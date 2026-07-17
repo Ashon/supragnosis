@@ -56,12 +56,72 @@ pub struct Provenance {
     pub trust_tier: TrustTier,
 }
 
+/// 관측에 동봉된 구조화 주장(후보 엔티티/관계) - architecture.md 2.3 의 `assertions`.
+/// 원칙 1: 주장은 클라이언트가 말한 **원문 그대로** 로그에 남는다. 정규화/해소는
+/// 프로젝션(해소 계층)의 일이며, 로그를 재생하면 언제든 다른 정책으로 재계산할 수 있다.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Assertions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entities: Vec<EntityAssertion>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<RelationAssertion>,
+}
+
+impl Assertions {
+    pub fn is_empty(&self) -> bool {
+        self.entities.is_empty() && self.relations.is_empty()
+    }
+
+    /// 콘텐츠 주소 해시용 결정적 바이트 인코딩. serde 포맷에 결합하지 않는 수제
+    /// 인코딩으로, 직렬화 라이브러리가 바뀌어도 id 가 흔들리지 않게 한다.
+    fn hash_into(&self, hasher: &mut blake3::Hasher) {
+        for e in &self.entities {
+            hasher.update(b"E\0");
+            hasher.update(e.name.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(e.kind.as_deref().unwrap_or("").as_bytes());
+            hasher.update(b"\0");
+        }
+        for r in &self.relations {
+            hasher.update(b"R\0");
+            hasher.update(r.from.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(r.kind.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(r.to.as_bytes());
+            hasher.update(b"\0");
+        }
+    }
+}
+
+/// 엔티티 주장: "이 이름의 것이 있고, (선택) 이 타입이다".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntityAssertion {
+    pub name: String,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+}
+
+/// 관계 주장: "from -kind-> to". from/to 는 이름(해소 전), kind 는 원문 표기.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelationAssertion {
+    pub from: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub to: String,
+}
+
 /// 관측(Observation) - 진실의 원천. 불변이며 **콘텐츠 주소**로 식별된다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Observation {
     pub id: String,
     pub content: String,
     pub provenance: Provenance,
+    /// 동봉된 구조화 주장 (원칙 1: 엔티티/관계 그래프는 이 로그의 프로젝션이어야 한다).
+    /// **콘텐츠 주소 id 계산에 포함한다** - 계보/임베딩과 달리 주장은 내용 정체성이다.
+    /// 같은 텍스트라도 다른 주장을 동봉하면 다른 관측이다 (덮어쓰기 dedup 방지).
+    #[serde(default, skip_serializing_if = "Assertions::is_empty")]
+    pub assertions: Assertions,
     /// 이 관측이 파생된 원천 관측 id들 (원칙 18: 오염 소독의 리콜 계보).
     /// 비어 있으면 1차 관측. (id 계산에는 포함하지 않는다 - 계보는 내용 정체성이 아니다.)
     #[serde(default)]
@@ -76,15 +136,26 @@ pub struct Observation {
 impl Observation {
     /// 콘텐츠 주소 ID = blake3(workspace + content). 어떤 경로(서버/피어)로 들어와도 동일 id -> dedup.
     pub fn new(content: String, provenance: Provenance) -> Self {
+        Self::with_assertions(content, provenance, Assertions::default())
+    }
+
+    /// 구조화 주장을 동봉한 관측. 주장이 비어 있으면 id 는 `new` 와 동일하고
+    /// (텍스트 전용 관측의 id 호환), 주장이 있으면 id 계산에 포함된다.
+    pub fn with_assertions(content: String, provenance: Provenance, assertions: Assertions) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(provenance.workspace.as_bytes());
         hasher.update(b"\0");
         hasher.update(content.as_bytes());
+        if !assertions.is_empty() {
+            hasher.update(b"\0");
+            assertions.hash_into(&mut hasher);
+        }
         let id = hasher.finalize().to_hex().to_string();
         Self {
             id,
             content,
             provenance,
+            assertions,
             derived_from: Vec::new(),
             embedding: None,
         }
@@ -136,12 +207,52 @@ pub struct Relation {
     pub valid_to: Option<Timestamp>,
 }
 
+/// 관계 타입 표기의 결정적 정규화(정준형). LLM 추출기가 주 클라이언트인 시스템에서
+/// 표기 요동(`depends_on`/`dependsOn`/`depends-on`/`Depends On`)은 상수이므로,
+/// id 에 구워지기 전에 하나의 정준형(`depends_on`)으로 수렴시킨다.
+///
+/// 규칙: trim -> 구분자 연속(`-`, `_`, 공백)은 `_` 하나로 -> camelCase 경계
+/// (소문자/숫자 뒤 대문자)에 `_` 삽입 -> 전부 lowercase.
+/// 순수 함수 - 어떤 노드에서 어떤 순서로 프로젝션해도 같은 결과 (원칙 16).
+pub fn normalize_relation_kind(kind: &str) -> String {
+    let mut out = String::with_capacity(kind.len() + 4);
+    let mut pending_sep = false;
+    let mut prev: Option<char> = None;
+    for ch in kind.trim().chars() {
+        if ch == '-' || ch == '_' || ch.is_whitespace() {
+            if !out.is_empty() {
+                pending_sep = true;
+            }
+            continue;
+        }
+        if ch.is_uppercase() {
+            if let Some(p) = prev {
+                if p.is_lowercase() || p.is_numeric() {
+                    pending_sep = true;
+                }
+            }
+        }
+        if pending_sep {
+            out.push('_');
+            pending_sep = false;
+        }
+        for lc in ch.to_lowercase() {
+            out.push(lc);
+        }
+        prev = Some(ch);
+    }
+    out
+}
+
 impl Relation {
+    /// 결정적 관계 ID = blake3(from + normalized_kind + to). kind 는
+    /// [`normalize_relation_kind`] 를 거치므로 표기 요동이 같은 엣지 id 로 수렴한다.
+    /// (from/to 는 이미 해소된 정규 엔티티 id.)
     pub fn make_id(from: &str, kind: &str, to: &str) -> String {
         let mut hasher = blake3::Hasher::new();
         hasher.update(from.as_bytes());
         hasher.update(b"\0");
-        hasher.update(kind.as_bytes());
+        hasher.update(normalize_relation_kind(kind).as_bytes());
         hasher.update(b"\0");
         hasher.update(to.as_bytes());
         hasher.finalize().to_hex().to_string()
@@ -249,6 +360,110 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relation_kind_normalization_converges() {
+        // 같은 의미의 표기 요동은 전부 하나의 정준형으로.
+        for variant in [
+            "depends_on",
+            "dependsOn",
+            "depends-on",
+            "Depends On",
+            " depends  on ",
+            "DEPENDS_ON",
+            "depends--on",
+        ] {
+            assert_eq!(
+                normalize_relation_kind(variant),
+                "depends_on",
+                "variant {variant:?} should normalize to depends_on"
+            );
+        }
+        // 이미 정준형이면 불변 (멱등).
+        assert_eq!(
+            normalize_relation_kind(&normalize_relation_kind("dependsOn")),
+            "depends_on"
+        );
+        assert_eq!(normalize_relation_kind("relates_to"), "relates_to");
+        // 숫자 뒤 대문자도 camelCase 경계.
+        assert_eq!(normalize_relation_kind("layer2Uses"), "layer2_uses");
+    }
+
+    #[test]
+    fn relation_id_is_notation_independent() {
+        let (a, b) = ("id-a", "id-b");
+        let canonical = Relation::make_id(a, "depends_on", b);
+        assert_eq!(Relation::make_id(a, "dependsOn", b), canonical);
+        assert_eq!(Relation::make_id(a, "depends-on", b), canonical);
+        // 다른 의미의 kind 는 다른 id.
+        assert_ne!(Relation::make_id(a, "part_of", b), canonical);
+    }
+
+    fn prov() -> Provenance {
+        Provenance {
+            host: "h".into(),
+            on_behalf_of: None,
+            workspace: "ws".into(),
+            source_ref: None,
+            observed_at: 1,
+            confidence: 1.0,
+            trust_tier: TrustTier::default(),
+        }
+    }
+
+    #[test]
+    fn observation_id_includes_assertions() {
+        let plain = Observation::new("supragnosis uses rmcp".into(), prov());
+        // 빈 주장은 텍스트 전용 관측과 id 가 같다 (기존 id 체계 호환).
+        let empty = Observation::with_assertions(
+            "supragnosis uses rmcp".into(),
+            prov(),
+            Assertions::default(),
+        );
+        assert_eq!(plain.id, empty.id);
+
+        // 주장이 붙으면 다른 관측이다 - 같은 텍스트라도 dedup 으로 주장이 소실되지 않는다.
+        let asserted = Observation::with_assertions(
+            "supragnosis uses rmcp".into(),
+            prov(),
+            Assertions {
+                entities: vec![EntityAssertion {
+                    name: "rmcp".into(),
+                    kind: Some("Tool".into()),
+                }],
+                relations: vec![],
+            },
+        );
+        assert_ne!(plain.id, asserted.id);
+
+        // 주장 내용이 다르면 id 도 다르다 (타입 배정도 내용 정체성).
+        let retyped = Observation::with_assertions(
+            "supragnosis uses rmcp".into(),
+            prov(),
+            Assertions {
+                entities: vec![EntityAssertion {
+                    name: "rmcp".into(),
+                    kind: Some("Project".into()),
+                }],
+                relations: vec![],
+            },
+        );
+        assert_ne!(asserted.id, retyped.id);
+
+        // 같은 주장이면 어떤 경로로 와도 같은 id (결정성).
+        let again = Observation::with_assertions(
+            "supragnosis uses rmcp".into(),
+            prov(),
+            Assertions {
+                entities: vec![EntityAssertion {
+                    name: "rmcp".into(),
+                    kind: Some("Tool".into()),
+                }],
+                relations: vec![],
+            },
+        );
+        assert_eq!(asserted.id, again.id);
+    }
 
     #[test]
     fn cosine_similarity_basics() {
