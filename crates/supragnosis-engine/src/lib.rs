@@ -8,6 +8,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use supragnosis_core::{
     now_millis, Entity, KnowledgeStore, Observation, Provenance, Relation, SearchHit, StoreError,
+    TraverseHit,
 };
 
 /// 적재 입력 (전송 DTO에서 매핑되는 도메인 입력).
@@ -153,6 +154,11 @@ impl Engine {
 
     pub fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
         self.store.search(query, workspace, limit)
+    }
+
+    /// 엔티티에서 관계 방향(from→to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
+    pub fn traverse(&self, id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
+        self.store.traverse(id, max_depth.max(1), limit)
     }
 }
 

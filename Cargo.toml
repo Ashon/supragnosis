@@ -19,6 +19,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
+cozo = { version = "0.7", features = ["storage-rocksdb"] }
 
 # 내부 (crate 간)
 supragnosis-core = { path = "crates/supragnosis-core" }

@@ -10,6 +10,7 @@ name = "supragnosis"
 path = "src/main.rs"
 
 [dependencies]
+supragnosis-core.workspace = true
 supragnosis-engine.workspace = true
 supragnosis-store.workspace = true
 supragnosis-mcp.workspace = true

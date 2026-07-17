@@ -2,12 +2,16 @@
 //!
 //! M0: 프로세스 메모리 기반 `InMemoryStore`. M1에서 Cozo(RocksDB) 어댑터를 같은 포트로 추가한다.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use supragnosis_core::{
     Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind, StoreError,
+    TraverseHit,
 };
+
+mod cozo_store;
+pub use cozo_store::CozoStore;
 
 /// 메모리 기반 지식 저장소. 테스트/개발/M0 골격용.
 #[derive(Default)]
@@ -91,5 +95,37 @@ impl KnowledgeStore for InMemoryStore {
         hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         hits.truncate(limit);
         hits
+    }
+
+    fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
+        let relations = self.relations.read().unwrap();
+        let entities = self.entities.read().unwrap();
+
+        let mut out: Vec<TraverseHit> = Vec::new();
+        let mut visited: HashSet<String> = HashSet::from([start_id.to_string()]);
+        let mut frontier: Vec<String> = vec![start_id.to_string()];
+
+        let mut depth = 1usize;
+        while depth <= max_depth && !frontier.is_empty() {
+            let mut next = Vec::new();
+            for node in &frontier {
+                for r in relations.values().filter(|r| &r.from == node) {
+                    if visited.insert(r.to.clone()) {
+                        let (name, kind) = entities
+                            .get(&r.to)
+                            .map(|e| (e.canonical_name.clone(), e.kind.clone()))
+                            .unwrap_or_default();
+                        out.push(TraverseHit { id: r.to.clone(), depth, name, kind });
+                        next.push(r.to.clone());
+                        if out.len() >= limit {
+                            return out;
+                        }
+                    }
+                }
+            }
+            frontier = next;
+            depth += 1;
+        }
+        out
     }
 }

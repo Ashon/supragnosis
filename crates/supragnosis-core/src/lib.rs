@@ -119,6 +119,16 @@ pub enum SearchHitKind {
     Observation,
 }
 
+/// 그래프 순회 결과 한 건 (시작 엔티티로부터 `depth` 홉 떨어진 엔티티).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraverseHit {
+    pub id: String,
+    pub depth: usize,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
 /// 저장소 포트. in-memory(M0) / Cozo(M1) 등 어댑터가 구현한다.
 pub trait KnowledgeStore: Send + Sync {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
@@ -129,6 +139,8 @@ pub trait KnowledgeStore: Send + Sync {
     /// from 또는 to 가 entity_id 인 관계들.
     fn relations_of(&self, entity_id: &str) -> Vec<Relation>;
     fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit>;
+    /// start_id 에서 방향(from→to)을 따라 최대 `max_depth` 홉까지 도달하는 엔티티들.
+    fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit>;
 }
 
 #[derive(Debug, thiserror::Error)]

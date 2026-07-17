@@ -78,6 +78,18 @@ pub struct SearchRequest {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TraverseRequest {
+    /// 시작 엔티티 id.
+    pub id: String,
+    /// 최대 홉 수(생략 시 3).
+    #[serde(default)]
+    pub max_depth: Option<usize>,
+    /// 최대 결과 수(생략 시 100).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 // ── 서버 ────────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -124,17 +136,34 @@ impl SupragnosisServer {
     fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
         match self.engine.get_entity(&req.id) {
             Some(view) => to_json(&view),
-            None => err_json("entity not found"),
+            // 열린 세계 가정(원칙 5): 부재는 거짓이 아니라 미지(unknown)다.
+            // "찾지 못함"을 에러로 주지 않아 LLM 이 부재를 부정으로 오독하지 않게 한다.
+            None => serde_json::json!({
+                "found": false,
+                "id": req.id,
+                "note": "unknown — not found is not a negation (open-world assumption)"
+            })
+            .to_string(),
         }
     }
 
     #[tool(
-        description = "지식(엔티티·관측)을 키워드로 검색한다. M0는 부분문자열 매칭이며, 의미(벡터) 검색은 이후 마일스톤에서 추가된다."
+        description = "지식(엔티티·관측)을 키워드로 검색한다. 부분문자열 매칭이며, 의미(벡터) 검색은 이후 마일스톤에서 추가된다."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         let hits = self
             .engine
             .search(&req.query, req.workspace.as_deref(), req.limit.unwrap_or(20));
+        to_json(&hits)
+    }
+
+    #[tool(
+        description = "엔티티에서 시작해 관계 방향(from→to)을 따라 그래프를 순회한다. 최대 홉(max_depth) 내에 도달하는 엔티티를 최단 거리와 함께 돌려준다."
+    )]
+    fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
+        let hits = self
+            .engine
+            .traverse(&req.id, req.max_depth.unwrap_or(3), req.limit.unwrap_or(100));
         to_json(&hits)
     }
 }

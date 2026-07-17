@@ -7,3 +7,5 @@ license.workspace = true
 
 [dependencies]
 supragnosis-core.workspace = true
+cozo.workspace = true
+serde_json.workspace = true
