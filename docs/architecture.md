@@ -48,6 +48,9 @@ description-logic 관례를 빌려 **두 계층**으로 나눈다.
 ### 2.2 관계(엣지)
 - 방향성 있는 **타입된 관계**: `depends_on`, `part_of`, `authored_by`, `relates_to`,
   `derived_from`, `mentions` ...
+- **관계 타입 정준화**: kind 표기는 결정적 정규화(trim, 구분자/camelCase -> `_`,
+  lowercase)를 거쳐 id 와 저장에 반영된다 - LLM 추출기의 표기 요동
+  (`depends-on`/`dependsOn`)이 다른 엣지 id 로 갈라지지 않는다 (순수 함수, 원칙 16).
 - **바이템포럴 속성**(원칙 4): **유효시간** `valid_from`/`valid_to`(세계에서 참이던 기간)
   vs **기록시간** `observed_at`(시스템이 알게 된 시점, provenance에). 반증은 삭제가 아니라
   `valid_to` 종료로 처리.
@@ -61,7 +64,7 @@ description-logic 관례를 빌려 **두 계층**으로 나눈다.
 |------|------|
 | `id` | **콘텐츠 주소** (blake3 해시) -> 어떤 경로(서버/피어)로 들어와도 자동 dedup |
 | `content` | 원문 지식 조각 (텍스트/구조화) |
-| `assertions` | (선택) 클라이언트가 넘긴 후보 엔티티/관계 |
+| `assertions` | (선택) 클라이언트가 넘긴 후보 엔티티/관계 - **원문 표기 그대로** 로그에 남고(정규화는 프로젝션의 일), **id 계산에 포함**된다(주장은 계보/임베딩과 달리 내용 정체성 - 같은 텍스트에 다른 주장이면 다른 관측) |
 | `provenance` | `host`(acting), `on_behalf_of`(위임 주체), `workspace`, `source_ref`, `observed_at`(기록시간), `confidence`, `trust_tier` |
 | `derived_from` | (선택) 이 관측이 파생된 원천 관측 id들 - 오염 소독의 리콜 명단(원칙 18) |
 | `origin` | `origin_host_id`, `origin_seq`(호스트별 단조 증가) - 버전벡터 델타 동기화의 키 |
@@ -255,7 +258,7 @@ flowchart LR
 
 ### Resources (읽기 전용, 주소 지정)
 - `supragnosis://entity/{id}` - 엔티티
-- `supragnosis://ontology/schema` - 현재 타입 스키마
+- `supragnosis://workspace/{ws}/schema` - 타입 스키마 (T-Box 는 워크스페이스 스코프 - 원칙 11)
 - `supragnosis://workspace/{ws}/summary` - 워크스페이스 지식 요약
 - `supragnosis://proposal/{id}` - 제안 (M3.5)
 - `supragnosis://workspace/{ws}/canon-policy` - 정본 정책 (M3.5)
@@ -361,7 +364,7 @@ listen = "0.0.0.0:7420"
 1. **M0 - 골격 [o]**: workspace 스캐폴드, `core` 모델, in-memory 스토어, `observe`+`get_entity`+`search`(키워드) stdio MCP 서버. (rmcp 0.16, E2E 핸드셰이크 검증 완료)
 2. **M1 - 임베디드 스토어 [o]**: Cozo 어댑터(관측/엔티티/관계), `traverse`(재귀 Datalog), 파일 영속. (E2E 검증)
 3. **M2 - 의미 검색**: `EmbeddingProvider`(fastembed) + HNSW 하이브리드. 회상 벤치마크(부록 B) 회귀셋.
-4. **M3 - 해소/스키마/바이템포럴**: 보수적 해소 + 유도 스키마 제안->명시 승격(원칙 11), `define_type` 정합성 검증(원칙 9), 유효구간/시간여행 질의(원칙 4), 신뢰등급 해소 가중(원칙 18).
+4. **M3 - 해소/스키마/바이템포럴**: 보수적 해소 + 유도 스키마 제안->명시 승격(원칙 11), 그 선행 작업으로 **타입 사용 통계 집계 뷰**(엔티티/관계 kind 별 사용 빈도, Cozo 집계 - 유도의 입력), `define_type` 정합성 검증(원칙 9), 타입 배정을 주장으로 취급해 해소가 kind 를 계산(원칙 1 - 현재의 last-write-wins 프로젝션 대체), 유효구간/시간여행 질의(원칙 4), 신뢰등급 해소 가중(원칙 18).
 5. **M3.5 - 제안 워크플로**: 정본 승격의 관문(원칙 23). 제안=관측 이벤트, 상태=결정적 폴드, 믿음 diff + blocking/informative 검사, `propose`/`get_proposal`/`review`. solo/단일 정본에서 동작(다중 노드 수렴은 M4의 HLC 전제). 설계 -> [proposal-workflow.md](proposal-workflow.md).
 6. **M4 - 페더레이션**: 버전벡터 델타 복제 + sync API(허브->피어->하이브리드), 위임사슬 서명(원칙 2), 선택적 공유(원칙 17), sync/consolidate를 **MCP Tasks**로/사람 중재를 **elicitation**으로(원칙 21). HLC 인과 순서로 제안 판정의 다중 노드 수렴 완성.
 7. **M5 - 추론/추출/오염방어**: 경량 추론, `Extractor` 포트, `derived_from` 계보 의무화/격리/소독(원칙 18).
@@ -393,7 +396,8 @@ listen = "0.0.0.0:7420"
 - 원칙 5(열린 세계): `get_entity` 는 부재를 에러가 아닌 `{found:false, note:...}` 로 반환.
 - 원칙 12/20(인코딩 편향 최소/헥사고날): `core` 는 IO 의존 0, Cozo 개념은 `store` 어댑터에만.
   저장소는 `KnowledgeStore` 포트 뒤 - mem/cozo 교체가 도메인 무변경.
-- 원칙 14(안정 식별자): 관측 id=blake3 콘텐츠주소, 엔티티 id=정규명 결정적 해소.
+- 원칙 14(안정 식별자): 관측 id=blake3 콘텐츠주소(동봉 주장 포함), 엔티티 id=정규명
+  결정적 해소, 관계 id=정준화된 kind(표기 요동 무관) - 전부 결정적 순수 함수.
 - 원칙 4(바이템포럴) *스키마*: 관계에 `valid_from`/`valid_to`(유효시간), provenance `observed_at`
   (기록시간) 필드 도입. 시간여행 질의 **로직**은 이연.
 - 원칙 18(오염 방어) *스키마*: provenance `trust_tier`(기본 `AgentExtracted`, 승격 명시적) +
@@ -402,9 +406,12 @@ listen = "0.0.0.0:7420"
 - 원칙 21(좁은 표면): 도구 4종(observe/get_entity/search_knowledge/traverse) - 모두 의도 단위.
 
 **의도적 이연 (마일스톤 지정)**
-- 원칙 1/6(주장<->믿음 분리, 충돌 보존): 현재 `observe` 는 관측 저장 후 **인라인 단순 프로젝션**.
-  관측/관계의 **다중 attestation 누적**과 교체 가능한 해소 정책은 **M3**(해소 계층).
-  참고: 진실의 원천인 관측 로그 자체는 보존되므로 재프로젝션으로 회복 가능.
+- 원칙 1/6(주장<->믿음 분리, 충돌 보존): 현재 `observe` 는 관측 저장 후 **인라인 단순 프로젝션**
+  (엔티티 kind 는 last-write-wins, 관계 provenance 는 단수 교체). 관측/관계의
+  **다중 attestation 누적**과 교체 가능한 해소 정책은 **M3**(해소 계층).
+  참고: 구조화 주장(`assertions` - 엔티티 kind 포함)이 관측 로그에 원문 그대로
+  동봉되므로, 로그 재프로젝션으로 어떤 해소 정책이든 소급 적용 가능하다 - 이
+  이연이 파괴적이지 않은 근거.
 - 원칙 3/4(대체/바이템포럴) *로직*: supersede/retraction 관측 처리, valid_to 자동 종료,
   `as_of_valid`/`as_of_recorded` 시간여행 질의 -> **M3~M4**. (필드는 M1 도입 완료)
 - 원칙 7(망각/응고): 유휴시간 결정적 재프로젝션 + 회상 강등 -> **M6**.

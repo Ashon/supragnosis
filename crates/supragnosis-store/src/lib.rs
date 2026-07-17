@@ -26,6 +26,11 @@ impl InMemoryStore {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// 관측 로그에서 id 로 관측을 꺼낸다 (테스트/검사용 - 로그가 진실의 원천임을 검증).
+    pub fn observation(&self, id: &str) -> Option<Observation> {
+        self.observations.read().unwrap().get(id).cloned()
+    }
 }
 
 impl KnowledgeStore for InMemoryStore {
