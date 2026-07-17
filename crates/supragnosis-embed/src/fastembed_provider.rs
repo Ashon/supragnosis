@@ -4,11 +4,23 @@
 //! 내려받는다(네트워크 필요). 코어는 [`EmbeddingProvider`] 포트만 알고, 이 어댑터가
 //! 없거나 실패하면 시스템은 키워드 검색으로 degrade 한다(원칙 19).
 
+use std::path::PathBuf;
+
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use supragnosis_core::{EmbedError, EmbeddingProvider};
 
 /// BGE-small-en-v1.5 임베딩 차원.
 const BGE_SMALL_EN_V15_DIMS: usize = 384;
+
+/// 모델 캐시 디렉터리. 실행 위치(CWD)에 흩어지지 않도록 안정 경로로 고정한다.
+/// `SUPRAGNOSIS_MODEL_DIR` 로 재지정 가능, 기본은 `~/.supragnosis/models`.
+fn model_cache_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("SUPRAGNOSIS_MODEL_DIR") {
+        return PathBuf::from(dir);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".supragnosis").join("models")
+}
 
 /// fastembed 로컬 ONNX 임베더.
 pub struct FastEmbedProvider {
@@ -20,7 +32,9 @@ impl FastEmbedProvider {
     /// 기본 모델(BGE-small-en-v1.5)로 초기화한다. 모델이 캐시에 없으면 내려받는다.
     pub fn try_default() -> Result<Self, EmbedError> {
         let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(false),
+            InitOptions::new(EmbeddingModel::BGESmallENV15)
+                .with_show_download_progress(false)
+                .with_cache_dir(model_cache_dir()),
         )
         .map_err(|e| EmbedError::Provider(e.to_string()))?;
         Ok(Self {
