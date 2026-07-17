@@ -197,10 +197,12 @@ impl KnowledgeStore for CozoStore {
         let workspace = obs.provenance.workspace.clone();
         let obs_id = obs.id.clone();
         let embedding = obs.embedding.clone();
-        // 복합 필드는 data JSON 컬럼에 (provenance + derived_from 계보 + 임베딩).
+        // 복합 필드는 data JSON 컬럼에 (provenance + 주장 + derived_from 계보 + 임베딩).
+        // assertions 는 재프로젝션의 입력이므로 반드시 로그와 함께 영속한다 (원칙 1).
         // 임베딩은 회상 보조일 뿐 정체성이 아니다(원칙 19) - 스키마 컬럼이 아닌 data 에 둔다.
         let data = json!({
             "provenance": obs.provenance,
+            "assertions": obs.assertions,
             "derived_from": obs.derived_from,
             "embedding": obs.embedding,
         })
