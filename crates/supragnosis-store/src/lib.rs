@@ -150,6 +150,28 @@ impl KnowledgeStore for InMemoryStore {
         out
     }
 
+    fn all_entities(&self, workspace: Option<&str>) -> Vec<Entity> {
+        self.entities
+            .read()
+            .unwrap()
+            .values()
+            .filter(|e| {
+                workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws))
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn all_relations(&self, workspace: Option<&str>) -> Vec<Relation> {
+        self.relations
+            .read()
+            .unwrap()
+            .values()
+            .filter(|r| workspace.is_none_or(|ws| r.provenance.workspace == ws))
+            .cloned()
+            .collect()
+    }
+
     fn search_semantic(
         &self,
         query_embedding: &[f32],

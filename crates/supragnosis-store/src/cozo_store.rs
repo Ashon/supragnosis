@@ -192,6 +192,51 @@ fn params(pairs: &[(&str, String)]) -> BTreeMap<String, DataValue> {
         .collect()
 }
 
+/// entity 행(id, etype, name, data JSON)을 도메인 Entity 로 복원한다. 조회/열거가 공유.
+/// data JSON 이 깨져도 스키마 컬럼(id/type/name)은 살리고 복합 필드만 비운다(방어적).
+fn entity_from_parts(id: String, etype: String, name: String, data_str: &str) -> Entity {
+    let data: serde_json::Value =
+        serde_json::from_str(data_str).unwrap_or(serde_json::Value::Null);
+    Entity {
+        id,
+        kind: etype,
+        canonical_name: name,
+        aliases: data
+            .get("aliases")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        properties: data
+            .get("properties")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        provenance: data
+            .get("provenance")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+    }
+}
+
+/// relation 행(id, src, dst, rtype, data JSON)을 도메인 Relation 으로 복원한다.
+/// provenance 파싱이 실패하면 None - provenance 없는 관계는 원칙 2 위반이라 흘리지 않는다.
+fn relation_from_parts(
+    id: &str,
+    src: &str,
+    dst: &str,
+    rtype: &str,
+    data_str: &str,
+) -> Option<Relation> {
+    let data: serde_json::Value = serde_json::from_str(data_str).ok()?;
+    Some(Relation {
+        id: id.to_string(),
+        from: src.to_string(),
+        to: dst.to_string(),
+        kind: rtype.to_string(),
+        provenance: serde_json::from_value(data.get("provenance")?.clone()).ok()?,
+        valid_from: data.get("valid_from").and_then(|v| v.as_u64()),
+        valid_to: data.get("valid_to").and_then(|v| v.as_u64()),
+    })
+}
+
 impl KnowledgeStore for CozoStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
         let workspace = obs.provenance.workspace.clone();
@@ -246,29 +291,8 @@ impl KnowledgeStore for CozoStore {
         let row = rows.rows.into_iter().next()?;
         let etype = row.first()?.get_str()?.to_string();
         let name = row.get(1)?.get_str()?.to_string();
-        let data_str = row.get(2)?.get_str()?.to_string();
-        let data: serde_json::Value =
-            serde_json::from_str(&data_str).unwrap_or(serde_json::Value::Null);
-        let aliases = data
-            .get("aliases")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let properties = data
-            .get("properties")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let provenance = data
-            .get("provenance")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        Some(Entity {
-            id: id.to_string(),
-            kind: etype,
-            canonical_name: name,
-            aliases,
-            properties,
-            provenance,
-        })
+        let data_str = row.get(2)?.get_str()?;
+        Some(entity_from_parts(id.to_string(), etype, name, data_str))
     }
 
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
@@ -334,16 +358,13 @@ impl KnowledgeStore for CozoStore {
         rows.rows
             .iter()
             .filter_map(|r| {
-                let data: serde_json::Value = serde_json::from_str(r.get(4)?.get_str()?).ok()?;
-                Some(Relation {
-                    id: r.first()?.get_str()?.to_string(),
-                    from: r.get(1)?.get_str()?.to_string(),
-                    to: r.get(2)?.get_str()?.to_string(),
-                    kind: r.get(3)?.get_str()?.to_string(),
-                    provenance: serde_json::from_value(data.get("provenance")?.clone()).ok()?,
-                    valid_from: data.get("valid_from").and_then(|v| v.as_u64()),
-                    valid_to: data.get("valid_to").and_then(|v| v.as_u64()),
-                })
+                relation_from_parts(
+                    r.first()?.get_str()?,
+                    r.get(1)?.get_str()?,
+                    r.get(2)?.get_str()?,
+                    r.get(3)?.get_str()?,
+                    r.get(4)?.get_str()?,
+                )
             })
             .collect()
     }
@@ -437,6 +458,59 @@ impl KnowledgeStore for CozoStore {
                     kind: r.get(3)?.get_str()?.to_string(),
                 })
             })
+            .collect()
+    }
+
+    fn all_entities(&self, workspace: Option<&str>) -> Vec<Entity> {
+        // entity 테이블은 workspace 컬럼을 지니므로 스토어에서 바로 필터한다.
+        let mut p = params(&[]);
+        let script = match workspace {
+            Some(ws) => {
+                p.insert("ws".to_string(), DataValue::from(ws));
+                "?[id, etype, name, data] := *entity{id, etype, name, workspace, data}, workspace == $ws"
+            }
+            None => "?[id, etype, name, data] := *entity{id, etype, name, data}",
+        };
+        let rows = match self.run(script, p, false) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+        rows.rows
+            .iter()
+            .filter_map(|r| {
+                Some(entity_from_parts(
+                    r.first()?.get_str()?.to_string(),
+                    r.get(1)?.get_str()?.to_string(),
+                    r.get(2)?.get_str()?.to_string(),
+                    r.get(3)?.get_str()?,
+                ))
+            })
+            .collect()
+    }
+
+    fn all_relations(&self, workspace: Option<&str>) -> Vec<Relation> {
+        // relation 테이블엔 workspace 컬럼이 없다 - 워크스페이스는 data JSON 의
+        // provenance.workspace 에 있으므로 복원 후 Rust 에서 필터한다.
+        let rows = match self.run(
+            "?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}",
+            params(&[]),
+            false,
+        ) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+        rows.rows
+            .iter()
+            .filter_map(|r| {
+                relation_from_parts(
+                    r.first()?.get_str()?,
+                    r.get(1)?.get_str()?,
+                    r.get(2)?.get_str()?,
+                    r.get(3)?.get_str()?,
+                    r.get(4)?.get_str()?,
+                )
+            })
+            .filter(|rel| workspace.is_none_or(|ws| rel.provenance.workspace == ws))
             .collect()
     }
 

@@ -1,14 +1,18 @@
-//! supragnosis-mcp - MCP 표면(도구).
+//! supragnosis-mcp - MCP 표면(도구 + 리소스).
 //!
 //! rmcp 매크로로 도구를 정의하고 [`supragnosis_engine::Engine`] 으로 위임한다.
 //! 도구: `observe`, `get_entity`, `search_knowledge`, `traverse`.
+//! 리소스: `supragnosis://workspace/{ws}/graph` - 온톨로지 그래프(node-link) 읽기 뷰.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router, ServerHandler,
+    schemars,
+    service::{RequestContext, RoleServer},
+    tool, tool_handler, tool_router, ErrorData, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 
@@ -191,16 +195,100 @@ impl SupragnosisServer {
 impl ServerHandler for SupragnosisServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "supragnosis: 여러 호스트/워크스페이스의 지식을 온톨로지화하는 MCP 서버. \
-                 observe 로 지식을 적재하고 get_entity/search_knowledge 로 탐색한다."
+                 observe 로 지식을 적재하고 get_entity/search_knowledge 로 탐색한다. \
+                 supragnosis://workspace/{ws}/graph 리소스로 온톨로지 그래프 전체(node-link)를 조회한다."
                     .to_string(),
             ),
             ..Default::default()
         }
     }
+
+    /// 구체 리소스 목록: 노드의 기본 워크스페이스 그래프 하나를 노출한다(다른 ws 는 템플릿으로).
+    fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
+        let ws = self.engine.default_workspace();
+        let mut res = RawResource::new(
+            format!("supragnosis://workspace/{ws}/graph"),
+            format!("{ws} 온톨로지 그래프"),
+        );
+        res.description = Some(
+            "엔티티(노드)+관계(엣지) node-link 그래프. provenance/신뢰 등급/유효구간 포함, 읽기 전용 파생 뷰."
+                .to_string(),
+        );
+        res.mime_type = Some("application/json".to_string());
+        std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
+            res.no_annotation(),
+        ])))
+    }
+
+    /// 리소스 템플릿: 임의 워크스페이스의 그래프를 URI 패턴으로 조회하게 한다.
+    fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + Send + '_ {
+        let tmpl = RawResourceTemplate {
+            uri_template: "supragnosis://workspace/{workspace}/graph".to_string(),
+            name: "workspace-graph".to_string(),
+            title: Some("워크스페이스 온톨로지 그래프".to_string()),
+            description: Some(
+                "특정 워크스페이스의 엔티티-관계 그래프(node-link). {workspace} 를 채워 조회한다."
+                    .to_string(),
+            ),
+            mime_type: Some("application/json".to_string()),
+            icons: None,
+        };
+        std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
+            tmpl.no_annotation(),
+        ])))
+    }
+
+    /// 리소스 읽기: URI 에서 워크스페이스를 파싱해 그래프 프로젝션 JSON 을 돌려준다.
+    /// 알 수 없는 URI 는 resource_not_found(부재는 미지, 원칙 5) 로 자기 교정 힌트를 담아 준다.
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
+        let uri = request.uri;
+        let result = match parse_graph_uri(&uri) {
+            Some(ws) => {
+                let graph = self.engine.graph(Some(ws));
+                Ok(ReadResourceResult {
+                    contents: vec![ResourceContents::text(to_json(&graph), uri)],
+                })
+            }
+            None => Err(ErrorData::resource_not_found(
+                format!(
+                    "알 수 없는 리소스 URI: {uri} - supragnosis://workspace/{{workspace}}/graph 형태만 지원한다"
+                ),
+                None,
+            )),
+        };
+        std::future::ready(result)
+    }
+}
+
+/// `supragnosis://workspace/<ws>/graph` 에서 워크스페이스를 뽑는다. 형식이 어긋나면 None.
+/// ws 에는 `/` 가 없어야 한다(경로 세그먼트 하나).
+fn parse_graph_uri(uri: &str) -> Option<&str> {
+    let ws = uri
+        .strip_prefix("supragnosis://workspace/")?
+        .strip_suffix("/graph")?;
+    if ws.is_empty() || ws.contains('/') {
+        return None;
+    }
+    Some(ws)
 }
 
 // --- 직렬화 헬퍼 (도구는 JSON 문자열을 반환) --------------------------------
