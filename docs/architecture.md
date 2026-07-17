@@ -249,11 +249,16 @@ flowchart LR
 | `list_sources` | 출처/워크스페이스 introspection |
 | `sync_status` / `sync_pull` / `sync_push` | 동기화 (관리용) |
 | `query` | 고급 Datalog 질의 (권한 가드 하에 passthrough) |
+| `propose` | 정본 승격 제안 생성 (M3.5, 원칙 23 - [proposal-workflow.md](proposal-workflow.md)) |
+| `list_proposals` / `get_proposal` | 제안 목록 / 제안 + 믿음 diff + 검사 (M3.5) |
+| `review` | 제안에 코멘트 또는 판정(merge/reject); 사람 확인은 elicitation (M3.5) |
 
 ### Resources (읽기 전용, 주소 지정)
 - `supragnosis://entity/{id}` - 엔티티
 - `supragnosis://ontology/schema` - 현재 타입 스키마
 - `supragnosis://workspace/{ws}/summary` - 워크스페이스 지식 요약
+- `supragnosis://proposal/{id}` - 제안 (M3.5)
+- `supragnosis://workspace/{ws}/canon-policy` - 정본 정책 (M3.5)
 
 ### Prompts
 - `what-do-we-know-about {topic}` - 온톨로지 문맥을 채워 넣는 가이드 프롬프트
@@ -357,9 +362,10 @@ listen = "0.0.0.0:7420"
 2. **M1 - 임베디드 스토어 [o]**: Cozo 어댑터(관측/엔티티/관계), `traverse`(재귀 Datalog), 파일 영속. (E2E 검증)
 3. **M2 - 의미 검색**: `EmbeddingProvider`(fastembed) + HNSW 하이브리드. 회상 벤치마크(부록 B) 회귀셋.
 4. **M3 - 해소/스키마/바이템포럴**: 보수적 해소 + 유도 스키마 제안->명시 승격(원칙 11), `define_type` 정합성 검증(원칙 9), 유효구간/시간여행 질의(원칙 4), 신뢰등급 해소 가중(원칙 18).
-5. **M4 - 페더레이션**: 버전벡터 델타 복제 + sync API(허브->피어->하이브리드), 위임사슬 서명(원칙 2), 선택적 공유(원칙 17), sync/consolidate를 **MCP Tasks**로/사람 중재를 **elicitation**으로(원칙 21).
-6. **M5 - 추론/추출/오염방어**: 경량 추론, `Extractor` 포트, `derived_from` 계보 의무화/격리/소독(원칙 18).
-7. **M6 - 망각/응고**: 유휴시간 결정적 재프로젝션 + 회상 강등(원칙 7, sleep-time).
+5. **M3.5 - 제안 워크플로**: 정본 승격의 관문(원칙 23). 제안=관측 이벤트, 상태=결정적 폴드, 믿음 diff + blocking/informative 검사, `propose`/`get_proposal`/`review`. solo/단일 정본에서 동작(다중 노드 수렴은 M4의 HLC 전제). 설계 -> [proposal-workflow.md](proposal-workflow.md).
+6. **M4 - 페더레이션**: 버전벡터 델타 복제 + sync API(허브->피어->하이브리드), 위임사슬 서명(원칙 2), 선택적 공유(원칙 17), sync/consolidate를 **MCP Tasks**로/사람 중재를 **elicitation**으로(원칙 21). HLC 인과 순서로 제안 판정의 다중 노드 수렴 완성.
+7. **M5 - 추론/추출/오염방어**: 경량 추론, `Extractor` 포트, `derived_from` 계보 의무화/격리/소독(원칙 18).
+8. **M6 - 망각/응고**: 유휴시간 결정적 재프로젝션 + 회상 강등(원칙 7, sleep-time).
 
 ---
 
@@ -411,3 +417,4 @@ listen = "0.0.0.0:7420"
   신뢰 가중 랭킹 -> **M5**(추출 포트와 함께).
 - 원칙 21(장기작업/사람중재): sync/consolidate의 MCP Tasks 노출, 병합/모순/승격 elicitation -> **M4**.
 - 원칙 22(작업의 부산물): 큐레이션을 질의 결과에 녹이는 UX/프롬프트 -> 도구 확장과 함께 점진.
+- 원칙 23(정본으로의 관문): 제안 워크플로 -> **M3.5**. 설계는 [proposal-workflow.md](proposal-workflow.md)에 완료, 다중 노드 수렴은 M4(HLC) 전제.
