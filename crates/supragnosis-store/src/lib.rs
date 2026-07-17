@@ -7,8 +7,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use supragnosis_core::{
-    Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind, StoreError,
-    TraverseHit,
+    cosine_similarity, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
+    StoreError, TraverseHit,
 };
 
 mod cozo_store;
@@ -143,6 +143,38 @@ impl KnowledgeStore for InMemoryStore {
             depth += 1;
         }
         out
+    }
+
+    fn search_semantic(
+        &self,
+        query_embedding: &[f32],
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Vec<SearchHit> {
+        let mut hits: Vec<SearchHit> = self
+            .observations
+            .read()
+            .unwrap()
+            .values()
+            .filter(|o| workspace.is_none_or(|ws| o.provenance.workspace == ws))
+            .filter_map(|o| {
+                let emb = o.embedding.as_deref()?;
+                Some(SearchHit {
+                    kind: SearchHitKind::Observation,
+                    id: o.id.clone(),
+                    snippet: o.content.chars().take(160).collect(),
+                    score: cosine_similarity(query_embedding, emb),
+                })
+            })
+            .collect();
+
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        hits.truncate(limit);
+        hits
     }
 }
 

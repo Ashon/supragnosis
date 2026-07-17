@@ -162,7 +162,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "지식(엔티티/관측)을 키워드로 검색한다. 부분문자열 매칭이며, 의미(벡터) 검색은 이후 마일스톤에서 추가된다."
+        description = "지식(엔티티/관측)을 검색한다. 임베딩이 있으면 의미(벡터)+키워드 하이브리드로, 없으면 키워드 부분일치로 동작한다."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         let hits = self.engine.search(

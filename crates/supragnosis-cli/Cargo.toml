@@ -12,10 +12,17 @@ workspace = true
 name = "supragnosis"
 path = "src/main.rs"
 
+[features]
+default = []
+# fastembed(ONNX 로컬 임베딩)을 켠다. 무거운 의존이라 opt-in - 끄면 키워드 검색으로 degrade.
+# 켠 빌드에서는 런타임 기본 임베더가 fastembed 가 된다(SUPRAGNOSIS_EMBED 로 재지정 가능).
+fastembed = ["supragnosis-embed/fastembed"]
+
 [dependencies]
 supragnosis-core.workspace = true
 supragnosis-engine.workspace = true
 supragnosis-store.workspace = true
+supragnosis-embed.workspace = true
 supragnosis-mcp.workspace = true
 rmcp.workspace = true
 tokio.workspace = true

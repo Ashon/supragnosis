@@ -1,0 +1,18 @@
+[package]
+name = "supragnosis-embed"
+description = "supragnosis 임베딩 어댑터. 결정적 해싱(의존 0) + fastembed(ONNX, feature)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# fastembed(ONNX 로컬 모델)은 무거운 의존이라 opt-in 으로 격리한다(원칙 19: degrade).
+fastembed = ["dep:fastembed"]
+
+[dependencies]
+supragnosis-core.workspace = true
+fastembed = { version = "4", optional = true }

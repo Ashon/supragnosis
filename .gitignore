@@ -4,3 +4,5 @@ Cargo.lock.orig
 .DS_Store
 /data
 *.log
+# fastembed 로컬 모델 캐시 (대용량 ONNX 바이너리 - 커밋 금지)
+**/.fastembed_cache/

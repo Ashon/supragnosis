@@ -66,6 +66,11 @@ pub struct Observation {
     /// 비어 있으면 1차 관측. (id 계산에는 포함하지 않는다 - 계보는 내용 정체성이 아니다.)
     #[serde(default)]
     pub derived_from: Vec<String>,
+    /// (선택) 의미 검색용 임베딩 벡터 (원칙 19: 확률적 경계).
+    /// **콘텐츠 주소 id 계산에 포함하지 않는다** - 임베딩은 회상을 넓히는 로컬 보조일 뿐
+    /// 내용 정체성이 아니며, 노드마다 다른 모델을 써도 정체성/수렴이 흔들리지 않는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
 }
 
 impl Observation {
@@ -81,6 +86,7 @@ impl Observation {
             content,
             provenance,
             derived_from: Vec::new(),
+            embedding: None,
         }
     }
 }
@@ -151,7 +157,7 @@ pub struct SearchHit {
     pub score: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchHitKind {
     Entity,
@@ -168,7 +174,7 @@ pub struct TraverseHit {
     pub kind: String,
 }
 
-/// 저장소 포트. in-memory(M0) / Cozo(M1) 등 어댑터가 구현한다.
+/// 저장소 포트. in-memory / Cozo(RocksDB) 등 어댑터가 구현한다.
 pub trait KnowledgeStore: Send + Sync {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
     fn get_entity(&self, id: &str) -> Option<Entity>;
@@ -180,10 +186,78 @@ pub trait KnowledgeStore: Send + Sync {
     fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit>;
     /// start_id 에서 방향(from->to)을 따라 최대 `max_depth` 홉까지 도달하는 엔티티들.
     fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit>;
+    /// 임베딩이 있는 관측을 질의 벡터와의 코사인 유사도로 검색한다 (원칙 19: 회상 확장).
+    /// 임베딩이 없는 관측은 후보에서 제외된다. `score` 는 코사인 유사도(-1.0~1.0).
+    /// 기본 구현은 빈 결과 - 벡터를 저장하지 않는 어댑터는 재정의할 필요가 없다.
+    fn search_semantic(
+        &self,
+        _query_embedding: &[f32],
+        _workspace: Option<&str>,
+        _limit: usize,
+    ) -> Vec<SearchHit> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("store backend error: {0}")]
     Backend(String),
+}
+
+/// 임베딩 공급 포트 (원칙 19: 확률적 경계). 코어는 이 포트만 알고,
+/// 실제 모델(fastembed/원격 등)은 교체 가능한 어댑터가 구현한다. 없으면 키워드 검색으로 degrade.
+pub trait EmbeddingProvider: Send + Sync {
+    /// 임베딩 벡터의 차원.
+    fn dimensions(&self) -> usize;
+    /// 텍스트 배치를 임베딩한다. 입력 순서와 출력 순서는 1:1 대응한다.
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError>;
+    /// 단일 텍스트 임베딩 편의 메서드.
+    fn embed_one(&self, text: &str) -> Result<Vec<f32>, EmbedError> {
+        let mut v = self.embed(&[text])?;
+        v.pop()
+            .ok_or_else(|| EmbedError::Provider("empty embedding result".into()))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EmbedError {
+    #[error("embedding provider error: {0}")]
+    Provider(String),
+}
+
+/// 두 벡터의 코사인 유사도(-1.0~1.0). 길이가 다르거나 영벡터면 0.0.
+/// 순수 함수 - InMemory 어댑터와 회상 평가가 공유한다.
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        return 0.0;
+    }
+    let mut dot = 0.0f32;
+    let mut na = 0.0f32;
+    let mut nb = 0.0f32;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    if na == 0.0 || nb == 0.0 {
+        return 0.0;
+    }
+    dot / (na.sqrt() * nb.sqrt())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cosine_similarity_basics() {
+        // 동일 방향 = 1, 직교 = 0, 반대 = -1.
+        assert!((cosine_similarity(&[1.0, 0.0], &[2.0, 0.0]) - 1.0).abs() < 1e-6);
+        assert!(cosine_similarity(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
+        assert!((cosine_similarity(&[1.0, 0.0], &[-1.0, 0.0]) + 1.0).abs() < 1e-6);
+        // 방어: 길이 불일치/영벡터는 0.0.
+        assert_eq!(cosine_similarity(&[1.0], &[1.0, 0.0]), 0.0);
+        assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
 }

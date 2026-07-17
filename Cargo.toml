@@ -33,4 +33,5 @@ cozo = { version = "0.7", features = ["storage-rocksdb"] }
 supragnosis-core = { path = "crates/supragnosis-core" }
 supragnosis-store = { path = "crates/supragnosis-store" }
 supragnosis-engine = { path = "crates/supragnosis-engine" }
+supragnosis-embed = { path = "crates/supragnosis-embed" }
 supragnosis-mcp = { path = "crates/supragnosis-mcp" }
