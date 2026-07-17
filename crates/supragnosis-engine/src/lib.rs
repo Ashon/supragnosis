@@ -3,14 +3,14 @@
 //! MCP 도구가 호출하는 결정론적 로직: 관측 적재 -> 엔티티 해소 -> 관계 링크 -> 조회/검색.
 //! 저장소는 [`supragnosis_core::KnowledgeStore`] 포트를 통해서만 접근한다.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::Serialize;
 use supragnosis_core::{
     normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity, EntityAssertion,
-    KnowledgeStore, Observation, Provenance, Relation, RelationAssertion, SearchHit,
-    SearchHitKind, StoreError, TraverseHit, TrustTier,
+    KnowledgeStore, Observation, Provenance, Relation, RelationAssertion, SearchHit, SearchHitKind,
+    StoreError, Timestamp, TraverseHit, TrustTier,
 };
 
 /// 적재 입력 (전송 DTO에서 매핑되는 도메인 입력).
@@ -51,6 +51,71 @@ pub struct EntityView {
     #[serde(flatten)]
     pub entity: Entity,
     pub relations: Vec<Relation>,
+}
+
+/// 온톨로지 그래프 프로젝션(관측가능성/시각화의 읽기 뷰).
+///
+/// 관측 로그가 진실의 원천이고 이 뷰는 그 위에 계산된 **파생 뷰**다(원칙 1) - 아무것도
+/// 쓰지 않는 순수 읽기다. 노드/엣지에 provenance 요약(신뢰 등급/출처 수)을 실어 "이 지식이
+/// 어디서/얼마나 뒷받침되나"까지 보게 한다(원칙 2/18). 정렬은 결정적이다(원칙 16).
+#[derive(Serialize)]
+pub struct GraphView {
+    /// 스코프한 워크스페이스. None 이면 전체.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<GraphEdge>,
+    pub stats: GraphStats,
+}
+
+/// 그래프 노드 = 엔티티. 시각화 힌트(타입/degree/신뢰)를 함께 싣는다.
+#[derive(Serialize)]
+pub struct GraphNode {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// 그래프에 포함된 엣지 중 이 노드에 연결된 수(양끝이 모두 노드 집합에 있는 엣지만).
+    pub degree: usize,
+    /// 이 엔티티에 누적된 출처(attestation) 수 - 여러 관측이 뒷받침할수록 크다.
+    pub sources: usize,
+    /// 출처들 중 **최고** 신뢰 등급(원칙 18) - 노드의 대표 신뢰도.
+    pub trust_tier: TrustTier,
+}
+
+/// 그래프 엣지 = 타입된 관계. provenance 요약과 유효구간을 싣는다.
+#[derive(Serialize)]
+pub struct GraphEdge {
+    pub from: String,
+    pub to: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub trust_tier: TrustTier,
+    pub confidence: f32,
+    /// 유효구간 종료(원칙 4). Some 이면 대체/반증되어 현재는 참이 아님 - 뷰어가 흐리게 그린다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<Timestamp>,
+}
+
+/// 그래프 요약 지표(관측가능성의 첫 계량). 결정적 정렬 위해 BTreeMap.
+#[derive(Serialize)]
+pub struct GraphStats {
+    pub node_count: usize,
+    pub edge_count: usize,
+    /// 타입별 노드 수.
+    pub type_counts: BTreeMap<String, usize>,
+    /// 신뢰 등급별 노드 수(대표 등급 기준).
+    pub trust_counts: BTreeMap<String, usize>,
+}
+
+/// TrustTier 의 안정적 문자열 라벨(직렬화 snake_case 와 일치). 지표 키에 쓴다.
+fn tier_label(t: TrustTier) -> &'static str {
+    match t {
+        TrustTier::Unverified => "unverified",
+        TrustTier::AgentExtracted => "agent_extracted",
+        TrustTier::HostSigned => "host_signed",
+        TrustTier::HumanConfirmed => "human_confirmed",
+    }
 }
 
 pub struct Engine {
@@ -234,6 +299,86 @@ impl Engine {
     /// 엔티티에서 관계 방향(from->to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
     pub fn traverse(&self, id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
         self.store.traverse(id, max_depth.max(1), limit)
+    }
+
+    /// 이 노드의 기본 워크스페이스(MCP 리소스가 구체 URI 를 만들 때 참조).
+    pub fn default_workspace(&self) -> &str {
+        &self.default_workspace
+    }
+
+    /// 온톨로지 그래프를 node-link 뷰로 프로젝션한다(관측가능성/시각화의 읽기 경로).
+    /// 순수 읽기 - 관측 로그를 건드리지 않는다(원칙 1). 엣지는 양끝이 모두 노드 집합에
+    /// 있을 때만 포함해 닫힌(렌더 가능한) 그래프를 준다. 노드/엣지 순서는 결정적이다(원칙 16).
+    pub fn graph(&self, workspace: Option<&str>) -> GraphView {
+        let entities = self.store.all_entities(workspace);
+        let relations = self.store.all_relations(workspace);
+
+        let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
+
+        // degree 는 그래프에 실제로 포함된 엣지 기준으로만 센다.
+        let mut degree: HashMap<String, usize> = HashMap::new();
+        let mut edges: Vec<GraphEdge> = Vec::new();
+        for r in &relations {
+            if node_ids.contains(r.from.as_str()) && node_ids.contains(r.to.as_str()) {
+                *degree.entry(r.from.clone()).or_default() += 1;
+                *degree.entry(r.to.clone()).or_default() += 1;
+                edges.push(GraphEdge {
+                    from: r.from.clone(),
+                    to: r.to.clone(),
+                    kind: r.kind.clone(),
+                    trust_tier: r.provenance.trust_tier,
+                    confidence: r.provenance.confidence,
+                    valid_to: r.valid_to,
+                });
+            }
+        }
+
+        let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut trust_counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut nodes: Vec<GraphNode> = entities
+            .iter()
+            .map(|e| {
+                // 대표 신뢰 = 출처들 중 최고 등급(원칙 18). 출처 없으면 기본값.
+                let trust = e
+                    .provenance
+                    .iter()
+                    .map(|p| p.trust_tier)
+                    .max()
+                    .unwrap_or_default();
+                *type_counts.entry(e.kind.clone()).or_default() += 1;
+                *trust_counts.entry(tier_label(trust).to_string()).or_default() += 1;
+                GraphNode {
+                    id: e.id.clone(),
+                    name: e.canonical_name.clone(),
+                    kind: e.kind.clone(),
+                    degree: degree.get(&e.id).copied().unwrap_or(0),
+                    sources: e.provenance.len(),
+                    trust_tier: trust,
+                }
+            })
+            .collect();
+
+        // 결정적 순서(원칙 16): 노드는 id, 엣지는 (from, kind, to) 로 안정 정렬.
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
+        edges.sort_by(|a, b| {
+            a.from
+                .cmp(&b.from)
+                .then_with(|| a.kind.cmp(&b.kind))
+                .then_with(|| a.to.cmp(&b.to))
+        });
+
+        let stats = GraphStats {
+            node_count: nodes.len(),
+            edge_count: edges.len(),
+            type_counts,
+            trust_counts,
+        };
+        GraphView {
+            workspace: workspace.map(String::from),
+            nodes,
+            edges,
+            stats,
+        }
     }
 }
 
@@ -452,5 +597,90 @@ mod tests {
             "semantic top hit should be the rust observation, got {:?}",
             hits.first()
         );
+    }
+
+    /// 그래프 프로젝션: 관측이 만든 엔티티/관계를 node-link 뷰로 되돌린다.
+    /// 워크스페이스 스코핑, 닫힌 그래프(고아 엣지 배제), degree/stats, 결정적 순서를 검증한다.
+    #[test]
+    fn graph_projection_nodes_edges_stats() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store, "h", "ws1");
+
+        // ws1: supragnosis --depends_on--> rmcp (엔티티 2, 관계 1).
+        engine
+            .observe(ObserveInput {
+                content: "supragnosis depends on rmcp".into(),
+                workspace: Some("ws1".into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![
+                    EntityInput {
+                        name: "supragnosis".into(),
+                        kind: Some("Project".into()),
+                    },
+                    EntityInput {
+                        name: "rmcp".into(),
+                        kind: Some("Tool".into()),
+                    },
+                ],
+                relations: vec![RelationInput {
+                    from: "supragnosis".into(),
+                    kind: "depends_on".into(),
+                    to: "rmcp".into(),
+                }],
+            })
+            .unwrap();
+
+        // 다른 워크스페이스의 지식 - ws1 그래프에 새면 안 된다.
+        engine
+            .observe(ObserveInput {
+                content: "unrelated".into(),
+                workspace: Some("other".into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    name: "elsewhere".into(),
+                    kind: None,
+                }],
+                relations: vec![],
+            })
+            .unwrap();
+
+        let g = engine.graph(Some("ws1"));
+        assert_eq!(g.stats.node_count, 2, "ws1 노드 2개");
+        assert_eq!(g.stats.edge_count, 1, "ws1 엣지 1개");
+
+        // 노드는 id 로 결정적 정렬.
+        let ids: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "노드는 id 오름차순(결정성)");
+
+        // 관계 양끝의 degree 는 각각 1.
+        for n in &g.nodes {
+            assert_eq!(n.degree, 1, "각 노드는 관계 1개에 연결: {}", n.name);
+        }
+
+        // 엣지는 depends_on, 양끝이 모두 노드 집합에 있다.
+        let e = &g.edges[0];
+        assert_eq!(e.kind, "depends_on");
+        assert!(ids.contains(&e.from.as_str()) && ids.contains(&e.to.as_str()));
+
+        // 타입 분포.
+        assert_eq!(g.stats.type_counts.get("Project"), Some(&1));
+        assert_eq!(g.stats.type_counts.get("Tool"), Some(&1));
+
+        // 워크스페이스 격리: other 의 엔티티는 없다.
+        assert!(
+            g.nodes.iter().all(|n| n.name != "elsewhere"),
+            "다른 워크스페이스 노드가 새면 안 된다"
+        );
+
+        // 전체(None)로는 other 까지 포함해 노드 3개.
+        assert_eq!(engine.graph(None).stats.node_count, 3);
     }
 }
