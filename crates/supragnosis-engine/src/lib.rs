@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use supragnosis_core::{
-    now_millis, EmbeddingProvider, Entity, KnowledgeStore, Observation, Provenance, Relation,
-    SearchHit, SearchHitKind, StoreError, TraverseHit, TrustTier,
+    normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity, EntityAssertion,
+    KnowledgeStore, Observation, Provenance, Relation, RelationAssertion, SearchHit,
+    SearchHitKind, StoreError, TraverseHit, TrustTier,
 };
 
 /// 적재 입력 (전송 DTO에서 매핑되는 도메인 입력).
@@ -112,7 +113,29 @@ impl Engine {
             input.on_behalf_of,
         );
 
-        let mut obs = Observation::new(input.content, prov.clone());
+        // 구조화 주장은 관측 로그에 **원문 그대로** 동봉한다 (원칙 1: 로그가 진실의
+        // 원천이고 그래프는 프로젝션 - 주장이 로그에 없으면 재프로젝션으로 그래프를
+        // 복원할 수 없다). 정규화(kind 정준화 등)는 아래 프로젝션 단계의 일이다.
+        let assertions = Assertions {
+            entities: input
+                .entities
+                .iter()
+                .map(|e| EntityAssertion {
+                    name: e.name.clone(),
+                    kind: e.kind.clone(),
+                })
+                .collect(),
+            relations: input
+                .relations
+                .iter()
+                .map(|r| RelationAssertion {
+                    from: r.from.clone(),
+                    kind: r.kind.clone(),
+                    to: r.to.clone(),
+                })
+                .collect(),
+        };
+        let mut obs = Observation::with_assertions(input.content, prov.clone(), assertions);
         obs.derived_from = input.derived_from;
         // 임베딩 부착은 best-effort: 실패해도 관측 저장은 막지 않는다(원칙 19: degrade).
         if let Some(embedder) = &self.embedder {
@@ -132,11 +155,14 @@ impl Engine {
         for r in input.relations {
             let from = self.upsert_named(&workspace, &r.from, None, &prov)?;
             let to = self.upsert_named(&workspace, &r.to, None, &prov)?;
+            // kind 는 정준형으로 프로젝션한다 - id 와 저장 표기가 항상 일치하도록
+            // (id 만 정규화하면 같은 id 에 다른 표기가 last-write-wins 로 남는다).
+            let kind = normalize_relation_kind(&r.kind);
             let rel = Relation {
-                id: Relation::make_id(&from, &r.kind, &to),
+                id: Relation::make_id(&from, &kind, &to),
                 from,
                 to,
-                kind: r.kind,
+                kind,
                 provenance: prov.clone(),
                 // 유효구간은 M3 에서 관측/반증으로부터 유도. 지금은 미지정(관측시점부터).
                 valid_from: None,
@@ -302,6 +328,78 @@ mod tests {
 
         // 다른 워크스페이스로는 안 보임.
         assert!(engine.search("rust", Some("other"), 10).is_empty());
+    }
+
+    /// 관계 kind 의 표기 요동(depends_on/dependsOn/depends-on)은 같은 엣지 하나로
+    /// 수렴하고, 관측 로그에는 주장이 **원문 표기 그대로** 남는다 (원칙 1).
+    #[test]
+    fn relation_kind_variants_converge_and_assertions_are_logged() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "test-host", "ws1");
+
+        let mut relation_ids = Vec::new();
+        for kind in ["depends_on", "dependsOn", "depends-on"] {
+            let out = engine
+                .observe(ObserveInput {
+                    content: format!("supragnosis {kind} rmcp"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![],
+                    relations: vec![RelationInput {
+                        from: "supragnosis".into(),
+                        kind: kind.into(),
+                        to: "rmcp".into(),
+                    }],
+                })
+                .unwrap();
+            relation_ids.push(out.relations[0].clone());
+        }
+        // 세 표기가 전부 같은 관계 id.
+        assert_eq!(relation_ids[0], relation_ids[1]);
+        assert_eq!(relation_ids[0], relation_ids[2]);
+
+        // 프로젝션에는 정준형 kind 하나만 존재.
+        let sup_id = Entity::make_id("ws1", "supragnosis");
+        let view = engine.get_entity(&sup_id).unwrap();
+        assert_eq!(view.relations.len(), 1);
+        assert_eq!(view.relations[0].kind, "depends_on");
+    }
+
+    /// 구조화 주장은 관측 로그에 동봉되고 id 에 반영된다 - 같은 텍스트에 다른 주장을
+    /// 실어도 dedup 으로 소실되지 않는다 (원칙 1: 로그만으로 그래프 재구성 가능).
+    #[test]
+    fn observations_carry_assertions_in_log() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "test-host", "ws1");
+
+        let observe_with_kind = |kind: &str| {
+            engine
+                .observe(ObserveInput {
+                    content: "supragnosis is written in Rust".into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: "supragnosis".into(),
+                        kind: Some(kind.into()),
+                    }],
+                    relations: vec![],
+                })
+                .unwrap()
+        };
+        let first = observe_with_kind("Tool");
+        let second = observe_with_kind("Project");
+
+        // 같은 텍스트라도 주장이 다르면 다른 관측 - 타입 재배정의 흔적이 로그에 남는다.
+        assert_ne!(first.observation_id, second.observation_id);
+        let logged = store.observation(&second.observation_id).unwrap();
+        assert_eq!(logged.assertions.entities.len(), 1);
+        assert_eq!(logged.assertions.entities[0].kind.as_deref(), Some("Project"));
     }
 
     fn observe_text(engine: &Engine, content: &str) {

@@ -58,7 +58,8 @@ pub struct EntityInput {
 pub struct RelationInput {
     /// 시작 엔티티의 이름.
     pub from: String,
-    /// 관계 타입(예: depends_on, part_of, relates_to).
+    /// 관계 타입(예: depends_on, part_of, relates_to). 표기는 서버가 정준화한다
+    /// (depends-on/dependsOn -> depends_on) - 표기 요동이 다른 엣지가 되지 않는다.
     #[serde(rename = "type")]
     pub kind: String,
     /// 도착 엔티티의 이름.
