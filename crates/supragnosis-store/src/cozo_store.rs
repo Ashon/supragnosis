@@ -25,7 +25,8 @@ impl CozoStore {
         let path = path.as_ref();
         std::fs::create_dir_all(path).map_err(|e| StoreError::Backend(e.to_string()))?;
         let path_str = path.to_string_lossy().to_string();
-        let db = cozo::new_cozo_rocksdb(&path_str).map_err(|e| StoreError::Backend(e.to_string()))?;
+        let db =
+            cozo::new_cozo_rocksdb(&path_str).map_err(|e| StoreError::Backend(e.to_string()))?;
         let store = Self { db };
         store.ensure_schema()?;
         Ok(store)
@@ -57,7 +58,11 @@ impl CozoStore {
         let have: HashSet<String> = existing
             .rows
             .iter()
-            .filter_map(|r| r.get(name_idx).and_then(|v| v.get_str()).map(str::to_string))
+            .filter_map(|r| {
+                r.get(name_idx)
+                    .and_then(|v| v.get_str())
+                    .map(str::to_string)
+            })
             .collect();
 
         if !have.contains("observation") {
@@ -267,7 +272,9 @@ impl KnowledgeStore for CozoStore {
                 obs_params.insert("ws".to_string(), DataValue::from(ws));
                 "?[id, content] := *observation{id, content, workspace}, str_includes(lowercase(content), $q), workspace == $ws"
             }
-            None => "?[id, content] := *observation{id, content}, str_includes(lowercase(content), $q)",
+            None => {
+                "?[id, content] := *observation{id, content}, str_includes(lowercase(content), $q)"
+            }
         };
         if let Ok(rows) = self.run(obs_script, obs_params, false) {
             for r in &rows.rows {
@@ -285,7 +292,11 @@ impl KnowledgeStore for CozoStore {
             }
         }
 
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits.truncate(limit);
         hits
     }
@@ -404,7 +415,10 @@ mod tests {
             // 순회: a -> b(1홉), c(2홉)
             let hits = store.traverse(&a, 5, 100);
             let ids: HashSet<_> = hits.iter().map(|h| h.id.clone()).collect();
-            assert!(ids.contains(&b) && ids.contains(&c), "traverse got {hits:?}");
+            assert!(
+                ids.contains(&b) && ids.contains(&c),
+                "traverse got {hits:?}"
+            );
         }
 
         // 영속성: 재오픈 후에도 데이터 유지

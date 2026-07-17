@@ -1,9 +1,12 @@
 [package]
 name = "supragnosis-store"
-description = "supragnosis 저장소 어댑터 (M0: in-memory)."
+description = "supragnosis 저장소 어댑터: in-memory + Cozo(RocksDB)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 supragnosis-core.workspace = true

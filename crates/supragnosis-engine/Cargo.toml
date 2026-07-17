@@ -1,9 +1,12 @@
 [package]
 name = "supragnosis-engine"
-description = "supragnosis 서비스 계층: ingest/resolve/query (M0)."
+description = "supragnosis 서비스 계층: observe/resolve/query/traverse."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 supragnosis-core.workspace = true

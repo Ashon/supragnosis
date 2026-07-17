@@ -8,6 +8,14 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashon/supragnosis"
 
+# 워크스페이스 공통 lint. 각 crate 는 `[lints] workspace = true` 로 상속한다.
+# clippy 경고를 deny 로 고정해 정리 상태의 regression 을 막는다.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
 [workspace.dependencies]
 # 외부
 serde = { version = "1", features = ["derive"] }

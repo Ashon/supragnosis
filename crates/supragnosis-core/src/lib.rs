@@ -76,7 +76,12 @@ impl Observation {
         hasher.update(b"\0");
         hasher.update(content.as_bytes());
         let id = hasher.finalize().to_hex().to_string();
-        Self { id, content, provenance, derived_from: Vec::new() }
+        Self {
+            id,
+            content,
+            provenance,
+            derived_from: Vec::new(),
+        }
     }
 }
 

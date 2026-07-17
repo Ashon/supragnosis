@@ -7,16 +7,20 @@
 
 - 언어/런타임: **Rust** (`rmcp` 0.16 공식 MCP SDK, `tokio`)
 - 저장소: **임베디드/파일 기반** (M0는 in-memory, M1부터 `cozo`/RocksDB - 관계+그래프+벡터 통합)
-- 상태: **M0 골격 구현** (stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 헌법 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
+- 상태: **M1 - 임베디드 스토어 구현** (Cozo/RocksDB 영속 + `traverse`, stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 헌법 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
 
-## 빌드 & 실행 (M0)
+## 빌드 & 실행 (M1)
 ```bash
 cargo build          # 워크스페이스 전체 빌드
-cargo test           # 엔진 로직 단위 테스트
+cargo test           # 엔진/스토어 단위 테스트
 ./target/debug/supragnosis   # stdio MCP 서버 (MCP 클라이언트가 자식 프로세스로 기동)
 ```
-- 환경변수: `SUPRAGNOSIS_HOST`(출처용 호스트 id), `SUPRAGNOSIS_WORKSPACE`(기본 워크스페이스).
-- M0 도구: `observe`(지식 적재), `get_entity`(엔티티+관계+출처 조회), `search_knowledge`(키워드 검색).
+- 환경변수:
+  - `SUPRAGNOSIS_HOST` - 출처용 호스트 id (기본 `localhost`).
+  - `SUPRAGNOSIS_WORKSPACE` - 기본 워크스페이스 (기본 `default`).
+  - `SUPRAGNOSIS_STORE` - `cozo`(기본, 파일 영속) | `mem`(비영속).
+  - `SUPRAGNOSIS_DATA_DIR` - Cozo 데이터 디렉터리 (기본 `~/.supragnosis/db`).
+- 도구: `observe`(지식 적재), `get_entity`(엔티티+관계+출처 조회), `search_knowledge`(키워드 검색), `traverse`(관계 그래프 순회).
 - 크레이트: `core`(도메인/포트), `store`(어댑터), `engine`(서비스), `mcp`(rmcp 도구), `cli`(바이너리).
 
 ## 핵심 아이디어

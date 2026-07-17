@@ -198,8 +198,14 @@ mod tests {
                 on_behalf_of: Some("ashon".into()),
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput { name: "rmcp".into(), kind: Some("Tool".into()) },
-                    EntityInput { name: "supragnosis".into(), kind: Some("Project".into()) },
+                    EntityInput {
+                        name: "rmcp".into(),
+                        kind: Some("Tool".into()),
+                    },
+                    EntityInput {
+                        name: "supragnosis".into(),
+                        kind: Some("Project".into()),
+                    },
                 ],
                 relations: vec![RelationInput {
                     from: "supragnosis".into(),
@@ -221,7 +227,10 @@ mod tests {
 
         // 재적재는 콘텐츠 주소라 동일 엔티티로 수렴(출처만 누적).
         let hits = engine.search("rust", Some("ws1"), 10);
-        assert!(!hits.is_empty(), "keyword search should find the observation");
+        assert!(
+            !hits.is_empty(),
+            "keyword search should find the observation"
+        );
 
         // 다른 워크스페이스로는 안 보임.
         assert!(engine.search("rust", Some("other"), 10).is_empty());

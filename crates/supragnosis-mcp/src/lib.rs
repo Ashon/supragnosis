@@ -1,15 +1,14 @@
 //! supragnosis-mcp - MCP 표면(도구).
 //!
 //! rmcp 매크로로 도구를 정의하고 [`supragnosis_engine::Engine`] 으로 위임한다.
-//! M0 도구: `observe`, `get_entity`, `search_knowledge`.
+//! 도구: `observe`, `get_entity`, `search_knowledge`, `traverse`.
 
 use std::sync::Arc;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router,
-    ServerHandler,
+    schemars, tool, tool_handler, tool_router, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +16,7 @@ use supragnosis_engine::{
     Engine, EntityInput as EngineEntityInput, ObserveInput, RelationInput as EngineRelationInput,
 };
 
-// ── 전송 DTO (JSON Schema 자동 생성) ────────────────────────────────────────
+// --- 전송 DTO (JSON Schema 자동 생성) ---------------------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ObserveRequest {
@@ -96,7 +95,7 @@ pub struct TraverseRequest {
     pub limit: Option<usize>,
 }
 
-// ── 서버 ────────────────────────────────────────────────────────────────────
+// --- 서버 --------------------------------------------------------------------
 
 #[derive(Clone)]
 pub struct SupragnosisServer {
@@ -129,12 +128,19 @@ impl SupragnosisServer {
             entities: req
                 .entities
                 .into_iter()
-                .map(|e| EngineEntityInput { name: e.name, kind: e.kind })
+                .map(|e| EngineEntityInput {
+                    name: e.name,
+                    kind: e.kind,
+                })
                 .collect(),
             relations: req
                 .relations
                 .into_iter()
-                .map(|r| EngineRelationInput { from: r.from, kind: r.kind, to: r.to })
+                .map(|r| EngineRelationInput {
+                    from: r.from,
+                    kind: r.kind,
+                    to: r.to,
+                })
                 .collect(),
         };
         respond(self.engine.observe(input))
@@ -159,9 +165,11 @@ impl SupragnosisServer {
         description = "지식(엔티티/관측)을 키워드로 검색한다. 부분문자열 매칭이며, 의미(벡터) 검색은 이후 마일스톤에서 추가된다."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
-        let hits = self
-            .engine
-            .search(&req.query, req.workspace.as_deref(), req.limit.unwrap_or(20));
+        let hits = self.engine.search(
+            &req.query,
+            req.workspace.as_deref(),
+            req.limit.unwrap_or(20),
+        );
         to_json(&hits)
     }
 
@@ -169,9 +177,11 @@ impl SupragnosisServer {
         description = "엔티티에서 시작해 관계 방향(from->to)을 따라 그래프를 순회한다. 최대 홉(max_depth) 내에 도달하는 엔티티를 최단 거리와 함께 돌려준다."
     )]
     fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
-        let hits = self
-            .engine
-            .traverse(&req.id, req.max_depth.unwrap_or(3), req.limit.unwrap_or(100));
+        let hits = self.engine.traverse(
+            &req.id,
+            req.max_depth.unwrap_or(3),
+            req.limit.unwrap_or(100),
+        );
         to_json(&hits)
     }
 }
@@ -192,7 +202,7 @@ impl ServerHandler for SupragnosisServer {
     }
 }
 
-// ── 직렬화 헬퍼 (도구는 JSON 문자열을 반환) ─────────────────────────────────
+// --- 직렬화 헬퍼 (도구는 JSON 문자열을 반환) --------------------------------
 
 fn respond<T: Serialize, E: std::fmt::Display>(r: Result<T, E>) -> String {
     match r {
