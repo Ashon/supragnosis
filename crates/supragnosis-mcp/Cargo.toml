@@ -14,3 +14,15 @@ rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+# MCP 도구 표면을 실제 프로토콜로 구동하는 통합 테스트용.
+# client feature 로 in-process 클라이언트를 띄우고, io-util 로 duplex 파이프를 만든다.
+rmcp = { workspace = true, features = ["client"] }
+tokio = { workspace = true, features = ["io-util"] }
+# Engine 을 실제로 조립하기 위한 어댑터(비영속 InMemory + 결정적 임베더).
+supragnosis-store.workspace = true
+supragnosis-embed.workspace = true
+# LLM eval(llm_eval.rs)에서 Anthropic Messages API 를 호출한다. eval 은 #[ignore] +
+# ANTHROPIC_API_KEY 필요라 기본 `cargo test` 에는 영향이 없다(네트워크/키 없이 skip).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
