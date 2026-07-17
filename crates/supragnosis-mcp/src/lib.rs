@@ -1,4 +1,4 @@
-//! supragnosis-mcp — MCP 표면(도구).
+//! supragnosis-mcp - MCP 표면(도구).
 //!
 //! rmcp 매크로로 도구를 정의하고 [`supragnosis_engine::Engine`] 으로 위임한다.
 //! M0 도구: `observe`, `get_entity`, `search_knowledge`.
@@ -32,6 +32,12 @@ pub struct ObserveRequest {
     /// 신뢰도 0.0~1.0 (생략 시 1.0).
     #[serde(default)]
     pub confidence: Option<f32>,
+    /// (선택) 위임 주체 - 이 에이전트가 대리하는 사람/주체 (예: "ashon"). 원칙 2.
+    #[serde(default)]
+    pub on_behalf_of: Option<String>,
+    /// (선택) 이 지식이 파생된 원천 관측 id들 - 오염 추적용 계보. 원칙 18.
+    #[serde(default)]
+    pub derived_from: Vec<String>,
     /// (선택) 클라이언트가 추출한 엔티티.
     #[serde(default)]
     pub entities: Vec<EntityInput>,
@@ -118,6 +124,8 @@ impl SupragnosisServer {
             workspace: req.workspace,
             source_ref: req.source_ref,
             confidence: req.confidence,
+            on_behalf_of: req.on_behalf_of,
+            derived_from: req.derived_from,
             entities: req
                 .entities
                 .into_iter()
@@ -132,7 +140,7 @@ impl SupragnosisServer {
         respond(self.engine.observe(input))
     }
 
-    #[tool(description = "엔티티 id로 엔티티와 그 관계·출처를 조회한다.")]
+    #[tool(description = "엔티티 id로 엔티티와 그 관계/출처를 조회한다.")]
     fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
         match self.engine.get_entity(&req.id) {
             Some(view) => to_json(&view),
@@ -141,14 +149,14 @@ impl SupragnosisServer {
             None => serde_json::json!({
                 "found": false,
                 "id": req.id,
-                "note": "unknown — not found is not a negation (open-world assumption)"
+                "note": "unknown - not found is not a negation (open-world assumption)"
             })
             .to_string(),
         }
     }
 
     #[tool(
-        description = "지식(엔티티·관측)을 키워드로 검색한다. 부분문자열 매칭이며, 의미(벡터) 검색은 이후 마일스톤에서 추가된다."
+        description = "지식(엔티티/관측)을 키워드로 검색한다. 부분문자열 매칭이며, 의미(벡터) 검색은 이후 마일스톤에서 추가된다."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         let hits = self
@@ -158,7 +166,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "엔티티에서 시작해 관계 방향(from→to)을 따라 그래프를 순회한다. 최대 홉(max_depth) 내에 도달하는 엔티티를 최단 거리와 함께 돌려준다."
+        description = "엔티티에서 시작해 관계 방향(from->to)을 따라 그래프를 순회한다. 최대 홉(max_depth) 내에 도달하는 엔티티를 최단 거리와 함께 돌려준다."
     )]
     fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
         let hits = self
@@ -176,7 +184,7 @@ impl ServerHandler for SupragnosisServer {
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "supragnosis: 여러 호스트/워크스페이스의 지식을 온톨로지화하는 MCP 서버. \
-                 observe 로 지식을 적재하고 get_entity·search_knowledge 로 탐색한다."
+                 observe 로 지식을 적재하고 get_entity/search_knowledge 로 탐색한다."
                     .to_string(),
             ),
             ..Default::default()

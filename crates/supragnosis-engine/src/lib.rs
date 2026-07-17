@@ -1,6 +1,6 @@
-//! supragnosis-engine — 서비스(유스케이스) 계층.
+//! supragnosis-engine - 서비스(유스케이스) 계층.
 //!
-//! MCP 도구가 호출하는 결정론적 로직: 관측 적재 → 엔티티 해소 → 관계 링크 → 조회/검색.
+//! MCP 도구가 호출하는 결정론적 로직: 관측 적재 -> 엔티티 해소 -> 관계 링크 -> 조회/검색.
 //! 저장소는 [`supragnosis_core::KnowledgeStore`] 포트를 통해서만 접근한다.
 
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use supragnosis_core::{
     now_millis, Entity, KnowledgeStore, Observation, Provenance, Relation, SearchHit, StoreError,
-    TraverseHit,
+    TraverseHit, TrustTier,
 };
 
 /// 적재 입력 (전송 DTO에서 매핑되는 도메인 입력).
@@ -17,6 +17,10 @@ pub struct ObserveInput {
     pub workspace: Option<String>,
     pub source_ref: Option<String>,
     pub confidence: Option<f32>,
+    /// 위임 사슬(원칙 2): 이 관측을 acting host 가 대리하는 principal.
+    pub on_behalf_of: Option<String>,
+    /// 계보(원칙 18): 이 관측이 파생된 원천 관측 id들.
+    pub derived_from: Vec<String>,
     pub entities: Vec<EntityInput>,
     pub relations: Vec<RelationInput>,
 }
@@ -71,13 +75,17 @@ impl Engine {
         workspace: &str,
         source_ref: Option<String>,
         confidence: Option<f32>,
+        on_behalf_of: Option<String>,
     ) -> Provenance {
         Provenance {
             host: self.host.clone(),
+            on_behalf_of,
             workspace: workspace.to_string(),
             source_ref,
             observed_at: now_millis(),
             confidence: confidence.unwrap_or(1.0),
+            // 신뢰 등급 승격은 명시적 흐름(사람 확인/교차검증)에서만 - observe 는 기본값.
+            trust_tier: TrustTier::default(),
         }
     }
 
@@ -86,9 +94,15 @@ impl Engine {
         let workspace = input
             .workspace
             .unwrap_or_else(|| self.default_workspace.clone());
-        let prov = self.provenance(&workspace, input.source_ref, input.confidence);
+        let prov = self.provenance(
+            &workspace,
+            input.source_ref,
+            input.confidence,
+            input.on_behalf_of,
+        );
 
-        let obs = Observation::new(input.content, prov.clone());
+        let mut obs = Observation::new(input.content, prov.clone());
+        obs.derived_from = input.derived_from;
         let observation_id = obs.id.clone();
         self.store.add_observation(obs)?;
 
@@ -107,6 +121,9 @@ impl Engine {
                 to,
                 kind: r.kind,
                 provenance: prov.clone(),
+                // 유효구간은 M3 에서 관측/반증으로부터 유도. 지금은 미지정(관측시점부터).
+                valid_from: None,
+                valid_to: None,
             };
             let rid = rel.id.clone();
             self.store.add_relation(rel)?;
@@ -156,7 +173,7 @@ impl Engine {
         self.store.search(query, workspace, limit)
     }
 
-    /// 엔티티에서 관계 방향(from→to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
+    /// 엔티티에서 관계 방향(from->to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
     pub fn traverse(&self, id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
         self.store.traverse(id, max_depth.max(1), limit)
     }
@@ -178,6 +195,8 @@ mod tests {
                 workspace: None,
                 source_ref: Some("docs/architecture.md".into()),
                 confidence: None,
+                on_behalf_of: Some("ashon".into()),
+                derived_from: vec![],
                 entities: vec![
                     EntityInput { name: "rmcp".into(), kind: Some("Tool".into()) },
                     EntityInput { name: "supragnosis".into(), kind: Some("Project".into()) },
@@ -193,7 +212,7 @@ mod tests {
         assert_eq!(out.entities.len(), 2);
         assert_eq!(out.relations.len(), 1);
 
-        // 결정적 id로 재조회 → 관계도 함께.
+        // 결정적 id로 재조회 -> 관계도 함께.
         let rmcp_id = Entity::make_id("ws1", "rmcp");
         let view = engine.get_entity(&rmcp_id).expect("entity exists");
         assert_eq!(view.entity.canonical_name, "rmcp");

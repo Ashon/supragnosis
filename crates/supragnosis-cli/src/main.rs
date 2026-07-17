@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let engine = Arc::new(Engine::new(store, host.clone(), workspace.clone()));
     let server = SupragnosisServer::new(engine);
 
-    tracing::info!(%host, %workspace, "supragnosis M1 · stdio MCP 서버 시작");
+    tracing::info!(%host, %workspace, "supragnosis M1 / stdio MCP 서버 시작");
 
     let service = server.serve(stdio()).await?;
     service.waiting().await?;

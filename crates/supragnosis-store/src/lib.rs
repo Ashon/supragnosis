@@ -1,4 +1,4 @@
-//! supragnosis-store — 저장소 어댑터.
+//! supragnosis-store - 저장소 어댑터.
 //!
 //! M0: 프로세스 메모리 기반 `InMemoryStore`. M1에서 Cozo(RocksDB) 어댑터를 같은 포트로 추가한다.
 

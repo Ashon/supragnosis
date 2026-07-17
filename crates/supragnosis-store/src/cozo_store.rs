@@ -1,4 +1,4 @@
-//! Cozo(RocksDB) 어댑터 — 파일 기반 영속 저장소.
+//! Cozo(RocksDB) 어댑터 - 파일 기반 영속 저장소.
 //!
 //! 지식을 3개의 stored relation 으로 보관하고, CozoScript(Datalog)로 질의한다.
 //! 복합 필드(aliases/properties/provenance)는 JSON 문자열 컬럼으로 저장한다.
@@ -62,7 +62,7 @@ impl CozoStore {
 
         if !have.contains("observation") {
             self.run(
-                ":create observation {id: String => content: String, workspace: String, prov: String}",
+                ":create observation {id: String => content: String, workspace: String, data: String}",
                 BTreeMap::new(),
                 true,
             )?;
@@ -76,7 +76,7 @@ impl CozoStore {
         }
         if !have.contains("relation") {
             self.run(
-                ":create relation {id: String => src: String, dst: String, rtype: String, prov: String}",
+                ":create relation {id: String => src: String, dst: String, rtype: String, data: String}",
                 BTreeMap::new(),
                 true,
             )?;
@@ -95,17 +95,22 @@ fn params(pairs: &[(&str, String)]) -> BTreeMap<String, DataValue> {
 
 impl KnowledgeStore for CozoStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
-        let prov = serde_json::to_string(&obs.provenance).unwrap_or_default();
         let workspace = obs.provenance.workspace.clone();
+        // 복합 필드는 data JSON 컬럼에 (provenance + derived_from 계보).
+        let data = json!({
+            "provenance": obs.provenance,
+            "derived_from": obs.derived_from,
+        })
+        .to_string();
         let p = params(&[
             ("id", obs.id),
             ("content", obs.content),
             ("workspace", workspace),
-            ("prov", prov),
+            ("data", data),
         ]);
         self.run(
-            "?[id, content, workspace, prov] <- [[$id, $content, $workspace, $prov]]\n\
-             :put observation {id => content, workspace, prov}",
+            "?[id, content, workspace, data] <- [[$id, $content, $workspace, $data]]\n\
+             :put observation {id => content, workspace, data}",
             p,
             true,
         )?;
@@ -178,17 +183,23 @@ impl KnowledgeStore for CozoStore {
     }
 
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
-        let prov = serde_json::to_string(&rel.provenance).unwrap_or_default();
+        // 복합/시간 필드는 data JSON 컬럼에 (provenance + 유효구간).
+        let data = json!({
+            "provenance": rel.provenance,
+            "valid_from": rel.valid_from,
+            "valid_to": rel.valid_to,
+        })
+        .to_string();
         let p = params(&[
             ("id", rel.id),
             ("src", rel.from),
             ("dst", rel.to),
             ("rtype", rel.kind),
-            ("prov", prov),
+            ("data", data),
         ]);
         self.run(
-            "?[id, src, dst, rtype, prov] <- [[$id, $src, $dst, $rtype, $prov]]\n\
-             :put relation {id => src, dst, rtype, prov}",
+            "?[id, src, dst, rtype, data] <- [[$id, $src, $dst, $rtype, $data]]\n\
+             :put relation {id => src, dst, rtype, data}",
             p,
             true,
         )?;
@@ -197,8 +208,8 @@ impl KnowledgeStore for CozoStore {
 
     fn relations_of(&self, entity_id: &str) -> Vec<Relation> {
         let p = params(&[("id", entity_id.to_string())]);
-        let script = "?[id, src, dst, rtype, prov] := *relation{id, src, dst, rtype, prov}, src == $id\n\
-                      ?[id, src, dst, rtype, prov] := *relation{id, src, dst, rtype, prov}, dst == $id";
+        let script = "?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}, src == $id\n\
+                      ?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}, dst == $id";
         let rows = match self.run(script, p, false) {
             Ok(r) => r,
             Err(_) => return Vec::new(),
@@ -206,12 +217,15 @@ impl KnowledgeStore for CozoStore {
         rows.rows
             .iter()
             .filter_map(|r| {
+                let data: serde_json::Value = serde_json::from_str(r.get(4)?.get_str()?).ok()?;
                 Some(Relation {
                     id: r.first()?.get_str()?.to_string(),
                     from: r.get(1)?.get_str()?.to_string(),
                     to: r.get(2)?.get_str()?.to_string(),
                     kind: r.get(3)?.get_str()?.to_string(),
-                    provenance: serde_json::from_str(r.get(4)?.get_str()?).ok()?,
+                    provenance: serde_json::from_value(data.get("provenance")?.clone()).ok()?,
+                    valid_from: data.get("valid_from").and_then(|v| v.as_u64()),
+                    valid_to: data.get("valid_to").and_then(|v| v.as_u64()),
                 })
             })
             .collect()
@@ -320,10 +334,12 @@ mod tests {
     fn prov() -> Provenance {
         Provenance {
             host: "h".into(),
+            on_behalf_of: Some("ashon".into()),
             workspace: "ws1".into(),
             source_ref: None,
             observed_at: 1,
             confidence: 1.0,
+            trust_tier: supragnosis_core::TrustTier::default(),
         }
     }
 
@@ -359,6 +375,8 @@ mod tests {
                     to: b.clone(),
                     kind: "rel".into(),
                     provenance: prov(),
+                    valid_from: None,
+                    valid_to: None,
                 })
                 .unwrap();
             store
@@ -368,6 +386,8 @@ mod tests {
                     to: c.clone(),
                     kind: "rel".into(),
                     provenance: prov(),
+                    valid_from: None,
+                    valid_to: None,
                 })
                 .unwrap();
             store
@@ -376,12 +396,12 @@ mod tests {
 
             // 조회
             assert_eq!(store.get_entity(&a).unwrap().canonical_name, "a");
-            // b 는 a→b, b→c 두 관계에 등장
+            // b 는 a->b, b->c 두 관계에 등장
             assert_eq!(store.relations_of(&b).len(), 2);
             // 검색
             assert!(!store.search("rust", Some("ws1"), 10).is_empty());
             assert!(store.search("rust", Some("other"), 10).is_empty());
-            // 순회: a → b(1홉), c(2홉)
+            // 순회: a -> b(1홉), c(2홉)
             let hits = store.traverse(&a, 5, 100);
             let ids: HashSet<_> = hits.iter().map(|h| h.id.clone()).collect();
             assert!(ids.contains(&b) && ids.contains(&c), "traverse got {hits:?}");
