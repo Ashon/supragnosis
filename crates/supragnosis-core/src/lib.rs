@@ -19,7 +19,9 @@ pub fn now_millis() -> Timestamp {
 
 /// 출처 신뢰 등급 (원칙 18: 쓰기는 공격 표면). 낮음 -> 높음.
 /// **승격은 명시적 검증으로만** 일어난다 - 시간이 지났다고 저절로 오르지 않는다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// 변형 선언 순서가 곧 신뢰 서열이라 derive Ord 가 "낮음 -> 높음" 을 그대로 준다
+/// (해소 가중/그래프 대표 등급 계산에서 max 로 쓴다).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustTier {
     /// 미검증 - 외부/불명 출처.
@@ -297,6 +299,12 @@ pub trait KnowledgeStore: Send + Sync {
     fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit>;
     /// start_id 에서 방향(from->to)을 따라 최대 `max_depth` 홉까지 도달하는 엔티티들.
     fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit>;
+    /// 워크스페이스의 모든 엔티티를 열거한다(그래프 프로젝션의 읽기 경로). `None` 이면 전체.
+    /// 온톨로지 시각화/관측가능성의 노드 집합 - search 처럼 질의어가 아니라 전수 열거다.
+    fn all_entities(&self, workspace: Option<&str>) -> Vec<Entity>;
+    /// 워크스페이스의 모든 관계를 열거한다(그래프 프로젝션의 엣지 집합). `None` 이면 전체.
+    /// 관계의 워크스페이스는 provenance.workspace 로 판단한다.
+    fn all_relations(&self, workspace: Option<&str>) -> Vec<Relation>;
     /// 임베딩이 있는 관측을 질의 벡터와의 코사인 유사도로 검색한다 (원칙 19: 회상 확장).
     /// 임베딩이 없는 관측은 후보에서 제외된다. `score` 는 코사인 유사도(-1.0~1.0).
     /// 기본 구현은 빈 결과 - 벡터를 저장하지 않는 어댑터는 재정의할 필요가 없다.

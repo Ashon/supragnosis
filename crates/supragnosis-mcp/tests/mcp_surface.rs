@@ -10,7 +10,9 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use rmcp::model::{CallToolRequestParams, CallToolResult};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ReadResourceRequestParams, ResourceContents,
+};
 use rmcp::ServiceExt;
 use serde_json::{json, Map, Value};
 
@@ -196,6 +198,114 @@ async fn mcp_protocol_surface_end_to_end() {
     );
 
     // 정리: 클라이언트를 종료하면 서버 파이프가 닫히고 서버 태스크가 끝난다.
+    client.cancel().await.expect("client shutdown");
+    let _ = server.await;
+}
+
+/// 리소스 표면: 온톨로지 그래프를 MCP 리소스로 노출하는 경로를 프로토콜 그대로 검증한다.
+/// list_resources/list_resource_templates 로 발견하고, read_resource 로 node-link JSON 을
+/// 받아 적재한 지식이 그래프에 반영됐는지, 미지 URI 는 에러가 나는지 확인한다.
+#[tokio::test]
+async fn mcp_resource_graph_surface() {
+    // 기본 워크스페이스 "ws" 로 엔진 구성(비영속).
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    // 지식 적재: supragnosis --depends_on--> rmcp (노드 2, 엣지 1).
+    client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "observe".into(),
+            arguments: args(json!({
+                "content": "supragnosis depends on rmcp",
+                "workspace": "ws",
+                "entities": [
+                    {"name": "supragnosis", "type": "Project"},
+                    {"name": "rmcp", "type": "Tool"}
+                ],
+                "relations": [{"from": "supragnosis", "type": "depends_on", "to": "rmcp"}]
+            })),
+            task: None,
+        })
+        .await
+        .expect("observe call");
+
+    // --- 1) list_resources: 기본 워크스페이스 그래프 리소스가 노출된다 ---------------
+    let resources = client.list_all_resources().await.expect("list resources");
+    assert!(
+        resources
+            .iter()
+            .any(|r| r.raw.uri == "supragnosis://workspace/ws/graph"),
+        "기본 워크스페이스 그래프 리소스를 노출해야 한다: {:?}",
+        resources.iter().map(|r| &r.raw.uri).collect::<Vec<_>>()
+    );
+
+    // --- 2) list_resource_templates: 임의 워크스페이스 조회용 템플릿 ------------------
+    let templates = client
+        .list_all_resource_templates()
+        .await
+        .expect("list templates");
+    assert!(
+        templates
+            .iter()
+            .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/graph"),
+        "그래프 리소스 템플릿을 노출해야 한다"
+    );
+
+    // --- 3) read_resource: node-link 그래프 JSON 을 받아 적재 지식을 확인 -------------
+    let read = client
+        .read_resource(ReadResourceRequestParams {
+            meta: None,
+            uri: "supragnosis://workspace/ws/graph".into(),
+        })
+        .await
+        .expect("read graph resource");
+    let text = match read.contents.first().expect("one content") {
+        ResourceContents::TextResourceContents { text, .. } => text.clone(),
+        other => panic!("expected text resource contents, got {other:?}"),
+    };
+    let graph: Value = serde_json::from_str(&text).expect("graph resource is JSON");
+    assert_eq!(
+        graph["stats"]["node_count"].as_u64(),
+        Some(2),
+        "그래프에 노드 2개: {graph}"
+    );
+    assert_eq!(
+        graph["stats"]["edge_count"].as_u64(),
+        Some(1),
+        "그래프에 엣지 1개: {graph}"
+    );
+    // 엣지가 depends_on 이고 노드 이름이 그래프에 담긴다.
+    let names: Vec<&str> = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|n| n["name"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"supragnosis") && names.contains(&"rmcp"),
+        "노드 이름이 그래프에 있어야 한다: {names:?}"
+    );
+    assert_eq!(graph["edges"][0]["type"].as_str(), Some("depends_on"));
+
+    // --- 4) 미지 URI: 부재는 에러로(원칙 5의 자기 교정 힌트를 담아) ------------------
+    let bad = client
+        .read_resource(ReadResourceRequestParams {
+            meta: None,
+            uri: "supragnosis://nope".into(),
+        })
+        .await;
+    assert!(bad.is_err(), "알 수 없는 리소스 URI 는 에러여야 한다");
+
     client.cancel().await.expect("client shutdown");
     let _ = server.await;
 }
