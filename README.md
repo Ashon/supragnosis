@@ -7,7 +7,7 @@
 
 - 언어/런타임: **Rust** (`rmcp` 0.16 공식 MCP SDK, `tokio`)
 - 저장소: **임베디드/파일 기반** (M0는 in-memory, M1부터 `cozo`/RocksDB - 관계+그래프+벡터 통합)
-- 상태: **M0 골격 구현** (stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 헌법 -> [`docs/principles.md`](docs/principles.md)
+- 상태: **M0 골격 구현** (stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 헌법 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
 
 ## 빌드 & 실행 (M0)
 ```bash
