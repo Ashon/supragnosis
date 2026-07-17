@@ -1,0 +1,14 @@
+[package]
+name = "supragnosis-engine"
+description = "supragnosis 서비스 계층: ingest·resolve·query (M0)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+supragnosis-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+supragnosis-store.workspace = true

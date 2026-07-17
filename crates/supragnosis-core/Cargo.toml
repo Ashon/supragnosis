@@ -1,0 +1,12 @@
+[package]
+name = "supragnosis-core"
+description = "supragnosis 도메인 모델 + 포트(트레이트). IO 의존 없음."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
+thiserror.workspace = true
