@@ -49,6 +49,16 @@ pub struct ObserveOutput {
     pub relations: Vec<String>,
 }
 
+/// 적재 실패. 검증 오류 메시지는 LLM 클라이언트가 자기 교정할 수 있게 쓴다 (원칙 21:
+/// 왜 실패했고 무엇을 다르게 하면 되는지).
+#[derive(Debug, thiserror::Error)]
+pub enum ObserveError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+}
+
 /// 엔티티 + 그 관계(조회 응답).
 #[derive(Serialize)]
 pub struct EntityView {
@@ -171,7 +181,17 @@ impl Engine {
     }
 
     /// 지식 조각을 적재한다: 불변 관측 저장 + 제공된 엔티티/관계를 온톨로지에 링크.
-    pub fn observe(&self, input: ObserveInput) -> Result<ObserveOutput, StoreError> {
+    pub fn observe(&self, input: ObserveInput) -> Result<ObserveOutput, ObserveError> {
+        // confidence 범위 강제 (원칙 2: 스키마 수준 강제). append-only 로그에 한번
+        // 실린 값은 영구하므로 적재 전에 막는다. NaN 도 contains 가 false 라 걸린다.
+        if let Some(c) = input.confidence {
+            if !(0.0..=1.0).contains(&c) {
+                return Err(ObserveError::Invalid(format!(
+                    "confidence 는 0.0~1.0 이어야 한다 (받은 값: {c}). 확신이 낮으면 \
+                     낮은 값을 주고, 평가가 불가하면 생략하라"
+                )));
+            }
+        }
         let workspace = input
             .workspace
             .unwrap_or_else(|| self.default_workspace.clone());
@@ -675,6 +695,35 @@ mod tests {
         let logged = store.observation(&second.observation_id).unwrap();
         assert_eq!(logged.assertions.entities.len(), 1);
         assert_eq!(logged.assertions.entities[0].kind.as_deref(), Some("Project"));
+    }
+
+    /// 원칙 2 스키마 수준 강제: 범위 밖 confidence 는 append-only 로그에 실리기 전에
+    /// 거부되고, 에러 메시지가 자기 교정을 유도한다 (원칙 21).
+    #[test]
+    fn confidence_out_of_range_is_rejected() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
+        let observe_with_conf = |conf: f32| {
+            engine.observe(ObserveInput {
+                content: "fact".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: Some(conf),
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![],
+                relations: vec![],
+            })
+        };
+        for bad in [-0.1f32, 1.5, f32::NAN] {
+            let err = observe_with_conf(bad).err().expect("범위 밖은 거부");
+            assert!(
+                err.to_string().contains("0.0~1.0"),
+                "자기 교정 힌트가 있어야 한다: {err}"
+            );
+        }
+        // 경계값은 유효하다.
+        assert!(observe_with_conf(0.0).is_ok());
+        assert!(observe_with_conf(1.0).is_ok());
     }
 
     /// 원칙 4 캡처: 소급 관측("지난달까지 참이었다")의 유효구간이 관측 로그(주장)와
