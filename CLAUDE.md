@@ -21,4 +21,4 @@
 
 ## 설계 규범
 
-설계/구현/리뷰는 [docs/principles.md](docs/principles.md) (설계 헌법)를 따른다.
+설계/구현/리뷰는 [docs/principles.md](docs/principles.md) (설계 원칙)를 따른다.

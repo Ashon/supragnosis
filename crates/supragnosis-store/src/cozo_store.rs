@@ -160,13 +160,13 @@ impl CozoStore {
                 p.insert("ws".to_string(), DataValue::from(ws));
                 format!(
                     "?[id, text, dist] := qv = vec({q}), ~{index}{{id | query: qv, k: {k}, ef: {ef}, bind_distance: dist}}, *{relation}{{id, {text_field}: text, workspace}}, workspace == $ws\n\
-                     :order dist\n\
+                     :order dist, id\n\
                      :limit {limit}"
                 )
             }
             None => format!(
                 "?[id, text, dist] := qv = vec({q}), ~{index}{{id | query: qv, k: {k}, ef: {ef}, bind_distance: dist}}, *{relation}{{id, {text_field}: text}}\n\
-                 :order dist\n\
+                 :order dist, id\n\
                  :limit {limit}"
             ),
         };
@@ -235,10 +235,12 @@ impl CozoStore {
             })
             .collect();
 
+        // 동점은 id 로 안정 정렬 - 질의 행 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
         hits
@@ -535,10 +537,12 @@ impl KnowledgeStore for CozoStore {
             }
         }
 
+        // 동점은 id 로 안정 정렬 - 질의 행 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
         hits
