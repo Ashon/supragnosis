@@ -22,6 +22,9 @@
 //!   - 산출물 형식 준수 (단일 html 코드블록), 도구 호출 수, 토큰
 //!
 //! EVAL_REPLAY=1 이면 모델 호출 없이 저장된 데모 파일을 재채점한다(결정적).
+//! EVAL_REPAIR_ROUNDS(기본 2): 실패 시 실패 내역(문법 stderr, 런타임 에러, 행동 미달)을
+//! 같은 대화에 되먹여 고치게 하는 수리 라운드 수. 성공률이 최초 생성 대비 얼마나
+//! 개선되는지가 지표다 - 위임 + 피드백 루프가 소형 모델의 조립 한계를 보완하는가.
 //! 정성 산출물:
 //!   - target/eval-reports/physics_demos/{model}_{condition}.html - 실제 실행 데모
 //!   - target/eval-reports/physics_gallery.html - 전 데모를 나란히 놓은 갤러리
@@ -166,7 +169,7 @@ const TASK: &str = "Implement a small 2D physics demo as ONE self-contained HTML
     No external libraries. Reply with a single ```html code block containing the complete file \
     and nothing else after it.";
 
-/// 한 (모델, 조건) 실행 결과.
+/// 한 (모델, 조건) 실행 결과. 수리 라운드가 있으면 최종 라운드의 평가가 실린다.
 struct CodeResult {
     model: String,
     condition: &'static str,
@@ -179,11 +182,26 @@ struct CodeResult {
     search_calls: usize,
     tokens: u64,
     error: Option<String>,
+    /// 라운드별 판정 라벨 (r0 = 최초 생성, r1+ = 수리 라운드).
+    rounds: Vec<String>,
+    /// 최초 생성(r0)이 성공이었는가 - 수리 이득의 기준선.
+    initial_success: bool,
+    /// 최종 성공 여부: html + 문법 + 행동(구동/움직임/바운스/경계) 전항 통과.
+    success: bool,
 }
 
 impl CodeResult {
     fn fp_hits(&self) -> usize {
         self.fingerprints.iter().filter(|(_, h)| *h).count()
+    }
+
+    /// "2/3에 성공" / "3/3 실패" 형태의 라운드 요약.
+    fn rounds_label(&self) -> String {
+        if self.success {
+            format!("{}/{}에 성공", self.rounds.len(), self.rounds.len())
+        } else {
+            format!("{}/{} 실패", self.rounds.len(), self.rounds.len())
+        }
     }
 }
 
@@ -230,9 +248,10 @@ fn extract_script(html: &str) -> Option<String> {
 }
 
 /// script 본문을 node --check 로 문법 검사한다. node 가 없으면 None.
-fn check_syntax(html: &str, tmp: &std::path::Path) -> Option<bool> {
+/// (ok, 실패 시 stderr 앞부분) - stderr 는 수리 라운드 피드백에 쓴다.
+fn check_syntax(html: &str, tmp: &std::path::Path) -> Option<(bool, String)> {
     let Some(script) = extract_script(html) else {
-        return Some(false); // 스크립트 없는 "데모"는 실패로 친다.
+        return Some((false, "no <script> body found".into())); // 스크립트 없는 "데모"는 실패.
     };
     let path = tmp.join("syntax_check.js");
     std::fs::write(&path, &script).ok()?;
@@ -241,7 +260,10 @@ fn check_syntax(html: &str, tmp: &std::path::Path) -> Option<bool> {
         .arg(&path)
         .output()
         .ok()
-        .map(|o| o.status.success())
+        .map(|o| {
+            let err: String = String::from_utf8_lossy(&o.stderr).chars().take(300).collect();
+            (o.status.success(), err)
+        })
 }
 
 // --- 행동 채점 (runtime scoring) ---------------------------------------------
@@ -514,106 +536,247 @@ fn score_behavior(v: &Value) -> Behavior {
     }
 }
 
-fn judge_code(
+/// 한 라운드 산출물의 평가: 형식/지문/문법/행동.
+struct Evaluation {
+    html: Option<String>,
+    fingerprints: Vec<(&'static str, bool)>,
+    syntax: Option<(bool, String)>,
+    behavior: Option<Behavior>,
+}
+
+impl Evaluation {
+    /// 성공 = html 존재 + 문법 통과(측정 가능 시) + 행동 전항(구동/움직임/바운스/경계).
+    fn success(&self) -> bool {
+        self.html.is_some()
+            && !matches!(self.syntax, Some((false, _)))
+            && self
+                .behavior
+                .as_ref()
+                .is_some_and(|b| b.ran && b.moved && b.first_bounce_s.is_some() && b.contained)
+    }
+
+    /// 라운드 로그용 짧은 판정 라벨.
+    fn label(&self) -> String {
+        if self.html.is_none() {
+            return "html 없음".into();
+        }
+        if let Some((false, _)) = &self.syntax {
+            return "문법 오류".into();
+        }
+        match &self.behavior {
+            Some(b) if !b.ran => format!("실행 실패({})", b.note),
+            Some(b) if self.success() => {
+                format!("성공 (바운스 ~{:.1}s)", b.first_bounce_s.unwrap_or(0.0))
+            }
+            Some(b) => format!(
+                "행동 미달 (움직임 {} 바운스 {} 경계 {})",
+                if b.moved { "o" } else { "x" },
+                if b.first_bounce_s.is_some() { "o" } else { "x" },
+                if b.contained { "o" } else { "x" }
+            ),
+            None => "행동 미측정".into(),
+        }
+    }
+
+    /// 수리 라운드 피드백: 실패 항목을 구체적으로 적어 고치게 한다.
+    fn feedback(&self) -> String {
+        let mut issues: Vec<String> = Vec::new();
+        if self.html.is_none() {
+            issues.push(
+                "your reply did not contain a single complete ```html code block".into(),
+            );
+        }
+        if let Some((false, err)) = &self.syntax {
+            issues.push(format!("the JavaScript has a syntax error:\n{err}"));
+        } else if let Some(b) = &self.behavior {
+            if !b.ran {
+                issues.push(format!("the script crashes at runtime: {}", b.note));
+            } else {
+                if !b.moved {
+                    issues.push(
+                        "the balls never move - make sure gravity actually reaches velocity \
+                         and velocity reaches position every frame (check units and reset \
+                         ordering)"
+                            .into(),
+                    );
+                }
+                if b.first_bounce_s.is_none() {
+                    issues.push(
+                        "the balls never bounce off the floor within 60 simulated seconds - \
+                         check the gravity magnitude / time step scale"
+                            .into(),
+                    );
+                } else if !b.contained {
+                    issues.push("balls escape the canvas - clamp positions at the walls".into());
+                }
+            }
+        }
+        format!(
+            "Your demo was tested automatically and it FAILED:\n- {}\n\nFix the problem and \
+             reply again with ONE complete ```html code block containing the whole corrected \
+             file (not a diff).",
+            issues.join("\n- ")
+        )
+    }
+}
+
+fn evaluate(text: &str, tmp: &std::path::Path) -> Evaluation {
+    let html = extract_html(text);
+    let fingerprints = FINGERPRINTS
+        .iter()
+        .map(|(name, pat)| {
+            let hit = html
+                .as_deref()
+                .map(|h| regex_lite::Regex::new(pat).unwrap().is_match(h))
+                .unwrap_or(false);
+            (*name, hit)
+        })
+        .collect();
+    let syntax = html.as_deref().and_then(|h| check_syntax(h, tmp));
+    let behavior = html.as_deref().and_then(|h| run_behavior(h, tmp));
+    Evaluation {
+        html,
+        fingerprints,
+        syntax,
+        behavior,
+    }
+}
+
+/// 대화 히스토리에서 어시스턴트 텍스트 답 하나를 받아낸다.
+/// delegated(tools=Some)는 tool_calls 를 실행-되먹임하며 텍스트가 나올 때까지 돈다.
+/// 받은 어시스턴트 메시지는 히스토리에 push 해 수리 라운드가 같은 대화를 잇게 한다.
+async fn next_answer(
+    http: &reqwest::Client,
+    base: &str,
+    model: &str,
+    messages: &mut Value,
+    bridge: Option<(&RunningService<RoleClient, ()>, &Value)>,
+    search_calls: &mut usize,
+    tokens_sum: &mut u64,
+) -> Result<String, String> {
+    let tools = bridge.map(|(_, t)| t);
+    for _ in 0..MAX_ROUNDS {
+        let (msg, usage) = chat(http, base, model, &*messages, tools).await?;
+        *tokens_sum += usage.total();
+        let calls = tool_calls(&msg);
+        push_message(messages, msg.clone());
+        if calls.is_empty() {
+            return Ok(msg.get("content").and_then(Value::as_str).unwrap_or("").to_string());
+        }
+        let Some((client, _)) = bridge else {
+            return Err("도구 없는 조건에서 tool_calls 발생".into());
+        };
+        for (id, name, args) in &calls {
+            if name == "search_knowledge" {
+                *search_calls += 1;
+            }
+            let result = exec_tool(client, name, args).await;
+            push_message(
+                messages,
+                json!({ "role": "tool", "tool_call_id": id, "content": result }),
+            );
+        }
+    }
+    Err(format!("{MAX_ROUNDS} 도구 왕복 내에 텍스트 답 없음"))
+}
+
+/// 한 (모델, 조건) 실행: 최초 생성 + 실패 시 최대 `repair_rounds` 회 수리.
+/// 실패 내역(문법 stderr, 런타임 에러, 행동 미달)을 되먹여 같은 대화에서 고치게 한다.
+async fn run_with_repair(
+    http: &reqwest::Client,
+    base: &str,
     model: &str,
     condition: &'static str,
-    answer: Result<(String, usize, u64), String>,
+    bridge: Option<(&RunningService<RoleClient, ()>, &Value)>,
+    repair_rounds: usize,
     tmp: &std::path::Path,
 ) -> CodeResult {
-    match answer {
-        Err(e) => CodeResult {
+    let initial_prompt = if bridge.is_some() {
+        format!(
+            "{TASK}\n\nIMPORTANT: your team's agreed design decisions for this demo (step \
+             order, integration method, exact constants, collision and impulse formulas, \
+             rendering spec) are stored in the knowledge base. Before writing code, use the \
+             search_knowledge tool (several queries, e.g. \"step order\", \"impulse\", \
+             \"restitution\", \"gravity\", \"rendering\") to retrieve the design, then follow \
+             it exactly in your implementation."
+        )
+    } else {
+        TASK.to_string()
+    };
+    let mut messages = json!([{ "role": "user", "content": initial_prompt }]);
+    let mut search_calls = 0usize;
+    let mut tokens_sum = 0u64;
+    let mut rounds: Vec<String> = Vec::new();
+    let mut last_eval: Option<Evaluation> = None;
+    let mut error: Option<String> = None;
+
+    for r in 0..=repair_rounds {
+        match next_answer(http, base, model, &mut messages, bridge, &mut search_calls, &mut tokens_sum)
+            .await
+        {
+            Err(e) => {
+                // 전송/프로토콜 오류는 피드백으로 고칠 수 없다 - 중단.
+                rounds.push(format!("r{r}: 오류 - {e}"));
+                error = Some(e);
+                break;
+            }
+            Ok(text) => {
+                let eval = evaluate(&text, tmp);
+                let label = eval.label();
+                eprintln!("    [r{r}] {label}");
+                rounds.push(format!("r{r}: {label}"));
+                let done = eval.success() || r == repair_rounds;
+                if !done {
+                    push_message(
+                        &mut messages,
+                        json!({ "role": "user", "content": eval.feedback() }),
+                    );
+                }
+                let stop = eval.success();
+                last_eval = Some(eval);
+                if stop {
+                    break;
+                }
+            }
+        }
+    }
+
+    let initial_success = rounds
+        .first()
+        .is_some_and(|r0| r0.contains("성공"));
+    match last_eval {
+        Some(eval) => {
+            let success = eval.success();
+            CodeResult {
+                model: model.into(),
+                condition,
+                syntax_ok: eval.syntax.as_ref().map(|(ok, _)| *ok),
+                html: eval.html,
+                fingerprints: eval.fingerprints,
+                behavior: eval.behavior,
+                search_calls,
+                tokens: tokens_sum,
+                error,
+                rounds,
+                initial_success,
+                success,
+            }
+        }
+        None => CodeResult {
             model: model.into(),
             condition,
             html: None,
             fingerprints: FINGERPRINTS.iter().map(|(n, _)| (*n, false)).collect(),
             syntax_ok: None,
             behavior: None,
-            search_calls: 0,
-            tokens: 0,
-            error: Some(e),
+            search_calls,
+            tokens: tokens_sum,
+            error,
+            rounds,
+            initial_success: false,
+            success: false,
         },
-        Ok((text, search_calls, tokens)) => {
-            let html = extract_html(&text);
-            let fingerprints = FINGERPRINTS
-                .iter()
-                .map(|(name, pat)| {
-                    let hit = html
-                        .as_deref()
-                        .map(|h| regex_lite::Regex::new(pat).unwrap().is_match(h))
-                        .unwrap_or(false);
-                    (*name, hit)
-                })
-                .collect();
-            let syntax_ok = html.as_deref().and_then(|h| check_syntax(h, tmp));
-            let behavior = html.as_deref().and_then(|h| run_behavior(h, tmp));
-            CodeResult {
-                model: model.into(),
-                condition,
-                html,
-                fingerprints,
-                syntax_ok,
-                behavior,
-                search_calls,
-                tokens,
-                error: None,
-            }
-        }
     }
-}
-
-/// bare: 과제만 단일턴. (최종 텍스트, 검색 0회, 토큰).
-async fn run_bare(
-    http: &reqwest::Client,
-    base: &str,
-    model: &str,
-) -> Result<(String, usize, u64), String> {
-    let messages = json!([{ "role": "user", "content": TASK }]);
-    let (msg, usage) = chat(http, base, model, &messages, None).await?;
-    let tokens = usage.total();
-    let text = msg.get("content").and_then(Value::as_str).unwrap_or("").to_string();
-    Ok((text, 0, tokens))
-}
-
-/// delegated: 지식 베이스 조회를 지시하고 도구 루프를 돌린 뒤 최종 텍스트를 받는다.
-async fn run_delegated(
-    http: &reqwest::Client,
-    base: &str,
-    model: &str,
-    client: &RunningService<RoleClient, ()>,
-    tools: &Value,
-) -> Result<(String, usize, u64), String> {
-    let prompt = format!(
-        "{TASK}\n\nIMPORTANT: your team's agreed design decisions for this demo (step order, \
-         integration method, exact constants, collision and impulse formulas, rendering spec) \
-         are stored in the knowledge base. Before writing code, use the search_knowledge tool \
-         (several queries, e.g. \"step order\", \"impulse\", \"restitution\", \"gravity\", \
-         \"rendering\") to retrieve the design, then follow it exactly in your implementation."
-    );
-    let mut messages = json!([{ "role": "user", "content": prompt }]);
-    let mut search_calls = 0usize;
-    let mut tokens_sum = 0u64;
-
-    for _ in 0..MAX_ROUNDS {
-        let (msg, usage) = chat(http, base, model, &messages, Some(tools)).await?;
-        tokens_sum += usage.total();
-        let calls = tool_calls(&msg);
-        if calls.is_empty() {
-            let text = msg.get("content").and_then(Value::as_str).unwrap_or("").to_string();
-            return Ok((text, search_calls, tokens_sum));
-        }
-        push_message(&mut messages, msg.clone());
-        for (id, name, args) in &calls {
-            if name == "search_knowledge" {
-                search_calls += 1;
-            }
-            let result = exec_tool(client, name, args).await;
-            push_message(
-                &mut messages,
-                json!({ "role": "tool", "tool_call_id": id, "content": result }),
-            );
-        }
-    }
-    Err(format!("{MAX_ROUNDS} 라운드 내에 코드 답 없음"))
 }
 
 /// 공통 온톨로지를 엔진에 적재한다.
@@ -668,7 +831,8 @@ fn render_gallery(results: &[CodeResult]) -> String {
                     .map(|b| b.label())
                     .unwrap_or_else(|| "행동 미측정".into());
                 format!(
-                    "설계 준수 {}/{} / 검색 {}회 / {behavior}",
+                    "{} / 설계 준수 {}/{} / 검색 {}회 / {behavior}",
+                    r.rounds_label(),
                     r.fp_hits(),
                     r.fingerprints.len(),
                     r.search_calls
@@ -721,14 +885,22 @@ fn render_markdown(results: &[CodeResult]) -> String {
     let mut md = String::new();
     md.push_str("# physics coding eval 리포트\n\n");
     md.push_str("공통 온톨로지(팀 설계 결정) 위임이 코딩 산출물에 반영되는가.\n\n");
-    md.push_str("| 모델 | 조건 | html | js 문법 | 설계 준수 | 행동 | 검색 | 토큰 |\n");
+    let initial_ok = results.iter().filter(|r| r.initial_success).count();
+    let final_ok = results.iter().filter(|r| r.success).count();
+    md.push_str(&format!(
+        "**성공률: 최초 생성 {initial_ok}/{} -> 수리 후 {final_ok}/{}** \
+         (성공 = 문법 + 구동 + 움직임 + 바운스 + 경계 전항 통과)\n\n",
+        results.len(),
+        results.len()
+    ));
+    md.push_str("| 모델 | 조건 | 라운드 | js 문법 | 설계 준수 | 행동 | 검색 | 토큰 |\n");
     md.push_str("|---|---|---|---|---|---|---|---|\n");
     for r in results {
         md.push_str(&format!(
             "| {} | {} | {} | {} | {}/{} | {} | {} | {} |\n",
             r.model,
             r.condition,
-            if r.html.is_some() { "ok" } else { "없음" },
+            r.rounds_label(),
             match r.syntax_ok {
                 Some(true) => "ok",
                 Some(false) => "오류",
@@ -739,6 +911,15 @@ fn render_markdown(results: &[CodeResult]) -> String {
             r.behavior.as_ref().map(|b| b.label()).unwrap_or_else(|| "-".into()),
             r.search_calls,
             r.tokens
+        ));
+    }
+    md.push_str("\n## 라운드 로그 (수리 수렴 과정)\n\n");
+    for r in results {
+        md.push_str(&format!(
+            "- {} / {}: {}\n",
+            r.model,
+            r.condition,
+            r.rounds.join(" -> ")
         ));
     }
     md.push_str("\n## 지문 상세\n\n");
@@ -793,8 +974,23 @@ async fn delegated_ontology_improves_coding() {
                 },
             };
             let html = std::fs::read_to_string(tmp.join(&name)).expect("데모 읽기");
-            // 저장본은 이미 순수 html 이라 추출 없이 그대로 채점한다.
-            let r = judge_code(&model, condition, Ok((format!("```html\n{html}\n```"), 0, 0)), &tmp);
+            // 저장본은 이미 순수 html 이라 코드블록으로 감싸 동일 평가 경로를 태운다.
+            let eval = evaluate(&format!("```html\n{html}\n```"), &tmp);
+            let success = eval.success();
+            let r = CodeResult {
+                model: model.clone(),
+                condition,
+                syntax_ok: eval.syntax.as_ref().map(|(ok, _)| *ok),
+                html: eval.html,
+                fingerprints: eval.fingerprints,
+                behavior: eval.behavior,
+                search_calls: 0,
+                tokens: 0,
+                error: None,
+                rounds: vec![format!("replay: {}", if success { "성공" } else { "실패" })],
+                initial_success: success,
+                success,
+            };
             eprintln!(
                 "  [replay] {model:<16} {condition:<10} 설계 준수 {}/{}  {}",
                 r.fp_hits(),
@@ -820,6 +1016,12 @@ async fn delegated_ontology_improves_coding() {
         return;
     }
 
+    let repair_rounds: usize = std::env::var("EVAL_REPAIR_ROUNDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2);
+    eprintln!("[config] 수리 라운드 최대 {repair_rounds}회 (EVAL_REPAIR_ROUNDS)");
+
     for model in &models {
         eprintln!("\n=== 모델: {model} ===");
 
@@ -833,19 +1035,16 @@ async fn delegated_ontology_improves_coding() {
         let tools = openai_tools(&client).await;
 
         for condition in ["bare", "delegated"] {
-            let answer = match condition {
-                "bare" => run_bare(&http, &base, model).await,
-                _ => run_delegated(&http, &base, model, &client, &tools).await,
+            eprintln!("  [{condition}]");
+            let bridge = match condition {
+                "bare" => None,
+                _ => Some((&client, &tools)),
             };
-            let r = judge_code(model, condition, answer, &tmp);
+            let r = run_with_repair(&http, &base, model, condition, bridge, repair_rounds, &tmp)
+                .await;
             eprintln!(
-                "  [{condition:<9}] html {}  syntax {}  설계 준수 {}/{}  검색 {}회  ({}tk)",
-                if r.html.is_some() { "ok" } else { "없음" },
-                match r.syntax_ok {
-                    Some(true) => "ok",
-                    Some(false) => "err",
-                    None => "-",
-                },
+                "  [{condition:<9}] {}  설계 준수 {}/{}  검색 {}회  ({}tk)",
+                r.rounds_label(),
                 r.fp_hits(),
                 r.fingerprints.len(),
                 r.search_calls,
