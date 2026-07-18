@@ -252,9 +252,16 @@ impl Engine {
         let mut obs = Observation::with_assertions(input.content, prov.clone(), assertions);
         obs.derived_from = input.derived_from;
         // 임베딩 부착은 best-effort: 실패해도 관측 저장은 막지 않는다(원칙 19: degrade).
+        // 단 degrade 는 침묵하지 않는다: 적재 시점 임베딩 실패는 이 관측을 의미 검색에서
+        // 재시도 없이 제외하므로(같은 content 재관측 전까지) 흔적을 남긴다.
         if let Some(embedder) = &self.embedder {
-            if let Ok(vec) = embedder.embed_one(&obs.content) {
-                obs.embedding = Some(vec);
+            match embedder.embed_one(&obs.content) {
+                Ok(vec) => obs.embedding = Some(vec),
+                Err(e) => tracing::warn!(
+                    observation_id = %obs.id,
+                    error = %e,
+                    "관측 임베딩 실패 - 키워드 검색으로만 회상된다 (degrade)"
+                ),
             }
         }
         let observation_id = obs.id.clone();
@@ -321,10 +328,18 @@ impl Engine {
         // (원칙 19: 회상 확장). 관측을 어휘로 언급하지 않는 노드의 회상 공백을 메운다.
         // 임베딩 부착은 best-effort: 실패해도 엔티티 저장은 막지 않는다(원칙 19: degrade).
         // 이름은 안정적이므로 없을 때 한 번만 계산한다(확률적 어댑터 호출 최소화).
+        // 실패는 침묵하지 않는다 - 다음 관측이 이 엔티티를 만질 때 재시도되지만(여전히
+        // None 이므로), 그때까지 이름의 의미로는 회상되지 않는다.
         if entity.embedding.is_none() {
             if let Some(embedder) = &self.embedder {
-                if let Ok(vec) = embedder.embed_one(&entity_text(&entity)) {
-                    entity.embedding = Some(vec);
+                match embedder.embed_one(&entity_text(&entity)) {
+                    Ok(vec) => entity.embedding = Some(vec),
+                    Err(e) => tracing::warn!(
+                        entity_id = %entity.id,
+                        name = %entity.canonical_name,
+                        error = %e,
+                        "엔티티 임베딩 실패 - 이름의 의미 회상 없이 저장한다 (degrade)"
+                    ),
                 }
             }
         }
@@ -936,6 +951,58 @@ mod tests {
             "semantic top hit should be the rust observation, got {:?}",
             hits.first()
         );
+    }
+
+    /// 원칙 19 degrade: 임베딩 어댑터가 매 호출 실패해도 적재는 막히지 않고
+    /// (best-effort 부착 - 실패는 로그로만 알린다), 검색은 키워드 전용으로
+    /// degrade 하며 mode 로 그 사실을 표기한다.
+    #[test]
+    fn embed_failure_degrades_without_blocking_ingest() {
+        use supragnosis_core::{EmbedError, EmbeddingProvider};
+
+        struct FailingEmbedder;
+        impl EmbeddingProvider for FailingEmbedder {
+            fn dimensions(&self) -> usize {
+                3
+            }
+            fn id(&self) -> String {
+                "failing-3".into()
+            }
+            fn embed(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+                Err(EmbedError::Provider("simulated failure".into()))
+            }
+        }
+
+        let store = Arc::new(InMemoryStore::new());
+        let engine =
+            Engine::new(store.clone(), "h", "ws1").with_embedder(Arc::new(FailingEmbedder));
+
+        let out = engine
+            .observe(ObserveInput {
+                content: "rust compiles fast".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    name: "rust".into(),
+                    kind: Some("Tool".into()),
+                }],
+                relations: vec![],
+            })
+            .expect("임베딩 실패가 적재를 막으면 안 된다 (원칙 19: degrade)");
+
+        // 관측/엔티티 모두 임베딩 없이 저장된다.
+        let obs = store.get_observation(&out.observation_id).unwrap().unwrap();
+        assert!(obs.embedding.is_none());
+        let ent = store.get_entity(&out.entities[0]).unwrap().unwrap();
+        assert!(ent.embedding.is_none());
+
+        // 질의 임베딩도 실패하므로 검색은 keyword 로 degrade 하되 동작한다.
+        let found = engine.search("rust", Some("ws1"), 10).unwrap();
+        assert_eq!(found.mode, SearchMode::Keyword);
+        assert!(!found.hits.is_empty());
     }
 
     /// 그래프 프로젝션: 관측이 만든 엔티티/관계를 node-link 뷰로 되돌린다.
