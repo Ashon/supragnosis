@@ -85,8 +85,14 @@ fn mtime_epoch(path: &std::path::Path) -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+/// 마크다운을 HTML 로 렌더한다(GFM 테이블 확장 포함).
+fn render_markdown_html(md: &str) -> String {
+    use pulldown_cmark::{html, Options, Parser};
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    let mut out = String::new();
+    html::push_html(&mut out, Parser::new_ext(md, opts));
+    out
 }
 
 /// eval-reports/ 를 스캔해 index.html 을 재생성한다.
@@ -128,8 +134,8 @@ pub fn refresh_index() {
         let body = if file.ends_with(".md") {
             let md = std::fs::read_to_string(&path).unwrap_or_default();
             format!(
-                "<details open><summary>리포트 본문</summary><pre>{}</pre></details>",
-                html_escape(&md)
+                "<details open><summary>리포트 본문</summary><div class=\"md\">{}</div></details>",
+                render_markdown_html(&md)
             )
         } else {
             String::new()
@@ -159,8 +165,20 @@ pub fn refresh_index() {
   section p {{ margin: 0 0 6px; }}
   details {{ margin-top: 8px; }}
   summary {{ cursor: pointer; color: #9aa5b1; font-size: 12.5px; }}
-  pre {{ overflow-x: auto; background: #101216; border: 1px solid #262b33;
-        border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.5; }}
+  .md {{ font-size: 13px; }}
+  .md h1 {{ font-size: 14px; margin: 10px 0 4px; color: #c3cad4; }}
+  .md h2 {{ font-size: 13px; margin: 12px 0 4px; color: #c3cad4; }}
+  .md p {{ margin: 4px 0; }}
+  .md ul {{ margin: 4px 0; padding-left: 20px; }}
+  .md li {{ margin: 1px 0; }}
+  .md code {{ background: #101216; border: 1px solid #262b33; border-radius: 4px;
+             padding: 0 4px; font-size: 12px; }}
+  .md table {{ border-collapse: collapse; margin: 6px 0; display: block;
+              overflow-x: auto; font-variant-numeric: tabular-nums; }}
+  .md th, .md td {{ border: 1px solid #2a2f38; padding: 4px 9px; font-size: 12.5px;
+                   text-align: left; white-space: nowrap; }}
+  .md th {{ background: #1d212a; color: #c3cad4; }}
+  .md tr:nth-child(even) td {{ background: #14171d; }}
 </style>
 <h1>supragnosis e2e 리포트</h1>
 <p class="sub">실모델 종단 측정 스위트의 산출물 목차 - 생성 {stamp}.
