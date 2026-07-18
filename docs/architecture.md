@@ -7,7 +7,7 @@
 - 이름: `supragnosis` = *supra*(위/너머) + *gnosis*(앎). 지식 위의 지식 = 메타지식.
 - 네임스페이스 URI: `supragnosis://...`
 - 상태: **설계 단계 (greenfield)**. 이 문서가 구현의 기준선.
-- 규범 문서: 설계 원칙은 [`principles.md`](principles.md) (설계 헌법)를 따른다.
+- 규범 문서: 설계 원칙은 [`principles.md`](principles.md) (설계 원칙)를 따른다.
 
 ---
 
@@ -385,10 +385,10 @@ listen = "0.0.0.0:7420"
 
 ---
 
-## 14. 헌법 준수 현황 ([principles.md](principles.md) 대비)
+## 14. 원칙 준수 현황 ([principles.md](principles.md) 대비)
 
 각 마일스톤은 원칙 전체를 한 번에 만족시키지 않는다. 아래는 **의도적 이연(deferral)** 을
-투명하게 기록한 것이다 (헌법 서문: 편의적 결정은 문서화 없이는 불허).
+투명하게 기록한 것이다 (원칙 서문: 편의적 결정은 문서화 없이는 불허).
 
 **현재(M1) 충족**
 - 원칙 2(출처 1급/위임): 모든 관측/엔티티/관계가 provenance를 지니며, provenance가 위임 주체

@@ -7,7 +7,7 @@
 
 - 언어/런타임: **Rust** (`rmcp` 0.16 공식 MCP SDK, `tokio`)
 - 저장소: **임베디드/파일 기반** `cozo`/RocksDB - 관계+그래프+벡터(HNSW) 통합.
-- 상태: **M2 - 의미 검색 구현** (fastembed 의미+키워드 하이브리드 검색, Cozo 네이티브 HNSW, Cozo/RocksDB 영속, stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 헌법 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
+- 상태: **M2 - 의미 검색 구현** (fastembed 의미+키워드 하이브리드 검색, Cozo 네이티브 HNSW, Cozo/RocksDB 영속, stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 원칙 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
 
 ## 빌드 & 실행
 ```bash

@@ -104,10 +104,12 @@ impl KnowledgeStore for InMemoryStore {
             }
         }
 
+        // 동점은 id 로 안정 정렬 - HashMap 반복 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
         hits
@@ -195,10 +197,12 @@ impl KnowledgeStore for InMemoryStore {
             })
             .collect();
 
+        // 동점은 id 로 안정 정렬 - HashMap 반복 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
         hits
@@ -227,10 +231,12 @@ impl KnowledgeStore for InMemoryStore {
             })
             .collect();
 
+        // 동점은 id 로 안정 정렬 - HashMap 반복 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
         hits
