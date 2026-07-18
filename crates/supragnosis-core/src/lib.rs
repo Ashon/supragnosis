@@ -177,6 +177,11 @@ pub struct Entity {
     pub properties: serde_json::Value,
     #[serde(default)]
     pub provenance: Vec<Provenance>,
+    /// (선택) 의미 검색용 임베딩 벡터 (원칙 19: 확률적 경계). 이름/별칭의 의미로 노드에
+    /// 도달하게 하는 회상 보조 - 관측과 마찬가지로 **id 계산에 포함하지 않는다**(정체성이
+    /// 아니라 회상 확장이며, 노드마다 다른 모델을 써도 정체성/수렴이 흔들리지 않는다).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
 }
 
 impl Entity {
@@ -309,6 +314,19 @@ pub trait KnowledgeStore: Send + Sync {
     /// 임베딩이 없는 관측은 후보에서 제외된다. `score` 는 코사인 유사도(-1.0~1.0).
     /// 기본 구현은 빈 결과 - 벡터를 저장하지 않는 어댑터는 재정의할 필요가 없다.
     fn search_semantic(
+        &self,
+        _query_embedding: &[f32],
+        _workspace: Option<&str>,
+        _limit: usize,
+    ) -> Vec<SearchHit> {
+        Vec::new()
+    }
+
+    /// 임베딩이 있는 엔티티를 질의 벡터와의 코사인 유사도로 검색한다 (원칙 19: 회상 확장).
+    /// 엔티티 **이름/별칭의 의미**로 노드에 도달하게 한다 - 어떤 관측도 그 노드를 어휘로
+    /// 언급하지 않아도 회상된다(관측 전용 시맨틱의 회상 공백을 메운다). `SearchHitKind::Entity`
+    /// 히트를 돌려주며, `score` 는 코사인 유사도. 기본 구현은 빈 결과.
+    fn search_semantic_entities(
         &self,
         _query_embedding: &[f32],
         _workspace: Option<&str>,
