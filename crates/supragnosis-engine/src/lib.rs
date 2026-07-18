@@ -124,7 +124,9 @@ pub struct GraphEdge {
     #[serde(rename = "type")]
     pub kind: String,
     pub trust_tier: TrustTier,
-    pub confidence: f32,
+    /// 무표기(None)는 표기 없음 그대로 - 1.0 으로 보이지 않는다 (원칙 2 4차).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
     /// 유효구간 종료(원칙 4). Some 이면 대체/반증되어 현재는 참이 아님 - 뷰어가 흐리게 그린다.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid_to: Option<Timestamp>,
@@ -193,7 +195,9 @@ impl Engine {
             workspace: workspace.to_string(),
             source_ref,
             observed_at: now_millis(),
-            confidence: confidence.unwrap_or(1.0),
+            // 무표기는 무표기로 보존한다 (원칙 2 4차) - 기본값(1.0) 치환은 "주장 없음"과
+            // "만점 주장"의 구별을 소실시키는 캡처 손실이다. 해석은 해소 정책(M3)의 몫.
+            confidence,
             // 신뢰 등급 승격은 명시적 흐름(사람 확인/교차검증)에서만 - observe 는 기본값.
             trust_tier: TrustTier::default(),
         }

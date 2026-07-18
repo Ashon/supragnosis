@@ -286,7 +286,7 @@ mod tests {
             workspace: "ws1".into(),
             source_ref: None,
             observed_at: 1,
-            confidence: 1.0,
+            confidence: Some(1.0),
             trust_tier: TrustTier::default(),
         }
     }
@@ -363,7 +363,7 @@ mod tests {
                 "same fact".into(),
                 Provenance {
                     host: host.into(),
-                    confidence: conf,
+                    confidence: Some(conf),
                     ..prov()
                 },
             );
