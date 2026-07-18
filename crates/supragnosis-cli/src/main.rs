@@ -97,8 +97,10 @@ async fn main() -> Result<()> {
         _ => {
             let data_dir =
                 std::env::var("SUPRAGNOSIS_DATA_DIR").unwrap_or_else(|_| default_data_dir());
-            let store = match embed_dim {
-                Some(dim) => CozoStore::open_with_embedding_dim(&data_dir, dim),
+            // 임베더 식별자(모델+차원)를 스토어에 기록/대조한다 - 다른 임베더로 재오픈하면
+            // 침묵 오염(벡터 공간 혼합/부분 쓰기) 대신 여기서 명시적으로 실패한다.
+            let store = match &embedder {
+                Some(e) => CozoStore::open_with_embedder(&data_dir, &e.id(), e.dimensions()),
                 None => CozoStore::open(&data_dir),
             }
             .with_context(|| format!("failed to open Cozo store at {data_dir}"))?;

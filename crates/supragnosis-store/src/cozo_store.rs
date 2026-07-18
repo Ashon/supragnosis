@@ -28,21 +28,70 @@ impl CozoStore {
         Self::open_inner(path, None)
     }
 
-    /// 임베딩 차원을 지정해 연다 - obs_vec 관계 + HNSW 인덱스를 만들어 의미 검색을
-    /// 네이티브 ANN 으로 가속한다. `dim` 은 임베딩 공급자의 차원과 일치해야 한다.
-    pub fn open_with_embedding_dim(path: impl AsRef<Path>, dim: usize) -> Result<Self, StoreError> {
-        Self::open_inner(path, Some(dim))
+    /// 임베더를 지정해 연다 - obs_vec/ent_vec 관계 + HNSW 인덱스를 만들어 의미 검색을
+    /// 네이티브 ANN 으로 가속한다. `embedder_id` (모델명+차원, [`EmbeddingProvider::id`])
+    /// 는 meta 에 기록되고, 다른 임베더로 재오픈하면 **명시적으로 거부**한다 - 벡터
+    /// 공간이 다른 구/신 벡터가 한 인덱스에 섞이거나(같은 차원 다른 모델), 차원
+    /// 불일치로 쓰기가 부분 실패하는(다른 차원) 침묵 오류를 fail-fast 로 바꾼다.
+    pub fn open_with_embedder(
+        path: impl AsRef<Path>,
+        embedder_id: &str,
+        dim: usize,
+    ) -> Result<Self, StoreError> {
+        Self::open_inner(path, Some((embedder_id.to_string(), dim)))
     }
 
-    fn open_inner(path: impl AsRef<Path>, vector_dim: Option<usize>) -> Result<Self, StoreError> {
+    fn open_inner(
+        path: impl AsRef<Path>,
+        embedder: Option<(String, usize)>,
+    ) -> Result<Self, StoreError> {
         let path = path.as_ref();
         std::fs::create_dir_all(path).map_err(|e| StoreError::Backend(e.to_string()))?;
         let path_str = path.to_string_lossy().to_string();
         let db =
             cozo::new_cozo_rocksdb(&path_str).map_err(|e| StoreError::Backend(e.to_string()))?;
-        let store = Self { db, vector_dim };
+        let store = Self {
+            db,
+            vector_dim: embedder.as_ref().map(|(_, d)| *d),
+        };
         store.ensure_schema()?;
+        if let Some((id, _)) = &embedder {
+            store.ensure_embedder(id)?;
+        }
         Ok(store)
+    }
+
+    /// meta 의 임베더 식별자를 대조한다: 처음이면 기록, 같으면 통과, 다르면 거부.
+    fn ensure_embedder(&self, embedder_id: &str) -> Result<(), StoreError> {
+        let rows = self.run(
+            "?[value] := *meta{key: \"embedder\", value}",
+            BTreeMap::new(),
+            false,
+        )?;
+        let stored = rows
+            .rows
+            .first()
+            .and_then(|r| r.first())
+            .and_then(|v| v.get_str())
+            .map(str::to_string);
+        match stored {
+            None => {
+                let p = params(&[("value", embedder_id.to_string())]);
+                self.run(
+                    "?[key, value] <- [[\"embedder\", $value]]\n:put meta {key => value}",
+                    p,
+                    true,
+                )?;
+                Ok(())
+            }
+            Some(s) if s == embedder_id => Ok(()),
+            Some(s) => Err(StoreError::Backend(format!(
+                "임베더 불일치: 이 저장소는 '{s}' 로 색인되었는데 현재 임베더는 \
+                 '{embedder_id}' 다. 같은 임베더로 되돌리거나(SUPRAGNOSIS_EMBED), \
+                 재색인하려면 새 데이터 디렉토리(SUPRAGNOSIS_DATA_DIR)로 다시 적재하라 \
+                 - 다른 벡터 공간을 한 인덱스에 섞으면 유사도가 무의미해진다"
+            ))),
+        }
     }
 
     fn run(
@@ -95,6 +144,14 @@ impl CozoStore {
         if !have.contains("relation") {
             self.run(
                 ":create relation {id: String => src: String, dst: String, rtype: String, data: String}",
+                BTreeMap::new(),
+                true,
+            )?;
+        }
+        // 스토어 메타데이터 (임베더 식별자 등) - 어댑터 교체 감지의 기준.
+        if !have.contains("meta") {
+            self.run(
+                ":create meta {key: String => value: String}",
                 BTreeMap::new(),
                 true,
             )?;
@@ -965,7 +1022,7 @@ mod tests {
         let a = Observation::new("x axis".into(), prov_ws("ws1")).id;
         let c = Observation::new("near x".into(), prov_ws("ws1")).id;
         {
-            let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
+            let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
             store
                 .add_observation(obs_with_emb("x axis", "ws1", [1.0, 0.0, 0.0]))
                 .unwrap();
@@ -993,11 +1050,38 @@ mod tests {
 
         // 재오픈: HNSW 인덱스와 벡터가 영속한다.
         {
-            let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
+            let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
             let hits = store.search_semantic(&[1.0, 0.0, 0.0], Some("ws1"), 1);
             assert_eq!(hits.first().map(|h| h.id.clone()), Some(a.clone()));
         }
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 임베더 식별자 대조: 같은 임베더 재오픈은 통과, 다른 임베더는 명시적으로
+    /// 거부된다. 차원 불일치의 부분 쓰기와, 같은 차원 다른 모델의 벡터 공간 혼합
+    /// (둘 다 침묵 오염이던 것)을 open 시점 fail-fast 로 바꾼다.
+    #[test]
+    fn cozo_rejects_embedder_switch() {
+        let dir = tmp_dir();
+        {
+            let store = CozoStore::open_with_embedder(&dir, "hashing-3", 3).unwrap();
+            store
+                .add_observation(obs_with_emb("fact", "ws1", [1.0, 0.0, 0.0]))
+                .unwrap();
+        }
+        // 같은 임베더 재오픈: 통과.
+        assert!(CozoStore::open_with_embedder(&dir, "hashing-3", 3).is_ok());
+        // 다른 차원의 임베더: 거부 + 자기 교정 힌트.
+        let err = CozoStore::open_with_embedder(&dir, "other-4", 4)
+            .err()
+            .expect("다른 차원 임베더는 거부돼야 한다");
+        assert!(err.to_string().contains("임베더 불일치"), "{err}");
+        // 같은 차원이라도 다른 모델이면 거부 (벡터 공간 혼합 방지).
+        let err = CozoStore::open_with_embedder(&dir, "other-3", 3)
+            .err()
+            .expect("다른 모델 임베더는 거부돼야 한다");
+        assert!(err.to_string().contains("임베더 불일치"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1021,7 +1105,7 @@ mod tests {
         let x = Entity::make_id("ws1", "x axis");
         let near = Entity::make_id("ws1", "near x");
         {
-            let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
+            let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
             store.put_entity(ent_with_emb("x axis", "ws1", [1.0, 0.0, 0.0])).unwrap();
             store.put_entity(ent_with_emb("y axis", "ws1", [0.0, 1.0, 0.0])).unwrap();
             store.put_entity(ent_with_emb("near x", "ws1", [0.9, 0.1, 0.0])).unwrap();
@@ -1042,7 +1126,7 @@ mod tests {
 
         // 재오픈: ent_vec 인덱스와 벡터가 영속한다.
         {
-            let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
+            let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
             let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 1);
             assert_eq!(hits.first().map(|h| h.id.clone()), Some(x.clone()));
         }
