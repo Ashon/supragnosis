@@ -34,7 +34,8 @@ fn fastembed_cozo_hnsw_end_to_end() {
 
     let dir = std::env::temp_dir().join(format!("supragnosis-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let store = Arc::new(CozoStore::open_with_embedding_dim(&dir, dim).expect("open cozo"));
+    let store =
+        Arc::new(CozoStore::open_with_embedder(&dir, &embedder.id(), dim).expect("open cozo"));
     let engine = Engine::new(store, "h", "ws").with_embedder(embedder);
 
     observe(
