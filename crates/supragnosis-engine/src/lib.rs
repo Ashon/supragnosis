@@ -261,11 +261,23 @@ impl Engine {
             aliases: Vec::new(),
             properties: serde_json::Value::Null,
             provenance: Vec::new(),
+            embedding: None,
         });
         if let Some(k) = kind {
             entity.kind = k;
         }
         entity.provenance.push(prov.clone());
+        // 엔티티 이름/별칭을 임베딩해 시맨틱 검색이 노드에 **이름의 의미**로 도달하게 한다
+        // (원칙 19: 회상 확장). 관측을 어휘로 언급하지 않는 노드의 회상 공백을 메운다.
+        // 임베딩 부착은 best-effort: 실패해도 엔티티 저장은 막지 않는다(원칙 19: degrade).
+        // 이름은 안정적이므로 없을 때 한 번만 계산한다(확률적 어댑터 호출 최소화).
+        if entity.embedding.is_none() {
+            if let Some(embedder) = &self.embedder {
+                if let Ok(vec) = embedder.embed_one(&entity_text(&entity)) {
+                    entity.embedding = Some(vec);
+                }
+            }
+        }
         self.store.put_entity(entity)?;
         Ok(id)
     }
@@ -277,23 +289,28 @@ impl Engine {
         })
     }
 
-    /// 하이브리드 검색: 키워드(부분일치) + 벡터(의미) 결과를 RRF 로 융합한다.
-    /// 임베더가 없거나 질의 임베딩에 실패하면 키워드 결과만 돌려준다(원칙 19: degrade).
-    /// 벡터는 회상(recall)을 넓히는 데만 쓰고 확정 랭킹은 결정적 융합으로 한다.
+    /// 하이브리드 검색: 키워드(부분일치) + 벡터(의미) 결과를 RRF 로 융합한다. 벡터 경로는
+    /// 관측 본문과 엔티티 이름 **양쪽**을 시맨틱으로 회상한다 - 관측을 어휘로 언급하지 않는
+    /// 엔티티 노드도 이름의 의미로 도달한다. 임베더가 없거나 질의 임베딩에 실패하면 키워드
+    /// 결과만 돌려준다(원칙 19: degrade). 벡터는 회상을 넓히고 확정 랭킹은 결정적 융합으로 한다.
     pub fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
         let keyword = self.store.search(query, workspace, limit);
 
-        let semantic = self
-            .embedder
-            .as_ref()
-            .and_then(|e| e.embed_one(query).ok())
-            .map(|qvec| self.store.search_semantic(&qvec, workspace, limit))
-            .unwrap_or_default();
+        // 질의 임베딩은 한 번만 계산해 관측/엔티티 시맨틱 검색이 공유한다.
+        let qvec = self.embedder.as_ref().and_then(|e| e.embed_one(query).ok());
+        let (semantic_obs, semantic_ent) = match &qvec {
+            Some(v) => (
+                self.store.search_semantic(v, workspace, limit),
+                self.store.search_semantic_entities(v, workspace, limit),
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
 
-        if semantic.is_empty() {
+        // 시맨틱 회상이 전혀 없으면(임베더 없음/미적재) 키워드 랭킹을 그대로 둔다.
+        if semantic_obs.is_empty() && semantic_ent.is_empty() {
             return keyword;
         }
-        fuse_rrf(&[keyword, semantic], limit)
+        fuse_rrf(&[keyword, semantic_obs, semantic_ent], limit)
     }
 
     /// 엔티티에서 관계 방향(from->to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
@@ -379,6 +396,16 @@ impl Engine {
             edges,
             stats,
         }
+    }
+}
+
+/// 엔티티를 임베딩할 텍스트: 정규명 + 별칭(있으면). 이름의 의미로 시맨틱 회상을 연다.
+/// 별칭이 표기 변형을 담으므로 함께 임베딩하면 같은 대상의 다른 표기에도 도달 폭이 넓어진다.
+fn entity_text(entity: &Entity) -> String {
+    if entity.aliases.is_empty() {
+        entity.canonical_name.clone()
+    } else {
+        format!("{} {}", entity.canonical_name, entity.aliases.join(" "))
     }
 }
 

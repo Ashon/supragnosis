@@ -99,22 +99,25 @@ impl CozoStore {
                 true,
             )?;
         }
-        // 벡터 인덱스: obs_vec 관계 + HNSW. relation 과 index 를 함께 만들므로
-        // obs_vec 부재를 둘 다의 부재로 본다(create-together 불변식).
+        // 벡터 인덱스: obs_vec/ent_vec 관계 + HNSW. relation 과 index 를 함께 만들므로
+        // 관계 부재를 둘 다의 부재로 본다(create-together 불변식). 관측과 엔티티를 각각
+        // 색인해 시맨틱 검색이 관측 본문과 엔티티 이름 양쪽으로 회상하게 한다(회상 공백 제거).
         if let Some(dim) = self.vector_dim {
-            if !have.contains("obs_vec") {
-                self.run(
-                    &format!(":create obs_vec {{id: String => vec: <F32; {dim}>}}"),
-                    BTreeMap::new(),
-                    true,
-                )?;
-                self.run(
-                    &format!(
-                        "::hnsw create obs_vec:idx {{dim: {dim}, dtype: F32, fields: [vec], distance: Cosine, m: 16, ef_construction: 32}}"
-                    ),
-                    BTreeMap::new(),
-                    true,
-                )?;
+            for rel in ["obs_vec", "ent_vec"] {
+                if !have.contains(rel) {
+                    self.run(
+                        &format!(":create {rel} {{id: String => vec: <F32; {dim}>}}"),
+                        BTreeMap::new(),
+                        true,
+                    )?;
+                    self.run(
+                        &format!(
+                            "::hnsw create {rel}:idx {{dim: {dim}, dtype: F32, fields: [vec], distance: Cosine, m: 16, ef_construction: 32}}"
+                        ),
+                        BTreeMap::new(),
+                        true,
+                    )?;
+                }
             }
         }
         Ok(())
@@ -135,29 +138,34 @@ impl CozoStore {
         s
     }
 
-    /// obs_vec HNSW 인덱스로 근사 최근접(ANN) 검색. 워크스페이스 필터는 조인 후 적용하므로
-    /// 후보(k)를 limit 보다 넉넉히 잡아 필터로 잘려도 limit 를 채운다.
-    fn search_semantic_hnsw(
+    /// HNSW 인덱스로 근사 최근접(ANN) 검색. 관측(obs_vec/observation/content)과
+    /// 엔티티(ent_vec/entity/name)가 같은 로직을 공유한다. 워크스페이스 필터는 조인 후
+    /// 적용하므로 후보(k)를 limit 보다 넉넉히 잡아 필터로 잘려도 limit 를 채운다.
+    fn semantic_hnsw(
         &self,
         query: &[f32],
         workspace: Option<&str>,
         limit: usize,
+        target: &SemanticTarget,
     ) -> Vec<SearchHit> {
+        let (index, relation, text_field, kind) =
+            (target.index, target.relation, target.text_field, target.kind);
         let k = (limit * 4).max(16);
         let ef = (k * 2).max(32);
         let q = Self::list_literal(query);
         let mut p = params(&[]);
+        // text_field 를 text 로 바인딩해 관측 content / 엔티티 name 을 한 형태로 다룬다.
         let script = match workspace {
             Some(ws) => {
                 p.insert("ws".to_string(), DataValue::from(ws));
                 format!(
-                    "?[id, content, dist] := qv = vec({q}), ~obs_vec:idx{{id | query: qv, k: {k}, ef: {ef}, bind_distance: dist}}, *observation{{id, content, workspace}}, workspace == $ws\n\
+                    "?[id, text, dist] := qv = vec({q}), ~{index}{{id | query: qv, k: {k}, ef: {ef}, bind_distance: dist}}, *{relation}{{id, {text_field}: text, workspace}}, workspace == $ws\n\
                      :order dist\n\
                      :limit {limit}"
                 )
             }
             None => format!(
-                "?[id, content, dist] := qv = vec({q}), ~obs_vec:idx{{id | query: qv, k: {k}, ef: {ef}, bind_distance: dist}}, *observation{{id, content}}\n\
+                "?[id, text, dist] := qv = vec({q}), ~{index}{{id | query: qv, k: {k}, ef: {ef}, bind_distance: dist}}, *{relation}{{id, {text_field}: text}}\n\
                  :order dist\n\
                  :limit {limit}"
             ),
@@ -170,17 +178,70 @@ impl CozoStore {
             .iter()
             .filter_map(|r| {
                 let id = r.first()?.get_str()?;
-                let content = r.get(1)?.get_str()?;
+                let text = r.get(1)?.get_str()?;
                 // Cozo Cosine 거리 = 1 - 코사인 유사도. 유사도로 되돌려 score 로 쓴다.
                 let dist = r.get(2)?.get_float()? as f32;
                 Some(SearchHit {
-                    kind: SearchHitKind::Observation,
+                    kind,
                     id: id.to_string(),
-                    snippet: content.chars().take(160).collect(),
+                    snippet: text.chars().take(160).collect(),
                     score: 1.0 - dist,
                 })
             })
             .collect()
+    }
+
+    /// 벡터 인덱스가 없을 때의 브루트포스 시맨틱 검색. data JSON 의 embedding 을 로드해
+    /// Rust 에서 코사인 유사도로 랭킹한다. 관측(observation/content)과 엔티티(entity/name)가
+    /// 공유하며, 두 관계 모두 workspace 컬럼이 있어 스토어에서 바로 필터한다.
+    fn semantic_brute(
+        &self,
+        query: &[f32],
+        workspace: Option<&str>,
+        limit: usize,
+        target: &SemanticTarget,
+    ) -> Vec<SearchHit> {
+        let (relation, text_field, kind) = (target.relation, target.text_field, target.kind);
+        let mut p = params(&[]);
+        let script = match workspace {
+            Some(ws) => {
+                p.insert("ws".to_string(), DataValue::from(ws));
+                format!(
+                    "?[id, text, data] := *{relation}{{id, {text_field}: text, workspace, data}}, workspace == $ws"
+                )
+            }
+            None => {
+                format!("?[id, text, data] := *{relation}{{id, {text_field}: text, data}}")
+            }
+        };
+        let rows = match self.run(&script, p, false) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+        let mut hits: Vec<SearchHit> = rows
+            .rows
+            .iter()
+            .filter_map(|r| {
+                let id = r.first()?.get_str()?;
+                let text = r.get(1)?.get_str()?;
+                let data: serde_json::Value = serde_json::from_str(r.get(2)?.get_str()?).ok()?;
+                let emb: Vec<f32> = serde_json::from_value(data.get("embedding")?.clone()).ok()?;
+                Some(SearchHit {
+                    kind,
+                    id: id.to_string(),
+                    snippet: text.chars().take(160).collect(),
+                    score: cosine_similarity(query, &emb),
+                })
+            })
+            .collect();
+
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        hits.truncate(limit);
+        hits
     }
 }
 
@@ -191,6 +252,34 @@ fn params(pairs: &[(&str, String)]) -> BTreeMap<String, DataValue> {
         .map(|(k, v)| (k.to_string(), DataValue::from(v.as_str())))
         .collect()
 }
+
+/// 시맨틱 검색 대상 기술자: 어느 HNSW 인덱스/stored relation/텍스트 컬럼을 어떤 히트 종류로
+/// 볼지. 관측(obs_vec/observation/content)과 엔티티(ent_vec/entity/name)가 같은 검색 로직을
+/// 이 기술자만 바꿔 공유한다.
+struct SemanticTarget {
+    /// HNSW 인덱스 이름 (브루트포스 경로는 무시).
+    index: &'static str,
+    /// stored relation 이름.
+    relation: &'static str,
+    /// 스니펫 원천이 되는 텍스트 컬럼(관측 content / 엔티티 name).
+    text_field: &'static str,
+    /// 결과 히트의 종류.
+    kind: SearchHitKind,
+}
+
+const OBS_TARGET: SemanticTarget = SemanticTarget {
+    index: "obs_vec:idx",
+    relation: "observation",
+    text_field: "content",
+    kind: SearchHitKind::Observation,
+};
+
+const ENT_TARGET: SemanticTarget = SemanticTarget {
+    index: "ent_vec:idx",
+    relation: "entity",
+    text_field: "name",
+    kind: SearchHitKind::Entity,
+};
 
 /// entity 행(id, etype, name, data JSON)을 도메인 Entity 로 복원한다. 조회/열거가 공유.
 /// data JSON 이 깨져도 스키마 컬럼(id/type/name)은 살리고 복합 필드만 비운다(방어적).
@@ -211,6 +300,11 @@ fn entity_from_parts(id: String, etype: String, name: String, data_str: &str) ->
             .unwrap_or(serde_json::Value::Null),
         provenance: data
             .get("provenance")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        // 임베딩을 복원해 업서트(get -> put) 왕복에서 소실되지 않게 한다. 없으면(구 스키마) None.
+        embedding: data
+            .get("embedding")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
     }
@@ -301,10 +395,15 @@ impl KnowledgeStore for CozoStore {
             .first()
             .map(|p| p.workspace.clone())
             .unwrap_or_default();
+        let embedding = entity.embedding.clone();
+        let entity_id = entity.id.clone();
+        // 임베딩은 회상 보조일 뿐 정체성이 아니다(원칙 19) - 스키마 컬럼이 아닌 data 에 둔다.
+        // data JSON 이 원천이고 ent_vec 은 ANN 가속을 위한 물질화 인덱스다(obs_vec 와 대칭).
         let data = json!({
             "aliases": entity.aliases,
             "properties": entity.properties,
             "provenance": entity.provenance,
+            "embedding": entity.embedding,
         })
         .to_string();
         let p = params(&[
@@ -320,6 +419,17 @@ impl KnowledgeStore for CozoStore {
             p,
             true,
         )?;
+
+        // 벡터 인덱스가 켜져 있고 임베딩 차원이 맞으면 ent_vec(HNSW)에도 적재한다.
+        if let (Some(dim), Some(emb)) = (self.vector_dim, embedding) {
+            if emb.len() == dim {
+                let script = format!(
+                    "?[id, vec] := id = $id, vec = {}\n:put ent_vec {{id => vec}}",
+                    Self::list_literal(&emb)
+                );
+                self.run(&script, params(&[("id", entity_id)]), true)?;
+            }
+        }
         Ok(())
     }
 
@@ -522,45 +632,23 @@ impl KnowledgeStore for CozoStore {
     ) -> Vec<SearchHit> {
         // 벡터 인덱스가 켜져 있으면 네이티브 HNSW ANN 으로.
         if self.vector_dim.is_some() {
-            return self.search_semantic_hnsw(query_embedding, workspace, limit);
+            return self.semantic_hnsw(query_embedding, workspace, limit, &OBS_TARGET);
         }
         // 아니면 브루트포스: 후보를 로드해 Rust 에서 코사인 유사도로 랭킹한다.
-        let mut p = params(&[]);
-        let script = match workspace {
-            Some(ws) => {
-                p.insert("ws".to_string(), DataValue::from(ws));
-                "?[id, content, data] := *observation{id, content, workspace, data}, workspace == $ws"
-            }
-            None => "?[id, content, data] := *observation{id, content, data}",
-        };
-        let rows = match self.run(script, p, false) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        let mut hits: Vec<SearchHit> = rows
-            .rows
-            .iter()
-            .filter_map(|r| {
-                let id = r.first()?.get_str()?;
-                let content = r.get(1)?.get_str()?;
-                let data: serde_json::Value = serde_json::from_str(r.get(2)?.get_str()?).ok()?;
-                let emb: Vec<f32> = serde_json::from_value(data.get("embedding")?.clone()).ok()?;
-                Some(SearchHit {
-                    kind: SearchHitKind::Observation,
-                    id: id.to_string(),
-                    snippet: content.chars().take(160).collect(),
-                    score: cosine_similarity(query_embedding, &emb),
-                })
-            })
-            .collect();
+        self.semantic_brute(query_embedding, workspace, limit, &OBS_TARGET)
+    }
 
-        hits.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        hits.truncate(limit);
-        hits
+    fn search_semantic_entities(
+        &self,
+        query_embedding: &[f32],
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Vec<SearchHit> {
+        // 엔티티도 관측과 대칭: HNSW(ent_vec) 가속, 없으면 브루트포스 코사인.
+        if self.vector_dim.is_some() {
+            return self.semantic_hnsw(query_embedding, workspace, limit, &ENT_TARGET);
+        }
+        self.semantic_brute(query_embedding, workspace, limit, &ENT_TARGET)
     }
 }
 
@@ -570,11 +658,19 @@ mod tests {
     use supragnosis_core::Provenance;
 
     fn tmp_dir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // 프로세스 원자 카운터로 유일성을 확정한다 - 벽시계 해상도에 기대면 동시 실행되는
+        // 두 Cozo 테스트가 같은 나노초에 같은 경로를 잡아 RocksDB 락 충돌로 open 이 실패한다.
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("supragnosis-cozo-{}-{}", std::process::id(), nanos))
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "supragnosis-cozo-{}-{nanos}-{seq}",
+            std::process::id()
+        ))
     }
 
     fn prov() -> Provenance {
@@ -597,6 +693,7 @@ mod tests {
             aliases: vec![],
             properties: serde_json::Value::Null,
             provenance: vec![prov()],
+            embedding: None,
         }
     }
 
@@ -718,6 +815,55 @@ mod tests {
             let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
             let hits = store.search_semantic(&[1.0, 0.0, 0.0], Some("ws1"), 1);
             assert_eq!(hits.first().map(|h| h.id.clone()), Some(a.clone()));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn ent_with_emb(name: &str, ws: &str, emb: [f32; 3]) -> Entity {
+        Entity {
+            id: Entity::make_id(ws, name),
+            kind: "Concept".into(),
+            canonical_name: name.into(),
+            aliases: vec![],
+            properties: serde_json::Value::Null,
+            provenance: vec![prov_ws(ws)],
+            embedding: Some(emb.to_vec()),
+        }
+    }
+
+    /// 엔티티 시맨틱 검색(ent_vec HNSW): 이름 임베딩으로 노드에 도달한다. 최근접 순위 +
+    /// 워크스페이스 필터 + 재오픈 영속을 관측 경로(obs_vec)와 대칭으로 검증한다.
+    #[test]
+    fn cozo_entity_semantic_search_uses_hnsw() {
+        let dir = tmp_dir();
+        let x = Entity::make_id("ws1", "x axis");
+        let near = Entity::make_id("ws1", "near x");
+        {
+            let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
+            store.put_entity(ent_with_emb("x axis", "ws1", [1.0, 0.0, 0.0])).unwrap();
+            store.put_entity(ent_with_emb("y axis", "ws1", [0.0, 1.0, 0.0])).unwrap();
+            store.put_entity(ent_with_emb("near x", "ws1", [0.9, 0.1, 0.0])).unwrap();
+            // 다른 워크스페이스의 완전 일치 - ws1 질의에 나오면 안 된다.
+            store.put_entity(ent_with_emb("other x", "ws2", [1.0, 0.0, 0.0])).unwrap();
+
+            let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 2);
+            let ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
+            assert_eq!(ids.len(), 2, "top-2 within ws1, got {ids:?}");
+            assert!(
+                ids.contains(&x) && ids.contains(&near),
+                "nearest should be x/near-x entities, got {ids:?}"
+            );
+            assert_eq!(hits[0].id, x, "exact-match entity should rank first");
+            // 엔티티 히트여야 한다(관측과 섞이지 않음).
+            assert!(hits.iter().all(|h| h.kind == SearchHitKind::Entity));
+        }
+
+        // 재오픈: ent_vec 인덱스와 벡터가 영속한다.
+        {
+            let store = CozoStore::open_with_embedding_dim(&dir, 3).unwrap();
+            let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 1);
+            assert_eq!(hits.first().map(|h| h.id.clone()), Some(x.clone()));
         }
 
         let _ = std::fs::remove_dir_all(&dir);

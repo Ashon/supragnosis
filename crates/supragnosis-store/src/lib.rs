@@ -203,6 +203,38 @@ impl KnowledgeStore for InMemoryStore {
         hits.truncate(limit);
         hits
     }
+
+    fn search_semantic_entities(
+        &self,
+        query_embedding: &[f32],
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Vec<SearchHit> {
+        let mut hits: Vec<SearchHit> = self
+            .entities
+            .read()
+            .unwrap()
+            .values()
+            .filter(|e| workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws)))
+            .filter_map(|e| {
+                let emb = e.embedding.as_deref()?;
+                Some(SearchHit {
+                    kind: SearchHitKind::Entity,
+                    id: e.id.clone(),
+                    snippet: e.canonical_name.clone(),
+                    score: cosine_similarity(query_embedding, emb),
+                })
+            })
+            .collect();
+
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        hits.truncate(limit);
+        hits
+    }
 }
 
 #[cfg(test)]
@@ -230,6 +262,7 @@ mod tests {
             aliases: vec![],
             properties: serde_json::Value::Null,
             provenance: vec![prov()],
+            embedding: None,
         }
     }
 
