@@ -11,7 +11,7 @@
 //! 비결정적(모델)이고 로컬 Ollama 가 필요하므로 기본 실행에서 제외한다.
 //! 실행:
 //!   OLLAMA_MODELS=gemma4,qwen2.5:3b,llama3.2:3b \
-//!     cargo test -p supragnosis-mcp --test ollama_eval -- --ignored --nocapture
+//!     cargo test -p supragnosis-e2e --test ollama_eval -- --ignored --nocapture
 //! 선택 env:
 //!   OLLAMA_BASE_URL (기본 http://localhost:11434)
 //!   OLLAMA_MODELS   (콤마 구분, 기본 gemma4) - 각 모델을 같은 시나리오로 채점해 비교표를 낸다.
@@ -21,17 +21,18 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rmcp::model::CallToolRequestParams;
-use rmcp::service::{RunningService, ServiceExt};
+use rmcp::service::RunningService;
 use rmcp::RoleClient;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
+use supragnosis_e2e::bridge::{
+    chat, exec_tool, ollama_reachable, openai_tools, push_message, push_tool_result,
+    serve_engine, tool_calls, DEFAULT_BASE,
+};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::Engine;
-use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::InMemoryStore;
 
-const DEFAULT_BASE: &str = "http://localhost:11434";
 const DEFAULT_MODELS: &str = "gemma4";
 
 /// 단일턴 시나리오: 자연어 요청 -> 기대 도구 + 인자 술어.
@@ -103,125 +104,6 @@ impl Scorecard {
     }
 }
 
-/// MCP 도구 목록을 Ollama(OpenAI 호환) tools 배열로 변환한다.
-async fn openai_tools(client: &RunningService<RoleClient, ()>) -> Value {
-    let tools = client.list_all_tools().await.expect("list tools");
-    Value::Array(
-        tools
-            .iter()
-            .map(|t| {
-                json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description.as_deref().unwrap_or(""),
-                        "parameters": &*t.input_schema,
-                    }
-                })
-            })
-            .collect(),
-    )
-}
-
-/// Ollama /v1/chat/completions 를 호출해 assistant 메시지(Value)를 돌려준다.
-async fn chat(
-    http: &reqwest::Client,
-    base: &str,
-    model: &str,
-    messages: &Value,
-    tools: &Value,
-) -> Result<Value, String> {
-    let body = json!({
-        "model": model,
-        "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
-        "stream": false,
-    });
-    let resp = http
-        .post(format!("{base}/v1/chat/completions"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("request failed: {e}"))?;
-    let status = resp.status();
-    let payload: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("bad json: {e}"))?;
-    if !status.is_success() {
-        return Err(format!("api {status}: {payload}"));
-    }
-    payload
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .cloned()
-        .ok_or_else(|| format!("no message in response: {payload}"))
-}
-
-/// assistant 메시지에서 tool_calls 를 (id, name, args) 로 뽑는다. arguments 는 JSON 문자열이라 파싱.
-fn tool_calls(msg: &Value) -> Vec<(String, String, Value)> {
-    let Some(calls) = msg.get("tool_calls").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-    calls
-        .iter()
-        .enumerate()
-        .filter_map(|(i, c)| {
-            let f = c.get("function")?;
-            let name = f.get("name")?.as_str()?.to_string();
-            // arguments 는 보통 JSON 문자열, 드물게 객체로 오기도 한다 - 둘 다 수용.
-            let args = match f.get("arguments") {
-                Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
-                Some(v) => v.clone(),
-                None => Value::Null,
-            };
-            let id = c
-                .get("id")
-                .and_then(Value::as_str)
-                .map(String::from)
-                .unwrap_or_else(|| format!("call_{i}"));
-            Some((id, name, args))
-        })
-        .collect()
-}
-
-/// MCP 도구를 실제 실행해 결과 텍스트를 돌려준다(에이전트 루프의 실행 단계).
-async fn exec_tool(
-    client: &RunningService<RoleClient, ()>,
-    name: &str,
-    args: &Value,
-) -> String {
-    let arguments: Option<Map<String, Value>> = args.as_object().cloned();
-    match client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: name.to_string().into(),
-            arguments,
-            task: None,
-        })
-        .await
-    {
-        Ok(res) => res
-            .content
-            .first()
-            .and_then(|c| c.as_text())
-            .map(|t| t.text.clone())
-            .unwrap_or_default(),
-        Err(e) => format!("{{\"error\":\"tool call failed: {e}\"}}"),
-    }
-}
-
-/// 로컬 Ollama 가 떠 있는지(태그 엔드포인트) 빠르게 확인한다.
-async fn ollama_reachable(http: &reqwest::Client, base: &str) -> bool {
-    http.get(format!("{base}/api/tags"))
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false)
-}
-
 /// 한 모델을 모든 시나리오로 채점한다(단일턴 4 + observe->search 에이전트 루프 1).
 async fn eval_model(
     http: &reqwest::Client,
@@ -240,8 +122,8 @@ async fn eval_model(
     // --- 단일턴: 올바른 도구 + 인자 선택 ---
     for sc in scenarios() {
         let messages = json!([{ "role": "user", "content": sc.user }]);
-        let msg = match chat(http, base, model, &messages, tools).await {
-            Ok(m) => m,
+        let msg = match chat(http, base, model, &messages, Some(tools)).await {
+            Ok((m, _)) => m,
             Err(e) => {
                 card.failed.push(format!("{}: {e}", sc.name));
                 continue;
@@ -301,7 +183,7 @@ async fn agent_loop(
     }]);
 
     // 1) 모델이 observe 를 부르길 기대 -> 실제 실행.
-    let msg1 = chat(http, base, model, &messages, tools).await?;
+    let (msg1, _) = chat(http, base, model, &messages, Some(tools)).await?;
     let calls1 = tool_calls(&msg1);
     let observe = calls1
         .iter()
@@ -319,7 +201,7 @@ async fn agent_loop(
             "content": "Now search the knowledge base to find which database the project uses.",
         }),
     );
-    let msg2 = chat(http, base, model, &messages, tools).await?;
+    let (msg2, _) = chat(http, base, model, &messages, Some(tools)).await?;
     let calls2 = tool_calls(&msg2);
     let search = calls2
         .iter()
@@ -333,21 +215,6 @@ async fn agent_loop(
     } else {
         Err(format!("검색 결과에 적재한 사실이 없음: {search_result}"))
     }
-}
-
-/// 메시지 히스토리에 임의 메시지 Value 를 push 한다.
-fn push_message(messages: &mut Value, msg: Value) {
-    if let Some(arr) = messages.as_array_mut() {
-        arr.push(msg);
-    }
-}
-
-/// tool 실행 결과를 tool 역할 메시지로 push 한다.
-fn push_tool_result(messages: &mut Value, tool_call_id: &str, content: &str) {
-    push_message(
-        messages,
-        json!({ "role": "tool", "tool_call_id": tool_call_id, "content": content }),
-    );
 }
 
 #[tokio::test]
@@ -372,13 +239,7 @@ async fn ollama_models_use_mcp_tools() {
         Engine::new(Arc::new(InMemoryStore::new()), "ollama-eval", "ws")
             .with_embedder(Arc::new(HashingEmbedder::default())),
     );
-    let (server_io, client_io) = tokio::io::duplex(16 * 1024);
-    let server = tokio::spawn(async move {
-        if let Ok(running) = SupragnosisServer::new(engine).serve(server_io).await {
-            let _ = running.waiting().await;
-        }
-    });
-    let client = ().serve(client_io).await.expect("client handshake");
+    let (client, server) = serve_engine(engine).await;
     let tools = openai_tools(&client).await;
 
     let mut cards: Vec<Scorecard> = Vec::new();

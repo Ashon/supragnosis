@@ -2971,7 +2971,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3244,6 +3244,12 @@ dependencies = [
  "memchr",
  "regex-syntax",
 ]
+
+[[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 
 [[package]]
 name = "regex-syntax"
@@ -3877,6 +3883,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "supragnosis-e2e"
+version = "0.0.0"
+dependencies = [
+ "regex-lite",
+ "reqwest",
+ "rmcp",
+ "serde_json",
+ "supragnosis-embed",
+ "supragnosis-engine",
+ "supragnosis-mcp",
+ "supragnosis-store",
+ "tokio",
+]
+
+[[package]]
 name = "supragnosis-embed"
 version = "0.0.0"
 dependencies = [
@@ -3900,7 +3921,6 @@ dependencies = [
 name = "supragnosis-mcp"
 version = "0.0.0"
 dependencies = [
- "reqwest",
  "rmcp",
  "serde",
  "serde_json",

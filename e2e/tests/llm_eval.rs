@@ -6,7 +6,7 @@
 //!
 //! 비결정적(모델 호출)이고 네트워크+크레덴셜이 필요하므로 기본 실행에서 제외한다.
 //! 실행:
-//!   ANTHROPIC_API_KEY=... cargo test -p supragnosis-mcp --test llm_eval -- --ignored --nocapture
+//!   ANTHROPIC_API_KEY=... cargo test -p supragnosis-e2e --test llm_eval -- --ignored --nocapture
 //! 선택 env:
 //!   SUPRAGNOSIS_EVAL_MODEL (기본 claude-haiku-4-5-20251001)
 //!

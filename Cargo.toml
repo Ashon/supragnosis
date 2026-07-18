@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+# e2e 는 배포물(crates/*)과 분리된 실모델 종단 측정 스위트다.
+members = ["crates/*", "e2e"]
 
 [workspace.package]
 version = "0.0.0"
