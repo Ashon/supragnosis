@@ -114,19 +114,36 @@ impl Assertions {
     /// 콘텐츠 주소 해시용 결정적 바이트 인코딩. serde 포맷에 결합하지 않는 수제
     /// 인코딩으로, 직렬화 라이브러리가 바뀌어도 id 가 흔들리지 않게 한다.
     /// 개수와 각 필드를 length-prefix 로 넣으므로 빈 주장(0,0)도 명시적으로 인코딩된다.
+    ///
+    /// 완전 구조분해(`..` 없음)로 쓴다 (원칙 14: 구조 진화의 기계적 강제): 주장 구조에
+    /// 필드가 추가되면 여기가 컴파일 에러가 되어 "새 필드가 내용 정체성인가(해시 포함
+    /// 여부)"의 명시적 결정을 강제한다 - 누락되면 그 필드만 다른 두 주장이 같은 콘텐츠
+    /// 주소로 붕괴한다 ("같은 텍스트에 다른 주장이면 다른 관측" 불변식 파괴).
     fn hash_into(&self, hasher: &mut blake3::Hasher) {
-        hasher.update(&(self.entities.len() as u64).to_le_bytes());
-        for e in &self.entities {
-            hash_field(hasher, e.name.as_bytes());
-            hash_opt_field(hasher, e.kind.as_deref());
+        let Assertions {
+            entities,
+            relations,
+        } = self;
+        hasher.update(&(entities.len() as u64).to_le_bytes());
+        for e in entities {
+            let EntityAssertion { name, kind } = e;
+            hash_field(hasher, name.as_bytes());
+            hash_opt_field(hasher, kind.as_deref());
         }
-        hasher.update(&(self.relations.len() as u64).to_le_bytes());
-        for r in &self.relations {
-            hash_field(hasher, r.from.as_bytes());
-            hash_field(hasher, r.kind.as_bytes());
-            hash_field(hasher, r.to.as_bytes());
-            hash_opt_u64(hasher, r.valid_from);
-            hash_opt_u64(hasher, r.valid_to);
+        hasher.update(&(relations.len() as u64).to_le_bytes());
+        for r in relations {
+            let RelationAssertion {
+                from,
+                kind,
+                to,
+                valid_from,
+                valid_to,
+            } = r;
+            hash_field(hasher, from.as_bytes());
+            hash_field(hasher, kind.as_bytes());
+            hash_field(hasher, to.as_bytes());
+            hash_opt_u64(hasher, *valid_from);
+            hash_opt_u64(hasher, *valid_to);
         }
     }
 }
@@ -226,15 +243,28 @@ impl Observation {
     /// 유지하고 없을 때만 받는다.
     pub fn absorb(&mut self, other: Observation) {
         debug_assert_eq!(self.id, other.id, "absorb 는 같은 콘텐츠 주소끼리만");
-        self.provenance.extend(other.provenance);
+        // 완전 구조분해(`..` 없음, 원칙 14: 구조 진화의 기계적 강제): Observation 에
+        // 필드가 추가되면(M4: origin/hlc/signature 예정) 여기가 컴파일 에러가 되어
+        // "재도착 병합에서 그 필드를 어떻게 합치는가"의 명시적 결정을 강제한다 -
+        // 침묵 누락은 병합 시 그 필드의 소실이다. 정체성 필드(id/content/assertions)는
+        // 콘텐츠 주소가 동일성을 보증하므로 버린다(`_` 바인딩도 결정의 표기다).
+        let Observation {
+            id: _,
+            content: _,
+            provenance,
+            assertions: _,
+            derived_from,
+            embedding,
+        } = other;
+        self.provenance.extend(provenance);
         self.provenance.sort_by(provenance_order);
         self.provenance
             .dedup_by(|a, b| provenance_order(a, b) == std::cmp::Ordering::Equal);
-        self.derived_from.extend(other.derived_from);
+        self.derived_from.extend(derived_from);
         self.derived_from.sort();
         self.derived_from.dedup();
         if self.embedding.is_none() {
-            self.embedding = other.embedding;
+            self.embedding = embedding;
         }
     }
 }
@@ -243,25 +273,43 @@ impl Observation {
 /// 비교하므로 "같음"은 완전 동일 attestation(릴레이 중복)뿐이고, 어떤 필드든 다르면
 /// (독립 재관측) 별개로 남는다. confidence 는 to_bits 로 전순서화한다 - 무표기(None)는
 /// Option 의 Ord 로 어떤 표기 값보다 앞이며, 표기 1.0 과 구별되는 별개 attestation 이다.
+///
+/// 완전 구조분해(`..` 없음)로 쓴다 (원칙 14: 구조 진화의 기계적 강제): Provenance 에
+/// 필드가 추가되면 여기가 컴파일 에러가 되어 "새 필드가 attestation 구별 축인가"의
+/// 명시적 결정을 강제한다 - 열거에서 침묵 누락되면 dedup 이 그 필드만 다른 별개
+/// attestation 을 하나로 붕괴시킨다 (원칙 3 위반).
 fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
-    (
-        a.host.as_str(),
-        a.on_behalf_of.as_deref(),
-        a.workspace.as_str(),
-        a.source_ref.as_deref(),
-        a.observed_at,
-        a.confidence.map(f32::to_bits),
-        a.trust_tier,
-    )
-        .cmp(&(
-            b.host.as_str(),
-            b.on_behalf_of.as_deref(),
-            b.workspace.as_str(),
-            b.source_ref.as_deref(),
-            b.observed_at,
-            b.confidence.map(f32::to_bits),
-            b.trust_tier,
-        ))
+    fn key(
+        p: &Provenance,
+    ) -> (
+        &str,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        Timestamp,
+        Option<u32>,
+        TrustTier,
+    ) {
+        let Provenance {
+            host,
+            on_behalf_of,
+            workspace,
+            source_ref,
+            observed_at,
+            confidence,
+            trust_tier,
+        } = p;
+        (
+            host.as_str(),
+            on_behalf_of.as_deref(),
+            workspace.as_str(),
+            source_ref.as_deref(),
+            *observed_at,
+            confidence.map(f32::to_bits),
+            *trust_tier,
+        )
+    }
+    key(a).cmp(&key(b))
 }
 
 /// 엔티티(개념 노드).
