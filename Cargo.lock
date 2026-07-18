@@ -3893,6 +3893,7 @@ dependencies = [
  "supragnosis-core",
  "supragnosis-embed",
  "supragnosis-store",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
