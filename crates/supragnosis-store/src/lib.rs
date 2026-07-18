@@ -65,13 +65,17 @@ impl KnowledgeStore for InMemoryStore {
     }
 
     fn relations_of(&self, entity_id: &str) -> Vec<Relation> {
-        self.relations
+        let mut rels: Vec<Relation> = self
+            .relations
             .read()
             .unwrap()
             .values()
             .filter(|r| r.from == entity_id || r.to == entity_id)
             .cloned()
-            .collect()
+            .collect();
+        // id 정렬 - HashMap 반복 순서가 응답에 새지 않게 한다(원칙 16: 재현성).
+        rels.sort_by(|a, b| a.id.cmp(&b.id));
+        rels
     }
 
     fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
@@ -130,25 +134,36 @@ impl KnowledgeStore for InMemoryStore {
 
         let mut depth = 1usize;
         while depth <= max_depth && !frontier.is_empty() {
-            let mut next = Vec::new();
-            for node in &frontier {
-                for r in relations.values().filter(|r| &r.from == node) {
-                    if visited.insert(r.to.clone()) {
-                        let (name, kind) = entities
-                            .get(&r.to)
-                            .map(|e| (e.canonical_name.clone(), e.kind.clone()))
-                            .unwrap_or_default();
-                        out.push(TraverseHit {
-                            id: r.to.clone(),
-                            depth,
-                            name,
-                            kind,
-                        });
-                        next.push(r.to.clone());
-                        if out.len() >= limit {
-                            return out;
-                        }
-                    }
+            // depth 단위로 이웃을 모아 id 정렬 후 방문/방출한다 - 출력은 (depth, id)
+            // 순서로 결정적이고, limit 절단도 가까운 이웃(얕은 depth) 우선으로
+            // 재현 가능하다 (원칙 16). HashMap 순회 순서가 결과에 새지 않는다.
+            let mut next: Vec<String> = frontier
+                .iter()
+                .flat_map(|node| {
+                    relations
+                        .values()
+                        .filter(move |r| &r.from == node)
+                        .map(|r| r.to.clone())
+                })
+                .filter(|to| !visited.contains(to))
+                .collect();
+            next.sort_unstable();
+            next.dedup();
+
+            for to in &next {
+                visited.insert(to.clone());
+                let (name, kind) = entities
+                    .get(to)
+                    .map(|e| (e.canonical_name.clone(), e.kind.clone()))
+                    .unwrap_or_default();
+                out.push(TraverseHit {
+                    id: to.clone(),
+                    depth,
+                    name,
+                    kind,
+                });
+                if out.len() >= limit {
+                    return out;
                 }
             }
             frontier = next;

@@ -514,7 +514,8 @@ impl KnowledgeStore for CozoStore {
             Ok(r) => r,
             Err(_) => return Vec::new(),
         };
-        rows.rows
+        let mut rels: Vec<Relation> = rows
+            .rows
             .iter()
             .filter_map(|r| {
                 relation_from_parts(
@@ -525,7 +526,10 @@ impl KnowledgeStore for CozoStore {
                     r.get(4)?.get_str()?,
                 )
             })
-            .collect()
+            .collect();
+        // id 정렬 - 행 순서가 응답에 새지 않게 명시한다 (InMemory 와 parity, 원칙 16).
+        rels.sort_by(|a, b| a.id.cmp(&b.id));
+        rels
     }
 
     fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
@@ -598,10 +602,14 @@ impl KnowledgeStore for CozoStore {
     fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
         let md = max_depth.max(1);
         // 재귀 Datalog: min 집계로 최단 홉 거리를 구하고 엔티티 메타를 조인.
+        // :order 없이는 결과가 id(첫 컬럼) 순으로 나와 :limit 절단이 depth 를 무시했다
+        // - (depth, id) 로 명시 정렬해 가까운 이웃 우선 + 재현 가능한 절단으로 만들고
+        // InMemory 어댑터와 절단 의미론을 일치시킨다 (원칙 16).
         let script = format!(
             "reach[dst, min(d)] := *relation{{src: $start, dst}}, d = 1\n\
              reach[dst, min(d)] := reach[nid, d0], *relation{{src: nid, dst}}, d = d0 + 1, d <= {md}\n\
              ?[id, depth, name, etype] := reach[id, depth], *entity{{id, name, etype}}\n\
+             :order depth, id\n\
              :limit {limit}"
         );
         let p = params(&[("start", start_id.to_string())]);
@@ -706,6 +714,7 @@ impl KnowledgeStore for CozoStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::InMemoryStore;
     use supragnosis_core::Provenance;
 
     fn tmp_dir() -> std::path::PathBuf {
@@ -811,6 +820,92 @@ mod tests {
             assert!(store2.get_entity(&a).is_some(), "data should persist");
         }
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// traverse 는 (depth asc, id asc)로 결정적이고 limit 절단은 얕은 depth 우선이다 -
+    /// 두 어댑터의 순서/절단 의미론이 일치한다 (원칙 16, 검색 정렬 tie-break 의 잔여).
+    /// 픽스처는 해시 선별: id 최소 후보를 depth-2 손자로 둬, id 순 절단이던 회귀라면
+    /// 손자가 depth-1 이웃을 밀어냈을 조건을 만든다.
+    #[test]
+    fn traverse_order_and_truncation_parity_across_adapters() {
+        let mut cands: Vec<String> = (0..30).map(|i| format!("child-{i:02}")).collect();
+        cands.sort_by_key(|n| Entity::make_id("ws1", n));
+        let grand = cands[0].clone();
+        let children: Vec<String> = cands[cands.len() - 6..].to_vec();
+        assert!(
+            Entity::make_id("ws1", &grand) < Entity::make_id("ws1", &children[0]),
+            "픽스처 전제: 손자 id 가 모든 자식 id 보다 작다"
+        );
+
+        let fill = |store: &dyn KnowledgeStore| {
+            store.put_entity(ent("root")).unwrap();
+            for name in &children {
+                store.put_entity(ent(name)).unwrap();
+                let (f, t) = (Entity::make_id("ws1", "root"), Entity::make_id("ws1", name));
+                store
+                    .add_relation(Relation {
+                        id: Relation::make_id(&f, "rel", &t),
+                        from: f,
+                        to: t,
+                        kind: "rel".into(),
+                        provenance: prov(),
+                        valid_from: None,
+                        valid_to: None,
+                    })
+                    .unwrap();
+            }
+            store.put_entity(ent(&grand)).unwrap();
+            let (f, t) = (
+                Entity::make_id("ws1", &children[0]),
+                Entity::make_id("ws1", &grand),
+            );
+            store
+                .add_relation(Relation {
+                    id: Relation::make_id(&f, "rel", &t),
+                    from: f,
+                    to: t,
+                    kind: "rel".into(),
+                    provenance: prov(),
+                    valid_from: None,
+                    valid_to: None,
+                })
+                .unwrap();
+        };
+        let check = |store: &dyn KnowledgeStore, label: &str| -> Vec<(usize, String)> {
+            let root = Entity::make_id("ws1", "root");
+            let full = store.traverse(&root, 5, 100);
+            let keys: Vec<(usize, String)> =
+                full.iter().map(|h| (h.depth, h.id.clone())).collect();
+            let mut sorted = keys.clone();
+            sorted.sort();
+            assert_eq!(keys, sorted, "{label}: (depth, id) 순서여야 한다");
+            // 절단은 가까운 이웃 우선 - id 최소인 손자(depth 2)가 depth-1 을 밀어내지 않는다.
+            let cut = store.traverse(&root, 5, 4);
+            assert!(
+                cut.iter().all(|h| h.depth == 1),
+                "{label}: limit 절단은 얕은 depth 우선이어야 한다: {cut:?}"
+            );
+            keys
+        };
+
+        // InMemory: 인스턴스(HashMap 시드)와 무관하게 같은 결과.
+        let m1 = InMemoryStore::new();
+        fill(&m1);
+        let k1 = check(&m1, "mem-1");
+        let m2 = InMemoryStore::new();
+        fill(&m2);
+        let k2 = check(&m2, "mem-2");
+        assert_eq!(k1, k2, "InMemory 인스턴스 간 재현성");
+
+        // Cozo: 같은 순서/절단 의미론 (어댑터 parity).
+        let dir = tmp_dir();
+        {
+            let store = CozoStore::open(&dir).unwrap();
+            fill(&store);
+            let kc = check(&store, "cozo");
+            assert_eq!(k1, kc, "InMemory <-> Cozo parity");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
