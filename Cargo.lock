@@ -3935,6 +3935,7 @@ dependencies = [
  "supragnosis-embed",
  "supragnosis-store",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
