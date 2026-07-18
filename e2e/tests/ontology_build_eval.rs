@@ -291,7 +291,8 @@ async fn build_ontology(
     };
 
     // 뷰어 데이터: 전체 프로젝션(워크스페이스 무제한) - 모델이 ws 를 지어내 샌 것도 보인다.
-    let graph = serde_json::to_value(engine_view.graph(None)).expect("graph serialize");
+    let graph = serde_json::to_value(engine_view.graph(None).expect("graph projection"))
+        .expect("graph serialize");
 
     let _ = client.cancel().await;
     let _ = server.await;

@@ -47,8 +47,8 @@ impl KnowledgeStore for InMemoryStore {
         Ok(())
     }
 
-    fn get_entity(&self, id: &str) -> Option<Entity> {
-        self.entities.read().unwrap().get(id).cloned()
+    fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> {
+        Ok(self.entities.read().unwrap().get(id).cloned())
     }
 
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
@@ -64,7 +64,7 @@ impl KnowledgeStore for InMemoryStore {
         Ok(())
     }
 
-    fn relations_of(&self, entity_id: &str) -> Vec<Relation> {
+    fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError> {
         let mut rels: Vec<Relation> = self
             .relations
             .read()
@@ -75,10 +75,15 @@ impl KnowledgeStore for InMemoryStore {
             .collect();
         // id 정렬 - HashMap 반복 순서가 응답에 새지 않게 한다(원칙 16: 재현성).
         rels.sort_by(|a, b| a.id.cmp(&b.id));
-        rels
+        Ok(rels)
     }
 
-    fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
+    fn search(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>, StoreError> {
         let q = query.trim().to_lowercase();
         let mut hits: Vec<SearchHit> = Vec::new();
 
@@ -121,10 +126,15 @@ impl KnowledgeStore for InMemoryStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
-        hits
+        Ok(hits)
     }
 
-    fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
+    fn traverse(
+        &self,
+        start_id: &str,
+        max_depth: usize,
+        limit: usize,
+    ) -> Result<Vec<TraverseHit>, StoreError> {
         let relations = self.relations.read().unwrap();
         let entities = self.entities.read().unwrap();
 
@@ -163,17 +173,18 @@ impl KnowledgeStore for InMemoryStore {
                     kind,
                 });
                 if out.len() >= limit {
-                    return out;
+                    return Ok(out);
                 }
             }
             frontier = next;
             depth += 1;
         }
-        out
+        Ok(out)
     }
 
-    fn all_entities(&self, workspace: Option<&str>) -> Vec<Entity> {
-        self.entities
+    fn all_entities(&self, workspace: Option<&str>) -> Result<Vec<Entity>, StoreError> {
+        Ok(self
+            .entities
             .read()
             .unwrap()
             .values()
@@ -181,17 +192,18 @@ impl KnowledgeStore for InMemoryStore {
                 workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws))
             })
             .cloned()
-            .collect()
+            .collect())
     }
 
-    fn all_relations(&self, workspace: Option<&str>) -> Vec<Relation> {
-        self.relations
+    fn all_relations(&self, workspace: Option<&str>) -> Result<Vec<Relation>, StoreError> {
+        Ok(self
+            .relations
             .read()
             .unwrap()
             .values()
             .filter(|r| workspace.is_none_or(|ws| r.provenance.workspace == ws))
             .cloned()
-            .collect()
+            .collect())
     }
 
     fn search_semantic(
@@ -199,7 +211,7 @@ impl KnowledgeStore for InMemoryStore {
         query_embedding: &[f32],
         workspace: Option<&str>,
         limit: usize,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         let mut hits: Vec<SearchHit> = self
             .observations
             .read()
@@ -225,7 +237,7 @@ impl KnowledgeStore for InMemoryStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
-        hits
+        Ok(hits)
     }
 
     fn search_semantic_entities(
@@ -233,7 +245,7 @@ impl KnowledgeStore for InMemoryStore {
         query_embedding: &[f32],
         workspace: Option<&str>,
         limit: usize,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         let mut hits: Vec<SearchHit> = self
             .entities
             .read()
@@ -259,7 +271,7 @@ impl KnowledgeStore for InMemoryStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
-        hits
+        Ok(hits)
     }
 }
 
@@ -297,8 +309,8 @@ mod tests {
     fn in_memory_get_relations_search_traverse() {
         let store = InMemoryStore::new();
 
-        // 열린 세계(원칙 5): 없는 엔티티는 None (에러 아님).
-        assert!(store.get_entity("missing").is_none());
+        // 열린 세계(원칙 5): 없는 엔티티는 Ok(None) (부재는 에러가 아니다 - Err 는 고장 전용).
+        assert!(store.get_entity("missing").unwrap().is_none());
 
         for n in ["a", "b", "c"] {
             store.put_entity(ent(n)).unwrap();
@@ -326,15 +338,18 @@ mod tests {
             .unwrap();
 
         // 조회 + 관계(b는 a->b, b->c 두 관계에 등장).
-        assert_eq!(store.get_entity(&a).unwrap().canonical_name, "a");
-        assert_eq!(store.relations_of(&b).len(), 2);
+        assert_eq!(
+            store.get_entity(&a).unwrap().unwrap().canonical_name,
+            "a"
+        );
+        assert_eq!(store.relations_of(&b).unwrap().len(), 2);
 
         // 검색: 워크스페이스 스코프.
-        assert!(!store.search("rust", Some("ws1"), 10).is_empty());
-        assert!(store.search("rust", Some("other"), 10).is_empty());
+        assert!(!store.search("rust", Some("ws1"), 10).unwrap().is_empty());
+        assert!(store.search("rust", Some("other"), 10).unwrap().is_empty());
 
         // 순회: a -> b(1홉), c(2홉). 방향(from->to)을 따른다.
-        let hits = store.traverse(&a, 5, 100);
+        let hits = store.traverse(&a, 5, 100).unwrap();
         let by_id: HashMap<_, _> = hits.iter().map(|h| (h.id.clone(), h.depth)).collect();
         assert_eq!(by_id.get(&b), Some(&1));
         assert_eq!(by_id.get(&c), Some(&2));

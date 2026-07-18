@@ -204,7 +204,7 @@ impl CozoStore {
         workspace: Option<&str>,
         limit: usize,
         target: &SemanticTarget,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         let (index, relation, text_field, kind) =
             (target.index, target.relation, target.text_field, target.kind);
         let k = (limit * 4).max(16);
@@ -227,11 +227,9 @@ impl CozoStore {
                  :limit {limit}"
             ),
         };
-        let rows = match self.run(&script, p, false) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.rows
+        let rows = self.run(&script, p, false)?;
+        Ok(rows
+            .rows
             .iter()
             .filter_map(|r| {
                 let id = r.first()?.get_str()?;
@@ -245,45 +243,29 @@ impl CozoStore {
                     score: 1.0 - dist,
                 })
             })
-            .collect()
+            .collect())
     }
 
     /// 관측 로그에서 id 로 관측을 복원한다 (재도착 병합의 기준 + 검사/테스트용).
     /// data JSON 에서 provenance(attestation 목록)/assertions/derived_from/embedding 을 되살린다.
-    pub fn observation(&self, id: &str) -> Option<Observation> {
+    /// 부재는 `Ok(None)`, 백엔드 실패/행 손상은 `Err` - 병합 기준 읽기가 실패를 부재로
+    /// 오인하면 absorb 대신 덮어쓰기가 되어 attestation 이 파괴되므로(원칙 3) 반드시 구별한다.
+    pub fn observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
         let p = params(&[("id", id.to_string())]);
-        let rows = self
-            .run(
-                "?[content, data] := *observation{id: $id, content, data}",
-                p,
-                false,
-            )
-            .ok()?;
-        let row = rows.rows.into_iter().next()?;
-        let content = row.first()?.get_str()?.to_string();
-        let data: serde_json::Value = serde_json::from_str(row.get(1)?.get_str()?).ok()?;
-        let provenance: Vec<Provenance> =
-            serde_json::from_value(data.get("provenance")?.clone()).ok()?;
-        let assertions: Assertions = data
-            .get("assertions")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let derived_from: Vec<String> = data
-            .get("derived_from")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let embedding: Option<Vec<f32>> = data
-            .get("embedding")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        Some(Observation {
-            id: id.to_string(),
-            content,
-            provenance,
-            assertions,
-            derived_from,
-            embedding,
-        })
+        let rows = self.run(
+            "?[content, data] := *observation{id: $id, content, data}",
+            p,
+            false,
+        )?;
+        let Some(row) = rows.rows.into_iter().next() else {
+            return Ok(None);
+        };
+        match observation_from_row(id, &row) {
+            Some(obs) => Ok(Some(obs)),
+            None => Err(StoreError::Backend(format!(
+                "관측 행 복원 실패 (data JSON 손상 - 부재가 아니라 고장이다): {id}"
+            ))),
+        }
     }
 
     /// 벡터 인덱스가 없을 때의 브루트포스 시맨틱 검색. data JSON 의 embedding 을 로드해
@@ -295,7 +277,7 @@ impl CozoStore {
         workspace: Option<&str>,
         limit: usize,
         target: &SemanticTarget,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         let (relation, text_field, kind) = (target.relation, target.text_field, target.kind);
         let mut p = params(&[]);
         let script = match workspace {
@@ -309,10 +291,7 @@ impl CozoStore {
                 format!("?[id, text, data] := *{relation}{{id, {text_field}: text, data}}")
             }
         };
-        let rows = match self.run(&script, p, false) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
+        let rows = self.run(&script, p, false)?;
         let mut hits: Vec<SearchHit> = rows
             .rows
             .iter()
@@ -338,7 +317,7 @@ impl CozoStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
-        hits
+        Ok(hits)
     }
 }
 
@@ -377,6 +356,35 @@ const ENT_TARGET: SemanticTarget = SemanticTarget {
     text_field: "name",
     kind: SearchHitKind::Entity,
 };
+
+/// observation 행(content, data JSON)을 도메인 Observation 으로 복원한다.
+/// 필수 필드(content/provenance)가 깨지면 None - 호출자가 고장으로 승격한다.
+fn observation_from_row(id: &str, row: &[DataValue]) -> Option<Observation> {
+    let content = row.first()?.get_str()?.to_string();
+    let data: serde_json::Value = serde_json::from_str(row.get(1)?.get_str()?).ok()?;
+    let provenance: Vec<Provenance> =
+        serde_json::from_value(data.get("provenance")?.clone()).ok()?;
+    let assertions: Assertions = data
+        .get("assertions")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let derived_from: Vec<String> = data
+        .get("derived_from")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let embedding: Option<Vec<f32>> = data
+        .get("embedding")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    Some(Observation {
+        id: id.to_string(),
+        content,
+        provenance,
+        assertions,
+        derived_from,
+        embedding,
+    })
+}
 
 /// entity 행(id, etype, name, data JSON)을 도메인 Entity 로 복원한다. 조회/열거가 공유.
 /// data JSON 이 깨져도 스키마 컬럼(id/type/name)은 살리고 복합 필드만 비운다(방어적).
@@ -432,7 +440,8 @@ impl KnowledgeStore for CozoStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
         // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
         // (원칙 3: 로그 불변). 기존 행을 읽어 attestation/계보를 병합한 뒤 쓴다.
-        let obs = match self.observation(&obs.id) {
+        // 기준 읽기 실패는 전파한다 - 실패를 부재로 오인하면 absorb 대신 덮어쓰기가 된다.
+        let obs = match self.observation(&obs.id)? {
             Some(mut existing) => {
                 existing.absorb(obs);
                 existing
@@ -479,20 +488,31 @@ impl KnowledgeStore for CozoStore {
         Ok(())
     }
 
-    fn get_entity(&self, id: &str) -> Option<Entity> {
+    fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> {
         let p = params(&[("id", id.to_string())]);
-        let rows = self
-            .run(
-                "?[etype, name, data] := *entity{id: $id, etype, name, data}",
-                p,
-                false,
-            )
-            .ok()?;
-        let row = rows.rows.into_iter().next()?;
-        let etype = row.first()?.get_str()?.to_string();
-        let name = row.get(1)?.get_str()?.to_string();
-        let data_str = row.get(2)?.get_str()?;
-        Some(entity_from_parts(id.to_string(), etype, name, data_str))
+        let rows = self.run(
+            "?[etype, name, data] := *entity{id: $id, etype, name, data}",
+            p,
+            false,
+        )?;
+        let Some(row) = rows.rows.into_iter().next() else {
+            return Ok(None);
+        };
+        let (Some(etype), Some(name), Some(data_str)) = (
+            row.first().and_then(|v| v.get_str()),
+            row.get(1).and_then(|v| v.get_str()),
+            row.get(2).and_then(|v| v.get_str()),
+        ) else {
+            return Err(StoreError::Backend(format!(
+                "엔티티 행 복원 실패 (스키마 컬럼 손상 - 부재가 아니라 고장이다): {id}"
+            )));
+        };
+        Ok(Some(entity_from_parts(
+            id.to_string(),
+            etype.to_string(),
+            name.to_string(),
+            data_str,
+        )))
     }
 
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
@@ -563,14 +583,11 @@ impl KnowledgeStore for CozoStore {
         Ok(())
     }
 
-    fn relations_of(&self, entity_id: &str) -> Vec<Relation> {
+    fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError> {
         let p = params(&[("id", entity_id.to_string())]);
         let script = "?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}, src == $id\n\
                       ?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}, dst == $id";
-        let rows = match self.run(script, p, false) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
+        let rows = self.run(script, p, false)?;
         let mut rels: Vec<Relation> = rows
             .rows
             .iter()
@@ -586,10 +603,15 @@ impl KnowledgeStore for CozoStore {
             .collect();
         // id 정렬 - 행 순서가 응답에 새지 않게 명시한다 (InMemory 와 parity, 원칙 16).
         rels.sort_by(|a, b| a.id.cmp(&b.id));
-        rels
+        Ok(rels)
     }
 
-    fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
+    fn search(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>, StoreError> {
         let q = query.trim().to_lowercase();
         let mut hits: Vec<SearchHit> = Vec::new();
 
@@ -602,19 +624,20 @@ impl KnowledgeStore for CozoStore {
             }
             None => "?[id, name] := *entity{id, name}, str_includes(lowercase(name), $q)",
         };
-        if let Ok(rows) = self.run(ent_script, ent_params, false) {
-            for r in &rows.rows {
-                if let (Some(id), Some(name)) = (
-                    r.first().and_then(|v| v.get_str()),
-                    r.get(1).and_then(|v| v.get_str()),
-                ) {
-                    hits.push(SearchHit {
-                        kind: SearchHitKind::Entity,
-                        id: id.to_string(),
-                        snippet: name.to_string(),
-                        score: 1.0,
-                    });
-                }
+        // 부분 실패는 부분 결과가 아니라 Err 다 - 엔티티 질의만 실패한 채 관측 히트를
+        // 돌려주면 호출자가 "엔티티 쪽은 0건"으로 오독한다 (원칙 5: 부재 != 고장).
+        let rows = self.run(ent_script, ent_params, false)?;
+        for r in &rows.rows {
+            if let (Some(id), Some(name)) = (
+                r.first().and_then(|v| v.get_str()),
+                r.get(1).and_then(|v| v.get_str()),
+            ) {
+                hits.push(SearchHit {
+                    kind: SearchHitKind::Entity,
+                    id: id.to_string(),
+                    snippet: name.to_string(),
+                    score: 1.0,
+                });
             }
         }
 
@@ -629,19 +652,18 @@ impl KnowledgeStore for CozoStore {
                 "?[id, content] := *observation{id, content}, str_includes(lowercase(content), $q)"
             }
         };
-        if let Ok(rows) = self.run(obs_script, obs_params, false) {
-            for r in &rows.rows {
-                if let (Some(id), Some(content)) = (
-                    r.first().and_then(|v| v.get_str()),
-                    r.get(1).and_then(|v| v.get_str()),
-                ) {
-                    hits.push(SearchHit {
-                        kind: SearchHitKind::Observation,
-                        id: id.to_string(),
-                        snippet: content.chars().take(160).collect(),
-                        score: 0.7,
-                    });
-                }
+        let rows = self.run(obs_script, obs_params, false)?;
+        for r in &rows.rows {
+            if let (Some(id), Some(content)) = (
+                r.first().and_then(|v| v.get_str()),
+                r.get(1).and_then(|v| v.get_str()),
+            ) {
+                hits.push(SearchHit {
+                    kind: SearchHitKind::Observation,
+                    id: id.to_string(),
+                    snippet: content.chars().take(160).collect(),
+                    score: 0.7,
+                });
             }
         }
 
@@ -653,10 +675,15 @@ impl KnowledgeStore for CozoStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         hits.truncate(limit);
-        hits
+        Ok(hits)
     }
 
-    fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
+    fn traverse(
+        &self,
+        start_id: &str,
+        max_depth: usize,
+        limit: usize,
+    ) -> Result<Vec<TraverseHit>, StoreError> {
         let md = max_depth.max(1);
         // 재귀 Datalog: min 집계로 최단 홉 거리를 구하고 엔티티 메타를 조인.
         // :order 없이는 결과가 id(첫 컬럼) 순으로 나와 :limit 절단이 depth 를 무시했다
@@ -670,11 +697,9 @@ impl KnowledgeStore for CozoStore {
              :limit {limit}"
         );
         let p = params(&[("start", start_id.to_string())]);
-        let rows = match self.run(&script, p, false) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.rows
+        let rows = self.run(&script, p, false)?;
+        Ok(rows
+            .rows
             .iter()
             .filter_map(|r| {
                 Some(TraverseHit {
@@ -684,10 +709,10 @@ impl KnowledgeStore for CozoStore {
                     kind: r.get(3)?.get_str()?.to_string(),
                 })
             })
-            .collect()
+            .collect())
     }
 
-    fn all_entities(&self, workspace: Option<&str>) -> Vec<Entity> {
+    fn all_entities(&self, workspace: Option<&str>) -> Result<Vec<Entity>, StoreError> {
         // entity 테이블은 workspace 컬럼을 지니므로 스토어에서 바로 필터한다.
         let mut p = params(&[]);
         let script = match workspace {
@@ -697,11 +722,9 @@ impl KnowledgeStore for CozoStore {
             }
             None => "?[id, etype, name, data] := *entity{id, etype, name, data}",
         };
-        let rows = match self.run(script, p, false) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.rows
+        let rows = self.run(script, p, false)?;
+        Ok(rows
+            .rows
             .iter()
             .filter_map(|r| {
                 Some(entity_from_parts(
@@ -711,21 +734,19 @@ impl KnowledgeStore for CozoStore {
                     r.get(3)?.get_str()?,
                 ))
             })
-            .collect()
+            .collect())
     }
 
-    fn all_relations(&self, workspace: Option<&str>) -> Vec<Relation> {
+    fn all_relations(&self, workspace: Option<&str>) -> Result<Vec<Relation>, StoreError> {
         // relation 테이블엔 workspace 컬럼이 없다 - 워크스페이스는 data JSON 의
         // provenance.workspace 에 있으므로 복원 후 Rust 에서 필터한다.
-        let rows = match self.run(
+        let rows = self.run(
             "?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}",
             params(&[]),
             false,
-        ) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.rows
+        )?;
+        Ok(rows
+            .rows
             .iter()
             .filter_map(|r| {
                 relation_from_parts(
@@ -737,7 +758,7 @@ impl KnowledgeStore for CozoStore {
                 )
             })
             .filter(|rel| workspace.is_none_or(|ws| rel.provenance.workspace == ws))
-            .collect()
+            .collect())
     }
 
     fn search_semantic(
@@ -745,7 +766,7 @@ impl KnowledgeStore for CozoStore {
         query_embedding: &[f32],
         workspace: Option<&str>,
         limit: usize,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         // 벡터 인덱스가 켜져 있으면 네이티브 HNSW ANN 으로.
         if self.vector_dim.is_some() {
             return self.semantic_hnsw(query_embedding, workspace, limit, &OBS_TARGET);
@@ -759,7 +780,7 @@ impl KnowledgeStore for CozoStore {
         query_embedding: &[f32],
         workspace: Option<&str>,
         limit: usize,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         // 엔티티도 관측과 대칭: HNSW(ent_vec) 가속, 없으면 브루트포스 코사인.
         if self.vector_dim.is_some() {
             return self.semantic_hnsw(query_embedding, workspace, limit, &ENT_TARGET);
@@ -855,14 +876,17 @@ mod tests {
                 .unwrap();
 
             // 조회
-            assert_eq!(store.get_entity(&a).unwrap().canonical_name, "a");
+            assert_eq!(
+                store.get_entity(&a).unwrap().unwrap().canonical_name,
+                "a"
+            );
             // b 는 a->b, b->c 두 관계에 등장
-            assert_eq!(store.relations_of(&b).len(), 2);
+            assert_eq!(store.relations_of(&b).unwrap().len(), 2);
             // 검색
-            assert!(!store.search("rust", Some("ws1"), 10).is_empty());
-            assert!(store.search("rust", Some("other"), 10).is_empty());
+            assert!(!store.search("rust", Some("ws1"), 10).unwrap().is_empty());
+            assert!(store.search("rust", Some("other"), 10).unwrap().is_empty());
             // 순회: a -> b(1홉), c(2홉)
-            let hits = store.traverse(&a, 5, 100);
+            let hits = store.traverse(&a, 5, 100).unwrap();
             let ids: HashSet<_> = hits.iter().map(|h| h.id.clone()).collect();
             assert!(
                 ids.contains(&b) && ids.contains(&c),
@@ -874,7 +898,10 @@ mod tests {
         {
             let store2 = CozoStore::open(&dir).unwrap();
             let a = Entity::make_id("ws1", "a");
-            assert!(store2.get_entity(&a).is_some(), "data should persist");
+            assert!(
+                store2.get_entity(&a).unwrap().is_some(),
+                "data should persist"
+            );
         }
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -931,14 +958,14 @@ mod tests {
         };
         let check = |store: &dyn KnowledgeStore, label: &str| -> Vec<(usize, String)> {
             let root = Entity::make_id("ws1", "root");
-            let full = store.traverse(&root, 5, 100);
+            let full = store.traverse(&root, 5, 100).unwrap();
             let keys: Vec<(usize, String)> =
                 full.iter().map(|h| (h.depth, h.id.clone())).collect();
             let mut sorted = keys.clone();
             sorted.sort();
             assert_eq!(keys, sorted, "{label}: (depth, id) 순서여야 한다");
             // 절단은 가까운 이웃 우선 - id 최소인 손자(depth 2)가 depth-1 을 밀어내지 않는다.
-            let cut = store.traverse(&root, 5, 4);
+            let cut = store.traverse(&root, 5, 4).unwrap();
             assert!(
                 cut.iter().all(|h| h.depth == 1),
                 "{label}: limit 절단은 얕은 depth 우선이어야 한다: {cut:?}"
@@ -988,14 +1015,14 @@ mod tests {
             store.add_observation(make("host-a", 0.9, "o1")).unwrap();
             store.add_observation(make("host-b", 0.1, "o2")).unwrap();
 
-            let o = store.observation(&id).unwrap();
+            let o = store.observation(&id).unwrap().unwrap();
             assert_eq!(o.provenance.len(), 2, "attestation 누적: {:?}", o.provenance);
             assert_eq!(o.derived_from, vec!["o1".to_string(), "o2".to_string()]);
         }
         // 병합 결과가 재오픈 후에도 유지된다.
         {
             let store = CozoStore::open(&dir).unwrap();
-            let o = store.observation(&id).unwrap();
+            let o = store.observation(&id).unwrap().unwrap();
             assert_eq!(o.provenance.len(), 2);
         }
         let _ = std::fs::remove_dir_all(&dir);
@@ -1037,7 +1064,9 @@ mod tests {
                 .add_observation(obs_with_emb("other x", "ws2", [1.0, 0.0, 0.0]))
                 .unwrap();
 
-            let hits = store.search_semantic(&[1.0, 0.0, 0.0], Some("ws1"), 2);
+            let hits = store
+                .search_semantic(&[1.0, 0.0, 0.0], Some("ws1"), 2)
+                .unwrap();
             let ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
             assert_eq!(ids.len(), 2, "top-2 within ws1, got {ids:?}");
             assert!(
@@ -1051,7 +1080,9 @@ mod tests {
         // 재오픈: HNSW 인덱스와 벡터가 영속한다.
         {
             let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
-            let hits = store.search_semantic(&[1.0, 0.0, 0.0], Some("ws1"), 1);
+            let hits = store
+                .search_semantic(&[1.0, 0.0, 0.0], Some("ws1"), 1)
+                .unwrap();
             assert_eq!(hits.first().map(|h| h.id.clone()), Some(a.clone()));
         }
 
@@ -1112,7 +1143,9 @@ mod tests {
             // 다른 워크스페이스의 완전 일치 - ws1 질의에 나오면 안 된다.
             store.put_entity(ent_with_emb("other x", "ws2", [1.0, 0.0, 0.0])).unwrap();
 
-            let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 2);
+            let hits = store
+                .search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 2)
+                .unwrap();
             let ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
             assert_eq!(ids.len(), 2, "top-2 within ws1, got {ids:?}");
             assert!(
@@ -1127,7 +1160,9 @@ mod tests {
         // 재오픈: ent_vec 인덱스와 벡터가 영속한다.
         {
             let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
-            let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 1);
+            let hits = store
+                .search_semantic_entities(&[1.0, 0.0, 0.0], Some("ws1"), 1)
+                .unwrap();
             assert_eq!(hits.first().map(|h| h.id.clone()), Some(x.clone()));
         }
 
