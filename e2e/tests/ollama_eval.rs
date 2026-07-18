@@ -257,6 +257,23 @@ async fn ollama_models_use_mcp_tools() {
         }
     }
 
+    // 채점표를 리포트 산출물로도 남긴다 - target/eval-reports/index.html 목차에 실린다.
+    let mut md = String::from("# ollama tool-use eval 채점표\n\n| 모델 | 점수 |\n|---|---|\n");
+    for c in &cards {
+        md.push_str(&format!("| {} | {} |\n", c.model, c.score()));
+    }
+    md.push_str("\n## 시나리오 상세\n\n");
+    for c in &cards {
+        for p in &c.passed {
+            md.push_str(&format!("- [o] {} : {}\n", c.model, p));
+        }
+        for f in &c.failed {
+            md.push_str(&format!("- [x] {} : {}\n", c.model, f));
+        }
+    }
+    let report_path = supragnosis_e2e::report::write_report("ollama_eval.md", &md);
+    eprintln!("[report] {}", report_path.display());
+
     let _ = client.cancel().await;
     let _ = server.await;
 

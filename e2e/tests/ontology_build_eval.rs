@@ -31,7 +31,6 @@
 //!
 //! Ollama 가 안 떠 있으면 조용히 통과(skip)한다.
 
-use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -41,7 +40,7 @@ use serde_json::{json, Map, Value};
 use supragnosis_e2e::bridge::{
     chat, exec_tool, ollama_reachable, openai_tools, serve_engine, tool_calls, DEFAULT_BASE,
 };
-use supragnosis_e2e::report::report_dir;
+use supragnosis_e2e::report;
 use supragnosis_engine::Engine;
 use supragnosis_store::InMemoryStore;
 
@@ -520,12 +519,7 @@ draw();
 "##;
 
 fn write_outputs(results: &[BuildResult]) -> (std::path::PathBuf, std::path::PathBuf) {
-    let dir = report_dir();
-
-    let md_path = dir.join("ontology_build_eval.md");
-    std::fs::File::create(&md_path)
-        .and_then(|mut f| f.write_all(render_markdown(results).as_bytes()))
-        .expect("md 리포트 쓰기");
+    let md_path = report::write_report("ontology_build_eval.md", &render_markdown(results));
 
     let data: Map<String, Value> = results
         .iter()
@@ -535,10 +529,7 @@ fn write_outputs(results: &[BuildResult]) -> (std::path::PathBuf, std::path::Pat
         "__DATA__",
         &serde_json::to_string(&Value::Object(data)).expect("graph data json"),
     );
-    let html_path = dir.join("ontology_viewer.html");
-    std::fs::File::create(&html_path)
-        .and_then(|mut f| f.write_all(html.as_bytes()))
-        .expect("뷰어 쓰기");
+    let html_path = report::write_report("ontology_viewer.html", &html);
 
     (md_path, html_path)
 }
