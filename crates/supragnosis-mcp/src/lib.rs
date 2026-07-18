@@ -180,7 +180,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "지식(엔티티/관측)을 검색한다. 임베딩이 있으면 의미(벡터)+키워드 하이브리드로, 없으면 키워드 부분일치로 동작한다."
+        description = "지식(엔티티/관측)을 검색한다. 응답의 mode 가 실제 사용 표면을 알린다: hybrid(의미+키워드) 또는 keyword(키워드 전용 degrade - 이 모드의 빈 결과는 회상 실패일 수 있다)."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         match self.engine.search(
@@ -188,7 +188,28 @@ impl SupragnosisServer {
             req.workspace.as_deref(),
             req.limit.unwrap_or(20),
         ) {
-            Ok(hits) => to_json(&hits),
+            Ok(out) => {
+                let mut resp = serde_json::json!({ "mode": out.mode, "hits": out.hits });
+                // 열린 세계 가정(원칙 5): 0건은 부정이 아니라 미지다. keyword degrade 의
+                // 0건은 회상 실패 가능성이 더 높다는 것까지 알려 자기 교정을 돕는다(원칙 21).
+                if out.hits.is_empty() {
+                    resp["note"] = serde_json::Value::String(match out.mode {
+                        supragnosis_engine::SearchMode::Hybrid => {
+                            "no hits - absence is unknown, not a negation (open-world). \
+                             The knowledge may not be ingested or phrased differently; \
+                             try other terms or traverse from a related entity"
+                                .into()
+                        }
+                        supragnosis_engine::SearchMode::Keyword => {
+                            "no hits under keyword-only degrade (semantic recall UNAVAILABLE) \
+                             - a miss here is weak evidence of absence, not a negation. \
+                             Try exact terms the knowledge would contain"
+                                .into()
+                        }
+                    });
+                }
+                resp.to_string()
+            }
             Err(e) => store_failure_json(&e),
         }
     }
@@ -202,7 +223,27 @@ impl SupragnosisServer {
             req.max_depth.unwrap_or(3),
             req.limit.unwrap_or(100),
         ) {
-            Ok(hits) => to_json(&hits),
+            Ok(hits) => {
+                let mut resp = serde_json::json!({ "hits": hits });
+                // 0건의 원인을 구별해 알린다(원칙 5/21): 시작 엔티티 부재(미지)와
+                // "존재하지만 나가는 관계 없음"은 LLM 이 다르게 교정해야 할 상황이다.
+                if hits.is_empty() {
+                    resp["note"] = serde_json::Value::String(match self.engine.get_entity(&req.id)
+                    {
+                        Ok(Some(_)) => "start entity exists but reached no entities - it has \
+                                        no outgoing relations within max_depth (absence of \
+                                        edges is unknown, not a negation)"
+                            .into(),
+                        Ok(None) => "start entity id not found - unknown, not a negation \
+                                     (open-world). Find the id via search_knowledge first"
+                            .into(),
+                        Err(_) => "empty result; start entity could not be checked due to a \
+                                   storage failure - do not conclude absence"
+                            .into(),
+                    });
+                }
+                resp.to_string()
+            }
             Err(e) => store_failure_json(&e),
         }
     }

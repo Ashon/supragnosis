@@ -174,7 +174,7 @@ fn recall_per_query(
         .iter()
         .map(|q| {
             let gold = gold_ids(q, obs_ids);
-            let hits: Vec<SearchHit> = engine.search(q.query, Some(WS), k).unwrap();
+            let hits: Vec<SearchHit> = engine.search(q.query, Some(WS), k).unwrap().hits;
             let got: HashSet<String> = hits.iter().take(k).map(|h| h.id.clone()).collect();
             let found = gold.iter().filter(|g| got.contains(*g)).count();
             let r = found as f32 / gold.len() as f32;
@@ -218,7 +218,7 @@ fn graph_enrichment_recalls_neighbor() {
     let zeta = supragnosis_core::Entity::make_id(WS, "zeta backend");
 
     // 질의는 "alpha service" 를 시드로 잡는다("zeta backend" 는 부분일치가 아니다).
-    let hits = engine.search("alpha service", Some(WS), 5).unwrap();
+    let hits = engine.search("alpha service", Some(WS), 5).unwrap().hits;
     let ids: HashSet<String> = hits.iter().map(|h| h.id.clone()).collect();
 
     assert!(ids.contains(&alpha), "시드(alpha service)가 매치돼야 한다: {ids:?}");
@@ -253,8 +253,9 @@ fn graph_enrichment_recalls_neighbor() {
     let control_ids: HashSet<String> = control
         .search("alpha service", Some(WS), 5)
         .unwrap()
-        .iter()
-        .map(|h| h.id.clone())
+        .hits
+        .into_iter()
+        .map(|h| h.id)
         .collect();
     assert!(
         !control_ids.contains(&zeta),

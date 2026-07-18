@@ -134,10 +134,40 @@ async fn mcp_protocol_surface_end_to_end() {
         })
         .await
         .expect("search call");
-    let hits = tool_json(&res);
+    let found = tool_json(&res);
     assert!(
-        hits.as_array().is_some_and(|a| !a.is_empty()),
-        "검색은 적재한 지식을 찾아야 한다: {hits}"
+        found["hits"].as_array().is_some_and(|a| !a.is_empty()),
+        "검색은 적재한 지식을 찾아야 한다: {found}"
+    );
+    // 응답은 사용 표면(mode)을 표기한다 (원칙 16 4차) - 이 조립은 임베더가 있어 hybrid.
+    assert_eq!(
+        found["mode"].as_str(),
+        Some("hybrid"),
+        "mode 표기가 있어야 한다: {found}"
+    );
+
+    // --- 3b) 빈 검색 결과: 열린 세계 노트 동반 (원칙 5) --------------------------
+    // 하이브리드는 유사도 임계 없이 최근접을 돌려주므로, 0건은 빈 워크스페이스
+    // 스코프로 만든다 (분산 노드의 동기화 전 부분 지식과 같은 상황).
+    let res = client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "search_knowledge".into(),
+            arguments: args(json!({"query": "anything", "workspace": "empty-ws"})),
+            task: None,
+        })
+        .await
+        .expect("empty search call");
+    let empty = tool_json(&res);
+    assert!(
+        empty["hits"].as_array().is_some_and(Vec::is_empty),
+        "0건이어야 하는 질의: {empty}"
+    );
+    assert!(
+        empty["note"]
+            .as_str()
+            .is_some_and(|n| n.contains("not a negation")),
+        "빈 결과는 부재!=부정 노트를 동반해야 한다(LLM 오독 방지): {empty}"
     );
 
     // --- 4) get_entity: observe 가 돌려준 id 로 재조회 (관계 포함) ----------------
@@ -179,10 +209,28 @@ async fn mcp_protocol_surface_end_to_end() {
         .expect("traverse call");
     let reached = tool_json(&res);
     assert!(
-        reached
+        reached["hits"]
             .as_array()
             .is_some_and(|a| a.iter().any(|h| h["name"] == "rmcp")),
         "순회는 depends_on 이웃 rmcp 에 도달해야 한다: {reached}"
+    );
+
+    // --- 5b) 미지 id 순회: 빈 결과 + 원인 구별 노트 (원칙 5/21) ------------------
+    let res = client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "traverse".into(),
+            arguments: args(json!({"id": "does-not-exist"})),
+            task: None,
+        })
+        .await
+        .expect("traverse unknown call");
+    let empty_tr = tool_json(&res);
+    assert!(
+        empty_tr["note"]
+            .as_str()
+            .is_some_and(|n| n.contains("not found")),
+        "미지 시작점의 0건은 '시작 엔티티 부재' 노트를 동반해야 한다: {empty_tr}"
     );
 
     // --- 6) get_entity(미지 id): 열린 세계 - 에러가 아니라 unknown (원칙 5) -------
