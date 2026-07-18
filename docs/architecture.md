@@ -258,6 +258,9 @@ flowchart LR
 
 ### Resources (읽기 전용, 주소 지정)
 - `supragnosis://entity/{id}` - 엔티티
+- `supragnosis://observation/{id}` - 관측 (원문 + provenance + derived_from 계보).
+  검색 히트가 돌려준 관측 id 의 역참조 경로 - "이 답이 어디서 왔는가"에 답하는
+  질의 표면의 의무(원칙 2)와 관측 식별자의 역참조 가능성(원칙 14)을 이행한다.
 - `supragnosis://workspace/{ws}/schema` - 타입 스키마 (T-Box 는 워크스페이스 스코프 - 원칙 11)
 - `supragnosis://workspace/{ws}/summary` - 워크스페이스 지식 요약
 - `supragnosis://proposal/{id}` - 제안 (M3.5)
@@ -412,9 +415,11 @@ listen = "0.0.0.0:7420"
 
 **의도적 이연 (마일스톤 지정)**
 - 원칙 1/6(주장<->믿음 분리, 충돌 보존): 현재 `observe` 는 관측 저장 후 **인라인 단순 프로젝션**
-  (엔티티 kind 는 last-write-wins, 관계 provenance 는 단수 교체). 관측의 다중
+  (엔티티 kind 는 last-write-wins, canonical_name 은 first-write-wins 로 표기
+  변형이 별칭(aliases)에 축적되지 않음, 관계 provenance 는 단수 교체). 관측의 다중
   attestation 누적은 로그 계층에서 구현됨(위 원칙 3 항목) - **관계**의 다중
-  attestation 누적과 교체 가능한 해소 정책은 **M3**(해소 계층).
+  attestation 누적, 대표 표기/별칭 축적 규칙, 교체 가능한 해소 정책은
+  **M3**(해소 계층).
   참고: 구조화 주장(`assertions` - 엔티티 kind 포함)이 관측 로그에 원문 그대로
   동봉되므로, 로그 재프로젝션으로 어떤 해소 정책이든 소급 적용 가능하다 - 이
   이연이 파괴적이지 않은 근거.
@@ -433,3 +438,29 @@ listen = "0.0.0.0:7420"
 - 원칙 21(장기작업/사람중재): sync/consolidate의 MCP Tasks 노출, 병합/모순/승격 elicitation -> **M4**.
 - 원칙 22(작업의 부산물): 큐레이션을 질의 결과에 녹이는 UX/프롬프트 -> 도구 확장과 함께 점진.
 - 원칙 23(정본으로의 관문): 제안 워크플로 -> **M3.5**. 설계는 [proposal-workflow.md](proposal-workflow.md)에 완료, 다중 노드 수렴은 M4(HLC) 전제.
+
+**마일스톤 진입 조건 (이연의 상환 시점)**
+
+이연은 무기한이 아니다. 위 항목들 중 "지금은 도달 불가능한 상태라 무해"가 방어
+근거인 것들은, 그 상태를 도달 가능하게 만드는 마일스톤의 **착수 조건**으로
+상환한다:
+
+- **M3 (해소 계층) 착수 시**:
+  - 별칭 축적이 시작되는 순간 Cozo 키워드 검색의 별칭 매칭 parity 를 복구한다
+    (현재 InMemory 만 aliases 를 매칭 - aliases 가 항상 비어 있어 잠재 상태).
+  - canonical_name 대표 표기 선택을 도착 순서 무관의 결정적 규칙으로 바꾼다
+    (원칙 16 수렴).
+- **M4 (sync - store 의 엔진 외 기록자 등장) 착수 시**:
+  - provenance 최소 1개를 스키마 수준에서 강제한다. 현재는 엔진의 구성(construction)
+    으로만 보장되는데, 역직렬화/직접 기록 경로가 열리면 그 보장이 우회된다 (원칙 2).
+  - sync 로 수신한 관측의 trust_tier 는 발신자의 평가 기록으로 강등하고 수신
+    노드가 재평가한다 (원칙 18 - "등급은 수신자의 평가").
+  - 엔티티 행이 없는 관계 끝점(dangling)에 대한 traverse 의 어댑터 간 parity 를
+    맞춘다 (현재 InMemory 는 방출, Cozo 는 탈락 - 부분 적재 상태는 sync 가 처음
+    만든다).
+  - 무작위 순서/분할 주입 property test 를 가동한다 (원칙 16 - 기존 이연 항목의
+    재확인).
+- **원격 전송(`--http` 등) 도입 시**:
+  - 워크스페이스 스코프 없는 전역 질의를 로컬 신뢰 표면(stdio)에 한정하는
+    전송 인지 가드를 함께 도입한다 (원칙 17 - 현재는 stdio 가 유일 전송이라
+    문구 그대로 충족되나, 그 충족이 가드가 아니라 배치의 사실에 의존한다).
