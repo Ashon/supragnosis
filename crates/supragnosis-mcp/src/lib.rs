@@ -33,7 +33,8 @@ pub struct ObserveRequest {
     /// 출처 참조(파일 경로/URL/툴 등).
     #[serde(default)]
     pub source_ref: Option<String>,
-    /// 신뢰도 0.0~1.0 (생략 시 1.0). 범위 밖 값은 적재가 거부된다.
+    /// 신뢰도 0.0~1.0. 생략하면 무표기로 보존된다(기본값 치환 없음) - 평가가 불가하면
+    /// 생략하라. 범위 밖 값은 적재가 거부된다.
     #[serde(default)]
     #[schemars(range(min = 0.0, max = 1.0))]
     pub confidence: Option<f32>,

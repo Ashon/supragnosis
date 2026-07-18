@@ -51,8 +51,11 @@ pub struct Provenance {
     pub source_ref: Option<String>,
     /// 관측 시각 = **기록 시간(transaction time)** (원칙 4).
     pub observed_at: Timestamp,
-    /// 신뢰도 0.0~1.0.
-    pub confidence: f32,
+    /// 신뢰도 0.0~1.0. **무표기(None)는 보존한다** (원칙 2 4차 개정): 기본값으로
+    /// 치환하면 "주장하지 않음"과 "만점으로 주장함"의 구별이 소실된다(캡처 손실).
+    /// 무표기의 해석(기본 가중)은 해소 정책의 몫이다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
     /// 신뢰 등급 (원칙 18). 기본 `AgentExtracted`, 승격은 명시적으로만.
     #[serde(default)]
     pub trust_tier: TrustTier,
@@ -238,7 +241,8 @@ impl Observation {
 
 /// attestation 의 결정적 전순서 - 합집합의 정렬/중복 제거에 쓴다. 필드 전체를
 /// 비교하므로 "같음"은 완전 동일 attestation(릴레이 중복)뿐이고, 어떤 필드든 다르면
-/// (독립 재관측) 별개로 남는다. confidence 는 to_bits 로 전순서화한다.
+/// (독립 재관측) 별개로 남는다. confidence 는 to_bits 로 전순서화한다 - 무표기(None)는
+/// Option 의 Ord 로 어떤 표기 값보다 앞이며, 표기 1.0 과 구별되는 별개 attestation 이다.
 fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
     (
         a.host.as_str(),
@@ -246,7 +250,7 @@ fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
         a.workspace.as_str(),
         a.source_ref.as_deref(),
         a.observed_at,
-        a.confidence.to_bits(),
+        a.confidence.map(f32::to_bits),
         a.trust_tier,
     )
         .cmp(&(
@@ -255,7 +259,7 @@ fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
             b.workspace.as_str(),
             b.source_ref.as_deref(),
             b.observed_at,
-            b.confidence.to_bits(),
+            b.confidence.map(f32::to_bits),
             b.trust_tier,
         ))
 }
@@ -558,7 +562,7 @@ mod tests {
             workspace: "ws".into(),
             source_ref: None,
             observed_at: 1,
-            confidence: 1.0,
+            confidence: Some(1.0),
             trust_tier: TrustTier::default(),
         }
     }
@@ -664,12 +668,12 @@ mod tests {
     fn absorb_union_is_order_independent_and_idempotent() {
         let prov_a = Provenance {
             host: "host-a".into(),
-            confidence: 0.9,
+            confidence: Some(0.9),
             ..prov()
         };
         let prov_b = Provenance {
             host: "host-b".into(),
-            confidence: 0.1,
+            confidence: Some(0.1),
             ..prov()
         };
 
@@ -696,6 +700,83 @@ mod tests {
         ab.absorb(make(&prov_a, &["o1"]));
         assert_eq!(ab.provenance.len(), 2);
         assert_eq!(ab.derived_from.len(), 2);
+    }
+
+    /// 관측 로그 병합의 위상 독립 property (원칙 16): 같은 attestation 집합이 어떤
+    /// 도착 순서로, 릴레이 중복을 얼마나 섞어 들어와도 같은 로그로 수렴한다.
+    /// 무작위 순서는 seed 고정 LCG 로 생성해 재현 가능하다(벽시계/OS 난수 없음).
+    /// 그래프 프로젝션 계층의 property test 는 M4 이연(architecture 14절) - 이 테스트는
+    /// 이미 수렴 규범을 구현한 로그 계층을 상시 가드한다.
+    #[test]
+    fn absorb_converges_under_random_arrival_orders() {
+        const N: usize = 8;
+        // 서로 다른 attestation N개 - 무표기 confidence 포함(구별 보존 검증).
+        let sources: Vec<(Provenance, Vec<String>)> = (0..N)
+            .map(|i| {
+                let p = Provenance {
+                    host: format!("host-{i}"),
+                    confidence: if i % 3 == 0 { None } else { Some(i as f32 / N as f32) },
+                    observed_at: (100 - i) as u64,
+                    ..prov()
+                };
+                (p, vec![format!("src-{}", i % 4)])
+            })
+            .collect();
+        let make = |(p, d): &(Provenance, Vec<String>)| {
+            let mut o = Observation::new("same fact".into(), p.clone());
+            o.derived_from = d.clone();
+            o
+        };
+        // 로그 상태의 비교 가능 표현 (Provenance 는 PartialEq 미구현 - serde 값으로).
+        let state = |o: &Observation| {
+            serde_json::to_value((&o.provenance, &o.derived_from)).unwrap()
+        };
+        let fold = |order: &[usize]| {
+            let mut acc = make(&sources[order[0]]);
+            for &i in &order[1..] {
+                acc.absorb(make(&sources[i]));
+            }
+            acc
+        };
+
+        let baseline = state(&fold(&(0..N).collect::<Vec<_>>()));
+        // seed 고정 LCG 로 Fisher-Yates 셔플 + 앞머리를 복제해 릴레이 중복 시뮬레이션.
+        let mut lcg: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = |bound: usize| {
+            lcg = lcg
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((lcg >> 33) as usize) % bound
+        };
+        for round in 0..32 {
+            let mut order: Vec<usize> = (0..N).collect();
+            for i in (1..N).rev() {
+                order.swap(i, next(i + 1));
+            }
+            let dup = order[next(N)];
+            order.push(dup); // 릴레이 중복
+            assert_eq!(
+                state(&fold(&order)),
+                baseline,
+                "round {round}: 도착 순서 {order:?} 가 다른 로그를 만들면 수렴 위반"
+            );
+        }
+    }
+
+    /// 원칙 2 (4차): confidence 무표기는 만점 주장과 다른 정보로 보존된다 - 같은
+    /// 출처가 무표기로 한 번, 1.0 으로 한 번 주장하면 두 attestation 이 별개로 남는다.
+    #[test]
+    fn unstated_confidence_is_distinct_from_full_confidence() {
+        let unstated = Provenance { confidence: None, ..prov() };
+        let full = Provenance { confidence: Some(1.0), ..prov() };
+        let mut o = Observation::new("fact".into(), unstated);
+        o.absorb(Observation::new("fact".into(), full));
+        assert_eq!(
+            o.provenance.len(),
+            2,
+            "무표기와 만점 주장이 하나로 붕괴하면 캡처 손실: {:?}",
+            o.provenance
+        );
     }
 
     #[test]
