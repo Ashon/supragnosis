@@ -215,6 +215,41 @@ impl Engine {
                 )));
             }
         }
+        // 정형성 검증 (원칙 1: 적재 검증은 정형성까지만). 빈 지시어는 "다르게 표기된
+        // 주장"이 아니라 지시 대상이 없는 비주장이다 - 영구 로그에 실리기 전에 막는다.
+        // 표기 자체는 검열하지 않는다: 거부는 변형이 아니며, 정규화는 프로젝션의 일.
+        for e in &input.entities {
+            if e.name.trim().is_empty() {
+                return Err(ObserveError::Invalid(
+                    "엔티티 이름이 비어 있다. 이름 없는 엔티티 주장은 성립하지 않는다 - \
+                     지시할 이름을 넣거나 항목을 빼라"
+                        .into(),
+                ));
+            }
+            if e.kind.as_deref().is_some_and(|k| k.trim().is_empty()) {
+                return Err(ObserveError::Invalid(format!(
+                    "엔티티 '{}' 의 타입이 빈 문자열이다. 빈 타입 주장은 타입 미지정과 \
+                     다른, 성립하지 않는 주장이다 - 타입을 모르면 type 을 생략하라",
+                    e.name
+                )));
+            }
+        }
+        for r in &input.relations {
+            if r.from.trim().is_empty() || r.to.trim().is_empty() {
+                return Err(ObserveError::Invalid(format!(
+                    "관계의 끝점이 비어 있다 (from: {:?}, to: {:?}). 이름 없는 엔티티를 \
+                     가리키는 관계 주장은 성립하지 않는다 - 양끝 엔티티 이름을 넣어라",
+                    r.from, r.to
+                )));
+            }
+            if normalize_relation_kind(&r.kind).is_empty() {
+                return Err(ObserveError::Invalid(format!(
+                    "관계 타입이 비어 있다 (받은 값: {:?} - 정규화하면 빈 문자열). \
+                     depends_on / part_of 처럼 의미가 읽히는 타입을 넣어라",
+                    r.kind
+                )));
+            }
+        }
         let workspace = input
             .workspace
             .unwrap_or_else(|| self.default_workspace.clone());
@@ -799,6 +834,63 @@ mod tests {
         // 경계값은 유효하다.
         assert!(observe_with_conf(0.0).is_ok());
         assert!(observe_with_conf(1.0).is_ok());
+    }
+
+    /// 원칙 1 정형성 검증: 빈 지시어(이름/타입/끝점/kind)는 비주장이므로 영구 로그에
+    /// 실리기 전에 거부된다. 반면 표기 요동(공백 둘러싼 이름, 구분자 변형 kind)은
+    /// 내용이므로 통과한다 - 거부는 정형성까지, 표기는 검열하지 않는다.
+    #[test]
+    fn formless_assertions_are_rejected_before_logging() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
+        let observe = |entities: Vec<EntityInput>, relations: Vec<RelationInput>| {
+            engine.observe(ObserveInput {
+                content: "fact".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities,
+                relations,
+            })
+        };
+        let ent = |name: &str, kind: Option<&str>| EntityInput {
+            name: name.into(),
+            kind: kind.map(String::from),
+        };
+        let rel = |from: &str, kind: &str, to: &str| RelationInput {
+            from: from.into(),
+            kind: kind.into(),
+            to: to.into(),
+            valid_from: None,
+            valid_to: None,
+        };
+
+        // 비주장: 빈/공백 이름, 빈 타입, 빈 끝점, 정규화하면 빈 kind - 전부 거부.
+        for (label, entities, relations) in [
+            ("빈 이름", vec![ent("", None)], vec![]),
+            ("공백 이름", vec![ent("   ", None)], vec![]),
+            ("빈 타입", vec![ent("thing", Some(""))], vec![]),
+            ("빈 from", vec![], vec![rel("", "depends_on", "b")]),
+            ("공백 to", vec![], vec![rel("a", "depends_on", "  ")]),
+            ("빈 kind", vec![], vec![rel("a", "", "b")]),
+            ("구분자만 kind", vec![], vec![rel("a", "-- __ ", "b")]),
+        ] {
+            let err = observe(entities, relations)
+                .err()
+                .unwrap_or_else(|| panic!("{label} 은 거부돼야 한다"));
+            assert!(
+                matches!(err, ObserveError::Invalid(_)),
+                "{label}: 검증 오류여야 한다: {err}"
+            );
+        }
+
+        // 표기 요동은 내용이다 - 통과 (정규화/보존은 로그와 프로젝션의 일).
+        assert!(observe(
+            vec![ent("  Padded Name  ", Some("Tool"))],
+            vec![rel("a", "Depends-On", "b")],
+        )
+        .is_ok());
     }
 
     /// 원칙 4 캡처: 소급 관측("지난달까지 참이었다")의 유효구간이 관측 로그(주장)와
