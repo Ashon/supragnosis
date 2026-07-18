@@ -182,6 +182,81 @@ fn recall_per_query(
         .collect()
 }
 
+/// 그래프 문맥 보강: 어휘로도 의미로도 안 걸리는 이웃을 그래프 엣지로 회상한다.
+/// 임베더 없는 degrade 모드로 짜, 키워드(부분일치)도 이웃을 못 잡게 한 뒤 - 이웃은 오직
+/// 매치된 시드의 1-hop 관계로만 도달한다. 그래프 엣지가 회상을 추가한다는 것을 격리 증명한다.
+#[test]
+fn graph_enrichment_recalls_neighbor() {
+    // 임베더 없음(degrade): 시맨틱 경로 0, 키워드 부분일치만.
+    let engine = Engine::new(Arc::new(InMemoryStore::new()), "enrich-host", WS);
+
+    engine
+        .observe(ObserveInput {
+            content: "alpha service overview".into(),
+            workspace: Some(WS.into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "alpha service".into(), kind: Some("Component".into()) },
+                EntityInput { name: "zeta backend".into(), kind: Some("Component".into()) },
+            ],
+            relations: vec![RelationInput {
+                from: "alpha service".into(),
+                kind: "depends_on".into(),
+                to: "zeta backend".into(),
+            }],
+        })
+        .unwrap();
+
+    let alpha = supragnosis_core::Entity::make_id(WS, "alpha service");
+    let zeta = supragnosis_core::Entity::make_id(WS, "zeta backend");
+
+    // 질의는 "alpha service" 를 시드로 잡는다("zeta backend" 는 부분일치가 아니다).
+    let hits = engine.search("alpha service", Some(WS), 5);
+    let ids: HashSet<String> = hits.iter().map(|h| h.id.clone()).collect();
+
+    assert!(ids.contains(&alpha), "시드(alpha service)가 매치돼야 한다: {ids:?}");
+    // 핵심: zeta backend 는 어떤 어휘/의미 경로로도 안 걸리는데 그래프 이웃으로 회상된다.
+    assert!(
+        ids.contains(&zeta),
+        "그래프 이웃(zeta backend)이 보강으로 회상돼야 한다: {ids:?}"
+    );
+
+    // 이웃은 시드보다 약한 신호: 감쇠된 점수로 시드 아래에 랭크된다(순서 확인).
+    let alpha_rank = hits.iter().position(|h| h.id == alpha).unwrap();
+    let zeta_rank = hits.iter().position(|h| h.id == zeta).unwrap();
+    assert!(zeta_rank > alpha_rank, "이웃은 시드보다 아래여야 한다: {hits:?}");
+
+    // 관계가 없으면 이웃은 회상되지 않는다 - 회상을 만든 것이 그래프 엣지임을 격리.
+    let control = Engine::new(Arc::new(InMemoryStore::new()), "enrich-host", WS);
+    control
+        .observe(ObserveInput {
+            content: "alpha service overview".into(),
+            workspace: Some(WS.into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "alpha service".into(), kind: Some("Component".into()) },
+                EntityInput { name: "zeta backend".into(), kind: Some("Component".into()) },
+            ],
+            relations: vec![], // 관계 없음
+        })
+        .unwrap();
+    let control_ids: HashSet<String> = control
+        .search("alpha service", Some(WS), 5)
+        .iter()
+        .map(|h| h.id.clone())
+        .collect();
+    assert!(
+        !control_ids.contains(&zeta),
+        "관계가 없으면 zeta 는 회상되지 않아야 한다(그래프 엣지가 원인): {control_ids:?}"
+    );
+}
+
 #[test]
 fn recall_at_5_meets_baseline() {
     let engine = Engine::new(Arc::new(InMemoryStore::new()), "recall-host", WS)
