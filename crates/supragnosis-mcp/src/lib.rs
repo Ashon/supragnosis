@@ -182,7 +182,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "지식(엔티티/관측)을 검색한다. 응답의 mode 가 실제 사용 표면을 알린다: hybrid(의미+키워드) 또는 keyword(키워드 전용 degrade - 이 모드의 빈 결과는 회상 실패일 수 있다)."
+        description = "지식(엔티티/관측)을 검색한다. 응답의 mode 가 실제 사용 표면을 알린다: hybrid(의미+키워드) 또는 keyword(키워드 전용 degrade - 이 모드의 빈 결과는 회상 실패일 수 있다). score 는 순위 비교 전용이다 - 스케일이 mode 마다 달라 절대값은 신뢰도가 아니다."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         match self.engine.search(
