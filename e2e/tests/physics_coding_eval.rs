@@ -841,7 +841,7 @@ fn render_gallery(results: &[CodeResult]) -> String {
         };
         let frame = match &r.html {
             Some(h) => format!(
-                "<iframe sandbox=\"allow-scripts\" srcdoc=\"{}\"></iframe>",
+                "<div class=\"frame\"><iframe sandbox=\"allow-scripts\" srcdoc=\"{}\"></iframe></div>",
                 attr_escape(h)
             ),
             None => {
@@ -867,9 +867,14 @@ fn render_gallery(results: &[CodeResult]) -> String {
   figure {{ margin: 0; background: #171a20; border: 1px solid #2a2f38; border-radius: 8px; padding: 10px; }}
   figcaption {{ margin-bottom: 8px; font-size: 13px; }}
   figcaption span {{ color: #9aa5b1; margin-left: 8px; font-size: 12px; }}
-  iframe {{ width: 100%; height: 340px; border: 0; border-radius: 6px; background: #14161a; }}
-  .empty {{ height: 340px; display: grid; place-items: center; color: #7f6a6a; font-size: 12.5px;
-           border: 1px dashed #3a2f2f; border-radius: 6px; padding: 12px; text-align: center; }}
+  /* 데모 캔버스(500~600px 높이)가 잘리지 않게: 2 배 가상 뷰포트를 0.5 로 축소해 담는다. */
+  .frame {{ width: 100%; aspect-ratio: 3 / 2; overflow: hidden; position: relative;
+           border-radius: 6px; background: #14161a; }}
+  .frame iframe {{ width: 200%; height: 200%; transform: scale(0.5); transform-origin: 0 0;
+                  border: 0; position: absolute; left: 0; top: 0; }}
+  .empty {{ aspect-ratio: 3 / 2; display: grid; place-items: center; color: #7f6a6a;
+           font-size: 12.5px; border: 1px dashed #3a2f2f; border-radius: 6px; padding: 12px;
+           text-align: center; }}
 </style>
 <h1>physics coding eval - 데모 갤러리</h1>
 <p class="sub">bare = 과제만 / delegated = 공통 온톨로지를 MCP 로 조회. "설계 준수 n/7"은
