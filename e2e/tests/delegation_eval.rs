@@ -382,6 +382,19 @@ impl ConditionResult {
 
 // --- 조건 실행 ---------------------------------------------------------------
 
+/// baseline 프롬프트 템플릿. {corpus} = 핵심+잡음 사실 목록, {question} = 각 질문.
+/// 실행과 리포트가 같은 원문을 쓴다(재현 가능한 문제 정의).
+const BASELINE_PROMPT: &str = "You are answering questions about a software project using the \
+project notes below.\nAnswer concisely in one sentence. If the notes do not contain the \
+answer, reply exactly: I don't know.\n\nPROJECT NOTES:\n{corpus}\n\nQUESTION: {question}";
+
+/// delegated 프롬프트 템플릿. {question} 만 치환된다.
+const DELEGATED_PROMPT: &str = "You are answering questions about a software project. A \
+knowledge base is available through the provided tools. Use search_knowledge to look up \
+relevant facts before answering; you may also use get_entity and traverse. Answer concisely \
+in one sentence based only on what the tools return. If the knowledge base does not contain \
+the answer, reply exactly: I don't know.\n\nQUESTION: {question}";
+
 /// baseline: 코퍼스 전체를 프롬프트에 주입하고 단일턴으로 질문한다.
 async fn run_baseline(
     http: &reqwest::Client,
@@ -391,12 +404,9 @@ async fn run_baseline(
     q: &Question,
     run: usize,
 ) -> QuestionResult {
-    let prompt = format!(
-        "You are answering questions about a software project using the project notes below.\n\
-         Answer concisely in one sentence. If the notes do not contain the answer, reply \
-         exactly: I don't know.\n\nPROJECT NOTES:\n{corpus_text}\n\nQUESTION: {}",
-        q.text
-    );
+    let prompt = BASELINE_PROMPT
+        .replace("{corpus}", corpus_text)
+        .replace("{question}", q.text);
     let messages = json!([{ "role": "user", "content": prompt }]);
     match chat(http, base, model, &messages, None).await {
         Ok((msg, u)) => {
@@ -438,14 +448,7 @@ async fn run_delegated(
     q: &Question,
     run: usize,
 ) -> QuestionResult {
-    let prompt = format!(
-        "You are answering questions about a software project. A knowledge base is available \
-         through the provided tools. Use search_knowledge to look up relevant facts before \
-         answering; you may also use get_entity and traverse. Answer concisely in one sentence \
-         based only on what the tools return. If the knowledge base does not contain the \
-         answer, reply exactly: I don't know.\n\nQUESTION: {}",
-        q.text
-    );
+    let prompt = DELEGATED_PROMPT.replace("{question}", q.text);
     let mut messages = json!([{ "role": "user", "content": prompt }]);
     let mut tool_log = Vec::new();
     let (mut pt_sum, mut ct_sum) = (0u64, 0u64);
@@ -608,6 +611,17 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
             c.mean_tokens_per_question(),
             tpc
         ));
+    }
+
+    // 문제 정의: 전 모델에 동일하게 쓰인 프롬프트와 질문 원문.
+    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
+    md.push_str("baseline ({corpus} = 핵심+잡음 사실 목록 주입):\n\n```text\n");
+    md.push_str(BASELINE_PROMPT);
+    md.push_str("\n```\n\ndelegated (도구 스키마는 MCP 표면에서 자동 변환되어 별도 전달):\n\n```text\n");
+    md.push_str(DELEGATED_PROMPT);
+    md.push_str("\n```\n\n질문 원문:\n\n");
+    for q in questions() {
+        md.push_str(&format!("- {}: {}\n", q.name, q.text));
     }
 
     // 정성 트랜스크립트.

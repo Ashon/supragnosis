@@ -169,6 +169,19 @@ const TASK: &str = "Implement a small 2D physics demo as ONE self-contained HTML
     No external libraries. Reply with a single ```html code block containing the complete file \
     and nothing else after it.";
 
+/// delegated 조건에서 TASK 뒤에 붙는 추가 지시(지식 베이스 조회 지시).
+const DELEGATED_SUFFIX: &str = "\n\nIMPORTANT: your team's agreed design decisions for this \
+demo (step order, integration method, exact constants, collision and impulse formulas, \
+rendering spec) are stored in the knowledge base. Before writing code, use the \
+search_knowledge tool (several queries, e.g. \"step order\", \"impulse\", \"restitution\", \
+\"gravity\", \"rendering\") to retrieve the design, then follow it exactly in your \
+implementation.";
+
+/// 수리 라운드 피드백 틀. {issues} = 자동 채점기가 찾은 실패 항목 목록.
+const FEEDBACK_TEMPLATE: &str = "Your demo was tested automatically and it FAILED:\n- \
+{issues}\n\nFix the problem and reply again with ONE complete ```html code block containing \
+the whole corrected file (not a diff).";
+
 /// 한 (모델, 조건) 실행 결과. 수리 라운드가 있으면 최종 라운드의 평가가 실린다.
 struct CodeResult {
     model: String,
@@ -611,12 +624,7 @@ impl Evaluation {
                 }
             }
         }
-        format!(
-            "Your demo was tested automatically and it FAILED:\n- {}\n\nFix the problem and \
-             reply again with ONE complete ```html code block containing the whole corrected \
-             file (not a diff).",
-            issues.join("\n- ")
-        )
+        FEEDBACK_TEMPLATE.replace("{issues}", &issues.join("\n- "))
     }
 }
 
@@ -692,14 +700,7 @@ async fn run_with_repair(
     tmp: &std::path::Path,
 ) -> CodeResult {
     let initial_prompt = if bridge.is_some() {
-        format!(
-            "{TASK}\n\nIMPORTANT: your team's agreed design decisions for this demo (step \
-             order, integration method, exact constants, collision and impulse formulas, \
-             rendering spec) are stored in the knowledge base. Before writing code, use the \
-             search_knowledge tool (several queries, e.g. \"step order\", \"impulse\", \
-             \"restitution\", \"gravity\", \"rendering\") to retrieve the design, then follow \
-             it exactly in your implementation."
-        )
+        format!("{TASK}{DELEGATED_SUFFIX}")
     } else {
         TASK.to_string()
     };
@@ -918,6 +919,15 @@ fn render_markdown(results: &[CodeResult]) -> String {
             r.tokens
         ));
     }
+    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
+    md.push_str("과제 (bare 는 이것만 받는다):\n\n```text\n");
+    md.push_str(TASK);
+    md.push_str("\n```\n\ndelegated 추가 지시:\n\n```text\n");
+    md.push_str(DELEGATED_SUFFIX.trim_start());
+    md.push_str("\n```\n\n수리 라운드 피드백 틀 ({issues} = 자동 채점기의 실패 항목):\n\n```text\n");
+    md.push_str(FEEDBACK_TEMPLATE);
+    md.push_str("\n```\n");
+
     md.push_str("\n## 라운드 로그 (수리 수렴 과정)\n\n");
     for r in results {
         md.push_str(&format!(
