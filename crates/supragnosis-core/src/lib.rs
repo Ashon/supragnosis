@@ -175,7 +175,11 @@ pub struct Observation {
     /// (선택) 의미 검색용 임베딩 벡터 (원칙 19: 확률적 경계).
     /// **콘텐츠 주소 id 계산에 포함하지 않는다** - 임베딩은 회상을 넓히는 로컬 보조일 뿐
     /// 내용 정체성이 아니며, 노드마다 다른 모델을 써도 정체성/수렴이 흔들리지 않는다.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// serde 에서 완전히 제외한다(원칙 21, Entity.embedding 과 대칭): 관측이 MCP
+    /// 리소스(observation/{id})로 나갈 때 수백 개 float 가 LLM 컨텍스트를 오염시키면
+    /// 안 된다. 영속은 스토어 어댑터가 수제 인코딩으로 담당한다.
+    #[serde(skip)]
     pub embedding: Option<Vec<f32>>,
 }
 
@@ -397,6 +401,10 @@ pub struct TraverseHit {
 ///   응답에 새면 계약 위반이다.
 pub trait KnowledgeStore: Send + Sync {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
+    /// 관측 로그에서 id 로 관측을 복원한다 - 검색 히트/파생 계보의 역참조 경로이자
+    /// (원칙 2/14: id 를 아는 자는 실체와 provenance 에 도달할 수 있다) 재도착 병합의
+    /// 기준 읽기. 없는 id 는 `Ok(None)`, 백엔드 실패는 `Err`.
+    fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError>;
     /// 없는 id 는 `Ok(None)`(부재, 원칙 5의 미지) - 백엔드 실패만 `Err`.
     fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError>;
     /// entity.id 기준 upsert.

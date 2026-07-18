@@ -274,13 +274,14 @@ async fn mcp_resource_graph_surface() {
     let client = ().serve(client_io).await.expect("client handshake");
 
     // 지식 적재: supragnosis --depends_on--> rmcp (노드 2, 엣지 1).
-    client
+    let observed = client
         .call_tool(CallToolRequestParams {
             meta: None,
             name: "observe".into(),
             arguments: args(json!({
                 "content": "supragnosis depends on rmcp",
                 "workspace": "ws",
+                "on_behalf_of": "ashon",
                 "entities": [
                     {"name": "supragnosis", "type": "Project"},
                     {"name": "rmcp", "type": "Tool"}
@@ -291,6 +292,10 @@ async fn mcp_resource_graph_surface() {
         })
         .await
         .expect("observe call");
+    let observation_id = tool_json(&observed)["observation_id"]
+        .as_str()
+        .expect("observation id")
+        .to_string();
 
     // --- 1) list_resources: 기본 워크스페이스 그래프 리소스가 노출된다 ---------------
     let resources = client.list_all_resources().await.expect("list resources");
@@ -350,7 +355,44 @@ async fn mcp_resource_graph_surface() {
     );
     assert_eq!(graph["edges"][0]["type"].as_str(), Some("depends_on"));
 
-    // --- 4) 미지 URI: 부재는 에러로(원칙 5의 자기 교정 힌트를 담아) ------------------
+    // --- 4) 관측 역참조 (원칙 2/14): 검색 히트/observe 가 준 id 로 원문+출처+계보 조회 --
+    let read = client
+        .read_resource(ReadResourceRequestParams {
+            meta: None,
+            uri: format!("supragnosis://observation/{observation_id}"),
+        })
+        .await
+        .expect("read observation resource");
+    let text = match read.contents.first().expect("one content") {
+        ResourceContents::TextResourceContents { text, .. } => text.clone(),
+        other => panic!("expected text resource contents, got {other:?}"),
+    };
+    let obs: Value = serde_json::from_str(&text).expect("observation resource is JSON");
+    assert_eq!(
+        obs["content"].as_str(),
+        Some("supragnosis depends on rmcp"),
+        "관측 원문이 와야 한다: {obs}"
+    );
+    assert_eq!(
+        obs["provenance"][0]["on_behalf_of"].as_str(),
+        Some("ashon"),
+        "provenance(위임 사슬 포함)가 와야 한다 - '이 답이 어디서 왔는가'의 종점: {obs}"
+    );
+    assert!(
+        obs.get("embedding").is_none(),
+        "관측 리소스에 임베딩 벡터가 노출되면 안 된다(원칙 21): {obs}"
+    );
+
+    // --- 5) 미지 관측 id: 부재는 not_found (열린 세계 힌트를 담아) -------------------
+    let missing = client
+        .read_resource(ReadResourceRequestParams {
+            meta: None,
+            uri: "supragnosis://observation/does-not-exist".into(),
+        })
+        .await;
+    assert!(missing.is_err(), "미지 관측 id 는 not_found 에러여야 한다");
+
+    // --- 6) 미지 URI: 부재는 에러로(원칙 5의 자기 교정 힌트를 담아) ------------------
     let bad = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
