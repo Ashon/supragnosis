@@ -179,6 +179,26 @@ impl BuildResult {
 
 // --- 실행 --------------------------------------------------------------------
 
+/// 청크 프롬프트 템플릿. {i}/{n} = 청크 번호, {note} = 설계 노트, {hint} = 스키마 힌트.
+/// 실행과 리포트가 같은 원문을 쓴다.
+const CHUNK_PROMPT: &str = "You are implementing a simple 2D physics engine. Knowledge \
+management is a by-product of your work: as you read each design note, you record it in the \
+knowledge base.\n\nDesign note {i}/{n}:\n{note}\n\nCall the observe tool now with:\n\
+- content: the note text\n\
+- entities: the key concepts, components, algorithms or quantities the note mentions (each \
+with a name and a type such as Concept, Component, Algorithm, Quantity)\n\
+- relations: typed links between those entities that the note supports (for example part_of, \
+uses, computes, produces, applies_to)\n\
+Extract only what this note supports.{hint}";
+
+/// 스키마 힌트(EVAL_SCHEMA_HINT=1, 기본). 힌트 없이는 소형 모델이 필드명을 지어내
+/// 전멸했던 실측이 헤더 주석에 있다.
+const SCHEMA_HINT: &str = "\n\nThe observe tool expects exactly this argument shape (field \
+names matter):\n{\"content\": \"...\", \"entities\": [{\"name\": \"rigid body\", \
+\"type\": \"Concept\"}], \"relations\": [{\"from\": \"integrator\", \"type\": \
+\"uses\", \"to\": \"rigid body\"}]}\nUse exactly the field names name, type, from, to. \
+relations must reference entity names from the entities list.";
+
 /// 한 모델에게 노트 전체를 청크로 먹이며 온톨로지를 짓게 한다.
 async fn build_ontology(
     http: &reqwest::Client,
@@ -198,30 +218,12 @@ async fn build_ontology(
     let schema_hint = std::env::var("EVAL_SCHEMA_HINT").as_deref() != Ok("0");
     let mut chunks = Vec::new();
     for (i, note) in NOTES.iter().enumerate() {
-        let hint = if schema_hint {
-            "\n\nThe observe tool expects exactly this argument shape (field names matter):\n\
-             {\"content\": \"...\", \
-             \"entities\": [{\"name\": \"rigid body\", \"type\": \"Concept\"}], \
-             \"relations\": [{\"from\": \"integrator\", \"type\": \"uses\", \"to\": \"rigid body\"}]}\n\
-             Use exactly the field names name, type, from, to. relations must reference \
-             entity names from the entities list."
-        } else {
-            ""
-        };
-        let prompt = format!(
-            "You are implementing a simple 2D physics engine. Knowledge management is a \
-             by-product of your work: as you read each design note, you record it in the \
-             knowledge base.\n\nDesign note {}/{}:\n{note}\n\nCall the observe tool now with:\n\
-             - content: the note text\n\
-             - entities: the key concepts, components, algorithms or quantities the note \
-             mentions (each with a name and a type such as Concept, Component, Algorithm, \
-             Quantity)\n\
-             - relations: typed links between those entities that the note supports \
-             (for example part_of, uses, computes, produces, applies_to)\n\
-             Extract only what this note supports.{hint}",
-            i + 1,
-            NOTES.len()
-        );
+        let hint = if schema_hint { SCHEMA_HINT } else { "" };
+        let prompt = CHUNK_PROMPT
+            .replace("{i}", &(i + 1).to_string())
+            .replace("{n}", &NOTES.len().to_string())
+            .replace("{note}", note)
+            .replace("{hint}", hint);
         let messages = json!([{ "role": "user", "content": prompt }]);
         let outcome = match chat(http, base, model, &messages, Some(&tools)).await {
             Err(e) => ChunkLog {
@@ -344,6 +346,16 @@ fn render_markdown(results: &[BuildResult]) -> String {
             if miss.is_empty() { "없음".to_string() } else { miss.join(", ") }
         ));
     }
+    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
+    md.push_str("청크 템플릿 ({i}/{n} = 청크 번호, {note} = 설계 노트, {hint} = 아래 힌트):\n\n```text\n");
+    md.push_str(CHUNK_PROMPT);
+    md.push_str("\n```\n\n스키마 힌트 (EVAL_SCHEMA_HINT=1 기본, 0 이면 생략):\n\n```text\n");
+    md.push_str(SCHEMA_HINT);
+    md.push_str("\n```\n\n설계 노트 원문:\n\n");
+    for (i, note) in NOTES.iter().enumerate() {
+        md.push_str(&format!("{}. {}\n", i + 1, note));
+    }
+
     md.push_str("\n## 청크별 적재 로그\n");
     for r in results {
         md.push_str(&format!("\n### {}\n\n", r.model));

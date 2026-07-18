@@ -168,6 +168,12 @@ async fn eval_model(
     card
 }
 
+/// 에이전트 루프 턴 프롬프트(실행/리포트 단일 출처).
+const AGENT_TURN1: &str = "Save this fact to the knowledge base: the project uses CozoDB as \
+its embedded storage engine.";
+const AGENT_TURN2: &str = "Now search the knowledge base to find which database the project \
+uses.";
+
 /// observe -> (실행) -> search -> (실행) 왕복. 적재한 사실이 검색으로 되돌아오면 통과.
 async fn agent_loop(
     http: &reqwest::Client,
@@ -176,11 +182,7 @@ async fn agent_loop(
     client: &RunningService<RoleClient, ()>,
     tools: &Value,
 ) -> Result<(), String> {
-    let mut messages = json!([{
-        "role": "user",
-        "content": "Save this fact to the knowledge base: the project uses CozoDB as its \
-                    embedded storage engine.",
-    }]);
+    let mut messages = json!([{ "role": "user", "content": AGENT_TURN1 }]);
 
     // 1) 모델이 observe 를 부르길 기대 -> 실제 실행.
     let (msg1, _) = chat(http, base, model, &messages, Some(tools)).await?;
@@ -196,10 +198,7 @@ async fn agent_loop(
     // 2) 이제 저장한 걸 검색하게 한다 -> search_knowledge 기대 -> 실제 실행.
     push_message(
         &mut messages,
-        json!({
-            "role": "user",
-            "content": "Now search the knowledge base to find which database the project uses.",
-        }),
+        json!({ "role": "user", "content": AGENT_TURN2 }),
     );
     let (msg2, _) = chat(http, base, model, &messages, Some(tools)).await?;
     let calls2 = tool_calls(&msg2);
@@ -262,6 +261,13 @@ async fn ollama_models_use_mcp_tools() {
     for c in &cards {
         md.push_str(&format!("| {} | {} |\n", c.model, c.score()));
     }
+    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
+    for sc in scenarios() {
+        md.push_str(&format!("- {}: \"{}\"\n", sc.name, sc.user));
+    }
+    md.push_str(&format!("- agent-loop 1턴: \"{AGENT_TURN1}\"\n"));
+    md.push_str(&format!("- agent-loop 2턴: \"{AGENT_TURN2}\"\n"));
+
     md.push_str("\n## 시나리오 상세\n\n");
     for c in &cards {
         for p in &c.passed {
