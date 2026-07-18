@@ -65,6 +65,10 @@ impl EmbeddingProvider for HashingEmbedder {
         self.dims
     }
 
+    fn id(&self) -> String {
+        format!("hashing-{}", self.dims)
+    }
+
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         Ok(texts.iter().map(|t| self.embed_text(t)).collect())
     }

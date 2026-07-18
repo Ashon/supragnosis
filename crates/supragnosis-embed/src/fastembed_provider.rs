@@ -49,6 +49,10 @@ impl EmbeddingProvider for FastEmbedProvider {
         self.dims
     }
 
+    fn id(&self) -> String {
+        format!("bge-small-en-v1.5-{}", self.dims)
+    }
+
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         let docs: Vec<&str> = texts.to_vec();
         self.model

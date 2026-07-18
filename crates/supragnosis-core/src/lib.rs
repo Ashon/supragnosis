@@ -416,6 +416,11 @@ pub enum StoreError {
 pub trait EmbeddingProvider: Send + Sync {
     /// 임베딩 벡터의 차원.
     fn dimensions(&self) -> usize;
+    /// 임베더의 안정 식별자 (모델명 + 차원, 예: "hashing-256", "bge-small-en-v1.5-384").
+    /// 저장소가 벡터 인덱스와 함께 기록해, 다른 임베더로 재오픈하는 교체를 감지한다 -
+    /// 모델이 다르면 벡터 공간이 달라 구/신 벡터를 한 인덱스에 섞으면 유사도가
+    /// 무의미해지기 때문이다 (원칙 19: 어댑터 교체가 코어 정확성을 해치면 안 된다).
+    fn id(&self) -> String;
     /// 텍스트 배치를 임베딩한다. 입력 순서와 출력 순서는 1:1 대응한다.
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError>;
     /// 단일 텍스트 임베딩 편의 메서드.
