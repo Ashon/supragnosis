@@ -289,10 +289,12 @@ impl Engine {
         })
     }
 
-    /// 하이브리드 검색: 키워드(부분일치) + 벡터(의미) 결과를 RRF 로 융합한다. 벡터 경로는
-    /// 관측 본문과 엔티티 이름 **양쪽**을 시맨틱으로 회상한다 - 관측을 어휘로 언급하지 않는
-    /// 엔티티 노드도 이름의 의미로 도달한다. 임베더가 없거나 질의 임베딩에 실패하면 키워드
-    /// 결과만 돌려준다(원칙 19: degrade). 벡터는 회상을 넓히고 확정 랭킹은 결정적 융합으로 한다.
+    /// 하이브리드 검색: 키워드(부분일치) + 벡터(의미) 결과를 RRF 로 융합하고, 상위 엔티티
+    /// 히트의 그래프 이웃으로 보강한다. 벡터 경로는 관측 본문과 엔티티 이름 **양쪽**을
+    /// 시맨틱으로 회상하고(관측을 어휘로 언급하지 않는 엔티티 노드도 이름의 의미로 도달),
+    /// 보강 단계는 매치된 엔티티의 1-hop 이웃을 채워 어휘/의미로는 안 걸리지만 그래프상
+    /// 인접한 노드까지 회상한다(architecture 4.2 "그래프 문맥 보강"). 임베더가 없거나 질의
+    /// 임베딩에 실패하면 키워드 결과만 융합한다(원칙 19: degrade). 확정 랭킹은 결정적이다.
     pub fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
         let keyword = self.store.search(query, workspace, limit);
 
@@ -306,11 +308,93 @@ impl Engine {
             None => (Vec::new(), Vec::new()),
         };
 
-        // 시맨틱 회상이 전혀 없으면(임베더 없음/미적재) 키워드 랭킹을 그대로 둔다.
-        if semantic_obs.is_empty() && semantic_ent.is_empty() {
-            return keyword;
+        // 시맨틱 회상이 없으면(임베더 없음/미적재) 키워드 랭킹을 그대로, 있으면 RRF 융합.
+        let fused = if semantic_obs.is_empty() && semantic_ent.is_empty() {
+            keyword
+        } else {
+            fuse_rrf(&[keyword, semantic_obs, semantic_ent], limit)
+        };
+
+        // 그래프 문맥 보강: 상위 엔티티 히트의 1-hop 이웃을 여분 슬롯에 채운다.
+        self.enrich_with_graph(fused, workspace, limit)
+    }
+
+    /// 그래프 문맥 보강: 상위 엔티티 히트(시드)의 1-hop 이웃을 결과에 더한다. 이웃은 시드의
+    /// 직접 매치보다 약한 신호이므로 시드 점수를 감쇠해 랭킹한다 - 1차 히트가 이웃보다 강하면
+    /// 위에 남고, 강한 시드의 이웃은 약한 1차 히트보다 위로 올 수 있다(그래프 근접성 반영).
+    /// 유계다: 시드 수/해소 이웃 수를 상한으로 잡아 활발한 노드가 결과를 뒤덮지 못한다.
+    /// 결정적이다(원칙 16): 이웃 점수를 도달한 시드들의 최댓값으로 잡아 순회 순서에 무관하고,
+    /// 최종 정렬을 (점수 desc, id asc)로 못박는다.
+    fn enrich_with_graph(
+        &self,
+        mut results: Vec<SearchHit>,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Vec<SearchHit> {
+        // 이미 결과에 있는 (kind, id) - 이웃 중복/1차 히트 재추가를 막는다.
+        let present: HashSet<(SearchHitKind, String)> =
+            results.iter().map(|h| (h.kind, h.id.clone())).collect();
+
+        // 상위 엔티티 히트를 시드로 1-hop 이웃 점수를 모은다. 여러 시드에서 도달하면 최댓값
+        // (도달 순서 무관 - 결정성). 관계의 반대편 엔드포인트가 이웃이다.
+        let mut neighbor_score: HashMap<String, f32> = HashMap::new();
+        for seed in results
+            .iter()
+            .filter(|h| h.kind == SearchHitKind::Entity)
+            .take(GRAPH_ENRICH_SEEDS)
+        {
+            let contrib = seed.score * GRAPH_ENRICH_DECAY;
+            for rel in self.store.relations_of(&seed.id) {
+                let neighbor = if rel.from == seed.id {
+                    rel.to
+                } else if rel.to == seed.id {
+                    rel.from
+                } else {
+                    continue;
+                };
+                if present.contains(&(SearchHitKind::Entity, neighbor.clone())) {
+                    continue;
+                }
+                let e = neighbor_score.entry(neighbor).or_insert(0.0);
+                *e = e.max(contrib);
+            }
         }
-        fuse_rrf(&[keyword, semantic_obs, semantic_ent], limit)
+
+        // 해소 비용을 유계로: 상위 limit 개 이웃만 엔티티로 해소(이름/워크스페이스 확인).
+        let mut candidates: Vec<(String, f32)> = neighbor_score.into_iter().collect();
+        candidates.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        candidates.truncate(limit);
+
+        for (id, score) in candidates {
+            if let Some(entity) = self.store.get_entity(&id) {
+                // 워크스페이스가 지정되면 그 안의 노드만(교차 워크스페이스 이웃 누출 방지).
+                let in_ws =
+                    workspace.is_none_or(|ws| entity.provenance.iter().any(|p| p.workspace == ws));
+                if !in_ws {
+                    continue;
+                }
+                results.push(SearchHit {
+                    kind: SearchHitKind::Entity,
+                    id,
+                    snippet: entity.canonical_name,
+                    score,
+                });
+            }
+        }
+
+        // 전역 재정렬(점수 desc, id asc) 후 limit - 1차 히트와 이웃을 한 랭킹으로 통합한다.
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        results.truncate(limit);
+        results
     }
 
     /// 엔티티에서 관계 방향(from->to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
@@ -398,6 +482,14 @@ impl Engine {
         }
     }
 }
+
+/// 그래프 문맥 보강에서 이웃에 적용하는 감쇠. 이웃은 시드(직접 매치)보다 약한 신호이므로
+/// 시드 점수의 절반으로 랭킹해 1차 히트 아래에 두되, 강한 시드의 이웃이 약한 1차 히트보다
+/// 위로 오는 것은 허용한다(그래프 근접성을 랭킹에 반영).
+const GRAPH_ENRICH_DECAY: f32 = 0.5;
+/// 이웃을 확장할 시드(상위 엔티티 히트) 수 상한 - 비용/정밀도 제어(활발한 노드가 결과를
+/// 뒤덮지 못하게 유계로 잡는다).
+const GRAPH_ENRICH_SEEDS: usize = 5;
 
 /// 엔티티를 임베딩할 텍스트: 정규명 + 별칭(있으면). 이름의 의미로 시맨틱 회상을 연다.
 /// 별칭이 표기 변형을 담으므로 함께 임베딩하면 같은 대상의 다른 표기에도 도달 폭이 넓어진다.
