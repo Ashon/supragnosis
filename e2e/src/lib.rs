@@ -21,4 +21,5 @@
 //!   - [`report`] : 리포트/갤러리 출력 경로 (target/eval-reports/)
 
 pub mod bridge;
+pub mod embedders;
 pub mod report;

@@ -19,6 +19,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # 평가 대상 스택 조립.
 supragnosis-engine.workspace = true
 supragnosis-mcp.workspace = true
+supragnosis-core.workspace = true
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
 # index 대시보드에서 마크다운 리포트를 HTML 로 렌더한다(테이블 확장).
@@ -27,3 +28,8 @@ pulldown-cmark = { version = "0.12", default-features = false, features = ["html
 [dev-dependencies]
 # physics_coding_eval 에서 생성 코드의 설계 지문(수치/공식 패턴)을 검사한다.
 regex-lite = "0.1"
+
+[features]
+# 실임베더(fastembed/ONNX) A/B 용 - delegation_eval 의 EVAL_EMBEDDERS=...,fastembed 에 필요.
+# 무거운 의존(ort)이라 opt-in 으로 격리한다(supragnosis-embed 의 fastembed feature 와 동일 취지).
+real-embed = ["supragnosis-embed/fastembed"]
