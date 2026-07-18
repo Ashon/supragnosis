@@ -90,6 +90,19 @@ fn hash_opt_field(hasher: &mut blake3::Hasher, v: Option<&str>) {
     }
 }
 
+/// Option<u64> 필드도 presence 바이트 + 고정폭 LE 로 인코딩한다.
+fn hash_opt_u64(hasher: &mut blake3::Hasher, v: Option<u64>) {
+    match v {
+        Some(x) => {
+            hasher.update(&[1]);
+            hasher.update(&x.to_le_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+}
+
 impl Assertions {
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty() && self.relations.is_empty()
@@ -109,6 +122,8 @@ impl Assertions {
             hash_field(hasher, r.from.as_bytes());
             hash_field(hasher, r.kind.as_bytes());
             hash_field(hasher, r.to.as_bytes());
+            hash_opt_u64(hasher, r.valid_from);
+            hash_opt_u64(hasher, r.valid_to);
         }
     }
 }
@@ -122,12 +137,21 @@ pub struct EntityAssertion {
 }
 
 /// 관계 주장: "from -kind-> to". from/to 는 이름(해소 전), kind 는 원문 표기.
+/// 유효구간(원칙 4)은 선택 - 소급 관측("지난달까지 참이었다")을 적재 시점에 캡처한다.
+/// 표면이 받지 못하는 것은 로그에 실리지 않고, 로그에 없는 것은 재프로젝션으로도
+/// 복원할 수 없다 - 시간여행 질의 로직은 미뤄도 캡처는 미룰 수 없는 이유.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RelationAssertion {
     pub from: String,
     #[serde(rename = "type")]
     pub kind: String,
     pub to: String,
+    /// 유효시간 시작(원칙 4). None = 관측 시점부터로 해석 (근사 기본값).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<Timestamp>,
+    /// 유효시간 종료. None = 반증 전까지.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<Timestamp>,
 }
 
 /// 관측(Observation) - 진실의 원천. 불변이며 **콘텐츠 주소**로 식별된다.

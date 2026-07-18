@@ -36,6 +36,10 @@ pub struct RelationInput {
     pub from: String,
     pub kind: String,
     pub to: String,
+    /// 유효시간 시작 (원칙 4, 선택). 소급 관측을 적재 시점에 캡처한다.
+    pub valid_from: Option<Timestamp>,
+    /// 유효시간 종료 (원칙 4, 선택).
+    pub valid_to: Option<Timestamp>,
 }
 
 #[derive(Serialize)]
@@ -197,6 +201,8 @@ impl Engine {
                     from: r.from.clone(),
                     kind: r.kind.clone(),
                     to: r.to.clone(),
+                    valid_from: r.valid_from,
+                    valid_to: r.valid_to,
                 })
                 .collect(),
         };
@@ -229,9 +235,10 @@ impl Engine {
                 to,
                 kind,
                 provenance: prov.clone(),
-                // 유효구간은 M3 에서 관측/반증으로부터 유도. 지금은 미지정(관측시점부터).
-                valid_from: None,
-                valid_to: None,
+                // 클라이언트가 명시한 유효구간을 그대로 프로젝션한다 (원칙 4 캡처).
+                // 반증에 의한 valid_to 자동 종료 등 유도 로직은 M3.
+                valid_from: r.valid_from,
+                valid_to: r.valid_to,
             };
             let rid = rel.id.clone();
             self.store.add_relation(rel)?;
@@ -569,6 +576,8 @@ mod tests {
                     from: "supragnosis".into(),
                     kind: "depends_on".into(),
                     to: "rmcp".into(),
+                    valid_from: None,
+                    valid_to: None,
                 }],
             })
             .unwrap();
@@ -616,6 +625,8 @@ mod tests {
                         from: "supragnosis".into(),
                         kind: kind.into(),
                         to: "rmcp".into(),
+                        valid_from: None,
+                        valid_to: None,
                     }],
                 })
                 .unwrap();
@@ -664,6 +675,53 @@ mod tests {
         let logged = store.observation(&second.observation_id).unwrap();
         assert_eq!(logged.assertions.entities.len(), 1);
         assert_eq!(logged.assertions.entities[0].kind.as_deref(), Some("Project"));
+    }
+
+    /// 원칙 4 캡처: 소급 관측("지난달까지 참이었다")의 유효구간이 관측 로그(주장)와
+    /// 프로젝션(관계) 양쪽에 실린다. 표면이 못 받으면 로그에 없고, 로그에 없으면
+    /// 재프로젝션으로도 복원할 수 없다 - 캡처는 이연할 수 없는 이유.
+    #[test]
+    fn relation_valid_interval_is_captured_in_log_and_projection() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "h", "ws1");
+
+        let observe_with_interval = |valid_to: Option<Timestamp>| {
+            engine
+                .observe(ObserveInput {
+                    content: "kim led team A until last month".into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![],
+                    relations: vec![RelationInput {
+                        from: "kim".into(),
+                        kind: "leads".into(),
+                        to: "team A".into(),
+                        valid_from: Some(100),
+                        valid_to,
+                    }],
+                })
+                .unwrap()
+        };
+        let out = observe_with_interval(Some(200));
+
+        // 로그: 주장에 유효구간이 원문 그대로 동봉된다.
+        let logged = store.observation(&out.observation_id).unwrap();
+        assert_eq!(logged.assertions.relations[0].valid_from, Some(100));
+        assert_eq!(logged.assertions.relations[0].valid_to, Some(200));
+
+        // 프로젝션: 관계가 유효구간을 지닌다.
+        let kim = Entity::make_id("ws1", "kim");
+        let rels = store.relations_of(&kim);
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].valid_from, Some(100));
+        assert_eq!(rels[0].valid_to, Some(200));
+
+        // 유효구간이 다르면 다른 주장 - 다른 관측 id (내용 정체성에 포함).
+        let out2 = observe_with_interval(None);
+        assert_ne!(out.observation_id, out2.observation_id);
     }
 
     /// 원칙 3: 같은 content 재관측 시 로그가 attestation 을 모두 보존한다 - 엔티티
@@ -794,6 +852,8 @@ mod tests {
                     from: "supragnosis".into(),
                     kind: "depends_on".into(),
                     to: "rmcp".into(),
+                    valid_from: None,
+                    valid_to: None,
                 }],
             })
             .unwrap();
