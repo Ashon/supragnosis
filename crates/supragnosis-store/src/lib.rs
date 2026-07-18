@@ -3,6 +3,7 @@
 //! 같은 [`supragnosis_core::KnowledgeStore`] 포트를 두 어댑터가 구현한다:
 //! 프로세스 메모리 기반 `InMemoryStore`(테스트/비영속)와 Cozo(RocksDB) 기반 `CozoStore`(파일 영속).
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
@@ -35,10 +36,14 @@ impl InMemoryStore {
 
 impl KnowledgeStore for InMemoryStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
-        self.observations
-            .write()
-            .unwrap()
-            .insert(obs.id.clone(), obs);
+        // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
+        // (원칙 3: 로그 불변 - provenance/계보가 파괴되지 않는다).
+        match self.observations.write().unwrap().entry(obs.id.clone()) {
+            Entry::Occupied(mut e) => e.get_mut().absorb(obs),
+            Entry::Vacant(v) => {
+                v.insert(obs);
+            }
+        }
         Ok(())
     }
 
@@ -93,7 +98,7 @@ impl KnowledgeStore for InMemoryStore {
 
         // 관측: 본문 부분일치.
         for o in self.observations.read().unwrap().values() {
-            let in_ws = workspace.is_none_or(|ws| o.provenance.workspace == ws);
+            let in_ws = workspace.is_none_or(|ws| o.workspace() == ws);
             if in_ws && o.content.to_lowercase().contains(&q) {
                 hits.push(SearchHit {
                     kind: SearchHitKind::Observation,
@@ -185,7 +190,7 @@ impl KnowledgeStore for InMemoryStore {
             .read()
             .unwrap()
             .values()
-            .filter(|o| workspace.is_none_or(|ws| o.provenance.workspace == ws))
+            .filter(|o| workspace.is_none_or(|ws| o.workspace() == ws))
             .filter_map(|o| {
                 let emb = o.embedding.as_deref()?;
                 Some(SearchHit {
@@ -318,5 +323,46 @@ mod tests {
         let by_id: HashMap<_, _> = hits.iter().map(|h| (h.id.clone(), h.depth)).collect();
         assert_eq!(by_id.get(&b), Some(&1));
         assert_eq!(by_id.get(&c), Some(&2));
+    }
+
+    /// 원칙 3: 같은 콘텐츠 주소의 재도착은 attestation/계보 합집합으로 흡수되고
+    /// (덮어쓰기 금지), 도착 순서와 무관하게 같은 로그로 수렴한다 (원칙 16).
+    #[test]
+    fn reobservation_accumulates_attestations() {
+        let make = |host: &str, conf: f32, derived: &str| {
+            let mut o = Observation::new(
+                "same fact".into(),
+                Provenance {
+                    host: host.into(),
+                    confidence: conf,
+                    ..prov()
+                },
+            );
+            o.derived_from = vec![derived.into()];
+            o
+        };
+
+        let forward = InMemoryStore::new();
+        forward.add_observation(make("host-a", 0.9, "o1")).unwrap();
+        forward.add_observation(make("host-b", 0.1, "o2")).unwrap();
+
+        let reverse = InMemoryStore::new();
+        reverse.add_observation(make("host-b", 0.1, "o2")).unwrap();
+        reverse.add_observation(make("host-a", 0.9, "o1")).unwrap();
+
+        let id = make("host-a", 0.9, "o1").id;
+        let f = forward.observation(&id).unwrap();
+        let r = reverse.observation(&id).unwrap();
+
+        // 두 attestation 이 모두 보존된다 - 첫 관측이 파괴되지 않는다.
+        assert_eq!(f.provenance.len(), 2, "attestation 누적: {:?}", f.provenance);
+        assert_eq!(f.derived_from, vec!["o1".to_string(), "o2".to_string()]);
+
+        // 도착 순서 무관 수렴.
+        let hosts = |o: &Observation| -> Vec<String> {
+            o.provenance.iter().map(|p| p.host.clone()).collect()
+        };
+        assert_eq!(hosts(&f), hosts(&r));
+        assert_eq!(f.derived_from, r.derived_from);
     }
 }
