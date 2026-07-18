@@ -36,7 +36,6 @@
 //!
 //! Ollama 가 안 떠 있으면 조용히 통과(skip)한다 - CI 를 깨지 않기 위해서다.
 
-use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -638,13 +637,9 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
     md
 }
 
-/// 리포트를 target/eval-reports/ 에 쓴다. 경로를 돌려준다.
+/// 리포트를 target/eval-reports/ 에 쓰고 index 를 갱신한다. 경로를 돌려준다.
 fn write_report(md: &str) -> std::path::PathBuf {
-    let dir = report::report_dir();
-    let path = dir.join("delegation_eval.md");
-    let mut f = std::fs::File::create(&path).expect("리포트 파일 생성");
-    f.write_all(md.as_bytes()).expect("리포트 쓰기");
-    path
+    report::write_report("delegation_eval.md", md)
 }
 
 // --- 메인 --------------------------------------------------------------------

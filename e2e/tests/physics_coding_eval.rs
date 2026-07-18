@@ -34,7 +34,6 @@
 //!
 //! Ollama 가 안 떠 있으면 조용히 통과(skip)한다.
 
-use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,7 +45,7 @@ use supragnosis_e2e::bridge::{
     chat, exec_tool, ollama_reachable, openai_tools, push_message, serve_engine, tool_calls,
     DEFAULT_BASE,
 };
-use supragnosis_e2e::report::report_dir;
+use supragnosis_e2e::report::{self, report_dir};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, EntityInput, ObserveInput, RelationInput};
 use supragnosis_store::InMemoryStore;
@@ -804,10 +803,8 @@ async fn delegated_ontology_improves_coding() {
             );
             results.push(r);
         }
-        let gallery = render_gallery(&results);
-        std::fs::write(dir.join("physics_gallery.html"), gallery).expect("갤러리 쓰기");
-        std::fs::write(dir.join("physics_coding_eval.md"), render_markdown(&results))
-            .expect("리포트 쓰기");
+        report::write_report("physics_gallery.html", &render_gallery(&results));
+        report::write_report("physics_coding_eval.md", &render_markdown(&results));
         eprintln!("\n[gallery] {}", dir.join("physics_gallery.html").display());
         assert!(!results.is_empty(), "재채점할 데모 파일이 없음");
         return;
@@ -878,15 +875,8 @@ async fn delegated_ontology_improves_coding() {
         );
     }
 
-    let gallery = render_gallery(&results);
-    let gallery_path = dir.join("physics_gallery.html");
-    std::fs::File::create(&gallery_path)
-        .and_then(|mut f| f.write_all(gallery.as_bytes()))
-        .expect("갤러리 쓰기");
-    let md_path = dir.join("physics_coding_eval.md");
-    std::fs::File::create(&md_path)
-        .and_then(|mut f| f.write_all(render_markdown(&results).as_bytes()))
-        .expect("리포트 쓰기");
+    let gallery_path = report::write_report("physics_gallery.html", &render_gallery(&results));
+    let md_path = report::write_report("physics_coding_eval.md", &render_markdown(&results));
     eprintln!("\n[gallery] {}", gallery_path.display());
     eprintln!("[report]  {}", md_path.display());
 
