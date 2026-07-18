@@ -68,6 +68,14 @@ pub struct RelationInput {
     pub kind: String,
     /// 도착 엔티티의 이름.
     pub to: String,
+    /// (선택) 유효시간 시작, epoch millis. 관계가 세계에서 참이 된 시점 - 과거에
+    /// 참이었던 사실을 소급 기록할 때 쓴다. 생략 시 관측 시점부터로 해석.
+    #[serde(default)]
+    pub valid_from: Option<u64>,
+    /// (선택) 유효시간 종료, epoch millis. 이미 끝난 사실("지난달까지 참")을 기록할 때
+    /// 쓴다. 생략 시 반증 전까지 참으로 해석.
+    #[serde(default)]
+    pub valid_to: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -145,6 +153,8 @@ impl SupragnosisServer {
                     from: r.from,
                     kind: r.kind,
                     to: r.to,
+                    valid_from: r.valid_from,
+                    valid_to: r.valid_to,
                 })
                 .collect(),
         };

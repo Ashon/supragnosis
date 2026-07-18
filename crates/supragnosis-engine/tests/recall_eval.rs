@@ -140,6 +140,8 @@ fn load(engine: &Engine) -> HashMap<&'static str, String> {
                         from: (*f).into(),
                         kind: (*k).into(),
                         to: (*t).into(),
+                        valid_from: None,
+                        valid_to: None,
                     })
                     .collect(),
             })
@@ -206,6 +208,8 @@ fn graph_enrichment_recalls_neighbor() {
                 from: "alpha service".into(),
                 kind: "depends_on".into(),
                 to: "zeta backend".into(),
+                valid_from: None,
+                valid_to: None,
             }],
         })
         .unwrap();
