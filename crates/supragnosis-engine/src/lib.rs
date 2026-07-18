@@ -59,6 +59,25 @@ pub enum ObserveError {
     Store(#[from] StoreError),
 }
 
+/// 검색이 실제로 사용한 표면 (원칙 16 4차 개정: 응답은 자신이 어느 표면에서 왔는지
+/// 표기해, 클라이언트가 수렴 표면과 회상 보조를 구별할 수 있어야 한다).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMode {
+    /// 키워드(수렴 표면) + 의미 벡터(노드 로컬 회상 보조) 하이브리드.
+    Hybrid,
+    /// 키워드 전용. 임베더 부재/질의 임베딩 실패로 degrade 된 상태 포함 (원칙 19) -
+    /// 이 모드의 0건은 하이브리드의 0건보다 "회상 실패" 가능성이 높다.
+    Keyword,
+}
+
+/// 검색 응답: 사용 표면 + 히트.
+#[derive(Serialize)]
+pub struct SearchOutput {
+    pub mode: SearchMode,
+    pub hits: Vec<SearchHit>,
+}
+
 /// 엔티티 + 그 관계(조회 응답).
 #[derive(Serialize)]
 pub struct EntityView {
@@ -332,13 +351,20 @@ impl Engine {
         query: &str,
         workspace: Option<&str>,
         limit: usize,
-    ) -> Result<Vec<SearchHit>, StoreError> {
+    ) -> Result<SearchOutput, StoreError> {
         let keyword = self.store.search(query, workspace, limit)?;
 
         // 질의 임베딩은 한 번만 계산해 관측/엔티티 시맨틱 검색이 공유한다.
         // 임베딩 실패는 degrade(키워드 전용, 원칙 19)지만 저장소 실패는 Err 다 -
         // 확률적 어댑터의 부재/실패와 결정적 저장소의 고장은 다른 사건이다.
         let qvec = self.embedder.as_ref().and_then(|e| e.embed_one(query).ok());
+        // mode 는 "의미 표면을 참조했는가" 다 - 의미 회상이 0건이어도 참조는 했으므로
+        // hybrid 다 (0건의 인식론적 무게가 mode 에 따라 다르다, 원칙 5/16 4차).
+        let mode = if qvec.is_some() {
+            SearchMode::Hybrid
+        } else {
+            SearchMode::Keyword
+        };
         let (semantic_obs, semantic_ent) = match &qvec {
             Some(v) => (
                 self.store.search_semantic(v, workspace, limit)?,
@@ -355,7 +381,8 @@ impl Engine {
         };
 
         // 그래프 문맥 보강: 상위 엔티티 히트의 1-hop 이웃을 여분 슬롯에 채운다.
-        self.enrich_with_graph(fused, workspace, limit)
+        let hits = self.enrich_with_graph(fused, workspace, limit)?;
+        Ok(SearchOutput { mode, hits })
     }
 
     /// 그래프 문맥 보강: 상위 엔티티 히트(시드)의 1-hop 이웃을 결과에 더한다. 이웃은 시드의
@@ -630,14 +657,20 @@ mod tests {
         assert_eq!(view.relations.len(), 1);
 
         // 재적재는 콘텐츠 주소라 동일 엔티티로 수렴(출처만 누적).
-        let hits = engine.search("rust", Some("ws1"), 10).unwrap();
+        let out = engine.search("rust", Some("ws1"), 10).unwrap();
         assert!(
-            !hits.is_empty(),
+            !out.hits.is_empty(),
             "keyword search should find the observation"
         );
+        // 임베더 없는 엔진의 mode 는 keyword (degrade 표기, 원칙 16 4차).
+        assert_eq!(out.mode, SearchMode::Keyword);
 
         // 다른 워크스페이스로는 안 보임.
-        assert!(engine.search("rust", Some("other"), 10).unwrap().is_empty());
+        assert!(engine
+            .search("rust", Some("other"), 10)
+            .unwrap()
+            .hits
+            .is_empty());
     }
 
     /// 관계 kind 의 표기 요동(depends_on/dependsOn/depends-on)은 같은 엣지 하나로
@@ -873,13 +906,17 @@ mod tests {
 
         // 키워드 전용(같은 저장소, 임베더 없음)은 이 질의를 놓친다.
         let keyword_only = Engine::new(store.clone(), "h", "ws");
+        let keyword_out = keyword_only.search(q, Some("ws"), 10).unwrap();
         assert!(
-            keyword_only.search(q, Some("ws"), 10).unwrap().is_empty(),
+            keyword_out.hits.is_empty(),
             "substring keyword search should miss this query"
         );
+        assert_eq!(keyword_out.mode, SearchMode::Keyword, "degrade 는 keyword 표기");
 
         // 하이브리드는 어휘가 겹치는 rust 관측을 최상위로 회상한다.
-        let hits = hybrid.search(q, Some("ws"), 10).unwrap();
+        let out = hybrid.search(q, Some("ws"), 10).unwrap();
+        assert_eq!(out.mode, SearchMode::Hybrid, "의미 표면 참조 시 hybrid 표기");
+        let hits = out.hits;
         assert!(
             !hits.is_empty(),
             "hybrid search should recall via embedding"

@@ -49,11 +49,14 @@ fn fastembed_cozo_hnsw_end_to_end() {
     );
 
     // 질의는 어느 관측의 부분문자열도 아니다 - 순수 의미(임베딩) 회상에 의존한다.
-    let hits = engine.search(
-        "compiling systems code into executable binaries",
-        Some("ws"),
-        3,
-    );
+    let hits = engine
+        .search(
+            "compiling systems code into executable binaries",
+            Some("ws"),
+            3,
+        )
+        .unwrap()
+        .hits;
     assert!(!hits.is_empty(), "semantic search should return hits");
     assert!(
         hits[0].snippet.contains("rust"),
