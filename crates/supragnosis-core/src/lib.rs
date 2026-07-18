@@ -386,23 +386,43 @@ pub struct TraverseHit {
 }
 
 /// 저장소 포트. in-memory / Cozo(RocksDB) 등 어댑터가 구현한다.
+///
+/// **읽기 계약** (모든 어댑터의 의무):
+/// - **부재와 고장의 구별 (원칙 5)**: 백엔드 실패는 `Err` 로 전파한다. 실패를 빈
+///   결과(`Ok(vec![])`/`Ok(None)`)로 삼키면 호출자가 "찾지 못함(미지)"과 "조회
+///   불능(고장)"을 구별할 수 없다 - 부재/부정/실패 구별의 전제가 저장 계층에서
+///   무너진다. 부분 실패도 부분 결과가 아니라 `Err` 다.
+/// - **재현성 (원칙 16)**: 같은 상태에 같은 질의는 같은 응답이다. 정렬과 limit
+///   절단은 안정 키(id)로 못박고, 내부 자료구조의 반복 순서(해시맵/행 순서)가
+///   응답에 새면 계약 위반이다.
 pub trait KnowledgeStore: Send + Sync {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
-    fn get_entity(&self, id: &str) -> Option<Entity>;
+    /// 없는 id 는 `Ok(None)`(부재, 원칙 5의 미지) - 백엔드 실패만 `Err`.
+    fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError>;
     /// entity.id 기준 upsert.
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError>;
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError>;
     /// from 또는 to 가 entity_id 인 관계들.
-    fn relations_of(&self, entity_id: &str) -> Vec<Relation>;
-    fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit>;
+    fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError>;
+    fn search(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>, StoreError>;
     /// start_id 에서 방향(from->to)을 따라 최대 `max_depth` 홉까지 도달하는 엔티티들.
-    fn traverse(&self, start_id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit>;
+    fn traverse(
+        &self,
+        start_id: &str,
+        max_depth: usize,
+        limit: usize,
+    ) -> Result<Vec<TraverseHit>, StoreError>;
     /// 워크스페이스의 모든 엔티티를 열거한다(그래프 프로젝션의 읽기 경로). `None` 이면 전체.
     /// 온톨로지 시각화/관측가능성의 노드 집합 - search 처럼 질의어가 아니라 전수 열거다.
-    fn all_entities(&self, workspace: Option<&str>) -> Vec<Entity>;
+    fn all_entities(&self, workspace: Option<&str>) -> Result<Vec<Entity>, StoreError>;
     /// 워크스페이스의 모든 관계를 열거한다(그래프 프로젝션의 엣지 집합). `None` 이면 전체.
     /// 관계의 워크스페이스는 provenance.workspace 로 판단한다.
-    fn all_relations(&self, workspace: Option<&str>) -> Vec<Relation>;
+    fn all_relations(&self, workspace: Option<&str>) -> Result<Vec<Relation>, StoreError>;
     /// 임베딩이 있는 관측을 질의 벡터와의 코사인 유사도로 검색한다 (원칙 19: 회상 확장).
     /// 임베딩이 없는 관측은 후보에서 제외된다. `score` 는 코사인 유사도(-1.0~1.0).
     /// 기본 구현은 빈 결과 - 벡터를 저장하지 않는 어댑터는 재정의할 필요가 없다.
@@ -411,8 +431,8 @@ pub trait KnowledgeStore: Send + Sync {
         _query_embedding: &[f32],
         _workspace: Option<&str>,
         _limit: usize,
-    ) -> Vec<SearchHit> {
-        Vec::new()
+    ) -> Result<Vec<SearchHit>, StoreError> {
+        Ok(Vec::new())
     }
 
     /// 임베딩이 있는 엔티티를 질의 벡터와의 코사인 유사도로 검색한다 (원칙 19: 회상 확장).
@@ -424,8 +444,8 @@ pub trait KnowledgeStore: Send + Sync {
         _query_embedding: &[f32],
         _workspace: Option<&str>,
         _limit: usize,
-    ) -> Vec<SearchHit> {
-        Vec::new()
+    ) -> Result<Vec<SearchHit>, StoreError> {
+        Ok(Vec::new())
     }
 }
 

@@ -165,15 +165,17 @@ impl SupragnosisServer {
     #[tool(description = "엔티티 id로 엔티티와 그 관계/출처를 조회한다.")]
     fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
         match self.engine.get_entity(&req.id) {
-            Some(view) => to_json(&view),
+            Ok(Some(view)) => to_json(&view),
             // 열린 세계 가정(원칙 5): 부재는 거짓이 아니라 미지(unknown)다.
             // "찾지 못함"을 에러로 주지 않아 LLM 이 부재를 부정으로 오독하지 않게 한다.
-            None => serde_json::json!({
+            Ok(None) => serde_json::json!({
                 "found": false,
                 "id": req.id,
                 "note": "unknown - not found is not a negation (open-world assumption)"
             })
             .to_string(),
+            // 고장은 부재와 다르다(원칙 5) - "없음" 으로 오독되지 않게 명시 에러로.
+            Err(e) => store_failure_json(&e),
         }
     }
 
@@ -181,24 +183,28 @@ impl SupragnosisServer {
         description = "지식(엔티티/관측)을 검색한다. 임베딩이 있으면 의미(벡터)+키워드 하이브리드로, 없으면 키워드 부분일치로 동작한다."
     )]
     fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
-        let hits = self.engine.search(
+        match self.engine.search(
             &req.query,
             req.workspace.as_deref(),
             req.limit.unwrap_or(20),
-        );
-        to_json(&hits)
+        ) {
+            Ok(hits) => to_json(&hits),
+            Err(e) => store_failure_json(&e),
+        }
     }
 
     #[tool(
         description = "엔티티에서 시작해 관계 방향(from->to)을 따라 그래프를 순회한다. 최대 홉(max_depth) 내에 도달하는 엔티티를 최단 거리와 함께 돌려준다."
     )]
     fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
-        let hits = self.engine.traverse(
+        match self.engine.traverse(
             &req.id,
             req.max_depth.unwrap_or(3),
             req.limit.unwrap_or(100),
-        );
-        to_json(&hits)
+        ) {
+            Ok(hits) => to_json(&hits),
+            Err(e) => store_failure_json(&e),
+        }
     }
 }
 
@@ -273,12 +279,16 @@ impl ServerHandler for SupragnosisServer {
     ) -> impl Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
         let uri = request.uri;
         let result = match parse_graph_uri(&uri) {
-            Some(ws) => {
-                let graph = self.engine.graph(Some(ws));
-                Ok(ReadResourceResult {
+            Some(ws) => match self.engine.graph(Some(ws)) {
+                Ok(graph) => Ok(ReadResourceResult {
                     contents: vec![ResourceContents::text(to_json(&graph), uri)],
-                })
-            }
+                }),
+                // 고장은 not_found(부재)가 아니라 내부 오류로 - 원칙 5 의 구별을 유지한다.
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("저장소 백엔드 실패 (리소스 부재가 아니다): {e}"),
+                    None,
+                )),
+            },
             None => Err(ErrorData::resource_not_found(
                 format!(
                     "알 수 없는 리소스 URI: {uri} - supragnosis://workspace/{{workspace}}/graph 형태만 지원한다"
@@ -313,6 +323,17 @@ fn respond<T: Serialize, E: std::fmt::Display>(r: Result<T, E>) -> String {
 
 fn to_json<T: Serialize>(v: &T) -> String {
     serde_json::to_string(v).unwrap_or_else(|e| err_json(&e.to_string()))
+}
+
+/// 저장소 고장의 응답 (원칙 5/21). 고장은 부재와 다른 사건이므로 "빈 결과가 아니라
+/// 조회 불능"임을 명시하고, LLM 이 지식 부재로 결론짓지 않도록 다음 행동을 안내한다.
+fn store_failure_json(e: &impl std::fmt::Display) -> String {
+    serde_json::json!({
+        "error": e.to_string(),
+        "note": "storage backend failure - this is NOT an empty result. \
+                 지식이 없다고 결론짓지 말라. 재시도하거나 사용자에게 저장소 상태 확인을 요청하라"
+    })
+    .to_string()
 }
 
 fn err_json(msg: &str) -> String {

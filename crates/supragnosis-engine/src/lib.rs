@@ -281,7 +281,7 @@ impl Engine {
         prov: &Provenance,
     ) -> Result<String, StoreError> {
         let id = Entity::make_id(workspace, name);
-        let mut entity = self.store.get_entity(&id).unwrap_or_else(|| Entity {
+        let mut entity = self.store.get_entity(&id)?.unwrap_or_else(|| Entity {
             id: id.clone(),
             kind: kind.clone().unwrap_or_else(|| "Concept".to_string()),
             canonical_name: name.trim().to_string(),
@@ -309,11 +309,16 @@ impl Engine {
         Ok(id)
     }
 
-    pub fn get_entity(&self, id: &str) -> Option<EntityView> {
-        self.store.get_entity(id).map(|entity| {
-            let relations = self.store.relations_of(id);
-            EntityView { entity, relations }
-        })
+    /// 엔티티 + 관계 조회. `Ok(None)` 은 부재(미지, 원칙 5), `Err` 는 저장소 고장 -
+    /// 호출자(MCP 표면)가 둘을 구별해 전달할 수 있도록 실패를 삼키지 않는다.
+    pub fn get_entity(&self, id: &str) -> Result<Option<EntityView>, StoreError> {
+        match self.store.get_entity(id)? {
+            Some(entity) => {
+                let relations = self.store.relations_of(id)?;
+                Ok(Some(EntityView { entity, relations }))
+            }
+            None => Ok(None),
+        }
     }
 
     /// 하이브리드 검색: 키워드(부분일치) + 벡터(의미) 결과를 RRF 로 융합하고, 상위 엔티티
@@ -322,15 +327,22 @@ impl Engine {
     /// 보강 단계는 매치된 엔티티의 1-hop 이웃을 채워 어휘/의미로는 안 걸리지만 그래프상
     /// 인접한 노드까지 회상한다(architecture 4.2 "그래프 문맥 보강"). 임베더가 없거나 질의
     /// 임베딩에 실패하면 키워드 결과만 융합한다(원칙 19: degrade). 확정 랭킹은 결정적이다.
-    pub fn search(&self, query: &str, workspace: Option<&str>, limit: usize) -> Vec<SearchHit> {
-        let keyword = self.store.search(query, workspace, limit);
+    pub fn search(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>, StoreError> {
+        let keyword = self.store.search(query, workspace, limit)?;
 
         // 질의 임베딩은 한 번만 계산해 관측/엔티티 시맨틱 검색이 공유한다.
+        // 임베딩 실패는 degrade(키워드 전용, 원칙 19)지만 저장소 실패는 Err 다 -
+        // 확률적 어댑터의 부재/실패와 결정적 저장소의 고장은 다른 사건이다.
         let qvec = self.embedder.as_ref().and_then(|e| e.embed_one(query).ok());
         let (semantic_obs, semantic_ent) = match &qvec {
             Some(v) => (
-                self.store.search_semantic(v, workspace, limit),
-                self.store.search_semantic_entities(v, workspace, limit),
+                self.store.search_semantic(v, workspace, limit)?,
+                self.store.search_semantic_entities(v, workspace, limit)?,
             ),
             None => (Vec::new(), Vec::new()),
         };
@@ -357,7 +369,7 @@ impl Engine {
         mut results: Vec<SearchHit>,
         workspace: Option<&str>,
         limit: usize,
-    ) -> Vec<SearchHit> {
+    ) -> Result<Vec<SearchHit>, StoreError> {
         // 이미 결과에 있는 (kind, id) - 이웃 중복/1차 히트 재추가를 막는다.
         let present: HashSet<(SearchHitKind, String)> =
             results.iter().map(|h| (h.kind, h.id.clone())).collect();
@@ -371,7 +383,7 @@ impl Engine {
             .take(GRAPH_ENRICH_SEEDS)
         {
             let contrib = seed.score * GRAPH_ENRICH_DECAY;
-            for rel in self.store.relations_of(&seed.id) {
+            for rel in self.store.relations_of(&seed.id)? {
                 let neighbor = if rel.from == seed.id {
                     rel.to
                 } else if rel.to == seed.id {
@@ -397,7 +409,7 @@ impl Engine {
         candidates.truncate(limit);
 
         for (id, score) in candidates {
-            if let Some(entity) = self.store.get_entity(&id) {
+            if let Some(entity) = self.store.get_entity(&id)? {
                 // 워크스페이스가 지정되면 그 안의 노드만(교차 워크스페이스 이웃 누출 방지).
                 let in_ws =
                     workspace.is_none_or(|ws| entity.provenance.iter().any(|p| p.workspace == ws));
@@ -421,11 +433,16 @@ impl Engine {
                 .then_with(|| a.id.cmp(&b.id))
         });
         results.truncate(limit);
-        results
+        Ok(results)
     }
 
     /// 엔티티에서 관계 방향(from->to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
-    pub fn traverse(&self, id: &str, max_depth: usize, limit: usize) -> Vec<TraverseHit> {
+    pub fn traverse(
+        &self,
+        id: &str,
+        max_depth: usize,
+        limit: usize,
+    ) -> Result<Vec<TraverseHit>, StoreError> {
         self.store.traverse(id, max_depth.max(1), limit)
     }
 
@@ -437,9 +454,9 @@ impl Engine {
     /// 온톨로지 그래프를 node-link 뷰로 프로젝션한다(관측가능성/시각화의 읽기 경로).
     /// 순수 읽기 - 관측 로그를 건드리지 않는다(원칙 1). 엣지는 양끝이 모두 노드 집합에
     /// 있을 때만 포함해 닫힌(렌더 가능한) 그래프를 준다. 노드/엣지 순서는 결정적이다(원칙 16).
-    pub fn graph(&self, workspace: Option<&str>) -> GraphView {
-        let entities = self.store.all_entities(workspace);
-        let relations = self.store.all_relations(workspace);
+    pub fn graph(&self, workspace: Option<&str>) -> Result<GraphView, StoreError> {
+        let entities = self.store.all_entities(workspace)?;
+        let relations = self.store.all_relations(workspace)?;
 
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
 
@@ -501,12 +518,12 @@ impl Engine {
             type_counts,
             trust_counts,
         };
-        GraphView {
+        Ok(GraphView {
             workspace: workspace.map(String::from),
             nodes,
             edges,
             stats,
-        }
+        })
     }
 }
 
@@ -607,20 +624,20 @@ mod tests {
 
         // 결정적 id로 재조회 -> 관계도 함께.
         let rmcp_id = Entity::make_id("ws1", "rmcp");
-        let view = engine.get_entity(&rmcp_id).expect("entity exists");
+        let view = engine.get_entity(&rmcp_id).unwrap().expect("entity exists");
         assert_eq!(view.entity.canonical_name, "rmcp");
         assert_eq!(view.entity.kind, "Tool");
         assert_eq!(view.relations.len(), 1);
 
         // 재적재는 콘텐츠 주소라 동일 엔티티로 수렴(출처만 누적).
-        let hits = engine.search("rust", Some("ws1"), 10);
+        let hits = engine.search("rust", Some("ws1"), 10).unwrap();
         assert!(
             !hits.is_empty(),
             "keyword search should find the observation"
         );
 
         // 다른 워크스페이스로는 안 보임.
-        assert!(engine.search("rust", Some("other"), 10).is_empty());
+        assert!(engine.search("rust", Some("other"), 10).unwrap().is_empty());
     }
 
     /// 관계 kind 의 표기 요동(depends_on/dependsOn/depends-on)은 같은 엣지 하나로
@@ -658,7 +675,7 @@ mod tests {
 
         // 프로젝션에는 정준형 kind 하나만 존재.
         let sup_id = Entity::make_id("ws1", "supragnosis");
-        let view = engine.get_entity(&sup_id).unwrap();
+        let view = engine.get_entity(&sup_id).unwrap().unwrap();
         assert_eq!(view.relations.len(), 1);
         assert_eq!(view.relations[0].kind, "depends_on");
     }
@@ -763,7 +780,7 @@ mod tests {
 
         // 프로젝션: 관계가 유효구간을 지닌다.
         let kim = Entity::make_id("ws1", "kim");
-        let rels = store.relations_of(&kim);
+        let rels = store.relations_of(&kim).unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].valid_from, Some(100));
         assert_eq!(rels[0].valid_to, Some(200));
@@ -803,7 +820,10 @@ mod tests {
         assert_eq!(first.observation_id, second.observation_id, "콘텐츠 주소 dedup");
 
         let logged = store.observation(&first.observation_id).unwrap();
-        let entity = store.get_entity(&Entity::make_id("ws1", "thing")).unwrap();
+        let entity = store
+            .get_entity(&Entity::make_id("ws1", "thing"))
+            .unwrap()
+            .unwrap();
 
         // 로그와 프로젝션이 같은 attestation 수를 지닌다 - 로그가 진실의 원천.
         assert_eq!(logged.provenance.len(), 2, "로그에 두 attestation 보존");
@@ -854,12 +874,12 @@ mod tests {
         // 키워드 전용(같은 저장소, 임베더 없음)은 이 질의를 놓친다.
         let keyword_only = Engine::new(store.clone(), "h", "ws");
         assert!(
-            keyword_only.search(q, Some("ws"), 10).is_empty(),
+            keyword_only.search(q, Some("ws"), 10).unwrap().is_empty(),
             "substring keyword search should miss this query"
         );
 
         // 하이브리드는 어휘가 겹치는 rust 관측을 최상위로 회상한다.
-        let hits = hybrid.search(q, Some("ws"), 10);
+        let hits = hybrid.search(q, Some("ws"), 10).unwrap();
         assert!(
             !hits.is_empty(),
             "hybrid search should recall via embedding"
@@ -924,7 +944,7 @@ mod tests {
             })
             .unwrap();
 
-        let g = engine.graph(Some("ws1"));
+        let g = engine.graph(Some("ws1")).unwrap();
         assert_eq!(g.stats.node_count, 2, "ws1 노드 2개");
         assert_eq!(g.stats.edge_count, 1, "ws1 엣지 1개");
 
@@ -955,6 +975,6 @@ mod tests {
         );
 
         // 전체(None)로는 other 까지 포함해 노드 3개.
-        assert_eq!(engine.graph(None).stats.node_count, 3);
+        assert_eq!(engine.graph(None).unwrap().stats.node_count, 3);
     }
 }
