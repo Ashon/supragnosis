@@ -190,6 +190,10 @@ pub struct Observation {
     pub assertions: Assertions,
     /// 이 관측이 파생된 원천 관측 id들 (원칙 18: 오염 소독의 리콜 계보).
     /// 비어 있으면 1차 관측. (id 계산에는 포함하지 않는다 - 계보는 내용 정체성이 아니다.)
+    ///
+    /// **원천 id 의 존재 검증을 하지 않는 것이 의도다** (원칙 16: 위상 독립 수렴):
+    /// 원천 관측이 sync 로 나중에 도착할 수 있으므로 전방 참조는 허용되어야 한다 -
+    /// 존재 검증의 추가는 도착 순서에 의미론을 결합시키는 회귀다.
     #[serde(default)]
     pub derived_from: Vec<String>,
     /// (선택) 의미 검색용 임베딩 벡터 (원칙 19: 확률적 경계).
@@ -421,6 +425,8 @@ pub struct SearchHit {
     pub kind: SearchHitKind,
     pub id: String,
     pub snippet: String,
+    /// 랭킹 점수 - **순위 비교 전용**. 스케일은 검색 표면마다 다르다(키워드 상수,
+    /// 코사인 유사도, RRF 융합값). 절대값을 신뢰도/확신도로 해석하면 오독이다.
     pub score: f32,
 }
 
