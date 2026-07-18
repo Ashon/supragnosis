@@ -180,7 +180,11 @@ pub struct Entity {
     /// (선택) 의미 검색용 임베딩 벡터 (원칙 19: 확률적 경계). 이름/별칭의 의미로 노드에
     /// 도달하게 하는 회상 보조 - 관측과 마찬가지로 **id 계산에 포함하지 않는다**(정체성이
     /// 아니라 회상 확장이며, 노드마다 다른 모델을 써도 정체성/수렴이 흔들리지 않는다).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// serde 에서 완전히 제외한다(원칙 21): 이 벡터는 내부 회상 기계일 뿐이라 MCP 표면
+    /// (get_entity)으로 새면 LLM 컨텍스트를 수백 개 float 로 오염시킨다. 영속은 스토어
+    /// 어댑터가 수제 인코딩으로 담당하므로(Cozo data JSON), 도메인 직렬화 대상이 아니다.
+    #[serde(skip)]
     pub embedding: Option<Vec<f32>>,
 }
 

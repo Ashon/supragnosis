@@ -161,6 +161,11 @@ async fn mcp_protocol_surface_end_to_end() {
         Some(1),
         "엔티티 조회에 관계가 함께 와야 한다: {ent}"
     );
+    // 내부 회상 벡터는 LLM 표면으로 새면 안 된다(원칙 21: 좁고 읽기 쉬운 표면).
+    assert!(
+        ent.get("embedding").is_none(),
+        "get_entity 응답에 임베딩 벡터가 노출되면 안 된다(컨텍스트 오염): {ent}"
+    );
 
     // --- 5) traverse: supragnosis -> rmcp (depends_on, 1홉) ----------------------
     let res = client
