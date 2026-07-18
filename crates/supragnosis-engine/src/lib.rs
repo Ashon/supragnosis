@@ -666,6 +666,52 @@ mod tests {
         assert_eq!(logged.assertions.entities[0].kind.as_deref(), Some("Project"));
     }
 
+    /// 원칙 3: 같은 content 재관측 시 로그가 attestation 을 모두 보존한다 - 엔티티
+    /// provenance 만 누적되고 로그는 마지막 1건이던 "진실의 원천 역전" 회귀를 막는다
+    /// (로그 재프로젝션으로 그래프의 attestation 을 복원할 수 있어야 한다).
+    #[test]
+    fn log_retains_all_attestations_on_reobservation() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "host", "ws1");
+
+        let observe = |behalf: &str, conf: f32| {
+            engine
+                .observe(ObserveInput {
+                    content: "repeated fact".into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: Some(conf),
+                    on_behalf_of: Some(behalf.into()),
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: "thing".into(),
+                        kind: None,
+                    }],
+                    relations: vec![],
+                })
+                .unwrap()
+        };
+        let first = observe("alice", 0.9);
+        let second = observe("bob", 0.1);
+        assert_eq!(first.observation_id, second.observation_id, "콘텐츠 주소 dedup");
+
+        let logged = store.observation(&first.observation_id).unwrap();
+        let entity = store.get_entity(&Entity::make_id("ws1", "thing")).unwrap();
+
+        // 로그와 프로젝션이 같은 attestation 수를 지닌다 - 로그가 진실의 원천.
+        assert_eq!(logged.provenance.len(), 2, "로그에 두 attestation 보존");
+        assert_eq!(entity.provenance.len(), 2);
+        let behalfs: Vec<Option<String>> = logged
+            .provenance
+            .iter()
+            .map(|p| p.on_behalf_of.clone())
+            .collect();
+        assert!(
+            behalfs.contains(&Some("alice".into())) && behalfs.contains(&Some("bob".into())),
+            "첫 관측의 provenance 가 파괴되면 안 된다: {behalfs:?}"
+        );
+    }
+
     fn observe_text(engine: &Engine, content: &str) {
         engine
             .observe(ObserveInput {

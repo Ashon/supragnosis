@@ -65,7 +65,7 @@ description-logic 관례를 빌려 **두 계층**으로 나눈다.
 | `id` | **콘텐츠 주소** (blake3 해시) -> 어떤 경로(서버/피어)로 들어와도 자동 dedup |
 | `content` | 원문 지식 조각 (텍스트/구조화) |
 | `assertions` | (선택) 클라이언트가 넘긴 후보 엔티티/관계 - **원문 표기 그대로** 로그에 남고(정규화는 프로젝션의 일), **id 계산에 포함**된다(주장은 계보/임베딩과 달리 내용 정체성 - 같은 텍스트에 다른 주장이면 다른 관측) |
-| `provenance` | `host`(acting), `on_behalf_of`(위임 주체), `workspace`, `source_ref`, `observed_at`(기록시간), `confidence`, `trust_tier` |
+| `provenance` | attestation **목록** (최소 1개): 각각 `host`(acting), `on_behalf_of`(위임 주체), `workspace`, `source_ref`, `observed_at`(기록시간), `confidence`, `trust_tier`. 같은 콘텐츠 주소로 재도착하면 덮어쓰지 않고 단조 합집합으로 누적 (원칙 3의 병합 규범) |
 | `derived_from` | (선택) 이 관측이 파생된 원천 관측 id들 - 오염 소독의 리콜 명단(원칙 18) |
 | `origin` | `origin_host_id`, `origin_seq`(호스트별 단조 증가) - 버전벡터 델타 동기화의 키 |
 | `hlc` | Hybrid Logical Clock - 호스트 벽시계 편차와 무관한 **결정적 인과 순서** |
@@ -398,6 +398,11 @@ listen = "0.0.0.0:7420"
   저장소는 `KnowledgeStore` 포트 뒤 - mem/cozo 교체가 도메인 무변경.
 - 원칙 14(안정 식별자): 관측 id=blake3 콘텐츠주소(동봉 주장 포함), 엔티티 id=정규명
   결정적 해소, 관계 id=정준화된 kind(표기 요동 무관) - 전부 결정적 순수 함수.
+  해시는 length-prefix 인코딩 - content 에 구분자를 심는 경계 조작으로 다른 관측과
+  id 를 충돌시킬 수 없다 (원칙 18).
+- 원칙 3(관측 로그 불변): 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라
+  provenance attestation / derived_from 계보의 **단조 합집합**으로 흡수된다
+  (원칙 3의 병합 규범). 로그 재프로젝션으로 그래프의 attestation 을 복원할 수 있다.
 - 원칙 4(바이템포럴) *스키마*: 관계에 `valid_from`/`valid_to`(유효시간), provenance `observed_at`
   (기록시간) 필드 도입. 시간여행 질의 **로직**은 이연.
 - 원칙 18(오염 방어) *스키마*: provenance `trust_tier`(기본 `AgentExtracted`, 승격 명시적) +
@@ -407,8 +412,9 @@ listen = "0.0.0.0:7420"
 
 **의도적 이연 (마일스톤 지정)**
 - 원칙 1/6(주장<->믿음 분리, 충돌 보존): 현재 `observe` 는 관측 저장 후 **인라인 단순 프로젝션**
-  (엔티티 kind 는 last-write-wins, 관계 provenance 는 단수 교체). 관측/관계의
-  **다중 attestation 누적**과 교체 가능한 해소 정책은 **M3**(해소 계층).
+  (엔티티 kind 는 last-write-wins, 관계 provenance 는 단수 교체). 관측의 다중
+  attestation 누적은 로그 계층에서 구현됨(위 원칙 3 항목) - **관계**의 다중
+  attestation 누적과 교체 가능한 해소 정책은 **M3**(해소 계층).
   참고: 구조화 주장(`assertions` - 엔티티 kind 포함)이 관측 로그에 원문 그대로
   동봉되므로, 로그 재프로젝션으로 어떤 해소 정책이든 소급 적용 가능하다 - 이
   이연이 파괴적이지 않은 근거.

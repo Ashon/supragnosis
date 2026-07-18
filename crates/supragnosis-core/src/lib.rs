@@ -69,6 +69,27 @@ pub struct Assertions {
     pub relations: Vec<RelationAssertion>,
 }
 
+/// 필드를 length-prefix 로 해시에 넣는다. 구분자(`\0`) 연접은 경계가 모호해 content 에
+/// 구분자를 심으면 다른 필드 조합과 같은 바이트열을 구성할 수 있었다(id 선점, 원칙 18).
+/// 길이 접두는 각 필드의 범위를 스트림 자체가 확정하므로 경계 조작이 불가능하다.
+fn hash_field(hasher: &mut blake3::Hasher, bytes: &[u8]) {
+    hasher.update(&(bytes.len() as u64).to_le_bytes());
+    hasher.update(bytes);
+}
+
+/// Option 필드는 presence 바이트를 앞세운다 - None 과 Some("") 이 구별된다.
+fn hash_opt_field(hasher: &mut blake3::Hasher, v: Option<&str>) {
+    match v {
+        Some(s) => {
+            hasher.update(&[1]);
+            hash_field(hasher, s.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+}
+
 impl Assertions {
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty() && self.relations.is_empty()
@@ -76,22 +97,18 @@ impl Assertions {
 
     /// 콘텐츠 주소 해시용 결정적 바이트 인코딩. serde 포맷에 결합하지 않는 수제
     /// 인코딩으로, 직렬화 라이브러리가 바뀌어도 id 가 흔들리지 않게 한다.
+    /// 개수와 각 필드를 length-prefix 로 넣으므로 빈 주장(0,0)도 명시적으로 인코딩된다.
     fn hash_into(&self, hasher: &mut blake3::Hasher) {
+        hasher.update(&(self.entities.len() as u64).to_le_bytes());
         for e in &self.entities {
-            hasher.update(b"E\0");
-            hasher.update(e.name.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(e.kind.as_deref().unwrap_or("").as_bytes());
-            hasher.update(b"\0");
+            hash_field(hasher, e.name.as_bytes());
+            hash_opt_field(hasher, e.kind.as_deref());
         }
+        hasher.update(&(self.relations.len() as u64).to_le_bytes());
         for r in &self.relations {
-            hasher.update(b"R\0");
-            hasher.update(r.from.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(r.kind.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(r.to.as_bytes());
-            hasher.update(b"\0");
+            hash_field(hasher, r.from.as_bytes());
+            hash_field(hasher, r.kind.as_bytes());
+            hash_field(hasher, r.to.as_bytes());
         }
     }
 }
@@ -118,7 +135,10 @@ pub struct RelationAssertion {
 pub struct Observation {
     pub id: String,
     pub content: String,
-    pub provenance: Provenance,
+    /// 출처 attestation 목록 (원칙 2, 최소 1개). 같은 콘텐츠 주소로 재도착한 관측은
+    /// 덮어쓰지 않고 이 목록의 **단조 합집합**으로 흡수된다(원칙 3) - [`Observation::absorb`].
+    /// 콘텐츠 주소가 워크스페이스를 포함하므로 모든 attestation 은 같은 워크스페이스다.
+    pub provenance: Vec<Provenance>,
     /// 동봉된 구조화 주장 (원칙 1: 엔티티/관계 그래프는 이 로그의 프로젝션이어야 한다).
     /// **콘텐츠 주소 id 계산에 포함한다** - 계보/임베딩과 달리 주장은 내용 정체성이다.
     /// 같은 텍스트라도 다른 주장을 동봉하면 다른 관측이다 (덮어쓰기 dedup 방지).
@@ -141,27 +161,75 @@ impl Observation {
         Self::with_assertions(content, provenance, Assertions::default())
     }
 
-    /// 구조화 주장을 동봉한 관측. 주장이 비어 있으면 id 는 `new` 와 동일하고
-    /// (텍스트 전용 관측의 id 호환), 주장이 있으면 id 계산에 포함된다.
+    /// 구조화 주장을 동봉한 관측. 주장이 비어 있으면 id 는 `new` 와 동일하고,
+    /// 주장이 있으면 id 계산에 포함된다. 모든 필드는 length-prefix 로 인코딩되어
+    /// content 에 구분자를 심는 경계 조작으로는 다른 관측과 충돌시킬 수 없다.
     pub fn with_assertions(content: String, provenance: Provenance, assertions: Assertions) -> Self {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(provenance.workspace.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(content.as_bytes());
-        if !assertions.is_empty() {
-            hasher.update(b"\0");
-            assertions.hash_into(&mut hasher);
-        }
+        hash_field(&mut hasher, provenance.workspace.as_bytes());
+        hash_field(&mut hasher, content.as_bytes());
+        assertions.hash_into(&mut hasher);
         let id = hasher.finalize().to_hex().to_string();
         Self {
             id,
             content,
-            provenance,
+            provenance: vec![provenance],
             assertions,
             derived_from: Vec::new(),
             embedding: None,
         }
     }
+
+    /// 이 관측의 워크스페이스. 콘텐츠 주소가 워크스페이스를 포함하므로 모든
+    /// attestation 이 같은 워크스페이스를 지닌다 - 첫 항목이 대표다.
+    pub fn workspace(&self) -> &str {
+        self.provenance.first().map(|p| p.workspace.as_str()).unwrap_or("")
+    }
+
+    /// 같은 콘텐츠 주소의 재도착을 **단조 병합**한다 (원칙 3: 덮어쓰기 금지).
+    /// 비정체성 필드(provenance attestation, derived_from 계보)를 합집합으로 누적한다 -
+    /// 합집합은 교환/결합/멱등이라 도착 순서와 무관하게 같은 결과로 수렴한다(원칙 16).
+    /// 릴레이 중복(완전 동일 attestation)은 자연 dedup 되고, 독립 재관측(어느 필드든
+    /// 다른 attestation)은 누적된다. 정체성 필드(content/assertions)는 id 가 같으면
+    /// 동일하므로 건드리지 않는다. 임베딩은 회상 보조일 뿐이라(원칙 19) 기존 값을
+    /// 유지하고 없을 때만 받는다.
+    pub fn absorb(&mut self, other: Observation) {
+        debug_assert_eq!(self.id, other.id, "absorb 는 같은 콘텐츠 주소끼리만");
+        self.provenance.extend(other.provenance);
+        self.provenance.sort_by(provenance_order);
+        self.provenance
+            .dedup_by(|a, b| provenance_order(a, b) == std::cmp::Ordering::Equal);
+        self.derived_from.extend(other.derived_from);
+        self.derived_from.sort();
+        self.derived_from.dedup();
+        if self.embedding.is_none() {
+            self.embedding = other.embedding;
+        }
+    }
+}
+
+/// attestation 의 결정적 전순서 - 합집합의 정렬/중복 제거에 쓴다. 필드 전체를
+/// 비교하므로 "같음"은 완전 동일 attestation(릴레이 중복)뿐이고, 어떤 필드든 다르면
+/// (독립 재관측) 별개로 남는다. confidence 는 to_bits 로 전순서화한다.
+fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
+    (
+        a.host.as_str(),
+        a.on_behalf_of.as_deref(),
+        a.workspace.as_str(),
+        a.source_ref.as_deref(),
+        a.observed_at,
+        a.confidence.to_bits(),
+        a.trust_tier,
+    )
+        .cmp(&(
+            b.host.as_str(),
+            b.on_behalf_of.as_deref(),
+            b.workspace.as_str(),
+            b.source_ref.as_deref(),
+            b.observed_at,
+            b.confidence.to_bits(),
+            b.trust_tier,
+        ))
 }
 
 /// 엔티티(개념 노드).
@@ -189,13 +257,12 @@ pub struct Entity {
 }
 
 impl Entity {
-    /// 결정적 엔티티 ID = blake3(workspace + normalized_name).
+    /// 결정적 엔티티 ID = blake3(workspace + normalized_name), length-prefix 인코딩.
     /// M0 해소 규칙: 정규명 완전일치(대소문자/공백 정규화). 임베딩 유사도 해소는 M3.
     pub fn make_id(workspace: &str, canonical_name: &str) -> String {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(workspace.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(canonical_name.trim().to_lowercase().as_bytes());
+        hash_field(&mut hasher, workspace.as_bytes());
+        hash_field(&mut hasher, canonical_name.trim().to_lowercase().as_bytes());
         hasher.finalize().to_hex().to_string()
     }
 }
@@ -256,16 +323,14 @@ pub fn normalize_relation_kind(kind: &str) -> String {
 }
 
 impl Relation {
-    /// 결정적 관계 ID = blake3(from + normalized_kind + to). kind 는
-    /// [`normalize_relation_kind`] 를 거치므로 표기 요동이 같은 엣지 id 로 수렴한다.
-    /// (from/to 는 이미 해소된 정규 엔티티 id.)
+    /// 결정적 관계 ID = blake3(from + normalized_kind + to), length-prefix 인코딩.
+    /// kind 는 [`normalize_relation_kind`] 를 거치므로 표기 요동이 같은 엣지 id 로
+    /// 수렴한다. (from/to 는 이미 해소된 정규 엔티티 id.)
     pub fn make_id(from: &str, kind: &str, to: &str) -> String {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(from.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(normalize_relation_kind(kind).as_bytes());
-        hasher.update(b"\0");
-        hasher.update(to.as_bytes());
+        hash_field(&mut hasher, from.as_bytes());
+        hash_field(&mut hasher, normalize_relation_kind(kind).as_bytes());
+        hash_field(&mut hasher, to.as_bytes());
         hasher.finalize().to_hex().to_string()
     }
 }
@@ -493,6 +558,87 @@ mod tests {
             },
         );
         assert_eq!(asserted.id, again.id);
+    }
+
+    /// length-prefix 인코딩: content 에 구분자를 심어 주장 블록을 위조하는 경계 조작이
+    /// 다른 관측과 같은 id 를 만들 수 없다 (구분자 연접 시절엔 충돌이 구성 가능했다).
+    #[test]
+    fn length_prefix_blocks_boundary_collision() {
+        let crafted = Observation::new("x\0E\0rmcp\0Tool\0".into(), prov());
+        let asserted = Observation::with_assertions(
+            "x".into(),
+            prov(),
+            Assertions {
+                entities: vec![EntityAssertion {
+                    name: "rmcp".into(),
+                    kind: Some("Tool".into()),
+                }],
+                relations: vec![],
+            },
+        );
+        assert_ne!(crafted.id, asserted.id, "경계 조작 충돌은 막혀야 한다");
+
+        // Option presence 인코딩: 타입 미지정과 빈 문자열 타입은 다른 주장이다.
+        let untyped = Observation::with_assertions(
+            "x".into(),
+            prov(),
+            Assertions {
+                entities: vec![EntityAssertion { name: "rmcp".into(), kind: None }],
+                relations: vec![],
+            },
+        );
+        let empty_typed = Observation::with_assertions(
+            "x".into(),
+            prov(),
+            Assertions {
+                entities: vec![EntityAssertion {
+                    name: "rmcp".into(),
+                    kind: Some(String::new()),
+                }],
+                relations: vec![],
+            },
+        );
+        assert_ne!(untyped.id, empty_typed.id);
+    }
+
+    /// absorb 의 단조 합집합: 도착 순서와 무관하게 같은 결과(교환), 릴레이 중복은
+    /// 자연 dedup(멱등), 독립 재관측은 누적된다 (원칙 3/16).
+    #[test]
+    fn absorb_union_is_order_independent_and_idempotent() {
+        let prov_a = Provenance {
+            host: "host-a".into(),
+            confidence: 0.9,
+            ..prov()
+        };
+        let prov_b = Provenance {
+            host: "host-b".into(),
+            confidence: 0.1,
+            ..prov()
+        };
+
+        let make = |p: &Provenance, derived: &[&str]| {
+            let mut o = Observation::new("same fact".into(), p.clone());
+            o.derived_from = derived.iter().map(|s| s.to_string()).collect();
+            o
+        };
+
+        // a 먼저 vs b 먼저 - 같은 attestation/계보 집합으로 수렴.
+        let mut ab = make(&prov_a, &["o1"]);
+        ab.absorb(make(&prov_b, &["o2"]));
+        let mut ba = make(&prov_b, &["o2"]);
+        ba.absorb(make(&prov_a, &["o1"]));
+        assert_eq!(ab.provenance.len(), 2);
+        let hosts = |o: &Observation| -> Vec<String> {
+            o.provenance.iter().map(|p| p.host.clone()).collect()
+        };
+        assert_eq!(hosts(&ab), hosts(&ba), "합집합은 순서 무관");
+        assert_eq!(ab.derived_from, ba.derived_from);
+        assert_eq!(ab.derived_from, vec!["o1".to_string(), "o2".to_string()]);
+
+        // 릴레이 중복(완전 동일 attestation)은 늘지 않는다 (멱등).
+        ab.absorb(make(&prov_a, &["o1"]));
+        assert_eq!(ab.provenance.len(), 2);
+        assert_eq!(ab.derived_from.len(), 2);
     }
 
     #[test]

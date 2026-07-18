@@ -11,8 +11,8 @@ use cozo::{DataValue, Db, NamedRows, RocksDbStorage, ScriptMutability};
 use serde_json::json;
 
 use supragnosis_core::{
-    cosine_similarity, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
-    StoreError, TraverseHit,
+    cosine_similarity, Assertions, Entity, KnowledgeStore, Observation, Provenance, Relation,
+    SearchHit, SearchHitKind, StoreError, TraverseHit,
 };
 
 pub struct CozoStore {
@@ -191,6 +191,44 @@ impl CozoStore {
             .collect()
     }
 
+    /// 관측 로그에서 id 로 관측을 복원한다 (재도착 병합의 기준 + 검사/테스트용).
+    /// data JSON 에서 provenance(attestation 목록)/assertions/derived_from/embedding 을 되살린다.
+    pub fn observation(&self, id: &str) -> Option<Observation> {
+        let p = params(&[("id", id.to_string())]);
+        let rows = self
+            .run(
+                "?[content, data] := *observation{id: $id, content, data}",
+                p,
+                false,
+            )
+            .ok()?;
+        let row = rows.rows.into_iter().next()?;
+        let content = row.first()?.get_str()?.to_string();
+        let data: serde_json::Value = serde_json::from_str(row.get(1)?.get_str()?).ok()?;
+        let provenance: Vec<Provenance> =
+            serde_json::from_value(data.get("provenance")?.clone()).ok()?;
+        let assertions: Assertions = data
+            .get("assertions")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        let derived_from: Vec<String> = data
+            .get("derived_from")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        let embedding: Option<Vec<f32>> = data
+            .get("embedding")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        Some(Observation {
+            id: id.to_string(),
+            content,
+            provenance,
+            assertions,
+            derived_from,
+            embedding,
+        })
+    }
+
     /// 벡터 인덱스가 없을 때의 브루트포스 시맨틱 검색. data JSON 의 embedding 을 로드해
     /// Rust 에서 코사인 유사도로 랭킹한다. 관측(observation/content)과 엔티티(entity/name)가
     /// 공유하며, 두 관계 모두 workspace 컬럼이 있어 스토어에서 바로 필터한다.
@@ -335,7 +373,16 @@ fn relation_from_parts(
 
 impl KnowledgeStore for CozoStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
-        let workspace = obs.provenance.workspace.clone();
+        // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
+        // (원칙 3: 로그 불변). 기존 행을 읽어 attestation/계보를 병합한 뒤 쓴다.
+        let obs = match self.observation(&obs.id) {
+            Some(mut existing) => {
+                existing.absorb(obs);
+                existing
+            }
+            None => obs,
+        };
+        let workspace = obs.workspace().to_string();
         let obs_id = obs.id.clone();
         let embedding = obs.embedding.clone();
         // 복합 필드는 data JSON 컬럼에 (provenance + 주장 + derived_from 계보 + 임베딩).
@@ -764,6 +811,41 @@ mod tests {
             assert!(store2.get_entity(&a).is_some(), "data should persist");
         }
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 원칙 3: Cozo 어댑터도 재도착을 합집합으로 흡수하고, 병합 결과가 영속한다.
+    #[test]
+    fn cozo_reobservation_accumulates_attestations() {
+        let dir = tmp_dir();
+        let make = |host: &str, conf: f32, derived: &str| {
+            let mut o = Observation::new(
+                "same fact".into(),
+                Provenance {
+                    host: host.into(),
+                    confidence: conf,
+                    ..prov()
+                },
+            );
+            o.derived_from = vec![derived.into()];
+            o
+        };
+        let id = make("host-a", 0.9, "o1").id;
+        {
+            let store = CozoStore::open(&dir).unwrap();
+            store.add_observation(make("host-a", 0.9, "o1")).unwrap();
+            store.add_observation(make("host-b", 0.1, "o2")).unwrap();
+
+            let o = store.observation(&id).unwrap();
+            assert_eq!(o.provenance.len(), 2, "attestation 누적: {:?}", o.provenance);
+            assert_eq!(o.derived_from, vec!["o1".to_string(), "o2".to_string()]);
+        }
+        // 병합 결과가 재오픈 후에도 유지된다.
+        {
+            let store = CozoStore::open(&dir).unwrap();
+            let o = store.observation(&id).unwrap();
+            assert_eq!(o.provenance.len(), 2);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
