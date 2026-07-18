@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
+use std::sync::Mutex;
 
 use cozo::{DataValue, Db, NamedRows, RocksDbStorage, ScriptMutability};
 use serde_json::json;
@@ -20,6 +21,11 @@ pub struct CozoStore {
     /// 벡터 인덱스 차원. Some(n) 이면 obs_vec 관계 + HNSW 인덱스를 두고 의미 검색을
     /// 네이티브 ANN 으로 처리한다. None 이면 임베딩을 data JSON 에만 두고 브루트포스한다.
     vector_dim: Option<usize>,
+    /// 관측 병합(read-merge-write)의 원자성 가드. 포트 계약(`Send + Sync + &self`)이
+    /// 동시 호출을 허용하는데, 기준 읽기와 put 이 별도 트랜잭션이라 두 스레드가 같은
+    /// id 로 동시에 들어오면 마지막 put 이 상대의 attestation 을 지운다(원칙 3 위반).
+    /// InMemory 는 RwLock write guard 안에서 원자 병합한다 - 이 뮤텍스가 그 parity 다.
+    merge_lock: Mutex<()>,
 }
 
 impl CozoStore {
@@ -53,6 +59,7 @@ impl CozoStore {
         let store = Self {
             db,
             vector_dim: embedder.as_ref().map(|(_, d)| *d),
+            merge_lock: Mutex::new(()),
         };
         store.ensure_schema()?;
         if let Some((id, _)) = &embedder {
@@ -438,6 +445,9 @@ impl KnowledgeStore for CozoStore {
     }
 
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
+        // read-merge-write 를 뮤텍스로 원자화한다 - 동시 재도착이 서로의 attestation 을
+        // 지우지 못하게 (InMemory 의 write guard 병합과 동시성 의미론 parity, 원칙 3).
+        let _guard = self.merge_lock.lock().unwrap();
         // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
         // (원칙 3: 로그 불변). 기존 행을 읽어 attestation/계보를 병합한 뒤 쓴다.
         // 기준 읽기 실패는 전파한다 - 실패를 부재로 오인하면 absorb 대신 덮어쓰기가 된다.
