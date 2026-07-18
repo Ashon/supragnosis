@@ -3909,6 +3909,7 @@ dependencies = [
  "reqwest",
  "rmcp",
  "serde_json",
+ "supragnosis-core",
  "supragnosis-embed",
  "supragnosis-engine",
  "supragnosis-mcp",

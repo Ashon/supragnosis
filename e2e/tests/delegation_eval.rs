@@ -30,6 +30,9 @@
 //!   OLLAMA_BASE_URL (기본 http://localhost:11434)
 //!   OLLAMA_MODELS   (콤마 구분, 기본 gemma4)
 //!   EVAL_RUNS       (반복 횟수, 기본 1 - 소형 모델 흔들림을 pass-rate 로 재려면 3+)
+//!   EVAL_EMBEDDERS  (콤마 구분, 기본 hashing - 예: hashing,fastembed. delegated 회수를
+//!                    임베더별로 A/B 한다. fastembed 는 --features real-embed 빌드 필요.
+//!                    어휘 해싱의 토큰 충돌 갭이 의미 임베더로 닫히는지를 격리 측정)
 //!   EVAL_SCALES     (콤마 구분 잡음 사실 수, 기본 60 - 예: 60,300,1000. baseline 은
 //!                    코퍼스에 선형으로 비싸지고 컨텍스트 윈도우를 넘으면 무너지는 반면
 //!                    delegated 는 상수임을 손익분기 곡선으로 보이기 위한 축)
@@ -48,7 +51,6 @@ use supragnosis_e2e::bridge::{
     DEFAULT_BASE,
 };
 use supragnosis_e2e::report;
-use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, EntityInput, ObserveInput, RelationInput};
 use supragnosis_store::InMemoryStore;
 
@@ -295,11 +297,12 @@ struct QuestionResult {
     completion_tokens: u64,
 }
 
-/// (모델, 잡음 규모, 조건)별 결과 묶음.
+/// (모델, 잡음 규모, 조건, 임베더)별 결과 묶음. baseline 은 엔진을 쓰지 않으므로 "-".
 struct ConditionResult {
     model: String,
     scale: usize,
     condition: &'static str,
+    embedder: String,
     results: Vec<QuestionResult>,
 }
 
@@ -579,10 +582,10 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
     // 정량 요약표.
     md.push_str("## 정량 요약\n\n");
     md.push_str(
-        "| 모델 | scale | 조건 | 정확도(answerable) | stale | 부작위(unanswerable) | 환각 | \
+        "| 모델 | scale | 조건 | 임베더 | 정확도(answerable) | stale | 부작위(unanswerable) | 환각 | \
          평균 토큰/질문 | 토큰/정답 |\n",
     );
-    md.push_str("|---|---|---|---|---|---|---|---|---|\n");
+    md.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
     for c in conditions {
         let (correct, total) = c.accuracy();
         let (abstained, un_total) = c.abstain();
@@ -591,10 +594,11 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
             .map(|t| format!("{t:.0}"))
             .unwrap_or_else(|| "-".into());
         md.push_str(&format!(
-            "| {} | {} | {} | {}/{} | {} | {}/{} | {} | {:.0} | {} |\n",
+            "| {} | {} | {} | {} | {}/{} | {} | {}/{} | {} | {:.0} | {} |\n",
             c.model,
             c.scale,
             c.condition,
+            c.embedder,
             correct,
             total,
             c.stale_count(),
@@ -610,8 +614,8 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
     md.push_str("\n## 트랜스크립트 (정성 리뷰용)\n");
     for c in conditions {
         md.push_str(&format!(
-            "\n### {} / scale {} / {}\n",
-            c.model, c.scale, c.condition
+            "\n### {} / scale {} / {} / {}\n",
+            c.model, c.scale, c.condition, c.embedder
         ));
         for r in &c.results {
             md.push_str(&format!(
@@ -663,6 +667,18 @@ async fn delegation_beats_context_stuffing() {
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
         .collect();
+    // 임베더 A/B 축. 실모델 초기화 비용을 한 번만 치르도록 여기서 만들고 clone 공유한다.
+    let embedder_names: Vec<String> = std::env::var("EVAL_EMBEDDERS")
+        .unwrap_or_else(|_| "hashing".to_string())
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let embedder_list: Vec<(String, std::sync::Arc<dyn supragnosis_core::EmbeddingProvider>)> =
+        embedder_names
+            .iter()
+            .map(|n| (n.clone(), supragnosis_e2e::embedders::make_embedder(n)))
+            .collect();
 
     let http = reqwest::Client::builder()
         // 큰 scale 의 baseline 은 프롬프트 평가가 길다 - 넉넉히 잡는다.
@@ -682,56 +698,64 @@ async fn delegation_beats_context_stuffing() {
             eprintln!("\n=== 모델: {model} / 잡음 {scale}건 ===");
             let corpus = corpus_text(scale);
 
-            // delegated 조건용 MCP 서버((모델, 규모)별 새 엔진 - 교차 오염 방지).
-            let engine = Arc::new(
-                Engine::new(Arc::new(InMemoryStore::new()), "delegation-eval", WS)
-                    .with_embedder(Arc::new(HashingEmbedder::default())),
-            );
-            load_corpus(&engine, scale);
-            let (client, server) = serve_engine(engine).await;
-            let tools = openai_tools(&client).await;
-
+            // baseline 은 엔진(임베더)과 무관 - (모델, 규모)당 한 번만 잰다.
             let mut baseline = ConditionResult {
                 model: model.to_string(),
                 scale,
                 condition: "baseline",
+                embedder: "-".into(),
                 results: Vec::new(),
             };
-            let mut delegated = ConditionResult {
-                model: model.to_string(),
-                scale,
-                condition: "delegated",
-                results: Vec::new(),
-            };
-
             for run in 1..=runs {
                 for q in questions() {
                     let rb = run_baseline(&http, &base, model, &corpus, &q, run).await;
                     eprintln!(
-                        "  [baseline ] run{run} {:<28} {:<12} ({}tk)",
+                        "  [baseline           ] run{run} {:<28} {:<12} ({}tk)",
                         q.name,
                         rb.verdict.label(),
                         rb.prompt_tokens + rb.completion_tokens
                     );
                     baseline.results.push(rb);
-
-                    let rd = run_delegated(&http, &base, model, &client, &tools, &q, run).await;
-                    eprintln!(
-                        "  [delegated] run{run} {:<28} {:<12} ({}tk, 도구 {}회)",
-                        q.name,
-                        rd.verdict.label(),
-                        rd.prompt_tokens + rd.completion_tokens,
-                        rd.tool_log.len()
-                    );
-                    delegated.results.push(rd);
                 }
             }
-
             conditions.push(baseline);
-            conditions.push(delegated);
 
-            let _ = client.cancel().await;
-            let _ = server.await;
+            // delegated 는 임베더별로 새 엔진((모델, 규모, 임베더) 격리)에서 잰다.
+            for (emb_name, emb) in &embedder_list {
+                let engine = Arc::new(
+                    Engine::new(Arc::new(InMemoryStore::new()), "delegation-eval", WS)
+                        .with_embedder(emb.clone()),
+                );
+                load_corpus(&engine, scale);
+                let (client, server) = serve_engine(engine).await;
+                let tools = openai_tools(&client).await;
+
+                let mut delegated = ConditionResult {
+                    model: model.to_string(),
+                    scale,
+                    condition: "delegated",
+                    embedder: emb_name.clone(),
+                    results: Vec::new(),
+                };
+                for run in 1..=runs {
+                    for q in questions() {
+                        let rd =
+                            run_delegated(&http, &base, model, &client, &tools, &q, run).await;
+                        eprintln!(
+                            "  [delegated/{emb_name:<9}] run{run} {:<28} {:<12} ({}tk, 도구 {}회)",
+                            q.name,
+                            rd.verdict.label(),
+                            rd.prompt_tokens + rd.completion_tokens,
+                            rd.tool_log.len()
+                        );
+                        delegated.results.push(rd);
+                    }
+                }
+                conditions.push(delegated);
+
+                let _ = client.cancel().await;
+                let _ = server.await;
+            }
         }
     }
 
@@ -745,10 +769,11 @@ async fn delegation_beats_context_stuffing() {
             .map(|t| format!("{t:.0}"))
             .unwrap_or_else(|| "-".into());
         eprintln!(
-            "  {:<14} n={:<5} {:<10} acc {}/{}  stale {}  abstain {}/{}  halluc {}  tk/q {:.0}  tk/correct {}",
+            "  {:<14} n={:<5} {:<10} emb={:<9} acc {}/{}  stale {}  abstain {}/{}  halluc {}  tk/q {:.0}  tk/correct {}",
             c.model,
             c.scale,
             c.condition,
+            c.embedder,
             correct,
             total,
             c.stale_count(),
