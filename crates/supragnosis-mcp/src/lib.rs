@@ -2,7 +2,8 @@
 //!
 //! rmcp 매크로로 도구를 정의하고 [`supragnosis_engine::Engine`] 으로 위임한다.
 //! 도구: `observe`, `get_entity`, `search_knowledge`, `traverse`.
-//! 리소스: `supragnosis://workspace/{ws}/graph` - 온톨로지 그래프(node-link) 읽기 뷰.
+//! 리소스: `supragnosis://workspace/{ws}/graph` - 온톨로지 그래프(node-link) 읽기 뷰,
+//! `supragnosis://observation/{id}` - 관측 역참조 (원문 + provenance + 계보, 원칙 2/14).
 
 use std::future::Future;
 use std::sync::Arc;
@@ -260,8 +261,10 @@ impl ServerHandler for SupragnosisServer {
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "supragnosis: 여러 호스트/워크스페이스의 지식을 온톨로지화하는 MCP 서버. \
-                 observe 로 지식을 적재하고 get_entity/search_knowledge 로 탐색한다. \
-                 supragnosis://workspace/{ws}/graph 리소스로 온톨로지 그래프 전체(node-link)를 조회한다."
+                 observe 로 지식을 적재하고 search_knowledge/get_entity/traverse 로 탐색한다. \
+                 리소스: supragnosis://workspace/{ws}/graph 는 온톨로지 그래프 전체(node-link), \
+                 supragnosis://observation/{id} 는 관측 역참조(원문+출처+계보 - 검색 히트의 \
+                 근거를 확인할 때 사용)."
                     .to_string(),
             ),
             ..Default::default()
@@ -289,13 +292,13 @@ impl ServerHandler for SupragnosisServer {
         ])))
     }
 
-    /// 리소스 템플릿: 임의 워크스페이스의 그래프를 URI 패턴으로 조회하게 한다.
+    /// 리소스 템플릿: 임의 워크스페이스의 그래프와 관측 역참조를 URI 패턴으로 조회하게 한다.
     fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + Send + '_ {
-        let tmpl = RawResourceTemplate {
+        let graph = RawResourceTemplate {
             uri_template: "supragnosis://workspace/{workspace}/graph".to_string(),
             name: "workspace-graph".to_string(),
             title: Some("워크스페이스 온톨로지 그래프".to_string()),
@@ -306,8 +309,23 @@ impl ServerHandler for SupragnosisServer {
             mime_type: Some("application/json".to_string()),
             icons: None,
         };
+        // 관측 역참조 (원칙 2/14): 검색 히트의 관측 id 로 원문 + provenance + 계보에
+        // 도달하는 경로 - "이 답이 어디서 왔는가"에 답하는 표면.
+        let observation = RawResourceTemplate {
+            uri_template: "supragnosis://observation/{id}".to_string(),
+            name: "observation".to_string(),
+            title: Some("관측 (원문 + 출처 + 계보)".to_string()),
+            description: Some(
+                "관측 id(search_knowledge 히트의 kind=observation id)로 원문 content, \
+                 provenance attestation 전체, derived_from 계보를 조회한다."
+                    .to_string(),
+            ),
+            mime_type: Some("application/json".to_string()),
+            icons: None,
+        };
         std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
-            tmpl.no_annotation(),
+            graph.no_annotation(),
+            observation.no_annotation(),
         ])))
     }
 
@@ -319,8 +337,8 @@ impl ServerHandler for SupragnosisServer {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
         let uri = request.uri;
-        let result = match parse_graph_uri(&uri) {
-            Some(ws) => match self.engine.graph(Some(ws)) {
+        let result = match parse_resource_uri(&uri) {
+            Some(ResourceUri::Graph(ws)) => match self.engine.graph(Some(ws)) {
                 Ok(graph) => Ok(ReadResourceResult {
                     contents: vec![ResourceContents::text(to_json(&graph), uri)],
                 }),
@@ -330,9 +348,27 @@ impl ServerHandler for SupragnosisServer {
                     None,
                 )),
             },
+            // 관측 역참조 (원칙 2/14): id 를 아는 자는 실체(원문/provenance/계보)를 조회한다.
+            Some(ResourceUri::Observation(id)) => match self.engine.get_observation(id) {
+                Ok(Some(obs)) => Ok(ReadResourceResult {
+                    contents: vec![ResourceContents::text(to_json(&obs), uri)],
+                }),
+                Ok(None) => Err(ErrorData::resource_not_found(
+                    format!(
+                        "관측 id 를 찾지 못함: {id} - 부재는 부정이 아니다(열린 세계). \
+                         search_knowledge 히트의 kind=observation id 를 사용하라"
+                    ),
+                    None,
+                )),
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("저장소 백엔드 실패 (리소스 부재가 아니다): {e}"),
+                    None,
+                )),
+            },
             None => Err(ErrorData::resource_not_found(
                 format!(
-                    "알 수 없는 리소스 URI: {uri} - supragnosis://workspace/{{workspace}}/graph 형태만 지원한다"
+                    "알 수 없는 리소스 URI: {uri} - supragnosis://workspace/{{workspace}}/graph \
+                     또는 supragnosis://observation/{{id}} 형태만 지원한다"
                 ),
                 None,
             )),
@@ -341,16 +377,30 @@ impl ServerHandler for SupragnosisServer {
     }
 }
 
-/// `supragnosis://workspace/<ws>/graph` 에서 워크스페이스를 뽑는다. 형식이 어긋나면 None.
-/// ws 에는 `/` 가 없어야 한다(경로 세그먼트 하나).
-fn parse_graph_uri(uri: &str) -> Option<&str> {
-    let ws = uri
-        .strip_prefix("supragnosis://workspace/")?
-        .strip_suffix("/graph")?;
-    if ws.is_empty() || ws.contains('/') {
-        return None;
+/// 리소스 URI 의 종류.
+enum ResourceUri<'a> {
+    /// `supragnosis://workspace/<ws>/graph` - 워크스페이스 온톨로지 그래프.
+    Graph(&'a str),
+    /// `supragnosis://observation/<id>` - 관측 역참조 (원칙 2/14).
+    Observation(&'a str),
+}
+
+/// 리소스 URI 파서. 형식이 어긋나면 None. 세그먼트에는 `/` 가 없어야 한다.
+fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
+    if let Some(rest) = uri.strip_prefix("supragnosis://workspace/") {
+        let ws = rest.strip_suffix("/graph")?;
+        if ws.is_empty() || ws.contains('/') {
+            return None;
+        }
+        return Some(ResourceUri::Graph(ws));
     }
-    Some(ws)
+    if let Some(id) = uri.strip_prefix("supragnosis://observation/") {
+        if id.is_empty() || id.contains('/') {
+            return None;
+        }
+        return Some(ResourceUri::Observation(id));
+    }
+    None
 }
 
 // --- 직렬화 헬퍼 (도구는 JSON 문자열을 반환) --------------------------------

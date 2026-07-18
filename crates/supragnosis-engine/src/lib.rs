@@ -328,6 +328,12 @@ impl Engine {
         Ok(id)
     }
 
+    /// 관측 역참조 (원칙 2/14): 검색 히트/파생 계보가 돌려준 관측 id 로 원문과
+    /// provenance 전체, derived_from 계보에 도달한다 - "이 답이 어디서 왔는가"의 종점.
+    pub fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
+        self.store.get_observation(id)
+    }
+
     /// 엔티티 + 관계 조회. `Ok(None)` 은 부재(미지, 원칙 5), `Err` 는 저장소 고장 -
     /// 호출자(MCP 표면)가 둘을 구별해 전달할 수 있도록 실패를 삼키지 않는다.
     pub fn get_entity(&self, id: &str) -> Result<Option<EntityView>, StoreError> {
@@ -742,7 +748,7 @@ mod tests {
 
         // 같은 텍스트라도 주장이 다르면 다른 관측 - 타입 재배정의 흔적이 로그에 남는다.
         assert_ne!(first.observation_id, second.observation_id);
-        let logged = store.observation(&second.observation_id).unwrap();
+        let logged = store.get_observation(&second.observation_id).unwrap().unwrap();
         assert_eq!(logged.assertions.entities.len(), 1);
         assert_eq!(logged.assertions.entities[0].kind.as_deref(), Some("Project"));
     }
@@ -807,7 +813,7 @@ mod tests {
         let out = observe_with_interval(Some(200));
 
         // 로그: 주장에 유효구간이 원문 그대로 동봉된다.
-        let logged = store.observation(&out.observation_id).unwrap();
+        let logged = store.get_observation(&out.observation_id).unwrap().unwrap();
         assert_eq!(logged.assertions.relations[0].valid_from, Some(100));
         assert_eq!(logged.assertions.relations[0].valid_to, Some(200));
 
@@ -852,7 +858,7 @@ mod tests {
         let second = observe("bob", 0.1);
         assert_eq!(first.observation_id, second.observation_id, "콘텐츠 주소 dedup");
 
-        let logged = store.observation(&first.observation_id).unwrap();
+        let logged = store.get_observation(&first.observation_id).unwrap().unwrap();
         let entity = store
             .get_entity(&Entity::make_id("ws1", "thing"))
             .unwrap()

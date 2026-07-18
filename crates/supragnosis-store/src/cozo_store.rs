@@ -246,28 +246,6 @@ impl CozoStore {
             .collect())
     }
 
-    /// 관측 로그에서 id 로 관측을 복원한다 (재도착 병합의 기준 + 검사/테스트용).
-    /// data JSON 에서 provenance(attestation 목록)/assertions/derived_from/embedding 을 되살린다.
-    /// 부재는 `Ok(None)`, 백엔드 실패/행 손상은 `Err` - 병합 기준 읽기가 실패를 부재로
-    /// 오인하면 absorb 대신 덮어쓰기가 되어 attestation 이 파괴되므로(원칙 3) 반드시 구별한다.
-    pub fn observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
-        let p = params(&[("id", id.to_string())]);
-        let rows = self.run(
-            "?[content, data] := *observation{id: $id, content, data}",
-            p,
-            false,
-        )?;
-        let Some(row) = rows.rows.into_iter().next() else {
-            return Ok(None);
-        };
-        match observation_from_row(id, &row) {
-            Some(obs) => Ok(Some(obs)),
-            None => Err(StoreError::Backend(format!(
-                "관측 행 복원 실패 (data JSON 손상 - 부재가 아니라 고장이다): {id}"
-            ))),
-        }
-    }
-
     /// 벡터 인덱스가 없을 때의 브루트포스 시맨틱 검색. data JSON 의 embedding 을 로드해
     /// Rust 에서 코사인 유사도로 랭킹한다. 관측(observation/content)과 엔티티(entity/name)가
     /// 공유하며, 두 관계 모두 workspace 컬럼이 있어 스토어에서 바로 필터한다.
@@ -437,11 +415,33 @@ fn relation_from_parts(
 }
 
 impl KnowledgeStore for CozoStore {
+    /// 관측 로그에서 id 로 관측을 복원한다 (역참조 + 재도착 병합의 기준 읽기).
+    /// data JSON 에서 provenance(attestation 목록)/assertions/derived_from/embedding 을 되살린다.
+    /// 부재는 `Ok(None)`, 백엔드 실패/행 손상은 `Err` - 병합 기준 읽기가 실패를 부재로
+    /// 오인하면 absorb 대신 덮어쓰기가 되어 attestation 이 파괴되므로(원칙 3) 반드시 구별한다.
+    fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
+        let p = params(&[("id", id.to_string())]);
+        let rows = self.run(
+            "?[content, data] := *observation{id: $id, content, data}",
+            p,
+            false,
+        )?;
+        let Some(row) = rows.rows.into_iter().next() else {
+            return Ok(None);
+        };
+        match observation_from_row(id, &row) {
+            Some(obs) => Ok(Some(obs)),
+            None => Err(StoreError::Backend(format!(
+                "관측 행 복원 실패 (data JSON 손상 - 부재가 아니라 고장이다): {id}"
+            ))),
+        }
+    }
+
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
         // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
         // (원칙 3: 로그 불변). 기존 행을 읽어 attestation/계보를 병합한 뒤 쓴다.
         // 기준 읽기 실패는 전파한다 - 실패를 부재로 오인하면 absorb 대신 덮어쓰기가 된다.
-        let obs = match self.observation(&obs.id)? {
+        let obs = match self.get_observation(&obs.id)? {
             Some(mut existing) => {
                 existing.absorb(obs);
                 existing
@@ -1015,14 +1015,14 @@ mod tests {
             store.add_observation(make("host-a", 0.9, "o1")).unwrap();
             store.add_observation(make("host-b", 0.1, "o2")).unwrap();
 
-            let o = store.observation(&id).unwrap().unwrap();
+            let o = store.get_observation(&id).unwrap().unwrap();
             assert_eq!(o.provenance.len(), 2, "attestation 누적: {:?}", o.provenance);
             assert_eq!(o.derived_from, vec!["o1".to_string(), "o2".to_string()]);
         }
         // 병합 결과가 재오픈 후에도 유지된다.
         {
             let store = CozoStore::open(&dir).unwrap();
-            let o = store.observation(&id).unwrap().unwrap();
+            let o = store.get_observation(&id).unwrap().unwrap();
             assert_eq!(o.provenance.len(), 2);
         }
         let _ = std::fs::remove_dir_all(&dir);

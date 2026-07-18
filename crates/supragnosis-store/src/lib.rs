@@ -27,14 +27,13 @@ impl InMemoryStore {
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// 관측 로그에서 id 로 관측을 꺼낸다 (테스트/검사용 - 로그가 진실의 원천임을 검증).
-    pub fn observation(&self, id: &str) -> Option<Observation> {
-        self.observations.read().unwrap().get(id).cloned()
-    }
 }
 
 impl KnowledgeStore for InMemoryStore {
+    fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
+        Ok(self.observations.read().unwrap().get(id).cloned())
+    }
+
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
         // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
         // (원칙 3: 로그 불변 - provenance/계보가 파괴되지 않는다).
@@ -381,8 +380,8 @@ mod tests {
         reverse.add_observation(make("host-a", 0.9, "o1")).unwrap();
 
         let id = make("host-a", 0.9, "o1").id;
-        let f = forward.observation(&id).unwrap();
-        let r = reverse.observation(&id).unwrap();
+        let f = forward.get_observation(&id).unwrap().unwrap();
+        let r = reverse.get_observation(&id).unwrap().unwrap();
 
         // 두 attestation 이 모두 보존된다 - 첫 관측이 파괴되지 않는다.
         assert_eq!(f.provenance.len(), 2, "attestation 누적: {:?}", f.provenance);
