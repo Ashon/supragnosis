@@ -29,6 +29,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
 cozo = { version = "0.7", features = ["storage-rocksdb"] }
+# standalone 데몬: MCP streamable-http 서비스를 마운트할 HTTP 서버(cli 전용).
+axum = "0.8"
 
 # 내부 (crate 간)
 supragnosis-core = { path = "crates/supragnosis-core" }

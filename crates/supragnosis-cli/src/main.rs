@@ -1,15 +1,24 @@
 //! supragnosis 실행 바이너리.
 //!
-//! stdio MCP 서버. 저장소는 파일 기반 Cozo(RocksDB, 기본) 또는 in-memory 선택.
+//! MCP 서버. 저장소는 파일 기반 Cozo(RocksDB, 기본) 또는 in-memory 선택.
 //! 임베딩은 fastembed(feature) / hashing / none 중 선택 - 없으면 키워드 검색으로 degrade.
-//! `SUPRAGNOSIS_VIZ_ADDR`(예 127.0.0.1:7373)를 주면 온톨로지 라이브 뷰어를 localhost 로
-//! 함께 띄운다(읽기 전용, 원칙 17: loopback 전용). MCP 서버와 같은 프로세스라 db lock 을
-//! 공유한다. (`--http` 원격 MCP 노출, `--server` 허브, sync는 이후 마일스톤에서 추가.)
+//!
+//! 전송 두 가지:
+//! - 기본: **stdio** (Claude Code 등이 chat 마다 자식 프로세스로 기동).
+//! - `SUPRAGNOSIS_HTTP_ADDR`(예 127.0.0.1:7373): **standalone 데몬** - MCP streamable-http 를
+//!   상시 노출한다. 에이전트는 `claude mcp add --transport http http://127.0.0.1:7373/mcp` 로
+//!   접속(chat 스폰 없이). 데몬이 db 의 유일한 보유자라 단일 프로세스 lock 문제도 해소.
+//!   loopback 전용 바인드(원칙 17: 로컬 신뢰 표면, 무인증). 비로컬/인증은 후속.
+//!
+//! `SUPRAGNOSIS_VIZ_ADDR`(예 127.0.0.1:7374): 온톨로지 라이브 뷰어를 함께 띄운다(두 모드 공통).
+//! (`--server` 허브, sync 는 이후 마일스톤.)
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use rmcp::{transport::stdio, ServiceExt};
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
+use rmcp::ServiceExt;
 use supragnosis_core::{EmbeddingProvider, KnowledgeStore};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::Engine;
@@ -175,11 +184,44 @@ async fn main() -> Result<()> {
         spawn_viz(&engine, &addr_str, tx).await;
     }
 
+    // standalone 데몬 모드: SUPRAGNOSIS_HTTP_ADDR 이 있으면 stdio 대신 MCP streamable-http 를
+    // 상시 노출한다(뷰어는 위에서 이미 자기 포트로 기동됨).
+    if let Ok(http_addr) = std::env::var("SUPRAGNOSIS_HTTP_ADDR") {
+        if !http_addr.trim().is_empty() {
+            return serve_http_daemon(engine, &http_addr, &host, &workspace, &session).await;
+        }
+    }
+
     let server = SupragnosisServer::new(engine);
 
     tracing::info!(%host, %workspace, %session, "supragnosis / stdio MCP 서버 시작");
 
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
+    Ok(())
+}
+
+/// standalone 데몬: MCP streamable-http 서버를 상시 실행한다. 세션마다 factory 로
+/// `SupragnosisServer` 를 만들되 `Arc<Engine>`(같은 db)을 공유한다. loopback 전용 바인드
+/// (원칙 17: 로컬 신뢰 표면 - 무인증 정당). kill 로 종료(graceful shutdown 생략).
+async fn serve_http_daemon(
+    engine: Arc<Engine>,
+    http_addr: &str,
+    host: &str,
+    workspace: &str,
+    session: &str,
+) -> Result<()> {
+    let addr = supragnosis_viz::parse_local_addr(http_addr)?; // 비로컬 바인드 거부(원칙 17)
+    let service = StreamableHttpService::new(
+        move || Ok(SupragnosisServer::new(engine.clone())),
+        Arc::new(LocalSessionManager::default()),
+        StreamableHttpServerConfig::default(),
+    );
+    let router = axum::Router::new().nest_service("/mcp", service);
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
+    tracing::info!(%host, %workspace, %session, %addr, "supragnosis / MCP streamable-http 데몬: http://{addr}/mcp");
+    axum::serve(listener, router).await?;
     Ok(())
 }

@@ -344,9 +344,16 @@ peers   = ["https://hostC.lan:7420/sync"]  # 피어 직접
 [server]                                   # role 에 "server" 포함 시에만
 listen = "0.0.0.0:7420"
 ```
-- **로컬 호스트**: MCP 클라이언트가 `supragnosis serve --stdio` 를 자식 프로세스로 기동 (+백그라운드 sync).
-- **원격 에이전트**: `supragnosis serve --http` 로 MCP streamable-HTTP 노출.
-- **허브 서버**: `supragnosis serve --server` 로 sync API 상시 기동, 여러 노드 집계/릴레이.
+- **로컬 호스트(stdio)**: MCP 클라이언트가 supragnosis 를 자식 프로세스로 기동(chat 마다).
+- **standalone 데몬(구현됨)**: `SUPRAGNOSIS_HTTP_ADDR`(예 127.0.0.1:7373)를 주면 stdio 대신
+  MCP **streamable-HTTP** 를 상시 노출한다(rmcp `StreamableHttpService` -> axum `/mcp`). 데몬이
+  db 의 유일한 보유자라 단일 프로세스 lock 문제가 사라지고, 여러 에이전트가
+  `claude mcp add --transport http http://127.0.0.1:7373/mcp` 로 접속한다(chat 스폰 없이).
+  **loopback 전용**(원칙 17: 로컬 신뢰 표면 = 무인증 정당). 동시 요청은 도구 핸들러가
+  `spawn_blocking` 으로 blocking 저장소 호출을 오프로드해 런타임 굶김을 막는다(14절 선행조건).
+  운용(launchd 등)은 [`deploy/README.md`](../deploy/README.md).
+  - 비로컬(0.0.0.0) 노출 + bearer/OAuth 인증(axum 미들웨어) + 원칙 17 주권 가드 + TLS 는 후속(M4).
+- **허브 서버**: sync API 상시 기동, 여러 노드 집계/릴레이 (M4).
 
 ### 온톨로지 라이브 뷰어 (로컬 점검용)
 
@@ -446,9 +453,15 @@ HTTP 뷰어(`supragnosis-viz` 크레이트)를 함께 띄운다. 브라우저로
   attestation 이 소실될 수 있다. 관측 로그는 store 계층에서 원자 병합되므로
   무사하고(위 원칙 3 항목), 소실은 파생 뷰에 국한되어 재프로젝션으로 복구
   가능하다 - 다만 그 실행물(reproject)이 생기기 전까지는 이론상의 보장이다.
-  프로젝션 쓰기 경로 전체가 M3 해소 계층으로 대체되므로 원자화도 **M3** 에서
+  프로젝션 쓰기 경로 전체가 M3 해소 계층으로 대체되므로 **전면 원자화**는 **M3** 에서
   함께 상환한다. 이 이연은 "동시 도구 호출이 드물다(stdio 단일 클라이언트)"는
-  배치의 사실에도 기대고 있음을 기록해 둔다.
+  배치의 사실에 기대고 있었다.
+  **갱신(standalone 데몬 도입)**: MCP-HTTP 데몬은 동시 도구 호출을 허용하므로 그 배치
+  전제가 깨진다. 그래서 `Engine` 에 쓰기 직렬화 락(`write_guard`)을 도입해 observe 의
+  로그 append + 프로젝션 upsert 구간을 직렬화한다 - 동시 same-entity 관측의 attestation
+  유실을 막는다(읽기 경로는 잠그지 않아 동시 유지). 이는 M3 의 전면 원자화(해소 계층에서
+  read-merge-write 를 근본적으로 재설계)를 대체하지 않는 잠정 상환이며, M3 착수 시 이 락은
+  해소 계층의 기록 경로로 흡수/제거된다.
 - 원칙 3/4(대체/바이템포럴) *로직*: supersede/retraction 관측 처리, valid_to 자동 종료,
   `as_of_valid`/`as_of_recorded` 시간여행 질의 -> **M3~M4**. (필드는 M1 도입 완료.
   적재 표면 캡처는 구현됨: `observe` 의 관계가 선택적 `valid_from`/`valid_to` 를 받아
