@@ -3,7 +3,7 @@
 //! MCP 도구가 호출하는 결정론적 로직: 관측 적재 -> 엔티티 해소 -> 관계 링크 -> 조회/검색.
 //! 저장소는 [`supragnosis_core::KnowledgeStore`] 포트를 통해서만 접근한다.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -12,6 +12,8 @@ use supragnosis_core::{
     KnowledgeStore, Observation, Provenance, Relation, RelationAssertion, SearchHit, SearchHitKind,
     StoreError, Timestamp, TraverseHit, TrustTier,
 };
+// UI 관측가능성 포트/타입을 재노출 - mcp/viz 가 core 를 직접 의존하지 않고 쓴다.
+pub use supragnosis_core::{Event, EventEnvelope, EventSink};
 
 /// 적재 입력 (전송 DTO에서 매핑되는 도메인 입력).
 pub struct ObserveInput {
@@ -157,6 +159,10 @@ pub struct Engine {
     store: Arc<dyn KnowledgeStore>,
     /// 임베딩 공급 포트 (원칙 19: 확률적 경계). 없으면 검색은 키워드로 degrade.
     embedder: Option<Arc<dyn EmbeddingProvider>>,
+    /// UI 이벤트 싱크 (관측가능성, 선택). 없으면 emit 은 no-op.
+    events: Option<Arc<dyn EventSink>>,
+    /// 세션 id (발자국 그룹 키). 발행하는 모든 이벤트에 실린다 - 기본 "local".
+    session: String,
     host: String,
     default_workspace: String,
 }
@@ -170,6 +176,8 @@ impl Engine {
         Self {
             store,
             embedder: None,
+            events: None,
+            session: "local".to_string(),
             host: host.into(),
             default_workspace: default_workspace.into(),
         }
@@ -180,6 +188,32 @@ impl Engine {
     pub fn with_embedder(mut self, embedder: Arc<dyn EmbeddingProvider>) -> Self {
         self.embedder = Some(embedder);
         self
+    }
+
+    /// UI 이벤트 싱크를 붙인다(빌더, 관측가능성). 붙이면 [`Engine::emit`] 이 여기로
+    /// 흘려보낸다 - 뷰어의 라이브 활동 로그/노드 강조용. 안 붙이면 emit 은 no-op.
+    pub fn with_events(mut self, sink: Arc<dyn EventSink>) -> Self {
+        self.events = Some(sink);
+        self
+    }
+
+    /// 세션 id 를 설정한다(빌더). 발행하는 모든 이벤트에 실려 대화 발자국의 그룹 키가
+    /// 된다 - 뷰어가 "이 세션이 어떤 지식을 썼나"를 묶어 보여준다.
+    pub fn with_session(mut self, session: impl Into<String>) -> Self {
+        self.session = session.into();
+        self
+    }
+
+    /// UI 이벤트를 발행한다. 싱크가 없으면 아무것도 하지 않는다(관측가능성은 선택).
+    /// 세션 id 를 봉투에 실어 보낸다(발자국 그룹 키). 호출자(MCP 도구 핸들러)가 의도
+    /// 단위로 부른다 - 저장/해소 로직과 무관한 부수 채널.
+    pub fn emit(&self, event: Event) {
+        if let Some(sink) = &self.events {
+            sink.emit(&EventEnvelope {
+                session: self.session.clone(),
+                event,
+            });
+        }
     }
 
     fn provenance(
@@ -536,6 +570,23 @@ impl Engine {
     /// 이 노드의 기본 워크스페이스(MCP 리소스가 구체 URI 를 만들 때 참조).
     pub fn default_workspace(&self) -> &str {
         &self.default_workspace
+    }
+
+    /// 지식이 존재하는 워크스페이스 목록(정렬, 결정적 - 원칙 16). 프로젝션된 그래프
+    /// (엔티티/관계)의 provenance.workspace 에서 유도한다 - 그래프를 그릴 수 있는
+    /// 워크스페이스의 집합이다. 별도 저장소 열거 없이 기존 읽기 포트만으로 계산한다.
+    /// BTreeSet 이 중복 제거 + 정렬을 동시에 주어 도착 순서에 무관한 결과를 보장한다.
+    pub fn workspaces(&self) -> Result<Vec<String>, StoreError> {
+        let mut set: BTreeSet<String> = BTreeSet::new();
+        for e in self.store.all_entities(None)? {
+            for p in &e.provenance {
+                set.insert(p.workspace.clone());
+            }
+        }
+        for r in self.store.all_relations(None)? {
+            set.insert(r.provenance.workspace.clone());
+        }
+        Ok(set.into_iter().collect())
     }
 
     /// 온톨로지 그래프를 node-link 뷰로 프로젝션한다(관측가능성/시각화의 읽기 경로).
@@ -1182,5 +1233,39 @@ mod tests {
 
         // 전체(None)로는 other 까지 포함해 노드 3개.
         assert_eq!(engine.graph(None).unwrap().stats.node_count, 3);
+    }
+
+    /// workspaces(): 지식이 존재하는 워크스페이스를 중복 없이 정렬해 돌려준다(원칙 16).
+    #[test]
+    fn workspaces_lists_distinct_sorted() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store, "h", "alpha");
+
+        assert!(engine.workspaces().unwrap().is_empty(), "빈 상태는 빈 목록");
+
+        let observe_in = |ws: &str, name: &str| {
+            engine
+                .observe(ObserveInput {
+                    content: format!("{name} in {ws}"),
+                    workspace: Some(ws.into()),
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: name.into(),
+                        kind: None,
+                    }],
+                    relations: vec![],
+                })
+                .unwrap();
+        };
+        // 도착 순서를 일부러 뒤섞고 같은 ws 를 중복 적재한다.
+        observe_in("gamma", "x");
+        observe_in("alpha", "y");
+        observe_in("gamma", "z");
+
+        // 중복 제거 + 정렬(도착 순서 무관).
+        assert_eq!(engine.workspaces().unwrap(), vec!["alpha", "gamma"]);
     }
 }

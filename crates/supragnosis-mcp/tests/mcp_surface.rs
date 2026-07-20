@@ -297,14 +297,36 @@ async fn mcp_resource_graph_surface() {
         .expect("observation id")
         .to_string();
 
-    // --- 1) list_resources: 기본 워크스페이스 그래프 리소스가 노출된다 ---------------
+    // --- 1) list_resources: 기본 워크스페이스 그래프 + 워크스페이스 목록 리소스 노출 ----
     let resources = client.list_all_resources().await.expect("list resources");
+    let uris: Vec<&str> = resources.iter().map(|r| r.raw.uri.as_str()).collect();
     assert!(
-        resources
-            .iter()
-            .any(|r| r.raw.uri == "supragnosis://workspace/ws/graph"),
-        "기본 워크스페이스 그래프 리소스를 노출해야 한다: {:?}",
-        resources.iter().map(|r| &r.raw.uri).collect::<Vec<_>>()
+        uris.contains(&"supragnosis://workspace/ws/graph"),
+        "기본 워크스페이스 그래프 리소스를 노출해야 한다: {uris:?}"
+    );
+    assert!(
+        uris.contains(&"supragnosis://workspaces"),
+        "워크스페이스 목록 리소스를 노출해야 한다(발견 진입점): {uris:?}"
+    );
+
+    // --- 1b) read_resource(workspaces): 지식이 있는 워크스페이스 이름 배열 --------------
+    let read = client
+        .read_resource(ReadResourceRequestParams {
+            meta: None,
+            uri: "supragnosis://workspaces".into(),
+        })
+        .await
+        .expect("read workspaces resource");
+    let text = match read.contents.first().expect("one content") {
+        ResourceContents::TextResourceContents { text, .. } => text.clone(),
+        other => panic!("expected text resource contents, got {other:?}"),
+    };
+    let workspaces: Value = serde_json::from_str(&text).expect("workspaces resource is JSON");
+    assert!(
+        workspaces
+            .as_array()
+            .is_some_and(|a| a.iter().any(|w| w == "ws")),
+        "워크스페이스 목록에 적재한 'ws' 가 있어야 한다: {workspaces}"
     );
 
     // --- 2) list_resource_templates: 임의 워크스페이스 조회용 템플릿 ------------------

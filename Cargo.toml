@@ -36,3 +36,4 @@ supragnosis-store = { path = "crates/supragnosis-store" }
 supragnosis-engine = { path = "crates/supragnosis-engine" }
 supragnosis-embed = { path = "crates/supragnosis-embed" }
 supragnosis-mcp = { path = "crates/supragnosis-mcp" }
+supragnosis-viz = { path = "crates/supragnosis-viz" }
