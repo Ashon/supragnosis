@@ -567,6 +567,61 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     dot / (na.sqrt() * nb.sqrt())
 }
 
+/// UI 활동 이벤트 (관측가능성). MCP 도구 호출이 **의도 단위로** 발행하고, 뷰어가
+/// 실시간 로그/노드 강조에 소비한다. core 는 데이터 타입 + 포트만 정의한다(원칙 20) -
+/// 실제 전송(SSE/브로드캐스트)은 어댑터가 [`EventSink`] 로 구현한다. 노드 id 목록
+/// (entities/reached/id)은 뷰어가 그래프 노드와 매칭해 펄스/포커스에 쓴다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Event {
+    /// 지식 적재: 관측 + 링크된 엔티티/관계.
+    Observe {
+        observation: String,
+        entities: Vec<String>,
+        relations: usize,
+        workspace: String,
+    },
+    /// 검색: 질의 + 히트. `nodes` 는 히트 id(뷰어가 그래프 노드와 매칭해 강조 -
+    /// 관측 id 는 노드가 아니라 매칭 안 되고 무시된다).
+    Search {
+        query: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
+        hits: usize,
+        nodes: Vec<String>,
+        mode: String,
+    },
+    /// 엔티티 조회.
+    GetEntity {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        found: bool,
+    },
+    /// 그래프 순회: 시작 노드 + 도달 노드들.
+    Traverse {
+        start: String,
+        reached: Vec<String>,
+    },
+}
+
+/// 이벤트 봉투: 이벤트 + **세션 id**(대화 발자국의 그룹 키). 같은 세션에서 어떤 지식이
+/// 쓰였는지 묶어 보기 위한 것. `event` 는 flatten 되어 `{session, kind, ...}` 로
+/// 직렬화된다 - 뷰어는 `ev.session` 과 `ev.kind` 를 평면으로 읽는다.
+#[derive(Debug, Clone, Serialize)]
+pub struct EventEnvelope {
+    /// 세션 id (대화 ≈ MCP 서버 실행 단위, 또는 클라이언트가 주입). 발자국 그룹 키.
+    pub session: String,
+    #[serde(flatten)]
+    pub event: Event,
+}
+
+/// UI 이벤트 싱크 포트 (원칙 20). 엔진이 보유하고 도구 호출이 발행한다. 없으면 no-op -
+/// 관측가능성은 선택이며, 코어 정확성은 이 포트에 의존하지 않는다(원칙 19의 정신).
+pub trait EventSink: Send + Sync {
+    fn emit(&self, env: &EventEnvelope);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

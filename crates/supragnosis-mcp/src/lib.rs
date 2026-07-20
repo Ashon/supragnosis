@@ -18,7 +18,8 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 
 use supragnosis_engine::{
-    Engine, EntityInput as EngineEntityInput, ObserveInput, RelationInput as EngineRelationInput,
+    Engine, EntityInput as EngineEntityInput, Event, ObserveInput,
+    RelationInput as EngineRelationInput, SearchMode,
 };
 
 // --- 전송 DTO (JSON Schema 자동 생성) ---------------------------------------
@@ -134,6 +135,11 @@ impl SupragnosisServer {
         description = "지식 조각을 적재한다. 불변 관측(진실의 원천)으로 저장하고, 함께 준 엔티티/관계를 온톨로지에 링크한다. 결과로 관측 id와 링크된 엔티티/관계 id를 돌려준다."
     )]
     fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
+        // 실제 사용된 워크스페이스(생략 시 노드 기본값) - 이벤트에 실어 뷰어가 스코프를 안다.
+        let workspace = req
+            .workspace
+            .clone()
+            .unwrap_or_else(|| self.engine.default_workspace().to_string());
         let input = ObserveInput {
             content: req.content,
             workspace: req.workspace,
@@ -161,21 +167,47 @@ impl SupragnosisServer {
                 })
                 .collect(),
         };
-        respond(self.engine.observe(input))
+        match self.engine.observe(input) {
+            Ok(out) => {
+                // UI 관측가능성: 적재 활동을 발행(뷰어 라이브 로그 + 새 노드 펄스).
+                self.engine.emit(Event::Observe {
+                    observation: out.observation_id.clone(),
+                    entities: out.entities.clone(),
+                    relations: out.relations.len(),
+                    workspace,
+                });
+                to_json(&out)
+            }
+            Err(e) => err_json(&e.to_string()),
+        }
     }
 
     #[tool(description = "엔티티 id로 엔티티와 그 관계/출처를 조회한다.")]
     fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
         match self.engine.get_entity(&req.id) {
-            Ok(Some(view)) => to_json(&view),
+            Ok(Some(view)) => {
+                self.engine.emit(Event::GetEntity {
+                    id: req.id.clone(),
+                    name: Some(view.entity.canonical_name.clone()),
+                    found: true,
+                });
+                to_json(&view)
+            }
             // 열린 세계 가정(원칙 5): 부재는 거짓이 아니라 미지(unknown)다.
             // "찾지 못함"을 에러로 주지 않아 LLM 이 부재를 부정으로 오독하지 않게 한다.
-            Ok(None) => serde_json::json!({
-                "found": false,
-                "id": req.id,
-                "note": "unknown - not found is not a negation (open-world assumption)"
-            })
-            .to_string(),
+            Ok(None) => {
+                self.engine.emit(Event::GetEntity {
+                    id: req.id.clone(),
+                    name: None,
+                    found: false,
+                });
+                serde_json::json!({
+                    "found": false,
+                    "id": req.id,
+                    "note": "unknown - not found is not a negation (open-world assumption)"
+                })
+                .to_string()
+            }
             // 고장은 부재와 다르다(원칙 5) - "없음" 으로 오독되지 않게 명시 에러로.
             Err(e) => store_failure_json(&e),
         }
@@ -191,6 +223,18 @@ impl SupragnosisServer {
             req.limit.unwrap_or(20),
         ) {
             Ok(out) => {
+                // UI 관측가능성: 검색 활동 발행(뷰어 로그 + 히트 노드 강조).
+                self.engine.emit(Event::Search {
+                    query: req.query.clone(),
+                    workspace: req.workspace.clone(),
+                    hits: out.hits.len(),
+                    nodes: out.hits.iter().map(|h| h.id.clone()).collect(),
+                    mode: match out.mode {
+                        SearchMode::Hybrid => "hybrid",
+                        SearchMode::Keyword => "keyword",
+                    }
+                    .to_string(),
+                });
                 let mut resp = serde_json::json!({ "mode": out.mode, "hits": out.hits });
                 // 열린 세계 가정(원칙 5): 0건은 부정이 아니라 미지다. keyword degrade 의
                 // 0건은 회상 실패 가능성이 더 높다는 것까지 알려 자기 교정을 돕는다(원칙 21).
@@ -226,6 +270,11 @@ impl SupragnosisServer {
             req.limit.unwrap_or(100),
         ) {
             Ok(hits) => {
+                // UI 관측가능성: 순회 활동 발행(시작 + 도달 노드 강조).
+                self.engine.emit(Event::Traverse {
+                    start: req.id.clone(),
+                    reached: hits.iter().map(|h| h.id.clone()).collect(),
+                });
                 let mut resp = serde_json::json!({ "hits": hits });
                 // 0건의 원인을 구별해 알린다(원칙 5/21): 시작 엔티티 부재(미지)와
                 // "존재하지만 나가는 관계 없음"은 LLM 이 다르게 교정해야 할 상황이다.
@@ -278,6 +327,17 @@ impl ServerHandler for SupragnosisServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
+        // 워크스페이스 발견 진입점 - 어느 워크스페이스가 있는지 먼저 보게 한다.
+        let mut ws_list = RawResource::new(
+            "supragnosis://workspaces".to_string(),
+            "워크스페이스 목록".to_string(),
+        );
+        ws_list.description = Some(
+            "지식이 있는 워크스페이스 이름 목록(정렬). 어느 워크스페이스가 있는지 발견하는 진입점."
+                .to_string(),
+        );
+        ws_list.mime_type = Some("application/json".to_string());
+
         let ws = self.engine.default_workspace();
         let mut res = RawResource::new(
             format!("supragnosis://workspace/{ws}/graph"),
@@ -289,6 +349,7 @@ impl ServerHandler for SupragnosisServer {
         );
         res.mime_type = Some("application/json".to_string());
         std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
+            ws_list.no_annotation(),
             res.no_annotation(),
         ])))
     }
@@ -339,6 +400,16 @@ impl ServerHandler for SupragnosisServer {
     ) -> impl Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
         let uri = request.uri;
         let result = match parse_resource_uri(&uri) {
+            // 워크스페이스 목록(발견용) - 지식이 있는 워크스페이스 이름 배열.
+            Some(ResourceUri::Workspaces) => match self.engine.workspaces() {
+                Ok(list) => Ok(ReadResourceResult {
+                    contents: vec![ResourceContents::text(to_json(&list), uri)],
+                }),
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("저장소 백엔드 실패 (리소스 부재가 아니다): {e}"),
+                    None,
+                )),
+            },
             Some(ResourceUri::Graph(ws)) => match self.engine.graph(Some(ws)) {
                 Ok(graph) => Ok(ReadResourceResult {
                     contents: vec![ResourceContents::text(to_json(&graph), uri)],
@@ -380,6 +451,8 @@ impl ServerHandler for SupragnosisServer {
 
 /// 리소스 URI 의 종류.
 enum ResourceUri<'a> {
+    /// `supragnosis://workspaces` - 지식이 있는 워크스페이스 목록(도입부/발견용).
+    Workspaces,
     /// `supragnosis://workspace/<ws>/graph` - 워크스페이스 온톨로지 그래프.
     Graph(&'a str),
     /// `supragnosis://observation/<id>` - 관측 역참조 (원칙 2/14).
@@ -388,6 +461,10 @@ enum ResourceUri<'a> {
 
 /// 리소스 URI 파서. 형식이 어긋나면 None. 세그먼트에는 `/` 가 없어야 한다.
 fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
+    // 정확 일치가 먼저 - "workspaces"(복수) 는 "workspace/"(단수+슬래시) prefix 와 겹치지 않는다.
+    if uri == "supragnosis://workspaces" {
+        return Some(ResourceUri::Workspaces);
+    }
     if let Some(rest) = uri.strip_prefix("supragnosis://workspace/") {
         let ws = rest.strip_suffix("/graph")?;
         if ws.is_empty() || ws.contains('/') {
@@ -405,13 +482,6 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
 }
 
 // --- 직렬화 헬퍼 (도구는 JSON 문자열을 반환) --------------------------------
-
-fn respond<T: Serialize, E: std::fmt::Display>(r: Result<T, E>) -> String {
-    match r {
-        Ok(v) => to_json(&v),
-        Err(e) => err_json(&e.to_string()),
-    }
-}
 
 fn to_json<T: Serialize>(v: &T) -> String {
     serde_json::to_string(v).unwrap_or_else(|e| err_json(&e.to_string()))

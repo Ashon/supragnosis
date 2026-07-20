@@ -348,6 +348,23 @@ listen = "0.0.0.0:7420"
 - **원격 에이전트**: `supragnosis serve --http` 로 MCP streamable-HTTP 노출.
 - **허브 서버**: `supragnosis serve --server` 로 sync API 상시 기동, 여러 노드 집계/릴레이.
 
+### 온톨로지 라이브 뷰어 (로컬 점검용)
+
+`SUPRAGNOSIS_VIZ_ADDR=127.0.0.1:7373` 을 주면 MCP 서버와 **같은 프로세스**에서 localhost
+HTTP 뷰어(`supragnosis-viz` 크레이트)를 함께 띄운다. 브라우저로 열면 `engine.graph()`
+프로젝션(노드-엣지, 타입/degree/trust_tier/유효구간)을 canvas 로 그리고 몇 초마다
+`/api/graph` 를 폴링해 갱신한다. 사람이 지식 그래프를 눈으로 점검하는 채널이다.
+
+- **읽기 전용**: 관측 로그를 건드리지 않는다(원칙 1). 적재는 그대로 `observe` 로만.
+- **loopback 전용 바인드**(원칙 17: 지식 주권): 비로opback 주소는 거부한다 - 원격 노출은
+  sync 경계의 공유 가드가 생기기 전까지 허용하지 않는다.
+- **MCP 도구 표면과 무관**(원칙 21): 사람용 별개 채널이라 LLM 도구가 늘지 않는다.
+- **단일 프로세스 제약**: cozo/RocksDB 가 단일 프로세스라 뷰어는 서버 인프로세스여야
+  하고(같은 `Arc<Engine>` 공유), 동시에 두 서버 인스턴스는 포트/db lock 을 다툰다.
+- 엔드포인트: `GET /`(뷰어 HTML), `GET /api/graph[?workspace=<ws>]`(빈 값/`*`=전체),
+  `GET /api/workspaces`(지식이 있는 워크스페이스 목록 - 뷰어가 클릭 가능한 피커로 렌더).
+  같은 목록은 MCP 리소스 `supragnosis://workspaces` 로도 조회된다(에이전트의 워크스페이스 발견).
+
 ---
 
 ## 11. 횡단 관심사

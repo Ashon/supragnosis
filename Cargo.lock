@@ -3885,6 +3885,7 @@ dependencies = [
  "supragnosis-engine",
  "supragnosis-mcp",
  "supragnosis-store",
+ "supragnosis-viz",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3959,6 +3960,20 @@ dependencies = [
  "cozo",
  "serde_json",
  "supragnosis-core",
+]
+
+[[package]]
+name = "supragnosis-viz"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde_json",
+ "supragnosis-embed",
+ "supragnosis-engine",
+ "supragnosis-store",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
