@@ -368,6 +368,23 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #log .row .t { color:var(--muted); margin-right:5px; }
   @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
                        82%{opacity:1;} 100%{opacity:0;} }
+  #detail { position:fixed; top:92px; right:12px; z-index:7; width:272px; max-width:44vw;
+            max-height:calc(100vh - 150px); overflow-y:auto; display:none;
+            background:#0d0d0df2; border:1px solid var(--border); border-radius:10px;
+            padding:11px 13px; font-size:12.5px; color:var(--ink2); box-shadow:0 8px 28px #000a; }
+  #detail.on { display:block; }
+  #detail h2 { font-size:14px; margin:0 22px 2px 0; color:var(--ink); font-weight:600; word-break:break-word; }
+  #detail .meta { color:var(--muted); font-size:11.5px; margin-bottom:4px; }
+  #detail .sec { color:var(--muted); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; margin:10px 0 3px; }
+  #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:6px; cursor:pointer; }
+  #detail .row:hover { background:#ffffff14; }
+  #detail .row .rel { color:var(--muted); font-size:11px; white-space:nowrap; }
+  #detail .row .nm { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
+  #detail .close { position:absolute; top:9px; right:11px; cursor:pointer; color:var(--muted);
+                   border:none; background:none; font-size:15px; line-height:1; padding:0; }
+  #detail .close:hover { color:var(--ink); }
+  #detail .empty { color:var(--muted); font-style:italic; padding:2px 5px; }
 </style>
 <canvas id="c"></canvas>
 <div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
@@ -377,11 +394,13 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   <label class="hint">ws <input id="ws" placeholder="(default)" size="11" autocomplete="off"></label>
   <span class="hint">*=all</span>
   <button id="reload">reload</button>
-  <button id="followBtn" class="on" title="camera follows agent activity">follow</button>
+  <button id="followBtn" class="on" title="follow agent activity: workspace + camera">follow</button>
+  <button id="clusterBtn" title="group by type; keep cross-group links visible">group</button>
   <span id="session" class="hint"></span>
   <span id="status"></span>
 </header>
 <div id="log"></div>
+<div id="detail"></div>
 <div id="chrome">
   <div id="wschips"></div>
   <div id="legend"></div>
@@ -406,9 +425,13 @@ const tip = document.getElementById("tip"), statusEl = document.getElementById("
 const wsInput = document.getElementById("ws"), searchEl = document.getElementById("search");
 const chipBar = document.getElementById("wschips"), legendEl = document.getElementById("legend");
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
+const detailEl = document.getElementById("detail");
 
 let follow = true;               // 카메라가 최신 에이전트 활동 노드를 따라가는지
+let clusterMode = false;         // 타입 그룹으로 분리 배치 + 그룹 간 연결/브리지 강조
+const bridgeSet = new Set();     // 다른 타입과 연결된 노드 id(그룹을 잇는 연결 노드)
 const pulses = new Map();        // id -> 남은 프레임(이벤트 노드 강조 링 애니메이션)
+const CLUSTER_PULL = 0.03;       // 그룹 목표점으로 끌어당기는 힘(중심 인력보다 강하게)
 let footprintSession = null;     // 현재 발자국이 속한 세션(대화)
 const footprint = new Set();     // 이 세션이 만진 노드 id들 - 대화의 지식 발자국
 let nodes = [], edges = [], typeColor = {};
@@ -426,13 +449,15 @@ let panning = null, downPos = null, userMoved = false, firstData = true, needFit
 // --- force 시뮬레이션 (alpha 냉각 + 충돌 분리) ------------------------------------
 let alpha = 1;
 const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.02;
-const REPULSE = 7000, SPRING_LEN = 120, SPRING_K = 0.02, CENTER_G = 0.0015;
-const COLLIDE_PAD = 14, DAMPING = 0.85;
+// 힘 base 파라미터. 큰 그래프일수록 넓게 퍼지도록 stepSim 에서 노드 수(spread)로 스케일한다.
+const REPULSE = 7000, SPRING_LEN = 120, SPRING_K = 0.02;
+const CENTER_BASE = 0.0015; // 중심 인력 base - 큰 그래프에선 약화(중앙 뭉침 방지)
+const RANGE_BASE = 240;     // 반발 사거리 base - 큰 그래프에선 확대(더 넓게 밀어냄)
+const COLLIDE_PAD = 16, DAMPING = 0.85;
 const MIN_SEP = 12;        // 반발 분모 하한 - 근접 시 힘 폭발(튀어나감) 방지
-const MAX_V = 30;          // 프레임당 최대 속도 - 큰 힘에도 날아가지 않게
+const MAX_V = 30;          // 프레임당 최대 속도 base - 큰 그래프에선 상향
 const MAX_PUSH = 6;        // 프레임당 노드별 충돌 변위 상한 - 허브 폭발 방지
-const REPULSE_RANGE = 240; // 반발 사거리 - 이 밖은 반발 0(응집 확보, 무한 확산 방지)
-function nodeRadius(n) { return 6 + Math.min(9, (n.degree || 0) * 1.6); }
+function nodeRadius(n) { return 5 + Math.min(8, (n.degree || 0) * 1.4); }
 // 시뮬레이션을 깨운다(discrete wakeup). 이벤트에서만 호출: 새 노드/삭제(applyGraph),
 // 드래그, 포커스. 연속 조건(겹침)으로는 절대 호출하지 않는다 - 정착 후 무한 재가열 방지.
 function wake(a = 0.7) { alpha = Math.max(alpha, a); }
@@ -487,14 +512,21 @@ function applyGraph(g) {
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
   edges = g.edges.map(e => Object.assign({}, e, { a: byId[e.from], b: byId[e.to] }))
                  .filter(e => e.a && e.b);
+  // 브리지 노드: 다른 타입(그룹)과 연결된 노드 - 그룹을 잇는 연결/네비게이션 지점.
+  bridgeSet.clear();
+  for (const e of edges) if (e.a.type !== e.b.type) { bridgeSet.add(e.a.id); bridgeSet.add(e.b.id); }
   assignColors();
   renderLegend();
   const s = g.stats || {};
   statusEl.textContent = "updated " + new Date().toLocaleTimeString();
   document.getElementById("stats").textContent =
     `nodes ${s.node_count ?? nodes.length} / edges ${s.edge_count ?? edges.length}`
+    + (clusterMode ? ` / groups ${Object.keys(typeColor).length}, bridges ${bridgeSet.size}` : "")
     + (s.type_counts ? " / " + Object.entries(s.type_counts).map(([t,c]) => `${t} ${c}`).join(", ") : "");
   emptyEl.style.display = nodes.length ? "none" : "flex";
+
+  // 포커스 중이면 상세 인스펙터를 갱신(연결 변화 반영). 포커스 노드가 사라졌으면 해제.
+  if (focus) { if (nodes.includes(focus)) renderDetail(focus); else { focus = null; renderDetail(null); } }
 
   // 초기 자동 맞춤: 레이아웃이 정착(냉각 완료)한 뒤 한 번, 사용자 조작 전에만(draw 에서).
   if (firstData && nodes.length) { firstData = false; needFit = true; }
@@ -593,6 +625,10 @@ function primaryNode(ev) {
 async function handleEvent(ev) {
   // 세션(대화)이 바뀌면 발자국 리셋 - 새 대화의 지식 사용을 처음부터 추적.
   if (ev.session && ev.session !== footprintSession) { footprintSession = ev.session; footprint.clear(); }
+  // follow 중 활동이 다른 워크스페이스에서 일어나면 그쪽으로 전환한다 - 안 그러면 추가된
+  // 노드/히트가 현재 스코프 밖이라 화면에 안 나타난다(SSE 이벤트는 와도 폴링 ws 불일치).
+  const switched = follow && ev.workspace && currentWs() !== "*" && currentWs() !== ev.workspace;
+  if (switched) { wsInput.value = ev.workspace; renderChipsActive(); }
   let ids = [];
   if (ev.kind === "observe") {
     logRow(`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${esc(ev.workspace)}</span>`);
@@ -600,6 +636,7 @@ async function handleEvent(ev) {
     ids = ev.entities || [];
   } else if (ev.kind === "search") {
     logRow(`<b>search</b> "${esc(ev.query)}" -> ${ev.hits} hits <span class="t">${esc(ev.mode)}</span>`);
+    if (switched) await poll();          // 워크스페이스 전환됐으면 그 그래프를 로드(히트 보이게)
     ids = ev.nodes || [];
   } else if (ev.kind === "get_entity") {
     logRow(`<b>get_entity</b> ${esc(ev.name || ev.id.slice(0,8))} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
@@ -622,6 +659,36 @@ function connectEvents() {
     es.onmessage = e => { try { handleEvent(JSON.parse(e.data)); } catch (_) {} };
     // 오류 시 EventSource 가 자동 재연결한다.
   } catch (_) { /* EventSource 미지원 - 폴링만으로 동작 */ }
+}
+
+// --- 상세 인스펙터: 클릭한 노드의 연결(이웃 + 관계)을 보여주고, 이웃 클릭으로 탐색 ---
+function renderDetail(node) {
+  if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
+  const outs = edges.filter(e => e.a === node && !typeOff.has(e.b.type));
+  const ins = edges.filter(e => e.b === node && !typeOff.has(e.a.type));
+  const rowHtml = (rel, other, dir) =>
+    `<div class="row" data-id="${esc(other.id)}" title="focus ${esc(other.name)}">`
+    + `<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>`
+    + `<span class="rel">${dir} ${esc(rel)}</span>`
+    + `<span class="nm">${esc(other.name)}</span></div>`;
+  const list = (arr, dir) => arr.length
+    ? arr.map(e => rowHtml(e.type, dir === "->" ? e.b : e.a, dir)).join("")
+    : `<div class="empty">none</div>`;
+  detailEl.innerHTML =
+    `<button class="close" title="close">x</button>`
+    + `<h2>${esc(node.name)}</h2>`
+    + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span> `
+    + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
+    + `<div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}`
+    + `<div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}`;
+  detailEl.className = "on";
+  detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
+  detailEl.querySelectorAll(".row").forEach(r => {
+    r.onclick = () => {
+      const n = nodeById(r.dataset.id);
+      if (n) { focus = n; wake(0.3); centerOn(n); renderDetail(n); }
+    };
+  });
 }
 
 // 슈퍼샘플링(HiDPI): 백킹 스토어를 DPR 배로 키우고 CSS 크기는 뷰포트로 고정 -> 선명.
@@ -654,6 +721,12 @@ function stepSim() {
   const active = alpha >= ALPHA_MIN;   // 냉각 완료면 휴면 - 어떤 힘도 적용하지 않는다
   const pinned = v => v === drag || v === focus;
 
+  // 노드 수로 스케일: 많을수록 넓게 퍼진다(반발 사거리/강도 up, 중심 인력 down).
+  // hairball(중앙 뭉침) 방지 - base 는 소규모 기준, 대규모는 spread 로 확장.
+  const spread = Math.min(4, Math.max(1, Math.sqrt(N / 20)));
+  const range = RANGE_BASE * spread, centerG = CENTER_BASE / spread;
+  const repulse = REPULSE * spread, maxV = MAX_V * Math.min(spread, 2);
+
   // 충돌 변위는 노드별로 누적 후 상한 클램프한다 - 여러 이웃과 겹친 허브가 한 프레임에
   // 멀리 튀는 것을 막는다(직접 이동 대신).
   const cdx = new Array(N).fill(0), cdy = new Array(N).fill(0);
@@ -669,8 +742,8 @@ function stepSim() {
     const d2 = d * d;
     // 반발은 active(냉각 중)일 때만, 그리고 근거리 전용(사거리 밖은 0). 휴면 상태에서
     // 반발만 남아 응집(중력/스프링)과의 균형 없이 무한히 퍼지던 문제를 막는다.
-    if (active && d < REPULSE_RANGE) {
-      const rf = REPULSE * alpha * (1 - d / REPULSE_RANGE) / Math.max(d2, MIN_SEP * MIN_SEP);
+    if (active && d < range) {
+      const rf = repulse * alpha * (1 - d / range) / Math.max(d2, MIN_SEP * MIN_SEP);
       a.vx -= rf*dx; a.vy -= rf*dy; b.vx += rf*dx; b.vy += rf*dy;
     }
     const minD = nodeRadius(a) + nodeRadius(b) + COLLIDE_PAD;
@@ -692,14 +765,31 @@ function stepSim() {
   }
 
   const wcx = innerWidth/2, wcy = innerHeight/2;   // 월드 좌표(CSS 픽셀계) - 카메라와 독립
+  // 그룹 모드: 타입별 목표점을 원형으로 배치해 그룹을 공간적으로 분리한다(결정적: 타입
+  // 정렬 순서로 각도 배정). 그룹 목표 인력이 중심 인력을 대체하고, 브리지 엣지(스프링)가
+  // 그룹 사이로 연결 노드를 당겨 "찾아갈 수 있는" 연결이 남는다.
+  let tgt = null;
+  if (clusterMode && active) {
+    const types = Object.keys(typeColor).sort(), k = Math.max(1, types.length);
+    const R = Math.min(innerWidth, innerHeight) * 0.34;
+    tgt = {};
+    types.forEach((t, i) => { const a = (i / k) * Math.PI * 2; tgt[t] = [wcx + R * Math.cos(a), wcy + R * Math.sin(a)]; });
+  }
   for (let k = 0; k < N; k++) {
     const v = nodes[k];
     if (pinned(v)) { v.vx = 0; v.vy = 0; continue; }
-    if (active) { v.vx += (wcx - v.x) * CENTER_G * alpha; v.vy += (wcy - v.y) * CENTER_G * alpha; }
+    if (active) {
+      if (tgt) {
+        const g = tgt[v.type] || [wcx, wcy];
+        v.vx += (g[0] - v.x) * CLUSTER_PULL * alpha; v.vy += (g[1] - v.y) * CLUSTER_PULL * alpha;
+      } else {
+        v.vx += (wcx - v.x) * centerG * alpha; v.vy += (wcy - v.y) * centerG * alpha;
+      }
+    }
     v.vx *= DAMPING; v.vy *= DAMPING;
     // 속도 상한 - 큰 힘이 걸려도 화면 밖으로 날아가지 않는다.
     const sp = Math.hypot(v.vx, v.vy);
-    if (sp > MAX_V) { v.vx *= MAX_V/sp; v.vy *= MAX_V/sp; }
+    if (sp > maxV) { v.vx *= maxV/sp; v.vy *= maxV/sp; }
     // 충돌 변위도 노드별 상한으로 클램프해 더한다.
     let mx = cdx[k], my = cdy[k]; const m = Math.hypot(mx, my);
     if (m > MAX_PUSH) { mx *= MAX_PUSH/m; my *= MAX_PUSH/m; }
@@ -733,9 +823,12 @@ function draw() {
     const sx0 = e.a.x + ux*ar, sy0 = e.a.y + uy*ar;
     const tipx = e.b.x - ux*br, tipy = e.b.y - uy*br;
     const basex = tipx - ux*alen, basey = tipy - uy*alen;
-    ctx.globalAlpha = act ? (hot ? 1 : 0.06) : 0.85;
-    ctx.strokeStyle = e.valid_to ? EDGE_OLD : (hot ? EDGE_HI : EDGE);
-    ctx.lineWidth = (hot ? 2 : 1.1) / cam.s;   // 화면상 일정 두께
+    // 그룹 모드: 그룹 간(다른 타입) 엣지는 도드라지게, 그룹 내 엣지는 흐리게 - 클러스터
+    // 사이 연결성이 드러난다.
+    const cross = clusterMode && e.a.type !== e.b.type;
+    ctx.globalAlpha = act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : 0.85);
+    ctx.strokeStyle = e.valid_to ? EDGE_OLD : (hot ? EDGE_HI : (cross ? "#c0caf5" : EDGE));
+    ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // 화면상 일정 두께
     ctx.setLineDash(e.valid_to ? [5/cam.s, 5/cam.s] : []);
     ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(basex, basey); ctx.stroke();
     ctx.setLineDash([]);
@@ -759,6 +852,11 @@ function draw() {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
       ctx.lineWidth = 1.5/cam.s; ctx.strokeStyle = "#9085e9"; ctx.stroke();
     }
+    // 그룹 모드: 브리지 노드(다른 그룹과 연결)는 연한 링으로 표시 - 그룹 간 이동 지점.
+    if (clusterMode && bridgeSet.has(n.id)) {
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, 7);
+      ctx.lineWidth = 2/cam.s; ctx.strokeStyle = "#c0caf5"; ctx.stroke();
+    }
   }
   // 이벤트 펄스(에이전트가 만진 노드) - 확장하며 사라지는 링. rAF 는 항상 도므로 냉각
   // 후에도 애니메이션된다.
@@ -777,11 +875,13 @@ function draw() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.font = "12px system-ui,-apple-system,sans-serif";
   ctx.textBaseline = "middle";
-  const showAll = cam.s > 0.85 || nodes.length <= 25;
+  // 라벨 정리: 소규모(<=40)이거나 충분히 확대(cam.s>1.4)면 전부, 큰 그래프에선 허브
+  // (고차수 >= cut)만 + hover/focus/active. hairball 의 라벨 벽을 없앤다.
+  const cut = (nodes.length <= 40 || cam.s > 1.4) ? 0 : Math.max(4, Math.round(nodes.length / 25));
   for (const n of nodes) {
     if (typeOff.has(n.type)) continue;
     const on = act ? act.ns.has(n.id) : true;
-    const show = on && (showAll || n === hover || n === focus || (n.degree || 0) >= 3);
+    const show = on && (n === hover || n === focus || (act && act.ns.has(n.id)) || (n.degree || 0) >= cut);
     if (!show) continue;
     const px = n.x*cam.s + cam.x, py = n.y*cam.s + cam.y, r = nodeRadius(n)*cam.s;
     ctx.globalAlpha = on ? 1 : 0.25;
@@ -842,6 +942,7 @@ addEventListener("mouseup", ev => {
     const n = nodeAt(ev.clientX, ev.clientY);
     focus = n ? (focus === n ? null : n) : null;   // 노드 클릭=포커스 토글(핀), 빈곳=해제
     if (focus) { wake(0.3); centerOn(focus); }    // 포커스-투-줌: 해당 노드로 부드럽게 센터
+    renderDetail(focus);                           // 상세 인스펙터 표시/해제
   }
   if (drag) wake(0.3);
   drag = null;
@@ -863,6 +964,8 @@ document.getElementById("zout").onclick = () => zoomAt(innerWidth/2, innerHeight
 document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
 const followBtn = document.getElementById("followBtn");
 followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", follow); };
+const clusterBtn = document.getElementById("clusterBtn");
+clusterBtn.onclick = () => { clusterMode = !clusterMode; clusterBtn.classList.toggle("on", clusterMode); wake(0.6); poll(); };
 
 resize(); loadWorkspaces(); poll(); connectEvents();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); draw();
