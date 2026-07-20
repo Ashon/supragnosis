@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  supragnosis standalone MCP 데몬 (launchd LaunchAgent).
+  설치: deploy/README.md 참고. 경로는 사용자(ashon.lee) 기준 절대경로 - 다른 사용자는 조정.
+  loopback 전용(원칙 17) - MCP http://127.0.0.1:7373/mcp, 뷰어 http://127.0.0.1:7374.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashon.supragnosis</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ashon.lee/.local/bin/supragnosis</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SUPRAGNOSIS_HTTP_ADDR</key>
+        <string>127.0.0.1:7373</string>
+        <key>SUPRAGNOSIS_VIZ_ADDR</key>
+        <string>127.0.0.1:7374</string>
+        <key>SUPRAGNOSIS_STORE</key>
+        <string>cozo</string>
+        <key>SUPRAGNOSIS_DATA_DIR</key>
+        <string>/Users/ashon.lee/.supragnosis/db</string>
+        <key>SUPRAGNOSIS_WORKSPACE</key>
+        <string>supragnosis</string>
+        <key>SUPRAGNOSIS_HOST</key>
+        <string>ashon-mac</string>
+        <key>SUPRAGNOSIS_EMBED</key>
+        <string>hashing</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ashon.lee/.supragnosis/log/supragnosis.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ashon.lee/.supragnosis/log/supragnosis.err.log</string>
+</dict>
+</plist>

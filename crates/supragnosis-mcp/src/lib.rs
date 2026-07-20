@@ -134,7 +134,7 @@ impl SupragnosisServer {
     #[tool(
         description = "지식 조각을 적재한다. 불변 관측(진실의 원천)으로 저장하고, 함께 준 엔티티/관계를 온톨로지에 링크한다. 결과로 관측 id와 링크된 엔티티/관계 id를 돌려준다."
     )]
-    fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
+    async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
         // 실제 사용된 워크스페이스(생략 시 노드 기본값) - 이벤트에 실어 뷰어가 스코프를 안다.
         let workspace = req
             .workspace
@@ -167,8 +167,11 @@ impl SupragnosisServer {
                 })
                 .collect(),
         };
-        match self.engine.observe(input) {
-            Ok(out) => {
+        // blocking 저장소 호출을 spawn_blocking 으로 - HTTP 동시 요청이 tokio 워커를 굶기지
+        // 않게 한다(stdio 단일 클라이언트에선 무해했으나 데몬 다중 접속엔 필수).
+        let engine = self.engine.clone();
+        match tokio::task::spawn_blocking(move || engine.observe(input)).await {
+            Ok(Ok(out)) => {
                 // UI 관측가능성: 적재 활동을 발행(뷰어 라이브 로그 + 새 노드 펄스).
                 self.engine.emit(Event::Observe {
                     observation: out.observation_id.clone(),
@@ -178,14 +181,17 @@ impl SupragnosisServer {
                 });
                 to_json(&out)
             }
-            Err(e) => err_json(&e.to_string()),
+            Ok(Err(e)) => err_json(&e.to_string()),
+            Err(e) => err_json(&format!("task join error: {e}")),
         }
     }
 
     #[tool(description = "엔티티 id로 엔티티와 그 관계/출처를 조회한다.")]
-    fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
-        match self.engine.get_entity(&req.id) {
-            Ok(Some(view)) => {
+    async fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
+        let id = req.id.clone();
+        let engine = self.engine.clone();
+        match tokio::task::spawn_blocking(move || engine.get_entity(&id)).await {
+            Ok(Ok(Some(view))) => {
                 self.engine.emit(Event::GetEntity {
                     id: req.id.clone(),
                     name: Some(view.entity.canonical_name.clone()),
@@ -195,7 +201,7 @@ impl SupragnosisServer {
             }
             // 열린 세계 가정(원칙 5): 부재는 거짓이 아니라 미지(unknown)다.
             // "찾지 못함"을 에러로 주지 않아 LLM 이 부재를 부정으로 오독하지 않게 한다.
-            Ok(None) => {
+            Ok(Ok(None)) => {
                 self.engine.emit(Event::GetEntity {
                     id: req.id.clone(),
                     name: None,
@@ -209,19 +215,26 @@ impl SupragnosisServer {
                 .to_string()
             }
             // 고장은 부재와 다르다(원칙 5) - "없음" 으로 오독되지 않게 명시 에러로.
-            Err(e) => store_failure_json(&e),
+            Ok(Err(e)) => store_failure_json(&e),
+            Err(e) => err_json(&format!("task join error: {e}")),
         }
     }
 
     #[tool(
         description = "지식(엔티티/관측)을 검색한다. 응답의 mode 가 실제 사용 표면을 알린다: hybrid(의미+키워드) 또는 keyword(키워드 전용 degrade - 이 모드의 빈 결과는 회상 실패일 수 있다). score 는 순위 비교 전용이다 - 스케일이 mode 마다 달라 절대값은 신뢰도가 아니다."
     )]
-    fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
-        match self.engine.search(
-            &req.query,
-            req.workspace.as_deref(),
-            req.limit.unwrap_or(20),
-        ) {
+    async fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
+        let query = req.query.clone();
+        let ws = req.workspace.clone();
+        let limit = req.limit.unwrap_or(20);
+        let engine = self.engine.clone();
+        let searched =
+            tokio::task::spawn_blocking(move || engine.search(&query, ws.as_deref(), limit)).await;
+        let searched = match searched {
+            Ok(r) => r,
+            Err(e) => return err_json(&format!("task join error: {e}")),
+        };
+        match searched {
             Ok(out) => {
                 // UI 관측가능성: 검색 활동 발행(뷰어 로그 + 히트 노드 강조).
                 self.engine.emit(Event::Search {
@@ -263,40 +276,45 @@ impl SupragnosisServer {
     #[tool(
         description = "엔티티에서 시작해 관계 방향(from->to)을 따라 그래프를 순회한다. 최대 홉(max_depth) 내에 도달하는 엔티티를 최단 거리와 함께 돌려준다."
     )]
-    fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
-        match self.engine.traverse(
-            &req.id,
-            req.max_depth.unwrap_or(3),
-            req.limit.unwrap_or(100),
-        ) {
-            Ok(hits) => {
-                // UI 관측가능성: 순회 활동 발행(시작 + 도달 노드 강조).
-                self.engine.emit(Event::Traverse {
-                    start: req.id.clone(),
-                    reached: hits.iter().map(|h| h.id.clone()).collect(),
-                });
-                let mut resp = serde_json::json!({ "hits": hits });
-                // 0건의 원인을 구별해 알린다(원칙 5/21): 시작 엔티티 부재(미지)와
-                // "존재하지만 나가는 관계 없음"은 LLM 이 다르게 교정해야 할 상황이다.
-                if hits.is_empty() {
-                    resp["note"] = serde_json::Value::String(match self.engine.get_entity(&req.id)
-                    {
-                        Ok(Some(_)) => "start entity exists but reached no entities - it has \
-                                        no outgoing relations within max_depth (absence of \
-                                        edges is unknown, not a negation)"
-                            .into(),
-                        Ok(None) => "start entity id not found - unknown, not a negation \
-                                     (open-world). Find the id via search_knowledge first"
-                            .into(),
-                        Err(_) => "empty result; start entity could not be checked due to a \
-                                   storage failure - do not conclude absence"
-                            .into(),
-                    });
-                }
-                resp.to_string()
-            }
-            Err(e) => store_failure_json(&e),
+    async fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
+        let id = req.id.clone();
+        let max_depth = req.max_depth.unwrap_or(3);
+        let limit = req.limit.unwrap_or(100);
+        let engine = self.engine.clone();
+        let traversed =
+            tokio::task::spawn_blocking(move || engine.traverse(&id, max_depth, limit)).await;
+        let hits = match traversed {
+            Ok(Ok(h)) => h,
+            Ok(Err(e)) => return store_failure_json(&e),
+            Err(e) => return err_json(&format!("task join error: {e}")),
+        };
+        // UI 관측가능성: 순회 활동 발행(시작 + 도달 노드 강조).
+        self.engine.emit(Event::Traverse {
+            start: req.id.clone(),
+            reached: hits.iter().map(|h| h.id.clone()).collect(),
+        });
+        let mut resp = serde_json::json!({ "hits": hits });
+        // 0건의 원인을 구별해 알린다(원칙 5/21): 시작 엔티티 부재(미지)와 "존재하지만
+        // 나가는 관계 없음"은 LLM 이 다르게 교정해야 할 상황이다. 확인용 get_entity 도
+        // blocking 이라 spawn_blocking 으로 오프로드.
+        if hits.is_empty() {
+            let id2 = req.id.clone();
+            let engine2 = self.engine.clone();
+            let exists = tokio::task::spawn_blocking(move || engine2.get_entity(&id2)).await;
+            resp["note"] = serde_json::Value::String(match exists {
+                Ok(Ok(Some(_))) => "start entity exists but reached no entities - it has \
+                                    no outgoing relations within max_depth (absence of \
+                                    edges is unknown, not a negation)"
+                    .into(),
+                Ok(Ok(None)) => "start entity id not found - unknown, not a negation \
+                                 (open-world). Find the id via search_knowledge first"
+                    .into(),
+                _ => "empty result; start entity could not be checked due to a \
+                      storage failure - do not conclude absence"
+                    .into(),
+            });
         }
+        resp.to_string()
     }
 }
 

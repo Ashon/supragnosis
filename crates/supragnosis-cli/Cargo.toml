@@ -25,9 +25,12 @@ supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
 supragnosis-mcp.workspace = true
 supragnosis-viz.workspace = true
-rmcp.workspace = true
-# net: 뷰어(SUPRAGNOSIS_VIZ_ADDR)용 TcpListener 바인드. 워크스페이스 공통에 없어 국소 추가.
+# transport-streamable-http-server: standalone 데몬(SUPRAGNOSIS_HTTP_ADDR)의 MCP HTTP 서비스.
+rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
+# net: 뷰어/데몬 TcpListener 바인드. 워크스페이스 공통에 없어 국소 추가.
 tokio = { workspace = true, features = ["net"] }
+# MCP streamable-http 서비스를 마운트하는 HTTP 서버(데몬 모드).
+axum.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

@@ -163,6 +163,12 @@ pub struct Engine {
     events: Option<Arc<dyn EventSink>>,
     /// 세션 id (발자국 그룹 키). 발행하는 모든 이벤트에 실린다 - 기본 "local".
     session: String,
+    /// 프로젝션 쓰기 직렬화 락. observe 의 엔티티 upsert 는 read-merge-write(get->push
+    /// provenance->put)라 원자적이지 않다 - 동시 관측이 같은 엔티티를 만지면 attestation 이
+    /// 유실될 수 있다(architecture 14절 이연). stdio 단일 클라이언트에선 무해했으나 HTTP
+    /// 데몬은 동시 호출을 허용하므로, 쓰기 구간을 이 락으로 직렬화해 유실을 막는다.
+    /// 읽기(get/search/traverse/graph)는 락 밖 - 동시 유지. 전면 원자화는 M3 해소 계층.
+    write_guard: std::sync::Mutex<()>,
     host: String,
     default_workspace: String,
 }
@@ -178,6 +184,7 @@ impl Engine {
             embedder: None,
             events: None,
             session: "local".to_string(),
+            write_guard: std::sync::Mutex::new(()),
             host: host.into(),
             default_workspace: default_workspace.into(),
         }
@@ -334,6 +341,12 @@ impl Engine {
             }
         }
         let observation_id = obs.id.clone();
+        // 쓰기 구간 직렬화(동시 관측의 프로젝션 read-merge-write 경쟁 방지, 위 필드 주석).
+        // 임베딩(위, 확률적/CPU)은 락 밖에 두고 여기서부터 잠근다. 읽기 경로는 잠그지 않는다.
+        let _write = self
+            .write_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.store.add_observation(obs)?;
 
         let mut entities = Vec::new();

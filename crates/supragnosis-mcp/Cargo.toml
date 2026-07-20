@@ -14,6 +14,9 @@ rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+# 도구 핸들러가 blocking 저장소 호출을 spawn_blocking 으로 오프로드(HTTP 동시성).
+# rt(-multi-thread) 는 워크스페이스 공통 feature 라 spawn_blocking 사용 가능.
+tokio.workspace = true
 
 [dev-dependencies]
 # MCP 도구 표면을 실제 프로토콜로 구동하는 통합 테스트용.
