@@ -1,0 +1,85 @@
+name: release
+
+# v* 태그를 push 하면 플랫폼별 릴리스 바이너리를 빌드해 tar.gz + sha256 로 GitHub Release
+# 에 첨부한다. workflow_dispatch 로는 빌드/패키징만 확인할 수 있다(게시 없음).
+#
+# prebuilt 바이너리는 기본 빌드(키워드 + hashing 검색)다. 로컬 ONNX 의미 검색이 필요하면
+# 소스에서 `--features fastembed` 로 빌드한다(무거운 ort 의존이라 릴리스에는 넣지 않는다).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release 생성/자산 업로드
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14        # Apple Silicon
+            target: aarch64-apple-darwin
+          - os: macos-13        # Intel
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      # cozo/RocksDB(C++)의 librocksdb-sys 는 bindgen(libclang)이 필요하다 - Linux 러너에 설치.
+      # macOS 러너는 clang 이 기본 포함.
+      - name: install build deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: build
+        run: cargo build --release --locked --bin supragnosis --target ${{ matrix.target }}
+
+      - name: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME:-dev}"
+          name="supragnosis-${version}-${{ matrix.target }}"
+          mkdir -p "dist/${name}"
+          cp "target/${{ matrix.target }}/release/supragnosis" "dist/${name}/"
+          cp README.md "dist/${name}/" 2>/dev/null || true
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          # 체크섬: Linux 는 sha256sum, macOS 는 shasum.
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
+
+      # 태그가 아닌 실행(workflow_dispatch)에서도 산출물을 받아 빌드를 검증할 수 있게 한다.
+      - name: upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supragnosis-${{ matrix.target }}
+          path: dist/*.tar.gz*
+
+      # 태그 push 일 때만 Release 에 첨부(여러 잡이 같은 Release 에 자산을 누적한다).
+      - name: publish to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          generate_release_notes: true
