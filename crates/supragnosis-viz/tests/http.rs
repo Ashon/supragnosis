@@ -202,3 +202,49 @@ async fn viz_streams_mcp_events_via_sse() {
         "SSE 이벤트 프레임(세션 포함)이 와야 한다: {got}"
     );
 }
+
+/// `/api/hypergraph`: 한 관측이 공동 주장한 엔티티 집합이 하이퍼엣지로 나온다
+/// (원칙 11 이차 구조). 라우팅 + 직렬화 + 엔진 배선을 HTTP 종단으로 가드한다.
+#[tokio::test]
+async fn viz_serves_hypergraph() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(
+        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
+    );
+    // 한 관측이 세 엔티티를 공동 주장 -> 하이퍼엣지 하나(size 3), 이진 관계 없음.
+    engine
+        .observe(ObserveInput {
+            content: "supragnosis, rmcp, cozo were discussed together".into(),
+            workspace: Some("ws".into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "supragnosis".into(), kind: Some("Project".into()) },
+                EntityInput { name: "rmcp".into(), kind: Some("Tool".into()) },
+                EntityInput { name: "cozo".into(), kind: Some("Tool".into()) },
+            ],
+            relations: vec![],
+        })
+        .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel()));
+
+    let hg: serde_json::Value = reqwest::Client::new()
+        .get(format!("http://{addr}/api/hypergraph?workspace=ws"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(hg["stats"]["node_count"], 3, "hypergraph: {hg}");
+    assert_eq!(hg["stats"]["hyperedge_count"], 1);
+    assert_eq!(hg["stats"]["max_size"], 3);
+    assert_eq!(hg["hyperedges"][0]["size"], 3);
+    // 멤버는 정렬된 엔티티 id 3개(결정적 - 원칙 16).
+    assert_eq!(hg["hyperedges"][0]["members"].as_array().unwrap().len(), 3);
+}
