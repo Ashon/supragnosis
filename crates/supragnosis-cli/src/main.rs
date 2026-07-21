@@ -1,21 +1,24 @@
-//! supragnosis 실행 바이너리.
+//! supragnosis 실행 바이너리 (단일 바이너리 CLI).
 //!
-//! MCP 서버. 저장소는 파일 기반 Cozo(RocksDB, 기본) 또는 in-memory 선택.
-//! 임베딩은 fastembed(feature) / hashing / none 중 선택 - 없으면 키워드 검색으로 degrade.
+//! 서브커맨드로 서버를 제어한다. **인자 없이** 실행하면 stdio MCP 서버로 뜬다 - MCP
+//! 클라이언트가 자식 프로세스로 기동하는 경로의 하위 호환이다.
 //!
-//! 전송 두 가지:
-//! - 기본: **stdio** (Claude Code 등이 chat 마다 자식 프로세스로 기동).
-//! - `SUPRAGNOSIS_HTTP_ADDR`(예 127.0.0.1:7373): **standalone 데몬** - MCP streamable-http 를
-//!   상시 노출한다. 에이전트는 `claude mcp add --transport http http://127.0.0.1:7373/mcp` 로
-//!   접속(chat 스폰 없이). 데몬이 db 의 유일한 보유자라 단일 프로세스 lock 문제도 해소.
-//!   loopback 전용 바인드(원칙 17: 로컬 신뢰 표면, 무인증). 비로컬/인증은 후속.
+//!   supragnosis                  stdio MCP 서버 (기본, 무인자)
+//!   supragnosis serve [옵션]      포그라운드 실행 (--http 주면 streamable-http 데몬, --viz 뷰어)
+//!   supragnosis start [옵션]      백그라운드 데몬 시작 (기본 MCP 127.0.0.1:7373 + 뷰어 :7374)
+//!   supragnosis stop             백그라운드 데몬 정지
+//!   supragnosis restart [옵션]    정지 후 시작
+//!   supragnosis status           데몬 상태
 //!
-//! `SUPRAGNOSIS_VIZ_ADDR`(예 127.0.0.1:7374): 온톨로지 라이브 뷰어를 함께 띄운다(두 모드 공통).
-//! (`--server` 허브, sync 는 이후 마일스톤.)
+//! 각 옵션은 대응 환경변수(SUPRAGNOSIS_*)를 폴백/기본값으로 쓴다(옵션이 우선). HTTP/뷰어는
+//! loopback 전용(원칙 17). 백그라운드 데몬은 pidfile(~/.supragnosis/supragnosis.pid) +
+//! 로그(~/.supragnosis/log)로 관리하는 자체 프로세스라 launchd 없이 동작한다(로그인 자동
+//! 기동 등 OS 서비스 등록은 deploy/README.md).
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use clap::{Args, Parser, Subcommand};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ServiceExt;
@@ -24,6 +27,122 @@ use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::Engine;
 use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::{CozoStore, InMemoryStore};
+
+#[derive(Parser)]
+#[command(name = "supragnosis", version, about = "여러 호스트/워크스페이스의 지식을 온톨로지화하는 MCP 서버")]
+struct Cli {
+    #[command(subcommand)]
+    cmd: Option<Cmd>,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    /// 포그라운드 실행 (기본 stdio, --http 주면 streamable-http 데몬)
+    Serve(RunArgs),
+    /// 백그라운드 데몬 시작 (기본 MCP :7373 + 뷰어 :7374)
+    Start(RunArgs),
+    /// 백그라운드 데몬 정지
+    Stop,
+    /// 데몬 재시작 (정지 후 시작)
+    Restart(RunArgs),
+    /// 데몬 상태 조회
+    Status,
+}
+
+/// serve/start/restart 공통 실행 옵션. 미지정 시 SUPRAGNOSIS_* 환경변수 -> 기본값 순으로 해소.
+#[derive(Args, Clone, Default)]
+struct RunArgs {
+    /// MCP streamable-http 바인드 주소(loopback). serve 는 생략 시 stdio, start 는 127.0.0.1:7373.
+    #[arg(long, value_name = "ADDR")]
+    http: Option<String>,
+    /// 온톨로지 라이브 뷰어 바인드 주소(loopback). start 기본 127.0.0.1:7374.
+    #[arg(long, value_name = "ADDR")]
+    viz: Option<String>,
+    /// 저장소: cozo(기본, 파일 영속) | mem(비영속).
+    #[arg(long)]
+    store: Option<String>,
+    /// Cozo 데이터 디렉터리(기본 ~/.supragnosis/db).
+    #[arg(long, value_name = "DIR")]
+    data_dir: Option<String>,
+    /// 출처용 호스트 id(기본 localhost).
+    #[arg(long)]
+    host: Option<String>,
+    /// 기본 워크스페이스(기본 default).
+    #[arg(long)]
+    workspace: Option<String>,
+    /// 임베더: fastembed | hashing | none.
+    #[arg(long)]
+    embed: Option<String>,
+    /// 세션 id(발자국 그룹 키).
+    #[arg(long)]
+    session: Option<String>,
+}
+
+fn main() -> Result<()> {
+    match Cli::parse().cmd.unwrap_or(Cmd::Serve(RunArgs::default())) {
+        Cmd::Serve(a) => run_blocking(resolve(a, false)),
+        Cmd::Start(a) => start(resolve(a, true)),
+        Cmd::Stop => stop(),
+        Cmd::Restart(a) => restart(resolve(a, true)),
+        Cmd::Status => status(),
+    }
+}
+
+/// 해소된 실행 설정.
+struct Config {
+    host: String,
+    workspace: String,
+    store_kind: String,
+    data_dir: String,
+    embed_kind: String,
+    session: String,
+    /// Some = streamable-http 데몬, None = stdio.
+    http: Option<String>,
+    /// Some = 라이브 뷰어 동반.
+    viz: Option<String>,
+}
+
+/// RunArgs + 환경변수 + 기본값으로 Config 를 해소한다. `daemon=true`(start/restart)면 stdio 가
+/// 무의미하므로 http/viz 를 loopback 기본값으로 채운다.
+fn resolve(a: RunArgs, daemon: bool) -> Config {
+    let env = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
+    let host = a
+        .host
+        .or_else(|| env("SUPRAGNOSIS_HOST"))
+        .unwrap_or_else(|| "localhost".to_string());
+    Config {
+        workspace: a
+            .workspace
+            .or_else(|| env("SUPRAGNOSIS_WORKSPACE"))
+            .unwrap_or_else(|| "default".to_string()),
+        store_kind: a
+            .store
+            .or_else(|| env("SUPRAGNOSIS_STORE"))
+            .unwrap_or_else(|| "cozo".to_string()),
+        data_dir: a
+            .data_dir
+            .or_else(|| env("SUPRAGNOSIS_DATA_DIR"))
+            .unwrap_or_else(default_data_dir),
+        embed_kind: a
+            .embed
+            .or_else(|| env("SUPRAGNOSIS_EMBED"))
+            .unwrap_or_else(|| default_embed_kind().to_string()),
+        session: a
+            .session
+            .or_else(|| env("SUPRAGNOSIS_SESSION"))
+            .or_else(|| env("CLAUDE_CODE_SESSION_ID"))
+            .unwrap_or_else(|| format!("{host}-{}", supragnosis_core::now_millis())),
+        http: a
+            .http
+            .or_else(|| env("SUPRAGNOSIS_HTTP_ADDR"))
+            .or_else(|| daemon.then(|| "127.0.0.1:7373".to_string())),
+        viz: a
+            .viz
+            .or_else(|| env("SUPRAGNOSIS_VIZ_ADDR"))
+            .or_else(|| daemon.then(|| "127.0.0.1:7374".to_string())),
+        host,
+    }
+}
 
 fn default_data_dir() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
@@ -50,10 +169,7 @@ fn build_embedder(kind: &str) -> Option<Arc<dyn EmbeddingProvider>> {
         }
         "fastembed" => build_fastembed(),
         other => {
-            tracing::warn!(
-                kind = other,
-                "알 수 없는 SUPRAGNOSIS_EMBED - 키워드 검색으로 진행"
-            );
+            tracing::warn!(kind = other, "알 수 없는 SUPRAGNOSIS_EMBED - 키워드 검색으로 진행");
             None
         }
     }
@@ -75,16 +191,88 @@ fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
 
 #[cfg(not(feature = "fastembed"))]
 fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
-    tracing::warn!(
-        "fastembed feature 미컴파일 - `--features fastembed` 로 빌드. 키워드 검색으로 진행"
-    );
+    tracing::warn!("fastembed feature 미컴파일 - `--features fastembed` 로 빌드. 키워드 검색으로 진행");
     None
 }
 
-/// 온톨로지 라이브 뷰어를 opt-in 으로 띄운다. `SUPRAGNOSIS_VIZ_ADDR`(IP:포트, loopback)이
-/// 설정돼 있으면 이벤트 채널과 함께 localhost HTTP 서버를 spawn 한다. 설정/바인드 실패는
-/// 로그만 남기고 MCP 서버 기동을 막지 않는다(뷰어는 보조 채널 - 원칙 21 의 도구 표면과 무관).
-/// `events` 는 엔진에 붙은 싱크와 같은 broadcast 채널의 Sender - SSE 구독의 원천이다.
+/// 설정으로 스토어/임베더/엔진을 조립한다. `events` 가 있으면 UI 이벤트 싱크(뷰어)를 붙인다.
+fn build_engine(
+    cfg: &Config,
+    events: Option<&tokio::sync::broadcast::Sender<String>>,
+) -> Result<Arc<Engine>> {
+    let embedder = build_embedder(&cfg.embed_kind);
+    let embed_dim = embedder.as_ref().map(|e| e.dimensions());
+    let store: Arc<dyn KnowledgeStore> = match cfg.store_kind.as_str() {
+        "mem" | "memory" => {
+            tracing::info!("store=in-memory (비영속)");
+            Arc::new(InMemoryStore::new())
+        }
+        _ => {
+            // 임베더 식별자(모델+차원)를 스토어에 기록/대조한다 - 다른 임베더로 재오픈 시 침묵
+            // 오염 대신 명시적 실패.
+            let store = match &embedder {
+                Some(e) => CozoStore::open_with_embedder(&cfg.data_dir, &e.id(), e.dimensions()),
+                None => CozoStore::open(&cfg.data_dir),
+            }
+            .with_context(|| format!("failed to open Cozo store at {}", cfg.data_dir))?;
+            tracing::info!(data_dir = %cfg.data_dir, ?embed_dim, "store=cozo (RocksDB, 영속)");
+            Arc::new(store)
+        }
+    };
+    let mut engine =
+        Engine::new(store, cfg.host.clone(), cfg.workspace.clone()).with_session(cfg.session.clone());
+    if let Some(e) = embedder {
+        engine = engine.with_embedder(e);
+    }
+    if let Some(tx) = events {
+        engine = engine.with_events(Arc::new(supragnosis_viz::BroadcastSink::new(tx.clone())));
+    }
+    Ok(Arc::new(engine))
+}
+
+/// 실제 서버 실행(비동기). http 가 있으면 streamable-http 데몬, 없으면 stdio. viz 가 있으면
+/// 같은 프로세스에서 라이브 뷰어를 함께 띄운다.
+async fn run(cfg: Config) -> Result<()> {
+    // 뷰어가 있을 때만 이벤트 채널을 만든다 - 엔진 싱크와 SSE 구독이 공유한다.
+    let events = cfg
+        .viz
+        .as_ref()
+        .map(|_| tokio::sync::broadcast::channel::<String>(256).0);
+    let engine = build_engine(&cfg, events.as_ref())?;
+
+    if let (Some(addr), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
+        spawn_viz(&engine, addr, tx.clone()).await;
+    }
+
+    match cfg.http.as_deref() {
+        Some(http) => serve_http_daemon(engine, http, &cfg.host, &cfg.workspace, &cfg.session).await,
+        None => {
+            tracing::info!(host = %cfg.host, workspace = %cfg.workspace, session = %cfg.session, "supragnosis / stdio MCP 서버 시작");
+            let service = SupragnosisServer::new(engine).serve(stdio()).await?;
+            service.waiting().await?;
+            Ok(())
+        }
+    }
+}
+
+/// stderr 로그 구독자 초기화(멱등). stdout 은 MCP stdio 채널이므로 로그는 반드시 stderr.
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .try_init();
+}
+
+/// tokio 런타임을 만들어 [`run`] 을 블로킹으로 돈다. `#[tokio::main]` 대신 수동 구축이라
+/// start 의 데몬화(fork)가 런타임 생성 **전에** 일어날 수 있다(fork 후 런타임 파손 방지).
+fn run_blocking(cfg: Config) -> Result<()> {
+    init_tracing();
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(run(cfg))
+}
+
+/// 온톨로지 라이브 뷰어를 opt-in 으로 띄운다. 바인드/설정 실패는 로그만 남기고 서버 기동을
+/// 막지 않는다(뷰어는 보조 채널 - 원칙 21). `events` 는 엔진 싱크와 같은 broadcast Sender.
 async fn spawn_viz(
     engine: &Arc<Engine>,
     addr_str: &str,
@@ -114,96 +302,9 @@ async fn spawn_viz(
     });
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // 로그는 반드시 stderr 로. stdout 은 MCP stdio 트랜스포트 채널이다.
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .init();
-
-    let host = std::env::var("SUPRAGNOSIS_HOST").unwrap_or_else(|_| "localhost".to_string());
-    let workspace =
-        std::env::var("SUPRAGNOSIS_WORKSPACE").unwrap_or_else(|_| "default".to_string());
-    let store_kind = std::env::var("SUPRAGNOSIS_STORE").unwrap_or_else(|_| "cozo".to_string());
-
-    // 임베더를 먼저 만든다 - Cozo 는 임베딩 차원으로 HNSW 인덱스를 세팅해야 하기 때문.
-    let embed_kind =
-        std::env::var("SUPRAGNOSIS_EMBED").unwrap_or_else(|_| default_embed_kind().to_string());
-    let embedder = build_embedder(&embed_kind);
-    let embed_dim = embedder.as_ref().map(|e| e.dimensions());
-
-    let store: Arc<dyn KnowledgeStore> = match store_kind.as_str() {
-        "mem" | "memory" => {
-            tracing::info!("store=in-memory (비영속)");
-            Arc::new(InMemoryStore::new())
-        }
-        _ => {
-            let data_dir =
-                std::env::var("SUPRAGNOSIS_DATA_DIR").unwrap_or_else(|_| default_data_dir());
-            // 임베더 식별자(모델+차원)를 스토어에 기록/대조한다 - 다른 임베더로 재오픈하면
-            // 침묵 오염(벡터 공간 혼합/부분 쓰기) 대신 여기서 명시적으로 실패한다.
-            let store = match &embedder {
-                Some(e) => CozoStore::open_with_embedder(&data_dir, &e.id(), e.dimensions()),
-                None => CozoStore::open(&data_dir),
-            }
-            .with_context(|| format!("failed to open Cozo store at {data_dir}"))?;
-            tracing::info!(data_dir, ?embed_dim, "store=cozo (RocksDB, 영속)");
-            Arc::new(store)
-        }
-    };
-
-    let mut engine = Engine::new(store, host.clone(), workspace.clone());
-    // 세션 id (대화 발자국 그룹 키, 모든 이벤트에 실림). 우선순위:
-    //   1) SUPRAGNOSIS_SESSION - 명시 override
-    //   2) CLAUDE_CODE_SESSION_ID - Claude Code 가 자식 프로세스에 주입하는 세션 id(자동)
-    //   3) host-<시작시각> - 그 외 실행의 서버 단위 폴백
-    let session = std::env::var("SUPRAGNOSIS_SESSION")
-        .or_else(|_| std::env::var("CLAUDE_CODE_SESSION_ID"))
-        .unwrap_or_else(|_| format!("{host}-{}", supragnosis_core::now_millis()));
-    engine = engine.with_session(session.clone());
-    if let Some(embedder) = embedder {
-        engine = engine.with_embedder(embedder);
-    }
-
-    // 뷰어(opt-in): 주소가 있으면 이벤트 채널을 만들고 엔진에 싱크를 붙인다 - MCP 도구
-    // 호출이 이 채널로 활동을 발행하고, 뷰어의 /api/events(SSE)가 구독한다.
-    let viz_addr = std::env::var("SUPRAGNOSIS_VIZ_ADDR")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
-    let events_tx =
-        viz_addr.as_ref().map(|_| tokio::sync::broadcast::channel::<String>(256).0);
-    if let Some(tx) = &events_tx {
-        engine = engine.with_events(Arc::new(supragnosis_viz::BroadcastSink::new(tx.clone())));
-    }
-
-    let engine = Arc::new(engine);
-
-    // 뷰어 HTTP 서버 기동(같은 프로세스, localhost 전용 - 원칙 17). 실패해도 MCP 는 진행.
-    if let (Some(addr_str), Some(tx)) = (viz_addr, events_tx) {
-        spawn_viz(&engine, &addr_str, tx).await;
-    }
-
-    // standalone 데몬 모드: SUPRAGNOSIS_HTTP_ADDR 이 있으면 stdio 대신 MCP streamable-http 를
-    // 상시 노출한다(뷰어는 위에서 이미 자기 포트로 기동됨).
-    if let Ok(http_addr) = std::env::var("SUPRAGNOSIS_HTTP_ADDR") {
-        if !http_addr.trim().is_empty() {
-            return serve_http_daemon(engine, &http_addr, &host, &workspace, &session).await;
-        }
-    }
-
-    let server = SupragnosisServer::new(engine);
-
-    tracing::info!(%host, %workspace, %session, "supragnosis / stdio MCP 서버 시작");
-
-    let service = server.serve(stdio()).await?;
-    service.waiting().await?;
-    Ok(())
-}
-
 /// standalone 데몬: MCP streamable-http 서버를 상시 실행한다. 세션마다 factory 로
 /// `SupragnosisServer` 를 만들되 `Arc<Engine>`(같은 db)을 공유한다. loopback 전용 바인드
-/// (원칙 17: 로컬 신뢰 표면 - 무인증 정당). kill 로 종료(graceful shutdown 생략).
+/// (원칙 17: 로컬 신뢰 표면 - 무인증 정당).
 async fn serve_http_daemon(
     engine: Arc<Engine>,
     http_addr: &str,
@@ -224,4 +325,162 @@ async fn serve_http_daemon(
     tracing::info!(%host, %workspace, %session, %addr, "supragnosis / MCP streamable-http 데몬: http://{addr}/mcp");
     axum::serve(listener, router).await?;
     Ok(())
+}
+
+// --- 백그라운드 데몬 lifecycle (start/stop/restart/status) --------------------------
+// pidfile + 로그 기반 자체 관리. kill(-0/SIGTERM)/TcpStream 만 쓰므로 unsafe/libc 불필요.
+
+#[cfg(unix)]
+fn base_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+        .join(".supragnosis")
+}
+#[cfg(unix)]
+fn pid_path() -> std::path::PathBuf {
+    base_dir().join("supragnosis.pid")
+}
+#[cfg(unix)]
+fn log_dir() -> std::path::PathBuf {
+    base_dir().join("log")
+}
+#[cfg(unix)]
+fn read_pid() -> Option<i32> {
+    std::fs::read_to_string(pid_path())
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+/// `kill -0` 로 프로세스 생존 확인(포터블, unsafe/libc 없이).
+#[cfg(unix)]
+fn pid_alive(pid: i32) -> bool {
+    std::process::Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+/// 주소에 리스너가 있는지(연결 시도 성공 = 사용 중).
+#[cfg(unix)]
+fn port_open(addr: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    addr.to_socket_addrs()
+        .ok()
+        .and_then(|mut it| it.next())
+        .map(|sa| {
+            std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(300)).is_ok()
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn start(cfg: Config) -> Result<()> {
+    let http = cfg
+        .http
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    if let Some(pid) = read_pid() {
+        if pid_alive(pid) {
+            anyhow::bail!("이미 실행 중입니다 (pid {pid}). 'supragnosis stop' 후 다시 시도하세요.");
+        }
+    }
+    if port_open(&http) {
+        anyhow::bail!(
+            "{http} 가 이미 사용 중입니다 (다른 인스턴스 또는 launchd 데몬?). 정지하거나 --http 로 다른 주소를 쓰세요."
+        );
+    }
+    std::fs::create_dir_all(log_dir()).with_context(|| "로그 디렉터리 생성 실패")?;
+    let out = std::fs::File::create(log_dir().join("supragnosis.out.log"))?;
+    let err = std::fs::File::create(log_dir().join("supragnosis.err.log"))?;
+    let viz_msg = cfg
+        .viz
+        .as_deref()
+        .map(|v| format!("http://{v}"))
+        .unwrap_or_else(|| "(off)".to_string());
+    println!("supragnosis 데몬 시작 - MCP http://{http}/mcp  뷰어 {viz_msg}");
+    println!("  pidfile {}  로그 {}", pid_path().display(), log_dir().display());
+    // fork/setsid/pidfile/stdio 리다이렉트. 이후 코드는 데몬화된 자식에서만 실행된다.
+    daemonize::Daemonize::new()
+        .pid_file(pid_path())
+        .stdout(out)
+        .stderr(err)
+        .start()
+        .map_err(|e| anyhow::anyhow!("데몬화 실패: {e}"))?;
+    run_blocking(cfg)
+}
+
+#[cfg(unix)]
+fn stop() -> Result<()> {
+    let Some(pid) = read_pid() else {
+        println!("실행 중이 아닙니다 (pidfile 없음).");
+        return Ok(());
+    };
+    if !pid_alive(pid) {
+        let _ = std::fs::remove_file(pid_path());
+        println!("실행 중이 아닙니다 (오래된 pidfile 정리, pid {pid}).");
+        return Ok(());
+    }
+    std::process::Command::new("kill")
+        .arg(pid.to_string())
+        .status()
+        .with_context(|| "kill 실행 실패")?;
+    // 종료 대기(최대 ~10s). SIGTERM 후 graceful 종료를 기다린다.
+    for _ in 0..50 {
+        if !pid_alive(pid) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    if pid_alive(pid) {
+        anyhow::bail!("정지 대기 초과 (pid {pid}). 수동 확인: kill {pid}");
+    }
+    let _ = std::fs::remove_file(pid_path());
+    println!("데몬 정지 (pid {pid}).");
+    Ok(())
+}
+
+#[cfg(unix)]
+fn restart(cfg: Config) -> Result<()> {
+    let _ = stop();
+    std::thread::sleep(std::time::Duration::from_millis(400)); // 포트 해제 대기
+    start(cfg)
+}
+
+#[cfg(unix)]
+fn status() -> Result<()> {
+    let http = std::env::var("SUPRAGNOSIS_HTTP_ADDR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    match read_pid() {
+        Some(pid) if pid_alive(pid) => {
+            println!("running (pid {pid})");
+            println!(
+                "  MCP http://{http}/mcp  ({})",
+                if port_open(&http) { "응답" } else { "포트 무응답" }
+            );
+        }
+        Some(pid) => println!("stopped (오래된 pidfile, pid {pid})"),
+        None => println!("stopped"),
+    }
+    Ok(())
+}
+
+// 비-unix: 데몬 lifecycle 미지원 - serve --http 를 안내한다.
+#[cfg(not(unix))]
+fn start(_cfg: Config) -> Result<()> {
+    anyhow::bail!("백그라운드 데몬(start)은 unix(macOS/Linux)에서만 지원합니다. 'supragnosis serve --http <ADDR>' 를 쓰세요.")
+}
+#[cfg(not(unix))]
+fn stop() -> Result<()> {
+    anyhow::bail!("백그라운드 데몬은 unix 전용입니다.")
+}
+#[cfg(not(unix))]
+fn restart(_cfg: Config) -> Result<()> {
+    anyhow::bail!("백그라운드 데몬은 unix 전용입니다.")
+}
+#[cfg(not(unix))]
+fn status() -> Result<()> {
+    anyhow::bail!("백그라운드 데몬은 unix 전용입니다.")
 }
