@@ -385,6 +385,11 @@ fn entity_from_parts(id: String, etype: String, name: String, data_str: &str) ->
             .get("aliases")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
+        // Absent (old schema) or JSON null -> None.
+        description: data
+            .get("description")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
         properties: data
             .get("properties")
             .cloned()
@@ -416,6 +421,10 @@ fn relation_from_parts(
         from: src.to_string(),
         to: dst.to_string(),
         kind: rtype.to_string(),
+        description: data
+            .get("description")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
         provenance: serde_json::from_value(data.get("provenance")?.clone()).ok()?,
         valid_from: data.get("valid_from").and_then(|v| v.as_u64()),
         valid_to: data.get("valid_to").and_then(|v| v.as_u64()),
@@ -538,6 +547,7 @@ impl KnowledgeStore for CozoStore {
         // The data JSON is the source and ent_vec is a materialized index for ANN acceleration (symmetric with obs_vec).
         let data = json!({
             "aliases": entity.aliases,
+            "description": entity.description,
             "properties": entity.properties,
             "provenance": entity.provenance,
             "embedding": entity.embedding,
@@ -574,6 +584,7 @@ impl KnowledgeStore for CozoStore {
         // Composite/temporal fields go in the data JSON column (provenance + valid interval).
         let data = json!({
             "provenance": rel.provenance,
+            "description": rel.description,
             "valid_from": rel.valid_from,
             "valid_to": rel.valid_to,
         })
@@ -876,6 +887,7 @@ mod tests {
             kind: "Concept".into(),
             canonical_name: name.into(),
             aliases: vec![],
+            description: None,
             properties: serde_json::Value::Null,
             provenance: vec![prov()],
             embedding: None,
@@ -897,7 +909,7 @@ mod tests {
                 Entity::make_id("ws1", "c"),
             );
             store
-                .add_relation(Relation {
+                .add_relation(Relation { description: None,
                     id: Relation::make_id(&a, "rel", &b),
                     from: a.clone(),
                     to: b.clone(),
@@ -908,7 +920,7 @@ mod tests {
                 })
                 .unwrap();
             store
-                .add_relation(Relation {
+                .add_relation(Relation { description: None,
                     id: Relation::make_id(&b, "rel", &c),
                     from: b.clone(),
                     to: c.clone(),
@@ -975,7 +987,7 @@ mod tests {
                 store.put_entity(ent(name)).unwrap();
                 let (f, t) = (Entity::make_id("ws1", "root"), Entity::make_id("ws1", name));
                 store
-                    .add_relation(Relation {
+                    .add_relation(Relation { description: None,
                         id: Relation::make_id(&f, "rel", &t),
                         from: f,
                         to: t,
@@ -992,7 +1004,7 @@ mod tests {
                 Entity::make_id("ws1", &grand),
             );
             store
-                .add_relation(Relation {
+                .add_relation(Relation { description: None,
                     id: Relation::make_id(&f, "rel", &t),
                     from: f,
                     to: t,
@@ -1169,6 +1181,7 @@ mod tests {
             kind: "Concept".into(),
             canonical_name: name.into(),
             aliases: vec![],
+            description: None,
             properties: serde_json::Value::Null,
             provenance: vec![prov_ws(ws)],
             embedding: Some(emb.to_vec()),

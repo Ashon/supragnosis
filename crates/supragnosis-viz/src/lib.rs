@@ -426,6 +426,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #detail.on { display:block; }
   #detail h2 { font-size:14px; margin:0 22px 2px 0; color:var(--ink); font-weight:600; word-break:break-word; }
   #detail .meta { color:var(--muted); font-size:11.5px; margin-bottom:4px; }
+  #detail .desc { color:var(--ink); font-size:11.5px; line-height:1.4; margin:2px 0 4px; opacity:.85; word-break:break-word; }
   #detail .sec { color:var(--muted); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; margin:10px 0 3px; }
   #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:6px; cursor:pointer; }
   #detail .row:hover { background:#ffffff14; }
@@ -806,19 +807,20 @@ function renderDetail(node) {
   if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
   const outs = edges.filter(e => e.a === node && !typeOff.has(e.b.type));
   const ins = edges.filter(e => e.b === node && !typeOff.has(e.a.type));
-  const rowHtml = (rel, other, dir) =>
-    `<div class="row" data-id="${esc(other.id)}" title="focus ${esc(other.name)}">`
+  const rowHtml = (rel, other, dir, desc) =>
+    `<div class="row" data-id="${esc(other.id)}" title="${desc ? esc(desc) : "focus " + esc(other.name)}">`
     + `<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>`
     + `<span class="rel">${dir} ${esc(rel)}</span>`
     + `<span class="nm">${esc(other.name)}</span></div>`;
   const list = (arr, dir) => arr.length
-    ? arr.map(e => rowHtml(e.type, dir === "->" ? e.b : e.a, dir)).join("")
+    ? arr.map(e => rowHtml(e.type, dir === "->" ? e.b : e.a, dir, e.description)).join("")
     : `<div class="empty">none</div>`;
   detailEl.innerHTML =
     `<button class="close" title="close">x</button>`
     + `<h2>${esc(node.name)}</h2>`
     + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span> `
     + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
+    + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
     + `<div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}`
     + `<div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}`;
   detailEl.className = "on";

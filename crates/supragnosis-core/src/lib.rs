@@ -126,9 +126,10 @@ impl Assertions {
         } = self;
         hasher.update(&(entities.len() as u64).to_le_bytes());
         for e in entities {
-            let EntityAssertion { name, kind } = e;
+            let EntityAssertion { name, kind, description } = e;
             hash_field(hasher, name.as_bytes());
             hash_opt_field(hasher, kind.as_deref());
+            hash_opt_field(hasher, description.as_deref());
         }
         hasher.update(&(relations.len() as u64).to_le_bytes());
         for r in relations {
@@ -136,12 +137,14 @@ impl Assertions {
                 from,
                 kind,
                 to,
+                description,
                 valid_from,
                 valid_to,
             } = r;
             hash_field(hasher, from.as_bytes());
             hash_field(hasher, kind.as_bytes());
             hash_field(hasher, to.as_bytes());
+            hash_opt_field(hasher, description.as_deref());
             hash_opt_u64(hasher, *valid_from);
             hash_opt_u64(hasher, *valid_to);
         }
@@ -154,6 +157,10 @@ pub struct EntityAssertion {
     pub name: String,
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// (Optional) A human-readable explanation of this entity - what it is / why it is defined this way.
+    /// Content identity (part of the observation id): a different description is a different asserted claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Relation assertion: "from -kind-> to". from/to are names (before resolution), kind is the original notation.
@@ -166,6 +173,10 @@ pub struct RelationAssertion {
     #[serde(rename = "type")]
     pub kind: String,
     pub to: String,
+    /// (Optional) A human-readable explanation of this connection - what it means / why from relates to
+    /// to this way. Content identity (part of the observation id): a different description is a different claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Valid-time start (Principle 4). None = interpreted as from the observation time (an approximate default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub valid_from: Option<Timestamp>,
@@ -324,6 +335,10 @@ pub struct Entity {
     pub canonical_name: String,
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// (Optional) Human-readable explanation of this entity, projected from the latest asserting observation
+    /// (last-write-wins in M0, symmetric with `kind`). Not part of the id - the full history stays in the log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(default)]
     pub properties: serde_json::Value,
     #[serde(default)]
@@ -358,6 +373,10 @@ pub struct Relation {
     pub to: String,
     #[serde(rename = "type")]
     pub kind: String,
+    /// (Optional) Human-readable explanation of this connection, projected from the latest asserting
+    /// observation (last-write-wins in M0). Not part of the id - the full history stays in the log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub provenance: Provenance,
     /// Valid time (Principle 4): the start of the interval during which the relation is true in the world.
     /// None = "from the observation time (provenance.observed_at) until refuted".
@@ -719,7 +738,7 @@ mod tests {
             "supragnosis uses rmcp".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion {
+                entities: vec![EntityAssertion { description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -733,7 +752,7 @@ mod tests {
             "supragnosis uses rmcp".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion {
+                entities: vec![EntityAssertion { description: None,
                     name: "rmcp".into(),
                     kind: Some("Project".into()),
                 }],
@@ -747,7 +766,7 @@ mod tests {
             "supragnosis uses rmcp".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion {
+                entities: vec![EntityAssertion { description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -766,7 +785,7 @@ mod tests {
             "x".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion {
+                entities: vec![EntityAssertion { description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -780,7 +799,7 @@ mod tests {
             "x".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { name: "rmcp".into(), kind: None }],
+                entities: vec![EntityAssertion { description: None, name: "rmcp".into(), kind: None }],
                 relations: vec![],
             },
         );
@@ -788,7 +807,7 @@ mod tests {
             "x".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion {
+                entities: vec![EntityAssertion { description: None,
                     name: "rmcp".into(),
                     kind: Some(String::new()),
                 }],

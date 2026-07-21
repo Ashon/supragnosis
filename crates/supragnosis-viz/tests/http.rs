@@ -26,16 +26,16 @@ fn observe_depends(engine: &Engine) {
             on_behalf_of: None,
             derived_from: vec![],
             entities: vec![
-                EntityInput {
+                EntityInput { description: None,
                     name: "supragnosis".into(),
                     kind: Some("Project".into()),
                 },
-                EntityInput {
+                EntityInput { description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 },
             ],
-            relations: vec![RelationInput {
+            relations: vec![RelationInput { description: None,
                 from: "supragnosis".into(),
                 kind: "depends_on".into(),
                 to: "rmcp".into(),
@@ -128,7 +128,7 @@ async fn viz_lists_workspaces_sorted_distinct() {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput {
+                entities: vec![EntityInput { description: None,
                     name: name.into(),
                     kind: None,
                 }],
@@ -221,9 +221,9 @@ async fn viz_serves_hypergraph() {
             on_behalf_of: None,
             derived_from: vec![],
             entities: vec![
-                EntityInput { name: "supragnosis".into(), kind: Some("Project".into()) },
-                EntityInput { name: "rmcp".into(), kind: Some("Tool".into()) },
-                EntityInput { name: "cozo".into(), kind: Some("Tool".into()) },
+                EntityInput { description: None, name: "supragnosis".into(), kind: Some("Project".into()) },
+                EntityInput { description: None, name: "rmcp".into(), kind: Some("Tool".into()) },
+                EntityInput { description: None, name: "cozo".into(), kind: Some("Tool".into()) },
             ],
             relations: vec![],
         })

@@ -803,12 +803,12 @@ fn load_ontology(engine: &Engine) {
                 entities: d
                     .entities
                     .iter()
-                    .map(|(n, t)| EntityInput { name: (*n).into(), kind: Some((*t).into()) })
+                    .map(|(n, t)| EntityInput { description: None, name: (*n).into(), kind: Some((*t).into()) })
                     .collect(),
                 relations: d
                     .relations
                     .iter()
-                    .map(|(f, k, t)| RelationInput {
+                    .map(|(f, k, t)| RelationInput { description: None,
                         from: (*f).into(),
                         kind: (*k).into(),
                         to: (*t).into(),

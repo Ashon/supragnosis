@@ -32,12 +32,16 @@ pub struct ObserveInput {
 pub struct EntityInput {
     pub name: String,
     pub kind: Option<String>,
+    /// (Optional) Human-readable explanation of this entity.
+    pub description: Option<String>,
 }
 
 pub struct RelationInput {
     pub from: String,
     pub kind: String,
     pub to: String,
+    /// (Optional) Human-readable explanation of this connection.
+    pub description: Option<String>,
     /// Valid-time start (Principle 4, optional). Captures retroactive observations at ingest time.
     pub valid_from: Option<Timestamp>,
     /// Valid-time end (Principle 4, optional).
@@ -110,6 +114,9 @@ pub struct GraphNode {
     pub name: String,
     #[serde(rename = "type")]
     pub kind: String,
+    /// (Optional) Human-readable explanation of this entity - shown in the viewer inspector.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// The number of edges included in the graph that connect to this node (only edges whose both endpoints are in the node set).
     pub degree: usize,
     /// The number of sources (attestations) accumulated on this entity - larger when more observations back it.
@@ -125,6 +132,9 @@ pub struct GraphEdge {
     pub to: String,
     #[serde(rename = "type")]
     pub kind: String,
+    /// (Optional) Human-readable explanation of this connection - shown in the viewer inspector.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub trust_tier: TrustTier,
     /// No annotation (None) stays as no annotation - it is not shown as 1.0 (Principle 2, 4th).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -355,6 +365,7 @@ impl Engine {
                 .map(|e| EntityAssertion {
                     name: e.name.clone(),
                     kind: e.kind.clone(),
+                    description: e.description.clone(),
                 })
                 .collect(),
             relations: input
@@ -364,6 +375,7 @@ impl Engine {
                     from: r.from.clone(),
                     kind: r.kind.clone(),
                     to: r.to.clone(),
+                    description: r.description.clone(),
                     valid_from: r.valid_from,
                     valid_to: r.valid_to,
                 })
@@ -395,13 +407,14 @@ impl Engine {
 
         let mut entities = Vec::new();
         for e in input.entities {
-            entities.push(self.upsert_named(&workspace, &e.name, e.kind, &prov)?);
+            entities.push(self.upsert_named(&workspace, &e.name, e.kind, e.description, &prov)?);
         }
 
         let mut relations = Vec::new();
         for r in input.relations {
-            let from = self.upsert_named(&workspace, &r.from, None, &prov)?;
-            let to = self.upsert_named(&workspace, &r.to, None, &prov)?;
+            // Endpoints are named-only references here (no type/description of their own on a relation input).
+            let from = self.upsert_named(&workspace, &r.from, None, None, &prov)?;
+            let to = self.upsert_named(&workspace, &r.to, None, None, &prov)?;
             // kind is projected into its canonical form - so the id and the stored notation always match
             // (if only the id is normalized, different notations for the same id are left last-write-wins).
             let kind = normalize_relation_kind(&r.kind);
@@ -410,6 +423,8 @@ impl Engine {
                 from,
                 to,
                 kind,
+                // Human-readable explanation of the connection (last-write-wins in M0; the log keeps history).
+                description: r.description,
                 provenance: prov.clone(),
                 // Project the valid interval the client specified as-is (Principle 4 capture).
                 // Derivation logic such as auto-closing valid_to on refutation is M3.
@@ -434,6 +449,7 @@ impl Engine {
         workspace: &str,
         name: &str,
         kind: Option<String>,
+        description: Option<String>,
         prov: &Provenance,
     ) -> Result<String, StoreError> {
         let id = Entity::make_id(workspace, name);
@@ -442,12 +458,18 @@ impl Engine {
             kind: kind.clone().unwrap_or_else(|| "Concept".to_string()),
             canonical_name: name.trim().to_string(),
             aliases: Vec::new(),
+            description: None,
             properties: serde_json::Value::Null,
             provenance: Vec::new(),
             embedding: None,
         });
         if let Some(k) = kind {
             entity.kind = k;
+        }
+        // Update the explanation only when this observation actually supplies one (do not erase a prior
+        // description with an omission) - last-write-wins among observations that specify it (M0).
+        if let Some(d) = description {
+            entity.description = Some(d);
         }
         entity.provenance.push(prov.clone());
         // Embed the entity name/aliases so semantic search reaches the node by the **meaning of its name**
@@ -666,6 +688,7 @@ impl Engine {
                     from: r.from.clone(),
                     to: r.to.clone(),
                     kind: r.kind.clone(),
+                    description: r.description.clone(),
                     trust_tier: r.provenance.trust_tier,
                     confidence: r.provenance.confidence,
                     valid_to: r.valid_to,
@@ -691,6 +714,7 @@ impl Engine {
                     id: e.id.clone(),
                     name: e.canonical_name.clone(),
                     kind: e.kind.clone(),
+                    description: e.description.clone(),
                     degree: degree.get(&e.id).copied().unwrap_or(0),
                     sources: e.provenance.len(),
                     trust_tier: trust,
@@ -824,6 +848,7 @@ impl Engine {
                     id: e.id.clone(),
                     name: e.canonical_name.clone(),
                     kind: e.kind.clone(),
+                    description: e.description.clone(),
                     degree: hyper_degree.get(&e.id).copied().unwrap_or(0),
                     sources: e.provenance.len(),
                     trust_tier: trust,
@@ -924,16 +949,16 @@ mod tests {
                 on_behalf_of: Some("ashon".into()),
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput {
+                    EntityInput { description: None,
                         name: "rmcp".into(),
                         kind: Some("Tool".into()),
                     },
-                    EntityInput {
+                    EntityInput { description: None,
                         name: "supragnosis".into(),
                         kind: Some("Project".into()),
                     },
                 ],
-                relations: vec![RelationInput {
+                relations: vec![RelationInput { description: None,
                     from: "supragnosis".into(),
                     kind: "depends_on".into(),
                     to: "rmcp".into(),
@@ -988,7 +1013,7 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![],
-                    relations: vec![RelationInput {
+                    relations: vec![RelationInput { description: None,
                         from: "supragnosis".into(),
                         kind: kind.into(),
                         to: "rmcp".into(),
@@ -1026,7 +1051,7 @@ mod tests {
                     confidence: None,
                     on_behalf_of: None,
                     derived_from: vec![],
-                    entities: vec![EntityInput {
+                    entities: vec![EntityInput { description: None,
                         name: "supragnosis".into(),
                         kind: Some(kind.into()),
                     }],
@@ -1091,11 +1116,11 @@ mod tests {
                 relations,
             })
         };
-        let ent = |name: &str, kind: Option<&str>| EntityInput {
+        let ent = |name: &str, kind: Option<&str>| EntityInput { description: None,
             name: name.into(),
             kind: kind.map(String::from),
         };
-        let rel = |from: &str, kind: &str, to: &str| RelationInput {
+        let rel = |from: &str, kind: &str, to: &str| RelationInput { description: None,
             from: from.into(),
             kind: kind.into(),
             to: to.into(),
@@ -1148,7 +1173,7 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![],
-                    relations: vec![RelationInput {
+                    relations: vec![RelationInput { description: None,
                         from: "kim".into(),
                         kind: "leads".into(),
                         to: "team A".into(),
@@ -1194,7 +1219,7 @@ mod tests {
                     confidence: Some(conf),
                     on_behalf_of: Some(behalf.into()),
                     derived_from: vec![],
-                    entities: vec![EntityInput {
+                    entities: vec![EntityInput { description: None,
                         name: "thing".into(),
                         kind: None,
                     }],
@@ -1314,7 +1339,7 @@ mod tests {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput {
+                entities: vec![EntityInput { description: None,
                     name: "rust".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -1351,16 +1376,16 @@ mod tests {
                 on_behalf_of: None,
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput {
+                    EntityInput { description: None,
                         name: "supragnosis".into(),
                         kind: Some("Project".into()),
                     },
-                    EntityInput {
+                    EntityInput { description: None,
                         name: "rmcp".into(),
                         kind: Some("Tool".into()),
                     },
                 ],
-                relations: vec![RelationInput {
+                relations: vec![RelationInput { description: None,
                     from: "supragnosis".into(),
                     kind: "depends_on".into(),
                     to: "rmcp".into(),
@@ -1379,7 +1404,7 @@ mod tests {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput {
+                entities: vec![EntityInput { description: None,
                     name: "elsewhere".into(),
                     kind: None,
                 }],
@@ -1438,7 +1463,7 @@ mod tests {
                     confidence: None,
                     on_behalf_of: None,
                     derived_from: vec![],
-                    entities: vec![EntityInput {
+                    entities: vec![EntityInput { description: None,
                         name: name.into(),
                         kind: None,
                     }],
@@ -1470,9 +1495,9 @@ mod tests {
                 on_behalf_of: None,
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput { name: "A".into(), kind: None },
-                    EntityInput { name: "B".into(), kind: None },
-                    EntityInput { name: "C".into(), kind: None },
+                    EntityInput { description: None, name: "A".into(), kind: None },
+                    EntityInput { description: None, name: "B".into(), kind: None },
+                    EntityInput { description: None, name: "C".into(), kind: None },
                 ],
                 relations: vec![], // no binary relation - co-mention only
             })
@@ -1512,8 +1537,8 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![
-                        EntityInput { name: "X".into(), kind: None },
-                        EntityInput { name: "Y".into(), kind: None },
+                        EntityInput { description: None, name: "X".into(), kind: None },
+                        EntityInput { description: None, name: "Y".into(), kind: None },
                     ],
                     relations: vec![],
                 })
@@ -1542,7 +1567,7 @@ mod tests {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput { name: "P".into(), kind: None }],
+                entities: vec![EntityInput { description: None, name: "P".into(), kind: None }],
                 relations: vec![],
             })
             .unwrap();
@@ -1557,14 +1582,14 @@ mod tests {
                 derived_from: vec![],
                 entities: vec![],
                 relations: vec![
-                    RelationInput {
+                    RelationInput { description: None,
                         from: "M".into(),
                         kind: "relates_to".into(),
                         to: "N".into(),
                         valid_from: None,
                         valid_to: None,
                     },
-                    RelationInput {
+                    RelationInput { description: None,
                         from: "M".into(),
                         kind: "relates_to".into(),
                         to: "O".into(),
@@ -1604,8 +1629,8 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![
-                        EntityInput { name: a.into(), kind: None },
-                        EntityInput { name: b.into(), kind: None },
+                        EntityInput { description: None, name: a.into(), kind: None },
+                        EntityInput { description: None, name: b.into(), kind: None },
                     ],
                     relations: vec![],
                 })
