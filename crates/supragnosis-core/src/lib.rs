@@ -70,6 +70,39 @@ pub struct Assertions {
     pub entities: Vec<EntityAssertion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<RelationAssertion>,
+    /// Type-vocabulary (T-Box) definitions asserted by this observation (Principle 8/11: an explicit
+    /// define_type act, scoped to the workspace). Rides the observation log like any other assertion, so
+    /// the glossary is a deterministic projection (no parallel storage - Principle 23) and a future
+    /// proposal gate can wrap it without rework.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub type_defs: Vec<TypeDefAssertion>,
+}
+
+/// Which vocabulary a type definition targets - entity types vs relation types (the two T-Box axes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TypeTarget {
+    Entity,
+    Relation,
+}
+
+impl TypeTarget {
+    /// Stable discriminant byte for content-address hashing (order-independent of the serde format).
+    fn tag(self) -> u8 {
+        match self {
+            TypeTarget::Entity => 0,
+            TypeTarget::Relation => 1,
+        }
+    }
+}
+
+/// Type definition (T-Box): "the <target> type `name` means <description>". Principle 8 requires a
+/// natural-language definition, so `description` is mandatory (not Option). Content identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypeDefAssertion {
+    pub target: TypeTarget,
+    pub name: String,
+    pub description: String,
 }
 
 /// Feeds a field into the hash with a length-prefix. Delimiter (`\0`) concatenation has ambiguous boundaries, so
@@ -108,7 +141,7 @@ fn hash_opt_u64(hasher: &mut blake3::Hasher, v: Option<u64>) {
 
 impl Assertions {
     pub fn is_empty(&self) -> bool {
-        self.entities.is_empty() && self.relations.is_empty()
+        self.entities.is_empty() && self.relations.is_empty() && self.type_defs.is_empty()
     }
 
     /// Deterministic byte encoding for the content-address hash. A hand-rolled encoding not coupled to the
@@ -123,6 +156,7 @@ impl Assertions {
         let Assertions {
             entities,
             relations,
+            type_defs,
         } = self;
         hasher.update(&(entities.len() as u64).to_le_bytes());
         for e in entities {
@@ -147,6 +181,13 @@ impl Assertions {
             hash_opt_field(hasher, description.as_deref());
             hash_opt_u64(hasher, *valid_from);
             hash_opt_u64(hasher, *valid_to);
+        }
+        hasher.update(&(type_defs.len() as u64).to_le_bytes());
+        for t in type_defs {
+            let TypeDefAssertion { target, name, description } = t;
+            hasher.update(&[target.tag()]);
+            hash_field(hasher, name.as_bytes());
+            hash_field(hasher, description.as_bytes());
         }
     }
 }
@@ -743,6 +784,7 @@ mod tests {
                     kind: Some("Tool".into()),
                 }],
                 relations: vec![],
+                type_defs: vec![],
             },
         );
         assert_ne!(plain.id, asserted.id);
@@ -757,6 +799,7 @@ mod tests {
                     kind: Some("Project".into()),
                 }],
                 relations: vec![],
+                type_defs: vec![],
             },
         );
         assert_ne!(asserted.id, retyped.id);
@@ -771,6 +814,7 @@ mod tests {
                     kind: Some("Tool".into()),
                 }],
                 relations: vec![],
+                type_defs: vec![],
             },
         );
         assert_eq!(asserted.id, again.id);
@@ -790,6 +834,7 @@ mod tests {
                     kind: Some("Tool".into()),
                 }],
                 relations: vec![],
+                type_defs: vec![],
             },
         );
         assert_ne!(crafted.id, asserted.id, "a boundary manipulation collision must be blocked");
@@ -801,6 +846,7 @@ mod tests {
             Assertions {
                 entities: vec![EntityAssertion { description: None, name: "rmcp".into(), kind: None }],
                 relations: vec![],
+                type_defs: vec![],
             },
         );
         let empty_typed = Observation::with_assertions(
@@ -812,6 +858,7 @@ mod tests {
                     kind: Some(String::new()),
                 }],
                 relations: vec![],
+                type_defs: vec![],
             },
         );
         assert_ne!(untyped.id, empty_typed.id);

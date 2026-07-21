@@ -18,8 +18,8 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 
 use supragnosis_engine::{
-    Engine, EntityInput as EngineEntityInput, Event, ObserveInput,
-    RelationInput as EngineRelationInput, SearchMode,
+    DefineTypeInput, Engine, EntityInput as EngineEntityInput, Event, ObserveInput,
+    RelationInput as EngineRelationInput, SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget,
 };
 
 // --- Transport DTOs (JSON Schema auto-generated) ----------------------------
@@ -88,6 +88,31 @@ pub struct RelationInput {
     /// ("true until last month"). Interpreted as true until refuted when omitted.
     #[serde(default)]
     pub valid_to: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DefineTypeRequest {
+    /// Workspace (defaults to the node default when omitted). The T-Box is scoped to the workspace.
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// Source reference (file path/URL/tool, etc.).
+    #[serde(default)]
+    pub source_ref: Option<String>,
+    /// (Optional) Delegation subject this agent acts on behalf of. Principle 2.
+    #[serde(default)]
+    pub on_behalf_of: Option<String>,
+    /// The type definitions to record (at least one).
+    pub defs: Vec<TypeDefItem>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TypeDefItem {
+    /// Which vocabulary: "entity" (a kind of thing, e.g. Driver) or "relation" (a kind of connection, e.g. depends_on).
+    pub target: String,
+    /// The type name being defined (e.g. Driver, depends_on).
+    pub name: String,
+    /// Natural-language definition of what this type means. Required (Principle 8: a type has no meaning without it).
+    pub description: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -408,6 +433,46 @@ impl SupragnosisServer {
         }
         resp.to_string()
     }
+
+    #[tool(
+        description = "Define ontology types (T-Box) for a workspace: give an entity type or relation type a name and a natural-language definition of what it means. Use this to record the vocabulary of the ontology so a type is not just a bare label but has a stated meaning (e.g. entity type 'Driver' = 'a kernel module that ...'; relation type 'depends_on' = 'X requires Y at runtime'). A description is required. Scoped to the workspace. Read them back via the supragnosis://workspace/{ws}/types resource."
+    )]
+    async fn define_type(&self, Parameters(req): Parameters<DefineTypeRequest>) -> String {
+        // Map the string target to the typed axis, rejecting anything else (self-correctable error).
+        let mut defs = Vec::with_capacity(req.defs.len());
+        for d in req.defs {
+            let target = match d.target.trim().to_lowercase().as_str() {
+                "entity" => TypeTarget::Entity,
+                "relation" => TypeTarget::Relation,
+                other => {
+                    return err_json(&format!(
+                        "unknown target '{other}' for type '{}'. use \"entity\" (a kind of thing) \
+                         or \"relation\" (a kind of connection)",
+                        d.name
+                    ))
+                }
+            };
+            defs.push(EngineTypeDefInput {
+                target,
+                name: d.name,
+                description: d.description,
+            });
+        }
+        let input = DefineTypeInput {
+            workspace: req.workspace,
+            source_ref: req.source_ref,
+            on_behalf_of: req.on_behalf_of,
+            defs,
+        };
+        let engine = self.engine.clone();
+        match tokio::task::spawn_blocking(move || engine.define_type(input)).await {
+            Ok(Ok(observation_id)) => {
+                serde_json::json!({ "observation_id": observation_id }).to_string()
+            }
+            Ok(Err(e)) => err_json(&e.to_string()),
+            Err(e) => err_json(&format!("task join error: {e}")),
+        }
+    }
 }
 
 #[tool_handler]
@@ -473,10 +538,22 @@ impl ServerHandler for SupragnosisServer {
                 .to_string(),
         );
         hyper.mime_type = Some("application/json".to_string());
+
+        // T-Box glossary (Principle 8/11) - the default workspace's type definitions.
+        let mut types = RawResource::new(
+            format!("supragnosis://workspace/{ws}/types"),
+            format!("{ws} type glossary"),
+        );
+        types.description = Some(
+            "Type vocabulary (T-Box) of the workspace: entity types and relation types with their natural-language definitions (via define_type)."
+                .to_string(),
+        );
+        types.mime_type = Some("application/json".to_string());
         std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
             ws_list.no_annotation(),
             res.no_annotation(),
             hyper.no_annotation(),
+            types.no_annotation(),
         ])))
     }
 
@@ -511,6 +588,19 @@ impl ServerHandler for SupragnosisServer {
             mime_type: Some("application/json".to_string()),
             icons: None,
         };
+        // T-Box glossary (Principle 8/11): the workspace's type vocabulary + definitions.
+        let types = RawResourceTemplate {
+            uri_template: "supragnosis://workspace/{workspace}/types".to_string(),
+            name: "workspace-types".to_string(),
+            title: Some("Workspace type glossary (T-Box)".to_string()),
+            description: Some(
+                "Entity types and relation types defined for a workspace, each with its \
+                 natural-language definition (recorded via define_type). Fill in {workspace} to query."
+                    .to_string(),
+            ),
+            mime_type: Some("application/json".to_string()),
+            icons: None,
+        };
         // Observation back-reference (Principles 2/14): a path from a search hit's observation id to
         // the raw content + provenance + lineage - the surface that answers "where did this answer come from".
         let observation = RawResourceTemplate {
@@ -528,6 +618,7 @@ impl ServerHandler for SupragnosisServer {
         std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
             graph.no_annotation(),
             hypergraph.no_annotation(),
+            types.no_annotation(),
             observation.no_annotation(),
         ])))
     }
@@ -565,6 +656,16 @@ impl ServerHandler for SupragnosisServer {
             Some(ResourceUri::Hypergraph(ws)) => match self.engine.hypergraph(Some(ws)) {
                 Ok(hg) => Ok(ReadResourceResult {
                     contents: vec![ResourceContents::text(to_json(&hg), uri)],
+                }),
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("storage backend failure (not a missing resource): {e}"),
+                    None,
+                )),
+            },
+            // T-Box glossary (Principle 8/11): the workspace's type definitions (entity + relation types + meanings).
+            Some(ResourceUri::Types(ws)) => match self.engine.types(Some(ws)) {
+                Ok(types) => Ok(ReadResourceResult {
+                    contents: vec![ResourceContents::text(to_json(&types), uri)],
                 }),
                 Err(e) => Err(ErrorData::internal_error(
                     format!("storage backend failure (not a missing resource): {e}"),
@@ -609,6 +710,8 @@ enum ResourceUri<'a> {
     Graph(&'a str),
     /// `supragnosis://workspace/<ws>/hypergraph` - co-occurrence second-order structure (Principle 11 second-order structure).
     Hypergraph(&'a str),
+    /// `supragnosis://workspace/<ws>/types` - the T-Box type glossary (Principle 8/11).
+    Types(&'a str),
     /// `supragnosis://observation/<id>` - observation back-reference (Principles 2/14).
     Observation(&'a str),
 }
@@ -633,6 +736,12 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
                 return None;
             }
             return Some(ResourceUri::Graph(ws));
+        }
+        if let Some(ws) = rest.strip_suffix("/types") {
+            if ws.is_empty() || ws.contains('/') {
+                return None;
+            }
+            return Some(ResourceUri::Types(ws));
         }
         return None;
     }

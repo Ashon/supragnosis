@@ -65,12 +65,13 @@ async fn mcp_protocol_surface_end_to_end() {
         names,
         BTreeSet::from([
             "observe",
+            "define_type",
             "get_entity",
             "search_knowledge",
             "traverse",
             "workspace_map",
         ]),
-        "must expose 5 intent-level tools (workspace_map = co-occurrence orientation)"
+        "must expose the intent-level tools (workspace_map = co-occurrence orientation, define_type = T-Box vocabulary)"
     );
     for t in &tools {
         let desc = t.description.as_deref().unwrap_or("");
