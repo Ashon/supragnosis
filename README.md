@@ -1,64 +1,66 @@
 # supragnosis
 
-여러 **호스트**와 **작업 공간**에서 발생하는 지식을 **온톨로지(개념/관계 그래프)** 로
-구조화하고 **MCP** 로 질의/탐색하게 하는, 임베디드/파일 기반 Rust 서버.
+An embedded, file-based Rust server that structures knowledge arising across
+multiple **hosts** and **workspaces** into an **ontology (a concept/relation graph)**
+and lets you query and explore it over **MCP**.
 
-> `supragnosis` = *supra*(위/너머) + *gnosis*(앎) - 지식 위의 지식(메타지식).
+> `supragnosis` = *supra* (above/beyond) + *gnosis* (knowing) - knowledge above knowledge (meta-knowledge).
 
-- 언어/런타임: **Rust** (`rmcp` 0.16 공식 MCP SDK, `tokio`)
-- 저장소: **임베디드/파일 기반** `cozo`/RocksDB - 관계+그래프+벡터(HNSW) 통합.
-- 상태: **M2 - 의미 검색 구현** (fastembed 의미+키워드 하이브리드 검색, Cozo 네이티브 HNSW, Cozo/RocksDB 영속, stdio MCP 서버 + standalone HTTP 데몬 + CLI 제어 + 라이브 뷰어). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 원칙 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
+- Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
+- Store: **embedded, file-based** `cozo`/RocksDB - unifies relational + graph + vector (HNSW).
+- Status: **M2 - semantic search implemented** (fastembed semantic + keyword hybrid search, Cozo native HNSW, Cozo/RocksDB persistence, stdio MCP server + standalone HTTP daemon + CLI control + live viewer). Design docs -> [`docs/architecture.md`](docs/architecture.md), design principles -> [`docs/principles.md`](docs/principles.md), proposal workflow -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
 
-## 설치 (prebuilt 바이너리)
+## Install (prebuilt binary)
 ```bash
-# 플랫폼 감지 -> 최신 릴리스 바이너리를 ~/.local/bin 에 설치(체크섬 검증)
+# Detect platform -> install the latest release binary to ~/.local/bin (with checksum verification)
 curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
 ```
-- 또는 [Releases](https://github.com/Ashon/supragnosis/releases)에서 플랫폼 tar.gz 를 직접 내려받아 압축 해제 후 `supragnosis` 를 PATH 에 둔다.
-- 지원 플랫폼: macOS(arm64/x86_64), Linux(x86_64). 다른 플랫폼은 아래 소스 빌드.
-- prebuilt 는 **키워드 + hashing 검색**이다. 로컬 ONNX **의미 검색**은 소스에서 `--features fastembed` 로 빌드한다.
-- 릴리스는 `v*` 태그 push 시 GitHub Actions(`.github/workflows/release.yml`)가 빌드/게시한다.
+- Or download the platform tar.gz directly from [Releases](https://github.com/Ashon/supragnosis/releases), extract it, and put `supragnosis` on your PATH.
+- Supported platforms: macOS (arm64/x86_64), Linux (x86_64). For other platforms, build from source below.
+- The prebuilt binary is **keyword + hashing search**. For local ONNX **semantic search**, build from source with `--features fastembed`.
+- On a `v*` tag push, GitHub Actions (`.github/workflows/release.yml`) builds and publishes the release.
 
-## 빌드 & 실행
+## Build & run
 ```bash
-cargo build                                          # 기본(키워드 검색) - 가벼운 빌드
-cargo build -p supragnosis-cli --features fastembed  # 의미 검색(fastembed 로컬 ONNX 모델) 포함
-cargo test                                           # 단위 테스트 (네트워크 필요한 fastembed 테스트는 --ignored 로 제외)
-./target/debug/supragnosis                           # stdio MCP 서버 (MCP 클라이언트가 자식 프로세스로 기동)
+cargo build                                          # default (keyword search) - lightweight build
+cargo build -p supragnosis-cli --features fastembed  # includes semantic search (fastembed local ONNX model)
+cargo test                                           # unit tests (network-dependent fastembed tests are excluded via --ignored)
+./target/debug/supragnosis                           # stdio MCP server (launched by the MCP client as a child process)
 ```
-- 환경변수:
-  - `SUPRAGNOSIS_HOST` - 출처용 호스트 id (기본 `localhost`).
-  - `SUPRAGNOSIS_WORKSPACE` - 기본 워크스페이스 (기본 `default`).
-  - `SUPRAGNOSIS_STORE` - `cozo`(기본, 파일 영속) | `mem`(비영속).
-  - `SUPRAGNOSIS_DATA_DIR` - Cozo 데이터 디렉터리 (기본 `~/.supragnosis/db`).
-  - `SUPRAGNOSIS_EMBED` - `fastembed`(feature 컴파일 시 기본, 로컬 ONNX) | `hashing`(개발용) | `none`. 없거나 실패하면 키워드 검색으로 degrade.
-- 도구: `observe`(지식 적재), `search_knowledge`(의미+키워드 하이브리드 검색), `get_entity`(엔티티+관계+출처 조회), `traverse`(관계 그래프 순회), `workspace_map`(공동출현 맥락/하이퍼엣지 개관).
-- 크레이트: `core`(도메인/포트), `store`(어댑터), `engine`(서비스), `embed`(임베딩 어댑터), `mcp`(rmcp 도구), `viz`(라이브 뷰어), `cli`(바이너리).
+- Environment variables:
+  - `SUPRAGNOSIS_HOST` - host id for provenance (default `localhost`).
+  - `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`).
+  - `SUPRAGNOSIS_STORE` - `cozo` (default, file-persistent) | `mem` (non-persistent).
+  - `SUPRAGNOSIS_DATA_DIR` - Cozo data directory (default `~/.supragnosis/db`).
+  - `SUPRAGNOSIS_EMBED` - `fastembed` (default when compiled with the feature, local ONNX) | `hashing` (for development) | `none`. If it is absent or fails, degrades to keyword search.
+- Tools: `observe` (load knowledge), `search_knowledge` (semantic + keyword hybrid search), `get_entity` (look up entity + relations + provenance), `traverse` (traverse the relation graph), `workspace_map` (overview of co-occurrence context / hyperedges).
+- Crates: `core` (domain/ports), `store` (adapters), `engine` (services), `embed` (embedder adapters), `mcp` (rmcp tools), `viz` (live viewer), `cli` (binary).
 
-## 사용 (CLI)
-단일 바이너리를 서브커맨드로 제어한다. **인자 없이** 실행하면 stdio MCP 서버로 뜬다(MCP
-클라이언트가 자식 프로세스로 기동하는 하위 호환 경로).
+## Usage (CLI)
+The single binary is controlled through subcommands. Run it **with no arguments** and it
+comes up as a stdio MCP server (the backward-compatible path where the MCP client launches
+it as a child process).
 ```bash
-supragnosis                     # stdio MCP 서버 (기본, 무인자)
-supragnosis serve --http 127.0.0.1:7373 --viz 127.0.0.1:7374   # 포그라운드 (HTTP 데몬 + 뷰어)
-supragnosis start               # 백그라운드 데몬 시작 (기본 MCP :7373 + 뷰어 :7374)
-supragnosis status              # 상태 (pid + 포트 헬스)
-supragnosis stop                # 정지
-supragnosis restart             # 재시작
-supragnosis --help              # 전체 옵션
+supragnosis                     # stdio MCP server (default, no arguments)
+supragnosis serve --http 127.0.0.1:7373 --viz 127.0.0.1:7374   # foreground (HTTP daemon + viewer)
+supragnosis start               # start the background daemon (default MCP :7373 + viewer :7374)
+supragnosis status              # status (pid + port health)
+supragnosis stop                # stop
+supragnosis restart             # restart
+supragnosis --help              # all options
 ```
-- 옵션 우선순위: 플래그 > `SUPRAGNOSIS_*` 환경변수 > 기본값.
-- `start` 데몬은 자체 관리(launchd 불필요): pidfile `~/.supragnosis/supragnosis.pid` + 로그
-  `~/.supragnosis/log`. 로그인 자동 기동 등 OS 서비스 등록은 [`deploy/README.md`](deploy/README.md).
-- HTTP/뷰어는 loopback 전용(무인증 = 로컬 신뢰 표면). MCP 클라이언트 등록 예:
+- Option precedence: flags > `SUPRAGNOSIS_*` environment variables > defaults.
+- The `start` daemon is self-managed (no launchd needed): pidfile `~/.supragnosis/supragnosis.pid` + logs
+  `~/.supragnosis/log`. For OS service registration such as auto-start on login, see [`deploy/README.md`](deploy/README.md).
+- HTTP/viewer is loopback-only (no auth = local trust surface). Example MCP client registration:
   - stdio: `claude mcp add supragnosis -- $(command -v supragnosis)`
-  - HTTP(데몬): `claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp`
+  - HTTP (daemon): `claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp`
 
-## 핵심 아이디어
-- 지식은 **불변 관측(observation) 이벤트**로 들어오고(진실의 원천, 출처 보존),
-  엔티티/관계 그래프는 로그로부터 **물질화**된다 (event sourcing).
-- **로컬 우선 + 위상 독립 로그 복제** - 로컬 단독 / 중앙 서버(허브) / 피어 직접 / 하이브리드
-  어느 연결 위상에서도 동일한 병합 의미론으로 충돌 없이 수렴.
-- 헥사고날(포트-어댑터) 구조로 스토어/임베딩/추출기를 교체 가능하게 격리.
+## Core ideas
+- Knowledge arrives as **immutable observation events** (the source of truth, preserving
+  provenance), and the entity/relation graph is **materialized** from the log (event sourcing).
+- **Local-first + topology-independent log replication** - whether local-only / central server (hub)
+  / direct peer / hybrid, any connection topology converges without conflict under the same merge semantics.
+- A hexagonal (port/adapter) structure isolates the store/embedder/extractor so they are swappable.
 
-자세한 내용은 [아키텍처 설계 문서](docs/architecture.md)를 참고.
+For details, see the [architecture design doc](docs/architecture.md).
