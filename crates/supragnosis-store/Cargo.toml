@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-store"
-description = "supragnosis 저장소 어댑터: in-memory + Cozo(RocksDB)."
+description = "supragnosis store adapters: in-memory + Cozo(RocksDB)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,5 +12,5 @@ workspace = true
 supragnosis-core.workspace = true
 cozo.workspace = true
 serde_json.workspace = true
-# 열거 degrade(손상 행 제외)를 침묵하지 않고 기록한다 (원칙 19).
+# Record enumeration degrade (excluding corrupt rows) instead of silencing it (Principle 19).
 tracing.workspace = true

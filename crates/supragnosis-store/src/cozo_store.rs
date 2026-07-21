@@ -1,8 +1,8 @@
-//! Cozo(RocksDB) 어댑터 - 파일 기반 영속 저장소.
+//! Cozo(RocksDB) adapter - file-based persistent store.
 //!
-//! 지식을 3개의 stored relation 으로 보관하고, CozoScript(Datalog)로 질의한다.
-//! 복합 필드(aliases/properties/provenance)는 JSON 문자열 컬럼으로 저장한다.
-//! `traverse` 는 Cozo 재귀 Datalog(min 집계)로 최단 홉 그래프 순회를 수행한다.
+//! Stores knowledge in 3 stored relations and queries with CozoScript (Datalog).
+//! Composite fields (aliases/properties/provenance) are stored as JSON string columns.
+//! `traverse` performs shortest-hop graph traversal with Cozo recursive Datalog (min aggregation).
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -18,27 +18,27 @@ use supragnosis_core::{
 
 pub struct CozoStore {
     db: Db<RocksDbStorage>,
-    /// 벡터 인덱스 차원. Some(n) 이면 obs_vec 관계 + HNSW 인덱스를 두고 의미 검색을
-    /// 네이티브 ANN 으로 처리한다. None 이면 임베딩을 data JSON 에만 두고 브루트포스한다.
+    /// Vector index dimension. When Some(n), keeps the obs_vec relation + HNSW index and handles
+    /// semantic search with native ANN. When None, keeps embeddings only in data JSON and brute-forces.
     vector_dim: Option<usize>,
-    /// 관측 병합(read-merge-write)의 원자성 가드. 포트 계약(`Send + Sync + &self`)이
-    /// 동시 호출을 허용하는데, 기준 읽기와 put 이 별도 트랜잭션이라 두 스레드가 같은
-    /// id 로 동시에 들어오면 마지막 put 이 상대의 attestation 을 지운다(원칙 3 위반).
-    /// InMemory 는 RwLock write guard 안에서 원자 병합한다 - 이 뮤텍스가 그 parity 다.
+    /// Atomicity guard for observation merge (read-merge-write). The port contract (`Send + Sync + &self`)
+    /// allows concurrent calls, but the baseline read and the put are separate transactions, so if two
+    /// threads enter concurrently with the same id the last put erases the other's attestation (Principle 3 violation).
+    /// InMemory merges atomically inside the RwLock write guard - this mutex is that parity.
     merge_lock: Mutex<()>,
 }
 
 impl CozoStore {
-    /// 벡터 인덱스 없이 연다(의미 검색은 브루트포스 코사인).
+    /// Opens without a vector index (semantic search is brute-force cosine).
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         Self::open_inner(path, None)
     }
 
-    /// 임베더를 지정해 연다 - obs_vec/ent_vec 관계 + HNSW 인덱스를 만들어 의미 검색을
-    /// 네이티브 ANN 으로 가속한다. `embedder_id` (모델명+차원, [`EmbeddingProvider::id`])
-    /// 는 meta 에 기록되고, 다른 임베더로 재오픈하면 **명시적으로 거부**한다 - 벡터
-    /// 공간이 다른 구/신 벡터가 한 인덱스에 섞이거나(같은 차원 다른 모델), 차원
-    /// 불일치로 쓰기가 부분 실패하는(다른 차원) 침묵 오류를 fail-fast 로 바꾼다.
+    /// Opens with a specified embedder - creates the obs_vec/ent_vec relations + HNSW indexes to
+    /// accelerate semantic search with native ANN. `embedder_id` (model name + dimension, [`EmbeddingProvider::id`])
+    /// is recorded in meta, and reopening with a different embedder is **explicitly rejected** - this turns
+    /// into fail-fast the silent errors where old/new vectors from different vector spaces mix in one index
+    /// (same dimension, different model), or writes partially fail on a dimension mismatch (different dimension).
     pub fn open_with_embedder(
         path: impl AsRef<Path>,
         embedder_id: &str,
@@ -68,7 +68,7 @@ impl CozoStore {
         Ok(store)
     }
 
-    /// meta 의 임베더 식별자를 대조한다: 처음이면 기록, 같으면 통과, 다르면 거부.
+    /// Checks the embedder identifier in meta: record if first, pass if same, reject if different.
     fn ensure_embedder(&self, embedder_id: &str) -> Result<(), StoreError> {
         let rows = self.run(
             "?[value] := *meta{key: \"embedder\", value}",
@@ -93,10 +93,10 @@ impl CozoStore {
             }
             Some(s) if s == embedder_id => Ok(()),
             Some(s) => Err(StoreError::Backend(format!(
-                "임베더 불일치: 이 저장소는 '{s}' 로 색인되었는데 현재 임베더는 \
-                 '{embedder_id}' 다. 같은 임베더로 되돌리거나(SUPRAGNOSIS_EMBED), \
-                 재색인하려면 새 데이터 디렉토리(SUPRAGNOSIS_DATA_DIR)로 다시 적재하라 \
-                 - 다른 벡터 공간을 한 인덱스에 섞으면 유사도가 무의미해진다"
+                "embedder mismatch: this store was indexed with '{s}' but the current embedder is \
+                 '{embedder_id}'. Revert to the same embedder (SUPRAGNOSIS_EMBED), or to reindex, \
+                 reload into a new data directory (SUPRAGNOSIS_DATA_DIR) \
+                 - mixing different vector spaces in one index makes similarity meaningless"
             ))),
         }
     }
@@ -155,7 +155,7 @@ impl CozoStore {
                 true,
             )?;
         }
-        // 스토어 메타데이터 (임베더 식별자 등) - 어댑터 교체 감지의 기준.
+        // Store metadata (embedder identifier, etc.) - the baseline for detecting an adapter swap.
         if !have.contains("meta") {
             self.run(
                 ":create meta {key: String => value: String}",
@@ -163,9 +163,10 @@ impl CozoStore {
                 true,
             )?;
         }
-        // 벡터 인덱스: obs_vec/ent_vec 관계 + HNSW. relation 과 index 를 함께 만들므로
-        // 관계 부재를 둘 다의 부재로 본다(create-together 불변식). 관측과 엔티티를 각각
-        // 색인해 시맨틱 검색이 관측 본문과 엔티티 이름 양쪽으로 회상하게 한다(회상 공백 제거).
+        // Vector index: obs_vec/ent_vec relations + HNSW. relation and index are created together, so
+        // absence of the relation is treated as absence of both (create-together invariant). Observations
+        // and entities are indexed separately so semantic search recalls from both observation content
+        // and entity names (removing the recall gap).
         if let Some(dim) = self.vector_dim {
             for rel in ["obs_vec", "ent_vec"] {
                 if !have.contains(rel) {
@@ -187,24 +188,24 @@ impl CozoStore {
         Ok(())
     }
 
-    /// f32 벡터를 CozoScript 리스트 리터럴 `[a,b,c]` 로 만든다. 값은 우리 f32 라 인젝션 위험 없음.
-    /// :put 시 `<F32; N>` 컬럼으로 coerce 되고, 질의에서는 `vec([..])` 로 감싸 쓴다.
+    /// Builds a CozoScript list literal `[a,b,c]` from an f32 vector. Values are our own f32, so no injection risk.
+    /// On :put it is coerced to a `<F32; N>` column, and in queries it is wrapped with `vec([..])`.
     fn list_literal(v: &[f32]) -> String {
         let mut s = String::from("[");
         for (i, x) in v.iter().enumerate() {
             if i > 0 {
                 s.push(',');
             }
-            // 완전 정밀도로 왕복 가능한 표기.
+            // Full-precision, round-trippable notation.
             s.push_str(&format!("{x:?}"));
         }
         s.push(']');
         s
     }
 
-    /// HNSW 인덱스로 근사 최근접(ANN) 검색. 관측(obs_vec/observation/content)과
-    /// 엔티티(ent_vec/entity/name)가 같은 로직을 공유한다. 워크스페이스 필터는 조인 후
-    /// 적용하므로 후보(k)를 limit 보다 넉넉히 잡아 필터로 잘려도 limit 를 채운다.
+    /// Approximate nearest-neighbor (ANN) search via HNSW index. Observations (obs_vec/observation/content)
+    /// and entities (ent_vec/entity/name) share the same logic. The workspace filter is applied after the
+    /// join, so candidates (k) are taken generously above limit so the limit is filled even after filtering.
     fn semantic_hnsw(
         &self,
         query: &[f32],
@@ -218,7 +219,7 @@ impl CozoStore {
         let ef = (k * 2).max(32);
         let q = Self::list_literal(query);
         let mut p = params(&[]);
-        // text_field 를 text 로 바인딩해 관측 content / 엔티티 name 을 한 형태로 다룬다.
+        // Bind text_field as text to handle observation content / entity name in one form.
         let script = match workspace {
             Some(ws) => {
                 p.insert("ws".to_string(), DataValue::from(ws));
@@ -241,7 +242,7 @@ impl CozoStore {
             .filter_map(|r| {
                 let id = r.first()?.get_str()?;
                 let text = r.get(1)?.get_str()?;
-                // Cozo Cosine 거리 = 1 - 코사인 유사도. 유사도로 되돌려 score 로 쓴다.
+                // Cozo Cosine distance = 1 - cosine similarity. Convert back to similarity to use as score.
                 let dist = r.get(2)?.get_float()? as f32;
                 Some(SearchHit {
                     kind,
@@ -253,9 +254,9 @@ impl CozoStore {
             .collect())
     }
 
-    /// 벡터 인덱스가 없을 때의 브루트포스 시맨틱 검색. data JSON 의 embedding 을 로드해
-    /// Rust 에서 코사인 유사도로 랭킹한다. 관측(observation/content)과 엔티티(entity/name)가
-    /// 공유하며, 두 관계 모두 workspace 컬럼이 있어 스토어에서 바로 필터한다.
+    /// Brute-force semantic search when there is no vector index. Loads the embedding from data JSON
+    /// and ranks by cosine similarity in Rust. Observations (observation/content) and entities (entity/name)
+    /// share this, and both relations have a workspace column so filtering happens directly in the store.
     fn semantic_brute(
         &self,
         query: &[f32],
@@ -294,7 +295,7 @@ impl CozoStore {
             })
             .collect();
 
-        // 동점은 id 로 안정 정렬 - 질의 행 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
+        // Break ties by id for a stable sort - keep query row order from leaking into results (Principle 16: reproducibility).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -306,7 +307,7 @@ impl CozoStore {
     }
 }
 
-/// (키, 문자열값) 쌍을 CozoScript 파라미터 맵으로. (파라미터화로 인젝션 방지)
+/// (key, string-value) pairs into a CozoScript parameter map. (Parameterization prevents injection)
 fn params(pairs: &[(&str, String)]) -> BTreeMap<String, DataValue> {
     pairs
         .iter()
@@ -314,17 +315,17 @@ fn params(pairs: &[(&str, String)]) -> BTreeMap<String, DataValue> {
         .collect()
 }
 
-/// 시맨틱 검색 대상 기술자: 어느 HNSW 인덱스/stored relation/텍스트 컬럼을 어떤 히트 종류로
-/// 볼지. 관측(obs_vec/observation/content)과 엔티티(ent_vec/entity/name)가 같은 검색 로직을
-/// 이 기술자만 바꿔 공유한다.
+/// Semantic search target descriptor: which HNSW index/stored relation/text column to treat as which
+/// hit kind. Observations (obs_vec/observation/content) and entities (ent_vec/entity/name) share the
+/// same search logic, differing only in this descriptor.
 struct SemanticTarget {
-    /// HNSW 인덱스 이름 (브루트포스 경로는 무시).
+    /// HNSW index name (ignored on the brute-force path).
     index: &'static str,
-    /// stored relation 이름.
+    /// stored relation name.
     relation: &'static str,
-    /// 스니펫 원천이 되는 텍스트 컬럼(관측 content / 엔티티 name).
+    /// Text column that is the source of the snippet (observation content / entity name).
     text_field: &'static str,
-    /// 결과 히트의 종류.
+    /// Kind of the resulting hit.
     kind: SearchHitKind,
 }
 
@@ -342,8 +343,8 @@ const ENT_TARGET: SemanticTarget = SemanticTarget {
     kind: SearchHitKind::Entity,
 };
 
-/// observation 행(content, data JSON)을 도메인 Observation 으로 복원한다.
-/// 필수 필드(content/provenance)가 깨지면 None - 호출자가 고장으로 승격한다.
+/// Reconstructs an observation row (content, data JSON) into a domain Observation.
+/// Returns None if a required field (content/provenance) is broken - the caller promotes it to a backend failure.
 fn observation_from_row(id: &str, row: &[DataValue]) -> Option<Observation> {
     let content = row.first()?.get_str()?.to_string();
     let data: serde_json::Value = serde_json::from_str(row.get(1)?.get_str()?).ok()?;
@@ -371,8 +372,8 @@ fn observation_from_row(id: &str, row: &[DataValue]) -> Option<Observation> {
     })
 }
 
-/// entity 행(id, etype, name, data JSON)을 도메인 Entity 로 복원한다. 조회/열거가 공유.
-/// data JSON 이 깨져도 스키마 컬럼(id/type/name)은 살리고 복합 필드만 비운다(방어적).
+/// Reconstructs an entity row (id, etype, name, data JSON) into a domain Entity. Shared by lookup/enumeration.
+/// Even if the data JSON is broken, the schema columns (id/type/name) are kept and only the composite fields are emptied (defensive).
 fn entity_from_parts(id: String, etype: String, name: String, data_str: &str) -> Entity {
     let data: serde_json::Value =
         serde_json::from_str(data_str).unwrap_or(serde_json::Value::Null);
@@ -392,7 +393,7 @@ fn entity_from_parts(id: String, etype: String, name: String, data_str: &str) ->
             .get("provenance")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
-        // 임베딩을 복원해 업서트(get -> put) 왕복에서 소실되지 않게 한다. 없으면(구 스키마) None.
+        // Reconstruct the embedding so it is not lost on an upsert (get -> put) round-trip. None if absent (old schema).
         embedding: data
             .get("embedding")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -400,8 +401,8 @@ fn entity_from_parts(id: String, etype: String, name: String, data_str: &str) ->
     }
 }
 
-/// relation 행(id, src, dst, rtype, data JSON)을 도메인 Relation 으로 복원한다.
-/// provenance 파싱이 실패하면 None - provenance 없는 관계는 원칙 2 위반이라 흘리지 않는다.
+/// Reconstructs a relation row (id, src, dst, rtype, data JSON) into a domain Relation.
+/// Returns None if provenance parsing fails - a relation without provenance violates Principle 2, so it is not leaked through.
 fn relation_from_parts(
     id: &str,
     src: &str,
@@ -422,10 +423,10 @@ fn relation_from_parts(
 }
 
 impl KnowledgeStore for CozoStore {
-    /// 관측 로그에서 id 로 관측을 복원한다 (역참조 + 재도착 병합의 기준 읽기).
-    /// data JSON 에서 provenance(attestation 목록)/assertions/derived_from/embedding 을 되살린다.
-    /// 부재는 `Ok(None)`, 백엔드 실패/행 손상은 `Err` - 병합 기준 읽기가 실패를 부재로
-    /// 오인하면 absorb 대신 덮어쓰기가 되어 attestation 이 파괴되므로(원칙 3) 반드시 구별한다.
+    /// Reconstructs an observation by id from the observation log (baseline read for back-reference + re-arrival merge).
+    /// Revives provenance (attestation list)/assertions/derived_from/embedding from the data JSON.
+    /// Absence is `Ok(None)`, backend failure/row corruption is `Err` - if the merge baseline read mistakes
+    /// a failure for absence, it becomes an overwrite instead of absorb and destroys attestations (Principle 3), so the two must be distinguished.
     fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
         let p = params(&[("id", id.to_string())]);
         let rows = self.run(
@@ -439,18 +440,18 @@ impl KnowledgeStore for CozoStore {
         match observation_from_row(id, &row) {
             Some(obs) => Ok(Some(obs)),
             None => Err(StoreError::Backend(format!(
-                "관측 행 복원 실패 (data JSON 손상 - 부재가 아니라 고장이다): {id}"
+                "observation row reconstruction failed (data JSON corruption - a backend failure, not absence): {id}"
             ))),
         }
     }
 
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
-        // read-merge-write 를 뮤텍스로 원자화한다 - 동시 재도착이 서로의 attestation 을
-        // 지우지 못하게 (InMemory 의 write guard 병합과 동시성 의미론 parity, 원칙 3).
+        // Make read-merge-write atomic with a mutex - so concurrent re-arrivals cannot erase each
+        // other's attestations (concurrency-semantics parity with InMemory's write-guard merge, Principle 3).
         let _guard = self.merge_lock.lock().unwrap();
-        // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
-        // (원칙 3: 로그 불변). 기존 행을 읽어 attestation/계보를 병합한 뒤 쓴다.
-        // 기준 읽기 실패는 전파한다 - 실패를 부재로 오인하면 absorb 대신 덮어쓰기가 된다.
+        // A re-arrival at the same content address is absorbed as a monotonic union, not an overwrite
+        // (Principle 3: log immutability). Read the existing row, merge attestations/lineage, then write.
+        // Propagate a baseline read failure - mistaking a failure for absence turns absorb into an overwrite.
         let obs = match self.get_observation(&obs.id)? {
             Some(mut existing) => {
                 existing.absorb(obs);
@@ -461,9 +462,9 @@ impl KnowledgeStore for CozoStore {
         let workspace = obs.workspace().to_string();
         let obs_id = obs.id.clone();
         let embedding = obs.embedding.clone();
-        // 복합 필드는 data JSON 컬럼에 (provenance + 주장 + derived_from 계보 + 임베딩).
-        // assertions 는 재프로젝션의 입력이므로 반드시 로그와 함께 영속한다 (원칙 1).
-        // 임베딩은 회상 보조일 뿐 정체성이 아니다(원칙 19) - 스키마 컬럼이 아닌 data 에 둔다.
+        // Composite fields go in the data JSON column (provenance + assertions + derived_from lineage + embedding).
+        // assertions are the input to reprojection, so they must persist together with the log (Principle 1).
+        // The embedding is only a recall aid, not identity (Principle 19) - keep it in data, not a schema column.
         let data = json!({
             "provenance": obs.provenance,
             "assertions": obs.assertions,
@@ -484,8 +485,8 @@ impl KnowledgeStore for CozoStore {
             true,
         )?;
 
-        // 벡터 인덱스가 켜져 있고 임베딩 차원이 맞으면 obs_vec(HNSW)에도 적재한다.
-        // data JSON 의 임베딩이 원천이고, obs_vec 은 ANN 가속을 위한 물질화 인덱스다.
+        // If the vector index is on and the embedding dimension matches, also load into obs_vec (HNSW).
+        // The embedding in data JSON is the source, and obs_vec is a materialized index for ANN acceleration.
         if let (Some(dim), Some(emb)) = (self.vector_dim, embedding) {
             if emb.len() == dim {
                 let script = format!(
@@ -514,7 +515,7 @@ impl KnowledgeStore for CozoStore {
             row.get(2).and_then(|v| v.get_str()),
         ) else {
             return Err(StoreError::Backend(format!(
-                "엔티티 행 복원 실패 (스키마 컬럼 손상 - 부재가 아니라 고장이다): {id}"
+                "entity row reconstruction failed (schema column corruption - a backend failure, not absence): {id}"
             )));
         };
         Ok(Some(entity_from_parts(
@@ -533,8 +534,8 @@ impl KnowledgeStore for CozoStore {
             .unwrap_or_default();
         let embedding = entity.embedding.clone();
         let entity_id = entity.id.clone();
-        // 임베딩은 회상 보조일 뿐 정체성이 아니다(원칙 19) - 스키마 컬럼이 아닌 data 에 둔다.
-        // data JSON 이 원천이고 ent_vec 은 ANN 가속을 위한 물질화 인덱스다(obs_vec 와 대칭).
+        // The embedding is only a recall aid, not identity (Principle 19) - keep it in data, not a schema column.
+        // The data JSON is the source and ent_vec is a materialized index for ANN acceleration (symmetric with obs_vec).
         let data = json!({
             "aliases": entity.aliases,
             "properties": entity.properties,
@@ -556,7 +557,7 @@ impl KnowledgeStore for CozoStore {
             true,
         )?;
 
-        // 벡터 인덱스가 켜져 있고 임베딩 차원이 맞으면 ent_vec(HNSW)에도 적재한다.
+        // If the vector index is on and the embedding dimension matches, also load into ent_vec (HNSW).
         if let (Some(dim), Some(emb)) = (self.vector_dim, embedding) {
             if emb.len() == dim {
                 let script = format!(
@@ -570,7 +571,7 @@ impl KnowledgeStore for CozoStore {
     }
 
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
-        // 복합/시간 필드는 data JSON 컬럼에 (provenance + 유효구간).
+        // Composite/temporal fields go in the data JSON column (provenance + valid interval).
         let data = json!({
             "provenance": rel.provenance,
             "valid_from": rel.valid_from,
@@ -611,7 +612,7 @@ impl KnowledgeStore for CozoStore {
                 )
             })
             .collect();
-        // id 정렬 - 행 순서가 응답에 새지 않게 명시한다 (InMemory 와 parity, 원칙 16).
+        // Sort by id - make explicit that row order does not leak into the response (parity with InMemory, Principle 16).
         rels.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(rels)
     }
@@ -625,7 +626,7 @@ impl KnowledgeStore for CozoStore {
         let q = query.trim().to_lowercase();
         let mut hits: Vec<SearchHit> = Vec::new();
 
-        // 엔티티: 정규명 부분일치.
+        // Entity: substring match on canonical name.
         let mut ent_params = params(&[("q", q.clone())]);
         let ent_script = match workspace {
             Some(ws) => {
@@ -634,8 +635,8 @@ impl KnowledgeStore for CozoStore {
             }
             None => "?[id, name] := *entity{id, name}, str_includes(lowercase(name), $q)",
         };
-        // 부분 실패는 부분 결과가 아니라 Err 다 - 엔티티 질의만 실패한 채 관측 히트를
-        // 돌려주면 호출자가 "엔티티 쪽은 0건"으로 오독한다 (원칙 5: 부재 != 고장).
+        // A partial failure is an Err, not a partial result - returning observation hits while only the
+        // entity query failed would make the caller misread it as "zero entities" (Principle 5: absence != backend failure).
         let rows = self.run(ent_script, ent_params, false)?;
         for r in &rows.rows {
             if let (Some(id), Some(name)) = (
@@ -651,7 +652,7 @@ impl KnowledgeStore for CozoStore {
             }
         }
 
-        // 관측: 본문 부분일치.
+        // Observation: substring match on content.
         let mut obs_params = params(&[("q", q.clone())]);
         let obs_script = match workspace {
             Some(ws) => {
@@ -677,7 +678,7 @@ impl KnowledgeStore for CozoStore {
             }
         }
 
-        // 동점은 id 로 안정 정렬 - 질의 행 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
+        // Break ties by id for a stable sort - keep query row order from leaking into results (Principle 16: reproducibility).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -695,10 +696,10 @@ impl KnowledgeStore for CozoStore {
         limit: usize,
     ) -> Result<Vec<TraverseHit>, StoreError> {
         let md = max_depth.max(1);
-        // 재귀 Datalog: min 집계로 최단 홉 거리를 구하고 엔티티 메타를 조인.
-        // :order 없이는 결과가 id(첫 컬럼) 순으로 나와 :limit 절단이 depth 를 무시했다
-        // - (depth, id) 로 명시 정렬해 가까운 이웃 우선 + 재현 가능한 절단으로 만들고
-        // InMemory 어댑터와 절단 의미론을 일치시킨다 (원칙 16).
+        // Recursive Datalog: compute shortest-hop distance with min aggregation and join entity metadata.
+        // Without :order the results came out in id (first-column) order and :limit truncation ignored depth
+        // - sort explicitly by (depth, id) to prefer nearer neighbors + make truncation reproducible, and
+        // match the truncation semantics with the InMemory adapter (Principle 16).
         let script = format!(
             "reach[dst, min(d)] := *relation{{src: $start, dst}}, d = 1\n\
              reach[dst, min(d)] := reach[nid, d0], *relation{{src: nid, dst}}, d = d0 + 1, d <= {md}\n\
@@ -723,7 +724,7 @@ impl KnowledgeStore for CozoStore {
     }
 
     fn all_entities(&self, workspace: Option<&str>) -> Result<Vec<Entity>, StoreError> {
-        // entity 테이블은 workspace 컬럼을 지니므로 스토어에서 바로 필터한다.
+        // The entity table has a workspace column, so filter directly in the store.
         let mut p = params(&[]);
         let script = match workspace {
             Some(ws) => {
@@ -748,8 +749,8 @@ impl KnowledgeStore for CozoStore {
     }
 
     fn all_relations(&self, workspace: Option<&str>) -> Result<Vec<Relation>, StoreError> {
-        // relation 테이블엔 workspace 컬럼이 없다 - 워크스페이스는 data JSON 의
-        // provenance.workspace 에 있으므로 복원 후 Rust 에서 필터한다.
+        // The relation table has no workspace column - the workspace is in provenance.workspace within
+        // the data JSON, so filter in Rust after reconstruction.
         let rows = self.run(
             "?[id, src, dst, rtype, data] := *relation{id, src, dst, rtype, data}",
             params(&[]),
@@ -772,7 +773,7 @@ impl KnowledgeStore for CozoStore {
     }
 
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
-        // observation 테이블은 workspace 컬럼을 지니므로 스토어에서 바로 필터한다.
+        // The observation table has a workspace column, so filter directly in the store.
         let mut p = params(&[]);
         let script = match workspace {
             Some(ws) => {
@@ -782,24 +783,25 @@ impl KnowledgeStore for CozoStore {
             None => "?[id, content, data] := *observation{id, content, data}",
         };
         let rows = self.run(script, p, false)?;
-        // 행 복원 실패는 부재가 아니라 고장이다(원칙 5) - 열거에서도 삼키지 않는다.
-        // observation_from_row 는 [content, data] 슬라이스를 받으므로 r[1..] 를 넘긴다.
+        // A row reconstruction failure is a backend failure, not absence (Principle 5) - do not swallow it in enumeration either.
+        // observation_from_row takes a [content, data] slice, so pass r[1..].
         let mut out = Vec::with_capacity(rows.rows.len());
         for r in &rows.rows {
             let Some(id) = r.first().and_then(|v| v.get_str()) else {
                 return Err(StoreError::Backend(
-                    "관측 열거: id 컬럼 손상 (부재가 아니라 고장이다)".into(),
+                    "observation enumeration: id column corruption (a backend failure, not absence)".into(),
                 ));
             };
             match observation_from_row(id, &r[1..]) {
                 Some(obs) => out.push(obs),
-                // 개별 행의 data JSON 복원 실패는 **전체 열거를 막지 않는다**(파생 오버레이가
-                // 한 행 때문에 통째로 못 쓰게 되는 것을 막는 degrade, 원칙 19). 침묵하지
-                // 않는다 - 제외를 경고로 남긴다(원칙 5: 부재가 아니라 고장이다). 원문은 로그
-                // 계층에 그대로 있으므로 재프로젝션(M3)에서 드롭이 아니라 복구 대상이다.
+                // A single row's data JSON reconstruction failure **does not block the whole enumeration**
+                // (a degrade that prevents the derived overlay from becoming entirely unusable because of one
+                // row, Principle 19). It is not silent - the exclusion is logged as a warning (Principle 5: a
+                // backend failure, not absence). The original stays in the log layer, so it is a recovery target
+                // in reprojection (M3), not a drop.
                 None => tracing::warn!(
                     observation_id = %id,
-                    "관측 행 복원 실패 - 열거에서 제외(degrade). 원문은 로그에 보존됨"
+                    "observation row reconstruction failed - excluded from enumeration (degrade). Original preserved in the log"
                 ),
             }
         }
@@ -812,11 +814,11 @@ impl KnowledgeStore for CozoStore {
         workspace: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>, StoreError> {
-        // 벡터 인덱스가 켜져 있으면 네이티브 HNSW ANN 으로.
+        // If the vector index is on, use native HNSW ANN.
         if self.vector_dim.is_some() {
             return self.semantic_hnsw(query_embedding, workspace, limit, &OBS_TARGET);
         }
-        // 아니면 브루트포스: 후보를 로드해 Rust 에서 코사인 유사도로 랭킹한다.
+        // Otherwise brute-force: load candidates and rank by cosine similarity in Rust.
         self.semantic_brute(query_embedding, workspace, limit, &OBS_TARGET)
     }
 
@@ -826,7 +828,7 @@ impl KnowledgeStore for CozoStore {
         workspace: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>, StoreError> {
-        // 엔티티도 관측과 대칭: HNSW(ent_vec) 가속, 없으면 브루트포스 코사인.
+        // Entities are symmetric with observations: HNSW(ent_vec) acceleration, brute-force cosine otherwise.
         if self.vector_dim.is_some() {
             return self.semantic_hnsw(query_embedding, workspace, limit, &ENT_TARGET);
         }
@@ -842,8 +844,8 @@ mod tests {
 
     fn tmp_dir() -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
-        // 프로세스 원자 카운터로 유일성을 확정한다 - 벽시계 해상도에 기대면 동시 실행되는
-        // 두 Cozo 테스트가 같은 나노초에 같은 경로를 잡아 RocksDB 락 충돌로 open 이 실패한다.
+        // A process-atomic counter guarantees uniqueness - relying on wall-clock resolution would let two
+        // concurrently running Cozo tests grab the same path at the same nanosecond, failing open on a RocksDB lock conflict.
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -920,17 +922,17 @@ mod tests {
                 .add_observation(Observation::new("hello rust world".into(), prov()))
                 .unwrap();
 
-            // 조회
+            // Lookup
             assert_eq!(
                 store.get_entity(&a).unwrap().unwrap().canonical_name,
                 "a"
             );
-            // b 는 a->b, b->c 두 관계에 등장
+            // b appears in two relations, a->b and b->c
             assert_eq!(store.relations_of(&b).unwrap().len(), 2);
-            // 검색
+            // Search
             assert!(!store.search("rust", Some("ws1"), 10).unwrap().is_empty());
             assert!(store.search("rust", Some("other"), 10).unwrap().is_empty());
-            // 순회: a -> b(1홉), c(2홉)
+            // Traverse: a -> b (1 hop), c (2 hops)
             let hits = store.traverse(&a, 5, 100).unwrap();
             let ids: HashSet<_> = hits.iter().map(|h| h.id.clone()).collect();
             assert!(
@@ -939,7 +941,7 @@ mod tests {
             );
         }
 
-        // 영속성: 재오픈 후에도 데이터 유지
+        // Persistence: data survives after reopen
         {
             let store2 = CozoStore::open(&dir).unwrap();
             let a = Entity::make_id("ws1", "a");
@@ -952,10 +954,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// traverse 는 (depth asc, id asc)로 결정적이고 limit 절단은 얕은 depth 우선이다 -
-    /// 두 어댑터의 순서/절단 의미론이 일치한다 (원칙 16, 검색 정렬 tie-break 의 잔여).
-    /// 픽스처는 해시 선별: id 최소 후보를 depth-2 손자로 둬, id 순 절단이던 회귀라면
-    /// 손자가 depth-1 이웃을 밀어냈을 조건을 만든다.
+    /// traverse is deterministic in (depth asc, id asc) and limit truncation prefers shallower depth -
+    /// the order/truncation semantics of the two adapters match (Principle 16, a remnant of the search-sort tie-break).
+    /// The fixture is hash-selected: the min-id candidate is placed as a depth-2 grandchild so that, under a
+    /// regression to id-order truncation, the grandchild would have pushed out a depth-1 neighbor.
     #[test]
     fn traverse_order_and_truncation_parity_across_adapters() {
         let mut cands: Vec<String> = (0..30).map(|i| format!("child-{i:02}")).collect();
@@ -964,7 +966,7 @@ mod tests {
         let children: Vec<String> = cands[cands.len() - 6..].to_vec();
         assert!(
             Entity::make_id("ws1", &grand) < Entity::make_id("ws1", &children[0]),
-            "픽스처 전제: 손자 id 가 모든 자식 id 보다 작다"
+            "fixture premise: the grandchild id is smaller than every child id"
         );
 
         let fill = |store: &dyn KnowledgeStore| {
@@ -1008,26 +1010,26 @@ mod tests {
                 full.iter().map(|h| (h.depth, h.id.clone())).collect();
             let mut sorted = keys.clone();
             sorted.sort();
-            assert_eq!(keys, sorted, "{label}: (depth, id) 순서여야 한다");
-            // 절단은 가까운 이웃 우선 - id 최소인 손자(depth 2)가 depth-1 을 밀어내지 않는다.
+            assert_eq!(keys, sorted, "{label}: must be in (depth, id) order");
+            // Truncation prefers nearer neighbors - the min-id grandchild (depth 2) does not push out depth-1.
             let cut = store.traverse(&root, 5, 4).unwrap();
             assert!(
                 cut.iter().all(|h| h.depth == 1),
-                "{label}: limit 절단은 얕은 depth 우선이어야 한다: {cut:?}"
+                "{label}: limit truncation must prefer shallower depth: {cut:?}"
             );
             keys
         };
 
-        // InMemory: 인스턴스(HashMap 시드)와 무관하게 같은 결과.
+        // InMemory: same result regardless of instance (HashMap seed).
         let m1 = InMemoryStore::new();
         fill(&m1);
         let k1 = check(&m1, "mem-1");
         let m2 = InMemoryStore::new();
         fill(&m2);
         let k2 = check(&m2, "mem-2");
-        assert_eq!(k1, k2, "InMemory 인스턴스 간 재현성");
+        assert_eq!(k1, k2, "reproducibility across InMemory instances");
 
-        // Cozo: 같은 순서/절단 의미론 (어댑터 parity).
+        // Cozo: same order/truncation semantics (adapter parity).
         let dir = tmp_dir();
         {
             let store = CozoStore::open(&dir).unwrap();
@@ -1038,7 +1040,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 원칙 3: Cozo 어댑터도 재도착을 합집합으로 흡수하고, 병합 결과가 영속한다.
+    /// Principle 3: the Cozo adapter also absorbs re-arrivals as a union, and the merge result persists.
     #[test]
     fn cozo_reobservation_accumulates_attestations() {
         let dir = tmp_dir();
@@ -1061,10 +1063,10 @@ mod tests {
             store.add_observation(make("host-b", 0.1, "o2")).unwrap();
 
             let o = store.get_observation(&id).unwrap().unwrap();
-            assert_eq!(o.provenance.len(), 2, "attestation 누적: {:?}", o.provenance);
+            assert_eq!(o.provenance.len(), 2, "attestation accumulation: {:?}", o.provenance);
             assert_eq!(o.derived_from, vec!["o1".to_string(), "o2".to_string()]);
         }
-        // 병합 결과가 재오픈 후에도 유지된다.
+        // The merge result survives after reopen.
         {
             let store = CozoStore::open(&dir).unwrap();
             let o = store.get_observation(&id).unwrap().unwrap();
@@ -1086,8 +1088,8 @@ mod tests {
         o
     }
 
-    /// 벡터 차원을 지정해 열면 의미 검색이 네이티브 HNSW 를 쓴다. 최근접 순위 + 워크스페이스
-    /// 필터를 검증하고, 재오픈 후에도 인덱스가 유지되는지 확인한다.
+    /// Opening with a specified vector dimension makes semantic search use native HNSW. Verifies
+    /// nearest-neighbor ranking + workspace filter, and checks the index survives after reopen.
     #[test]
     fn cozo_semantic_search_uses_hnsw() {
         let dir = tmp_dir();
@@ -1104,7 +1106,7 @@ mod tests {
             store
                 .add_observation(obs_with_emb("near x", "ws1", [0.9, 0.1, 0.0]))
                 .unwrap();
-            // 다른 워크스페이스의 완전 일치 - ws1 질의에 나오면 안 된다.
+            // Exact match in a different workspace - must not appear in the ws1 query.
             store
                 .add_observation(obs_with_emb("other x", "ws2", [1.0, 0.0, 0.0]))
                 .unwrap();
@@ -1118,11 +1120,11 @@ mod tests {
                 ids.contains(&a) && ids.contains(&c),
                 "nearest should be x/near-x, got {ids:?}"
             );
-            // 최근접(완전 일치)이 1위.
+            // The nearest (exact match) ranks first.
             assert_eq!(hits[0].id, a, "exact match should rank first");
         }
 
-        // 재오픈: HNSW 인덱스와 벡터가 영속한다.
+        // Reopen: the HNSW index and vectors persist.
         {
             let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
             let hits = store
@@ -1134,9 +1136,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 임베더 식별자 대조: 같은 임베더 재오픈은 통과, 다른 임베더는 명시적으로
-    /// 거부된다. 차원 불일치의 부분 쓰기와, 같은 차원 다른 모델의 벡터 공간 혼합
-    /// (둘 다 침묵 오염이던 것)을 open 시점 fail-fast 로 바꾼다.
+    /// Embedder identifier check: reopening with the same embedder passes, a different embedder is
+    /// explicitly rejected. Turns the partial writes of a dimension mismatch, and the vector-space mixing
+    /// of a same-dimension different model (both previously silent corruption), into a fail-fast at open time.
     #[test]
     fn cozo_rejects_embedder_switch() {
         let dir = tmp_dir();
@@ -1146,18 +1148,18 @@ mod tests {
                 .add_observation(obs_with_emb("fact", "ws1", [1.0, 0.0, 0.0]))
                 .unwrap();
         }
-        // 같은 임베더 재오픈: 통과.
+        // Reopen with the same embedder: passes.
         assert!(CozoStore::open_with_embedder(&dir, "hashing-3", 3).is_ok());
-        // 다른 차원의 임베더: 거부 + 자기 교정 힌트.
+        // Different-dimension embedder: rejected + self-correction hint.
         let err = CozoStore::open_with_embedder(&dir, "other-4", 4)
             .err()
-            .expect("다른 차원 임베더는 거부돼야 한다");
-        assert!(err.to_string().contains("임베더 불일치"), "{err}");
-        // 같은 차원이라도 다른 모델이면 거부 (벡터 공간 혼합 방지).
+            .expect("a different-dimension embedder must be rejected");
+        assert!(err.to_string().contains("embedder mismatch"), "{err}");
+        // Even at the same dimension, a different model is rejected (prevents vector-space mixing).
         let err = CozoStore::open_with_embedder(&dir, "other-3", 3)
             .err()
-            .expect("다른 모델 임베더는 거부돼야 한다");
-        assert!(err.to_string().contains("임베더 불일치"), "{err}");
+            .expect("a different-model embedder must be rejected");
+        assert!(err.to_string().contains("embedder mismatch"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1173,8 +1175,8 @@ mod tests {
         }
     }
 
-    /// 엔티티 시맨틱 검색(ent_vec HNSW): 이름 임베딩으로 노드에 도달한다. 최근접 순위 +
-    /// 워크스페이스 필터 + 재오픈 영속을 관측 경로(obs_vec)와 대칭으로 검증한다.
+    /// Entity semantic search (ent_vec HNSW): reaches nodes via name embeddings. Verifies nearest-neighbor
+    /// ranking + workspace filter + reopen persistence, symmetric with the observation path (obs_vec).
     #[test]
     fn cozo_entity_semantic_search_uses_hnsw() {
         let dir = tmp_dir();
@@ -1185,7 +1187,7 @@ mod tests {
             store.put_entity(ent_with_emb("x axis", "ws1", [1.0, 0.0, 0.0])).unwrap();
             store.put_entity(ent_with_emb("y axis", "ws1", [0.0, 1.0, 0.0])).unwrap();
             store.put_entity(ent_with_emb("near x", "ws1", [0.9, 0.1, 0.0])).unwrap();
-            // 다른 워크스페이스의 완전 일치 - ws1 질의에 나오면 안 된다.
+            // Exact match in a different workspace - must not appear in the ws1 query.
             store.put_entity(ent_with_emb("other x", "ws2", [1.0, 0.0, 0.0])).unwrap();
 
             let hits = store
@@ -1198,11 +1200,11 @@ mod tests {
                 "nearest should be x/near-x entities, got {ids:?}"
             );
             assert_eq!(hits[0].id, x, "exact-match entity should rank first");
-            // 엔티티 히트여야 한다(관측과 섞이지 않음).
+            // Must be entity hits (not mixed with observations).
             assert!(hits.iter().all(|h| h.kind == SearchHitKind::Entity));
         }
 
-        // 재오픈: ent_vec 인덱스와 벡터가 영속한다.
+        // Reopen: the ent_vec index and vectors persist.
         {
             let store = CozoStore::open_with_embedder(&dir, "test-3d", 3).unwrap();
             let hits = store

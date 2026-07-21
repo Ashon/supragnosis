@@ -1,43 +1,50 @@
-//! Delegation eval: "지식 위임이 실제로 이득인가"를 정량/정성으로 채점한다.
+//! Delegation eval: scores, quantitatively and qualitatively, "is knowledge delegation actually a gain".
 //!
-//! 논지: 소형 모델이 지식을 supragnosis MCP 에 위임하면, 전체 이력을 컨텍스트에
-//! 넣지 않고도 같은(또는 더 나은) 정확도를 더 적은 토큰으로 낼 수 있다.
-//! 이 하네스는 그 논지를 A/B 로 직접 잰다:
+//! Thesis: when a small model delegates knowledge to supragnosis MCP, it can produce the same
+//! (or better) accuracy with fewer tokens, without stuffing the entire history into context.
+//! This harness measures that thesis directly, A/B:
 //!
-//!   - baseline  조건: 코퍼스 전체(핵심 사실 + 잡음 사실)를 프롬프트에 주입하고 질문.
-//!   - delegated 조건: 같은 코퍼스를 엔진에 미리 적재(결정적 - 모델의 적재 품질과 분리)
-//!     하고, 모델은 MCP 도구(search_knowledge 등)로 필요한 만큼만 꺼내 답한다.
+//!   - baseline  condition: inject the whole corpus (core facts + noise facts) into the prompt and ask.
+//!   - delegated condition: preload the same corpus into the engine (deterministically -
+//!     decoupled from the model's ingestion quality), and the model pulls only as much as it
+//!     needs via MCP tools (search_knowledge, etc.) to answer.
 //!
-//! 질문 카테고리와 정량 지표:
-//!   - direct      : 단순 회상 정확도 (정답 키워드 포함 여부).
-//!   - supersede   : 사실이 갱신된 경우 최신 값을 답하는가 (stale 답변율 - 원칙 3/6:
-//!     충돌은 정보다, 모델이 두 관측을 화해시켜야 한다).
-//!   - unanswerable: 코퍼스에 없는 질문에 "모른다"고 답하는가 (부작위/환각율 - 위임
-//!     구조 최대 리스크는 검색 없이 지어내는 것).
-//!   - 토큰 비용   : 조건별 프롬프트+생성 토큰 합계, 정답당 토큰(tokens-per-correct).
+//! Question categories and quantitative metrics:
+//!   - direct      : plain recall accuracy (whether the gold keyword appears).
+//!   - supersede   : when a fact has been updated, does it answer with the latest value (stale
+//!     answer rate - Principle 3/6: conflict is information, the model must reconcile the two
+//!     observations).
+//!   - unanswerable: does it answer "I don't know" to a question absent from the corpus
+//!     (abstention/hallucination rate - the greatest risk of the delegation structure is making
+//!     something up without searching).
+//!   - token cost  : per-condition sum of prompt+generation tokens, and tokens-per-correct.
 //!
-//! 정성 평가: 전체 트랜스크립트(질문/도구 호출/인자/결과/최종 답변/판정)를 마크다운
-//! 리포트로 남긴다 -> target/eval-reports/delegation_eval.md (사람이 리뷰하는 산출물).
+//! Qualitative evaluation: the full transcript (question/tool calls/args/results/final answer/
+//! verdict) is left as a markdown report -> target/eval-reports/delegation_eval.md (an artifact
+//! for human review).
 //!
-//! 판정은 결정적 키워드 매칭이다(정량 재현성). 자유 서술의 미묘한 오답은 리포트의
-//! 정성 리뷰로 잡는다 - LLM-judge 는 비결정성을 더하므로 의도적으로 넣지 않았다.
+//! Judging is deterministic keyword matching (quantitative reproducibility). Subtle wrong answers
+//! in free-form prose are caught by the report's qualitative review - an LLM-judge would add
+//! nondeterminism, so it was intentionally left out.
 //!
-//! 비결정적(모델)이고 로컬 Ollama 가 필요하므로 기본 실행에서 제외한다.
-//! 실행:
+//! Nondeterministic (model) and requiring a local Ollama, so excluded from the default run.
+//! Run:
 //!   OLLAMA_MODELS=gemma4,qwen2.5:3b,llama3.2:3b \
 //!     cargo test -p supragnosis-e2e --test delegation_eval -- --ignored --nocapture
-//! 선택 env:
-//!   OLLAMA_BASE_URL (기본 http://localhost:11434)
-//!   OLLAMA_MODELS   (콤마 구분, 기본 gemma4)
-//!   EVAL_RUNS       (반복 횟수, 기본 1 - 소형 모델 흔들림을 pass-rate 로 재려면 3+)
-//!   EVAL_EMBEDDERS  (콤마 구분, 기본 hashing - 예: hashing,fastembed. delegated 회수를
-//!                    임베더별로 A/B 한다. fastembed 는 --features real-embed 빌드 필요.
-//!                    어휘 해싱의 토큰 충돌 갭이 의미 임베더로 닫히는지를 격리 측정)
-//!   EVAL_SCALES     (콤마 구분 잡음 사실 수, 기본 60 - 예: 60,300,1000. baseline 은
-//!                    코퍼스에 선형으로 비싸지고 컨텍스트 윈도우를 넘으면 무너지는 반면
-//!                    delegated 는 상수임을 손익분기 곡선으로 보이기 위한 축)
+//! Optional env:
+//!   OLLAMA_BASE_URL (default http://localhost:11434)
+//!   OLLAMA_MODELS   (comma-separated, default gemma4)
+//!   EVAL_RUNS       (repeat count, default 1 - use 3+ to measure small-model jitter as a pass-rate)
+//!   EVAL_EMBEDDERS  (comma-separated, default hashing - e.g. hashing,fastembed. A/Bs delegated
+//!                    recall per embedder. fastembed needs a --features real-embed build.
+//!                    Isolates whether the token-collision gap of lexical hashing closes with a
+//!                    semantic embedder)
+//!   EVAL_SCALES     (comma-separated noise-fact counts, default 60 - e.g. 60,300,1000. An axis
+//!                    to show, as a break-even curve, that baseline grows linearly more expensive
+//!                    with the corpus and collapses once it exceeds the context window, whereas
+//!                    delegated stays constant)
 //!
-//! Ollama 가 안 떠 있으면 조용히 통과(skip)한다 - CI 를 깨지 않기 위해서다.
+//! If Ollama is not up, it silently passes (skips) - so as not to break CI.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -56,28 +63,29 @@ use supragnosis_store::InMemoryStore;
 
 const DEFAULT_MODELS: &str = "gemma4";
 const WS: &str = "eval";
-/// delegated 조건에서 도구 왕복 최대 횟수(무한 루프 가드).
+/// Max tool round-trips in the delegated condition (infinite-loop guard).
 const MAX_ROUNDS: usize = 5;
 
-// 유효구간 픽스처용 epoch millis 상수.
+// epoch-millis constants for the validity-interval fixture.
 const TS_2024_01: u64 = 1_704_067_200_000; // 2024-01-01
 const TS_2025_03: u64 = 1_740_787_200_000; // 2025-03-01
 const TS_2025_06: u64 = 1_748_736_000_000; // 2025-06-01
 
-// --- 픽스처: 코퍼스와 질문 ---------------------------------------------------
+// --- Fixtures: corpus and questions ------------------------------------------
 
-/// 관계 픽스처: (from, kind, to, valid_from, valid_to).
+/// Relation fixture: (from, kind, to, valid_from, valid_to).
 type FactRelation = (&'static str, &'static str, &'static str, Option<u64>, Option<u64>);
 
-/// 핵심 사실 한 건: 관측 본문 + 동봉 엔티티/관계(유효구간 포함).
+/// A single core fact: observation body + enclosed entities/relations (with validity intervals).
 struct Fact {
     content: &'static str,
     entities: &'static [(&'static str, &'static str)],
     relations: &'static [FactRelation],
 }
 
-/// 핵심 사실. supersede 쌍(4-5, 6-7)은 날짜를 본문에 명시해 두 관측이 모두 회수됐을 때
-/// 모델이 최신을 고를 수 있게 한다(엔진의 자동 반증 종료는 M3 - 지금은 모델의 몫).
+/// Core facts. The supersede pairs (4-5, 6-7) state dates in the body so that, when both
+/// observations are recalled, the model can pick the latest (the engine automatically closing
+/// out refuted facts is M3 - for now it is the model's job).
 fn core_facts() -> Vec<Fact> {
     vec![
         Fact {
@@ -95,7 +103,7 @@ fn core_facts() -> Vec<Fact> {
             entities: &[("billing service", "Component"), ("auth service", "Component")],
             relations: &[("billing service", "depends_on", "auth service", None, None)],
         },
-        // supersede 쌍 1: 배포 대상 이전.
+        // supersede pair 1: deployment target migration.
         Fact {
             content: "from january 2024 until june 2025 the acme api was deployed on heroku",
             entities: &[("acme api", "Component"), ("heroku", "Tool")],
@@ -112,7 +120,7 @@ fn core_facts() -> Vec<Fact> {
             entities: &[("acme api", "Component"), ("fly.io", "Tool")],
             relations: &[("acme api", "deployed_on", "fly.io", Some(TS_2025_06), None)],
         },
-        // supersede 쌍 2: 세션 캐시 교체.
+        // supersede pair 2: session cache replacement.
         Fact {
             content: "until march 2025 the acme api cached sessions with redis",
             entities: &[("acme api", "Component"), ("redis", "Tool")],
@@ -131,9 +139,10 @@ fn core_facts() -> Vec<Fact> {
     ]
 }
 
-/// 잡음 사실 `n`건: baseline 컨텍스트를 현실적인 무게로 만들고 delegated 검색에
-/// distractor 를 준다. 결정적으로 생성하며, 정답/오답 키워드와 어휘가 겹치지 않게 고른다.
-/// n=60 이면 서비스 15개 x 템플릿 4개, 그 이상은 번호 붙은 서비스 세대로 확장된다.
+/// `n` noise facts: give the baseline context a realistic weight and give the delegated search
+/// distractors. Generated deterministically, chosen so their vocabulary does not overlap with the
+/// gold/wrong keywords. At n=60 that is 15 services x 4 templates; beyond that it expands into
+/// numbered service generations.
 fn distractor_facts(n: usize) -> Vec<String> {
     const SERVICES: [&str; 15] = [
         "orion", "lyra", "vega", "altair", "deneb", "rigel", "castor", "pollux", "mira",
@@ -143,7 +152,7 @@ fn distractor_facts(n: usize) -> Vec<String> {
     const LANGS: [&str; 4] = ["go", "python", "typescript", "kotlin"];
     (0..n)
         .map(|i| {
-            // 60건마다 새 세대(orion1 -> orion2)로 서비스명을 늘려 무한 확장한다.
+            // Every 60 facts, bump the service name into a new generation (orion1 -> orion2) for unbounded expansion.
             let s = format!("{}{}", SERVICES[i % SERVICES.len()], i / 60 + 1);
             match (i / SERVICES.len()) % 4 {
                 0 => format!("the {s} service exposes its api on port {}", 7000 + i),
@@ -158,13 +167,13 @@ fn distractor_facts(n: usize) -> Vec<String> {
         .collect()
 }
 
-/// 질문 한 건. `gold` 가 비면 unanswerable(부작위 기대) 질문이다.
+/// A single question. If `gold` is empty this is an unanswerable question (abstention expected).
 struct Question {
     name: &'static str,
     text: &'static str,
-    /// 정답 판정 키워드(any-of, 소문자). 정답이 stale 보다 우선한다.
+    /// Keywords for judging a correct answer (any-of, lowercase). Correct takes precedence over stale.
     gold: &'static [&'static str],
-    /// 구버전 정답 키워드(any-of) - 이걸 답하면 Stale (supersede 실패).
+    /// Old-version answer keywords (any-of) - answering with these is Stale (supersede failure).
     stale: &'static [&'static str],
 }
 
@@ -215,21 +224,21 @@ fn questions() -> Vec<Question> {
     ]
 }
 
-// --- 판정 --------------------------------------------------------------------
+// --- Judging -----------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 enum Verdict {
-    /// 정답 키워드 포함.
+    /// Contains a gold keyword.
     Correct,
-    /// 구버전 정답을 답함 (supersede 화해 실패).
+    /// Answered with the old-version value (supersede reconciliation failure).
     Stale,
-    /// 답했지만 정답도 stale 도 아님.
+    /// Answered, but neither gold nor stale.
     Wrong,
-    /// unanswerable 에 "모른다"로 답함 (기대 행동).
+    /// Answered "I don't know" to an unanswerable (the expected behavior).
     Abstained,
-    /// unanswerable 에 구체적 답을 지어냄 (환각).
+    /// Made up a concrete answer to an unanswerable (hallucination).
     Hallucinated,
-    /// 응답 없음/전송 오류.
+    /// No response / transport error.
     Error(String),
 }
 
@@ -246,7 +255,7 @@ impl Verdict {
     }
 }
 
-/// 부작위 표지: 답변에 이 중 하나가 보이면 "모른다"로 판정한다.
+/// Abstention markers: if the answer contains any of these, judge it as "I don't know".
 const ABSTAIN_MARKERS: [&str; 14] = [
     "i don't know",
     "i do not know",
@@ -267,7 +276,7 @@ const ABSTAIN_MARKERS: [&str; 14] = [
 fn judge(q: &Question, answer: &str) -> Verdict {
     let a = answer.to_lowercase();
     if a.trim().is_empty() {
-        return Verdict::Error("빈 응답".into());
+        return Verdict::Error("empty response".into());
     }
     if q.gold.is_empty() {
         if ABSTAIN_MARKERS.iter().any(|m| a.contains(m)) {
@@ -284,20 +293,20 @@ fn judge(q: &Question, answer: &str) -> Verdict {
     }
 }
 
-// --- 결과 집계 ---------------------------------------------------------------
+// --- Result aggregation ------------------------------------------------------
 
 struct QuestionResult {
     run: usize,
     question: &'static str,
     verdict: Verdict,
     answer: String,
-    /// delegated 조건의 도구 호출 로그 (이름(인자) -> 결과 앞부분).
+    /// Tool-call log for the delegated condition (name(args) -> head of the result).
     tool_log: Vec<String>,
     prompt_tokens: u64,
     completion_tokens: u64,
 }
 
-/// (모델, 잡음 규모, 조건, 임베더)별 결과 묶음. baseline 은 엔진을 쓰지 않으므로 "-".
+/// A bundle of results per (model, noise scale, condition, embedder). baseline uses no engine, hence "-".
 struct ConditionResult {
     model: String,
     scale: usize,
@@ -365,7 +374,7 @@ impl ConditionResult {
         self.total_tokens() as f64 / self.results.len() as f64
     }
 
-    /// 정답당 토큰: 낮을수록 효율적. 정답이 없으면 None.
+    /// Tokens per correct: lower is more efficient. None if there are no correct answers.
     fn tokens_per_correct(&self) -> Option<f64> {
         let (correct, _) = self.accuracy();
         let abstained = self.abstain().0;
@@ -378,24 +387,24 @@ impl ConditionResult {
     }
 }
 
-// --- Ollama 브리지 (ollama_eval.rs 와 같은 패턴, 토큰 usage 회수를 더함) ------
+// --- Ollama bridge (same pattern as ollama_eval.rs, plus collecting token usage) ------
 
-// --- 조건 실행 ---------------------------------------------------------------
+// --- Condition execution -----------------------------------------------------
 
-/// baseline 프롬프트 템플릿. {corpus} = 핵심+잡음 사실 목록, {question} = 각 질문.
-/// 실행과 리포트가 같은 원문을 쓴다(재현 가능한 문제 정의).
+/// baseline prompt template. {corpus} = list of core+noise facts, {question} = each question.
+/// Execution and the report use the same source text (a reproducible problem definition).
 const BASELINE_PROMPT: &str = "You are answering questions about a software project using the \
 project notes below.\nAnswer concisely in one sentence. If the notes do not contain the \
 answer, reply exactly: I don't know.\n\nPROJECT NOTES:\n{corpus}\n\nQUESTION: {question}";
 
-/// delegated 프롬프트 템플릿. {question} 만 치환된다.
+/// delegated prompt template. Only {question} is substituted.
 const DELEGATED_PROMPT: &str = "You are answering questions about a software project. A \
 knowledge base is available through the provided tools. Use search_knowledge to look up \
 relevant facts before answering; you may also use get_entity and traverse. Answer concisely \
 in one sentence based only on what the tools return. If the knowledge base does not contain \
 the answer, reply exactly: I don't know.\n\nQUESTION: {question}";
 
-/// baseline: 코퍼스 전체를 프롬프트에 주입하고 단일턴으로 질문한다.
+/// baseline: inject the whole corpus into the prompt and ask in a single turn.
 async fn run_baseline(
     http: &reqwest::Client,
     base: &str,
@@ -437,8 +446,8 @@ async fn run_baseline(
     }
 }
 
-/// delegated: 도구만 주고 질문한다. tool_calls 가 나오는 동안 실행-되먹임을 반복하고,
-/// 텍스트 답이 나오면 그걸 최종 답으로 채점한다.
+/// delegated: give only the tools and ask. Repeat execute-and-feed-back while tool_calls keep
+/// coming, and when a text answer appears, score that as the final answer.
 async fn run_delegated(
     http: &reqwest::Client,
     base: &str,
@@ -503,15 +512,15 @@ async fn run_delegated(
     QuestionResult {
         run,
         question: q.name,
-        verdict: Verdict::Error(format!("{MAX_ROUNDS} 라운드 내에 텍스트 답 없음")),
-        answer: "[error] 도구 호출만 반복".into(),
+        verdict: Verdict::Error(format!("no text answer within {MAX_ROUNDS} rounds")),
+        answer: "[error] only repeated tool calls".into(),
         tool_log,
         prompt_tokens: pt_sum,
         completion_tokens: ct_sum,
     }
 }
 
-/// 코퍼스를 엔진에 결정적으로 적재한다(모델 적재 품질과 분리 - 회수 측만 격리 측정).
+/// Deterministically loads the corpus into the engine (decoupled from model ingestion quality - isolates the recall side only).
 fn load_corpus(engine: &Engine, scale: usize) {
     for f in core_facts() {
         engine
@@ -542,7 +551,7 @@ fn load_corpus(engine: &Engine, scale: usize) {
                     })
                     .collect(),
             })
-            .expect("core fact 적재");
+            .expect("load core fact");
     }
     for content in distractor_facts(scale) {
         engine
@@ -556,37 +565,37 @@ fn load_corpus(engine: &Engine, scale: usize) {
                 entities: vec![],
                 relations: vec![],
             })
-            .expect("distractor 적재");
+            .expect("load distractor");
     }
 }
 
-/// baseline 프롬프트용 코퍼스 텍스트(핵심 + 잡음, 적재 순서와 동일).
+/// Corpus text for the baseline prompt (core + noise, same order as ingestion).
 fn corpus_text(scale: usize) -> String {
     let mut lines: Vec<String> = core_facts().iter().map(|f| format!("- {}", f.content)).collect();
     lines.extend(distractor_facts(scale).iter().map(|d| format!("- {d}")));
     lines.join("\n")
 }
 
-// --- 리포트 ------------------------------------------------------------------
+// --- Report ------------------------------------------------------------------
 
-/// 정량 요약 + 정성 트랜스크립트를 마크다운으로 만든다.
+/// Builds the quantitative summary + qualitative transcript as markdown.
 fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
     let mut md = String::new();
-    md.push_str("# delegation eval 리포트\n\n");
+    md.push_str("# delegation eval report\n\n");
     md.push_str(&format!(
-        "- 질문 {}개 (answerable {}, unanswerable {}), 반복 {}회\n",
+        "- {} questions (answerable {}, unanswerable {}), {} runs\n",
         questions().len(),
         questions().iter().filter(|q| !q.gold.is_empty()).count(),
         questions().iter().filter(|q| q.gold.is_empty()).count(),
         runs
     ));
-    md.push_str(&format!("- 핵심 사실 {}건, 잡음 규모는 표의 scale 열\n\n", core_facts().len()));
+    md.push_str(&format!("- {} core facts; the noise scale is the scale column of the table\n\n", core_facts().len()));
 
-    // 정량 요약표.
-    md.push_str("## 정량 요약\n\n");
+    // Quantitative summary table.
+    md.push_str("## Quantitative summary\n\n");
     md.push_str(
-        "| 모델 | scale | 조건 | 임베더 | 정확도(answerable) | stale | 부작위(unanswerable) | 환각 | \
-         평균 토큰/질문 | 토큰/정답 |\n",
+        "| model | scale | condition | embedder | accuracy(answerable) | stale | abstention(unanswerable) | hallucination | \
+         mean tokens/question | tokens/correct |\n",
     );
     md.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
     for c in conditions {
@@ -613,19 +622,19 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
         ));
     }
 
-    // 문제 정의: 전 모델에 동일하게 쓰인 프롬프트와 질문 원문.
-    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
-    md.push_str("baseline ({corpus} = 핵심+잡음 사실 목록 주입):\n\n```text\n");
+    // Problem definition: the prompts and question source text used identically for all models.
+    md.push_str("\n## Prompts used (identical for all models)\n\n");
+    md.push_str("baseline ({corpus} = injected list of core+noise facts):\n\n```text\n");
     md.push_str(BASELINE_PROMPT);
-    md.push_str("\n```\n\ndelegated (도구 스키마는 MCP 표면에서 자동 변환되어 별도 전달):\n\n```text\n");
+    md.push_str("\n```\n\ndelegated (the tool schemas are auto-converted from the MCP surface and passed separately):\n\n```text\n");
     md.push_str(DELEGATED_PROMPT);
-    md.push_str("\n```\n\n질문 원문:\n\n");
+    md.push_str("\n```\n\nQuestion source text:\n\n");
     for q in questions() {
         md.push_str(&format!("- {}: {}\n", q.name, q.text));
     }
 
-    // 정성 트랜스크립트.
-    md.push_str("\n## 트랜스크립트 (정성 리뷰용)\n");
+    // Qualitative transcript.
+    md.push_str("\n## Transcript (for qualitative review)\n");
     for c in conditions {
         md.push_str(&format!(
             "\n### {} / scale {} / {} / {}\n",
@@ -633,19 +642,19 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
         ));
         for r in &c.results {
             md.push_str(&format!(
-                "\n**[run {}] {}** - 판정: `{}`\n\n",
+                "\n**[run {}] {}** - verdict: `{}`\n\n",
                 r.run,
                 r.question,
                 r.verdict.label()
             ));
             if let Verdict::Error(e) = &r.verdict {
-                md.push_str(&format!("- 오류: {e}\n"));
+                md.push_str(&format!("- error: {e}\n"));
             }
             for t in &r.tool_log {
-                md.push_str(&format!("- 도구: `{t}`\n"));
+                md.push_str(&format!("- tool: `{t}`\n"));
             }
             md.push_str(&format!(
-                "- 답변: {}\n- 토큰: prompt {} / completion {}\n",
+                "- answer: {}\n- tokens: prompt {} / completion {}\n",
                 r.answer.replace('\n', " "),
                 r.prompt_tokens,
                 r.completion_tokens
@@ -655,15 +664,15 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
     md
 }
 
-/// 리포트를 target/eval-reports/ 에 쓰고 index 를 갱신한다. 경로를 돌려준다.
+/// Writes the report to target/eval-reports/ and refreshes the index. Returns the path.
 fn write_report(md: &str) -> std::path::PathBuf {
     report::write_report("delegation_eval.md", md)
 }
 
-// --- 메인 --------------------------------------------------------------------
+// --- Main --------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "로컬 Ollama 필요 - 지식 위임 이득 A/B 수동 eval"]
+#[ignore = "requires local Ollama - manual A/B eval of knowledge-delegation gain"]
 async fn delegation_beats_context_stuffing() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
@@ -681,7 +690,7 @@ async fn delegation_beats_context_stuffing() {
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
         .collect();
-    // 임베더 A/B 축. 실모델 초기화 비용을 한 번만 치르도록 여기서 만들고 clone 공유한다.
+    // Embedder A/B axis. Built here and shared via clone so the real-model init cost is paid only once.
     let embedder_names: Vec<String> = std::env::var("EVAL_EMBEDDERS")
         .unwrap_or_else(|_| "hashing".to_string())
         .split(',')
@@ -695,13 +704,13 @@ async fn delegation_beats_context_stuffing() {
             .collect();
 
     let http = reqwest::Client::builder()
-        // 큰 scale 의 baseline 은 프롬프트 평가가 길다 - 넉넉히 잡는다.
+        // baseline at large scale takes long to evaluate the prompt - allow generous time.
         .timeout(Duration::from_secs(600))
         .build()
         .expect("http client");
 
     if !ollama_reachable(&http, &base).await {
-        eprintln!("[skip] Ollama 에 연결 불가({base}) - `ollama serve` 후 재실행");
+        eprintln!("[skip] cannot reach Ollama ({base}) - rerun after `ollama serve`");
         return;
     }
 
@@ -709,10 +718,10 @@ async fn delegation_beats_context_stuffing() {
 
     for model in &models {
         for &scale in &scales {
-            eprintln!("\n=== 모델: {model} / 잡음 {scale}건 ===");
+            eprintln!("\n=== model: {model} / noise {scale} facts ===");
             let corpus = corpus_text(scale);
 
-            // baseline 은 엔진(임베더)과 무관 - (모델, 규모)당 한 번만 잰다.
+            // baseline is independent of the engine (embedder) - measured once per (model, scale).
             let mut baseline = ConditionResult {
                 model: model.to_string(),
                 scale,
@@ -734,7 +743,7 @@ async fn delegation_beats_context_stuffing() {
             }
             conditions.push(baseline);
 
-            // delegated 는 임베더별로 새 엔진((모델, 규모, 임베더) 격리)에서 잰다.
+            // delegated is measured on a fresh engine per embedder (isolating (model, scale, embedder)).
             for (emb_name, emb) in &embedder_list {
                 let engine = Arc::new(
                     Engine::new(Arc::new(InMemoryStore::new()), "delegation-eval", WS)
@@ -756,7 +765,7 @@ async fn delegation_beats_context_stuffing() {
                         let rd =
                             run_delegated(&http, &base, model, &client, &tools, &q, run).await;
                         eprintln!(
-                            "  [delegated/{emb_name:<9}] run{run} {:<28} {:<12} ({}tk, 도구 {}회)",
+                            "  [delegated/{emb_name:<9}] run{run} {:<28} {:<12} ({}tk, {} tool calls)",
                             q.name,
                             rd.verdict.label(),
                             rd.prompt_tokens + rd.completion_tokens,
@@ -773,8 +782,8 @@ async fn delegation_beats_context_stuffing() {
         }
     }
 
-    // 정량 비교표 (stdout).
-    eprintln!("\n=== 비교 (정확도 / stale / 부작위 / 환각 / 평균토큰 / 토큰-정답) ===");
+    // Quantitative comparison table (stdout).
+    eprintln!("\n=== comparison (accuracy / stale / abstention / hallucination / mean tokens / tokens-per-correct) ===");
     for c in &conditions {
         let (correct, total) = c.accuracy();
         let (abst, un) = c.abstain();
@@ -803,14 +812,14 @@ async fn delegation_beats_context_stuffing() {
     let path = write_report(&report);
     eprintln!("\n[report] {}", path.display());
 
-    // 검증 목적은 "위임이 이득인가"의 측정이다 - 모델 품질을 강제하지 않는다(수치는
-    // 비교표/리포트로 드러난다). 다만 어떤 모델도 어떤 조건에서도 유효한 답을 하나도
-    // 못 내면 하네스/브리지가 깨진 것이라 실패.
+    // The point of the assertion is to measure "is delegation a gain" - it does not enforce model
+    // quality (the numbers surface in the comparison table/report). But if no model produces even
+    // one valid answer under any condition, the harness/bridge is broken, so fail.
     let any_answer = conditions
         .iter()
         .any(|c| c.results.iter().any(|r| !matches!(r.verdict, Verdict::Error(_))));
     assert!(
         any_answer,
-        "어떤 모델도 유효한 답을 내지 못함 - Ollama 브리지/하네스 점검 필요"
+        "no model produced a valid answer - check the Ollama bridge/harness"
     );
 }

@@ -1,22 +1,23 @@
-//! Ollama eval: 로컬 경량 모델이 supragnosis MCP 도구 표면을 잘 쓰는지 채점한다.
+//! Ollama eval: scores whether local lightweight models use the supragnosis MCP tool surface well.
 //!
-//! llm_eval.rs(Anthropic)의 Ollama 판. 살아있는 `SupragnosisServer` 에서 도구 스키마를
-//! 프로토콜로 뽑아(= 실제 표면) Ollama 의 OpenAI 호환 tool-calling API 로 넘기고,
-//! 자연어 시나리오마다 (1) 올바른 도구를 올바른 인자로 부르는지, (2) 도구를 MCP 로 실제
-//! 실행해 결과를 되먹였을 때 observe -> search 지식 흐름이 도는지를 채점한다.
+//! The Ollama edition of llm_eval.rs (Anthropic). Pulls the tool schemas from a live
+//! `SupragnosisServer` over the protocol (= the real surface), hands them to Ollama's
+//! OpenAI-compatible tool-calling API, and for each natural-language scenario scores (1) whether
+//! it calls the right tool with the right arguments, and (2) whether, once the tool is actually
+//! executed over MCP and its result fed back, the observe -> search knowledge flow turns.
 //!
-//! Ollama 는 MCP 클라이언트가 아니라 추론 서버다. 그래서 이 하네스가 브리지 역할을 한다:
-//! MCP 도구 스키마 -> Ollama tools 포맷 변환 + 모델의 tool_calls -> MCP call_tool 실행.
+//! Ollama is an inference server, not an MCP client. So this harness acts as the bridge:
+//! MCP tool schemas -> Ollama tools format conversion + the model's tool_calls -> MCP call_tool execution.
 //!
-//! 비결정적(모델)이고 로컬 Ollama 가 필요하므로 기본 실행에서 제외한다.
-//! 실행:
+//! Nondeterministic (model) and requiring a local Ollama, so excluded from the default run.
+//! Run:
 //!   OLLAMA_MODELS=gemma4,qwen2.5:3b,llama3.2:3b \
 //!     cargo test -p supragnosis-e2e --test ollama_eval -- --ignored --nocapture
-//! 선택 env:
-//!   OLLAMA_BASE_URL (기본 http://localhost:11434)
-//!   OLLAMA_MODELS   (콤마 구분, 기본 gemma4) - 각 모델을 같은 시나리오로 채점해 비교표를 낸다.
+//! Optional env:
+//!   OLLAMA_BASE_URL (default http://localhost:11434)
+//!   OLLAMA_MODELS   (comma-separated, default gemma4) - scores each model on the same scenarios and produces a comparison table.
 //!
-//! Ollama 가 안 떠 있으면 조용히 통과(skip)한다 - CI 를 깨지 않기 위해서다.
+//! If Ollama is not up, it silently passes (skips) - so as not to break CI.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,7 +36,7 @@ use supragnosis_store::InMemoryStore;
 
 const DEFAULT_MODELS: &str = "gemma4";
 
-/// 단일턴 시나리오: 자연어 요청 -> 기대 도구 + 인자 술어.
+/// Single-turn scenario: natural-language request -> expected tool + argument predicate.
 struct Scenario {
     name: &'static str,
     user: &'static str,
@@ -86,7 +87,7 @@ fn scenarios() -> Vec<Scenario> {
     ]
 }
 
-/// 한 모델의 채점 결과.
+/// Scoring result for a single model.
 struct Scorecard {
     model: String,
     reachable: bool,
@@ -104,7 +105,7 @@ impl Scorecard {
     }
 }
 
-/// 한 모델을 모든 시나리오로 채점한다(단일턴 4 + observe->search 에이전트 루프 1).
+/// Scores a single model on all scenarios (4 single-turn + 1 observe->search agent loop).
 async fn eval_model(
     http: &reqwest::Client,
     base: &str,
@@ -119,7 +120,7 @@ async fn eval_model(
         failed: Vec::new(),
     };
 
-    // --- 단일턴: 올바른 도구 + 인자 선택 ---
+    // --- single-turn: correct tool + argument choice ---
     for sc in scenarios() {
         let messages = json!([{ "role": "user", "content": sc.user }]);
         let msg = match chat(http, base, model, &messages, Some(tools)).await {
@@ -136,23 +137,23 @@ async fn eval_model(
                     card.passed.push(sc.name.to_string());
                 }
                 Err(why) => {
-                    eprintln!("  [fail] {}: 인자 - {why}", sc.name);
+                    eprintln!("  [fail] {}: args - {why}", sc.name);
                     card.failed.push(format!("{}: args - {why}", sc.name));
                 }
             },
             Some((_, name, args)) => {
-                eprintln!("  [fail] {}: 기대 {}, 실제 {name}({args})", sc.name, sc.expect_tool);
+                eprintln!("  [fail] {}: expected {}, got {name}({args})", sc.name, sc.expect_tool);
                 card.failed
                     .push(format!("{}: got {name} want {}", sc.name, sc.expect_tool));
             }
             None => {
-                eprintln!("  [fail] {}: tool_call 없음 (텍스트로만 답)", sc.name);
+                eprintln!("  [fail] {}: no tool_call (answered with text only)", sc.name);
                 card.failed.push(format!("{}: no tool_call", sc.name));
             }
         }
     }
 
-    // --- 에이전트 루프: 사실을 observe 로 적재 -> 실행 -> search 로 회상 -> 실행 -> 결과 확인 ---
+    // --- agent loop: ingest a fact via observe -> execute -> recall via search -> execute -> check result ---
     let loop_name = "agent-loop: observe -> search";
     match agent_loop(http, base, model, client, tools).await {
         Ok(()) => {
@@ -168,13 +169,13 @@ async fn eval_model(
     card
 }
 
-/// 에이전트 루프 턴 프롬프트(실행/리포트 단일 출처).
+/// Agent-loop turn prompts (single source for execution/report).
 const AGENT_TURN1: &str = "Save this fact to the knowledge base: the project uses CozoDB as \
 its embedded storage engine.";
 const AGENT_TURN2: &str = "Now search the knowledge base to find which database the project \
 uses.";
 
-/// observe -> (실행) -> search -> (실행) 왕복. 적재한 사실이 검색으로 되돌아오면 통과.
+/// observe -> (execute) -> search -> (execute) round-trip. Passes if the ingested fact comes back via search.
 async fn agent_loop(
     http: &reqwest::Client,
     base: &str,
@@ -184,18 +185,18 @@ async fn agent_loop(
 ) -> Result<(), String> {
     let mut messages = json!([{ "role": "user", "content": AGENT_TURN1 }]);
 
-    // 1) 모델이 observe 를 부르길 기대 -> 실제 실행.
+    // 1) expect the model to call observe -> actually execute it.
     let (msg1, _) = chat(http, base, model, &messages, Some(tools)).await?;
     let calls1 = tool_calls(&msg1);
     let observe = calls1
         .iter()
         .find(|(_, n, _)| n == "observe")
-        .ok_or("1턴에서 observe 를 부르지 않음")?;
+        .ok_or("did not call observe on turn 1")?;
     push_message(&mut messages, msg1.clone());
     let obs_result = exec_tool(client, "observe", &observe.2).await;
     push_tool_result(&mut messages, &observe.0, &obs_result);
 
-    // 2) 이제 저장한 걸 검색하게 한다 -> search_knowledge 기대 -> 실제 실행.
+    // 2) now have it search what was saved -> expect search_knowledge -> actually execute it.
     push_message(
         &mut messages,
         json!({ "role": "user", "content": AGENT_TURN2 }),
@@ -205,19 +206,19 @@ async fn agent_loop(
     let search = calls2
         .iter()
         .find(|(_, n, _)| n == "search_knowledge")
-        .ok_or("2턴에서 search_knowledge 를 부르지 않음")?;
+        .ok_or("did not call search_knowledge on turn 2")?;
     let search_result = exec_tool(client, "search_knowledge", &search.2).await;
 
-    // 3) 적재한 사실(CozoDB/cozo)이 검색 결과에 돌아왔는가 = 지식 흐름이 실제로 돌았는가.
+    // 3) did the ingested fact (CozoDB/cozo) come back in the search result = did the knowledge flow actually turn.
     if search_result.to_lowercase().contains("cozo") {
         Ok(())
     } else {
-        Err(format!("검색 결과에 적재한 사실이 없음: {search_result}"))
+        Err(format!("the ingested fact is absent from the search result: {search_result}"))
     }
 }
 
 #[tokio::test]
-#[ignore = "로컬 Ollama 필요 - 경량 모델 MCP 도구 사용 수동 eval"]
+#[ignore = "requires local Ollama - manual eval of lightweight-model MCP tool use"]
 async fn ollama_models_use_mcp_tools() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
@@ -229,11 +230,11 @@ async fn ollama_models_use_mcp_tools() {
         .expect("http client");
 
     if !ollama_reachable(&http, &base).await {
-        eprintln!("[skip] Ollama 에 연결 불가({base}) - `ollama serve` 후 재실행");
+        eprintln!("[skip] cannot reach Ollama ({base}) - rerun after `ollama serve`");
         return;
     }
 
-    // 살아있는 MCP 서버(비영속 + 결정적 임베더)를 in-process duplex 로 띄운다.
+    // Spin up a live MCP server (non-persistent + deterministic embedder) over an in-process duplex.
     let engine = Arc::new(
         Engine::new(Arc::new(InMemoryStore::new()), "ollama-eval", "ws")
             .with_embedder(Arc::new(HashingEmbedder::default())),
@@ -243,12 +244,12 @@ async fn ollama_models_use_mcp_tools() {
 
     let mut cards: Vec<Scorecard> = Vec::new();
     for model in &models {
-        eprintln!("\n=== 모델: {model} ===");
+        eprintln!("\n=== model: {model} ===");
         cards.push(eval_model(&http, &base, model, &client, &tools).await);
     }
 
-    // 비교표.
-    eprintln!("\n=== 비교 (도구 사용 정확도) ===");
+    // Comparison table.
+    eprintln!("\n=== comparison (tool-use accuracy) ===");
     for c in &cards {
         eprintln!("  {:<20} {}", c.model, c.score());
         for f in &c.failed {
@@ -256,19 +257,19 @@ async fn ollama_models_use_mcp_tools() {
         }
     }
 
-    // 채점표를 리포트 산출물로도 남긴다 - target/eval-reports/index.html 목차에 실린다.
-    let mut md = String::from("# ollama tool-use eval 채점표\n\n| 모델 | 점수 |\n|---|---|\n");
+    // Also leave the scorecard as a report artifact - it appears in the target/eval-reports/index.html table of contents.
+    let mut md = String::from("# ollama tool-use eval scorecard\n\n| model | score |\n|---|---|\n");
     for c in &cards {
         md.push_str(&format!("| {} | {} |\n", c.model, c.score()));
     }
-    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
+    md.push_str("\n## Prompts used (identical for all models)\n\n");
     for sc in scenarios() {
         md.push_str(&format!("- {}: \"{}\"\n", sc.name, sc.user));
     }
-    md.push_str(&format!("- agent-loop 1턴: \"{AGENT_TURN1}\"\n"));
-    md.push_str(&format!("- agent-loop 2턴: \"{AGENT_TURN2}\"\n"));
+    md.push_str(&format!("- agent-loop turn 1: \"{AGENT_TURN1}\"\n"));
+    md.push_str(&format!("- agent-loop turn 2: \"{AGENT_TURN2}\"\n"));
 
-    md.push_str("\n## 시나리오 상세\n\n");
+    md.push_str("\n## Scenario detail\n\n");
     for c in &cards {
         for p in &c.passed {
             md.push_str(&format!("- [o] {} : {}\n", c.model, p));
@@ -283,12 +284,13 @@ async fn ollama_models_use_mcp_tools() {
     let _ = client.cancel().await;
     let _ = server.await;
 
-    // 검증 목적이 "경량 모델이 MCP 를 잘 쓰는가"의 측정이라, 하나라도 도구 하나를 제대로
-    // 부르면 브리지/표면이 동작함을 뜻한다(전 시나리오 통과를 강제하지 않는다 - 모델 품질은
-    // 비교표로 드러난다). 아무 모델도 아무 도구를 못 부르면 브리지가 깨진 것이라 실패.
+    // Since the point of the assertion is to measure "do lightweight models use MCP well", even one
+    // model correctly calling one tool means the bridge/surface works (it does not force every
+    // scenario to pass - model quality surfaces in the comparison table). If no model can call any
+    // tool, the bridge is broken, so fail.
     let any_tool_use = cards.iter().any(|c| !c.passed.is_empty());
     assert!(
         any_tool_use,
-        "어떤 모델도 도구를 하나도 제대로 부르지 못함 - MCP<->Ollama 브리지 점검 필요"
+        "no model correctly called even one tool - check the MCP<->Ollama bridge"
     );
 }

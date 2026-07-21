@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-viz"
-description = "supragnosis 온톨로지 라이브 시각화 - localhost HTTP 뷰어(읽기 전용 어댑터)."
+description = "supragnosis ontology live visualization - localhost HTTP viewer (read-only adapter)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,19 +9,19 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-# engine.graph(ws) 프로젝션을 그대로 직렬화해 노출한다(원칙 20: viz 는 engine 에만 의존).
+# Exposes the engine.graph(ws) projection by serializing it as-is (Principle 20: viz depends only on engine).
 supragnosis-engine.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-# TcpListener + AsyncRead/Write + broadcast(sync). 워크스페이스 공통에 없어 국소로 켠다
-# (cargo feature 는 union 이라 다른 크레이트 빌드에 무해). sync = MCP 이벤트 브로드캐스트.
+# TcpListener + AsyncRead/Write + broadcast(sync). Not in the workspace-wide set, so enabled locally
+# (cargo features are a union, so it is harmless to other crate builds). sync = MCP event broadcast.
 tokio = { workspace = true, features = ["net", "io-util", "sync"] }
 
 [dev-dependencies]
-# 결정적 Engine 조립(InMemory + 어휘 해싱)으로 HTTP 표면을 in-process 로 검증한다.
+# Verifies the HTTP surface in-process with a deterministic Engine assembly (InMemory + lexical hashing).
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
-# 로컬 포트에 실제 GET 을 쏘는 통합 테스트. localhost http 라 TLS 불필요.
+# Integration test that fires real GETs at a local port. localhost http, so no TLS needed.
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros"] }

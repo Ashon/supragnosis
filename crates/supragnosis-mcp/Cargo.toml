@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-mcp"
-description = "supragnosis MCP 서버: rmcp 도구/리소스/프롬프트."
+description = "supragnosis MCP server: rmcp tools/resources/prompts."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,16 +14,16 @@ rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-# 도구 핸들러가 blocking 저장소 호출을 spawn_blocking 으로 오프로드(HTTP 동시성).
-# rt(-multi-thread) 는 워크스페이스 공통 feature 라 spawn_blocking 사용 가능.
+# Tool handlers offload blocking store calls via spawn_blocking (HTTP concurrency).
+# rt(-multi-thread) is a workspace-wide feature, so spawn_blocking is available.
 tokio.workspace = true
 
 [dev-dependencies]
-# MCP 도구 표면을 실제 프로토콜로 구동하는 통합 테스트용.
-# client feature 로 in-process 클라이언트를 띄우고, io-util 로 duplex 파이프를 만든다.
+# For integration tests that drive the MCP tool surface over the real protocol.
+# The client feature spins up an in-process client, and io-util builds a duplex pipe.
 rmcp = { workspace = true, features = ["client"] }
 tokio = { workspace = true, features = ["io-util"] }
-# Engine 을 실제로 조립하기 위한 어댑터(비영속 InMemory + 결정적 임베더).
-# 실모델 종단 측정(비결정적 eval)은 이 크레이트가 아니라 e2e/ 에 있다.
+# Adapters to actually assemble the Engine (non-persistent InMemory + deterministic embedder).
+# Real-model end-to-end measurement (non-deterministic eval) lives in e2e/, not this crate.
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true

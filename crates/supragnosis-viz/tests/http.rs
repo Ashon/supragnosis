@@ -1,6 +1,6 @@
-//! viz HTTP 표면 통합 테스트. 결정적 Engine(InMemory + 어휘 해싱)을 in-process 로
-//! 조립하고, 포트 0 으로 바인드한 실제 리스너에 reqwest 로 GET 을 쏜다
-//! (crates/supragnosis-mcp/tests/mcp_surface.rs 의 in-process 구동 관례를 따른다).
+//! viz HTTP surface integration test. Assembles a deterministic Engine (InMemory + hashing
+//! embedder) in-process and fires GETs via reqwest at a real listener bound to port 0
+//! (following the in-process bring-up convention of crates/supragnosis-mcp/tests/mcp_surface.rs).
 
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
 
-/// 테스트용 이벤트 채널 - serve 에 넘길 broadcast Sender.
+/// Event channel for tests - the broadcast Sender to pass to serve.
 fn ev_channel() -> broadcast::Sender<String> {
     broadcast::channel::<String>(16).0
 }
@@ -43,7 +43,7 @@ fn observe_depends(engine: &Engine) {
                 valid_to: None,
             }],
         })
-        .expect("observe 성공");
+        .expect("observe succeeds");
 }
 
 #[tokio::test]
@@ -54,7 +54,7 @@ async fn viz_serves_graph_index_and_404() {
     );
     observe_depends(&engine);
 
-    // 포트 0 -> OS 할당 실제 포트 조회(결정적/충돌 없음).
+    // port 0 -> look up the actual OS-assigned port (deterministic/no collision).
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel()));
@@ -62,7 +62,7 @@ async fn viz_serves_graph_index_and_404() {
     let base = format!("http://{addr}");
     let client = reqwest::Client::new();
 
-    // /api/graph?workspace=ws -> 노드 2, 엣지 1.
+    // /api/graph?workspace=ws -> 2 nodes, 1 edge.
     let resp = client
         .get(format!("{base}/api/graph?workspace=ws"))
         .send()
@@ -74,7 +74,7 @@ async fn viz_serves_graph_index_and_404() {
     assert_eq!(g["stats"]["edge_count"], 1);
     assert_eq!(g["edges"][0]["type"], "depends_on");
 
-    // 워크스페이스 미지정 -> 노드 기본 ws("ws") 스코프 -> 동일 2 노드.
+    // workspace unspecified -> the node's default ws ("ws") scope -> same 2 nodes.
     let g2: serde_json::Value = client
         .get(format!("{base}/api/graph"))
         .send()
@@ -85,7 +85,7 @@ async fn viz_serves_graph_index_and_404() {
         .unwrap();
     assert_eq!(g2["stats"]["node_count"], 2);
 
-    // '*' -> 전체(None) -> 동일.
+    // '*' -> everything (None) -> same.
     let g3: serde_json::Value = client
         .get(format!("{base}/api/graph?workspace=*"))
         .send()
@@ -96,7 +96,7 @@ async fn viz_serves_graph_index_and_404() {
         .unwrap();
     assert_eq!(g3["stats"]["node_count"], 2);
 
-    // 인덱스 HTML - canvas 뷰어.
+    // Index HTML - the canvas viewer.
     let idx = client.get(format!("{base}/")).send().await.unwrap();
     assert_eq!(idx.status(), 200);
     assert_eq!(
@@ -104,10 +104,10 @@ async fn viz_serves_graph_index_and_404() {
         "text/html; charset=utf-8"
     );
     let html = idx.text().await.unwrap();
-    assert!(html.contains("<canvas"), "뷰어 HTML 에 canvas 가 있어야 한다");
-    assert!(html.contains("/api/graph"), "뷰어가 그래프 API 를 폴링해야 한다");
+    assert!(html.contains("<canvas"), "the viewer HTML must contain a canvas");
+    assert!(html.contains("/api/graph"), "the viewer must poll the graph API");
 
-    // 알 수 없는 경로 -> 404.
+    // Unknown path -> 404.
     let nf = client.get(format!("{base}/nope")).send().await.unwrap();
     assert_eq!(nf.status(), 404);
 }
@@ -118,7 +118,7 @@ async fn viz_lists_workspaces_sorted_distinct() {
     let engine = Arc::new(
         Engine::new(store, "h", "alpha").with_embedder(Arc::new(HashingEmbedder::default())),
     );
-    // 두 워크스페이스에 지식 적재(도착 순서 뒤섞음).
+    // Load knowledge into two workspaces (arrival order shuffled).
     for (ws, name) in [("gamma", "x"), ("alpha", "y"), ("gamma", "z")] {
         engine
             .observe(ObserveInput {
@@ -149,12 +149,12 @@ async fn viz_lists_workspaces_sorted_distinct() {
         .json()
         .await
         .unwrap();
-    // 중복 제거 + 정렬(원칙 16).
+    // Deduplicated + sorted (Principle 16).
     assert_eq!(list, vec!["alpha", "gamma"]);
 }
 
-/// SSE: 엔진 이벤트가 /api/events 로 스트리밍되는지 - 엔진에 BroadcastSink 를 붙이고
-/// 같은 채널을 serve 에 준 뒤, 연결 -> emit -> data: 프레임 수신을 확인한다.
+/// SSE: whether engine events stream to /api/events - attach a BroadcastSink to the engine, give
+/// the same channel to serve, then verify connect -> emit -> receiving a data: frame.
 #[tokio::test]
 async fn viz_streams_mcp_events_via_sse() {
     let tx = broadcast::channel::<String>(16).0;
@@ -167,7 +167,7 @@ async fn viz_streams_mcp_events_via_sse() {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, tx.clone()));
 
-    // SSE 연결 후 헤더를 먼저 읽는다(핸들러가 subscribe 를 마쳤다는 신호 - emit 순서 보장).
+    // After the SSE connect, read the header first (a signal the handler has finished subscribe - guarantees emit ordering).
     let mut sock = TcpStream::connect(addr).await.unwrap();
     sock.write_all(b"GET /api/events HTTP/1.1\r\nHost: x\r\n\r\n")
         .await
@@ -177,7 +177,7 @@ async fn viz_streams_mcp_events_via_sse() {
     let head = String::from_utf8_lossy(&buf[..n]);
     assert!(head.contains("text/event-stream"), "SSE content-type: {head}");
 
-    // 이제 이벤트 발행 -> SSE data: 프레임으로 와야 한다.
+    // Now emit an event -> it must arrive as an SSE data: frame.
     engine.emit(Event::GetEntity {
         id: "abc".into(),
         name: Some("rmcp".into()),
@@ -199,19 +199,19 @@ async fn viz_streams_mcp_events_via_sse() {
             && got.contains("get_entity")
             && got.contains("rmcp")
             && got.contains("\"session\""),
-        "SSE 이벤트 프레임(세션 포함)이 와야 한다: {got}"
+        "an SSE event frame (including session) must arrive: {got}"
     );
 }
 
-/// `/api/hypergraph`: 한 관측이 공동 주장한 엔티티 집합이 하이퍼엣지로 나온다
-/// (원칙 11 이차 구조). 라우팅 + 직렬화 + 엔진 배선을 HTTP 종단으로 가드한다.
+/// `/api/hypergraph`: the set of entities co-asserted in one observation surfaces as a hyperedge
+/// (Principle 11 second-order structure). Guards routing + serialization + engine wiring end-to-end over HTTP.
 #[tokio::test]
 async fn viz_serves_hypergraph() {
     let store = Arc::new(InMemoryStore::new());
     let engine = Arc::new(
         Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
     );
-    // 한 관측이 세 엔티티를 공동 주장 -> 하이퍼엣지 하나(size 3), 이진 관계 없음.
+    // One observation co-asserts three entities -> a single hyperedge (size 3), no binary relations.
     engine
         .observe(ObserveInput {
             content: "supragnosis, rmcp, cozo were discussed together".into(),
@@ -245,6 +245,6 @@ async fn viz_serves_hypergraph() {
     assert_eq!(hg["stats"]["hyperedge_count"], 1);
     assert_eq!(hg["stats"]["max_size"], 3);
     assert_eq!(hg["hyperedges"][0]["size"], 3);
-    // 멤버는 정렬된 엔티티 id 3개(결정적 - 원칙 16).
+    // Members are 3 sorted entity ids (deterministic - Principle 16).
     assert_eq!(hg["hyperedges"][0]["members"].as_array().unwrap().len(), 3);
 }
