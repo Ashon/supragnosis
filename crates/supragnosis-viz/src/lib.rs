@@ -446,8 +446,8 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   <span class="hint">*=all</span>
   <button id="reload">reload</button>
   <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
-  <button id="clusterBtn" class="tog" title="group by type; keep cross-group links visible">group</button>
-  <button id="hyperBtn" class="tog" title="draw hyperedge hulls: co-occurrence sets (size>=3), Principle 11 second-order structure">hulls</button>
+  <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
+  <button id="hyperBtn" class="tog" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
   <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
   <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
   <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
@@ -507,8 +507,9 @@ const emptyEl = document.getElementById("empty"), logEl = document.getElementByI
 const detailEl = document.getElementById("detail");
 
 let follow = true;               // whether the camera follows the most recent agent-activity node
-let clusterMode = false;         // separate layout by type group + highlight cross-group links/bridges
-let hyperMode = false;           // hyperedge (co-occurrence second-order structure) hull overlay - Principle 11
+let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
+let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
+let hyperMode = false;           // hyperedge hull OVERLAY (fills + labels) - visual only, independent of hullForce
 let hyperedges = [];             // [{id, members:[nodeId], size, sources, trust_tier}] - /api/hypergraph
 // Graphic-element visibility toggles (all default on). Pure render switches with no effect on layout.
 let showLabels = true, showEdges = true, showArrows = true;
@@ -516,7 +517,22 @@ let showFootprint = true, showPulses = true, showSuperseded = true;
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
 const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
-const HYPER_PULL = 0.03;         // hyperedge centroid cohesion (packs nodes inside a hull tightly)
+const HYPER_PULL = 0.03;         // base hyperedge centroid cohesion (scaled by hull size - see hullSizeNorm)
+// Cohesion scales with member count: larger hulls pull their nodes tighter (small ones stay loose).
+// Fill opacity scales with member DENSITY (count within the hull area), not raw count - so tightly
+// knit groups read boldest while large sprawling domains fade instead of flooding the canvas.
+const HULL_SIZE_REF = 8;         // members at/above which a hull gets full cohesion weight
+const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HYPER_PULL)
+const HULL_FILL_MIN = 0.02, HULL_FILL_MAX = 0.09; // fill opacity range (very faint -> visible)
+const HULL_MEMBER_CELL = 48;                      // world px: ~1 member per (CELL)^2 -> full opacity (tune)
+// On hover the hull soup fades out so the hovered node's memberships stand out: its own hulls are
+// emphasized to a clear absolute opacity (density alone can leave a sprawling member hull near-
+// invisible), while every other hull fades to a small fraction of its base.
+const HULL_HOVER_EMPH = 0.18;    // absolute fill opacity for the hovered node's own hulls
+const HULL_HOVER_OTHER = 0.12;   // other hulls fade to this fraction of their base
+const HULL_LABEL_BASE = 0.7;     // hull label opacity with no hover
+const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this on hover
+const HULL_NODE_GAP = 14;        // world px gap between a boundary node's outer edge (radius+stroke) and the hull boundary
 const HULL_PAD = 24;             // target gap between hulls (world px). Kept small to avoid over-separation at high density
 const HULL_SEP = 0.008;          // separation force between hulls (gentle - scaled by cooling alpha)
 const HULL_R_CAP = 160;          // upper bound on the hull radius used for separation - so a huge grab-bag cannot push the whole layout
@@ -687,9 +703,10 @@ async function poll() {
     const g = await r.json();
     if (g.error) { statusEl.textContent = g.error; return; }
     applyGraph(g);
-    // Hyperedges (second-order structure) are fetched only in hull mode - otherwise cleared. As an
-    // auxiliary channel, a failure still keeps the graph rendering (Principle 21: observability is optional).
-    if (hyperMode) {
+    // Hyperedges (second-order structure) are fetched whenever the hull force or overlay needs them
+    // (the force is on by default, suppressed only in group mode); otherwise cleared. As an auxiliary
+    // channel, a failure still keeps the graph rendering (Principle 21: observability is optional).
+    if (hyperMode || (hullForce && !clusterMode)) {
       try {
         const hurl = "/api/hypergraph" + (ws ? "?workspace=" + encodeURIComponent(ws) : "");
         const hr = await fetch(hurl, { cache: "no-store" });
@@ -840,6 +857,29 @@ function fitView(list, pad = 90) {
 }
 
 // hyperedge id -> palette color (deterministic hash). Overlapping hulls blend semi-transparently (C1: overlap = connective tissue).
+// Size-scaled visual weight for a hyperedge (0 at min size 2, 1 at HULL_SIZE_REF+ members).
+function hullSizeNorm(size) { return Math.max(0, Math.min(1, (size - 2) / (HULL_SIZE_REF - 2))); }
+// Polygon area (shoelace) in world coordinates - used to derive hull member density.
+function polygonArea(pts) {
+  let a = 0;
+  for (let i = 0, n = pts.length; i < n; i++) { const p = pts[i], q = pts[(i + 1) % n]; a += p.x * q.y - q.x * p.y; }
+  return Math.abs(a) / 2;
+}
+// Trace a smooth closed curve through pts on the current path (quadratic curves through each edge
+// midpoint, using the vertex as the control point). The curve stays within the convex hull of the
+// vertices, so a convex polygon rounds smoothly with NO outward overshoot/spikes. Used for hull fills.
+function smoothClosedPath(ctx, pts) {
+  const n = pts.length;
+  if (n < 3) { ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < n; i++) ctx.lineTo(pts[i].x, pts[i].y); return; }
+  const mid = (a, b) => [(a.x + b.x) / 2, (a.y + b.y) / 2];
+  const [sx, sy] = mid(pts[n - 1], pts[0]);
+  ctx.moveTo(sx, sy);
+  for (let i = 0; i < n; i++) {
+    const cur = pts[i], nxt = pts[(i + 1) % n];
+    const [mx, my] = mid(cur, nxt);
+    ctx.quadraticCurveTo(cur.x, cur.y, mx, my);
+  }
+}
 function hyperColor(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return catColor(h % 512, false);   // id hash -> generated palette index (removes the fixed 8-color limit)
@@ -925,7 +965,8 @@ function stepSim() {
   // non-overlapping hulls to widen the gap. Hulls that share a node (overlap) stay naturally close
   // because the shared node is pulled to both centroids at once, and the separation force cancels at
   // the shared node, preserving the overlap relationship (C1: overlap = connective tissue).
-  if (hyperMode && active && hyperedges.length) {
+  // Default organizer; group mode takes precedence (suppressed while clusterMode is on) so the two never fight.
+  if (hullForce && !clusterMode && active && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
     // Geometry: members + centroid + mean radius (clamped to a cap - so a huge grab-bag cannot push the whole layout)
     // + member id set (for share detection).
@@ -939,11 +980,13 @@ function stepSim() {
       r = Math.min(r / ms.length, HULL_R_CAP);
       hgs.push({ ms, ids: new Set(ms.map(m => m.id)), cx, cy, r });
     }
-    // (1) Cohesion: member -> its own centroid.
+    // (1) Cohesion: member -> its own centroid. Scaled by hull size - larger hulls pull tighter,
+    // small ones stay loose.
     for (const g of hgs) {
+      const cf = HYPER_PULL * (HULL_COH_MIN + hullSizeNorm(g.ms.length) * (HULL_COH_MAX - HULL_COH_MIN));
       for (const m of g.ms) {
         if (pinned(m)) continue;
-        m.vx += (g.cx - m.x) * HYPER_PULL * alpha; m.vy += (g.cy - m.y) * HYPER_PULL * alpha;
+        m.vx += (g.cx - m.x) * cf * alpha; m.vy += (g.cy - m.y) * cf * alpha;
       }
     }
     // (2) Separation: push apart only **disjoint** hull pairs (not sharing a node) - a shared hull is
@@ -1008,6 +1051,7 @@ function draw() {
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
 
   const act = activeSet();
+  const hlAnchor = focus || hover;   // the active node (click or hover) - drives hull emphasis + fade
   const anchor = focus || hover;
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -1017,29 +1061,37 @@ function draw() {
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   // Hyperedge hull overlay (laid behind edges/nodes). Only size>=3 is drawn - 2 converges to a binary
   // edge and does not help ease density. Being semi-transparent, overlapping contexts blend (C1: overlap = connective tissue).
-  // The hull a hovered node belongs to is highlighted, and the representative concept (highest-degree member) + size label is collected.
+  // The hull the active (click/hover) node belongs to is highlighted, and the representative concept (highest-degree member) + size label is collected.
   const hullLabels = [];
   if (hyperMode && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
-    const PAD = 18;
     for (const h of hyperedges) {
       const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
       if (ms.length < 3) continue;
-      const hull = convexHull(ms.map(m => ({ x: m.x, y: m.y })));
+      // Carry each member's graphic radius (node radius + half stroke) so the hull can be expanded to
+      // fully enclose the node glyph at every boundary vertex, not just its center.
+      const hull = convexHull(ms.map(m => ({ x: m.x, y: m.y, r: nodeRadius(m) + nodeStrokeW(m) / 2 })));
       if (hull.length < 3) continue;
       let cx = 0, cy = 0; for (const q of hull) { cx += q.x; cy += q.y; } cx /= hull.length; cy /= hull.length;
       const col = hyperColor(h.id);
-      const hot = hover && h.members.includes(hover.id);   // does the hovered node belong to this context
+      const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
+      // Expand each hull vertex outward past its own node glyph (q.r) plus a gap, then trace a smooth closed
+      // curve through them so the boundary encloses the nodes and reads as a soft blob, not a hard polygon.
+      const ep = hull.map(q => { const dx = q.x - cx, dy = q.y - cy, d = Math.hypot(dx, dy) || 1; const pad = (q.r || 0) + HULL_NODE_GAP; return { x: q.x + dx/d*pad, y: q.y + dy/d*pad }; });
       ctx.beginPath();
-      hull.forEach((q, i) => {
-        const dx = q.x - cx, dy = q.y - cy, d = Math.hypot(dx, dy) || 1;
-        const px = q.x + dx/d*PAD, py = q.y + dy/d*PAD;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      });
+      smoothClosedPath(ctx, ep);
       ctx.closePath();
-      // Fill only, no stroke (a soft area). To offset the missing outline, base alpha is raised a little
-      // to keep individual hulls legible, and overlapping areas naturally darken via alpha accumulation (a density cue, C1).
-      ctx.globalAlpha = hot ? 0.26 : 0.12; ctx.fillStyle = col; ctx.fill();
+      // Fill only, no stroke. Opacity tracks member DENSITY (count / hull area): tightly knit groups
+      // read boldest, large sprawling domains fall to HULL_FILL_MIN instead of flooding the canvas.
+      // On hover the whole hull soup fades out for a clear inspection view - the hovered node's own
+      // hulls fade less (a context hint). Overlaps still accumulate, so a crowded region reads denser.
+      const density = ms.length / Math.max(polygonArea(hull), 1);   // members per world px^2
+      const dNorm = Math.min(1, density * HULL_MEMBER_CELL * HULL_MEMBER_CELL);
+      const fa = HULL_FILL_MIN + dNorm * (HULL_FILL_MAX - HULL_FILL_MIN);
+      // Active (click/hover): emphasize the active node's own hulls to an absolute opacity (regardless of
+      // their low density), fade every other hull. Nothing active: plain density opacity.
+      const a = hlAnchor ? (hot ? Math.max(fa, HULL_HOVER_EMPH) : fa * HULL_HOVER_OTHER) : fa;
+      ctx.globalAlpha = a; ctx.fillStyle = col; ctx.fill();
       // Representative concept = highest-degree member (the hub). The label is drawn later in screen coordinates (constant size).
       let anchor = ms[0]; for (const m of ms) if ((m.degree||0) > (anchor.degree||0)) anchor = m;
       hullLabels.push({ cx, cy, text: anchor.name + " (" + ms.length + ")", col, hot });
@@ -1141,13 +1193,15 @@ function draw() {
       ctx.fillStyle = (n === focus || n === hover) ? INK : INK2; ctx.fillText(n.name, px + r + 5, py);
     }
     ctx.globalAlpha = 1;
-    // Hyperedge hull labels (representative concept + size). The hovered hull is darker. textAlign is restored.
+    // Hyperedge hull labels (representative concept + size). Matches the hull fill: on hover the hovered
+    // node's own hull labels are emphasized (full opacity + bold) while others fade out. textAlign is restored.
     if (hullLabels.length) {
-      ctx.font = "11px system-ui,-apple-system,sans-serif";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       for (const l of hullLabels) {
         const px = l.cx*cam.s + cam.x, py = l.cy*cam.s + cam.y;
-        ctx.globalAlpha = l.hot ? 1 : 0.7;
+        const emph = hlAnchor && l.hot;
+        ctx.font = (emph ? "bold 11px " : "11px ") + "system-ui,-apple-system,sans-serif";
+        ctx.globalAlpha = hlAnchor ? (l.hot ? 1 : HULL_LABEL_HOVER_FADE) : HULL_LABEL_BASE;
         ctx.lineWidth = 3.5; ctx.strokeStyle = SURFACE; ctx.strokeText(l.text, px, py);
         ctx.fillStyle = l.col; ctx.fillText(l.text, px, py);
       }
@@ -1232,7 +1286,9 @@ followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", f
 const clusterBtn = document.getElementById("clusterBtn");
 clusterBtn.onclick = () => { clusterMode = !clusterMode; clusterBtn.classList.toggle("on", clusterMode); wake(0.6); poll(); };
 const hyperBtn = document.getElementById("hyperBtn");
-hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); wake(0.6); poll(); };
+// Overlay is render-only (the draw loop shows it next frame) - do not reheat the sim. Fetch hyperedge
+// data only if we do not already have it (e.g. when leaving group mode, where it was cleared).
+hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); if (hyperMode && !hyperedges.length) poll(); };
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
