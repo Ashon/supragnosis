@@ -453,13 +453,20 @@ fn status() -> Result<()> {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    let up = port_open(&http);
     match read_pid() {
+        // 이 CLI(start)가 관리하는 데몬.
         Some(pid) if pid_alive(pid) => {
             println!("running (pid {pid})");
             println!(
                 "  MCP http://{http}/mcp  ({})",
-                if port_open(&http) { "응답" } else { "포트 무응답" }
+                if up { "응답" } else { "포트 무응답" }
             );
+        }
+        // pidfile 은 없지만 포트가 응답 - 외부 관리(예: launchd 의 serve, 다른 인스턴스) 데몬.
+        _ if up => {
+            println!("running (external; pidfile 없음 - launchd serve 등)");
+            println!("  MCP http://{http}/mcp  (응답)");
         }
         Some(pid) => println!("stopped (오래된 pidfile, pid {pid})"),
         None => println!("stopped"),
