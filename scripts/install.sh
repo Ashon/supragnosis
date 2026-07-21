@@ -16,6 +16,46 @@ REPO="Ashon/supragnosis"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 VERSION="${SUPRAGNOSIS_VERSION:-latest}"
 
+usage() {
+  cat <<'USAGE'
+supragnosis 설치 스크립트
+
+플랫폼(macOS arm64/x86_64, Linux x86_64)을 감지해 GitHub Release 바이너리를 설치한다
+(sha256 체크섬 검증). 기본 설치 경로는 ~/.local/bin.
+
+사용법:
+  curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+  curl -fsSL .../install.sh | sh -s -- [옵션]     # 파이프로 옵션 전달
+  sh scripts/install.sh [옵션]                     # 로컬 파일로
+
+옵션:
+  -h, --help          이 도움말 출력
+  -v, --version TAG   설치할 릴리스 태그 (기본: latest, 예: v0.1.0)
+  -d, --dir DIR       설치 경로 (기본: ~/.local/bin)
+
+환경변수(옵션이 우선):
+  SUPRAGNOSIS_VERSION   설치할 태그
+  BIN_DIR               설치 경로
+
+예:
+  sh scripts/install.sh --version v0.1.0
+  BIN_DIR=/usr/local/bin sh scripts/install.sh
+
+참고: prebuilt 는 키워드 + hashing 검색이다. 로컬 ONNX 의미 검색은 소스에서
+  cargo build --release --features fastembed 로 빌드한다.
+USAGE
+}
+
+# 옵션 파싱(환경변수 기본값을 덮어쓴다). 파이프 실행 시엔 `sh -s -- --help` 로 전달.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)     usage; exit 0 ;;
+    -v|--version)  VERSION="${2:?--version 에 태그가 필요합니다}"; shift 2 ;;
+    -d|--dir)      BIN_DIR="${2:?--dir 에 경로가 필요합니다}"; shift 2 ;;
+    *) echo "알 수 없는 옵션: $1" >&2; echo >&2; usage >&2; exit 2 ;;
+  esac
+done
+
 os="$(uname -s)"
 arch="$(uname -m)"
 case "${os}-${arch}" in
@@ -75,7 +115,16 @@ esac
 
 cat <<EOF
 
-다음 단계:
-  - stdio MCP 등록:  claude mcp add supragnosis -- "${BIN_DIR}/supragnosis"
-  - 상시 데몬(macOS launchd) 설정은 소스 저장소의 deploy/README.md 참고.
+설치 완료. 온보딩:
+
+  1) MCP 클라이언트(Claude Code 등)에 stdio 로 등록
+       claude mcp add supragnosis -- "${BIN_DIR}/supragnosis"
+
+  2) (선택) 상시 데몬 + 라이브 뷰어로 실행
+       SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373 SUPRAGNOSIS_VIZ_ADDR=127.0.0.1:7374 "${BIN_DIR}/supragnosis"
+       # MCP: http://127.0.0.1:7373/mcp   뷰어: http://127.0.0.1:7374
+       # 로그인 시 자동 기동(launchd)은 저장소 deploy/README.md 참고.
+
+  - 검색: prebuilt 는 키워드/hashing. 의미 검색은 소스 --features fastembed 빌드.
+  - 도움말: sh install.sh --help   |   문서/이슈: https://github.com/${REPO}
 EOF
