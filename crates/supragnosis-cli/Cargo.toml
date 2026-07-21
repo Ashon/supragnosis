@@ -34,3 +34,10 @@ axum.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+# 서브커맨드/플래그 CLI.
+clap = { version = "4", features = ["derive"] }
+
+# 백그라운드 데몬(start): fork/setsid/pidfile/로그 리다이렉트. unsafe_code=forbid 라 직접
+# 구현하지 않고 크레이트에 위임한다(내부 unsafe 는 의존 크레이트 소관). unix 전용.
+[target.'cfg(unix)'.dependencies]
+daemonize = "0.5"
