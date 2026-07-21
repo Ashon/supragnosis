@@ -9,6 +9,16 @@
 - 저장소: **임베디드/파일 기반** `cozo`/RocksDB - 관계+그래프+벡터(HNSW) 통합.
 - 상태: **M2 - 의미 검색 구현** (fastembed 의미+키워드 하이브리드 검색, Cozo 네이티브 HNSW, Cozo/RocksDB 영속, stdio MCP 서버). 설계 문서 -> [`docs/architecture.md`](docs/architecture.md), 설계 원칙 -> [`docs/principles.md`](docs/principles.md), 제안 워크플로 -> [`docs/proposal-workflow.md`](docs/proposal-workflow.md)
 
+## 설치 (prebuilt 바이너리)
+```bash
+# 플랫폼 감지 -> 최신 릴리스 바이너리를 ~/.local/bin 에 설치(체크섬 검증)
+curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+```
+- 또는 [Releases](https://github.com/Ashon/supragnosis/releases)에서 플랫폼 tar.gz 를 직접 내려받아 압축 해제 후 `supragnosis` 를 PATH 에 둔다.
+- 지원 플랫폼: macOS(arm64/x86_64), Linux(x86_64). 다른 플랫폼은 아래 소스 빌드.
+- prebuilt 는 **키워드 + hashing 검색**이다. 로컬 ONNX **의미 검색**은 소스에서 `--features fastembed` 로 빌드한다.
+- 릴리스는 `v*` 태그 push 시 GitHub Actions(`.github/workflows/release.yml`)가 빌드/게시한다.
+
 ## 빌드 & 실행
 ```bash
 cargo build                                          # 기본(키워드 검색) - 가벼운 빌드
