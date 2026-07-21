@@ -519,20 +519,17 @@ const pulses = new Map();        // id -> remaining frames (event-node highlight
 const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
 const HYPER_PULL = 0.03;         // base hyperedge centroid cohesion (scaled by hull size - see hullSizeNorm)
 // Cohesion scales with member count: larger hulls pull their nodes tighter (small ones stay loose).
-// Fill opacity scales with member DENSITY (count within the hull area), not raw count - so tightly
-// knit groups read boldest while large sprawling domains fade instead of flooding the canvas.
 const HULL_SIZE_REF = 8;         // members at/above which a hull gets full cohesion weight
 const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HYPER_PULL)
-const HULL_FILL_MIN = 0.02, HULL_FILL_MAX = 0.09; // fill opacity range (very faint -> visible)
-const HULL_MEMBER_CELL = 48;                      // world px: ~1 member per (CELL)^2 -> full opacity (tune)
-// On hover the hull soup fades out so the hovered node's memberships stand out: its own hulls are
-// emphasized to a clear absolute opacity (density alone can leave a sprawling member hull near-
-// invisible), while every other hull fades to a small fraction of its base.
-const HULL_HOVER_EMPH = 0.18;    // absolute fill opacity for the hovered node's own hulls
-const HULL_HOVER_OTHER = 0.12;   // other hulls fade to this fraction of their base
-const HULL_LABEL_BASE = 0.7;     // hull label opacity with no hover
-const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this on hover
-const HULL_NODE_GAP = 14;        // world px gap between a boundary node's outer edge (radius+stroke) and the hull boundary
+// Hull rendering: each hull is a single outward-offset rounded path (see roundedHullPath) filled once,
+// directly on the canvas, at the opacity below. No stroke -> no fill/stroke seam; no offscreen -> cheap.
+// A hull's whole area gets uniform transparency, while different hulls blend where they overlap.
+const HULL_LAYER_ALPHA = 0.2;    // per-hull fill opacity (no node active)
+const HULL_LAYER_DIM = 0.05;     // non-active hulls fade to this while a node is active (inspection view)
+const HULL_ACTIVE_ALPHA = 0.42;  // the active node's own hulls, painted on top
+const HULL_LABEL_BASE = 0.7;     // hull label opacity with no active node
+const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this while a node is active
+const HULL_NODE_GAP = 14;        // world px: extra gap past the largest member glyph when expanding a hull
 const HULL_PAD = 24;             // target gap between hulls (world px). Kept small to avoid over-separation at high density
 const HULL_SEP = 0.008;          // separation force between hulls (gentle - scaled by cooling alpha)
 const HULL_R_CAP = 160;          // upper bound on the hull radius used for separation - so a huge grab-bag cannot push the whole layout
@@ -859,26 +856,43 @@ function fitView(list, pad = 90) {
 // hyperedge id -> palette color (deterministic hash). Overlapping hulls blend semi-transparently (C1: overlap = connective tissue).
 // Size-scaled visual weight for a hyperedge (0 at min size 2, 1 at HULL_SIZE_REF+ members).
 function hullSizeNorm(size) { return Math.max(0, Math.min(1, (size - 2) / (HULL_SIZE_REF - 2))); }
-// Polygon area (shoelace) in world coordinates - used to derive hull member density.
-function polygonArea(pts) {
-  let a = 0;
-  for (let i = 0, n = pts.length; i < n; i++) { const p = pts[i], q = pts[(i + 1) % n]; a += p.x * q.y - q.x * p.y; }
-  return Math.abs(a) / 2;
+// Geometry of one hyperedge hull: the convex hull of the member centers, an outward expansion radius r
+// (largest member glyph + gap), and the member centroid (for the label). Returns null when degenerate.
+function hullGeom(ms) {
+  let cx = 0, cy = 0, r = 0;
+  for (const m of ms) { cx += m.x; cy += m.y; const g = nodeRadius(m) + nodeStrokeW(m) / 2; if (g > r) r = g; }
+  cx /= ms.length; cy /= ms.length; r += HULL_NODE_GAP;
+  const hull = convexHull(ms.map(m => ({ x: m.x, y: m.y })));
+  if (hull.length < 3) return null;
+  return { hull, r, cx, cy };
 }
-// Trace a smooth closed curve through pts on the current path (quadratic curves through each edge
-// midpoint, using the vertex as the control point). The curve stays within the convex hull of the
-// vertices, so a convex polygon rounds smoothly with NO outward overshoot/spikes. Used for hull fills.
-function smoothClosedPath(ctx, pts) {
-  const n = pts.length;
-  if (n < 3) { ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < n; i++) ctx.lineTo(pts[i].x, pts[i].y); return; }
-  const mid = (a, b) => [(a.x + b.x) / 2, (a.y + b.y) / 2];
-  const [sx, sy] = mid(pts[n - 1], pts[0]);
-  ctx.moveTo(sx, sy);
+// Trace the outward-offset rounded hull as a SINGLE closed path: each edge is pushed out by r (past the
+// node glyphs) and consecutive edges are joined by a corner arc sampled into short segments. Filling this
+// one path gives the same rounded blob a thick round-join stroke would - but with no stroke, so there is
+// no fill/stroke overlap (no seam) and no offscreen compositing is needed; the caller just fills it once
+// at the hull's opacity, directly on the canvas, and overlapping hulls blend naturally.
+function roundedHullPath(c, g) {
+  const hull = g.hull, n = hull.length, r = g.r, cx = g.cx, cy = g.cy;
+  const nrm = [];   // outward unit normal per edge i (edge hull[i]->hull[i+1])
   for (let i = 0; i < n; i++) {
-    const cur = pts[i], nxt = pts[(i + 1) % n];
-    const [mx, my] = mid(cur, nxt);
-    ctx.quadraticCurveTo(cur.x, cur.y, mx, my);
+    const a = hull[i], b = hull[(i + 1) % n];
+    let nx = -(b.y - a.y), ny = (b.x - a.x); const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
+    if (nx * ((a.x + b.x) / 2 - cx) + ny * ((a.y + b.y) / 2 - cy) < 0) { nx = -nx; ny = -ny; }  // point away from centroid
+    nrm.push([nx, ny]);
   }
+  c.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = hull[i], b = hull[(i + 1) % n], [nx, ny] = nrm[i];
+    if (i === 0) c.moveTo(a.x + nx * r, a.y + ny * r); else c.lineTo(a.x + nx * r, a.y + ny * r);
+    c.lineTo(b.x + nx * r, b.y + ny * r);
+    // corner arc at vertex b, from this edge's normal to the next edge's normal (shortest signed sweep)
+    const v = hull[(i + 1) % n], [mx, my] = nrm[(i + 1) % n];
+    const a1 = Math.atan2(ny, nx); let da = Math.atan2(my, mx) - a1;
+    while (da <= -Math.PI) da += 2 * Math.PI; while (da > Math.PI) da -= 2 * Math.PI;
+    const steps = Math.max(1, Math.ceil(Math.abs(da) / 0.4));
+    for (let k = 1; k <= steps; k++) { const t = a1 + da * k / steps; c.lineTo(v.x + Math.cos(t) * r, v.y + Math.sin(t) * r); }
+  }
+  c.closePath();
 }
 function hyperColor(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
@@ -1060,42 +1074,31 @@ function draw() {
   ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   // Hyperedge hull overlay (laid behind edges/nodes). Only size>=3 is drawn - 2 converges to a binary
-  // edge and does not help ease density. Being semi-transparent, overlapping contexts blend (C1: overlap = connective tissue).
-  // The hull the active (click/hover) node belongs to is highlighted, and the representative concept (highest-degree member) + size label is collected.
-  const hullLabels = [];
+  // edge. Each hull is a SINGLE outward-offset rounded path filled once, directly on the canvas, at the
+  // hull's opacity - no stroke (so no fill/stroke seam) and no offscreen compositing (cheap: N path fills,
+  // not N large drawImage copies). Overlapping hulls blend naturally (C1: overlap = connective tissue).
+  // While a node is active, its own hulls are emphasized and the rest fade. Labels are collected per hull.
+  let hullLabels = [];
   if (hyperMode && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
+    const items = [];
     for (const h of hyperedges) {
       const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
       if (ms.length < 3) continue;
-      // Carry each member's graphic radius (node radius + half stroke) so the hull can be expanded to
-      // fully enclose the node glyph at every boundary vertex, not just its center.
-      const hull = convexHull(ms.map(m => ({ x: m.x, y: m.y, r: nodeRadius(m) + nodeStrokeW(m) / 2 })));
-      if (hull.length < 3) continue;
-      let cx = 0, cy = 0; for (const q of hull) { cx += q.x; cy += q.y; } cx /= hull.length; cy /= hull.length;
-      const col = hyperColor(h.id);
+      const g = hullGeom(ms);
+      if (!g) continue;
       const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
-      // Expand each hull vertex outward past its own node glyph (q.r) plus a gap, then trace a smooth closed
-      // curve through them so the boundary encloses the nodes and reads as a soft blob, not a hard polygon.
-      const ep = hull.map(q => { const dx = q.x - cx, dy = q.y - cy, d = Math.hypot(dx, dy) || 1; const pad = (q.r || 0) + HULL_NODE_GAP; return { x: q.x + dx/d*pad, y: q.y + dy/d*pad }; });
-      ctx.beginPath();
-      smoothClosedPath(ctx, ep);
-      ctx.closePath();
-      // Fill only, no stroke. Opacity tracks member DENSITY (count / hull area): tightly knit groups
-      // read boldest, large sprawling domains fall to HULL_FILL_MIN instead of flooding the canvas.
-      // On hover the whole hull soup fades out for a clear inspection view - the hovered node's own
-      // hulls fade less (a context hint). Overlaps still accumulate, so a crowded region reads denser.
-      const density = ms.length / Math.max(polygonArea(hull), 1);   // members per world px^2
-      const dNorm = Math.min(1, density * HULL_MEMBER_CELL * HULL_MEMBER_CELL);
-      const fa = HULL_FILL_MIN + dNorm * (HULL_FILL_MAX - HULL_FILL_MIN);
-      // Active (click/hover): emphasize the active node's own hulls to an absolute opacity (regardless of
-      // their low density), fade every other hull. Nothing active: plain density opacity.
-      const a = hlAnchor ? (hot ? Math.max(fa, HULL_HOVER_EMPH) : fa * HULL_HOVER_OTHER) : fa;
-      ctx.globalAlpha = a; ctx.fillStyle = col; ctx.fill();
-      // Representative concept = highest-degree member (the hub). The label is drawn later in screen coordinates (constant size).
-      let anchor = ms[0]; for (const m of ms) if ((m.degree||0) > (anchor.degree||0)) anchor = m;
-      hullLabels.push({ cx, cy, text: anchor.name + " (" + ms.length + ")", col, hot });
+      const rep = ms.reduce((a, m) => (m.degree||0) > (a.degree||0) ? m : a, ms[0]);   // hub = highest-degree member
+      items.push({ g, col: hyperColor(h.id), hot, rep, size: ms.length });
     }
+    const paint = (it) => {
+      roundedHullPath(ctx, it.g);
+      ctx.globalAlpha = hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
+      ctx.fillStyle = it.col; ctx.fill();
+      hullLabels.push({ cx: it.g.cx, cy: it.g.cy, text: it.rep.name + " (" + it.size + ")", col: it.col, hot: it.hot });
+    };
+    for (const it of items) if (!it.hot) paint(it);   // active hulls painted last so they sit on top
+    for (const it of items) if (it.hot) paint(it);
     ctx.globalAlpha = 1;
   }
   if (showEdges) for (let i = 0; i < edges.length; i++) {
