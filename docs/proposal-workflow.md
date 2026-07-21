@@ -1,474 +1,521 @@
-# supragnosis - 제안 워크플로 설계 (Proposal Workflow)
+# supragnosis - Proposal Workflow Design
 
-> 여러 주체(사람 + 에이전트)가 공유하는 지식에서 "정본(canon)으로의 승격"을
-> 관리하는 워크플로 - 지식의 Pull Request.
+> A workflow that manages "promotion to canon" in knowledge shared across
+> multiple parties (humans + agents) - the Pull Request of knowledge.
 >
-> - 규범 근거: [principles.md](principles.md) 원칙 23 (정본으로의 관문)의 구체화.
-> - 상태: 설계 노트. 구현 마일스톤은 13절 참조.
-> - 핵심 목표: **각 단계가 원칙과 논리적으로 모순되지 않을 것.** 이를 위해
->   모든 단계를 불변식(invariant)으로 먼저 고정하고(2절), 흐름은 그 위에 세운다.
+> - Normative basis: the concretization of [principles.md](principles.md) Principle 23 (the gate to canon).
+> - Status: design note. See Section 13 for implementation milestones.
+> - Core goal: **each step must not logically contradict the principles.** To that end,
+>   all steps are first fixed as invariants (Section 2), and the flow is built on top of them.
 
 ---
 
-## 1. 문제와 비유
+## 1. Problem and Analogy
 
-적재(observe)는 자유롭다 (원칙 22). 그러나 모든 주장이 같은 무게로 취급되면
-그래프는 쓰레기장이 된다 (원칙 18). 따라서 **개인의 주장**과 **공유된 정본**
-사이에 관문이 필요하고, 그 관문의 워크플로가 제안(proposal)이다.
+Observation (observe) is free (Principle 22). But if every assertion is treated with
+equal weight, the graph becomes a junkyard (Principle 18). Therefore a gate is needed
+between **an individual's assertion** and the **shared canon**, and the workflow of
+that gate is the proposal.
 
-git PR과의 대응:
+Correspondence with a git PR:
 
-| git | supragnosis | 차이 |
-|-----|-------------|------|
-| commit | 관측(observation) | 동일하게 불변, append-only |
-| branch | 호스트/워크스페이스의 로컬 믿음 | 명시적 분기 없이 자연 발생 |
-| PR | 제안(proposal) | **쓰기가 아니라 승격의 관문** |
-| diff | 믿음 diff (5절) | 줄 비교가 아니라 믿음 변화의 비교 |
-| CI | 검사(checks) (6절) | 정합성/모순/영향 분석 |
-| merge | 승격 이벤트 적재 (8절) | 코드 복사가 아니라 신뢰 등급 상승 |
-| revert | 강등 제안 | 되감기가 아니라 새 이벤트 (원칙 3) |
+| git | supragnosis | Difference |
+|-----|-------------|------------|
+| commit | observation | equally immutable, append-only |
+| branch | a host's/workspace's local belief | arises naturally without an explicit branch |
+| PR | proposal | **a gate for promotion, not for writing** |
+| diff | belief diff (Section 5) | a comparison of belief change, not a line comparison |
+| CI | checks (Section 6) | consistency/contradiction/impact analysis |
+| merge | loading a promotion event (Section 8) | a rise in trust tier, not copying code |
+| revert | demotion proposal | a new event, not a rewind (Principle 3) |
 
-**결정적 차이**: git은 머지 전까지 main에 코드가 없지만, supragnosis에서
-주장은 제안과 무관하게 **이미 존재**한다 (낮은 신뢰 등급으로). 제안은 존재의
-관문이 아니라 **등급의 관문**이다. 이 차이가 원칙 22(마찰 최소)와 원칙 18
-(오염 방어)을 동시에 만족시키는 열쇠다.
-
----
-
-## 2. 불변식 (Invariants)
-
-흐름의 모든 단계는 아래 불변식을 위반할 수 없다. 각 불변식은 원칙 원칙의
-직접 귀결이다.
-
-| # | 불변식 | 근거 원칙 |
-|---|--------|-----------|
-| I1 | **제안도 지식이다.** 제안의 생성/갱신/검토/판정은 전부 관측 이벤트로 적재된다. 별도의 사이드 스토어는 없다. | 1, 3 |
-| I2 | **상태는 폴드다.** 제안의 현재 상태는 그 제안에 속한 이벤트 스트림을 HLC 순서로 접은(fold) 결정적 함수다. 상태를 별도로 저장하면 위반이다. | 16 |
-| I3 | **병행 판정은 수렴하고 단조롭다.** 결론은 판정 집합의 함수다(HLC 도착 순서에 의존하지 않는다): 유효한 merge 가 하나라도 존재하면 결론은 Merged, 하나도 없을 때만 reject 가 결론이 된다. Merged 는 흡수 상태라 유효한 merge 가 로그에 든 순간부터 뒤집히지 않는다(I16). 상충하는 판정은 무효화되어 코멘트로 기록된다. 모든 노드가 같은 결론에 도달한다. | 16 |
-| I4 | **벽시계 금지.** 시간 경과 자체는 어떤 상태 전이도 일으키지 않는다. 만료/자동 병합은 반드시 명시적 이벤트(정책 실행자가 적재)로 표현된다. | 16, 18 |
-| I5 | **기각은 부정이 아니다.** 제안 기각은 "주장이 거짓"이 아니라 "승격하지 않음"이다. 기각된 주장은 원래 등급으로 계속 존재한다. | 5 |
-| I6 | **병합은 추가다.** 병합은 주장을 복사/수정하지 않고 승격 이벤트를 추가할 뿐이다. 취소도 새 강등 이벤트로 한다 (되감기 없음). | 3 |
-| I7 | **기반은 고정된다.** 제안은 열릴 때의 정본 프런티어(버전 벡터)를 기록하고, diff와 검사는 그 기반에 대해 계산된다. 기반이 움직이면(touched set 변경) 제안은 stale이 되고 재검사 없이 병합할 수 없다. | 16, 9 |
-| I8 | **검사는 순수 함수다.** 검사 결과 = f(제안, 기반 프런티어). 같은 입력이면 어느 노드에서든 같은 결과 - 재실행으로 언제든 재현 가능하다. | 16, 19 |
-| I9 | **자기 승인 금지.** 판정의 권한 주체(위임 사슬의 principal)는 제안의 권한 주체와 달라야 한다. 에이전트가 대리한 제안을 그 위임자가 승인하는 것은 자기 승인이다. principal 비교는 **정규 신원**(해소된 엔티티 id 또는 서명 키) 기준이며, 미해소 principal 간 판정은 자기 승인 의심으로 사람 리뷰를 강제한다. **예외: claim-demotion/recall 은 자기 승인을 허용**한다 - 자신이 유입시킨 것의 강등은 원칙 3 덕에 저위험이고(자기 커밋 revert 와 동지위) fast-path(9절)와 정합한다. **단 recall 의 verdict 는 위임 불가**(I17) - 자기 승인 허용은 principal 이 직접 행위할 때의 이야기이고, 에이전트 대리 판정으로는 성립하지 않는다. | 2, 15, 18 |
-| I17 | **recall 판정은 사람의 직접 행위다.** recall 의 verdict 는 위임 사슬을 통한 대리 적재로 유효해질 수 없다 - 사람 principal 의 직접 서명 또는 elicitation 응답으로만 유효하다. 폴드가 verdict 의 provenance 를 검사해 대리 recall 판정을 무효화(코멘트 강등)한다. 오염된 에이전트가 `on_behalf_of` 사슬로 recall 을 열고 즉시 대리 자기 승인해 사람 눈 없이 파생 트리를 대량 철회하는 경로를 차단한다 - 9절의 "recall 은 항상 사람 리뷰"를 위임 앞에서도 공허하지 않게 만드는 조항. claim-demotion 은 파괴 반경이 주장 묶음 단위라 이 제약을 받지 않는다(fast-path 유지). | 18, 19, 23 |
-| I10 | **적재는 게이트하지 않는다.** 제안 절차의 어떤 부분도 observe를 막거나 지연시키지 않는다. | 22 |
-| I11 | **HLC 인과 전파.** 관측의 생성/ingest/sync 시 HLC를 인과적으로 갱신한다. 폴드의 prefix 판정(참조 무결성, "첫 유효 판정")이 이 성질에 의존하며, 없으면 다중 노드 수렴이 성립하지 않는다. | 16 |
-| I12 | **판정은 base에 묶인다.** verdict 는 자신이 검토한 base 프런티어를 참조한다. 현재 base 와 불일치하는 판정은 무효화되어 코멘트로 강등되고, revise(base 재고정)는 **아직 확정(merge/쿼럼 성립)되지 않은** 이전 판정을 자동 무효화한다(쿼럼 카운트 리셋). 스테일 diff 에 대한 승인이 병합에 새지 않는다. 단 유효한 merge 가 이미 확정된 뒤에 도착한 revise 는 base 를 움직이지 못하고 코멘트로 강등된다 - 종결이 revise 를 이긴다(I16 의 단조성). | 9, 16 |
-| I13 | **blocking 검사는 폴드가 재계산한다.** 병합 유효성의 blocking 통과 여부는 `check_reported` 이벤트를 신뢰하지 않고 폴드가 재계산한다(I8 이 재현성 보장). `check_reported` 는 UX 캐시/advisory 일 뿐, 위조된 "통과"로 오염을 승격할 수 없다. | 8, 18 |
-| I14 | **병합 효과는 멱등이다.** 같은 효과의 중복 적재는 무해하며, entity-merge 는 정규 id 순서로 정준화해 동시 중복 제안이 발산하지 않는다. | 3 |
-| I15 | **자동 판정은 라우팅 조건을 폴드가 재검증한다.** 정책 실행자(자동)의 verdict 는 그 라우팅 전제(새 모순 0, 영향 반경 임계 이하)를 폴드가 병합 시점 상태에서 재계산해 통과할 때만 유효하다 - 오염/버그 실행자가 고영향 제안을 자동 병합해도 폴드가 무효화한다. 사람 verdict 에는 적용하지 않는다. | 8, 16, 18 |
-| I16 | **종결은 단조롭다.** 승격(Merged)은 이벤트 집합의 단조 함수이자 흡수 상태다 - 유효한 merge 가 로그에 존재하는 한 이후 어떤 이벤트의 도착도 승격을 취소할 수 없다. reject 결론은 "유효한 merge 부재"를 뜻하는 잠정 상태이고(늦게 온 유효 merge 는 Merged 로 승격), 승격의 번복은 항상 새 제안(claim-demotion 등)으로 표현된다. 파생 지식은 Merged 위에만 쌓이므로, 흡수 상태를 Merged 로 두는 것이 소급 무효화를 막는 유일한 배치다(reject 흡수는 Merged 를 잠정으로 만들어 파생을 다시 무너뜨린다). | 16, 3 |
+**The decisive difference**: in git there is no code on main until merge, but in
+supragnosis an assertion **already exists** regardless of a proposal (at a low trust
+tier). A proposal is not a gate of existence but a **gate of tier**. This difference is
+the key to satisfying Principle 22 (minimal friction) and Principle 18 (contamination
+defense) at the same time.
 
 ---
 
-## 3. 도메인 모델
+## 2. Invariants
 
-### 3.1 정본 (Canon)
+Every step of the flow is forbidden to violate the invariants below. Each invariant is
+a direct consequence of a principle.
 
-정본 = 워크스페이스의 "공유 믿음 뷰". 물질화된 프로젝션의 일종으로,
-**신뢰 등급이 임계값 이상인 주장들로만** 계산된 current belief다.
-
-- 정본은 저장물이 아니라 뷰다 (원칙 1). 같은 로그에서 등급 임계값을 바꾸면
-  다른 정본이 계산된다.
-- 워크스페이스마다 정본 정책(등급 임계값, 판정 권한, 자동 병합 규칙)이 있고,
-  이 정책 자체도 버전 있는 지식이다 (10절).
-
-### 3.2 제안 (Proposal)
-
-코어 온톨로지(원칙 10의 메타 수준)에 추가되는 엔티티.
-
-| 필드 | 설명 |
-|------|------|
-| `id` | 안정 식별자 (`supragnosis://proposal/{id}`) |
-| `kind` | 제안 종류 (3.3) |
-| `payload` | 대상 주장/엔티티/타입의 참조 목록 (관측 id 기반) |
-| `target` | 대상 워크스페이스(정본)와 요청 등급 |
-| `rationale` | 제안 사유 (자연어) |
-| `base` | 열릴 때의 정본 프런티어 (버전 벡터) - I7의 기준점 |
-| `proposer` | 위임 사슬 포함 provenance (원칙 2) |
-
-### 3.3 제안의 종류 (정본에 영향을 주는 의도 5종)
-
-원칙 23에 의해, 아래 다섯 가지는 **오직 제안을 통해서만** 정본에 반영된다.
-
-1. **claim-promotion** - 주장 묶음의 신뢰 등급 승격 (가장 흔한 경우)
-2. **claim-demotion** - 등급 강등 (사실상의 revert, 오염 대응 포함)
-3. **entity-merge / split** - 정체성 해소의 확정/취소 (원칙 15의 "사람 확인" 경로)
-4. **tbox-change** - 정본 T-Box의 타입/관계 추가/개정 (원칙 11의 "명시적 승격")
-5. **recall** - 오염 원천의 파생 트리 일괄 retraction (원칙 18의 소독)
-
-각 종류는 같은 상태 기계를 공유하고, 검사 스위트(6절)만 다르다.
-
-### 3.4 이벤트 (전부 관측이다 - I1)
-
-| 이벤트 | 의미 |
-|--------|------|
-| `proposal_opened` | 제안 생성 (base 프런티어 고정) |
-| `proposal_revised` | payload/rationale 수정 (base 재고정) |
-| `check_reported` | 검사 결과 기록 (파생 관측, 재현 가능 - I8) |
-| `review_commented` | 리뷰 코멘트 (판정 아님) |
-| `verdict_cast` | 판정: `merge` / `reject` (결정적 이벤트 - I3) |
-| `proposal_withdrawn` | 제안자 철회 |
-| 병합 효과 | `tier_promoted` / `entities_merged` / `type_defined` / `claims_retracted` 등 - verdict(merge)의 귀결로 적재 |
-
-이벤트가 전부 관측이므로 제안은 sync 계층을 그대로 타고 페더레이션되고
-(원칙 16), 어느 노드에서 리뷰해도 수렴한다. 제안 시스템을 위한 별도 복제
-프로토콜은 존재하지 않는다.
+| # | Invariant | Basis principle |
+|---|-----------|-----------------|
+| I1 | **A proposal is also knowledge.** The creation/update/review/verdict of a proposal are all loaded as observation events. There is no separate side store. | 1, 3 |
+| I2 | **State is a fold.** A proposal's current state is a deterministic function that folds the event stream belonging to that proposal in HLC order. Storing the state separately is a violation. | 16 |
+| I3 | **Concurrent verdicts converge and are monotonic.** The conclusion is a function of the verdict set (it does not depend on HLC arrival order): if even one valid merge exists the conclusion is Merged, and reject becomes the conclusion only when none exists. Merged is an absorbing state, so from the moment a valid merge is in the log it is never overturned (I16). Conflicting verdicts are invalidated and recorded as comments. Every node reaches the same conclusion. | 16 |
+| I4 | **No wall clock.** The mere passage of time causes no state transition. Expiry/auto-merge must be expressed as an explicit event (loaded by a policy executor). | 16, 18 |
+| I5 | **Rejection is not negation.** Rejecting a proposal means "not promoting", not "the assertion is false". A rejected assertion continues to exist at its original tier. | 5 |
+| I6 | **Merge is additive.** A merge does not copy/modify the assertion; it only appends a promotion event. Cancellation, too, is done via a new demotion event (no rewind). | 3 |
+| I7 | **The base is fixed.** A proposal records the canon frontier (version vector) at the time it opens, and the diff and checks are computed against that base. If the base moves (touched set changes), the proposal becomes stale and cannot be merged without re-checking. | 16, 9 |
+| I8 | **Checks are pure functions.** Check result = f(proposal, base frontier). Given the same input, the same result on any node - always reproducible by re-running. | 16, 19 |
+| I9 | **No self-approval.** The authority principal of a verdict (the principal of the delegation chain) must differ from the authority principal of the proposal. For an agent to approve, on behalf of its delegator, a proposal that same delegator authored is self-approval. The principal comparison is based on **canonical identity** (resolved entity id or signing key), and a verdict between unresolved principals is treated as suspected self-approval and forces human review. **Exception: claim-demotion/recall permit self-approval** - demoting what you yourself introduced is low-risk thanks to Principle 3 (on par with reverting your own commit) and is consistent with the fast-path (Section 9). **However, a recall's verdict cannot be delegated** (I17) - self-approval is a matter of the principal acting directly, and does not hold for a proxied verdict cast by an agent. | 2, 15, 18 |
+| I17 | **A recall verdict is a human's direct act.** A recall's verdict cannot become valid through proxied loading via a delegation chain - it is valid only through a human principal's direct signature or elicitation response. The fold inspects the verdict's provenance and invalidates (demotes to comment) a proxied recall verdict. This blocks the path where a contaminated agent opens a recall via an `on_behalf_of` chain and immediately self-approves it by proxy, mass-withdrawing a derivation tree without human eyes - the clause that keeps Section 9's "recall is always human review" from being vacuous even in the face of delegation. claim-demotion is not subject to this constraint because its blast radius is at the granularity of an assertion bundle (the fast-path is preserved). | 18, 19, 23 |
+| I10 | **Loading is not gated.** No part of the proposal procedure blocks or delays observe. | 22 |
+| I11 | **HLC causal propagation.** On the creation/ingest/sync of an observation, the HLC is updated causally. The fold's prefix-based determination (referential integrity, "first valid verdict") depends on this property; without it, multi-node convergence does not hold. | 16 |
+| I12 | **Verdicts are bound to base.** A verdict references the base frontier it reviewed. A verdict inconsistent with the current base is invalidated and demoted to a comment, and revise (re-pinning the base) automatically invalidates prior verdicts that are **not yet finalized (merge/quorum met)** (resetting the quorum count). An approval of a stale diff does not leak into a merge. However, a revise that arrives after a valid merge has already been finalized cannot move the base and is demoted to a comment - finality beats revise (the monotonicity of I16). | 9, 16 |
+| I13 | **The fold recomputes blocking checks.** Whether the blocking gate for merge validity passes is recomputed by the fold rather than trusting the `check_reported` event (I8 guarantees reproducibility). `check_reported` is merely a UX cache/advisory; a forged "pass" cannot promote contamination. | 8, 18 |
+| I14 | **Merge effects are idempotent.** Duplicate loading of the same effect is harmless, and entity-merge canonicalizes by canonical id order so concurrent duplicate proposals do not diverge. | 3 |
+| I15 | **The fold re-validates the routing conditions of an automatic verdict.** A policy executor's (automatic) verdict is valid only when the fold recomputes its routing premises (zero new contradictions, impact radius at or below the threshold) at the merge-time state and they pass - even if a contaminated/buggy executor auto-merges a high-impact proposal, the fold invalidates it. This does not apply to human verdicts. | 8, 16, 18 |
+| I16 | **Finality is monotonic.** Promotion (Merged) is a monotonic function of the event set and an absorbing state - as long as a valid merge exists in the log, no later event arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). | 16, 3 |
 
 ---
 
-## 4. 상태 기계
+## 3. Domain Model
 
-상태는 저장되지 않고 이벤트 폴드로 계산된다 (I2).
+### 3.1 Canon
+
+Canon = the workspace's "shared belief view". A kind of materialized projection, it is
+the current belief computed **only from assertions whose trust tier is at or above a
+threshold**.
+
+- Canon is not a stored artifact but a view (Principle 1). Changing the tier threshold
+  over the same log computes a different canon.
+- Each workspace has a canon policy (tier threshold, verdict authority, auto-merge
+  rules), and this policy itself is versioned knowledge (Section 10).
+
+### 3.2 Proposal
+
+An entity added to the core ontology (the meta level of Principle 10).
+
+| Field | Description |
+|-------|-------------|
+| `id` | Stable identifier (`supragnosis://proposal/{id}`) |
+| `kind` | Proposal kind (3.3) |
+| `payload` | List of references to target assertions/entities/types (based on observation ids) |
+| `target` | Target workspace (canon) and requested tier |
+| `rationale` | Proposal rationale (natural language) |
+| `base` | Canon frontier at the time it opens (version vector) - the reference point of I7 |
+| `proposer` | Provenance including the delegation chain (Principle 2) |
+
+### 3.3 Proposal Kinds (the 5 intents that affect canon)
+
+Per Principle 23, the following five are reflected into canon **only through a
+proposal**.
+
+1. **claim-promotion** - promotion of the trust tier of an assertion bundle (the most common case)
+2. **claim-demotion** - tier demotion (a de facto revert, including contamination response)
+3. **entity-merge / split** - finalizing/canceling an identity resolution (the "human confirmation" path of Principle 15)
+4. **tbox-change** - adding/revising a type/relation in the canon T-Box (the "explicit promotion" of Principle 11)
+5. **recall** - bulk retraction of the derivation tree from a contamination source (the sanitization of Principle 18)
+
+Each kind shares the same state machine and differs only in its check suite (Section 6).
+
+### 3.4 Events (all are observations - I1)
+
+| Event | Meaning |
+|-------|---------|
+| `proposal_opened` | Proposal creation (pins the base frontier) |
+| `proposal_revised` | Modifying payload/rationale (re-pins base) |
+| `check_reported` | Recording a check result (a derived observation, reproducible - I8) |
+| `review_commented` | Review comment (not a verdict) |
+| `verdict_cast` | Verdict: `merge` / `reject` (the deciding event - I3) |
+| `proposal_withdrawn` | Withdrawal by the proposer |
+| merge effects | `tier_promoted` / `entities_merged` / `type_defined` / `claims_retracted`, etc. - loaded as the consequence of a verdict(merge) |
+
+Because every event is an observation, proposals federate straight over the sync layer
+(Principle 16), and reviewing on any node converges. There is no separate replication
+protocol for the proposal system.
+
+---
+
+## 4. State Machine
+
+State is not stored; it is computed by an event fold (I2).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft: 로컬 작성
+    [*] --> Draft: authored locally
     Draft --> Open: proposal_opened
     Open --> Open: revise / comment / check
-    Open --> Stale: 기반 이동 감지 (touched set)
-    Stale --> Open: proposal_revised (base 재고정 + 재검사)
-    Open --> Merged: 유효한 merge 존재
-    Open --> Rejected: 유효한 merge 부재 (잠정)
-    Rejected --> Merged: 늦은 유효 merge (I16 단조)
-    Draft --> [*]: 폐기 (미공개)
+    Open --> Stale: base movement detected (touched set)
+    Stale --> Open: proposal_revised (re-pin base + re-check)
+    Open --> Merged: valid merge exists
+    Open --> Rejected: no valid merge (provisional)
+    Rejected --> Merged: late valid merge (I16 monotonic)
+    Draft --> [*]: discard (unpublished)
     Open --> Withdrawn: proposal_withdrawn
     Stale --> Withdrawn: proposal_withdrawn
     Rejected --> Withdrawn: proposal_withdrawn
-    Merged --> [*]: 흡수 (종결)
+    Merged --> [*]: absorbing (final)
     Withdrawn --> [*]
 ```
 
-주석 - Rejected 는 흡수 상태가 아니다: reject 결론은 "아직 유효한 merge 가
-없음"이라는 잠정 상태이고, 늦게 도착한 유효 merge 는 결론을 Merged 로 올린다
-(I16 의 단조 승격). 벽시계로는 이 잠정 결론을 닫을 수 없으므로(I4),
-영구 종결의 유일한 수단은 제안자의 철회(proposal_withdrawn)다. 반대로 Merged 는
-흡수 상태라 어떤 이벤트도 승격을 되돌리지 못한다 - 번복은 새 강등 제안으로만
-표현된다(I6, I16).
+Note - Rejected is not an absorbing state: a reject conclusion is a provisional state
+meaning "there is not yet a valid merge", and a late-arriving valid merge raises the
+conclusion to Merged (the monotonic promotion of I16). Since a wall clock cannot close
+this provisional conclusion (I4), the only means of permanent finality is the proposer's
+withdrawal (proposal_withdrawn). Conversely, Merged is an absorbing state, so no event
+can undo the promotion - a reversal is expressed only as a new demotion proposal
+(I6, I16).
 
-전이 규칙:
+Transition rules:
 
-| 전이 | 조건 | 비고 |
-|------|------|------|
-| Draft -> Open | proposer가 공개 | base 프런티어 고정 (I7) |
-| Open -> Stale | touched set에 새 관측 도달 | 폴드가 감지 - 전이 이벤트 불필요 (아래 주석) |
-| Stale -> Open | revise로 base 재고정 | 검사 재실행 + 이전 판정 무효화(쿼럼 리셋) 필수 (I7, I8, I12) |
-| Open -> Merged | 유효한 merge 가 하나라도 존재 (blocking 통과, 권한 유효 I9). Merged 는 흡수 상태 (I16) | 병합 효과 이벤트 적재 (I6) |
-| Open -> Rejected | 유효한 merge 가 하나도 없음 (잠정 결론) | 주장은 원 등급 유지 (I5) |
-| Rejected -> Merged | 늦게 도착한 유효 merge | 단조 승격 - reject 는 종결이 아니라 잠정 (I16) |
-| Merged 이후 | 번복은 **새 제안**(강등)으로 | 승격은 불변 (I6, I16) |
-| Rejected 영구 종결 | proposal_withdrawn 만이 잠정 결론을 닫는다 | 벽시계로 못 닫음 (I4) |
+| Transition | Condition | Note |
+|------------|-----------|------|
+| Draft -> Open | the proposer publishes | pin the base frontier (I7) |
+| Open -> Stale | a new observation reaches the touched set | the fold detects it - no transition event needed (see note below) |
+| Stale -> Open | re-pin base via revise | check re-run + invalidation of prior verdicts (quorum reset) required (I7, I8, I12) |
+| Open -> Merged | at least one valid merge exists (blocking passed, authority valid I9). Merged is an absorbing state (I16) | load merge effect events (I6) |
+| Open -> Rejected | no valid merge exists (provisional conclusion) | assertions keep their original tier (I5) |
+| Rejected -> Merged | a late-arriving valid merge | monotonic promotion - reject is provisional, not final (I16) |
+| After Merged | a reversal via a **new proposal** (demotion) | promotion is immutable (I6, I16) |
+| Permanent finality of Rejected | only proposal_withdrawn closes the provisional conclusion | cannot be closed by a wall clock (I4) |
 
-주석 - Stale의 논리적 지위: Stale은 이벤트로 만들어지는 상태가 아니라
-**폴드의 계산 결과**다 ("이 제안의 base 이후 touched set에 관측이 있는가"는
-로그만으로 결정 가능). 따라서 벽시계도, 별도 감시 프로세스의 판단도 필요
-없다 - 어느 노드가 계산해도 같은 답이 나온다 (I2, I4 준수).
+Note - the logical status of Stale: Stale is not a state made by an event but
+**a computed result of the fold** ("is there an observation in the touched set after this
+proposal's base" is decidable from the log alone). So neither a wall clock nor the
+judgment of a separate watchdog process is needed - any node computes the same answer
+(compliant with I2, I4).
 
-touched set의 정의: payload가 참조하는 주장들 + 그 주장들과 (subject,
-predicate)를 공유하는 주장들 + entity-merge의 경우 해당 엔티티의 별칭 공간.
-의도적으로 좁게 정의한다 - 정본 전체의 변화에 반응하면 활발한 워크스페이스
-에서 어떤 제안도 병합될 수 없다 (livelock 방지).
+Definition of the touched set: the assertions referenced by the payload + assertions
+sharing a (subject, predicate) with those assertions + for entity-merge, the alias space
+of the entity in question. It is defined deliberately narrowly - if it reacted to changes
+across the whole canon, no proposal could ever merge in an active workspace (livelock
+prevention).
 
-단, 영향 반경(diff 4항)의 신선도는 별도로 지킨다: payload의 `derived_from`
-하위 트리에 base 이후 새 파생이 도달하면, touched set 을 넓혀 stale 로 만드는
-대신 **영향 분석만 병합 시점에 재계산**한다 - 과소평가로 인한 자동 병합
-오라우팅(9절)을 막으면서 livelock 은 부르지 않는다.
+However, the freshness of the impact radius (diff item 4) is guarded separately: if a
+new derivation reaches the `derived_from` subtree of the payload after the base, then
+instead of widening the touched set to make it stale, **only the impact analysis is
+recomputed at merge time** - this blocks auto-merge misrouting (Section 9) caused by
+underestimation while not inducing livelock.
 
 ---
 
-## 5. 믿음 diff (Belief Diff)
+## 5. Belief Diff
 
-리뷰 가능성의 핵심. git PR의 diff에 해당하며, **결정적 프로젝션(원칙 16)이
-공짜로 주는 능력**이다:
+The heart of reviewability. It corresponds to the diff of a git PR, and is **a capability
+that deterministic projection (Principle 16) gives for free**:
 
 ```
-diff = materialize(canon, base) 와 materialize(canon, base + 병합효과) 의 차
+diff = the difference between materialize(canon, base) and materialize(canon, base + merge effects)
 ```
 
-두 물질화 모두 순수 함수이므로 diff도 순수 함수다 (I8). 계산은 정본 전체가
-아니라 **touched set + 영향 반경 슬라이스**에 국한한다 - 결정성은 유지하면서
-비용을 O(정본)에서 O(영향 범위)로 낮춘다. 구성 요소:
+Since both materializations are pure functions, the diff is a pure function too (I8). The
+computation is confined to the **touched set + impact radius slice** rather than the whole
+canon - preserving determinism while lowering the cost from O(canon) to O(impact scope).
+Components:
 
-1. **승격되는 주장** - 무엇이 정본에 새로 들어오는가.
-2. **뒤집히는 믿음** - 해소 정책상 current belief가 바뀌는 지점 (예: 기존
-   정본 주장이 supersede됨).
-3. **새로 생기는/해소되는 모순** - 원칙 6에 따라 모순은 병합을 막지 않지만
-   반드시 리뷰어에게 보인다.
-4. **영향받는 파생 지식** - `derived_from` 계보를 따라 내려가며 이 믿음에
-   의존하는 지식의 목록 (영향 반경 = 리뷰 강도의 입력, 9절).
-5. **해소 변화** - entity-merge 제안의 경우, 어떤 참조들이 재배선되는가.
-
----
-
-## 6. 검사 (Checks)
-
-검사는 순수 함수이고 (I8), 두 부류로 나뉜다. **blocking과 informative의
-구분 기준은 원칙에서 나온다**: 스키마/구조의 모순은 시스템의 버그이므로
-막고 (원칙 9), 주장 간의 모순은 세계의 성질이므로 보여주기만 한다 (원칙 6).
-
-| 검사 | 부류 | 내용 |
-|------|------|------|
-| T-Box 정합성 | **blocking** | 순환 subtype, 도메인/레인지 충돌, rigidity 위반 후보 (원칙 9, 13) |
-| provenance 완전성 | **blocking** | 위임 사슬/서명/계보 누락 (원칙 2, 18) |
-| 참조 무결성 | **blocking** | payload가 참조하는 관측이 로컬 로그에 존재하는가 (sync 미완이면 병합 불가 - 없는 것을 승격할 수 없다) |
-| 권한 검사 | **blocking** | 제안 종류에 대한 proposer/reviewer 권한, 자기 승인 여부 (I9) |
-| 모순 분석 | informative | diff 3항 - 새 모순의 목록과 상대 주장의 provenance |
-| 영향 분석 | informative | diff 4항 - 파생 트리 크기, 정본 내 인용 빈도 |
-| 신뢰 프로파일 | informative | payload 주장들의 현재 등급/출처 분포 (미검증 외부 소스 비율 등) |
-
-recall 제안의 특칙: recall은 blocking 검사에 **계보 완전성**이 추가된다 -
-지목된 원천에서 도달 가능한 파생 트리가 payload와 일치해야 한다 (빠뜨린
-파생물이 있으면 소독이 불완전하다).
-
-**검사 결과는 캐시다 (I13).** `check_reported` 이벤트는 UX/재현 편의를 위한
-기록일 뿐이고, 병합 유효성의 blocking 통과 여부는 폴드가 그 HLC prefix 에서
-재계산한다. 위조된 "통과" 이벤트로는 오염을 정본으로 승격할 수 없다.
-
-**단조성 주석 (I16 과의 정합).** 폴드의 blocking 재계산은 고정된 base
-프런티어(I7)를 입력으로 쓴다 - 검사 결과 = f(제안, base) 이다(I8). 늦게 도착한
-이른-HLC 이벤트가 prefix 에 끼어들어도 검사 입력(고정 base)은 바뀌지 않으므로,
-"유효한 merge 존재"라는 판정이 사후에 pass -> fail 로 뒤집히지 않는다. 즉
-I16 의 단조성이 blocking 검사까지 관통한다. I13 의 "prefix 재계산"은
-`check_reported` 를 불신하고 폴드가 직접 계산한다는 뜻이지, 도착 순서에 따라
-base 를 새로 접는다는 뜻이 아니다. (이 성질은 property test 로 상시 검증한다 -
-13절 열린 결정.)
+1. **Assertions being promoted** - what newly enters canon.
+2. **Beliefs being overturned** - the point where the current belief changes under the
+   resolution policy (e.g., an existing canon assertion is superseded).
+3. **Contradictions newly created/resolved** - per Principle 6, contradictions do not
+   block a merge but must be shown to the reviewer.
+4. **Affected derived knowledge** - the list of knowledge that depends on this belief,
+   descending along the `derived_from` lineage (impact radius = an input to review
+   intensity, Section 9).
+5. **Resolution changes** - for an entity-merge proposal, which references get rewired.
 
 ---
 
-## 7. 판정과 병행성
+## 6. Checks
 
-여기가 논리적으로 가장 위험한 지점이다. 분산 환경에서 두 리뷰어가 서로
-모르는 채 상반된 판정을 내릴 수 있다.
+Checks are pure functions (I8) and fall into two classes. **The criterion distinguishing
+blocking from informative comes from the principles**: a contradiction of schema/structure
+is a bug in the system so it is blocked (Principle 9), while a contradiction between
+assertions is a property of the world so it is only shown (Principle 6).
 
-### 7.1 결정 규칙 (I3/I16의 구체화)
+| Check | Class | Content |
+|-------|-------|---------|
+| T-Box consistency | **blocking** | cyclic subtype, domain/range conflicts, rigidity violation candidates (Principles 9, 13) |
+| provenance completeness | **blocking** | missing delegation chain/signature/lineage (Principles 2, 18) |
+| referential integrity | **blocking** | does the observation referenced by the payload exist in the local log (if sync is incomplete, merge is impossible - you cannot promote what is not there) |
+| authority check | **blocking** | proposer/reviewer authority for the proposal kind, whether it is self-approval (I9) |
+| contradiction analysis | informative | diff item 3 - the list of new contradictions and the provenance of the opposing assertions |
+| impact analysis | informative | diff item 4 - derivation tree size, citation frequency within canon |
+| trust profile | informative | current tier/source distribution of the payload assertions (e.g., proportion of unverified external sources) |
 
-- verdict_cast는 관측 이벤트이고 HLC를 지닌다.
-- 폴드의 결론은 판정 **집합**의 함수다 (HLC 도착 순서에 의존하지 않는다):
-  - 유효한 merge 가 하나라도 존재하면 결론은 **Merged**.
-  - 유효한 merge 가 하나도 없고 유효한 reject 가 있으면 결론은 **Rejected**
-    (잠정 - 늦게 유효한 merge 가 오면 Merged 로 승격한다, I16).
-- "유효"의 정의는 그대로다: (a) 권한 검사 통과(자기 승인 아님, I9),
-  (b) blocking 검사를 폴드가 재계산해 통과(I13), (c) 판정이 참조한 base 가
-  현재 base 와 일치(I12), (d) 제안이 Open 상태였음, (e) 판정 주체가 자동이면
-  라우팅 전제를 폴드가 재계산해 통과(I15).
-- 결정 규칙은 사슬 pending <= reject <= merge 위의 join 이다. join 은
-  결합/교환/멱등이고 merge 가 흡수원소(top)이므로, 결론은 도착 순서와 무관하며
-  (수렴) 유효한 merge 가 로그에 든 순간부터 고정된다(단조/finality). 워터마크나
-  낙오 판정 대기 같은 별도 기계 없이 수렴과 finality("언제부터 이 결론을 믿고
-  파생을 쌓아도 되는가")를 동시에 얻는다 - 벽시계를 끌어들이지 않으므로 I4 와
-  정합한다.
-- 유효한 merge 가 복수면 대표 verdict 는 **HLC 최소**로 정준화한다 (효과는
-  멱등이므로 의미론 문제는 없고, 정준화는 대표 선택의 결정성만을 위한 것 - I14).
-- Merged 이후 도착한 상충 reject 나 revise 는 결론을 바꾸지 못하고
-  `review_commented` 와 동등한 기록으로 강등된다 (정보는 보존 - 원칙 3).
+Special rule for recall proposals: recall adds **lineage completeness** to the blocking
+checks - the derivation tree reachable from the named source must match the payload (if a
+derivation is missed, the sanitization is incomplete).
 
-예시 1 (수렴): 노드 A에서 갑이 merge(HLC=t1), 오프라인이던 노드 B에서 을이
-reject(HLC=t2, t1 < t2). sync 후 집합에 유효한 merge 가 존재하므로 모든 노드의
-폴드가 Merged 로 수렴하고, 을의 reject 는 코멘트로 남는다.
+**Check results are a cache (I13).** The `check_reported` event is only a record for
+UX/reproduction convenience, and whether the blocking gate for merge validity passes is
+recomputed by the fold at that HLC prefix. A forged "pass" event cannot promote
+contamination into canon.
 
-예시 2 (단조성의 요점): 노드 A가 merge(HLC=t2)를 결론으로 계산해 정본 승격,
-그 위에 파생을 쌓기 시작한다. 파티션 해소 후 노드 B의 reject(HLC=t1, t1 < t2)가
-뒤늦게 도착한다. 집합에 유효한 merge 가 있으므로 결론은 **Merged 로 유지**된다 -
-이른 HLC 의 reject 도 승격을 취소하지 못한다(I16). 이미 승격된 정본과 그 위의
-파생은 소급 무효화되지 않는다. 을이 실제로 번복을 원하면 **강등 제안**
-(claim-demotion)을 새로 연다 - 종결의 불변성(I6, I16)과 수렴(I3)이 동시에
-지켜진다.
-
-### 7.2 병합 효과의 원자성
-
-verdict(merge)와 병합 효과 이벤트(tier_promoted 등)는 별개의 관측이지만,
-**폴드가 병합 효과를 verdict에서 유도**하므로 원자성 문제가 없다: 승격의
-효력은 "verdict_cast(merge)가 결론"이라는 사실에서 나오고, 효과 이벤트는
-그 귀결의 물질화 편의를 위한 기록이다. 효과 이벤트가 아직 sync되지 않은
-노드도 verdict만 있으면 같은 정본을 계산한다 (I2).
-
-### 7.3 쿼럼 정책
-
-기본 정책은 "유효한 단일 merge" (위 7.1). 워크스페이스 정책(10절)으로 N인
-쿼럼을 요구할 수 있다. 이때 결론이 Merged 가 되는 조건은 순차 폴드의 최종
-상태가 아니라 **집합 존재형**으로 정의한다: "어떤 base B 에 대해, 리셋 없이
-성립하는 **현재 base 에 대한** 유효 merge 가 N 개 존재하는 prefix 가 있는가."
-이 prefix 가 한 번 성립하면 Merged 는 흡수 상태이므로(I16) 이후 도착한
-이른-HLC revise 도 카운트를 되돌리지 못한다. 확정 전(prefix 미성립)까지만
-revise 가 base 를 움직여 카운트를 리셋한다(I12) - 스테일 diff 에 대한 승인이
-병합에 새지 않는다.
-
-주의: "N에 도달하는 첫 시점"을 순차 최종 상태로 오구현하면, 늦게 온 이른-HLC
-revise 가 카운트를 리셋해 이미 확정된 Merged 를 소급 취소할 수 있다(단조성
-위반). 반드시 "리셋 없는 prefix 의 존재"라는 집합 함수로 구현한다(13절 열린
-결정). reject 방향 쿼럼도 대칭으로 정의하되 잠정이다 - 늦은 merge 쿼럼 성립이
-결론을 Merged 로 올린다. 어느 쪽이든 결정 규칙은 로그 집합만의 함수다 (I2).
+**Monotonicity note (consistency with I16).** The fold's blocking recomputation uses the
+fixed base frontier (I7) as input - check result = f(proposal, base) (I8). Even if a
+late-arriving early-HLC event slips into the prefix, the check input (the fixed base) does
+not change, so the verdict "a valid merge exists" does not flip pass -> fail after the
+fact. That is, the monotonicity of I16 runs all the way through the blocking checks.
+I13's "prefix recomputation" means the fold computes directly, distrusting
+`check_reported`; it does not mean re-folding the base anew according to arrival order.
+(This property is continuously verified by a property test - see the open decisions in
+Section 13.)
 
 ---
 
-## 8. 병합, 기각, 철회의 의미론
+## 7. Verdicts and Concurrency
 
-- **병합** = 승격 이벤트의 추가 (I6). 주장 자체는 그대로다 - 등급 메타데이터가
-  추가되어 정본 뷰의 임계값을 넘게 될 뿐이다. 리뷰어의 verdict는 그 자체가
-  높은 신뢰의 attestation이기도 하다 (원칙 18의 "사람 확인" 승격 경로).
-- **기각** = 승격하지 않기로 한 기록 (I5). 주장은 원래 등급으로 존재를
-  계속한다. 리뷰어가 "이 주장은 틀렸다"고 믿는다면 기각에 그치지 말고
-  **반대 주장을 적재**해야 한다 - 부정은 명시적 주장으로 표현한다 (원칙 5).
-  기각 사유는 rationale로 남겨 같은 제안의 재제출 시 참조하게 한다.
-- **철회** = 제안자의 종료. 판정이 아니므로 어떤 등급에도 영향 없다. 잠정
-  결론(Rejected)을 영구히 닫는 유일한 수단이기도 하다 (벽시계로는 못 닫는다, I4).
-- **번복** = 승격의 되돌림은 항상 새 제안 (강등). **Merged 는 흡수 상태라
-  불변**이다(I16). 단 Rejected 는 잠정이라, 늦게 도착한 유효 merge 는 새 제안
-  없이도 결론을 Merged 로 올린다 - 파생이 Merged 위에만 쌓이므로 이 방향의
-  전이는 소급 무효화를 일으키지 않는다(오히려 없던 승격이 생길 뿐).
+This is the most logically dangerous point. In a distributed environment, two reviewers
+can cast opposing verdicts without knowing about each other.
+
+### 7.1 Decision Rule (the concretization of I3/I16)
+
+- verdict_cast is an observation event and carries an HLC.
+- The fold's conclusion is a function of the verdict **set** (it does not depend on HLC
+  arrival order):
+  - If even one valid merge exists, the conclusion is **Merged**.
+  - If no valid merge exists and a valid reject exists, the conclusion is **Rejected**
+    (provisional - if a valid merge arrives late, it is promoted to Merged, I16).
+- The definition of "valid" is unchanged: (a) passes the authority check (not
+  self-approval, I9), (b) the fold recomputes the blocking checks and they pass (I13),
+  (c) the base the verdict referenced matches the current base (I12), (d) the proposal was
+  in the Open state, (e) if the verdict-casting party is automatic, the fold recomputes the
+  routing premises and they pass (I15).
+- The decision rule is a join over the chain pending <= reject <= merge. Since the join is
+  associative/commutative/idempotent and merge is the absorbing element (top), the
+  conclusion is independent of arrival order (convergence) and is fixed from the moment a
+  valid merge is in the log (monotonicity/finality). Without any separate machinery such as
+  watermarks or waiting for straggler verdicts, we get both convergence and finality
+  ("from when may I trust this conclusion and accumulate derivations on it") at once - and
+  since it does not drag in a wall clock, it is consistent with I4.
+- If there are multiple valid merges, the representative verdict is canonicalized to the
+  **minimum HLC** (since effects are idempotent there is no semantic issue; the
+  canonicalization is only for the determinism of choosing the representative - I14).
+- A conflicting reject or revise that arrives after Merged cannot change the conclusion and
+  is demoted to a record equivalent to `review_commented` (information is preserved -
+  Principle 3).
+
+Example 1 (convergence): on node A, Alice casts merge (HLC=t1); on node B, which was
+offline, Bob casts reject (HLC=t2, t1 < t2). After sync, since a valid merge exists in the
+set, the fold on every node converges to Merged, and Bob's reject remains as a comment.
+
+Example 2 (the point of monotonicity): node A computes merge (HLC=t2) as the conclusion,
+promotes to canon, and begins accumulating derivations on top of it. After the partition
+heals, Bob's reject (HLC=t1, t1 < t2) arrives belatedly. Since a valid merge exists in the
+set, the conclusion **stays Merged** - even an earlier-HLC reject cannot cancel the
+promotion (I16). The already-promoted canon and the derivations on top of it are not
+retroactively invalidated. If Bob genuinely wants a reversal, they open a new **demotion
+proposal** (claim-demotion) - the immutability of finality (I6, I16) and convergence (I3)
+are upheld at once.
+
+### 7.2 Atomicity of Merge Effects
+
+verdict(merge) and the merge effect events (tier_promoted, etc.) are separate observations,
+but since **the fold derives the merge effect from the verdict**, there is no atomicity
+problem: the force of the promotion comes from the fact that "verdict_cast(merge) is the
+conclusion", and the effect events are records for the convenience of materializing that
+consequence. A node where the effect events have not yet synced still computes the same
+canon as long as it has the verdict (I2).
+
+### 7.3 Quorum Policy
+
+The default policy is "a single valid merge" (7.1 above). A workspace policy (Section 10)
+can require an N-person quorum. The condition for the conclusion to become Merged is then
+defined not as the final state of a sequential fold but as a **set-existential**: "is there
+a prefix in which N valid merges **against the current base** hold without a reset, for
+some base B." Once this prefix holds, Merged is an absorbing state (I16), so a
+later-arriving early-HLC revise cannot roll back the count. Only until finalization (before
+the prefix holds) can a revise move the base and reset the count (I12) - an approval of a
+stale diff does not leak into a merge.
+
+Caution: if "the first moment N is reached" is mis-implemented as a sequential final state,
+a late-arriving early-HLC revise could reset the count and retroactively cancel an
+already-finalized Merged (a monotonicity violation). It must be implemented as a set
+function, "the existence of a prefix without a reset" (see the open decisions in
+Section 13). A reject-direction quorum is defined symmetrically but is provisional - a late
+merge quorum being met raises the conclusion to Merged. Either way, the decision rule is a
+function of the log set alone (I2).
 
 ---
 
-## 9. 리뷰 경제학 (Review Economics)
+## 8. Semantics of Merge, Reject, and Withdraw
 
-사람의 주의가 병목이다. 원칙: **대부분은 자동으로, 소수만 사람에게.**
+- **Merge** = appending a promotion event (I6). The assertion itself is unchanged - only
+  tier metadata is added so that it crosses the threshold of the canon view. A reviewer's
+  verdict is itself also a high-trust attestation (the "human confirmation" promotion path
+  of Principle 18).
+- **Reject** = a record of the decision not to promote (I5). The assertion continues to
+  exist at its original tier. If a reviewer believes "this assertion is wrong", they should
+  not stop at rejecting but should **load a counter-assertion** - negation is expressed as
+  an explicit assertion (Principle 5). The rejection rationale is kept in the rationale so
+  it can be referenced on resubmission of the same proposal.
+- **Withdraw** = termination by the proposer. Since it is not a verdict, it has no effect on
+  any tier. It is also the only means to permanently close a provisional conclusion
+  (Rejected) (it cannot be closed by a wall clock, I4).
+- **Reversal** = undoing a promotion is always a new proposal (demotion). **Merged is an
+  absorbing state and thus immutable** (I16). But Rejected is provisional, so a
+  late-arriving valid merge raises the conclusion to Merged even without a new proposal -
+  since derivations accumulate only on top of Merged, a transition in this direction causes
+  no retroactive invalidation (it merely creates a promotion that was not there before).
 
-리뷰 강도의 라우팅 (정본 정책으로 조정 가능):
+---
 
-| 조건 | 경로 |
+## 9. Review Economics
+
+Human attention is the bottleneck. Principle: **most automatically, only a few to humans.**
+
+Routing of review intensity (adjustable by canon policy):
+
+| Condition | Path |
+|-----------|------|
+| zero new contradictions + small impact radius + sufficient proposer tier | **auto-merge allowed** - the policy executor loads the verdict (I4: an explicit event by the executor, not the passage of time). The routing premise is re-validated by the fold (I15) |
+| a new contradiction exists | human review required (the mediation point of Principle 6) |
+| large impact radius (many derivations / core of canon) | human review required, consider raising the quorum |
+| tbox-change, recall | always human review (structural change and sanitization are not automated) |
+| entity-merge | only the top band of resolution confidence is automatic, the rest to humans (the conservatism of Principle 15) |
+
+Operating principles:
+
+- **Auto-merge is also a verdict**: the policy executor (daemon/agent) loads the verdict
+  with its own delegation chain. There is always an answer to "who merged this" later
+  (Principle 2). However, the routing premises of an automatic verdict (zero new
+  contradictions, impact radius at or below the threshold) are **re-validated by the fold as
+  validity conditions** (I15) rather than being left to the executor's discipline - even if
+  a contaminated/buggy executor auto-merges a high-impact proposal, no conclusion stands.
+- **The review queue is curation UX**: per Principle 22, the review backlog is not a
+  separate task but is naturally exposed in query results and introspection ("among the
+  grounds for this answer, there are 2 proposals awaiting your confirmation").
+- **Agent pre-review**: an LLM agent can do a first-pass review that summarizes the
+  informative check results and flags the points at issue. But the agent's review is a
+  comment, not a verdict - the verdict authority for the top canon tier rests with a human
+  principal (Principle 19: the LLM is not a judge).
+- **Demotion/recall fast-path**: demotion of something already in canon (claim-demotion) and
+  contamination recall have a lower threshold than promotion (quorum 1, a high-trust reviewer
+  immediately). This is because an asymmetry of fast promotion and slow correction creates a
+  contamination exposure window, and since information is preserved (Principle 3) the cost of
+  a hasty demotion is low. The blocking of recall (lineage completeness) is retained. For
+  demotion/recall only, **self-approval is permitted** (the I9 exception) - waiting for
+  someone else's approval to immediately demote contamination you introduced would instead
+  widen the exposure window. However, a recall's verdict must be **a human's direct act**
+  (I17) - permitting self-approval does not mean permitting a proxied verdict cast by an
+  agent.
+- **The contamination trade-off of merge absorption**: the decision rule of 7.1 (a valid
+  merge wins and absorbs) slightly widens the contamination exposure window - if during a
+  partition a contaminated assertion is merged while a legitimate reject also existed, the
+  merge wins. This is not a new defense mechanism but a scenario already designed to be
+  absorbed by the demotion fast-path above. The rationale is two-fold:
+  (1) **cost structure** - a merge is merely the addition of tier metadata and can be cheaply
+  undone by a demotion, so the fast-path's justifying logic, "thanks to Principle 3 the cost
+  of a hasty demotion is low", applies equally to merge. Finalizing optimistically and going
+  through a new proposal for correction is right by the cost structure. (2) **the goal forces
+  it** - since derivations accumulate only on top of Merged, to prevent retroactive
+  invalidation Merged must be the absorbing state. The seemingly conservative
+  reject-absorbing choice would instead make Merged provisional and tear derivations down
+  again, so it does not solve this problem - the choice of absorbing state is effectively
+  forced to be merge. The residual risk (a single valid reviewer principal creating a
+  promotion that persists until detection) is blocked in the automatic-verdict case because
+  the fold re-validates the routing premises (zero new contradictions, low impact) (I15), and
+  the real exposure surface narrows to human merges.
+
+---
+
+## 10. Governance
+
+- **Policy is also knowledge**: a workspace's canon policy (tier threshold, verdict
+  authority, quorum, auto-merge rules) is stored as that workspace's knowledge, and changing
+  the policy itself requires a proposal on par with a tbox-change (self-referential but not
+  circular - the bootstrap policy comes from the node's config file).
+- **Verdict authority**: the principal (a human) designated by the policy, or a delegated
+  high-trust host. Even when a verdict is cast through a delegation chain, the responsible
+  party is the principal of the chain (Principle 2).
+- **No self-approval (I9)**: if the principals of the proposer and approver are the same,
+  merge is impossible. Principal identity is based on **canonical identity** (resolved
+  principal entity id or signing key), and the identity anchor is bootstrapped from the node
+  config (blocking a resolution cycle). A verdict between unresolved principals is treated as
+  suspected self-approval and forces human review. **Exception (demotion/recall)**:
+  claim-demotion and recall permit self-approval (I9) - immediate correction of contamination
+  you introduced is low-risk and consistent with the fast-path (Section 9). Only recall must
+  be a human principal's direct verdict rather than a proxy via a delegation chain (I17).
+  The special case of a single-person (solo) workspace: the policy permits self-approval, but
+  that promotion carries a "self-attested" mark so it is distinguished in trust evaluation
+  when synced to another canon (Principle 18) - it removes the friction of working alone
+  while preserving trust when federating.
+
+---
+
+## 11. MCP Surface Extension
+
+Per Principle 21 (a narrow surface), only 4 intent-level tools are added.
+
+| Tool | Role |
 |------|------|
-| 새 모순 0 + 영향 반경 소 + proposer 등급 충분 | **자동 병합 가능** - 정책 실행자가 verdict를 적재 (I4: 실행자의 명시 이벤트이지 시간 경과가 아님). 라우팅 전제는 폴드가 재검증 (I15) |
-| 새 모순 존재 | 사람 리뷰 필수 (원칙 6의 중재 지점) |
-| 영향 반경 대 (파생 다수/정본 핵심부) | 사람 리뷰 필수, 쿼럼 상향 고려 |
-| tbox-change, recall | 항상 사람 리뷰 (구조 변경과 소독은 자동화하지 않는다) |
-| entity-merge | 해소 confidence 상위 구간만 자동, 나머지 사람 (원칙 15의 보수성) |
-
-운영 원리:
-
-- **자동 병합도 판정이다**: 정책 실행자(데몬/에이전트)가 자신의 위임 사슬로
-  verdict를 적재한다. 나중에 "누가 이걸 병합했나"에 항상 답이 있다 (원칙 2).
-  단, 자동 verdict 의 라우팅 전제(새 모순 0, 영향 반경 임계 이하)는 실행자의
-  규율이 아니라 **폴드가 유효성 조건으로 재검증**한다 (I15) - 오염/버그 실행자가
-  고영향 제안을 자동 병합해도 결론이 서지 않는다.
-- **리뷰 큐는 큐레이션 UX다**: 원칙 22에 따라, 리뷰 대기 목록은 별도의 일이
-  아니라 질의 결과와 introspection에 자연스럽게 노출한다 ("이 답의 근거 중
-  당신의 확인을 기다리는 제안이 2건 있다").
-- **에이전트 사전 리뷰**: LLM 에이전트가 informative 검사 결과를 요약하고
-  쟁점을 표시하는 1차 리뷰를 할 수 있다. 단, 에이전트의 리뷰는 코멘트이지
-  판정이 아니다 - 정본 최상위 등급의 verdict 권한은 사람 principal에 둔다
-  (원칙 19: LLM은 심판이 아니다).
-- **강등/리콜 fast-path**: 이미 정본에 있는 것의 강등(claim-demotion)과 오염
-  리콜은 승격보다 문턱을 낮춘다(쿼럼 1, 고신뢰 리뷰어 즉시). 승격은 빠르고
-  정정은 느린 비대칭이 오염 노출창을 만들기 때문이며, 정보는 보존되므로
-  (원칙 3) 성급한 강등의 비용은 낮다. recall 의 blocking(계보 완전성)은 유지한다.
-  강등/리콜에 한해 **자기 승인을 허용**한다 (I9 예외) - 자신이 유입시킨 오염의
-  즉시 강등에 남의 승인을 기다리는 것이 오히려 노출창을 늘린다. 단 recall 의
-  verdict 는 **사람의 직접 행위**여야 한다 (I17) - 자기 승인 허용이 에이전트
-  대리 판정까지 허용하는 것은 아니다.
-- **merge 흡수의 오염 트레이드오프**: 7.1 의 결정 규칙(유효 merge 가 이기고
-  흡수)은 오염 노출창을 약간 넓힌다 - 파티션 중 오염 주장이 merge 되고 동시에
-  정당한 reject 가 있었어도 merge 가 이긴다. 이는 새 방어 장치가 아니라 위
-  강등 fast-path 가 흡수하도록 이미 설계된 시나리오다. 근거는 두 겹이다:
-  (1) **비용 구조** - 병합은 등급 메타데이터 추가일 뿐이고 강등으로 싸게
-  되돌릴 수 있으므로, "원칙 3 덕에 성급한 강등의 비용은 낮다"는 fast-path 의
-  정당화 논리가 병합에도 동일하게 적용된다. 낙관적으로 확정하고 정정은 새
-  제안으로 가는 것이 비용 구조상 맞다. (2) **목표가 강제한다** - 파생은
-  Merged 위에만 쌓이므로, 소급 무효화를 막으려면 Merged 가 흡수 상태여야 한다.
-  보수적으로 보이는 reject 흡수는 오히려 Merged 를 잠정으로 만들어 파생을 다시
-  무너뜨리므로 이 문제를 풀지 못한다 - 흡수 상태의 선택지는 사실상 merge 로
-  강제된다. 잔여 위험(유효 리뷰어 principal 하나가 탐지 전까지 지속되는 승격을
-  만드는 것)은 자동 verdict 의 경우 라우팅 전제(새 모순 0, 저영향)를 폴드가
-  재검증하므로(I15) 막히고, 실질 노출면은 사람 merge 로 좁혀진다.
-
----
-
-## 10. 거버넌스
-
-- **정책도 지식이다**: 워크스페이스의 정본 정책(등급 임계값, 판정 권한,
-  쿼럼, 자동 병합 규칙)은 그 워크스페이스의 지식으로 저장되고, 정책의 변경
-  자체가 tbox-change에 준하는 제안을 요구한다 (자기 언급이지만 순환은 아니다
-  - 부트스트랩 정책은 노드 설정 파일에서 온다).
-- **판정 권한**: 정책이 지정한 principal(사람) 또는 위임받은 고신뢰 호스트.
-  위임 사슬로 판정한 경우에도 책임 주체는 사슬의 principal이다 (원칙 2).
-- **자기 승인 금지 (I9)**: proposer와 approver의 principal이 같으면 병합
-  불가. principal 동일성은 **정규 신원**(해소된 principal 엔티티 id 또는 서명
-  키) 기준이고, 신원 앵커는 노드 설정에서 부트스트랩한다(해소 순환 차단).
-  미해소 principal 간 판정은 자기 승인 의심으로 사람 리뷰를 강제한다.
-  **예외 (강등/리콜)**: claim-demotion 과 recall 은 자기 승인을 허용한다 (I9)
-  - 자신이 유입시킨 오염의 즉시 정정은 저위험이고 fast-path(9절)와 정합한다.
-  recall 만은 위임 사슬 대리가 아닌 사람 principal 의 직접 판정이어야 한다 (I17).
-  1인 워크스페이스(solo)의 특례: 정책으로 자기 승인을 허용하되, 그
-  승격은 "self-attested" 표지를 달아 다른 정본으로 sync될 때 신뢰 평가에서
-  구분된다 (원칙 18) - 혼자 쓸 때의 마찰은 없애고, 연합할 때의 신뢰는 지킨다.
-
----
-
-## 11. MCP 표면 확장
-
-원칙 21(좁은 표면)에 따라 의도 단위 도구 4개만 추가한다.
-
-| 도구 | 역할 |
-|------|------|
-| `propose` | 제안 생성 (kind, payload, target, rationale) |
-| `list_proposals` | 상태/워크스페이스/내 리뷰 대기 필터 |
-| `get_proposal` | 제안 + 믿음 diff + 검사 결과 (diff 계산이 오래 걸리면 태스크 핸들 반환 - MCP Tasks) |
-| `review` | 코멘트 또는 판정. 사람 확인이 필요한 판정은 elicitation / multi round-trip으로 위임 |
+| `propose` | Create a proposal (kind, payload, target, rationale) |
+| `list_proposals` | Filter by state/workspace/awaiting-my-review |
+| `get_proposal` | Proposal + belief diff + check results (if diff computation takes long, returns a task handle - MCP Tasks) |
+| `review` | Comment or verdict. A verdict requiring human confirmation is delegated via elicitation / multi round-trip |
 
 Resources: `supragnosis://proposal/{id}`, `supragnosis://workspace/{ws}/canon-policy`.
 
-Prompts: `review-proposal {id}` - diff와 검사 결과를 채워 에이전트의 1차
-리뷰(9절)를 유도하는 가이드 프롬프트.
+Prompts: `review-proposal {id}` - a guide prompt that fills in the diff and check results
+to elicit the agent's first-pass review (Section 9).
 
 ---
 
-## 12. 원칙 정합성 매트릭스
+## 12. Principle Alignment Matrix
 
-각 단계가 원칙과 어떻게 정합하는지의 요약 (리뷰용):
+A summary of how each step aligns with the principles (for review):
 
-| 단계 | 지켜야 할 원칙 | 이 설계의 장치 |
-|------|----------------|----------------|
-| 적재 | 22 (마찰 최소) | 제안은 적재와 무관 (I10) - 승격만 게이트 |
-| 제안 생성 | 1, 3 (주장/불변) | 제안 = 관측 이벤트 (I1) |
-| 검사 | 9 vs 6 (스키마 모순은 버그, 주장 모순은 신호) | blocking / informative 이분 (6절) |
-| diff | 16 (결정적 프로젝션) | 두 물질화의 차 = 순수 함수 (I8) |
-| stale | 16, I4 (벽시계 금지) | Stale은 이벤트가 아니라 폴드의 계산 결과 (4절 주석) |
-| 판정 | 16 (수렴 + 단조) | 유효 merge 흡수 결정 규칙(집합의 함수) + Merged 흡수 + 번복은 새 제안 (7절, I16) |
-| 병합 | 3 (추가만) | 승격 이벤트 추가, 주장 불변 (I6) |
-| 기각 | 5 (OWA) | 기각 != 부정, 부정은 명시적 주장으로 (8절) |
-| 자동화 | 2, 18, 19 (책임, 오염방어, LLM은 심판 아님) | 자동 병합도 위임 사슬 달린 판정, 라우팅 전제는 폴드가 재검증 (I15), 에이전트는 코멘트까지 (9절) |
-| 거버넌스 | 18 (명시적 승격) | 정책도 지식, 자기 승인 금지 + solo 특례 (10절) |
+| Step | Principle to uphold | This design's mechanism |
+|------|---------------------|-------------------------|
+| loading | 22 (minimal friction) | proposals are independent of loading (I10) - only promotion is gated |
+| proposal creation | 1, 3 (assertion/immutable) | proposal = observation event (I1) |
+| checks | 9 vs 6 (schema contradiction is a bug, assertion contradiction is a signal) | blocking / informative dichotomy (Section 6) |
+| diff | 16 (deterministic projection) | the difference of two materializations = a pure function (I8) |
+| stale | 16, I4 (no wall clock) | Stale is not an event but a computed result of the fold (Section 4 note) |
+| verdict | 16 (convergence + monotonic) | valid-merge-absorbing decision rule (a function of the set) + Merged absorbing + a reversal is a new proposal (Section 7, I16) |
+| merge | 3 (additive only) | append a promotion event, assertion immutable (I6) |
+| reject | 5 (OWA) | reject != negation, negation via an explicit assertion (Section 8) |
+| automation | 2, 18, 19 (responsibility, contamination defense, the LLM is not a judge) | auto-merge is also a verdict with a delegation chain, the routing premise is re-validated by the fold (I15), the agent goes only as far as a comment (Section 9) |
+| governance | 18 (explicit promotion) | policy is also knowledge, no self-approval + solo special case (Section 10) |
 
-의도적으로 해결한 엣지케이스 9종:
+The 9 kinds of edge cases deliberately resolved:
 
-1. **병행 상반 판정** -> 유효 merge 흡수 결정 규칙(집합의 함수) + 번복은 새 제안 (7.1).
-2. **시간 기반 자동 병합의 비결정성** -> 만료/자동화는 명시적 이벤트만 (I4).
-3. **활발한 정본에서의 stale 무한루프** -> touched set을 좁게 정의 (4절).
-4. **스테일 diff 승인** -> 판정을 base 에 묶고 revise 가 판정 리셋 (I12).
-5. **검사 결과 위조** -> blocking 은 폴드가 재계산, check_reported 는 캐시 (I13).
-6. **동시 중복 병합** -> 병합 효과 멱등 + entity-merge 정준화 (I14).
-7. **영향 과소평가로 인한 자동 병합** -> 영향 반경 병합 시점 재계산 (4절, 9절).
-8. **오염/버그 실행자의 고영향 자동 병합** -> 자동 verdict 의 라우팅 전제를 폴드가 재검증 (I15).
-9. **늦은 이른-HLC 판정의 소급 번복** -> 종결은 이벤트 집합의 단조 함수, Merged 는 흡수 상태 (I16, 7.1).
-10. **오염 에이전트의 대리 recall 자기 승인** -> recall verdict 는 위임 불가, 사람 principal 의 직접 행위만 유효 (I17).
+1. **Concurrent opposing verdicts** -> valid-merge-absorbing decision rule (a function of the set) + a reversal is a new proposal (7.1).
+2. **Nondeterminism of time-based auto-merge** -> expiry/automation only via explicit events (I4).
+3. **Infinite stale loop in an active canon** -> define the touched set narrowly (Section 4).
+4. **Approval of a stale diff** -> bind the verdict to the base and revise resets the verdict (I12).
+5. **Forgery of check results** -> blocking is recomputed by the fold, check_reported is a cache (I13).
+6. **Concurrent duplicate merges** -> merge effects idempotent + entity-merge canonicalization (I14).
+7. **Auto-merge due to impact underestimation** -> recompute the impact radius at merge time (Sections 4, 9).
+8. **High-impact auto-merge by a contaminated/buggy executor** -> the fold re-validates the routing premise of an automatic verdict (I15).
+9. **Retroactive reversal by a late early-HLC verdict** -> finality is a monotonic function of the event set, Merged is an absorbing state (I16, 7.1).
+10. **Proxied recall self-approval by a contaminated agent** -> a recall verdict cannot be delegated, only a human principal's direct act is valid (I17).
 
 ---
 
-## 13. 마일스톤과 열린 결정
+## 13. Milestones and Open Decisions
 
-의존 관계: 신뢰 등급/해소 계층(M3)이 전제다. 또한 **다중 노드 수렴은 HLC
-순서(M4)에 의존한다(I11)** - 따라서 M3.5는 solo/단일 정본에서 완전히 동작하고,
-다중 노드/페더레이션 판정의 결정적 수렴은 HLC 도입(M4) 이후 보장된다. 제안
-워크플로는 **M3.5**로 M3와 M4 사이에 넣는다 (solo/허브 환경에서 선가치).
+Dependencies: the trust tier / resolution layer (M3) is a prerequisite. Also,
+**multi-node convergence depends on HLC ordering (M4) (I11)** - so M3.5 works fully in
+solo/single-canon, while deterministic convergence of multi-node/federation verdicts is
+guaranteed only after HLC is introduced (M4). The proposal workflow goes in as **M3.5**,
+between M3 and M4 (pre-value in solo/hub environments).
 
-- M3.5a: Proposal 엔티티 + 이벤트 + 폴드 상태 기계 + claim-promotion **및 claim-demotion**. (강등은 승격과 대칭이라 구현이 싸고, 9절 fast-path 의 안전장치로 조기 필요 - 승격만 있고 정정이 없는 기간이 곧 오염 노출창.) 폴드 상태 기계는 I16 의 단조 결정 규칙을 반영한다 - 순차 최종 상태 폴드가 아니라 "유효 merge 존재"라는 집합 함수로 결론을 계산하고(쿼럼은 리셋 없는 prefix 존재형, 7.3), Merged 를 흡수 상태로 처리한다.
-- M3.5b: 믿음 diff + blocking 검사 + `propose`/`get_proposal`/`review`.
-- M4+: 쿼럼 정책, entity-merge/tbox-change/recall 종류, 자동 병합 정책 실행자.
+- M3.5a: Proposal entity + events + fold state machine + claim-promotion **and
+  claim-demotion**. (Demotion is symmetric with promotion so it is cheap to implement, and
+  it is needed early as the safety device of the Section 9 fast-path - a period with only
+  promotion and no correction is itself a contamination exposure window.) The fold state
+  machine reflects the monotonic decision rule of I16 - it computes the conclusion not as a
+  sequential final-state fold but as the set function "a valid merge exists" (quorum as the
+  reset-free prefix-existential, 7.3), and treats Merged as an absorbing state.
+- M3.5b: belief diff + blocking checks + `propose`/`get_proposal`/`review`.
+- M4+: quorum policy, the entity-merge/tbox-change/recall kinds, the auto-merge policy
+  executor.
 
-열린 결정:
+Open decisions:
 
-- touched set의 정확한 반경 (subject/predicate 공유까지 vs 1-hop 이웃까지) -
-  livelock과 안전성의 트레이드오프. 초기값: 좁게.
-- 자동 병합 실행자의 위치: 각 노드의 데몬 vs 허브 전용 - 어느 쪽이든 verdict
-  관측의 provenance로 식별되므로 의미론은 동일. 운영 선택.
-- 기각된 제안의 재제출 쿨다운을 정책에 둘 것인가 (스팸 방지) - I4 위반이
-  아닌 형태(재제출 시 이전 기각 rationale 첨부 강제)로 먼저 시도.
-- 쿼럼 N>1 의 단조성: "동일 방향 유효 판정 N 도달"을 집합 존재형(리셋 없는
-  prefix)으로 구현하는 세부 - 순차 최종 상태로 오구현하면 늦은 revise 가 확정을
-  소급 취소한다 (7.3). 도달 이후 revise 무효화(코멘트 강등) 규칙과 함께 확정.
-- 복수 유효 merge 의 대표 verdict 정준화: HLC 최소 선택 (효과는 멱등이므로
-  의미론 문제는 없고, 폴드의 결정성만을 위한 것 - I14).
-- blocking 검사의 단조성: 재계산 입력을 고정 base 프런티어(I7, I8)로 못박아
-  유효성이 사후에 뒤집히지 않게 하는 것(6절 단조성 주석)을, 같은 이벤트 집합을
-  무작위 순서/분할로 주입해도 결론이 동일한지 확인하는 property test 로 상시
-  검증(원칙 16).
+- The exact radius of the touched set (up to subject/predicate sharing vs up to the 1-hop
+  neighborhood) - a trade-off between livelock and safety. Initial value: narrow.
+- The location of the auto-merge executor: a daemon on each node vs hub-only - either way
+  the semantics are the same since it is identified by the provenance of the verdict
+  observation. An operational choice.
+- Whether to put a resubmission cooldown for rejected proposals in the policy (spam
+  prevention) - try first in a form that is not an I4 violation (forcing attachment of the
+  prior rejection rationale on resubmission).
+- Monotonicity of quorum N>1: the details of implementing "N same-direction valid verdicts
+  reached" as a set-existential (reset-free prefix) - mis-implementing it as a sequential
+  final state lets a late revise retroactively cancel a finalization (7.3). To be finalized
+  together with the rule for revise invalidation (demotion to comment) after N is reached.
+- Canonicalization of the representative verdict among multiple valid merges: choosing the
+  minimum HLC (since effects are idempotent there is no semantic issue; it is only for the
+  fold's determinism - I14).
+- Monotonicity of blocking checks: pinning the recomputation input to the fixed base
+  frontier (I7, I8) so validity does not flip after the fact (the Section 6 monotonicity
+  note), continuously verified by a property test that checks the conclusion is identical
+  even when the same event set is injected in random order/partitioning (Principle 16).

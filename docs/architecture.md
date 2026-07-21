@@ -1,136 +1,136 @@
-# supragnosis - 아키텍처 설계
+# supragnosis - Architecture Design
 
-> 여러 **호스트**와 **작업 공간(workspace)** 에서 발생하는 지식 조각을 수집해
-> **온톨로지(개념/관계 그래프)** 로 구조화하고, **MCP** 를 통해 질의/탐색하게 하는
-> 임베디드/파일 기반 Rust 서버.
+> An embedded/file-based Rust server that collects knowledge fragments arising across
+> multiple **hosts** and **workspaces**, structures them into an
+> **ontology (a concept/relation graph)**, and lets them be queried/explored via **MCP**.
 
-- 이름: `supragnosis` = *supra*(위/너머) + *gnosis*(앎). 지식 위의 지식 = 메타지식.
-- 네임스페이스 URI: `supragnosis://...`
-- 상태: **설계 단계 (greenfield)**. 이 문서가 구현의 기준선.
-- 규범 문서: 설계 원칙은 [`principles.md`](principles.md) (설계 원칙)를 따른다.
-
----
-
-## 1. 목표 / 비목표
-
-### 목표
-- 여러 호스트/워크스페이스의 지식을 **출처(provenance)를 보존한 채** 하나의 온톨로지로 통합.
-- **임베디드/파일 기반**: 별도 DB 서버 없이 각 호스트에서 단일 프로세스로 동작.
-- MCP 클라이언트(예: Claude Code/Desktop, 각종 에이전트)가 지식을 **적재(observe)** 하고
-  **의미/그래프 기반으로 조회(search/traverse)** 할 수 있는 도구 제공.
-- **로컬 우선(local-first)** + 호스트 간 **동기화** 로 분산 지식을 수렴.
-
-### 비목표 (초기 버전)
-- 자체 내장 LLM으로 하는 지식 추출 - 초기엔 **클라이언트(호출한 에이전트)가 추출**을 담당하고,
-  supragnosis는 결정론적 저장/해소/질의 substrate 역할 (추출기는 포트로 분리해 나중에 부착).
-- 대규모 멀티테넌시/실시간 협업 편집 - 이벤트 로그 병합 수준의 최종 일관성만 목표.
-- 완전한 OWL 추론기(reasoner) - 규칙 기반 경량 추론부터 시작.
+- Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
+- Namespace URI: `supragnosis://...`
+- Status: **design phase (greenfield)**. This document is the baseline for implementation.
+- Normative document: the design principles follow [`principles.md`](principles.md) (design principles).
 
 ---
 
-## 2. 핵심 개념 & 도메인 모델
+## 1. Goals / Non-goals
 
-description-logic 관례를 빌려 **두 계층**으로 나눈다.
+### Goals
+- Unify knowledge from multiple hosts/workspaces into a single ontology **while preserving provenance**.
+- **Embedded/file-based**: runs as a single process on each host, with no separate DB server.
+- Provides tools that let MCP clients (e.g. Claude Code/Desktop, various agents) **ingest (observe)** knowledge and
+  **query it semantically/graph-wise (search/traverse)**.
+- Converges distributed knowledge via **local-first** operation + **synchronization** across hosts.
 
-- **스키마 계층 (T-Box)** - 어떤 엔티티 타입/관계 타입이 존재하는가(온톨로지의 정의).
-- **인스턴스 계층 (A-Box)** - 실제 엔티티/관계/지식 조각.
+### Non-goals (initial version)
+- Knowledge extraction via a built-in LLM - initially the **client (the calling agent) is responsible for extraction**,
+  and supragnosis serves as a deterministic storage/resolution/query substrate (the extractor is separated behind a port and attached later).
+- Large-scale multi-tenancy/real-time collaborative editing - only eventual consistency at the level of event-log merging is targeted.
+- A full OWL reasoner - start with lightweight rule-based inference.
 
-### 2.1 엔티티(개념 노드)
-| 필드 | 설명 |
+---
+
+## 2. Core Concepts & Domain Model
+
+Borrowing the description-logic convention, we split into **two layers**.
+
+- **Schema layer (T-Box)** - which entity types/relation types exist (the ontology's definitions).
+- **Instance layer (A-Box)** - the actual entities/relations/knowledge fragments.
+
+### 2.1 Entity (concept node)
+| Field | Description |
 |------|------|
-| `id` | 안정적 식별자 (해소된 정규 엔티티) |
-| `type` | T-Box의 타입 (`Concept`,`Person`,`Project`,`Tool`,`File`,`Decision`,`Task`...) |
-| `canonical_name` | 정규 명칭 |
-| `aliases` | 동의어/표기 변형 |
-| `properties` | 타입별 속성(JSON) |
-| `embedding` | (선택) 의미 검색용 벡터 |
+| `id` | Stable identifier (the resolved canonical entity) |
+| `type` | T-Box type (`Concept`,`Person`,`Project`,`Tool`,`File`,`Decision`,`Task`...) |
+| `canonical_name` | Canonical name |
+| `aliases` | Synonyms/spelling variants |
+| `properties` | Type-specific properties (JSON) |
+| `embedding` | (optional) vector for semantic search |
 
-### 2.2 관계(엣지)
-- 방향성 있는 **타입된 관계**: `depends_on`, `part_of`, `authored_by`, `relates_to`,
+### 2.2 Relation (edge)
+- Directed **typed relations**: `depends_on`, `part_of`, `authored_by`, `relates_to`,
   `derived_from`, `mentions` ...
-- **관계 타입 정준화**: kind 표기는 결정적 정규화(trim, 구분자/camelCase -> `_`,
-  lowercase)를 거쳐 id 와 저장에 반영된다 - LLM 추출기의 표기 요동
-  (`depends-on`/`dependsOn`)이 다른 엣지 id 로 갈라지지 않는다 (순수 함수, 원칙 16).
-- **바이템포럴 속성**(원칙 4): **유효시간** `valid_from`/`valid_to`(세계에서 참이던 기간)
-  vs **기록시간** `observed_at`(시스템이 알게 된 시점, provenance에). 반증은 삭제가 아니라
-  `valid_to` 종료로 처리.
-- 그 외: `confidence`, `provenance`(신뢰등급 포함).
+- **Relation-type canonicalization**: the kind spelling goes through deterministic normalization (trim, separators/camelCase -> `_`,
+  lowercase) before being reflected into the id and storage - spelling jitter from LLM extractors
+  (`depends-on`/`dependsOn`) does not diverge into different edge ids (a pure function, Principle 16).
+- **Bitemporal attributes** (Principle 4): **valid time** `valid_from`/`valid_to` (the period it was true in the world)
+  vs **transaction time** `observed_at` (when the system learned of it, in provenance). Disproof is handled not as deletion but as
+  closing `valid_to`.
+- Others: `confidence`, `provenance` (including trust tier).
 
-### 2.3 관측(Observation) - **진실의 원천(source of truth)**
-지식은 먼저 **불변 관측 이벤트**로 들어온다. 엔티티/관계 그래프는 관측 로그로부터 파생된
-**물질화(materialized) 프로젝션**이다 (event sourcing).
+### 2.3 Observation - **the source of truth**
+Knowledge first arrives as an **immutable observation event**. The entity/relation graph is a
+**materialized projection** derived from the observation log (event sourcing).
 
-| 필드 | 설명 |
+| Field | Description |
 |------|------|
-| `id` | **콘텐츠 주소** (blake3 해시) -> 어떤 경로(서버/피어)로 들어와도 자동 dedup |
-| `content` | 원문 지식 조각 (텍스트/구조화) |
-| `assertions` | (선택) 클라이언트가 넘긴 후보 엔티티/관계 - **원문 표기 그대로** 로그에 남고(정규화는 프로젝션의 일), **id 계산에 포함**된다(주장은 계보/임베딩과 달리 내용 정체성 - 같은 텍스트에 다른 주장이면 다른 관측) |
-| `provenance` | attestation **목록** (최소 1개): 각각 `host`(acting), `on_behalf_of`(위임 주체), `workspace`, `source_ref`, `observed_at`(기록시간), `confidence`, `trust_tier`. 같은 콘텐츠 주소로 재도착하면 덮어쓰지 않고 단조 합집합으로 누적 (원칙 3의 병합 규범) |
-| `derived_from` | (선택) 이 관측이 파생된 원천 관측 id들 - 오염 소독의 리콜 명단(원칙 18) |
-| `origin` | `origin_host_id`, `origin_seq`(호스트별 단조 증가) - 버전벡터 델타 동기화의 키 |
-| `hlc` | Hybrid Logical Clock - 호스트 벽시계 편차와 무관한 **결정적 인과 순서** |
-| `signature` | (선택) 원본 노드 서명 - 서버/피어 릴레이를 거쳐도 출처 위/변조 검출 |
+| `id` | **Content address** (blake3 hash) -> automatic dedup no matter which path (server/peer) it arrives by |
+| `content` | The raw knowledge fragment (text/structured) |
+| `assertions` | (optional) candidate entities/relations handed over by the client - kept in the log **exactly as spelled** (normalization is the projection's job) and **included in id computation** (assertions, unlike lineage/embedding, are content identity - the same text with different assertions is a different observation) |
+| `provenance` | a **list** of attestations (at least 1): each with `host` (acting), `on_behalf_of` (the delegating principal), `workspace`, `source_ref`, `observed_at` (transaction time), `confidence`, `trust_tier`. Re-arrival under the same content address accumulates as a monotonic union rather than overwriting (the merge norm of Principle 3) |
+| `derived_from` | (optional) the source observation ids this observation was derived from - the recall list for contamination cleanup (Principle 18) |
+| `origin` | `origin_host_id`, `origin_seq` (monotonically increasing per host) - the key for version-vector delta sync |
+| `hlc` | Hybrid Logical Clock - a **deterministic causal order** independent of host wall-clock skew |
+| `signature` | (optional) the origin node's signature - detects source forgery/tampering even after relaying through servers/peers |
 
-### 2.4 출처(Provenance) - **1급 시민, 위임 사슬, 신뢰 등급**
-모든 사실은 출처 태그를 달고 저장된다. 어떤 것도 파괴적으로 덮어쓰지 않는다.
-- **위임 사슬**(원칙 2): "누가"는 평평한 host id 가 아니라 `acting host` + `on_behalf_of`
-  (예: `claude-code@macbook` 가 `ashon` 을 대리)로 표현. 사슬 없는 외부/레거시 관측은
-  acting host 단독으로 기록하되 신뢰 평가에서 낮게 취급.
-- **신뢰 등급**(원칙 18): 관측은 검증 수준 등급(사람확인 > 서명 신뢰호스트 > 호스트의
-  에이전트 추출 > 미검증)을 지니고 해소 가중/질의 랭킹에 반영. 등급 **승격은 명시적으로만**
-  (사람 확인/교차검증) - 시간이 지났다고 오르지 않는다.
-- **충돌 보존**(원칙 6): 상충 주장은 모두 provenance와 함께 남고, **해소 계층**(교체 가능
-  전략)이 "현재 믿음"을 계산하되 모순 존재를 질의 가능하게 남긴다.
+### 2.4 Provenance - **first-class citizen, delegation chain, trust tier**
+Every fact is stored with a provenance tag. Nothing is destructively overwritten.
+- **Delegation chain** (Principle 2): "who" is expressed not as a flat host id but as `acting host` + `on_behalf_of`
+  (e.g. `claude-code@macbook` acting on behalf of `ashon`). External/legacy observations without a chain are recorded with the
+  acting host alone but treated as lower in trust evaluation.
+- **Trust tier** (Principle 18): an observation carries a verification-level tier (human-confirmed > signed trusted host > a host's
+  agent extraction > unverified) that feeds into resolution weighting/query ranking. Tier **promotion is explicit only**
+  (human confirmation/cross-validation) - it does not rise merely with the passage of time.
+- **Conflict preservation** (Principle 6): conflicting assertions all remain with their provenance, and the **resolution layer** (a swappable
+  strategy) computes the "current belief" while leaving the existence of the contradiction queryable.
 
 ---
 
-## 3. 아키텍처 개요 (헥사고날 / 포트-어댑터)
+## 3. Architecture Overview (hexagonal / port-adapter)
 
-도메인은 순수하게, IO는 어댑터로. 저장소/임베딩/추출기는 **트레이트(포트)** 뒤에 두어 교체 가능.
+The domain pure, IO as adapters. The store/embedding/extractor sit behind **traits (ports)**, making them swappable.
 
 ```mermaid
 flowchart TB
-    subgraph Clients["MCP 클라이언트 (호스트별)"]
+    subgraph Clients["MCP clients (per host)"]
         C1["Claude Code / Desktop"]
-        C2["다른 에이전트"]
+        C2["Other agents"]
     end
     subgraph MCP["supragnosis-mcp (rmcp)"]
         T["Tools / Resources / Prompts"]
         TR["Transport: stdio, streamable-http"]
     end
-    subgraph Engine["supragnosis-engine (서비스)"]
+    subgraph Engine["supragnosis-engine (service)"]
         ING["Ingest"]
         RES["Entity Resolution"]
         PRJ["Projector"]
         QRY["Query / Traverse"]
         SYN["Sync"]
     end
-    subgraph Core["supragnosis-core (도메인, IO 없음)"]
-        M["모델: Observation, Entity, Relation, Schema, Provenance"]
-        P["포트: ObservationStore, GraphStore, VectorIndex, Extractor, EmbeddingProvider"]
+    subgraph Core["supragnosis-core (domain, no IO)"]
+        M["Models: Observation, Entity, Relation, Schema, Provenance"]
+        P["Ports: ObservationStore, GraphStore, VectorIndex, Extractor, EmbeddingProvider"]
     end
-    subgraph Store["supragnosis-store (어댑터)"]
-        DB[("Cozo / RocksDB\n관계+그래프+벡터")]
+    subgraph Store["supragnosis-store (adapter)"]
+        DB[("Cozo / RocksDB\nrelational+graph+vector")]
         LOG[("Observation Log\nappend-only")]
     end
     Clients --> TR --> T --> Engine
     Engine --> Core
-    Core -. 구현 .-> Store
-    SYN <-->|"이벤트 로그 복제"| Peers["다른 호스트 / 공유 원격"]
+    Core -. implements .-> Store
+    SYN <-->|"event log replication"| Peers["Other hosts / shared remote"]
 ```
 
-### 계층
-1. **MCP 프로토콜 계층** (`rmcp`): 도구/리소스/프롬프트, 트랜스포트(로컬 stdio + 원격 HTTP).
-2. **서비스(엔진) 계층**: ingest/resolve/project/query/sync 유스케이스 오케스트레이션.
-3. **도메인 계층**: 모델 + 포트 트레이트 + 스키마/해소/추론 규칙 (외부 의존 0).
-4. **저장 계층**: 임베디드 스토어 어댑터 (관측 로그 + 물질화 그래프 + 벡터 인덱스).
-5. **동기화 계층**: 호스트 간 관측 로그 복제.
+### Layers
+1. **MCP protocol layer** (`rmcp`): tools/resources/prompts, transport (local stdio + remote HTTP).
+2. **Service (engine) layer**: orchestration of the ingest/resolve/project/query/sync use cases.
+3. **Domain layer**: models + port traits + schema/resolution/inference rules (zero external dependencies).
+4. **Storage layer**: the embedded store adapter (observation log + materialized graph + vector index).
+5. **Synchronization layer**: observation-log replication across hosts.
 
 ---
 
-## 4. 데이터 흐름
+## 4. Data Flow
 
-### 4.1 적재(Ingest)
+### 4.1 Ingest
 ```mermaid
 sequenceDiagram
     participant Cl as MCP Client
@@ -141,382 +141,377 @@ sequenceDiagram
     participant G as Graph+Vector Store
     Cl->>Mcp: observe(content, source?)
     Mcp->>Eng: ingest
-    Eng->>Eng: (선택) Extractor -> 후보 엔티티/관계
+    Eng->>Eng: (optional) Extractor -> candidate entities/relations
     Eng->>Log: append(Observation, provenance, blake3 id)
     Eng->>Prj: project(new events)
-    Prj->>Prj: 엔티티 해소 (정규 키 + 임베딩 유사도)
-    Prj->>G: upsert 엔티티/관계 (+벡터)
-    Eng-->>Cl: ack (엔티티 id, 링크 결과)
+    Prj->>Prj: entity resolution (canonical key + embedding similarity)
+    Prj->>G: upsert entities/relations (+vectors)
+    Eng-->>Cl: ack (entity ids, link results)
 ```
 
-### 4.2 질의(Query)
-- `search`: **벡터(HNSW) + 키워드** 하이브리드로 조각/엔티티 후보 -> 그래프 문맥 보강 -> provenance 포함 랭킹.
-- `traverse`: 엔티티 기점 n-hop 순회(관계 타입 필터). 재귀 순회는 Cozo Datalog로 표현.
+### 4.2 Query
+- `search`: **vector (HNSW) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
+- `traverse`: n-hop traversal from an entity (relation-type filter). Recursive traversal is expressed in Cozo Datalog.
 
-### 4.3 동기화(Sync) - 위상 독립 복제
-- 각 호스트는 로컬 관측 로그에 append. 관측은 **불변 + 콘텐츠 주소 + origin/HLC**.
-- 동기화 = **버전벡터 델타 복제** - 노드가 서로 `{host_id: max_seq}` 를 교환하고 부족분만 pull/push.
-- CAS(blake3)로 dedup, HLC로 결정적 순서 -> **동일 로그 집합 -> 동일 그래프**로 수렴 (CRDT류 강한 최종 일관성).
-- 이 복제 프리미티브는 경로(로컬/서버/피어)에 **무관** -> 5절의 모든 위상이 같은 로직 재사용.
+### 4.3 Sync - topology-independent replication
+- Each host appends to its local observation log. Observations are **immutable + content-addressed + origin/HLC**.
+- Sync = **version-vector delta replication** - nodes exchange `{host_id: max_seq}` with each other and pull/push only the shortfall.
+- dedup via CAS (blake3), deterministic order via HLC -> converges to **the same log set -> the same graph** (CRDT-like strong eventual consistency).
+- This replication primitive is **independent** of the path (local/server/peer) -> all topologies in Section 5 reuse the same logic.
 
 ---
 
-## 5. 연결 위상 / 페더레이션 (Topology & Federation)
+## 5. Connection Topology / Federation (Topology & Federation)
 
-**단일 바이너리, 역할 조합.** 한 supragnosis 인스턴스는 아래 역할을 겹쳐 가질 수 있다.
+**A single binary, composed roles.** A single supragnosis instance can hold the roles below in overlapping combinations.
 
-- **로컬 노드(항상)** - 임베디드 스토어 + 로컬 MCP(stdio)로 그 호스트의 지식을 온톨로지화.
-- **동기화 클라이언트** - 자기 관측 로그를 원격(서버/피어)과 pull/push.
-- **서버(허브) 노드** - 여러 노드의 로그를 집계/릴레이, 상시가용, 중앙 authz.
-- **피어** - 중앙 없이 노드<->노드 직접 sync (mesh).
+- **Local node (always)** - ontologizes that host's knowledge via the embedded store + local MCP (stdio).
+- **Sync client** - pull/push its own observation log against a remote (server/peer).
+- **Server (hub) node** - aggregates/relays multiple nodes' logs, always available, central authz.
+- **Peer** - direct node<->node sync without a center (mesh).
 
-### 지원 위상
-1. **Standalone** - 로컬 전용 (오프라인).
-2. **Hub-and-spoke (클라이언트-서버)** - 호스트들이 중앙 서버로 sync. 서버가 정규 집합/릴레이/상시가용.
-   호스트들이 동시에 온라인이 아니어도 서버 경유로 따라잡음.
-3. **Peer-to-peer (mesh)** - 호스트들이 직접 sync. 중앙 불필요, 애드혹/오프라인 우선.
-4. **Hybrid** - 일부는 피어 직접 + 동시에 허브로도 sync. (**기본 지향점**)
+### Supported topologies
+1. **Standalone** - local only (offline).
+2. **Hub-and-spoke (client-server)** - hosts sync to a central server. The server is the canonical set/relay/always-available.
+   Even when hosts are not online simultaneously, they catch up via the server.
+3. **Peer-to-peer (mesh)** - hosts sync directly. No center needed, ad-hoc/offline-first.
+4. **Hybrid** - some peer directly + also sync to a hub at the same time. (**the default direction**)
 
 ```mermaid
 flowchart LR
-    subgraph HostA["호스트 A (노드)"]
-        A1["로컬 스토어 + MCP(stdio)"]
+    subgraph HostA["Host A (node)"]
+        A1["Local store + MCP(stdio)"]
     end
-    subgraph HostB["호스트 B (노드)"]
-        B1["로컬 스토어 + MCP(stdio)"]
+    subgraph HostB["Host B (node)"]
+        B1["Local store + MCP(stdio)"]
     end
-    subgraph HostC["호스트 C (노드)"]
-        C1["로컬 스토어 + MCP(stdio)"]
+    subgraph HostC["Host C (node)"]
+        C1["Local store + MCP(stdio)"]
     end
-    Hub[("서버 / 허브 노드\n집계, 릴레이, 상시가용")]
+    Hub[("Server / hub node\naggregate, relay, always-available")]
     A1 <-->|sync API| Hub
     B1 <-->|sync API| Hub
     C1 <-->|sync API| Hub
-    A1 <-->|"peer sync (직접)"| C1
+    A1 <-->|"peer sync (direct)"| C1
 ```
 
-### 두 종류의 연결을 구분
-| | MCP 트랜스포트 | 동기화(Federation) 트랜스포트 |
+### Distinguishing the two kinds of connection
+| | MCP transport | Sync (federation) transport |
 |--|----------------|-------------------------------|
-| 대상 | **에이전트 <-> 노드** | **노드 <-> 노드/서버** |
-| 프로토콜 | MCP (stdio 로컬 / streamable-HTTP 원격) | 전용 sync API (HTTP(S), 후에 gRPC) |
-| 하는 일 | observe/search/traverse 도구 호출 | 관측 로그 버전벡터 델타 교환 |
+| Target | **agent <-> node** | **node <-> node/server** |
+| Protocol | MCP (stdio local / streamable-HTTP remote) | a dedicated sync API (HTTP(S), later gRPC) |
+| What it does | observe/search/traverse tool calls | observation-log version-vector delta exchange |
 
-> 즉 "서버와 연결"은 두 층위 모두에서 가능: (a) 원격 에이전트가 노드의 MCP-HTTP에 접속,
-> (b) 노드가 허브 서버와 로그를 sync. supragnosis는 둘 다 지원한다.
+> That is, "connecting to a server" is possible at both levels: (a) a remote agent connects to a node's MCP-HTTP,
+> (b) a node syncs its log with a hub server. supragnosis supports both.
 
-### 동기화 프로토콜 (초안)
-- `advertise` -> 버전벡터 `{host_id: max_seq}` 교환 (내가 가진 것 요약).
-- `pull(since)` -> 상대가 나보다 앞선 origin_seq 구간의 관측을 스트림으로 수신.
-- `push(events)` -> 내가 앞선 구간을 전송. 수신 측은 CAS로 dedup, HLC로 정렬 후 재물질화.
-- 신뢰: 노드 keypair로 이벤트 **서명** -> 릴레이/피어를 거쳐도 출처 authenticity 보장.
+### Sync protocol (draft)
+- `advertise` -> exchange the version vector `{host_id: max_seq}` (a summary of what I have).
+- `pull(since)` -> stream in observations from the origin_seq ranges where the peer is ahead of me.
+- `push(events)` -> send the ranges where I am ahead. The receiving side dedups via CAS, orders by HLC, then re-materializes.
+- Trust: **sign** events with the node keypair -> guarantees source authenticity even through relays/peers.
 
-### 선택적 공유
-로컬 지식 전부가 밖으로 나가면 안 됨 -> sync 경계에서 **workspace/민감도 라벨 기준 필터/레드액션**.
-노드는 공유할 workspace만 advertise, 서버는 노드별 접근을 enforce.
+### Selective sharing
+Not all local knowledge should leave -> at the sync boundary, **filter/redact by workspace/sensitivity label**.
+A node advertises only the workspaces it will share, and the server enforces per-node access.
 
 ---
 
-## 6. 저장소 선택
+## 6. Store Selection
 
-| 기준 | **CozoDB (권장)** | Oxigraph |
+| Criterion | **CozoDB (recommended)** | Oxigraph |
 |------|-------------------|----------|
-| 형태 | 임베디드 관계+그래프+벡터, Datalog | 임베디드 RDF 트리플스토어, SPARQL |
-| 벡터 검색 | [o] 네이티브 HNSW | [x] (별도 필요) |
-| 그래프 순회 | [o] 재귀 Datalog | [o] SPARQL property path |
-| 온톨로지 표준(OWL/RDFS) | 스키마를 직접 모델링 | [o] 표준 최적 |
-| 백엔드 | RocksDB / SQLite / in-mem | RocksDB / in-mem |
-| 파일 기반 | [o] | [o] |
+| Form | embedded relational+graph+vector, Datalog | embedded RDF triplestore, SPARQL |
+| Vector search | [o] native HNSW | [x] (needs a separate component) |
+| Graph traversal | [o] recursive Datalog | [o] SPARQL property path |
+| Ontology standards (OWL/RDFS) | model the schema directly | [o] standards-optimal |
+| Backend | RocksDB / SQLite / in-mem | RocksDB / in-mem |
+| File-based | [o] | [o] |
 
-**권장: CozoDB 를 1차 스토어로.**
-이유 - 지식 시스템은 (1) 조각의 **의미적 회상(벡터)**, (2) 온톨로지 **그래프 순회**,
-(3) 메타데이터/출처 **관계형 질의** 를 모두 필요로 하는데 Cozo 하나가 셋을 커버하고 임베디드다.
+**Recommended: CozoDB as the primary store.**
+Reason - a knowledge system needs all of (1) **semantic recall of fragments (vector)**, (2) ontology **graph traversal**,
+and (3) **relational queries over metadata/provenance**, and Cozo alone covers all three and is embedded.
 
-> **대안 조건**: 엄격한 RDF/OWL 표준 준수/SPARQL 상호운용이 **하드 요구사항**이면 Oxigraph.
-> 포트-어댑터 구조라 `GraphStore`/`VectorIndex` 트레이트만 다시 구현하면 교체 가능 -
-> 스토어 선택은 도메인 코드에 새지 않게 격리한다.
+> **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability is a **hard requirement**, use Oxigraph.
+> Because of the port-adapter structure, it can be swapped by reimplementing only the `GraphStore`/`VectorIndex` traits -
+> the store choice is isolated so it does not leak into the domain code.
 
 ---
 
-## 7. MCP 표면 (Tools / Resources / Prompts)
+## 7. MCP Surface (Tools / Resources / Prompts)
 
 ### Tools
-| 도구 | 역할 |
+| Tool | Role |
 |------|------|
-| `observe` | 지식 조각(자유텍스트 + 선택적 엔티티/관계/`on_behalf_of`/`derived_from`) 적재 -> 관측 생성/엔티티 링크 |
-| `search_knowledge` | 의미+키워드 하이브리드 검색 |
-| `get_entity` | 엔티티 + 관계 + 출처 조회 |
-| `traverse` | 엔티티 기점 n-hop 그래프 순회 |
-| `assert_relation` | 타입된 관계 명시적 주장 |
-| `define_type` | T-Box(타입/관계) 확장 |
-| `list_sources` | 출처/워크스페이스 introspection |
-| `sync_status` / `sync_pull` / `sync_push` | 동기화 (관리용) |
-| `query` | 고급 Datalog 질의 (권한 가드 하에 passthrough) |
-| `propose` | 정본 승격 제안 생성 (M3.5, 원칙 23 - [proposal-workflow.md](proposal-workflow.md)) |
-| `list_proposals` / `get_proposal` | 제안 목록 / 제안 + 믿음 diff + 검사 (M3.5) |
-| `review` | 제안에 코멘트 또는 판정(merge/reject); 사람 확인은 elicitation (M3.5) |
+| `observe` | ingest a knowledge fragment (free text + optional entities/relations/`on_behalf_of`/`derived_from`) -> creates an observation/links entities |
+| `search_knowledge` | semantic + keyword hybrid search |
+| `get_entity` | look up an entity + relations + provenance |
+| `traverse` | n-hop graph traversal from an entity |
+| `assert_relation` | explicitly assert a typed relation |
+| `define_type` | extend the T-Box (types/relations) |
+| `list_sources` | provenance/workspace introspection |
+| `sync_status` / `sync_pull` / `sync_push` | synchronization (administrative) |
+| `query` | advanced Datalog query (passthrough under an authorization guard) |
+| `propose` | create a canon-promotion proposal (M3.5, Principle 23 - [proposal-workflow.md](proposal-workflow.md)) |
+| `list_proposals` / `get_proposal` | proposal list / proposal + belief diff + checks (M3.5) |
+| `review` | comment on or adjudicate a proposal (merge/reject); human confirmation via elicitation (M3.5) |
 
-### Resources (읽기 전용, 주소 지정)
-- `supragnosis://entity/{id}` - 엔티티
-- `supragnosis://observation/{id}` - 관측 (원문 + provenance + derived_from 계보).
-  검색 히트가 돌려준 관측 id 의 역참조 경로 - "이 답이 어디서 왔는가"에 답하는
-  질의 표면의 의무(원칙 2)와 관측 식별자의 역참조 가능성(원칙 14)을 이행한다.
-- `supragnosis://workspace/{ws}/schema` - 타입 스키마 (T-Box 는 워크스페이스 스코프 - 원칙 11)
-- `supragnosis://workspace/{ws}/summary` - 워크스페이스 지식 요약
-- `supragnosis://proposal/{id}` - 제안 (M3.5)
-- `supragnosis://workspace/{ws}/canon-policy` - 정본 정책 (M3.5)
+### Resources (read-only, addressable)
+- `supragnosis://entity/{id}` - entity
+- `supragnosis://observation/{id}` - observation (raw text + provenance + derived_from lineage).
+  The dereference path for an observation id returned by a search hit - it fulfills the query surface's obligation to
+  answer "where did this answer come from" (Principle 2) and the dereferenceability of observation identifiers (Principle 14).
+- `supragnosis://workspace/{ws}/schema` - the type schema (the T-Box is workspace-scoped - Principle 11)
+- `supragnosis://workspace/{ws}/summary` - a summary of the workspace's knowledge
+- `supragnosis://proposal/{id}` - proposal (M3.5)
+- `supragnosis://workspace/{ws}/canon-policy` - canon policy (M3.5)
 
 ### Prompts
-- `what-do-we-know-about {topic}` - 온톨로지 문맥을 채워 넣는 가이드 프롬프트
+- `what-do-we-know-about {topic}` - a guide prompt that fills in ontology context
 - `summarize-workspace-knowledge {ws}`
 
-### 장기 작업 / 사람 중재 (원칙 21)
-- `sync` / `consolidate`(응고) / 대량 재프로젝션은 **블로킹하지 않고** 폴링 가능한
-  **태스크 핸들**로 노출한다 (MCP Tasks 확장 정렬).
-- 병합 승인 / 모순 중재 / 신뢰 등급 승격은 MCP **elicitation(다중 왕복 입력)** 으로
-  사람 확인을 프로토콜 수준에서 요청한다 (원칙 6/18의 "사람 중재"를 프로토콜로 구현).
+### Long-running tasks / human mediation (Principle 21)
+- `sync` / `consolidate` (consolidation) / bulk reprojection are exposed **without blocking**, as pollable
+  **task handles** (aligned with the MCP Tasks extension).
+- Merge approval / contradiction mediation / trust-tier promotion request human confirmation at the protocol level via
+  MCP **elicitation (multi-round input)** (implementing the "human mediation" of Principles 6/18 as a protocol).
 
-### LLM 친화 응답 규약 (원칙 5/21)
-- 응답은 "찾지 못함(미지)"과 "거짓"을 구별한다 (`{found:false}` vs 명시적 부정 주장).
-- 실패 응답은 "왜 실패했고 무엇을 다르게 하면 되는지"를 담아 LLM 이 자기 교정하게 한다.
-- 질의 결과는 provenance(출처/신뢰등급)를 동반할 수 있어야 한다.
+### LLM-friendly response conventions (Principles 5/21)
+- Responses distinguish "not found (unknown)" from "false" (`{found:false}` vs an explicit negative assertion).
+- Failure responses carry "why it failed and what to do differently" so the LLM can self-correct.
+- Query results must be able to be accompanied by provenance (source/trust tier).
 
 ---
 
-## 8. 기술 스택 (Rust 크레이트)
+## 8. Technology Stack (Rust crates)
 
-| 목적 | 크레이트 |
+| Purpose | Crate |
 |------|----------|
-| MCP 서버 SDK | `rmcp` (`server`, `transport-io`, `macros`) |
-| 비동기 런타임 | `tokio` |
-| 임베디드 스토어 | `cozo` (RocksDB 백엔드) *(대안: `oxigraph`)* |
-| 로컬 임베딩(선택) | `fastembed` (ONNX, 로컬 모델) - 없으면 키워드 검색으로 degrade / 클라이언트 공급 |
-| 직렬화 | `serde`, `serde_json` |
-| 콘텐츠 주소 ID | `blake3` |
-| 오류 | `thiserror`(라이브러리) / `anyhow`(바이너리) |
-| 관측/로깅 | `tracing`, `tracing-subscriber` |
-| 동기화 트랜스포트 | `axum`(서버) + `reqwest`(클라이언트) HTTP sync API *(후: `tonic`/gRPC)* |
-| 노드 신원/서명 | `ed25519-dalek` (이벤트 서명, 노드 keypair) |
-| 시간/식별자 | `time`, `uuid` |
-| 설정 | `figment` 또는 `config` (TOML) |
-| 테스트 | `insta`(스냅샷) + in-memory 스토어 어댑터 |
+| MCP server SDK | `rmcp` (`server`, `transport-io`, `macros`) |
+| Async runtime | `tokio` |
+| Embedded store | `cozo` (RocksDB backend) *(alternative: `oxigraph`)* |
+| Local embedding (optional) | `fastembed` (ONNX, local model) - if absent, degrade to keyword search / client-supplied |
+| Serialization | `serde`, `serde_json` |
+| Content-address ID | `blake3` |
+| Errors | `thiserror` (library) / `anyhow` (binary) |
+| Observability/logging | `tracing`, `tracing-subscriber` |
+| Sync transport | `axum` (server) + `reqwest` (client) HTTP sync API *(later: `tonic`/gRPC)* |
+| Node identity/signing | `ed25519-dalek` (event signing, node keypair) |
+| Time/identifiers | `time`, `uuid` |
+| Configuration | `figment` or `config` (TOML) |
+| Testing | `insta` (snapshot) + in-memory store adapter |
 
 ---
 
-## 9. 저장소 구조 (Cargo workspace)
+## 9. Repository Structure (Cargo workspace)
 
 ```
 supragnosis/
 |- Cargo.toml                 # [workspace]
 |- docs/architecture.md
 |- crates/
-|  |- supragnosis-core/       # 도메인 모델 + 포트 트레이트 (IO 0)
-|  |- supragnosis-store/      # 어댑터: cozo, in-memory
-|  |- supragnosis-engine/     # 서비스: ingest/resolve/project/query/sync
-|  |- supragnosis-embed/      # EmbeddingProvider 어댑터 (fastembed/remote/none)
-|  |- supragnosis-sync/       # 페더레이션: 버전벡터 델타 복제, sync API, 노드 서명
-|  |- supragnosis-mcp/        # rmcp 서버: tools/resources/prompts + 트랜스포트
+|  |- supragnosis-core/       # domain models + port traits (zero IO)
+|  |- supragnosis-store/      # adapters: cozo, in-memory
+|  |- supragnosis-engine/     # service: ingest/resolve/project/query/sync
+|  |- supragnosis-embed/      # EmbeddingProvider adapter (fastembed/remote/none)
+|  |- supragnosis-sync/       # federation: version-vector delta replication, sync API, node signing
+|  |- supragnosis-mcp/        # rmcp server: tools/resources/prompts + transport
 |  `- supragnosis-cli/        # bin: `supragnosis serve|sync|...`
 ```
 
-도메인(`core`)을 순수하게 유지 -> 인메모리 어댑터로 빠른 단위 테스트, 스토어 교체 자유.
+Keeping the domain (`core`) pure -> fast unit tests via an in-memory adapter, freedom to swap the store.
 
 ---
 
-## 10. 설정 & 배포
+## 10. Configuration & Deployment
 
 `supragnosis.toml`:
 ```toml
-host_id     = "ashon-macbook"     # 출처/동기화/서명용 안정 식별자
+host_id     = "ashon-macbook"     # stable identifier for provenance/sync/signing
 workspace   = "supragnosis"
-data_dir    = "~/.supragnosis"    # RocksDB + 관측 로그 + 노드 keypair
+data_dir    = "~/.supragnosis"    # RocksDB + observation log + node keypair
 store       = "cozo"              # | "oxigraph"
 embedding   = "fastembed"         # | "client" | "none"
 
 [node]
-role = ["local", "sync-client"]        # | "server"(허브). 조합 가능
+role = ["local", "sync-client"]        # | "server" (hub). Combinable
 
 [sync]
-share_workspaces = ["supragnosis"]         # 밖으로 내보낼 workspace 화이트리스트
-servers = ["https://hub.example/sync"]     # 연결할 허브(들)
-peers   = ["https://hostC.lan:7420/sync"]  # 피어 직접
+share_workspaces = ["supragnosis"]         # whitelist of workspaces to export outward
+servers = ["https://hub.example/sync"]     # hub(s) to connect to
+peers   = ["https://hostC.lan:7420/sync"]  # peers directly
 
-[server]                                   # role 에 "server" 포함 시에만
+[server]                                   # only when "server" is included in role
 listen = "0.0.0.0:7420"
 ```
-- **로컬 호스트(stdio)**: MCP 클라이언트가 supragnosis 를 자식 프로세스로 기동(chat 마다).
-- **standalone 데몬(구현됨)**: `SUPRAGNOSIS_HTTP_ADDR`(예 127.0.0.1:7373)를 주면 stdio 대신
-  MCP **streamable-HTTP** 를 상시 노출한다(rmcp `StreamableHttpService` -> axum `/mcp`). 데몬이
-  db 의 유일한 보유자라 단일 프로세스 lock 문제가 사라지고, 여러 에이전트가
-  `claude mcp add --transport http http://127.0.0.1:7373/mcp` 로 접속한다(chat 스폰 없이).
-  **loopback 전용**(원칙 17: 로컬 신뢰 표면 = 무인증 정당). 동시 요청은 도구 핸들러가
-  `spawn_blocking` 으로 blocking 저장소 호출을 오프로드해 런타임 굶김을 막는다(14절 선행조건).
-  운용(launchd 등)은 [`deploy/README.md`](../deploy/README.md).
-  - 비로컬(0.0.0.0) 노출 + bearer/OAuth 인증(axum 미들웨어) + 원칙 17 주권 가드 + TLS 는 후속(M4).
-- **허브 서버**: sync API 상시 기동, 여러 노드 집계/릴레이 (M4).
+- **Local host (stdio)**: the MCP client launches supragnosis as a child process (per chat).
+- **Standalone daemon (implemented)**: given `SUPRAGNOSIS_HTTP_ADDR` (e.g. 127.0.0.1:7373), it exposes
+  MCP **streamable-HTTP** persistently instead of stdio (rmcp `StreamableHttpService` -> axum `/mcp`). Because the daemon is
+  the sole holder of the db, the single-process lock problem disappears, and multiple agents connect via
+  `claude mcp add --transport http http://127.0.0.1:7373/mcp` (without spawning per chat).
+  **Loopback only** (Principle 17: local trust surface = no-auth justified). For concurrent requests, the tool handler
+  offloads blocking store calls via `spawn_blocking` to prevent runtime starvation (a precondition from Section 14).
+  For operations (launchd, etc.) see [`deploy/README.md`](../deploy/README.md).
+  - Non-local (0.0.0.0) exposure + bearer/OAuth authentication (axum middleware) + Principle 17 sovereignty guard + TLS are follow-ups (M4).
+- **Hub server**: runs the sync API persistently, aggregates/relays multiple nodes (M4).
 
-### 온톨로지 라이브 뷰어 (로컬 점검용)
+### Ontology live viewer (for local inspection)
 
-`SUPRAGNOSIS_VIZ_ADDR=127.0.0.1:7373` 을 주면 MCP 서버와 **같은 프로세스**에서 localhost
-HTTP 뷰어(`supragnosis-viz` 크레이트)를 함께 띄운다. 브라우저로 열면 `engine.graph()`
-프로젝션(노드-엣지, 타입/degree/trust_tier/유효구간)을 canvas 로 그리고 몇 초마다
-`/api/graph` 를 폴링해 갱신한다. 사람이 지식 그래프를 눈으로 점검하는 채널이다.
+Given `SUPRAGNOSIS_VIZ_ADDR=127.0.0.1:7373`, it brings up a localhost HTTP viewer (the `supragnosis-viz` crate) in the
+**same process** as the MCP server. Opening it in a browser draws the `engine.graph()`
+projection (nodes-edges, type/degree/trust_tier/valid interval) on a canvas and refreshes by polling
+`/api/graph` every few seconds. It is the channel by which a human visually inspects the knowledge graph.
 
-- **읽기 전용**: 관측 로그를 건드리지 않는다(원칙 1). 적재는 그대로 `observe` 로만.
-- **loopback 전용 바인드**(원칙 17: 지식 주권): 비로opback 주소는 거부한다 - 원격 노출은
-  sync 경계의 공유 가드가 생기기 전까지 허용하지 않는다.
-- **MCP 도구 표면과 무관**(원칙 21): 사람용 별개 채널이라 LLM 도구가 늘지 않는다.
-- **단일 프로세스 제약**: cozo/RocksDB 가 단일 프로세스라 뷰어는 서버 인프로세스여야
-  하고(같은 `Arc<Engine>` 공유), 동시에 두 서버 인스턴스는 포트/db lock 을 다툰다.
-- 엔드포인트: `GET /`(뷰어 HTML), `GET /api/graph[?workspace=<ws>]`(빈 값/`*`=전체),
-  `GET /api/workspaces`(지식이 있는 워크스페이스 목록 - 뷰어가 클릭 가능한 피커로 렌더).
-  같은 목록은 MCP 리소스 `supragnosis://workspaces` 로도 조회된다(에이전트의 워크스페이스 발견).
-- **계획(하이퍼엣지 뷰)**: 그래프 밀도가 높아질 때 공동출현 이차 구조(하이퍼엣지)를
-  bubble-set/concave 영역으로 오버레이하고 밀집 영역을 collapse/expand 한다 - 저장
-  모델(이진 Relation) 무변경의 파생 뷰이며(원칙 1/12), 멤버십은 결정적이고 hull 모양은
-  렌더링 재량이다(원칙 16). 이차 구조의 규범은 [`principles.md`](principles.md) 원칙 11(이차 구조).
-
----
-
-## 11. 횡단 관심사
-
-- **출처/신뢰/위임**: 모든 사실에 (acting host, on_behalf_of, workspace, source, confidence, trust_tier, time). 질의 시 출처 필터/신뢰 가중.
-- **바이템포럴**(원칙 4): 관측=기록시간, 관계=유효구간(valid_from/to) -> `as_of_valid(T)`/`as_of_recorded(T)` 두 시간여행 질의.
-- **오염 방어**(원칙 18): 신뢰 등급 + `derived_from` 계보 + 격리(quarantine) + 계보 역추적 일괄 retraction(소독). 서명은 전송 무결성일 뿐 내용 진위가 아님.
-- **망각/응고**(원칙 7): 로그는 영원, 회상은 유한. 강등은 인덱스 가중치만(로그 불변), 응고는 유휴시간 결정적 재프로젝션(확률적 요약은 파생 관측으로 회수).
-- **정체성 해소**: 정규 키 우선 + 임베딩 유사도는 후보까지, 병합 확정은 결정적/보수적. 병합 이력 보존/un-merge 가능.
-- **보안/프라이버시**: 워크스페이스 스코핑, 적재 레드액션 훅, **sync 경계 필터**(공유 opt-in).
-- **노드 신원/전송**: 노드 keypair 이벤트 **서명**(authenticity), sync TLS/mTLS.
+- **Read-only**: it does not touch the observation log (Principle 1). Ingest remains exclusively via `observe`.
+- **Loopback-only bind** (Principle 17: knowledge sovereignty): it rejects non-loopback addresses - remote exposure is
+  not permitted until the sharing guard at the sync boundary exists.
+- **Independent of the MCP tool surface** (Principle 21): being a separate human-facing channel, it does not add to the LLM's tools.
+- **Single-process constraint**: because cozo/RocksDB is single-process, the viewer must be in-process with the server
+  (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
+- Endpoints: `GET /` (viewer HTML), `GET /api/graph[?workspace=<ws>]` (empty/`*` = all),
+  `GET /api/workspaces` (the list of workspaces that have knowledge - the viewer renders it as a clickable picker).
+  The same list is also retrievable via the MCP resource `supragnosis://workspaces` (an agent's workspace discovery).
+- **Planned (hyperedge view)**: as graph density grows, overlay the co-occurrence second-order structure (hyperedges) as
+  bubble-set/concave regions and collapse/expand dense regions - a derived view with no change to the storage
+  model (binary Relation) (Principles 1/12), where membership is deterministic and the hull shape is a
+  rendering discretion (Principle 16). The norm for second-order structure is in [`principles.md`](principles.md) Principle 11 (second-order structure).
 
 ---
 
-## 12. 로드맵 (단계)
+## 11. Cross-cutting Concerns
 
-1. **M0 - 골격 [o]**: workspace 스캐폴드, `core` 모델, in-memory 스토어, `observe`+`get_entity`+`search`(키워드) stdio MCP 서버. (rmcp 0.16, E2E 핸드셰이크 검증 완료)
-2. **M1 - 임베디드 스토어 [o]**: Cozo 어댑터(관측/엔티티/관계), `traverse`(재귀 Datalog), 파일 영속. (E2E 검증)
-3. **M2 - 의미 검색**: `EmbeddingProvider`(fastembed) + HNSW 하이브리드. 회상 벤치마크(부록 B) 회귀셋.
-4. **M3 - 해소/스키마/바이템포럴**: 보수적 해소 + 유도 스키마 제안->명시 승격(원칙 11), 그 선행 작업으로 **타입 사용 통계 집계 뷰**(엔티티/관계 kind 별 사용 빈도, Cozo 집계 - 유도의 입력) 및 **하이퍼엣지(공동출현 이차 구조) 프로젝션**(반복 공동출현이 타입/해소 후보의 기준 - 원칙 11 이차 구조/15), `define_type` 정합성 검증(원칙 9), 타입 배정을 주장으로 취급해 해소가 kind 를 계산(원칙 1 - 현재의 last-write-wins 프로젝션 대체), 유효구간/시간여행 질의(원칙 4), 신뢰등급 해소 가중(원칙 18).
-5. **M3.5 - 제안 워크플로**: 정본 승격의 관문(원칙 23). 제안=관측 이벤트, 상태=결정적 폴드, 믿음 diff + blocking/informative 검사, `propose`/`get_proposal`/`review`. solo/단일 정본에서 동작(다중 노드 수렴은 M4의 HLC 전제). 설계 -> [proposal-workflow.md](proposal-workflow.md).
-6. **M4 - 페더레이션**: 버전벡터 델타 복제 + sync API(허브->피어->하이브리드), 위임사슬 서명(원칙 2), 선택적 공유(원칙 17), sync/consolidate를 **MCP Tasks**로/사람 중재를 **elicitation**으로(원칙 21). HLC 인과 순서로 제안 판정의 다중 노드 수렴 완성.
-7. **M5 - 추론/추출/오염방어**: 경량 추론, `Extractor` 포트, `derived_from` 계보 의무화/격리/소독(원칙 18).
-8. **M6 - 망각/응고**: 유휴시간 결정적 재프로젝션 + 회상 강등(원칙 7, sleep-time). 응고 대상 선정은 하이퍼엣지의 안정/corroboration/응집 지표를 기준으로 한다(원칙 11 이차 구조).
-
----
-
-## 13. 열린 결정 사항
-
-**확정됨**
-- "서버"의 정체(5절): **supragnosis 허브 노드 + 원격 MCP-HTTP 노출** (외부 백엔드 연동은 범위 밖). [o]
-- T-Box 부트스트랩: **작은 기본 세트 + 확장** - [`principles.md`](principles.md) 원칙 10으로 승격. [o]
-
-**미결**
-- 임베딩을 **로컬(fastembed)** vs **클라이언트 공급** vs **원격 API** 중 기본값? (M2)
-- 1차 페더레이션 위상: **허브** vs **피어** 중 무엇부터 구현? (설계는 둘 다 수용, M4)
-- 충돌 시 "현재 믿음" 정책: **최신 우선** vs **confidence 가중** (또는 둘 다). 원칙 1에 따라 교체 가능 전략으로. (M3)
+- **Provenance/trust/delegation**: every fact carries (acting host, on_behalf_of, workspace, source, confidence, trust_tier, time). Provenance filtering/trust weighting at query time.
+- **Bitemporal** (Principle 4): observation = transaction time, relation = valid interval (valid_from/to) -> the two time-travel queries `as_of_valid(T)`/`as_of_recorded(T)`.
+- **Contamination defense** (Principle 18): trust tier + `derived_from` lineage + quarantine + batch retraction by lineage back-tracing (cleanup). A signature is only transport integrity, not content authenticity.
+- **Forgetting/consolidation** (Principle 7): the log is forever, recall is finite. Demotion touches only index weights (the log is immutable); consolidation is a deterministic idle-time reprojection (probabilistic summaries are recovered as derived observations).
+- **Identity resolution**: canonical key first + embedding similarity only up to candidates, merge finalization deterministic/conservative. Merge history preserved/un-merge possible.
+- **Security/privacy**: workspace scoping, an ingest redaction hook, a **sync-boundary filter** (sharing opt-in).
+- **Node identity/transport**: node-keypair event **signing** (authenticity), sync TLS/mTLS.
 
 ---
 
-## 14. 원칙 준수 현황 ([principles.md](principles.md) 대비)
+## 12. Roadmap (phases)
 
-각 마일스톤은 원칙 전체를 한 번에 만족시키지 않는다. 아래는 **의도적 이연(deferral)** 을
-투명하게 기록한 것이다 (원칙 서문: 편의적 결정은 문서화 없이는 불허).
+1. **M0 - Skeleton [o]**: workspace scaffold, `core` models, in-memory store, an `observe`+`get_entity`+`search` (keyword) stdio MCP server. (rmcp 0.16, E2E handshake verified)
+2. **M1 - Embedded store [o]**: Cozo adapter (observations/entities/relations), `traverse` (recursive Datalog), file persistence. (E2E verified)
+3. **M2 - Semantic search**: `EmbeddingProvider` (fastembed) + HNSW hybrid. Recall benchmark (Appendix B) regression set.
+4. **M3 - Resolution/schema/bitemporal**: conservative resolution + induced schema proposal -> explicit promotion (Principle 11), and as prerequisite work for it, a **type-usage statistics aggregate view** (usage frequency per entity/relation kind, Cozo aggregation - the input to induction) and a **hyperedge (co-occurrence second-order structure) projection** (repeated co-occurrence as the basis for type/resolution candidates - Principle 11 second-order structure/15), `define_type` consistency validation (Principle 9), treating type assignment as an assertion so that resolution computes the kind (Principle 1 - replacing the current last-write-wins projection), valid interval/time-travel queries (Principle 4), trust-tier resolution weighting (Principle 18).
+5. **M3.5 - Proposal workflow**: the gateway to canon promotion (Principle 23). Proposal = observation event, state = deterministic fold, belief diff + blocking/informative checks, `propose`/`get_proposal`/`review`. Works in solo/single-canon (multi-node convergence presupposes M4's HLC). Design -> [proposal-workflow.md](proposal-workflow.md).
+6. **M4 - Federation**: version-vector delta replication + sync API (hub -> peer -> hybrid), delegation-chain signing (Principle 2), selective sharing (Principle 17), sync/consolidate as **MCP Tasks** / human mediation as **elicitation** (Principle 21). HLC causal ordering completes multi-node convergence of proposal adjudication.
+7. **M5 - Inference/extraction/contamination defense**: lightweight inference, the `Extractor` port, mandatory `derived_from` lineage/quarantine/cleanup (Principle 18).
+8. **M6 - Forgetting/consolidation**: deterministic idle-time reprojection + recall demotion (Principle 7, sleep-time). Selection of consolidation targets is based on hyperedge stability/corroboration/cohesion metrics (Principle 11 second-order structure).
 
-**현재(M1) 충족**
-- 원칙 2(출처 1급/위임): 모든 관측/엔티티/관계가 provenance를 지니며, provenance가 위임 주체
-  (`on_behalf_of`)와 acting host 를 구분해 표현(스키마 수준). `observe` 가 선택적으로 받음.
-- 원칙 5(열린 세계): `get_entity` 는 부재를 에러가 아닌 `{found:false, note:...}` 로 반환.
-- 원칙 12/20(인코딩 편향 최소/헥사고날): `core` 는 IO 의존 0, Cozo 개념은 `store` 어댑터에만.
-  저장소는 `KnowledgeStore` 포트 뒤 - mem/cozo 교체가 도메인 무변경.
-- 원칙 14(안정 식별자): 관측 id=blake3 콘텐츠주소(동봉 주장 포함), 엔티티 id=정규명
-  결정적 해소, 관계 id=정준화된 kind(표기 요동 무관) - 전부 결정적 순수 함수.
-  해시는 length-prefix 인코딩 - content 에 구분자를 심는 경계 조작으로 다른 관측과
-  id 를 충돌시킬 수 없다 (원칙 18).
-- 원칙 3(관측 로그 불변): 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라
-  provenance attestation / derived_from 계보의 **단조 합집합**으로 흡수된다
-  (원칙 3의 병합 규범). 로그 재프로젝션으로 그래프의 attestation 을 복원할 수 있다.
-- 원칙 4(바이템포럴) *스키마*: 관계에 `valid_from`/`valid_to`(유효시간), provenance `observed_at`
-  (기록시간) 필드 도입. 시간여행 질의 **로직**은 이연.
-- 원칙 18(오염 방어) *스키마*: provenance `trust_tier`(기본 `AgentExtracted`, 승격 명시적) +
-  관측 `derived_from`(계보) 필드 도입. 등급 랭킹/격리/소독 **로직**은 이연.
-- 원칙 19(결정적 코어): 저장/해소/순회 전부 결정론적, 확률적 요소 없음.
-- 원칙 21(좁은 표면): 도구 4종(observe/get_entity/search_knowledge/traverse) - 모두 의도 단위.
+---
 
-**의도적 이연 (마일스톤 지정)**
-- 원칙 1/6(주장<->믿음 분리, 충돌 보존): 현재 `observe` 는 관측 저장 후 **인라인 단순 프로젝션**
-  (엔티티 kind 는 last-write-wins, canonical_name 은 first-write-wins 로 표기
-  변형이 별칭(aliases)에 축적되지 않음, 관계 provenance 는 단수 교체). 관측의 다중
-  attestation 누적은 로그 계층에서 구현됨(위 원칙 3 항목) - **관계**의 다중
-  attestation 누적, 대표 표기/별칭 축적 규칙, 교체 가능한 해소 정책은
-  **M3**(해소 계층).
-  참고: 구조화 주장(`assertions` - 엔티티 kind 포함)이 관측 로그에 원문 그대로
-  동봉되므로, 로그 재프로젝션으로 어떤 해소 정책이든 소급 적용 가능하다 - 이
-  이연이 파괴적이지 않은 근거. (캡처가 로그에 실리는지는 테스트로 상시 가드되고,
-  그 실행물인 reproject 는 M3 착수 조건이다 - 아래.)
-- 원칙 3(프로젝션 병합의 원자성): 엔티티 업서트가 get -> put 두 스토어 호출로
-  나뉘어 원자적이지 않다 - 동시 관측이 같은 엔티티를 만지면 **프로젝션**의
-  attestation 이 소실될 수 있다. 관측 로그는 store 계층에서 원자 병합되므로
-  무사하고(위 원칙 3 항목), 소실은 파생 뷰에 국한되어 재프로젝션으로 복구
-  가능하다 - 다만 그 실행물(reproject)이 생기기 전까지는 이론상의 보장이다.
-  프로젝션 쓰기 경로 전체가 M3 해소 계층으로 대체되므로 **전면 원자화**는 **M3** 에서
-  함께 상환한다. 이 이연은 "동시 도구 호출이 드물다(stdio 단일 클라이언트)"는
-  배치의 사실에 기대고 있었다.
-  **갱신(standalone 데몬 도입)**: MCP-HTTP 데몬은 동시 도구 호출을 허용하므로 그 배치
-  전제가 깨진다. 그래서 `Engine` 에 쓰기 직렬화 락(`write_guard`)을 도입해 observe 의
-  로그 append + 프로젝션 upsert 구간을 직렬화한다 - 동시 same-entity 관측의 attestation
-  유실을 막는다(읽기 경로는 잠그지 않아 동시 유지). 이는 M3 의 전면 원자화(해소 계층에서
-  read-merge-write 를 근본적으로 재설계)를 대체하지 않는 잠정 상환이며, M3 착수 시 이 락은
-  해소 계층의 기록 경로로 흡수/제거된다.
-- 원칙 3/4(대체/바이템포럴) *로직*: supersede/retraction 관측 처리, valid_to 자동 종료,
-  `as_of_valid`/`as_of_recorded` 시간여행 질의 -> **M3~M4**. (필드는 M1 도입 완료.
-  적재 표면 캡처는 구현됨: `observe` 의 관계가 선택적 `valid_from`/`valid_to` 를 받아
-  로그의 주장과 프로젝션에 동봉한다 - 캡처와 처리의 분리, 원칙 4 단서.)
-- 원칙 7(망각/응고): 유휴시간 결정적 재프로젝션 + 회상 강등 -> **M6**.
-- 원칙 11(유도 스키마): 반복 패턴에서 타입 후보 제안 -> 명시 `define_type` 승격 -> **M3**.
-- 원칙 15(해소는 기반의 책임): 현재는 정규명 완전일치. 임베딩 후보 + 보수적 병합 -> **M2~M3**.
-- 원칙 16(위상 독립 수렴) + property test: HLC 기반 결정적 재물질화와 무작위 순서 주입
-  property test -> **M4**(페더레이션).
-- 원칙 17(지식 주권): 공유 opt-in 화이트리스트/sync 경계 필터 -> **M4**.
-- 원칙 18(오염 방어) 로직: `derived_from` 계보 의무화, 격리(quarantine), 계보 역추적 소독,
-  신뢰 가중 랭킹 -> **M5**(추출 포트와 함께).
-- 원칙 21(장기작업/사람중재): sync/consolidate의 MCP Tasks 노출, 병합/모순/승격 elicitation -> **M4**.
-- 원칙 22(작업의 부산물): 큐레이션을 질의 결과에 녹이는 UX/프롬프트 -> 도구 확장과 함께 점진.
-- 원칙 23(정본으로의 관문): 제안 워크플로 -> **M3.5**. 설계는 [proposal-workflow.md](proposal-workflow.md)에 완료, 다중 노드 수렴은 M4(HLC) 전제.
+## 13. Open Decisions
 
-**마일스톤 진입 조건 (이연의 상환 시점)**
+**Decided**
+- The identity of the "server" (Section 5): **a supragnosis hub node + remote MCP-HTTP exposure** (integrating an external backend is out of scope). [o]
+- T-Box bootstrap: **a small default set + extension** - promoted to [`principles.md`](principles.md) Principle 10. [o]
 
-이연은 무기한이 아니다. 위 항목들 중 "지금은 도달 불가능한 상태라 무해"가 방어
-근거인 것들은, 그 상태를 도달 가능하게 만드는 마일스톤의 **착수 조건**으로
-상환한다:
+**Open**
+- Which default for embedding among **local (fastembed)** vs **client-supplied** vs **remote API**? (M2)
+- The first federation topology: implement **hub** or **peer** first? (the design accommodates both, M4)
+- The "current belief" policy on conflict: **latest-wins** vs **confidence-weighted** (or both). As a swappable strategy per Principle 1. (M3)
 
-- **M3 (해소 계층) 착수 시**:
-  - 재프로젝션(reproject)을 **첫 작업**으로 구현한다 - "주장이 로그에 원문
-    그대로 있으므로 어떤 해소 정책이든 소급 적용 가능"이라는 위 이연들의 방어
-    근거를 실행물로 상환하고, 해소 정책 교체의 하네스로 쓴다. 전제로
-    `KnowledgeStore` 에 관측 전수 열거를 추가한다 (현재는 개별 get 뿐이라
-    재프로젝션이 구조적으로 불가능하다).
-  - 엔티티 프로젝션 쓰기(read-merge-write)를 원자화한다 (위 원칙 3 프로젝션
-    이연의 상환 - 해소 계층의 프로젝션 기록 경로 설계에 포함).
-  - 별칭 축적이 시작되는 순간 Cozo 키워드 검색의 별칭 매칭 parity 를 복구한다
-    (현재 InMemory 만 aliases 를 매칭 - aliases 가 항상 비어 있어 잠재 상태).
-  - 별칭 축적이 시작되면 엔티티 임베딩 재계산 규칙도 함께 도입한다 - 현재는
-    임베딩이 없을 때 한 번만 계산하므로, 임베딩 텍스트(정규명 + 별칭)가 별칭
-    축적으로 바뀌어도 벡터가 갱신되지 않는 조용한 staleness 가 생긴다.
-  - canonical_name 대표 표기 선택을 도착 순서 무관의 결정적 규칙으로 바꾼다
-    (원칙 16 수렴).
-- **M4 (sync - store 의 엔진 외 기록자 등장) 착수 시**:
-  - provenance 최소 1개를 스키마 수준에서 강제한다. 현재는 엔진의 구성(construction)
-    으로만 보장되는데, 역직렬화/직접 기록 경로가 열리면 그 보장이 우회된다 (원칙 2).
-  - sync 로 수신한 관측의 trust_tier 는 발신자의 평가 기록으로 강등하고 수신
-    노드가 재평가한다 (원칙 18 - "등급은 수신자의 평가").
-  - 엔티티 행이 없는 관계 끝점(dangling)에 대한 traverse 의 어댑터 간 parity 를
-    맞춘다 (현재 InMemory 는 방출, Cozo 는 탈락 - 부분 적재 상태는 sync 가 처음
-    만든다).
-  - 무작위 순서/분할 주입 property test 를 가동한다 (원칙 16 - 기존 이연 항목의
-    재확인).
-- **원격 전송(`--http` 등) 도입 시**:
-  - 워크스페이스 스코프 없는 전역 질의를 로컬 신뢰 표면(stdio)에 한정하는
-    전송 인지 가드를 함께 도입한다 (원칙 17 - 현재는 stdio 가 유일 전송이라
-    문구 그대로 충족되나, 그 충족이 가드가 아니라 배치의 사실에 의존한다).
-  - 동기 도구 핸들러의 blocking 저장소/임베딩 호출을 async 경계(spawn_blocking
-    등) 뒤로 옮긴다 - stdio 단일 클라이언트에선 무해하지만 동시 클라이언트가
-    생기면 런타임 워커를 점유한다 (이 무해함도 배치의 사실에 의존한다).
+---
+
+## 14. Principle Compliance Status (against [principles.md](principles.md))
+
+Each milestone does not satisfy the entire set of principles at once. Below is a transparent record of
+**intentional deferrals** (per the principles' preamble: expedient decisions are not allowed without documentation).
+
+**Currently satisfied (M1)**
+- Principle 2 (provenance first-class/delegation): every observation/entity/relation carries provenance, and provenance
+  distinguishes the delegating principal (`on_behalf_of`) from the acting host (at the schema level). `observe` accepts them optionally.
+- Principle 5 (open world): `get_entity` returns absence not as an error but as `{found:false, note:...}`.
+- Principles 12/20 (minimal encoding bias/hexagonal): `core` has zero IO dependencies, Cozo concepts live only in the `store` adapter.
+  The store sits behind the `KnowledgeStore` port - swapping mem/cozo leaves the domain unchanged.
+- Principle 14 (stable identifiers): observation id = blake3 content address (including enclosed assertions), entity id = deterministic
+  resolution of the canonical name, relation id = canonicalized kind (independent of spelling jitter) - all deterministic pure functions.
+  The hash uses length-prefix encoding - boundary manipulation by embedding a delimiter in the content cannot collide an id
+  with another observation (Principle 18).
+- Principle 3 (observation log immutable): re-arrival of the same content address is absorbed not as an overwrite but as a
+  **monotonic union** of provenance attestations / derived_from lineage (the merge norm of Principle 3). Reprojecting the log can
+  restore the graph's attestations.
+- Principle 4 (bitemporal) *schema*: introduced `valid_from`/`valid_to` (valid time) on relations and the `observed_at` (transaction time)
+  field on provenance. The time-travel query **logic** is deferred.
+- Principle 18 (contamination defense) *schema*: introduced the provenance `trust_tier` (default `AgentExtracted`, promotion explicit) +
+  the observation `derived_from` (lineage) field. The tier-ranking/quarantine/cleanup **logic** is deferred.
+- Principle 19 (deterministic core): storage/resolution/traversal are all deterministic, with no probabilistic element.
+- Principle 21 (narrow surface): four tools (observe/get_entity/search_knowledge/traverse) - each at the granularity of an intent.
+
+**Intentional deferrals (milestone-assigned)**
+- Principles 1/6 (assertion<->belief separation, conflict preservation): currently `observe` does an **inline simple projection**
+  after storing the observation (entity kind is last-write-wins, canonical_name is first-write-wins so spelling
+  variants do not accumulate into aliases, relation provenance is singular replacement). Multi-attestation accumulation for
+  observations is implemented at the log layer (the Principle 3 item above) - multi-attestation accumulation for **relations**,
+  the representative-spelling/alias-accumulation rules, and a swappable resolution policy are in
+  **M3** (the resolution layer).
+  Note: because structured assertions (`assertions` - including entity kind) are enclosed in the observation log exactly as spelled,
+  any resolution policy can be applied retroactively by reprojecting the log - the grounds that this deferral is
+  non-destructive. (Whether the capture lands in the log is continuously guarded by tests, and its realization,
+  reproject, is an entry condition for M3 - see below.)
+- Principle 3 (atomicity of projection merge): an entity upsert splits into two store calls, get -> put, and is not
+  atomic - if concurrent observations touch the same entity, the **projection's**
+  attestations may be lost. Because the observation log is atomically merged at the store layer, it is safe
+  (the Principle 3 item above), and the loss is confined to the derived view and recoverable by reprojection
+  - but until that realization (reproject) exists, it is a theoretical guarantee.
+  Because the entire projection write path is replaced by the M3 resolution layer, **full atomicity** is repaid together in **M3**.
+  This deferral rested on the deployment fact that "concurrent tool calls are rare (a single stdio client)."
+  **Update (introduction of the standalone daemon)**: the MCP-HTTP daemon permits concurrent tool calls, so that deployment
+  premise breaks. So a write-serialization lock (`write_guard`) is introduced on the `Engine` to serialize observe's
+  log-append + projection-upsert section - preventing attestation loss from concurrent same-entity observations
+  (the read path is not locked, so it stays concurrent). This is a provisional repayment that does not replace M3's full atomicity
+  (a fundamental redesign of read-merge-write in the resolution layer), and when M3 begins this lock is
+  absorbed/removed into the resolution layer's write path.
+- Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, automatic valid_to closing,
+  `as_of_valid`/`as_of_recorded` time-travel queries -> **M3-M4**. (Fields were introduced in M1.
+  Ingest-surface capture is implemented: `observe`'s relation accepts optional `valid_from`/`valid_to` and encloses them in
+  the log's assertions and the projection - separation of capture and processing, a clue of Principle 4.)
+- Principle 7 (forgetting/consolidation): deterministic idle-time reprojection + recall demotion -> **M6**.
+- Principle 11 (induced schema): propose type candidates from repeated patterns -> explicit `define_type` promotion -> **M3**.
+- Principle 15 (resolution is the substrate's responsibility): currently exact match on the canonical name. Embedding candidates + conservative merge -> **M2-M3**.
+- Principle 16 (topology-independent convergence) + property test: HLC-based deterministic re-materialization and a random-order-injection
+  property test -> **M4** (federation).
+- Principle 17 (knowledge sovereignty): a sharing opt-in whitelist / sync-boundary filter -> **M4**.
+- Principle 18 (contamination defense) logic: mandatory `derived_from` lineage, quarantine, lineage back-tracing cleanup,
+  trust-weighted ranking -> **M5** (together with the extraction port).
+- Principle 21 (long-running tasks/human mediation): MCP Tasks exposure of sync/consolidate, merge/contradiction/promotion elicitation -> **M4**.
+- Principle 22 (a byproduct of work): UX/prompts that blend curation into query results -> incremental, together with tool expansion.
+- Principle 23 (the gateway to canon): the proposal workflow -> **M3.5**. The design is complete in [proposal-workflow.md](proposal-workflow.md); multi-node convergence presupposes M4 (HLC).
+
+**Milestone entry conditions (when deferrals are repaid)**
+
+Deferrals are not indefinite. Among the items above, those whose defense rests on "harmless because the state is
+currently unreachable" are repaid as the **entry conditions** of the milestone that makes that state reachable:
+
+- **On starting M3 (the resolution layer)**:
+  - Implement reprojection (reproject) as the **first task** - repay, as a realization, the above deferrals' defense that
+    "because assertions are in the log exactly as spelled, any resolution policy can be applied retroactively," and use it
+    as the harness for swapping the resolution policy. As a prerequisite, add full enumeration of observations to
+    `KnowledgeStore` (currently only individual get, so reprojection is structurally impossible).
+  - Make the entity projection write (read-merge-write) atomic (repayment of the Principle 3 projection
+    deferral above - included in the design of the resolution layer's projection write path).
+  - The moment alias accumulation begins, restore the alias-matching parity of Cozo keyword search
+    (currently only InMemory matches aliases - a latent state because aliases are always empty).
+  - Once alias accumulation begins, also introduce an entity-embedding recomputation rule - currently the
+    embedding is computed only once when absent, so a silent staleness arises where the vector is not updated even when the
+    embedding text (canonical name + aliases) changes due to alias accumulation.
+  - Change canonical_name representative-spelling selection to a deterministic rule independent of arrival order
+    (Principle 16 convergence).
+- **On starting M4 (sync - the appearance of a writer to the store outside the engine)**:
+  - Enforce at least one provenance at the schema level. Currently it is guaranteed only by the engine's construction,
+    and when a deserialization/direct-write path opens, that guarantee is bypassed (Principle 2).
+  - The trust_tier of an observation received via sync is demoted to the sender's evaluation record, and the receiving
+    node re-evaluates it (Principle 18 - "the tier is the receiver's evaluation").
+  - Align the cross-adapter parity of traverse for relation endpoints without an entity row (dangling)
+    (currently InMemory emits, Cozo drops - the partial-ingest state is first created by sync).
+  - Bring up a random-order/partition-injection property test (Principle 16 - reaffirming the existing deferral item).
+- **On introducing remote transport (`--http`, etc.)**:
+  - Introduce a transport-aware guard that confines workspace-scope-less global queries to the local trust surface (stdio)
+    (Principle 17 - currently stdio is the only transport so it is satisfied literally, but that satisfaction depends on a
+    deployment fact rather than a guard).
+  - Move the synchronous tool handler's blocking store/embedding calls behind an async boundary (spawn_blocking,
+    etc.) - harmless with a single stdio client, but with concurrent clients they occupy runtime workers (this
+    harmlessness also depends on a deployment fact).

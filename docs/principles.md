@@ -1,641 +1,675 @@
-# supragnosis - 설계 원칙 (Design Principles)
+# supragnosis - Design Principles
 
-> 이 문서는 supragnosis의 **규범(normative) 문서**다. 모든 설계/구현/리뷰 결정은
-> 이 원칙들에 비추어 정당화되어야 하며, 원칙과 충돌하는 편의적 결정은 이 문서의
-> 개정 없이는 허용되지 않는다. `architecture.md`가 "무엇을 어떻게 만드는가"라면,
-> 이 문서는 "왜 그렇게 만들어야 하는가"다.
+> This document is the **normative document** of supragnosis. Every design/implementation/review
+> decision must be justified against these principles, and an expedient decision that conflicts
+> with a principle is not permitted without a revision of this document. If `architecture.md` is
+> "what we build and how", this document is "why it must be built that way".
 >
-> 각 조항은 **원칙 -> 근거 -> supragnosis에서의 구속력(무엇을 강제하는가)** 순으로 서술한다.
+> Each clause is stated in the order **Principle -> Rationale -> Enforcement in supragnosis (what it mandates)**.
 >
-> 개정: 2026-07 - 바이템포럴 명시(4), 위임 사슬(2), 망각/응고(7), 오염 방어(18),
-> 스키마 유도(11), MCP 장기작업/확인 흐름(21). 근거는 부록 C 출전 참조.
-> 개정: 2026-07 (2차) - 제5장 거버넌스 신설, 원칙 23(정본으로의 관문) 추가.
-> 구체 설계는 [proposal-workflow.md](proposal-workflow.md).
-> 개정: 2026-07 (3차) - 관측 병합 규범(3): 이벤트 정체성의 경계와 재도착 병합 규칙 명시.
-> 질의 응답 결정성(16): 원칙 16 의 적용 범위를 읽기 경로(정렬/절단)까지 확장.
-> 유효구간 캡처(4): 기본 해석이 근사임을 명시, 소급 관측의 캡처를 적재 표면에 요구.
-> 묘비의 흡수성(3), confidence 규약(2), 지식 주권의 질의 표면 확장(17),
-> 신뢰 등급은 수신자의 평가(18), recall 판정의 위임 불가(23).
-> 개정: 2026-07 (4차) - 질의 결정성의 두 층위(16): 재현성/수렴성을 구분하고
-> 회상 보조(임베딩/ANN 인덱스)를 수렴 규범에서 제외(가드 동반).
-> confidence 무표기의 보존(2): 무표기를 기본값으로 치환하지 않는다.
-> 개정: 2026-07 (5차) - 주장의 정형성(1): 적재 검증의 경계(정형성까지, 내용
-> 검열 금지)를 명시. 구조 진화의 기계적 강제(14): 정체성/전순서/병합 함수의
-> 필드 열거는 필드 추가 시 컴파일 수준에서 재검토를 강제해야 한다.
-> 개정: 2026-07 (6차) - 유도의 기반(11): 스키마 유도의 substrate 를 공동출현의
-> 이차 구조(하이퍼엣지)로 명시. 하이퍼엣지는 체계화(유도 11/해소 15/응고 7/모순
-> 국소화 6/건강 지표 22)의 결정적 입력이되 심판이 아니다 - 확정은 기존 게이트
-> (결정적 해소, 제안 23, 사람 확인 18)를 거친다.
+> Revision: 2026-07 - bitemporality made explicit (4), delegation chain (2), forgetting/consolidation (7),
+> contamination defense (18), schema induction (11), MCP long-running tasks/confirmation flow (21).
+> See Appendix C references for rationale.
+> Revision: 2026-07 (2nd) - Chapter 5 Governance added, Principle 23 (Gate to Canon) added.
+> Concrete design in [proposal-workflow.md](proposal-workflow.md).
+> Revision: 2026-07 (3rd) - Observation merge norm (3): boundaries of event identity and the
+> re-arrival merge rule made explicit. Query-response determinism (16): the scope of Principle 16
+> extended to the read path (ordering/truncation). Valid-interval capture (4): the default
+> interpretation stated to be an approximation, and capture of retroactive observations required at
+> the ingest surface. Absorbing property of tombstones (3), confidence convention (2), extension of
+> knowledge sovereignty to the query surface (17), trust tier as the receiver's evaluation (18),
+> non-delegability of the recall verdict (23).
+> Revision: 2026-07 (4th) - Two layers of query determinism (16): reproducibility and convergence
+> distinguished, and recall aids (embedding/ANN indexes) excluded from the convergence norm (with guards).
+> Preservation of unspecified confidence (2): an unspecified value is not substituted with a default.
+> Revision: 2026-07 (5th) - Well-formedness of assertions (1): the boundary of ingest validation
+> (well-formedness only, no content censorship) made explicit. Mechanical enforcement of structural
+> evolution (14): field enumeration in the identity/total-order/merge functions must force review at
+> the compile level when a field is added.
+> Revision: 2026-07 (6th) - Substrate of induction (11): the substrate of schema induction made
+> explicit as the second-order structure of co-occurrence (hyperedges). Hyperedges are a deterministic
+> input to systematization (induction 11 / resolution 15 / consolidation 7 / contradiction
+> localization 6 / health metrics 22) but not its judge - commitment goes through the existing gates
+> (deterministic resolution, proposal 23, human confirmation 18).
 
 ---
 
-## 제1장 - 지식의 본성 (Epistemology)
+## Chapter 1 - The Nature of Knowledge (Epistemology)
 
-지식을 다루는 시스템의 오류는 대부분 코드가 아니라 **지식이 무엇인지에 대한
-전제**에서 나온다. 이 장은 그 전제를 고정한다.
+Most errors in a system that handles knowledge arise not from the code but from **the premises about
+what knowledge is**. This chapter fixes those premises.
 
-### 원칙 1. 주장과 사실의 분리 (Assertion-Belief Separation)
+### Principle 1. Separation of Assertion and Fact (Assertion-Belief Separation)
 
-**저장되는 것은 사실이 아니라 주장이다.** 그래프에 기록되는 단위는 "X이다"가
-아니라 "호스트 H가 시점 T에 근거 S로 X라고 관측/주장했다"이다. "사실(현재 믿음,
-current belief)"은 주장들의 집합 위에서 해소 계층이 **계산해 내는 파생 뷰**이지,
-저장의 단위가 아니다.
+**What is stored is not fact but assertion.** The unit recorded in the graph is not "X is the case"
+but "host H, at time T, on the basis of S, observed/asserted X". "Fact (the current belief)" is a
+**derived view computed** by the resolution layer over the set of assertions, not a unit of storage.
 
-- **근거**: 사람과 에이전트가 같은 그래프에 쓴다. 에이전트의 주장은 환각일 수
-  있고, 사람의 주장도 낡을 수 있다. 주장을 사실로 승격하는 판단을 저장 시점에
-  하면 그 판단의 근거가 소실되고 되돌릴 수 없다.
-- **구속력**:
-  - 관측(Observation) 로그가 유일한 진실의 원천이고, 엔티티/관계 그래프는
-    물질화된 프로젝션이다 (event sourcing).
-  - 해소 정책(최신 우선, confidence 가중 등)은 **교체 가능한 전략**이어야 하며,
-    정책을 바꾸면 같은 로그에서 다른 믿음을 재계산할 수 있어야 한다.
-  - 어떤 API도 "주장을 거치지 않은 사실"을 그래프에 직접 쓸 수 없다.
-  - **적재 검증은 정형성(well-formedness)까지만 - 거부는 변형이 아니다**: 적재
-    표면은 주장이 주장으로 성립하는지(지시어가 비어 있지 않은지, 값이 정의역
-    안인지 - confidence 범위 강제와 동형)를 검증해 거부할 수 있고, append-only
-    로그의 영구성(원칙 3) 때문에 이 검증은 적재 전에 일어나야 한다. 그러나
-    주장의 **내용**(표기 선택, 사실 여부, 스키마 적합성)을 이유로 거부하거나
-    로그에 싣기 전에 변형해서는 안 된다 - 표기 요동은 원문 그대로 보존하고
-    정규화는 프로젝션의 일이다. 빈 이름의 엔티티 주장, 정규화하면 공백인 관계
-    타입은 "다르게 표기된 주장"이 아니라 지시 대상이 없는 **비주장**이므로,
-    그 거부는 느슨한 적재(원칙 11/22)와 충돌하지 않는다 - 느슨함은 구조화
-    정도에 대한 관용이지 정형성의 포기가 아니다.
+- **Rationale**: People and agents write to the same graph. An agent's assertion can be a
+  hallucination, and a person's assertion can be stale. If the judgment that promotes an assertion to
+  fact is made at storage time, the basis of that judgment is lost and cannot be undone.
+- **Enforcement**:
+  - The observation log is the single source of truth, and the entity/relation graph is a
+    materialized projection (event sourcing).
+  - Resolution policy (latest-wins, confidence-weighted, etc.) must be a **replaceable strategy**;
+    changing the policy must allow recomputing a different belief from the same log.
+  - No API may write a "fact that did not pass through an assertion" directly into the graph.
+  - **Ingest validation goes only as far as well-formedness - rejection is not transformation**: the
+    ingest surface may validate and reject whether an assertion holds as an assertion (that the
+    referent is non-empty, that a value is within its domain - isomorphic to enforcing the confidence
+    range), and because of the permanence of the append-only log (Principle 3) this validation must
+    happen before ingest. However, it must not reject an assertion on the grounds of its **content**
+    (choice of notation, whether it is true, schema conformance) or transform it before placing it in
+    the log - notational fluctuation is preserved verbatim and normalization is the job of the
+    projection. An entity assertion with an empty name, or a relation type that is whitespace once
+    normalized, is not a "differently-notated assertion" but a **non-assertion** with no referent, so
+    rejecting it does not conflict with loose ingest (Principles 11/22) - looseness is tolerance of
+    the degree of structuring, not an abandonment of well-formedness.
 
-### 원칙 2. 출처는 1급 시민, 신원은 위임 사슬 (Provenance First, Identity as Delegation Chain)
+### Principle 2. Provenance Is a First-Class Citizen, Identity Is a Delegation Chain (Provenance First, Identity as Delegation Chain)
 
-**출처 없는 지식은 존재할 수 없다.** 모든 관측/관계는
-(host, workspace, source_ref, observed_at, confidence)를 필수로 지닌다.
-그리고 **에이전트는 대개 누군가를 대리해 행동한다** - 출처의 "누가"는 평평한
-호스트 id가 아니라 **위임 사슬**(예: `ashon -> claude-code@macbook`)로 표현될 수
-있어야 한다.
+**Knowledge without provenance cannot exist.** Every observation/relation necessarily carries
+(host, workspace, source_ref, observed_at, confidence). And **an agent usually acts on behalf of
+someone** - the "who" of provenance must be expressible not as a flat host id but as a **delegation
+chain** (e.g., `ashon -> claude-code@macbook`).
 
-- **근거**: 멀티호스트 환경에서 지식의 가치는 내용만큼이나 "누가 어떤 근거로
-  말했는가"에 있다. 출처는 신뢰 가중, 충돌 해소, 감사(audit), 사후 레드액션의
-  전제 조건이다. 또한 에이전트 신원 표준화 논의(A2A, IETF 에이전트 신원
-  드래프트들)의 공통 문제의식이 "에이전트의 자기 선언 신원은 위임 검증이 안
-  된다"는 것이다 - "이 지식은 **누구의 권한으로** 들어왔나"에 답하지 못하는
-  provenance는 절반의 provenance다.
-- **구속력**:
-  - provenance가 없는 관측은 적재 단계에서 거부된다 (스키마 수준 강제).
-  - provenance의 주체 필드는 위임 사슬(acting host + `on_behalf_of` 주체)을
-    표현할 수 있어야 한다. 사슬 정보가 없는 레거시/외부 관측은 acting host
-    단독으로 기록하되, 신뢰 평가(원칙 18)에서 그만큼 낮게 취급된다.
-  - 질의 결과는 항상 provenance를 동반할 수 있어야 한다 - "이 답이 어디서
-    왔는가"에 대답하지 못하는 질의 API는 만들지 않는다.
-  - 릴레이/피어를 거친 이벤트의 출처 authenticity는 원본 노드 서명으로 보장한다.
-  - **confidence 규약**: confidence 는 [0.0, 1.0] 이며 적재 시 범위가 강제된다
-    (스키마 수준). 자기 보고 confidence 는 보정(calibration)을 신뢰할 수 없으므로
-    - 자기 선언 신원을 검증 못 하는 문제와 동형 - 해소/랭킹에서 confidence 는
-    신뢰 등급(원칙 18)의 하위 신호로만 쓴다. 복수 attestation 의 confidence 결합
-    규칙은 교체 가능한 재량이 아니라 해소 정책 명세의 필수 요소다.
-    **무표기는 보존한다**: confidence 를 명시하지 않은 주장을 기본값(특히 1.0)으로
-    치환해 저장하면 "주장하지 않음"과 "만점으로 주장함"의 구별이 소실된다 - 이는
-    캡처 손실이다 (캡처와 처리의 분리, 원칙 4 단서). 무표기는 무표기로 저장하고,
-    그 해석(기본 가중을 얼마로 칠지)은 해소 정책의 몫으로 미룬다.
+- **Rationale**: In a multi-host environment, the value of knowledge lies as much in "who said it and
+  on what basis" as in the content itself. Provenance is a precondition for trust weighting, conflict
+  resolution, audit, and after-the-fact redaction. Moreover, the shared concern of agent-identity
+  standardization efforts (A2A, IETF agent-identity drafts) is that "an agent's self-declared identity
+  cannot be verified for delegation" - provenance that cannot answer "under **whose authority** did
+  this knowledge enter" is only half of provenance.
+- **Enforcement**:
+  - An observation without provenance is rejected at the ingest stage (schema-level enforcement).
+  - The subject field of provenance must be able to express a delegation chain (the acting host +
+    the `on_behalf_of` principal). A legacy/external observation with no chain information is recorded
+    with the acting host alone, but is treated correspondingly lower in trust evaluation (Principle 18).
+  - A query result must always be able to carry provenance - we do not build a query API that cannot
+    answer "where did this answer come from".
+  - The provenance authenticity of an event that passed through a relay/peer is guaranteed by the
+    origin node's signature.
+  - **Confidence convention**: confidence is in [0.0, 1.0] and its range is enforced at ingest
+    (schema-level). Because self-reported confidence cannot be trusted for calibration - isomorphic to
+    the problem of not being able to verify a self-declared identity - confidence is used in
+    resolution/ranking only as a sub-signal of the trust tier (Principle 18). The rule for combining
+    confidence across multiple attestations is not a replaceable discretion but a mandatory element of
+    the resolution-policy specification. **The unspecified value is preserved**: storing an assertion
+    that did not specify confidence by substituting a default (particularly 1.0) loses the distinction
+    between "did not assert" and "asserted with full marks" - this is capture loss (separation of
+    capture and processing, the caveat of Principle 4). The unspecified value is stored as unspecified,
+    and its interpretation (what default weight to assign) is deferred to the resolution policy.
 
-### 원칙 3. 삭제 대신 대체 (Supersede, Don't Delete)
+### Principle 3. Supersede Instead of Delete (Supersede, Don't Delete)
 
-**지식은 append-only로 쌓이고, 낡은 지식은 지워지는 게 아니라 대체된다.**
-파괴적 덮어쓰기(destructive overwrite)는 금지된다.
+**Knowledge accumulates append-only, and stale knowledge is not erased but superseded.** Destructive
+overwrite is forbidden.
 
-- **근거**: 삭제는 정보를 파괴하지만 대체는 정보를 늘린다("이것이 저것을
-  대체했다"는 그 자체로 지식이다). 또한 append-only 불변 이벤트는 콘텐츠 주소
-  dedup과 위상 독립 복제 수렴의 전제이므로, 이 원칙이 무너지면 동기화 모델
-  전체가 무너진다.
-- **구속력**:
-  - 관측 로그는 불변(immutable)/콘텐츠 주소(blake3)다. 수정은 새 관측으로,
-    철회는 명시적 retraction 관측으로 표현한다.
-  - **재도착 병합 규범**: 같은 콘텐츠 주소로 다시 도착한 관측은 덮어쓰지 않는다.
-    정체성 필드(내용/주장)는 id 가 동일성을 보증하고, 비정체성 필드(provenance
-    attestation, derived_from 계보)는 **단조 집합 합집합**으로 병합한다 - 합집합은
-    교환/결합/멱등이라 도착 순서와 무관하게 수렴한다(원칙 16). 릴레이 중복(완전
-    동일 attestation)은 합집합이 자연스럽게 dedup 하고, 독립 재관측(어느 필드든
-    다른 attestation)은 누적된다. 이 규범이 "출처는 1급"(원칙 2)과 "내용이 곧
-    정체성"(원칙 14)의 충돌 지점을 해소한다 - 내용은 관측의 정체성이고, 출처는
-    그 관측에 대한 attestation 의 집합이다.
-  - 엔티티 병합(merge)도 이력을 보존한다 - 병합 취소(un-merge)가 가능해야 한다.
-  - 예외는 단 하나, **규제/프라이버시에 의한 파기 요구**이며, 이 경우에도
-    "무엇이 파기되었다"는 묘비(tombstone)를 남긴다. 묘비는 해당 id 에 대한
-    **흡수 상태**다 (원칙 16의 흡수 개념) - 묘비를 가진 노드는 그 id 의
-    재적재/sync 재수신을 거부하고 묘비를 유지하며, 묘비 자체가 sync 로 전파된다.
-    이것이 없으면 파기된 지식이 아직 갖고 있는 피어로부터 되돌아와 부활한다.
+- **Rationale**: Deletion destroys information, whereas superseding adds information ("this superseded
+  that" is itself knowledge). Moreover, append-only immutable events are the precondition for
+  content-address dedup and topology-independent replication convergence, so if this principle breaks,
+  the entire sync model breaks.
+- **Enforcement**:
+  - The observation log is immutable / content-addressed (blake3). A modification is expressed as a
+    new observation, and a withdrawal as an explicit retraction observation.
+  - **Re-arrival merge norm**: an observation that arrives again under the same content address is not
+    overwritten. Identity fields (content/assertion) have their sameness guaranteed by the id, while
+    non-identity fields (provenance attestations, `derived_from` lineage) are merged by **monotonic
+    set union** - union is commutative/associative/idempotent, so it converges regardless of arrival
+    order (Principle 16). Relay duplication (a fully identical attestation) is naturally deduped by the
+    union, while an independent re-observation (an attestation differing in any field) accumulates.
+    This norm resolves the point of collision between "provenance is first-class" (Principle 2) and
+    "content is identity" (Principle 14) - content is the observation's identity, and provenance is
+    the set of attestations about that observation.
+  - Entity merge also preserves history - un-merge must be possible.
+  - There is exactly one exception, a **destruction demand due to regulation/privacy**, and even in
+    this case a tombstone recording "what was destroyed" is left behind. A tombstone is an **absorbing
+    state** for that id (the absorbing concept of Principle 16) - a node that holds a tombstone refuses
+    re-ingest / sync re-receipt of that id and keeps the tombstone, and the tombstone itself propagates
+    via sync. Without this, destroyed knowledge would come back from a peer that still holds it and be
+    resurrected.
 
-### 원칙 4. 바이템포럴 - 두 개의 시간 축 (Bi-Temporality)
+### Principle 4. Bitemporal - Two Time Axes (Bi-Temporality)
 
-**모든 지식은 두 개의 시간 축 위에 있다.** (1) **유효 시간(valid time)** - 그것이
-세계에서 참이었던 기간(`valid_from`/`valid_to`), (2) **기록 시간(transaction
-time)** - 시스템이 그것을 알게 된 시점(`observed_at`). 지식은 부패(decay)한다는
-것이 기본 전제이며, 부패는 두 축 모두에서 일어난다.
+**All knowledge sits on two time axes.** (1) **valid time** - the period during which it was true in
+the world (`valid_from`/`valid_to`), (2) **transaction time** - the moment the system came to know it
+(`observed_at`). The base premise is that knowledge decays, and decay happens on both axes.
 
-- **근거**: "김 팀장이 A팀 소유다"는 조직 개편 전까지만 참이고(유효 시간),
-  우리가 그 사실을 안 것은 더 늦었을 수 있다(기록 시간). 한 축만 있는
-  지식베이스는 "T에 무엇이 참이었나"와 "T에 우리가 무엇을 알았나"를 구별하지
-  못한다. 바이템포럴 모델은 최신 에이전트 메모리 시스템(Graphiti/Zep 등)이
-  수렴한 표준 관행이기도 하다 - 이 구분이 있어야 소급 정정(retroactive
-  correction: 과거에 참이었던 것을 지금 알게 됨)이 표현 가능하다.
-- **구속력**:
-  - 관측은 기록 시간을, 관계는 유효구간을 항상 표현할 수 있어야 한다. 유효구간이
-    없는 관계는 "관측 시점부터 반증 전까지"로 해석한다. 단, 이 기본값은 기록 시간을
-    유효 시간에 차용하는 **근사**다 - 소급 관측(과거에 참이었던 것을 지금 알게 됨)은
-    `valid_from`/`valid_to` 를 명시해야 하며, 적재 표면은 이를 항상 받을 수 있어야
-    한다 (캡처와 처리의 분리 - 질의 로직은 미뤄도 캡처는 미루면 정보가 소실된다).
-  - **두 종류의 시간여행 질의**를 모두 지원한다: `as_of_valid(T)`(T에 참이었던
-    세계)와 `as_of_recorded(T)`(T 시점 시스템의 믿음). append-only 로그(원칙 3)가
-    후자를 공짜로 제공한다.
-  - 새 관측이 기존 믿음을 반증하면 옛 관계는 삭제가 아니라 유효구간 종료
-    (`valid_to` 설정)로 처리한다.
+- **Rationale**: "Team lead Kim belongs to Team A" is true only until the reorganization (valid time),
+  and we may have learned that fact later (transaction time). A knowledge base with only one axis
+  cannot distinguish "what was true at T" from "what we knew at T". The bitemporal model is also the
+  standard practice that recent agent-memory systems (Graphiti/Zep, etc.) have converged on - only
+  with this distinction is retroactive correction (learning now something that was true in the past)
+  expressible.
+- **Enforcement**:
+  - An observation must always be able to express transaction time, and a relation its valid interval.
+    A relation with no valid interval is interpreted as "from the observation time until it is
+    disproven". However, this default is an **approximation** that borrows transaction time for valid
+    time - a retroactive observation (learning now something that was true in the past) must specify
+    `valid_from`/`valid_to`, and the ingest surface must always be able to accept them (separation of
+    capture and processing - query logic may be deferred, but if capture is deferred information is
+    lost).
+  - Support **both kinds of time-travel query**: `as_of_valid(T)` (the world that was true at T) and
+    `as_of_recorded(T)` (the system's belief as of T). The append-only log (Principle 3) provides the
+    latter for free.
+  - When a new observation disproves an existing belief, the old relation is handled not by deletion
+    but by closing its valid interval (setting `valid_to`).
 
-### 원칙 5. 열린 세계 가정 (Open World Assumption)
+### Principle 5. Open World Assumption (Open World Assumption)
 
-**그래프에 없다고 거짓이 아니다.** 부재(absence)는 부정(negation)이 아니라
-미지(unknown)다.
+**Absence from the graph is not falsehood.** Absence is not negation but unknown.
 
-- **근거**: 분산된 호스트들은 각자 부분 지식만 가지며, 동기화 전의 노드는 항상
-  불완전하다. 닫힌 세계 가정(CWA)은 단일 완전 DB에서만 성립한다.
-- **구속력**:
-  - 질의 API와 추론 규칙은 "없음 -> 거짓" 추론을 기본으로 하지 않는다.
-    부정이 필요하면 명시적 부정 주장으로 표현한다.
-  - MCP 도구의 응답은 "찾지 못함"과 "거짓임"을 구별해 전달한다 -
-    LLM 클라이언트가 부재를 부정으로 오독하지 않도록 응답 스키마에 반영한다.
+- **Rationale**: Distributed hosts each hold only partial knowledge, and a node before sync is always
+  incomplete. The closed world assumption (CWA) holds only in a single complete DB.
+- **Enforcement**:
+  - Query APIs and inference rules do not treat "absent -> false" inference as the default. When
+    negation is needed, it is expressed as an explicit negative assertion.
+  - MCP tool responses convey a distinction between "not found" and "is false" - this is reflected in
+    the response schema so that an LLM client does not misread absence as negation.
 
-### 원칙 6. 충돌은 정보다 (Contradiction Is Signal)
+### Principle 6. Conflict Is Information (Contradiction Is Signal)
 
-**모순되는 주장은 억압하지 않고 표면화한다.** 호스트 A와 B가 상충하는 주장을
-하면 둘 다 provenance와 함께 보존하고, 해소 계층이 현재 믿음을 계산하되
-모순의 존재 자체를 질의 가능하게 남긴다.
+**Contradictory assertions are not suppressed but surfaced.** When hosts A and B make conflicting
+assertions, both are preserved along with their provenance, and the resolution layer computes the
+current belief while leaving the existence of the contradiction itself queryable.
 
-- **근거**: 멀티호스트 환경에서 모순은 오류가 아니라 "여기에 확인이 필요하다"는
-  가장 값진 신호다. 자동으로 한쪽을 지우는 시스템은 신호를 파괴한다.
-- **구속력**:
-  - 해소는 선택이지 삭제가 아니다 - 패배한 주장도 로그에 남고 재해소 시 복권될
-    수 있다.
-  - "현재 모순 상태인 지점"을 나열하는 introspection 질의를 제공한다
-    (사람 호스트의 확인/중재를 유도하는 진입점).
+- **Rationale**: In a multi-host environment, a contradiction is not an error but the most valuable
+  signal that "confirmation is needed here". A system that automatically erases one side destroys the
+  signal.
+- **Enforcement**:
+  - Resolution is a choice, not a deletion - a defeated assertion also remains in the log and can be
+    reinstated upon re-resolution.
+  - Provide an introspection query that lists "points currently in a contradictory state" (an entry
+    point that invites a human host's confirmation/mediation).
 
-### 원칙 7. 망각은 강등, 응고는 재프로젝션 (Forgetting as Demotion, Consolidation as Re-Projection)
+### Principle 7. Forgetting Is Demotion, Consolidation Is Re-Projection (Forgetting as Demotion, Consolidation as Re-Projection)
 
-**지식의 생애주기는 적재로 끝나지 않는다.** 낡거나 저가치의 지식은 삭제가
-아니라 **회상 우선순위의 강등**으로 잊히고, 유휴 시간의 **응고(consolidation)**
-과정이 축적된 관측을 요약/승격/강등한다. 로그는 영원하지만 회상은 유한하다.
+**The lifecycle of knowledge does not end at ingest.** Stale or low-value knowledge is forgotten not
+by deletion but by **demotion of recall priority**, and an idle-time **consolidation** process
+summarizes/promotes/demotes accumulated observations. The log is eternal, but recall is finite.
 
-- **근거**: append-only 로그는 무한히 자라고, 큐레이션 없는 회상은 잡음에
-  오염된다. 최근 에이전트 메모리 연구가 수렴한 해법이 이것이다 - 사용자 응답
-  경로 밖의 유휴 시간(sleep-time)에 메모리를 재처리해 표현을 개선하는 것
-  (수면 중 기억 응고의 계산적 유비). 저장(원칙 3: 전부 보존)과 회상(유한한
-  주의)을 분리하면 두 요구가 충돌하지 않는다.
-- **구속력**:
-  - 망각은 관측 로그를 건드리지 않는다 - 프로젝션/인덱스 계층의 가중치
-    (recency, 사용 빈도, 신뢰 등급)만 조정한다. 강등된 지식도 명시 질의로는
-    항상 도달 가능하다.
-  - 응고는 **결정적 재프로젝션**이 기본이다 (원칙 16과 정합). LLM 요약 같은
-    확률적 응고를 쓰는 경우, 그 산출물은 confidence와 `derived_from` 계보를 단
-    **파생 관측**으로 적재된다 (원칙 1/18/19로 회수) - 응고가 원본을 대체하지
-    않는다.
-  - 응고/재인덱싱은 사용자 요청의 critical path 밖(유휴/배치)에서 실행한다.
-
----
-
-## 제2장 - 온톨로지 설계 (Ontology Engineering)
-
-Gruber(1995)의 온톨로지 설계 원칙과 OntoClean(Guarino & Welty)을 supragnosis의
-T-Box/A-Box 설계에 적용한다.
-
-### 원칙 8. 명확성 - 개념 하나에 의미 하나 (Clarity)
-
-**T-Box의 모든 타입/관계는 단일하고 객관적인 정의와 자연어 설명을 지닌다.**
-하나의 이름이 두 의미로, 두 이름이 한 의미로 쓰이는 것을 허용하지 않는다.
-
-- **근거**: 온톨로지의 SRP. 의미가 흐린 개념은 호스트마다 다르게 쓰이고,
-  그래프는 연결이 아니라 동음이의어의 무덤이 된다.
-- **구속력**:
-  - `define_type`은 자연어 정의(description) 없이 타입을 만들 수 없다.
-  - 관계 타입은 방향과 의미가 이름에서 읽혀야 한다 (`depends_on`처럼).
-    `related`류의 만능 관계는 `relates_to` 하나로 제한하고, 사용은
-    "아직 분류 전"이라는 임시 상태로 취급한다.
-
-### 원칙 9. 일관성 - 모순 없는 추론 (Coherence)
-
-**스키마와 추론 규칙으로부터 모순이 도출되어서는 안 된다.** 원칙 6이 A-Box의
-주장 충돌을 허용하는 것과 달리, T-Box(스키마)와 추론 규칙 자체는 논리적으로
-일관해야 한다.
-
-- **근거**: 주장의 충돌은 세계의 성질이지만, 스키마의 모순은 시스템의 버그다.
-  둘을 혼동하면 안 된다.
-- **구속력**:
-  - T-Box 변경(`define_type`)은 기존 스키마와의 정합성 검증을 통과해야 한다
-    (순환 subtype, 도메인/레인지 충돌 등).
-  - 추론 규칙은 단위 테스트로 모순 미도출을 검증한다.
-
-### 원칙 10. 확장에 열리고 수정에 닫힌 스키마 (Extendibility / Open-Closed)
-
-**T-Box는 2층 구조다.** 코어 온톨로지(Observation, Entity, Relation, Provenance,
-Host, Workspace 같은 메타 수준)는 고정하고, 도메인 온톨로지(Project, Decision,
-Tool...)는 코어를 수정하지 않고 확장 가능하게 연다.
-
-- **근거**: 스키마를 전부 고정하면 에이전트가 지식을 표현하지 못하고, 전부 열면
-  쓰레기장이 된다. OOP의 Open-Closed와 동형의 해법: 안정 코어 + 확장점.
-- **구속력**:
-  - 코어 온톨로지의 변경은 이 원칙의 개정에 준하는 신중함을 요한다
-    (마이그레이션 경로 필수).
-  - 도메인 타입 추가는 기존 관측/엔티티를 무효화해서는 안 된다 -
-    기존 데이터가 깨지는 스키마 변경은 새 타입 + supersede로 표현한다.
-  - 부트스트랩은 "작은 기본 세트 + 확장" (architecture.md 13절의 결정을 원칙으로
-    승격).
-
-### 원칙 11. 최소 존재론적 개입, 스키마는 유도된다 (Minimal Commitment, Induced Schema)
-
-**지식 공유에 필요한 최소한만 모델링하고, 나머지는 열어둔다.** 미리 정교한
-분류 체계를 구축하려는 유혹을 거부한다. 스키마는 위에서 설계되기보다
-**인스턴스에서 상향 유도(bottom-up induction)되어 승격**되는 것이 기본 경로다.
-
-- **근거**: 과도한 스키마는 과도한 추상화와 같은 병이다. 쓰이지 않는 정교함은
-  유지비만 남기고, 실제 사용 패턴이 요구하기 전에 만든 분류는 대부분 틀린다.
-  LLM 시대의 온톨로지 구축 연구도 같은 방향으로 수렴했다 - 수작업 계층 설계에서,
-  인스턴스 그래프로부터 개념/관계를 유도(클러스터링/일반화)하는 접근으로.
-- **구속력**:
-  - 새 타입/관계는 **실제 관측이 그것을 요구할 때** 추가한다 (지식의 YAGNI).
-  - 타입 불명의 지식을 표현할 탈출구를 항상 남긴다 - `Concept` + `relates_to` +
-    자유 properties로 일단 적재하고, 패턴이 굳으면 타입으로 승격한다.
-  - 유도는 제안까지, 승격은 명시적으로: 시스템(또는 LLM 추출기)이 반복 패턴에서
-    타입 후보를 **제안**할 수 있으나, T-Box 승격은 명시적 `define_type` 행위로만
-    일어난다 (원칙 9의 정합성 검증을 통과하며).
-  - **T-Box 의 스코프는 워크스페이스다** (도메인 온톨로지에 한한다 - 코어
-    온톨로지는 원칙 10에 따라 전역 고정). 전역 도메인 T-Box 는 없다: 스키마가
-    사용에서 유도되는 이상, 유도의 모집단인 워크스페이스가 곧 스키마의 스코프다.
-    워크스페이스 간 타입 연결은 명시적 정렬 주장(bridge claim)으로만 표현한다.
-  - "적재를 막는 스키마"보다 "나중에 정제 가능한 느슨한 적재"를 우선한다.
-
-**[6차 개정] 유도의 기반은 공동출현의 이차 구조다 (Second-Order Structure as
-Induction Substrate).** 유도가 "제안까지"라면, *무엇으로부터* 유도하는가에 답이
-있어야 한다. 그 기반은 관측이 남기는 **이차 구조**다: 한 관측이 공동 주장한 엔티티
-집합(하이퍼엣지)은 이진 관계 프로젝션이 버린 "무엇이 함께 말해졌는가"(맥락)를
-로그로부터 결정적으로 되살린 파생 뷰이며(원칙 1/16), "관측에 대한 관측"(meta-
-knowledge)으로서 이 프로젝트가 이름으로 약속한 supra-gnosis 그 자체다. 이 이차
-구조가 스키마 유도만이 아니라 체계화 전반 - 해소(원칙 15), 응고(원칙 7), 모순
-국소화(원칙 6), 큐레이션 건강 지표(원칙 22) - 의 공통 기준점이 되어, 지식체계가
-자기 정제 안건을 스스로 올리게 한다.
-
-- **구속력 (확장)**:
-  - **기준이지 심판이 아니다.** 하이퍼엣지는 후보/제안을 *생성*할 뿐, 확정(병합/
-    승격/스키마 정의/철회)은 결정적 해소 규칙(원칙 15)과 제안 워크플로(원칙 23),
-    사람 확인(원칙 18)을 거친다. 파생 뷰가 정본을 직접 쓰면 원칙 1/19 위반이다 -
-    이는 새 권한이 아니라 기존 게이트드 흐름에 붙는 **새 입력**이다.
-  - **저장이 아니라 프로젝션이다.** 하이퍼엣지는 이진 Relation 모델을 대체하지
-    않는다(원칙 10/12) - 무방향/무타입/n-항의 파생 뷰로 병존하고, traverse 등 이진
-    경로는 그대로다. 멤버 집합으로 식별되며 관측이 그 attestation 이다 (원칙 3/14의
-    정체성 모델과 동형: 같은 멤버 집합을 만든 여러 관측은 dedup 되어 attestation 으로
-    누적된다).
-  - **유도 산출물도 계보 + 저신뢰다.** 하이퍼엣지에서 요약/승격된 파생 관측은
-    `derived_from` 으로 원천을 달고 최저 신뢰로 시작한다 - 검증 안 된 공동출현이
-    정본으로 세탁되지 않게 한다 (원칙 18).
-  - **기준은 결정적, 우선순위는 재량이다.** 후보 *생성*은 로그의 결정적 함수라 노드
-    간 수렴한다(원칙 16). "먼저 리뷰할 것"의 정렬은 큐레이션 UX 라 휴리스틱을 허용한다.
-    corroboration(반복 공동주장) 신호는 자기 선언을 검증할 수 없으므로 **독립 출처**
-    (위임 사슬 principal 기준)만 센다 (원칙 2/18).
-  - **공동출현은 약신호다.** 상관은 동일성/인과가 아니다 - 반복 공동멤버십은 가설
-    생성기일 뿐이라 후보는 본질적으로 저 confidence 다 (공동출현을 사실로 과신하는
-    지식그래프 유도의 고전적 실패를 이 저신뢰 취급으로 막는다). 주장된 응집(하이퍼엣지)
-    과 창발적 응집(구조 클러스터)의 불일치는 억압하지 않고 신호로 남긴다 (원칙 6).
-
-### 원칙 12. 최소 인코딩 편향 (Minimal Encoding Bias)
-
-**지식 모델은 특정 저장소/표현 형식에 종속되지 않는다.** 모델은 지식 수준에서
-정의하고, Cozo Datalog든 RDF든 인코딩은 어댑터의 사정이다.
-
-- **근거**: 저장소 선택(architecture.md 6절)은 바뀔 수 있는 결정이다. 모델에
-  인코딩이 새면 저장소가 도메인을 인질로 잡는다.
-- **구속력**:
-  - `supragnosis-core`는 저장소 크레이트에 의존하지 않는다 (의존 방향 강제).
-  - Cozo 고유 개념(예: 특정 인덱스 구조)이 도메인 모델/MCP 표면에 노출되면
-    위반이다. `query` passthrough 도구가 유일한 명시적 예외이며, 이는 "고급
-    사용자용 탈출구"로 문서화된다.
-
-### 원칙 13. 본질과 역할의 구분 (Rigidity - OntoClean)
-
-**is-a 계층은 본질(rigid)에만 쓴다.** "사람"은 본질이지만 "리뷰어"는 역할이다.
-역할/상태/단계는 서브타입이 아니라 관계 또는 시간 유효구간 있는 속성으로
-모델링한다.
-
-- **근거**: 역할을 서브타입으로 만들면 (Liskov 위반과 동형으로) 엔티티가 역할을
-  바꿀 때마다 타입이 바뀌어야 하는 모순이 생긴다. is-a 남용은 온톨로지 부패의
-  가장 흔한 경로다.
-- **구속력**:
-  - T-Box의 subtype 계층은 얕게 유지한다 (기본 2~3 단계).
-  - `define_type` 가이드라인: "이 엔티티가 그 타입이기를 그만둘 수 있는가?"에
-    "예"라면 서브타입이 아니라 관계다.
+- **Rationale**: An append-only log grows without bound, and recall without curation is polluted by
+  noise. This is the solution that recent agent-memory research has converged on - reprocessing memory
+  during idle time (sleep-time) outside the user-response path to improve its representation (a
+  computational analogue of memory consolidation during sleep). Separating storage (Principle 3:
+  preserve everything) from recall (finite attention) keeps the two demands from conflicting.
+- **Enforcement**:
+  - Forgetting does not touch the observation log - it only adjusts weights in the projection/index
+    layer (recency, usage frequency, trust tier). Demoted knowledge is always reachable by an explicit
+    query.
+  - Consolidation is by default a **deterministic re-projection** (consistent with Principle 16). When
+    a probabilistic consolidation such as LLM summarization is used, its output is ingested as a
+    **derived observation** carrying confidence and `derived_from` lineage (subsumed under Principles
+    1/18/19) - consolidation does not supersede the original.
+  - Consolidation/re-indexing runs off the critical path of user requests (idle/batch).
 
 ---
 
-## 제3장 - 연결과 신뢰 (Identity, Federation & Trust)
+## Chapter 2 - Ontology Design (Ontology Engineering)
 
-supragnosis의 존재 이유는 호스트들의 **연결**이다. 이 장은 연결이 실제로
-성립하기 위한 원칙과, 연결이 만들어내는 위협에 대한 방어를 고정한다.
+Apply Gruber's (1995) ontology design principles and OntoClean (Guarino & Welty) to supragnosis's
+T-Box/A-Box design.
 
-### 원칙 14. 모든 것에 안정적 식별자 (Stable Identifiers)
+### Principle 8. Clarity - One Meaning per Concept (Clarity)
 
-**모든 엔티티/관측/타입은 전역적으로 안정적인 식별자를 지닌다**
-(Linked Data 원칙의 적용). 식별자는 위치/저장소/호스트가 바뀌어도 불변이다.
+**Every type/relation in the T-Box has a single, objective definition and a natural-language
+description.** One name used for two meanings, or two names for one meaning, is not permitted.
 
-- **근거**: 호스트 간 연결은 결국 참조다. 식별자가 불안정하면 그래프의 모든
-  링크가 dangling pointer가 된다.
-- **구속력**:
-  - 관측 id는 콘텐츠 주소(blake3) - 내용이 곧 정체성이므로 경로 무관 dedup이
-    성립한다.
-  - 엔티티 id는 해소된 정규 id이며, 병합 시에도 옛 id는 새 id로의 포워딩을
-    유지한다 (참조 무결성).
-  - `supragnosis://` URI는 역참조 가능해야 한다 - id를 아는 자는 그 실체를
-    조회할 수 있다 (MCP Resource로 노출).
-  - **구조 진화의 기계적 강제**: 정체성(콘텐츠 주소 해시 인코딩), attestation
-    전순서(병합 dedup 의 기준), 재도착 병합(absorb)처럼 **필드 열거로 의미론을
-    정의하는 함수**는, 모델에 필드가 추가될 때 그 함수의 재검토가 컴파일
-    수준에서 강제되도록 작성한다 (완전 구조분해 등 - 열거 누락이 컴파일 에러가
-    되게). 새 필드가 내용 정체성인지, attestation 구별 축인지, 병합 대상인지는
-    침묵 기본값이 아니라 명시적 결정이어야 한다 - 누락은 서로 다른 주장의 id
-    붕괴(이 원칙)나 attestation 의 dedup 소실(원칙 3)로 나타나며, 리뷰의
-    성실성은 그것을 막는 보장이 아니다.
+- **Rationale**: The SRP of ontology. A concept with blurry meaning is used differently by each host,
+  and the graph becomes not a set of connections but a graveyard of homonyms.
+- **Enforcement**:
+  - `define_type` cannot create a type without a natural-language definition (description).
+  - A relation type's direction and meaning must be readable from its name (like `depends_on`). A
+    catch-all relation of the `related` kind is limited to the single `relates_to`, and its use is
+    treated as a temporary state meaning "not yet classified".
 
-### 원칙 15. 정체성 해소는 기반의 책임 (Resolution Is Substrate's Job)
+### Principle 9. Coherence - Contradiction-Free Inference (Coherence)
 
-**"같은 것을 다르게 부르는 문제"는 클라이언트가 아니라 supragnosis가 푼다.**
-호스트들은 각자의 어휘로 말하고, 연결은 해소 계층이 만든다.
+**No contradiction may be derivable from the schema and the inference rules.** Unlike Principle 6,
+which permits assertion conflicts in the A-Box, the T-Box (schema) and the inference rules themselves
+must be logically coherent.
 
-- **근거**: entity resolution을 클라이언트에 떠넘기면 호스트 수만큼의 서로 다른
-  해소 정책이 생기고, 그래프는 같은 대상의 파편으로 쪼개진다. 연결이 목적인
-  시스템에서 해소는 부가 기능이 아니라 존재 이유다.
-- **구속력**:
-  - `observe`는 클라이언트에게 정규 id를 요구하지 않는다 - 이름/별칭으로
-    말하게 하고 해소는 서버가 한다.
-  - 해소는 보수적으로: 확신 없는 병합보다 보류(두 엔티티 유지 + 후보 링크)가
-    낫다. 잘못된 병합은 잘못된 분리보다 비싸다 (단, 원칙 3에 의해 둘 다
-    되돌릴 수 있어야 한다).
-  - 해소 이력(무엇이 무엇으로, 어떤 근거로)은 provenance로 남는다.
+- **Rationale**: A conflict of assertions is a property of the world, but a contradiction in the
+  schema is a bug in the system. The two must not be confused.
+- **Enforcement**:
+  - A T-Box change (`define_type`) must pass a consistency check against the existing schema (cyclic
+    subtypes, domain/range conflicts, etc.).
+  - Inference rules verify non-derivation of contradictions via unit tests.
 
-### 원칙 16. 위상 독립 수렴 (Topology-Independent Convergence)
+### Principle 10. Schema Open to Extension, Closed to Modification (Extendibility / Open-Closed)
 
-**같은 관측 집합을 가진 노드는 같은 그래프를 물질화한다.** 이벤트가 어떤
-경로(허브/피어/하이브리드)로, 어떤 순서로 도착했든 결과는 동일하다.
+**The T-Box is a two-layer structure.** The core ontology (the meta level, such as Observation,
+Entity, Relation, Provenance, Host, Workspace) is fixed, while the domain ontology (Project, Decision,
+Tool...) is opened for extension without modifying the core.
 
-- **근거**: 이 성질이 없으면 페더레이션은 위상마다 다른 의미론을 갖는 N개의
-  시스템이 된다. 결정적 수렴(CAS dedup + HLC 순서 + 결정적 프로젝션)이 있어야
-  "연결 방식"이 순수하게 운영상의 선택이 된다.
-- **구속력**:
-  - 프로젝션/해소 로직에 비결정성(벽시계, 도착 순서, 난수) 사용 금지.
-    순서가 필요하면 HLC, 임의성이 필요하면 seed를 이벤트에서 유도한다.
-  - **질의 응답도 결정적이어야 한다**: 같은 그래프 상태에 대한 검색/순회 응답은
-    정렬 순서와 limit 절단까지 재현 가능해야 한다. 내부 자료구조의 반복 순서
-    (해시맵, 행 순서)가 응답에 새면 위반이다 - 동점/절단은 안정 키(id)로 못박는다.
-  - **질의 결정성의 두 층위 - 재현성과 수렴성**: (a) **재현성**(같은 노드의 같은
-    상태에 같은 질의 -> 같은 응답)은 모든 질의 표면의 의무다 - 의미 회상(ANN)도
-    동점/절단을 안정 키로 못박아 이를 지킨다. (b) **수렴성**(같은 관측 집합을
-    가진 두 노드 -> 같은 응답)은 결정적 읽기 표면(정확 조회, 그래프 순회, 키워드
-    검색)의 의무다. 의미 회상 인덱스(임베딩, ANN 그래프)는 물질화 그래프의
-    일부가 아니라 **노드 로컬 회상 보조**이며 - 삽입 순서 의존의 근사 구조라
-    노드 간 수렴을 약속할 수 없고, 약속할 필요도 없다 (원칙 7 의 저장/회상 분리,
-    부록 A 의 회상/확정 분리) - 수렴 규범의 대상이 아니다. 단 이 면제에는 가드가
-    둘 전제된다: 회상 결과가 확정(병합/승격 등 commit)의 입력이 될 때는 결정적
-    규칙을 다시 거쳐야 하고(원칙 19), 질의 응답은 자신이 어느 표면에서 왔는지
-    (mode)를 표기해 클라이언트가 수렴 표면과 회상 보조를 구별할 수 있어야 한다.
-  - 이 성질은 테스트로 상시 검증한다: 같은 이벤트 집합을 무작위 순서/분할로
-    주입해 그래프 동일성을 확인하는 property test를 유지한다.
-  - **수렴과 단조는 다른 성질이다.** 수렴은 "순서 무관 - 같은 집합이면 같은
-    결과"이고, 단조는 "집합 증가에 대한 안정성 - 이벤트가 더 도착해도 이미 선
-    결론이 뒤집히지 않음"이다. 결정적 폴드는 수렴을 주지만, "언제부터 결론을
-    믿고 파생을 쌓아도 되는가"(finality)는 결정 규칙이 반격자(흡수 상태)를
-    이뤄 단조일 때만 성립한다. 순서 함수(first-writer-wins 류)는 수렴하되
-    늦게 온 이른-시각 이벤트가 결론을 바꿀 수 있어 단조가 아니다. 따라서 그
-    위에 파생이 쌓이는 종결 상태는 흡수 상태로 설계한다
-    (proposal-workflow.md I16).
+- **Rationale**: Fixing the whole schema prevents agents from expressing knowledge, while opening all
+  of it makes a garbage dump. A solution isomorphic to OOP's Open-Closed: a stable core + extension
+  points.
+- **Enforcement**:
+  - A change to the core ontology demands caution on par with a revision of this principle (a
+    migration path is mandatory).
+  - Adding a domain type must not invalidate existing observations/entities - a schema change that
+    breaks existing data is expressed as a new type + supersede.
+  - Bootstrap is "a small default set + extension" (promoting the decision in architecture.md
+    section 13 to a principle).
 
-### 원칙 17. 지식 주권 - 선택적 공유 (Knowledge Sovereignty)
+### Principle 11. Minimal Ontological Commitment, Schema Is Induced (Minimal Commitment, Induced Schema)
 
-**모든 지식이 밖으로 나가는 것이 기본값이어서는 안 된다.** 무엇을 공유할지는
-지식을 만든 호스트가 결정하며, 공유 경계는 sync 계층에서 강제된다.
+**Model only the minimum needed for knowledge sharing, and leave the rest open.** Reject the
+temptation to build an elaborate classification scheme up front. The default path is for the schema to
+be **induced bottom-up from instances and then promoted**, rather than designed from the top.
 
-- **근거**: 로컬 우선 시스템의 신뢰는 "내 것이 내 통제 하에 있다"에서 나온다.
-  공유가 기본값이면 사람들은 민감한 지식을 아예 적재하지 않게 되고, 시스템은
-  가장 가치 있는 지식을 잃는다.
-- **구속력**:
-  - 공유는 workspace 화이트리스트 opt-in (기본: 공유 없음).
-  - 필터/레드액션은 sync 경계에서 적용된다 - 나가지 말아야 할 것은 상대 노드에
-    도달하기 전에 걸러진다 (도달 후 삭제 요청이 아니라).
-  - **공유 경계는 원격 질의 표면에도 적용된다**: sync 필터만 막고 원격 MCP 질의를
-    열어두면 같은 지식이 다른 문으로 나간다. 원격(비로컬) 클라이언트의 읽기는
-    공유 화이트리스트의 지배를 받고, 워크스페이스 스코프 없는 전역 질의는 로컬
-    신뢰 표면(stdio, 단일 사용자)에 한한다.
-  - 적재 시 비밀정보 레드액션 훅을 제공하되, 이는 공유 필터의 보조이지 대체가
-    아니다 (심층 방어).
+- **Rationale**: An excessive schema is the same disease as excessive abstraction. Elaboration that is
+  never used leaves only maintenance cost behind, and a classification built before actual usage
+  patterns demand it is mostly wrong. Ontology-building research in the LLM era has converged in the
+  same direction - from hand-crafted hierarchy design toward an approach that induces concepts/relations
+  from the instance graph (clustering/generalization).
+- **Enforcement**:
+  - A new type/relation is added **when actual observations demand it** (the YAGNI of knowledge).
+  - Always leave an escape hatch for expressing knowledge of unknown type - ingest it first as
+    `Concept` + `relates_to` + free-form properties, and promote it to a type once the pattern hardens.
+  - Induction goes as far as a proposal, promotion is explicit: the system (or an LLM extractor) may
+    **propose** type candidates from repeated patterns, but T-Box promotion happens only through an
+    explicit `define_type` act (passing the consistency check of Principle 9).
+  - **The scope of the T-Box is the workspace** (limited to the domain ontology - the core ontology is
+    globally fixed per Principle 10). There is no global domain T-Box: as long as the schema is induced
+    from usage, the workspace, which is the population from which it is induced, is the scope of the
+    schema. Type connections across workspaces are expressed only through an explicit alignment
+    assertion (bridge claim).
+  - Prefer "loose ingest that can be refined later" over "a schema that blocks ingest".
 
-### 원칙 18. 쓰기는 공격 표면이다 (Writes Are an Attack Surface)
+**[6th revision] The substrate of induction is the second-order structure of co-occurrence
+(Second-Order Structure as Induction Substrate).** If induction goes "as far as a proposal", there
+must be an answer to *what* it induces from. That substrate is the **second-order structure** that
+observations leave behind: the set of entities co-asserted by a single observation (a hyperedge) is a
+derived view that deterministically recovers from the log the "what was said together" (context) that
+the binary-relation projection discarded (Principles 1/16), and as "observation about observation"
+(meta-knowledge) it is the very supra-gnosis this project promised in its name. This second-order
+structure becomes the common reference point not only for schema induction but for systematization as
+a whole - resolution (Principle 15), consolidation (Principle 7), contradiction localization
+(Principle 6), curation health metrics (Principle 22) - so that the knowledge system raises its own
+self-refinement agenda.
 
-**모든 observe는 잠재적 오염원이다.** 지식의 무결성은 서명(전송 무결성)만으로
-보장되지 않는다 - 서명은 "누가 보냈는가"를 증명할 뿐 "내용이 참인가"를 증명하지
-않는다. 오염에 대한 방어는 신뢰 등급, 계보 추적, 격리의 심층 방어로 한다.
+- **Enforcement (extension)**:
+  - **A reference, not a judge.** A hyperedge only *generates* candidates/proposals; commitment
+    (merge/promotion/schema definition/retraction) goes through the deterministic resolution rule
+    (Principle 15), the proposal workflow (Principle 23), and human confirmation (Principle 18). If a
+    derived view writes to the canon directly, it violates Principles 1/19 - this is not a new
+    authority but a **new input** attached to the existing gated flows.
+  - **A projection, not storage.** A hyperedge does not replace the binary Relation model (Principles
+    10/12) - it coexists as an undirected/untyped/n-ary derived view, and binary paths such as
+    traverse remain as they are. It is identified by its member set, and observations are its
+    attestations (isomorphic to the identity model of Principles 3/14: multiple observations that
+    produced the same member set are deduped and accumulate as attestations).
+  - **Induction outputs are also lineage-bearing + low-trust.** A derived observation
+    summarized/promoted from a hyperedge carries its source via `derived_from` and starts at the
+    lowest trust - so that unverified co-occurrence is not laundered into the canon (Principle 18).
+  - **The criterion is deterministic, the priority is discretionary.** Candidate *generation* is a
+    deterministic function of the log, so it converges across nodes (Principle 16). The ordering of
+    "what to review first" is curation UX, so heuristics are permitted. Because a corroboration
+    (repeated co-assertion) signal cannot be verified against self-declaration, only **independent
+    sources** (by delegation-chain principal) are counted (Principles 2/18).
+  - **Co-occurrence is a weak signal.** Correlation is not identity/causation - repeated co-membership
+    is only a hypothesis generator, so candidates are inherently low-confidence (this low-trust
+    treatment prevents the classic failure of knowledge-graph induction that over-trusts co-occurrence
+    as fact). A mismatch between asserted cohesion (a hyperedge) and emergent cohesion (a structural
+    cluster) is not suppressed but left as a signal (Principle 6).
 
-- **근거**: 메모리/컨텍스트 오염은 OWASP Agentic Top 10 (2026)에 정식
-  등재(ASI06)된 실전 위협이다. 전형적 경로: 에이전트가 오염된 외부 문서를 읽고
-  -> 요약해 지식베이스에 적재 -> 오염이 영속화 -> 그 지식을 읽은 다른 에이전트의
-  산출물로 **교차 오염**이 전파된다. 여러 호스트의 지식을 연결하는 것이 목적인
-  supragnosis에게 이것은 주변 위협이 아니라 정면 위협이다.
-- **구속력**:
-  - **출처 신뢰 등급(trust tier)**: 모든 관측은 출처의 검증 수준에 따른 등급을
-    지닌다 (예: 사람이 확인함 > 서명된 신뢰 호스트 > 서명된 호스트의 에이전트
-    추출 > 미검증 외부 소스). 등급은 해소 가중치와 질의 랭킹에 반영된다.
-  - **계보 의무화**: 다른 지식/외부 콘텐츠에서 파생된 주장(요약, 추론, 추출)은
-    `derived_from`으로 원천 관측까지 추적 가능해야 한다. 계보 없는 파생 주장은
-    적재를 거부하는 것이 아니라(원칙 22와의 긴장) **최저 신뢰 등급**으로
-    격리(quarantine) 표시한다.
-  - **소독 가능성**: 오염된 원천이 발견되면 그 파생 트리 전체를 계보로 역추적해
-    일괄 retraction(원칙 3의 철회 관측)할 수 있어야 한다 - 계보가 곧 리콜
-    명단이다.
-  - 신뢰 등급의 **승격은 명시적으로만** 일어난다 (사람 확인, 독립 출처 교차
-    검증 등). 시간이 지났다고 저절로 신뢰가 오르지 않는다.
-  - **등급은 수신자의 평가다**: 신뢰 등급은 이벤트가 자기 선언하는 저장 속성이
-    아니라, 수신 노드가 출처(위임 사슬, 서명, 자기 노드에서의 검증 이력)에 근거해
-    계산하는 평가다. sync 로 들어온 관측에 실린 등급 표기는 발신 노드의 평가
-    기록일 뿐 수신 노드를 구속하지 않는다 - 악성 피어의 "사람이 확인함"
-    self-declare 가 수신 그래프의 신뢰를 오염시킬 수 없어야 한다 (자기 선언
-    신원을 검증 못 하는 원칙 2 의 문제의식과 동형).
+### Principle 12. Minimal Encoding Bias (Minimal Encoding Bias)
 
----
+**The knowledge model is not tied to a particular store/representation format.** The model is defined
+at the knowledge level, and whether the encoding is Cozo Datalog or RDF is the adapter's concern.
 
-## 제4장 - 시스템 구성 (System Design)
+- **Rationale**: The store choice (architecture.md section 6) is a decision that can change. If
+  encoding leaks into the model, the store holds the domain hostage.
+- **Enforcement**:
+  - `supragnosis-core` does not depend on any store crate (dependency direction is enforced).
+  - It is a violation if a Cozo-specific concept (e.g., a particular index structure) is exposed in
+    the domain model / MCP surface. The `query` passthrough tool is the only explicit exception, and it
+    is documented as an "escape hatch for advanced users".
 
-### 원칙 19. 결정적 코어, 확률적 경계 (Deterministic Core, Probabilistic Edge)
+### Principle 13. Distinguishing Essence from Role (Rigidity - OntoClean)
 
-**supragnosis 본체는 결정론적 substrate다.** LLM/임베딩 등 확률적 구성요소는
-포트 뒤의 교체 가능한 어댑터이며, 코어의 정확성이 그것들에 의존해서는 안 된다.
+**The is-a hierarchy is used only for essence (rigid).** "Person" is an essence, but "reviewer" is a
+role. Roles/states/stages are modeled not as subtypes but as relations or as properties with a valid
+time interval.
 
-- **근거**: 이 프로젝트의 존재 이유가 "LLM은 확률적이라 지식베이스가 될 수
-  없다"는 진단이다. 그 해법의 코어가 다시 확률적이면 자기모순이다. LLM은
-  지식의 훌륭한 **추출기/소비자**이지 **저장소/심판**이 아니다.
-- **구속력**:
-  - 추출(Extractor)/임베딩(EmbeddingProvider)은 포트다. 없어도 시스템은
-    degrade될지언정 동작한다 (임베딩 없음 -> 키워드 검색).
-  - 확률적 구성요소의 출력이 지식이 될 때는 반드시 confidence를 단 주장으로
-    들어온다 (원칙 1로 회수) - LLM 추출 결과가 무표기로 사실화되면 위반이다.
-  - 엔티티 해소에서 임베딩 유사도는 후보 생성까지만, 병합 확정은 결정적
-    규칙(정규 키, 임계값, 또는 사람 확인)으로 한다.
-
-### 원칙 20. 도메인의 순수성 (Hexagonal Purity)
-
-**`supragnosis-core`는 IO 의존이 0이다.** 저장소/네트워크/임베딩은 전부 포트
-트레이트 뒤에 있고, 의존 방향은 항상 바깥(어댑터)에서 안(도메인)으로 향한다.
-
-- **근거**: 지식 모델은 이 시스템에서 가장 오래 살 자산이고, 저장소/프로토콜은
-  가장 먼저 바뀔 부품이다. 수명이 다른 것들을 격리하지 않으면 부품의 교체가
-  자산의 재작성이 된다. (원칙 12의 구조적 집행 장치이기도 하다.)
-- **구속력**:
-  - `core`의 `Cargo.toml`에 IO 크레이트(tokio, cozo, reqwest 등)가 나타나면
-    위반이다.
-  - 모든 엔진 로직은 in-memory 어댑터만으로 단위 테스트 가능해야 한다.
-
-### 원칙 21. LLM에게 좁고 명확한 표면 (Narrow, LLM-Legible Surface)
-
-**MCP 도구는 적고, 각 도구는 하나의 의도를 표현한다.** 범용 질의 언어의
-노출이 아니라 `observe`/`search`/`traverse`/`assert_relation` 같은 의도 단위
-도구가 기본 표면이다.
-
-- **근거**: 주 사용자는 LLM 에이전트다. LLM은 좁고 이름이 정직한 도구를 잘
-  쓰고, 표현력이 무한한 질의 언어(SPARQL/Datalog)를 잘 못 쓴다. 도구 표면의
-  설계가 곧 이 시스템의 UX다.
-- **구속력**:
-  - 새 도구 추가의 기준: "에이전트의 반복되는 의도인가?" 표현 가능하다는 이유만
-    으로 추가하지 않는다 (원칙 11의 API 버전).
-  - 도구 설명/파라미터/에러 메시지는 LLM이 자기 교정할 수 있게 쓴다 - 실패
-    응답은 "왜 실패했고 무엇을 다르게 하면 되는지"를 포함한다.
-  - **장기 작업은 블로킹하지 않는다**: sync/응고/대량 재프로젝션처럼 오래 걸리는
-    작업은 폴링 가능한 태스크 핸들로 노출한다 (MCP Tasks 확장과 정렬 -
-    2026-07 스펙에서 폴링형 태스크가 공식 확장으로 확정). 사람의 확인이 필요한
-    지점(병합 승인, 모순 중재, 신뢰 승격)은 MCP의 입력 요청 흐름(elicitation /
-    multi round-trip)으로 표현해, 원칙 6/18의 "사람 중재"가 프로토콜 수준에서
-    가능하게 한다.
-  - `query`(Datalog passthrough)는 권한 가드 하의 고급 탈출구로만 존재한다.
-
-### 원칙 22. 지식 관리는 작업의 부산물 (Knowledge as a By-Product)
-
-**지식 적재가 별도의 노동이 되면 시스템은 죽는다.** supragnosis는 호스트가
-일하는 흐름 속에서 지식이 자연스럽게 쌓이도록 설계한다 - 작업의 산출물이
-지식이 된다.
-
-- **근거**: 수동 큐레이션에 의존한 지식 관리 시스템의 공통 사인(死因)은
-  "아무도 입력하지 않음"이다. 에이전트 시대의 기회는 에이전트가 작업 중에
-  관측을 흘리게 만들 수 있다는 것이고, 이 기회를 살리는 것이 이 프로젝트의
-  차별점이다.
-- **구속력**:
-  - `observe`는 마찰이 최소여야 한다: 자유 텍스트 + 선택적 구조화 주장.
-    완벽한 구조화를 적재의 전제로 요구하지 않는다 (원칙 11과 공명).
-  - 프롬프트(`what-do-we-know-about` 등)와 도구 설명은 에이전트가 작업 중
-    자발적으로 observe/search하도록 유도하게 작성한다.
-  - 큐레이션(타입 승격, 병합 확인, 모순 중재, 신뢰 승격)은 별도의 일이 아니라
-    질의 결과에 자연스럽게 노출되는 마이크로 결정으로 설계한다.
+- **Rationale**: Making a role a subtype creates (isomorphically to a Liskov violation) the
+  contradiction that the entity's type must change every time it changes roles. Overuse of is-a is the
+  most common path to ontology decay.
+- **Enforcement**:
+  - Keep the T-Box subtype hierarchy shallow (2-3 levels by default).
+  - `define_type` guideline: if the answer to "can this entity stop being that type?" is "yes", it is
+    a relation, not a subtype.
 
 ---
 
-## 제5장 - 거버넌스 (Governance)
+## Chapter 3 - Connection and Trust (Identity, Federation & Trust)
 
-여러 주체가 하나의 정본(canon)에 합의하는 절차를 고정한다.
-구체 설계는 [proposal-workflow.md](proposal-workflow.md).
+The reason supragnosis exists is the **connection** of hosts. This chapter fixes the principles for
+connection to actually hold, and the defenses against the threats that connection creates.
 
-### 원칙 23. 정본으로의 관문 (Gate to Canon)
+### Principle 14. Stable Identifiers for Everything (Stable Identifiers)
 
-**적재는 자유롭고, 정본 승격은 제안(proposal)을 통해서만 일어난다.** 정본에
-영향을 주는 다섯 의도 - 등급 승격/강등, 엔티티 병합/분할, T-Box 변경, 리콜 -
-는 오직 제안 워크플로를 거친다. 그리고 **제안 자체도 지식이다**: 제안의
-생성/검토/판정은 전부 관측 이벤트이며, 이 원칙의 지배를 똑같이 받는다.
+**Every entity/observation/type has a globally stable identifier** (an application of the Linked Data
+principle). The identifier is invariant even when location/store/host changes.
 
-- **근거**: 코드 협업이 PR로 검증한 패턴 - 개인의 작업과 공유 정본 사이에
-  검토 가능한 관문을 두는 것 - 은 지식에도 성립한다. 단, 지식에서 관문은
-  존재의 관문이 아니라 **등급의 관문**이어야 한다 (원칙 22가 적재 게이트를
-  금지하므로). Wikidata의 "열린 적재 + rank/patrol 층위 관리"가 이 구조의
-  20년 선례다. 또한 제안을 별도 서브시스템으로 만들면 provenance/수렴/보존이
-  이중 구현되므로, 제안을 관측으로 표현하는 것이 논리적으로도 경제적으로도
-  옳다.
-- **구속력**:
-  - 정본에 영향을 주는 변경이 제안을 우회하는 API 경로가 있으면 위반이다.
-    반대로 제안 절차가 observe를 막거나 지연시켜도 위반이다 (양방향 관문 금지).
-  - 제안의 상태는 이벤트 스트림의 결정적 폴드다 (원칙 16). 벽시계 경과는
-    어떤 전이도 일으키지 못하며, 자동 병합/만료도 명시적 이벤트로만 표현된다.
-  - 병행 판정은 유효한 merge 를 흡수 상태로 삼는 결정 규칙으로 수렴한다.
-    수렴(순서 무관)에 더해 **단조**다 - 승격은 이벤트 집합의 단조 함수라,
-    유효한 merge 가 로그에 든 순간부터 어떤 이벤트의 도착도 승격을 소급
-    취소하지 못한다. 번복(강등)은 항상 새 제안이다.
-  - 병합 전에 믿음 diff(승격/뒤집힘/새 모순/영향 반경)와 검사 결과가 계산되어
-    있어야 한다 - diff 없는 병합은 리뷰 없는 머지다.
-  - 기각은 부정이 아니다 (원칙 5). 어떤 판정도 주장을 삭제하지 않는다 (원칙 3).
-  - 자기 승인은 금지한다 (위임 사슬의 principal 기준). 1인 워크스페이스 특례는
-    self-attested 표지를 달아 연합 시 신뢰 평가에서 구분한다 (원칙 18).
-  - **recall 의 판정은 위임 불가**다: 파생 트리 일괄 retraction 은 파괴 반경이
-    가장 큰 판정이므로, 위임 사슬을 통한 에이전트 대리 판정("사람 principal 의
-    권한으로")으로는 성립하지 않고 사람의 직접 행위(직접 서명 또는 elicitation
-    응답)여야 한다. 오염된 에이전트가 대리 자기 승인으로 사람 눈 없이 대량
-    철회하는 경로를 막는다 (원칙 18 이 경계하는 시나리오가 정확히 이것이다).
+- **Rationale**: Connection across hosts is, in the end, reference. If identifiers are unstable, every
+  link in the graph becomes a dangling pointer.
+- **Enforcement**:
+  - The observation id is a content address (blake3) - since content is identity, path-independent
+    dedup holds.
+  - The entity id is a resolved canonical id, and even on merge the old id keeps a forwarding to the
+    new id (referential integrity).
+  - A `supragnosis://` URI must be dereferenceable - whoever knows an id can look up the thing it
+    denotes (exposed as an MCP Resource).
+  - **Mechanical enforcement of structural evolution**: functions that **define semantics by
+    enumerating fields** - such as identity (content-address hash encoding), attestation total order
+    (the basis of merge dedup), and re-arrival merge (absorb) - are written so that review of those
+    functions is forced at the compile level when a field is added to the model (exhaustive
+    destructuring, etc. - so that a missing enumeration becomes a compile error). Whether a new field
+    is content identity, an attestation-distinguishing axis, or a merge target must be an explicit
+    decision, not a silent default - an omission manifests as id collapse of distinct assertions (this
+    principle) or loss of attestation dedup (Principle 3), and the diligence of a review is not a
+    guarantee against it.
+
+### Principle 15. Identity Resolution Is the Substrate's Responsibility (Resolution Is Substrate's Job)
+
+**The "problem of calling the same thing by different names" is solved by supragnosis, not the
+client.** Hosts speak in their own vocabularies, and the resolution layer makes the connection.
+
+- **Rationale**: Pushing entity resolution onto the client produces as many different resolution
+  policies as there are hosts, and the graph shatters into fragments of the same subject. In a system
+  whose purpose is connection, resolution is not an add-on feature but a reason for being.
+- **Enforcement**:
+  - `observe` does not require a canonical id from the client - it lets the client speak by
+    name/alias, and the server does the resolution.
+  - Resolve conservatively: holding off (keeping the two entities + a candidate link) is better than a
+    merge made without conviction. A wrong merge is more expensive than a wrong split (though, by
+    Principle 3, both must be reversible).
+  - The resolution history (what became what, on what basis) is retained as provenance.
+
+### Principle 16. Topology-Independent Convergence (Topology-Independent Convergence)
+
+**Nodes with the same set of observations materialize the same graph.** No matter which path
+(hub/peer/hybrid) or in what order events arrived, the result is identical.
+
+- **Rationale**: Without this property, federation becomes N systems each with a different semantics
+  per topology. Only with deterministic convergence (CAS dedup + HLC ordering + deterministic
+  projection) does the "manner of connection" become a purely operational choice.
+- **Enforcement**:
+  - No use of nondeterminism (wall clock, arrival order, random numbers) in projection/resolution
+    logic. When ordering is needed, use HLC; when randomness is needed, derive the seed from the event.
+  - **Query responses must be deterministic too**: search/traversal responses over the same graph
+    state must be reproducible down to the sort order and the limit truncation. It is a violation if
+    the iteration order of an internal data structure (hash map, row order) leaks into the response -
+    ties/truncation are pinned by a stable key (id).
+  - **Two layers of query determinism - reproducibility and convergence**: (a) **reproducibility**
+    (same query against the same state of the same node -> same response) is the duty of every query
+    surface - semantic recall (ANN) also upholds this by pinning ties/truncation with a stable key.
+    (b) **convergence** (two nodes with the same observation set -> same response) is the duty of the
+    deterministic read surfaces (exact lookup, graph traversal, keyword search). A semantic-recall
+    index (embeddings, ANN graph) is not part of the materialized graph but a **node-local recall
+    aid** - being an insertion-order-dependent approximate structure, it cannot promise convergence
+    across nodes, and need not (the storage/recall separation of Principle 7, the recall/commit
+    separation of Appendix A) - it is not subject to the convergence norm. This exemption, however,
+    presumes two guards: when a recall result becomes an input to a commit (merge/promotion, etc.), it
+    must pass through the deterministic rules again (Principle 19), and a query response must label
+    which surface it came from (mode) so that a client can distinguish the convergence surface from the
+    recall aid.
+  - This property is verified continuously by test: maintain a property test that injects the same
+    event set in random order/partitioning and checks graph identity.
+  - **Convergence and monotonicity are different properties.** Convergence is "order-independent - the
+    same set yields the same result", while monotonicity is "stability under set growth - an
+    already-reached conclusion is not overturned by further events arriving". A deterministic fold
+    gives convergence, but "from when may a conclusion be trusted and derivations stacked on it"
+    (finality) holds only when the decision rule forms a semilattice (absorbing state) and is thus
+    monotonic. An ordering function (of the first-writer-wins kind) converges but is not monotonic,
+    because a late-arriving early-timestamped event can change the conclusion. Therefore a terminal
+    state on which derivations accumulate is designed as an absorbing state (proposal-workflow.md I16).
+
+### Principle 17. Knowledge Sovereignty - Selective Sharing (Knowledge Sovereignty)
+
+**It must not be the default that all knowledge goes out.** What to share is decided by the host that
+created the knowledge, and the sharing boundary is enforced at the sync layer.
+
+- **Rationale**: Trust in a local-first system comes from "what is mine is under my control". If
+  sharing is the default, people stop ingesting sensitive knowledge at all, and the system loses its
+  most valuable knowledge.
+- **Enforcement**:
+  - Sharing is a workspace whitelist opt-in (default: no sharing).
+  - Filters/redaction are applied at the sync boundary - what must not leave is filtered out before it
+    reaches the peer node (not a delete request after it arrives).
+  - **The sharing boundary applies to the remote query surface too**: if only the sync filter is
+    blocked while the remote MCP query is left open, the same knowledge goes out through a different
+    door. Reads by a remote (non-local) client are governed by the sharing whitelist, and a global
+    query with no workspace scope is limited to the local trust surface (stdio, single user).
+  - Provide a secret-redaction hook at ingest, but this is an aid to, not a replacement for, the
+    sharing filter (defense in depth).
+
+### Principle 18. Writes Are an Attack Surface (Writes Are an Attack Surface)
+
+**Every observe is a potential source of contamination.** The integrity of knowledge is not
+guaranteed by signatures (transport integrity) alone - a signature only proves "who sent it", not
+"whether the content is true". Defense against contamination is done with the defense-in-depth of
+trust tiers, lineage tracking, and quarantine.
+
+- **Rationale**: Memory/context contamination is a real-world threat formally listed in the OWASP
+  Agentic Top 10 (2026) (ASI06). The typical path: an agent reads a contaminated external document ->
+  summarizes and ingests it into the knowledge base -> the contamination becomes persistent ->
+  **cross-contamination** propagates into the outputs of other agents that read that knowledge. For
+  supragnosis, whose purpose is to connect the knowledge of many hosts, this is not a peripheral
+  threat but a frontal one.
+- **Enforcement**:
+  - **Provenance trust tier**: every observation carries a tier according to the verification level of
+    its source (e.g., human-confirmed > signed trusted host > agent extraction from a signed host >
+    unverified external source). The tier is reflected in resolution weighting and query ranking.
+  - **Mandatory lineage**: an assertion derived from other knowledge/external content (summary,
+    inference, extraction) must be traceable via `derived_from` back to the source observation. A
+    derived assertion without lineage is not refused ingest (in tension with Principle 22) but marked
+    as quarantine at the **lowest trust tier**.
+  - **Sanitizability**: when a contaminated source is discovered, it must be possible to trace back
+    its entire derived tree by lineage and retract them in bulk (the retraction observation of
+    Principle 3) - lineage is the recall list.
+  - **Promotion** of the trust tier happens **only explicitly** (human confirmation, independent
+    cross-source verification, etc.). Trust does not rise by itself just because time has passed.
+  - **The tier is the receiver's evaluation**: a trust tier is not a stored attribute that an event
+    self-declares, but an evaluation the receiving node computes based on provenance (delegation chain,
+    signature, verification history at its own node). A tier annotation carried on an observation that
+    arrived via sync is only the sending node's evaluation record and does not bind the receiving node
+    - a malicious peer's "human-confirmed" self-declaration must not be able to contaminate the trust
+    of the receiving graph (isomorphic to the concern of Principle 2 about not being able to verify a
+    self-declared identity).
 
 ---
 
-## 부록 A - 원칙 간 긴장과 우선순위
+## Chapter 4 - System Composition (System Design)
 
-원칙들은 서로 긴장할 수 있다. 충돌 시 판단 지침:
+### Principle 19. Deterministic Core, Probabilistic Edge (Deterministic Core, Probabilistic Edge)
 
-| 긴장 | 판단 |
+**The main body of supragnosis is a deterministic substrate.** Probabilistic components such as
+LLM/embedding are replaceable adapters behind ports, and the correctness of the core must not depend
+on them.
+
+- **Rationale**: The reason this project exists is the diagnosis that "an LLM is probabilistic and
+  therefore cannot be a knowledge base". It is self-contradictory if the core of that solution is
+  itself probabilistic again. An LLM is an excellent **extractor/consumer** of knowledge, not a
+  **store/judge**.
+- **Enforcement**:
+  - Extraction (Extractor) / embedding (EmbeddingProvider) are ports. Even without them the system
+    operates, though degraded (no embedding -> keyword search).
+  - When the output of a probabilistic component becomes knowledge, it must enter as an assertion
+    carrying confidence (subsumed under Principle 1) - it is a violation if an LLM extraction result is
+    turned into fact without annotation.
+  - In entity resolution, embedding similarity goes only as far as candidate generation; merge
+    commitment is done with a deterministic rule (canonical key, threshold, or human confirmation).
+
+### Principle 20. Purity of the Domain (Hexagonal Purity)
+
+**`supragnosis-core` has zero IO dependencies.** Store/network/embedding are all behind port traits,
+and the dependency direction always points from the outside (adapters) to the inside (the domain).
+
+- **Rationale**: The knowledge model is the longest-living asset in this system, while the
+  store/protocol are the parts that change first. If things with different lifetimes are not isolated,
+  replacing a part becomes a rewrite of the asset. (It is also the structural enforcement mechanism for
+  Principle 12.)
+- **Enforcement**:
+  - It is a violation if an IO crate (tokio, cozo, reqwest, etc.) appears in `core`'s `Cargo.toml`.
+  - All engine logic must be unit-testable with an in-memory adapter alone.
+
+### Principle 21. A Narrow, Clear Surface for the LLM (Narrow, LLM-Legible Surface)
+
+**MCP tools are few, and each tool expresses one intent.** The default surface is intent-level tools
+such as `observe`/`search`/`traverse`/`assert_relation`, not the exposure of a general-purpose query
+language.
+
+- **Rationale**: The primary user is the LLM agent. An LLM uses narrow, honestly-named tools well, and
+  uses an infinitely expressive query language (SPARQL/Datalog) poorly. The design of the tool surface
+  is this system's UX.
+- **Enforcement**:
+  - The criterion for adding a new tool: "is it a recurring intent of the agent?" It is not added
+    merely because it is expressible (the API version of Principle 11).
+  - Tool descriptions/parameters/error messages are written so that the LLM can self-correct - a
+    failure response includes "why it failed and what to do differently".
+  - **Long-running work does not block**: work that takes a long time, such as sync/consolidation/bulk
+    re-projection, is exposed as a pollable task handle (aligned with the MCP Tasks extension -
+    polling-style tasks were fixed as an official extension in the 2026-07 spec). Points that need
+    human confirmation (merge approval, contradiction mediation, trust promotion) are expressed via
+    MCP's input-request flow (elicitation / multi round-trip), so that the "human mediation" of
+    Principles 6/18 is possible at the protocol level.
+  - `query` (Datalog passthrough) exists only as an advanced escape hatch under a permission guard.
+
+### Principle 22. Knowledge Management Is a By-Product of Work (Knowledge as a By-Product)
+
+**If knowledge ingest becomes a separate labor, the system dies.** supragnosis is designed so that
+knowledge accumulates naturally within the flow in which a host works - the output of work becomes
+knowledge.
+
+- **Rationale**: The common cause of death of knowledge-management systems that relied on manual
+  curation is "no one enters anything". The opportunity of the agent era is that agents can be made to
+  shed observations while they work, and seizing this opportunity is what differentiates this project.
+- **Enforcement**:
+  - `observe` must have minimal friction: free text + optional structured assertions. It does not
+    require perfect structuring as a precondition for ingest (resonating with Principle 11).
+  - Prompts (`what-do-we-know-about`, etc.) and tool descriptions are written to induce the agent to
+    observe/search voluntarily during work.
+  - Curation (type promotion, merge confirmation, contradiction mediation, trust promotion) is
+    designed not as separate work but as micro-decisions that surface naturally in query results.
+
+---
+
+## Chapter 5 - Governance (Governance)
+
+Fix the procedure by which multiple subjects agree on a single canon.
+Concrete design in [proposal-workflow.md](proposal-workflow.md).
+
+### Principle 23. Gate to Canon (Gate to Canon)
+
+**Ingest is free, and promotion to the canon happens only through a proposal.** The five intents that
+affect the canon - tier promotion/demotion, entity merge/split, T-Box change, recall - go only through
+the proposal workflow. And **a proposal is itself knowledge**: the creation/review/verdict of a
+proposal are all observation events, and are governed by this principle just the same.
+
+- **Rationale**: The pattern that code collaboration validated with the PR - placing a reviewable gate
+  between an individual's work and the shared canon - holds for knowledge too. However, in knowledge
+  the gate must be a **gate of tier**, not a gate of existence (since Principle 22 forbids an ingest
+  gate). Wikidata's "open ingest + rank/patrol tier management" is a 20-year precedent for this
+  structure. Moreover, making the proposal a separate subsystem would doubly implement
+  provenance/convergence/preservation, so expressing the proposal as an observation is correct both
+  logically and economically.
+- **Enforcement**:
+  - It is a violation if there is an API path by which a change affecting the canon bypasses the
+    proposal. Conversely, it is also a violation if the proposal procedure blocks or delays observe (no
+    bidirectional gating).
+  - A proposal's state is a deterministic fold of the event stream (Principle 16). The passage of
+    wall-clock time causes no transition, and auto-merge/expiry are also expressed only as explicit
+    events.
+  - Concurrent verdicts converge via a decision rule that treats a valid merge as an absorbing state.
+    Beyond convergence (order-independent), it is **monotonic** - promotion is a monotonic function of
+    the event set, so from the moment a valid merge is in the log, no event's arrival can retroactively
+    cancel the promotion. A reversal (demotion) is always a new proposal.
+  - Before merging, a belief diff (promotions/reversals/new contradictions/blast radius) and check
+    results must already be computed - a merge without a diff is a merge without review.
+  - A rejection is not a negation (Principle 5). No verdict deletes an assertion (Principle 3).
+  - Self-approval is forbidden (by the delegation chain's principal). The single-person workspace
+    exception attaches a self-attested marker so that it is distinguished in trust evaluation upon
+    federation (Principle 18).
+  - **The recall verdict is non-delegable**: because bulk retraction of a derived tree is the verdict
+    with the largest destructive radius, it cannot hold as an agent's proxy verdict through the
+    delegation chain ("under the human principal's authority") but must be the human's direct act (a
+    direct signature or an elicitation response). This blocks the path by which a contaminated agent
+    bulk-retracts without human eyes via proxy self-approval (this is exactly the scenario Principle 18
+    guards against).
+
+---
+
+## Appendix A - Tensions Between Principles and Priorities
+
+Principles can be in tension with each other. Guidance for judgment upon conflict:
+
+| Tension | Judgment |
 |------|------|
-| 느슨한 적재(11, 22) vs 스키마 명확성(8, 9) | **적재를 우선**하되, 정제 경로를 남긴다. 들어오지 않은 지식은 정제할 수도 없다. |
-| 느슨한 적재(22) vs 오염 방어(18) | **적재는 막지 않고 신뢰로 방어한다.** 의심스러운 지식도 들어오되 최저 등급으로 격리 - 문을 잠그는 게 아니라 라벨을 붙인다. |
-| 보존(3, 6) vs 프라이버시(17) | **프라이버시가 이긴다.** 파기 요구는 원칙 3의 유일한 예외이며 묘비를 남긴다. |
-| 보존(3) vs 망각(7) | 충돌이 아니다 - **로그는 영원하고 회상은 유한하다.** 망각은 저장이 아니라 주의(attention)의 배분이다. |
-| 해소의 적극성(15) vs 보수성 | **보수가 기본.** 자동 병합은 확신 구간에서만, 애매하면 후보 링크로 보류. |
-| 도구 표면 최소(21) vs 표현력 | **최소가 기본.** 표현력 요구는 먼저 기존 도구 조합으로 검증하고, 반복 패턴일 때만 승격. |
-| 결정적 코어(19) vs 의미 검색 품질 | 확률적 요소는 **회상(recall)을 넓히는 데**만 쓰고, 확정(commit)은 결정적으로. |
-| 관문(23) vs 마찰 최소(22) | **관문은 승격에만, 적재에는 없다.** 리뷰가 밀려도 지식은 낮은 등급으로 이미 존재하고 유통된다. |
-| 리뷰 엄밀성(23) vs 리뷰어의 주의 | **대부분은 자동, 소수만 사람에게.** 새 모순/고영향/구조 변경/리콜만 사람 리뷰를 강제한다. |
+| Loose ingest (11, 22) vs schema clarity (8, 9) | **Prioritize ingest**, but leave a refinement path. Knowledge that never came in cannot be refined either. |
+| Loose ingest (22) vs contamination defense (18) | **Do not block ingest; defend with trust.** Suspicious knowledge comes in too, but is quarantined at the lowest tier - not locking the door but attaching a label. |
+| Preservation (3, 6) vs privacy (17) | **Privacy wins.** A destruction demand is the only exception to Principle 3 and leaves a tombstone. |
+| Preservation (3) vs forgetting (7) | Not a conflict - **the log is eternal and recall is finite.** Forgetting is the allocation of attention, not of storage. |
+| Aggressiveness of resolution (15) vs conservatism | **Conservatism is the default.** Auto-merge only in the confident band; when ambiguous, hold off with a candidate link. |
+| Minimal tool surface (21) vs expressiveness | **Minimal is the default.** An expressiveness demand is first validated by composing existing tools, and promoted only when it is a repeated pattern. |
+| Deterministic core (19) vs semantic search quality | Use the probabilistic element only **to widen recall**, and commit deterministically. |
+| Gate (23) vs minimal friction (22) | **The gate is on promotion only, not on ingest.** Even when review is backlogged, knowledge already exists and circulates at a low tier. |
+| Review rigor (23) vs reviewer's attention | **Most is automatic, only a few go to a human.** Only new contradictions/high-impact/structural changes/recall force human review. |
 
-## 부록 B - 리뷰 체크리스트
+## Appendix B - Review Checklist
 
-설계/PR 리뷰 시 빠르게 적용하는 질문들:
+Questions to apply quickly during design/PR review:
 
-- 이 변경은 주장을 거치지 않고 사실을 쓰는가? (원칙 1)
-- 적재 검증이 정형성을 넘어 주장의 내용을 거부/변형하는가? 반대로 비주장(빈
-  지시어)이 영구 로그에 실리는 경로가 있는가? (원칙 1)
-- provenance 없이 저장되는 경로가 생기는가? 위임 사슬이 끊기는가? (원칙 2)
-- 무언가를 파괴적으로 덮어쓰는가? 같은 콘텐츠 주소의 재도착이 비정체성 필드
-  (attestation/계보)를 덮어쓰는가? (원칙 3 병합 규범)
-- 다른 노드가 자기 선언한 신뢰 등급/confidence 를 수신 노드가 재평가 없이
-  신뢰하는 경로가 생기는가? (원칙 2/18)
-- 유효 시간과 기록 시간을 혼동하는 로직이 있는가? (원칙 4)
-- 부재를 부정으로 해석하는 로직이 있는가? (원칙 5)
-- 망각/응고가 관측 로그를 건드리는가? (원칙 7)
-- 서브타입으로 모델링한 것이 사실은 역할인가? (원칙 13)
-- 모델 필드 추가가 정체성/전순서/병합 함수의 재검토를 컴파일로 강제받는가? (원칙 14)
-- 프로젝션에 비결정성이 들어갔는가? (원칙 16, property test로 검증)
-- 파생 지식에 `derived_from` 계보가 있는가? 신뢰 등급 없는 적재 경로가 생기는가? (원칙 18)
-- 하이퍼엣지/공동출현에서 유도한 후보가 게이트(결정적 해소/제안/사람 확인) 없이
-  정본에 반영되는가? 유도 산출물에 계보/저신뢰가 빠졌는가? (원칙 11 이차 구조, 15, 18, 23)
-- 신뢰 승격이 암묵적으로 일어나는 경로가 있는가? (원칙 18)
-- `core`에 IO 의존이 생겼는가? (원칙 20)
-- 새 MCP 도구가 정말 반복되는 의도인가? 장기 작업이 블로킹하는가? (원칙 21)
-- 이 기능은 호스트에게 추가 노동을 요구하는가? (원칙 22)
-- 정본에 영향을 주는 변경이 제안을 우회하는가? 제안 상태에 벽시계/비결정성이
-  들어갔는가? (원칙 23)
-- 자기 승인이 가능한 경로가 생기는가? (원칙 23)
-- 회상 품질을 측정하는가? - 검색/회상 변경은 메모리 벤치마크(LongMemEval류)
-  스타일의 회귀 평가셋으로 검증한다.
+- Does this change write a fact without going through an assertion? (Principle 1)
+- Does ingest validation reject/transform an assertion's content beyond well-formedness? Conversely,
+  is there a path by which a non-assertion (empty referent) gets placed in the permanent log?
+  (Principle 1)
+- Is there a path that stores without provenance? Does the delegation chain break? (Principle 2)
+- Does it destructively overwrite something? Does a re-arrival of the same content address overwrite
+  non-identity fields (attestation/lineage)? (Principle 3 merge norm)
+- Is there a path by which the receiving node trusts a trust tier/confidence self-declared by another
+  node without re-evaluation? (Principles 2/18)
+- Is there logic that confuses valid time with transaction time? (Principle 4)
+- Is there logic that interprets absence as negation? (Principle 5)
+- Does forgetting/consolidation touch the observation log? (Principle 7)
+- Is something modeled as a subtype actually a role? (Principle 13)
+- Does adding a model field force compile-time review of the identity/total-order/merge functions?
+  (Principle 14)
+- Did nondeterminism enter the projection? (Principle 16, verified by property test)
+- Does derived knowledge have `derived_from` lineage? Is there an ingest path with no trust tier?
+  (Principle 18)
+- Is a candidate induced from a hyperedge/co-occurrence reflected in the canon without a gate
+  (deterministic resolution/proposal/human confirmation)? Is the induction output missing
+  lineage/low-trust? (Principle 11 second-order structure, 15, 18, 23)
+- Is there a path by which trust promotion happens implicitly? (Principle 18)
+- Did an IO dependency creep into `core`? (Principle 20)
+- Is the new MCP tool really a recurring intent? Does long-running work block? (Principle 21)
+- Does this feature demand extra labor from the host? (Principle 22)
+- Does a change affecting the canon bypass the proposal? Did wall-clock/nondeterminism enter the
+  proposal state? (Principle 23)
+- Is there a path that makes self-approval possible? (Principle 23)
+- Do we measure recall quality? - search/recall changes are verified with a regression eval set in the
+  style of a memory benchmark (LongMemEval-like).
 
-## 부록 C - 출전
+## Appendix C - References
 
 - T. R. Gruber, *Toward Principles for the Design of Ontologies Used for
-  Knowledge Sharing* (1995) - 원칙 8~12.
-- N. Guarino & C. Welty, *OntoClean* - 원칙 13.
-- T. Berners-Lee, *Linked Data Design Issues* (2006) - 원칙 14.
-- Event Sourcing / CRDT / local-first 문헌 - 원칙 1, 3, 16.
-- 바이템포럴 데이터 모델링(valid/transaction time); 에이전트 메모리에서의 적용은
+  Knowledge Sharing* (1995) - Principles 8-12.
+- N. Guarino & C. Welty, *OntoClean* - Principle 13.
+- T. Berners-Lee, *Linked Data Design Issues* (2006) - Principle 14.
+- Event Sourcing / CRDT / local-first literature - Principles 1, 3, 16.
+- Bitemporal data modeling (valid/transaction time); its application in agent memory is
   Zep/Graphiti (*Zep: A Temporal Knowledge Graph Architecture for Agent Memory*,
-  arXiv:2501.13956) - 원칙 4.
-- Sleep-time compute / 기억 응고/선택적 망각 연구 (2025-2026) - 원칙 7.
+  arXiv:2501.13956) - Principle 4.
+- Sleep-time compute / memory consolidation / selective forgetting research (2025-2026) - Principle 7.
 - OWASP Top 10 for Agentic Applications 2026, ASI06 "Memory & Context
-  Poisoning"; 메모리 오염 공격/방어 연구 - 원칙 18.
-- 에이전트 신원/위임 표준화: A2A (Linux Foundation), IETF 드래프트(AIMS, WIMSE,
-  Agentic JWT), C2PA 서명 provenance 모델 - 원칙 2.
-- LLM 기반 지식그래프/온톨로지 유도 서베이 (arXiv:2510.20345 등) - 원칙 11.
-- MCP 스펙 2026-07-28 (Tasks 확장, multi round-trip 입력) - 원칙 21.
-- 코드 리뷰/PR 워크플로; Wikidata의 statement rank + patrol 모델; 브랜치형
-  지식 저장소(TerminusDB, Dolt) - 원칙 23.
-- 제1장/제3장/제4장/제5장의 멀티호스트 원칙은 supragnosis 고유의 확장.
+  Poisoning"; memory-contamination attack/defense research - Principle 18.
+- Agent identity/delegation standardization: A2A (Linux Foundation), IETF drafts (AIMS, WIMSE,
+  Agentic JWT), the C2PA signed-provenance model - Principle 2.
+- Surveys of LLM-based knowledge-graph/ontology induction (arXiv:2510.20345, etc.) - Principle 11.
+- MCP spec 2026-07-28 (Tasks extension, multi round-trip input) - Principle 21.
+- Code review/PR workflow; Wikidata's statement rank + patrol model; branch-style
+  knowledge stores (TerminusDB, Dolt) - Principle 23.
+- The multi-host principles of Chapters 1/3/4/5 are supragnosis's own extension.
