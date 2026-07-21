@@ -9,8 +9,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_SRC="$REPO_ROOT/target/release/supragnosis"
 BIN_DST="$HOME/.local/bin/supragnosis"
-PLIST_SRC="$REPO_ROOT/deploy/launchd/com.ashon.supragnosis.plist"
-PLIST_DST="$HOME/Library/LaunchAgents/com.ashon.supragnosis.plist"
+LABEL="com.supragnosis.daemon"
+PLIST_SRC="$REPO_ROOT/deploy/launchd/$LABEL.plist"
+PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LEGACY_PLIST_DST="$HOME/Library/LaunchAgents/com.ashon.supragnosis.plist"  # pre-0.1.2 label - migrated away
 MCP_URL="http://127.0.0.1:7373/mcp"
 
 echo "[1/5] Release build"
@@ -21,6 +23,12 @@ mkdir -p "$HOME/.local/bin" "$HOME/.supragnosis/db" "$HOME/.supragnosis/log"
 # Stop first before replacing - overwriting a file while running breaks the mapping. Stop the launchd-managed
 # process with unload, and any leftover with pkill (by install path - the daemon runs from $BIN_DST).
 launchctl unload "$PLIST_DST" 2>/dev/null || true
+# Migrate away from the legacy label (pre-0.1.2 com.ashon.supragnosis) if present.
+if [ -f "$LEGACY_PLIST_DST" ]; then
+  echo "  migrating legacy label com.ashon.supragnosis -> $LABEL"
+  launchctl unload "$LEGACY_PLIST_DST" 2>/dev/null || true
+  rm -f "$LEGACY_PLIST_DST"
+fi
 pkill -f "$BIN_DST" 2>/dev/null || true
 
 echo "[3/5] Install binary + load LaunchAgent"
@@ -42,5 +50,7 @@ claude mcp add --transport http supragnosis "$MCP_URL" --scope user
 
 echo ""
 echo "Done. Viewer: http://127.0.0.1:7374 | Logs: ~/.supragnosis/log/"
-echo "Stop:  launchctl unload $PLIST_DST"
-echo "Restart: launchctl unload $PLIST_DST && launchctl load $PLIST_DST"
+echo "Control (label $LABEL):"
+echo "  supragnosis status    # server + viewer state"
+echo "  supragnosis restart   # restart both (launchctl kickstart -k)"
+echo "  supragnosis stop      # stop both (launchctl bootout; stays down until reload)"
