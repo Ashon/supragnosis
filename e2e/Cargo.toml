@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-e2e"
-description = "실모델 종단(e2e) 측정 스위트: 모델 행동의 채점표를 낸다 - 회귀 가드가 아니다."
+description = "Real-model end-to-end (e2e) measurement suite: produces a scorecard of model behavior - not a regression guard."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,26 +10,26 @@ publish = false
 workspace = true
 
 [dependencies]
-# MCP 클라이언트로 살아있는 서버 표면을 구동한다(in-process duplex).
+# Drives the live server surface with an MCP client (in-process duplex).
 rmcp = { workspace = true, features = ["client"] }
 tokio = { workspace = true, features = ["io-util"] }
 serde_json.workspace = true
-# Ollama(OpenAI 호환) / Anthropic API 호출.
+# Ollama(OpenAI-compatible) / Anthropic API calls.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-# 평가 대상 스택 조립.
+# Assembles the stack under evaluation.
 supragnosis-engine.workspace = true
 supragnosis-mcp.workspace = true
 supragnosis-core.workspace = true
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
-# index 대시보드에서 마크다운 리포트를 HTML 로 렌더한다(테이블 확장).
+# Renders markdown reports to HTML in the index dashboard (with table extension).
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 
 [dev-dependencies]
-# physics_coding_eval 에서 생성 코드의 설계 지문(수치/공식 패턴)을 검사한다.
+# In physics_coding_eval, inspects the design fingerprint (numeric/formula patterns) of the generated code.
 regex-lite = "0.1"
 
 [features]
-# 실임베더(fastembed/ONNX) A/B 용 - delegation_eval 의 EVAL_EMBEDDERS=...,fastembed 에 필요.
-# 무거운 의존(ort)이라 opt-in 으로 격리한다(supragnosis-embed 의 fastembed feature 와 동일 취지).
+# For A/B of the real embedder (fastembed/ONNX) - needed by delegation_eval's EVAL_EMBEDDERS=...,fastembed.
+# It is a heavy dependency (ort), so it is isolated as opt-in (same intent as supragnosis-embed's fastembed feature).
 real-embed = ["supragnosis-embed/fastembed"]

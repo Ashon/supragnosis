@@ -1,7 +1,7 @@
-//! supragnosis-engine - 서비스(유스케이스) 계층.
+//! supragnosis-engine - the service (use-case) layer.
 //!
-//! MCP 도구가 호출하는 결정론적 로직: 관측 적재 -> 엔티티 해소 -> 관계 링크 -> 조회/검색.
-//! 저장소는 [`supragnosis_core::KnowledgeStore`] 포트를 통해서만 접근한다.
+//! Deterministic logic invoked by the MCP tools: observation ingest -> entity resolution -> relation linking -> lookup/search.
+//! The store is accessed only through the [`supragnosis_core::KnowledgeStore`] port.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -12,18 +12,18 @@ use supragnosis_core::{
     EntityAssertion, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
     SearchHit, SearchHitKind, StoreError, Timestamp, TraverseHit, TrustTier,
 };
-// UI 관측가능성 포트/타입을 재노출 - mcp/viz 가 core 를 직접 의존하지 않고 쓴다.
+// Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink};
 
-/// 적재 입력 (전송 DTO에서 매핑되는 도메인 입력).
+/// Ingest input (the domain input mapped from the transport DTO).
 pub struct ObserveInput {
     pub content: String,
     pub workspace: Option<String>,
     pub source_ref: Option<String>,
     pub confidence: Option<f32>,
-    /// 위임 사슬(원칙 2): 이 관측을 acting host 가 대리하는 principal.
+    /// Delegation chain (Principle 2): the principal that the acting host represents for this observation.
     pub on_behalf_of: Option<String>,
-    /// 계보(원칙 18): 이 관측이 파생된 원천 관측 id들.
+    /// Lineage (Principle 18): the ids of the source observations this observation was derived from.
     pub derived_from: Vec<String>,
     pub entities: Vec<EntityInput>,
     pub relations: Vec<RelationInput>,
@@ -38,9 +38,9 @@ pub struct RelationInput {
     pub from: String,
     pub kind: String,
     pub to: String,
-    /// 유효시간 시작 (원칙 4, 선택). 소급 관측을 적재 시점에 캡처한다.
+    /// Valid-time start (Principle 4, optional). Captures retroactive observations at ingest time.
     pub valid_from: Option<Timestamp>,
-    /// 유효시간 종료 (원칙 4, 선택).
+    /// Valid-time end (Principle 4, optional).
     pub valid_to: Option<Timestamp>,
 }
 
@@ -51,8 +51,8 @@ pub struct ObserveOutput {
     pub relations: Vec<String>,
 }
 
-/// 적재 실패. 검증 오류 메시지는 LLM 클라이언트가 자기 교정할 수 있게 쓴다 (원칙 21:
-/// 왜 실패했고 무엇을 다르게 하면 되는지).
+/// Ingest failure. Validation error messages are written so the LLM client can self-correct (Principle 21:
+/// why it failed and what to do differently).
 #[derive(Debug, thiserror::Error)]
 pub enum ObserveError {
     #[error("{0}")]
@@ -61,26 +61,26 @@ pub enum ObserveError {
     Store(#[from] StoreError),
 }
 
-/// 검색이 실제로 사용한 표면 (원칙 16 4차 개정: 응답은 자신이 어느 표면에서 왔는지
-/// 표기해, 클라이언트가 수렴 표면과 회상 보조를 구별할 수 있어야 한다).
+/// The surface the search actually used (Principle 16, 4th revision: a response marks which
+/// surface it came from, so the client can distinguish the convergence surface from recall assistance).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchMode {
-    /// 키워드(수렴 표면) + 의미 벡터(노드 로컬 회상 보조) 하이브리드.
+    /// Hybrid of keyword (convergence surface) + semantic vector (node-local recall assistance).
     Hybrid,
-    /// 키워드 전용. 임베더 부재/질의 임베딩 실패로 degrade 된 상태 포함 (원칙 19) -
-    /// 이 모드의 0건은 하이브리드의 0건보다 "회상 실패" 가능성이 높다.
+    /// Keyword only. Includes the state degraded by a missing embedder or a failed query embedding (Principle 19) -
+    /// zero results in this mode are more likely a "recall failure" than zero results in hybrid mode.
     Keyword,
 }
 
-/// 검색 응답: 사용 표면 + 히트.
+/// Search response: the surface used + hits.
 #[derive(Serialize)]
 pub struct SearchOutput {
     pub mode: SearchMode,
     pub hits: Vec<SearchHit>,
 }
 
-/// 엔티티 + 그 관계(조회 응답).
+/// An entity + its relations (lookup response).
 #[derive(Serialize)]
 pub struct EntityView {
     #[serde(flatten)]
@@ -88,14 +88,14 @@ pub struct EntityView {
     pub relations: Vec<Relation>,
 }
 
-/// 온톨로지 그래프 프로젝션(관측가능성/시각화의 읽기 뷰).
+/// Ontology graph projection (the read view for observability/visualization).
 ///
-/// 관측 로그가 진실의 원천이고 이 뷰는 그 위에 계산된 **파생 뷰**다(원칙 1) - 아무것도
-/// 쓰지 않는 순수 읽기다. 노드/엣지에 provenance 요약(신뢰 등급/출처 수)을 실어 "이 지식이
-/// 어디서/얼마나 뒷받침되나"까지 보게 한다(원칙 2/18). 정렬은 결정적이다(원칙 16).
+/// The observation log is the source of truth and this view is a **derived view** computed on top of it (Principle 1) - a
+/// pure read that writes nothing. Nodes/edges carry a provenance summary (trust tier / source count) so you can see "where
+/// this knowledge is supported and by how much" (Principle 2/18). Ordering is deterministic (Principle 16).
 #[derive(Serialize)]
 pub struct GraphView {
-    /// 스코프한 워크스페이스. None 이면 전체.
+    /// The scoped workspace. None means all.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
     pub nodes: Vec<GraphNode>,
@@ -103,22 +103,22 @@ pub struct GraphView {
     pub stats: GraphStats,
 }
 
-/// 그래프 노드 = 엔티티. 시각화 힌트(타입/degree/신뢰)를 함께 싣는다.
+/// Graph node = entity. Carries visualization hints (type/degree/trust).
 #[derive(Serialize)]
 pub struct GraphNode {
     pub id: String,
     pub name: String,
     #[serde(rename = "type")]
     pub kind: String,
-    /// 그래프에 포함된 엣지 중 이 노드에 연결된 수(양끝이 모두 노드 집합에 있는 엣지만).
+    /// The number of edges included in the graph that connect to this node (only edges whose both endpoints are in the node set).
     pub degree: usize,
-    /// 이 엔티티에 누적된 출처(attestation) 수 - 여러 관측이 뒷받침할수록 크다.
+    /// The number of sources (attestations) accumulated on this entity - larger when more observations back it.
     pub sources: usize,
-    /// 출처들 중 **최고** 신뢰 등급(원칙 18) - 노드의 대표 신뢰도.
+    /// The **highest** trust tier among the sources (Principle 18) - the node's representative trust.
     pub trust_tier: TrustTier,
 }
 
-/// 그래프 엣지 = 타입된 관계. provenance 요약과 유효구간을 싣는다.
+/// Graph edge = a typed relation. Carries the provenance summary and valid interval.
 #[derive(Serialize)]
 pub struct GraphEdge {
     pub from: String,
@@ -126,26 +126,26 @@ pub struct GraphEdge {
     #[serde(rename = "type")]
     pub kind: String,
     pub trust_tier: TrustTier,
-    /// 무표기(None)는 표기 없음 그대로 - 1.0 으로 보이지 않는다 (원칙 2 4차).
+    /// No annotation (None) stays as no annotation - it is not shown as 1.0 (Principle 2, 4th).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
-    /// 유효구간 종료(원칙 4). Some 이면 대체/반증되어 현재는 참이 아님 - 뷰어가 흐리게 그린다.
+    /// Valid interval end (Principle 4). Some means it was superseded/refuted and is no longer true now - the viewer draws it faded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid_to: Option<Timestamp>,
 }
 
-/// 그래프 요약 지표(관측가능성의 첫 계량). 결정적 정렬 위해 BTreeMap.
+/// Graph summary metrics (the first measure of observability). BTreeMap for deterministic ordering.
 #[derive(Serialize)]
 pub struct GraphStats {
     pub node_count: usize,
     pub edge_count: usize,
-    /// 타입별 노드 수.
+    /// Node count by type.
     pub type_counts: BTreeMap<String, usize>,
-    /// 신뢰 등급별 노드 수(대표 등급 기준).
+    /// Node count by trust tier (by representative tier).
     pub trust_counts: BTreeMap<String, usize>,
 }
 
-/// TrustTier 의 안정적 문자열 라벨(직렬화 snake_case 와 일치). 지표 키에 쓴다.
+/// A stable string label for TrustTier (matching the serialized snake_case). Used as metric keys.
 fn tier_label(t: TrustTier) -> &'static str {
     match t {
         TrustTier::Unverified => "unverified",
@@ -155,13 +155,13 @@ fn tier_label(t: TrustTier) -> &'static str {
     }
 }
 
-/// 하이퍼그래프 프로젝션(공동출현 이차 구조 - 원칙 11 "유도의 기반").
+/// Hypergraph projection (the second-order structure of co-occurrence - Principle 11, "the ground of induction").
 ///
-/// 한 관측이 공동 주장한 엔티티 집합을 하나의 **하이퍼엣지**로 되살린다 - 이진 관계
-/// 프로젝션이 버린 "무엇이 함께 말해졌는가"(맥락)를 로그로부터 결정적으로 회복한 파생
-/// 뷰다(원칙 1). 저장 모델(이진 Relation)은 건드리지 않는다. 멤버 집합이 하이퍼엣지의
-/// 정체성이라 같은 집합을 만든 여러 관측은 dedup 되어 attestation(sources/trust)으로
-/// 누적된다(원칙 3/14). 노드/엣지 순서, 멤버 순서, 식별자 모두 결정적이다(원칙 16).
+/// Revives the set of entities co-asserted by one observation as a single **hyperedge** - a derived view that
+/// deterministically recovers from the log "what was said together" (context), which the binary-relation
+/// projection discarded (Principle 1). It does not touch the storage model (binary Relation). The member set is the
+/// hyperedge's identity, so multiple observations that produce the same set are deduped and accumulated as
+/// attestation (sources/trust) (Principle 3/14). Node/edge order, member order, and identifiers are all deterministic (Principle 16).
 #[derive(Serialize)]
 pub struct HyperGraphView {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,47 +171,47 @@ pub struct HyperGraphView {
     pub stats: HyperGraphStats,
 }
 
-/// 하이퍼엣지 = 한 관측(들)에서 공동 주장된 엔티티 집합. 무방향/무타입/n-항 -
-/// 이진 관계(방향/타입/쌍)의 쌍대이지 대체가 아니다.
+/// Hyperedge = the set of entities co-asserted in one observation (or several). Undirected/untyped/n-ary -
+/// the dual of a binary relation (directed/typed/pair), not a replacement for it.
 #[derive(Serialize)]
 pub struct HyperEdge {
-    /// 멤버 집합의 콘텐츠 주소(원칙 14) - 같은 집합은 어떤 관측에서 유도돼도 같은 id.
+    /// The content address of the member set (Principle 14) - the same set has the same id no matter which observation it is derived from.
     pub id: String,
-    /// 멤버 엔티티 id들 (정렬, 결정적). 그래프 노드 집합에 있는 것만(닫힌 hull).
+    /// The member entity ids (sorted, deterministic). Only those in the graph node set (closed hull).
     pub members: Vec<String>,
-    /// 멤버의 대표 이름(canonical_name), `members` 와 같은 순서. id-only 응답은 LLM 이
-    /// 읽기 어렵고 뷰어 라벨도 이름이 필요하므로 프로젝션이 이름을 함께 싣는다(가독성).
+    /// The members' canonical names (canonical_name), in the same order as `members`. An id-only response is
+    /// hard for the LLM to read and the viewer labels need names, so the projection carries the names too (readability).
     pub member_names: Vec<String>,
-    /// arity = 멤버 수. 입도 신호(큰 약응집은 grab-bag/분할 후보 - 원칙 11 이차 구조).
+    /// arity = member count. A granularity signal (a large loose cluster is a grab-bag/split candidate - Principle 11 second-order structure).
     pub size: usize,
-    /// 이 멤버 집합을 공동 주장한 관측 수 - corroboration 신호(원칙 6/18).
+    /// The number of observations that co-asserted this member set - a corroboration signal (Principle 6/18).
     pub sources: usize,
-    /// 기여 관측들의 provenance 중 최고 신뢰 등급(원칙 18).
+    /// The highest trust tier among the provenance of the contributing observations (Principle 18).
     pub trust_tier: TrustTier,
 }
 
-/// 하이퍼그래프 요약 지표(관측가능성의 첫 계량).
+/// Hypergraph summary metrics (the first measure of observability).
 #[derive(Serialize)]
 pub struct HyperGraphStats {
     pub node_count: usize,
     pub hyperedge_count: usize,
-    /// 최대 하이퍼엣지 크기(arity) - grab-bag 탐지의 첫 계량.
+    /// The maximum hyperedge size (arity) - the first measure for grab-bag detection.
     pub max_size: usize,
 }
 
 pub struct Engine {
     store: Arc<dyn KnowledgeStore>,
-    /// 임베딩 공급 포트 (원칙 19: 확률적 경계). 없으면 검색은 키워드로 degrade.
+    /// The embedding provider port (Principle 19: the probabilistic boundary). If absent, search degrades to keyword.
     embedder: Option<Arc<dyn EmbeddingProvider>>,
-    /// UI 이벤트 싱크 (관측가능성, 선택). 없으면 emit 은 no-op.
+    /// The UI event sink (observability, optional). If absent, emit is a no-op.
     events: Option<Arc<dyn EventSink>>,
-    /// 세션 id (발자국 그룹 키). 발행하는 모든 이벤트에 실린다 - 기본 "local".
+    /// The session id (footprint group key). Carried on every event emitted - defaults to "local".
     session: String,
-    /// 프로젝션 쓰기 직렬화 락. observe 의 엔티티 upsert 는 read-merge-write(get->push
-    /// provenance->put)라 원자적이지 않다 - 동시 관측이 같은 엔티티를 만지면 attestation 이
-    /// 유실될 수 있다(architecture 14절 이연). stdio 단일 클라이언트에선 무해했으나 HTTP
-    /// 데몬은 동시 호출을 허용하므로, 쓰기 구간을 이 락으로 직렬화해 유실을 막는다.
-    /// 읽기(get/search/traverse/graph)는 락 밖 - 동시 유지. 전면 원자화는 M3 해소 계층.
+    /// The projection write serialization lock. observe's entity upsert is read-merge-write (get -> push
+    /// provenance -> put), so it is not atomic - if concurrent observations touch the same entity, attestation
+    /// can be lost (deferred, architecture section 14). It was harmless with a single stdio client, but the HTTP
+    /// daemon allows concurrent calls, so the write section is serialized with this lock to prevent loss.
+    /// Reads (get/search/traverse/graph) stay outside the lock - kept concurrent. Full atomicity is the M3 resolution layer.
     write_guard: std::sync::Mutex<()>,
     host: String,
     default_workspace: String,
@@ -234,30 +234,30 @@ impl Engine {
         }
     }
 
-    /// 임베딩 공급자를 붙인다(빌더). 붙이면 observe 가 관측에 임베딩을 달고
-    /// search 가 벡터+키워드 하이브리드로 동작한다. 안 붙이면 키워드 전용(degrade).
+    /// Attaches an embedding provider (builder). When attached, observe adds embeddings to observations and
+    /// search operates as a vector+keyword hybrid. When not attached, keyword only (degrade).
     pub fn with_embedder(mut self, embedder: Arc<dyn EmbeddingProvider>) -> Self {
         self.embedder = Some(embedder);
         self
     }
 
-    /// UI 이벤트 싱크를 붙인다(빌더, 관측가능성). 붙이면 [`Engine::emit`] 이 여기로
-    /// 흘려보낸다 - 뷰어의 라이브 활동 로그/노드 강조용. 안 붙이면 emit 은 no-op.
+    /// Attaches a UI event sink (builder, observability). When attached, [`Engine::emit`] streams here -
+    /// for the viewer's live activity log / node highlighting. When not attached, emit is a no-op.
     pub fn with_events(mut self, sink: Arc<dyn EventSink>) -> Self {
         self.events = Some(sink);
         self
     }
 
-    /// 세션 id 를 설정한다(빌더). 발행하는 모든 이벤트에 실려 대화 발자국의 그룹 키가
-    /// 된다 - 뷰어가 "이 세션이 어떤 지식을 썼나"를 묶어 보여준다.
+    /// Sets the session id (builder). Carried on every event emitted, it becomes the group key of the conversation
+    /// footprint - the viewer groups "which knowledge this session used" together.
     pub fn with_session(mut self, session: impl Into<String>) -> Self {
         self.session = session.into();
         self
     }
 
-    /// UI 이벤트를 발행한다. 싱크가 없으면 아무것도 하지 않는다(관측가능성은 선택).
-    /// 세션 id 를 봉투에 실어 보낸다(발자국 그룹 키). 호출자(MCP 도구 핸들러)가 의도
-    /// 단위로 부른다 - 저장/해소 로직과 무관한 부수 채널.
+    /// Emits a UI event. Does nothing if there is no sink (observability is optional).
+    /// Carries the session id in the envelope (footprint group key). The caller (MCP tool handler) invokes it per
+    /// intent - a side channel unrelated to the storage/resolution logic.
     pub fn emit(&self, event: Event) {
         if let Some(sink) = &self.events {
             sink.emit(&EventEnvelope {
@@ -280,41 +280,41 @@ impl Engine {
             workspace: workspace.to_string(),
             source_ref,
             observed_at: now_millis(),
-            // 무표기는 무표기로 보존한다 (원칙 2 4차) - 기본값(1.0) 치환은 "주장 없음"과
-            // "만점 주장"의 구별을 소실시키는 캡처 손실이다. 해석은 해소 정책(M3)의 몫.
+            // Preserve no-annotation as no-annotation (Principle 2, 4th) - substituting a default (1.0) is a
+            // capture loss that erases the distinction between "no assertion" and "full-confidence assertion". Interpretation is the resolution policy's job (M3).
             confidence,
-            // 신뢰 등급 승격은 명시적 흐름(사람 확인/교차검증)에서만 - observe 는 기본값.
+            // Trust tier promotion only happens in an explicit flow (human confirmation / cross-validation) - observe uses the default.
             trust_tier: TrustTier::default(),
         }
     }
 
-    /// 지식 조각을 적재한다: 불변 관측 저장 + 제공된 엔티티/관계를 온톨로지에 링크.
+    /// Ingests a piece of knowledge: stores an immutable observation + links the provided entities/relations into the ontology.
     pub fn observe(&self, input: ObserveInput) -> Result<ObserveOutput, ObserveError> {
-        // confidence 범위 강제 (원칙 2: 스키마 수준 강제). append-only 로그에 한번
-        // 실린 값은 영구하므로 적재 전에 막는다. NaN 도 contains 가 false 라 걸린다.
+        // Enforce the confidence range (Principle 2: schema-level enforcement). A value once written to the
+        // append-only log is permanent, so we block it before ingest. NaN is caught too, since contains is false for it.
         if let Some(c) = input.confidence {
             if !(0.0..=1.0).contains(&c) {
                 return Err(ObserveError::Invalid(format!(
-                    "confidence 는 0.0~1.0 이어야 한다 (받은 값: {c}). 확신이 낮으면 \
-                     낮은 값을 주고, 평가가 불가하면 생략하라"
+                    "confidence must be in the range 0.0~1.0 (received: {c}). If confidence is low, \
+                     give a low value; if it cannot be evaluated, omit it"
                 )));
             }
         }
-        // 정형성 검증 (원칙 1: 적재 검증은 정형성까지만). 빈 지시어는 "다르게 표기된
-        // 주장"이 아니라 지시 대상이 없는 비주장이다 - 영구 로그에 실리기 전에 막는다.
-        // 표기 자체는 검열하지 않는다: 거부는 변형이 아니며, 정규화는 프로젝션의 일.
+        // Well-formedness validation (Principle 1: ingest validation goes only as far as well-formedness). An empty
+        // directive is not a "differently spelled assertion" but a non-assertion with no referent - block it before it
+        // reaches the permanent log. The notation itself is not censored: rejection is not transformation, and normalization is the projection's job.
         for e in &input.entities {
             if e.name.trim().is_empty() {
                 return Err(ObserveError::Invalid(
-                    "엔티티 이름이 비어 있다. 이름 없는 엔티티 주장은 성립하지 않는다 - \
-                     지시할 이름을 넣거나 항목을 빼라"
+                    "entity name is empty. an entity assertion with no name does not hold - \
+                     provide a name to refer to, or drop the item"
                         .into(),
                 ));
             }
             if e.kind.as_deref().is_some_and(|k| k.trim().is_empty()) {
                 return Err(ObserveError::Invalid(format!(
-                    "엔티티 '{}' 의 타입이 빈 문자열이다. 빈 타입 주장은 타입 미지정과 \
-                     다른, 성립하지 않는 주장이다 - 타입을 모르면 type 을 생략하라",
+                    "the type of entity '{}' is an empty string. an empty-type assertion is a \
+                     non-holding assertion, different from leaving the type unspecified - if you don't know the type, omit type",
                     e.name
                 )));
             }
@@ -322,15 +322,15 @@ impl Engine {
         for r in &input.relations {
             if r.from.trim().is_empty() || r.to.trim().is_empty() {
                 return Err(ObserveError::Invalid(format!(
-                    "관계의 끝점이 비어 있다 (from: {:?}, to: {:?}). 이름 없는 엔티티를 \
-                     가리키는 관계 주장은 성립하지 않는다 - 양끝 엔티티 이름을 넣어라",
+                    "a relation endpoint is empty (from: {:?}, to: {:?}). a relation assertion that \
+                     points to an unnamed entity does not hold - provide both endpoint entity names",
                     r.from, r.to
                 )));
             }
             if normalize_relation_kind(&r.kind).is_empty() {
                 return Err(ObserveError::Invalid(format!(
-                    "관계 타입이 비어 있다 (받은 값: {:?} - 정규화하면 빈 문자열). \
-                     depends_on / part_of 처럼 의미가 읽히는 타입을 넣어라",
+                    "the relation type is empty (received: {:?} - normalizes to an empty string). \
+                     provide a type whose meaning reads clearly, like depends_on / part_of",
                     r.kind
                 )));
             }
@@ -345,9 +345,9 @@ impl Engine {
             input.on_behalf_of,
         );
 
-        // 구조화 주장은 관측 로그에 **원문 그대로** 동봉한다 (원칙 1: 로그가 진실의
-        // 원천이고 그래프는 프로젝션 - 주장이 로그에 없으면 재프로젝션으로 그래프를
-        // 복원할 수 없다). 정규화(kind 정준화 등)는 아래 프로젝션 단계의 일이다.
+        // Structured assertions are enclosed in the observation log **verbatim** (Principle 1: the log is the source
+        // of truth and the graph is a projection - if an assertion is not in the log, the graph cannot be recovered by
+        // re-projection). Normalization (kind canonicalization, etc.) is the job of the projection step below.
         let assertions = Assertions {
             entities: input
                 .entities
@@ -371,22 +371,22 @@ impl Engine {
         };
         let mut obs = Observation::with_assertions(input.content, prov.clone(), assertions);
         obs.derived_from = input.derived_from;
-        // 임베딩 부착은 best-effort: 실패해도 관측 저장은 막지 않는다(원칙 19: degrade).
-        // 단 degrade 는 침묵하지 않는다: 적재 시점 임베딩 실패는 이 관측을 의미 검색에서
-        // 재시도 없이 제외하므로(같은 content 재관측 전까지) 흔적을 남긴다.
+        // Embedding attachment is best-effort: a failure does not block storing the observation (Principle 19: degrade).
+        // But degrade is not silent: an embedding failure at ingest time excludes this observation from semantic
+        // search with no retry (until the same content is re-observed), so it leaves a trace.
         if let Some(embedder) = &self.embedder {
             match embedder.embed_one(&obs.content) {
                 Ok(vec) => obs.embedding = Some(vec),
                 Err(e) => tracing::warn!(
                     observation_id = %obs.id,
                     error = %e,
-                    "관측 임베딩 실패 - 키워드 검색으로만 회상된다 (degrade)"
+                    "observation embedding failed - recalled by keyword search only (degrade)"
                 ),
             }
         }
         let observation_id = obs.id.clone();
-        // 쓰기 구간 직렬화(동시 관측의 프로젝션 read-merge-write 경쟁 방지, 위 필드 주석).
-        // 임베딩(위, 확률적/CPU)은 락 밖에 두고 여기서부터 잠근다. 읽기 경로는 잠그지 않는다.
+        // Serialize the write section (prevents the read-merge-write race of concurrent observations' projections, see the field comment above).
+        // Embedding (above, probabilistic/CPU) is left outside the lock; we lock from here. The read path is not locked.
         let _write = self
             .write_guard
             .lock()
@@ -402,8 +402,8 @@ impl Engine {
         for r in input.relations {
             let from = self.upsert_named(&workspace, &r.from, None, &prov)?;
             let to = self.upsert_named(&workspace, &r.to, None, &prov)?;
-            // kind 는 정준형으로 프로젝션한다 - id 와 저장 표기가 항상 일치하도록
-            // (id 만 정규화하면 같은 id 에 다른 표기가 last-write-wins 로 남는다).
+            // kind is projected into its canonical form - so the id and the stored notation always match
+            // (if only the id is normalized, different notations for the same id are left last-write-wins).
             let kind = normalize_relation_kind(&r.kind);
             let rel = Relation {
                 id: Relation::make_id(&from, &kind, &to),
@@ -411,8 +411,8 @@ impl Engine {
                 to,
                 kind,
                 provenance: prov.clone(),
-                // 클라이언트가 명시한 유효구간을 그대로 프로젝션한다 (원칙 4 캡처).
-                // 반증에 의한 valid_to 자동 종료 등 유도 로직은 M3.
+                // Project the valid interval the client specified as-is (Principle 4 capture).
+                // Derivation logic such as auto-closing valid_to on refutation is M3.
                 valid_from: r.valid_from,
                 valid_to: r.valid_to,
             };
@@ -428,7 +428,7 @@ impl Engine {
         })
     }
 
-    /// M0 해소: 정규명 완전일치. 존재하면 출처만 덧붙이고, 없으면 생성.
+    /// M0 resolution: exact match on the canonical name. If it exists, only append the source; otherwise create it.
     fn upsert_named(
         &self,
         workspace: &str,
@@ -450,12 +450,12 @@ impl Engine {
             entity.kind = k;
         }
         entity.provenance.push(prov.clone());
-        // 엔티티 이름/별칭을 임베딩해 시맨틱 검색이 노드에 **이름의 의미**로 도달하게 한다
-        // (원칙 19: 회상 확장). 관측을 어휘로 언급하지 않는 노드의 회상 공백을 메운다.
-        // 임베딩 부착은 best-effort: 실패해도 엔티티 저장은 막지 않는다(원칙 19: degrade).
-        // 이름은 안정적이므로 없을 때 한 번만 계산한다(확률적 어댑터 호출 최소화).
-        // 실패는 침묵하지 않는다 - 다음 관측이 이 엔티티를 만질 때 재시도되지만(여전히
-        // None 이므로), 그때까지 이름의 의미로는 회상되지 않는다.
+        // Embed the entity name/aliases so semantic search reaches the node by the **meaning of its name**
+        // (Principle 19: recall expansion). This fills the recall gap for nodes that observations do not mention lexically.
+        // Embedding attachment is best-effort: a failure does not block storing the entity (Principle 19: degrade).
+        // The name is stable, so compute it only once when absent (to minimize probabilistic adapter calls).
+        // A failure is not silent - it is retried when the next observation touches this entity (since it is still
+        // None), but until then it is not recalled by the meaning of its name.
         if entity.embedding.is_none() {
             if let Some(embedder) = &self.embedder {
                 match embedder.embed_one(&entity_text(&entity)) {
@@ -464,7 +464,7 @@ impl Engine {
                         entity_id = %entity.id,
                         name = %entity.canonical_name,
                         error = %e,
-                        "엔티티 임베딩 실패 - 이름의 의미 회상 없이 저장한다 (degrade)"
+                        "entity embedding failed - stored without name-meaning recall (degrade)"
                     ),
                 }
             }
@@ -473,14 +473,14 @@ impl Engine {
         Ok(id)
     }
 
-    /// 관측 역참조 (원칙 2/14): 검색 히트/파생 계보가 돌려준 관측 id 로 원문과
-    /// provenance 전체, derived_from 계보에 도달한다 - "이 답이 어디서 왔는가"의 종점.
+    /// Observation dereference (Principle 2/14): from an observation id returned by a search hit / derivation
+    /// lineage, reach the original text, the full provenance, and the derived_from lineage - the terminus of "where did this answer come from".
     pub fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
         self.store.get_observation(id)
     }
 
-    /// 엔티티 + 관계 조회. `Ok(None)` 은 부재(미지, 원칙 5), `Err` 는 저장소 고장 -
-    /// 호출자(MCP 표면)가 둘을 구별해 전달할 수 있도록 실패를 삼키지 않는다.
+    /// Entity + relation lookup. `Ok(None)` is absence (unknown, Principle 5), `Err` is a store failure -
+    /// failures are not swallowed, so the caller (the MCP surface) can distinguish and relay the two.
     pub fn get_entity(&self, id: &str) -> Result<Option<EntityView>, StoreError> {
         match self.store.get_entity(id)? {
             Some(entity) => {
@@ -491,12 +491,12 @@ impl Engine {
         }
     }
 
-    /// 하이브리드 검색: 키워드(부분일치) + 벡터(의미) 결과를 RRF 로 융합하고, 상위 엔티티
-    /// 히트의 그래프 이웃으로 보강한다. 벡터 경로는 관측 본문과 엔티티 이름 **양쪽**을
-    /// 시맨틱으로 회상하고(관측을 어휘로 언급하지 않는 엔티티 노드도 이름의 의미로 도달),
-    /// 보강 단계는 매치된 엔티티의 1-hop 이웃을 채워 어휘/의미로는 안 걸리지만 그래프상
-    /// 인접한 노드까지 회상한다(architecture 4.2 "그래프 문맥 보강"). 임베더가 없거나 질의
-    /// 임베딩에 실패하면 키워드 결과만 융합한다(원칙 19: degrade). 확정 랭킹은 결정적이다.
+    /// Hybrid search: fuses keyword (substring match) + vector (semantic) results with RRF, then enriches with the
+    /// graph neighbors of the top entity hits. The vector path semantically recalls **both** observation bodies and
+    /// entity names (so even entity nodes not mentioned lexically by an observation are reached by the meaning of their name),
+    /// and the enrichment step fills in the 1-hop neighbors of matched entities to recall nodes that are not caught by
+    /// lexical/semantic means but are graph-adjacent (architecture 4.2 "graph enrichment"). If there is no embedder or the query
+    /// embedding fails, only keyword results are fused (Principle 19: degrade). The final ranking is deterministic.
     pub fn search(
         &self,
         query: &str,
@@ -505,12 +505,12 @@ impl Engine {
     ) -> Result<SearchOutput, StoreError> {
         let keyword = self.store.search(query, workspace, limit)?;
 
-        // 질의 임베딩은 한 번만 계산해 관측/엔티티 시맨틱 검색이 공유한다.
-        // 임베딩 실패는 degrade(키워드 전용, 원칙 19)지만 저장소 실패는 Err 다 -
-        // 확률적 어댑터의 부재/실패와 결정적 저장소의 고장은 다른 사건이다.
+        // The query embedding is computed once and shared by the observation/entity semantic searches.
+        // An embedding failure is a degrade (keyword only, Principle 19), but a store failure is an Err -
+        // the absence/failure of the probabilistic adapter and the failure of the deterministic store are different events.
         let qvec = self.embedder.as_ref().and_then(|e| e.embed_one(query).ok());
-        // mode 는 "의미 표면을 참조했는가" 다 - 의미 회상이 0건이어도 참조는 했으므로
-        // hybrid 다 (0건의 인식론적 무게가 mode 에 따라 다르다, 원칙 5/16 4차).
+        // mode is "did it reference the semantic surface" - even if semantic recall is zero, it did reference it, so it is
+        // hybrid (the epistemic weight of zero results differs by mode, Principle 5/16 4th).
         let mode = if qvec.is_some() {
             SearchMode::Hybrid
         } else {
@@ -524,36 +524,36 @@ impl Engine {
             None => (Vec::new(), Vec::new()),
         };
 
-        // 시맨틱 회상이 없으면(임베더 없음/미적재) 키워드 랭킹을 그대로, 있으면 RRF 융합.
+        // If there is no semantic recall (no embedder / not embedded), use the keyword ranking as-is; otherwise RRF-fuse.
         let fused = if semantic_obs.is_empty() && semantic_ent.is_empty() {
             keyword
         } else {
             fuse_rrf(&[keyword, semantic_obs, semantic_ent], limit)
         };
 
-        // 그래프 문맥 보강: 상위 엔티티 히트의 1-hop 이웃을 여분 슬롯에 채운다.
+        // Graph enrichment: fill the spare slots with the 1-hop neighbors of the top entity hits.
         let hits = self.enrich_with_graph(fused, workspace, limit)?;
         Ok(SearchOutput { mode, hits })
     }
 
-    /// 그래프 문맥 보강: 상위 엔티티 히트(시드)의 1-hop 이웃을 결과에 더한다. 이웃은 시드의
-    /// 직접 매치보다 약한 신호이므로 시드 점수를 감쇠해 랭킹한다 - 1차 히트가 이웃보다 강하면
-    /// 위에 남고, 강한 시드의 이웃은 약한 1차 히트보다 위로 올 수 있다(그래프 근접성 반영).
-    /// 유계다: 시드 수/해소 이웃 수를 상한으로 잡아 활발한 노드가 결과를 뒤덮지 못한다.
-    /// 결정적이다(원칙 16): 이웃 점수를 도달한 시드들의 최댓값으로 잡아 순회 순서에 무관하고,
-    /// 최종 정렬을 (점수 desc, id asc)로 못박는다.
+    /// Graph enrichment: adds the 1-hop neighbors of the top entity hits (seeds) to the results. A neighbor is a weaker
+    /// signal than a seed's direct match, so it is ranked with the seed score decayed - a primary hit stronger than a
+    /// neighbor stays above it, and the neighbor of a strong seed can rise above a weak primary hit (reflecting graph proximity).
+    /// It is bounded: the seed count / resolved neighbor count are capped so an active node cannot flood the results.
+    /// It is deterministic (Principle 16): a neighbor's score is taken as the max over the seeds that reached it, so it is
+    /// independent of traversal order, and the final sort is pinned to (score desc, id asc).
     fn enrich_with_graph(
         &self,
         mut results: Vec<SearchHit>,
         workspace: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>, StoreError> {
-        // 이미 결과에 있는 (kind, id) - 이웃 중복/1차 히트 재추가를 막는다.
+        // The (kind, id) already in the results - prevents duplicate neighbors / re-adding primary hits.
         let present: HashSet<(SearchHitKind, String)> =
             results.iter().map(|h| (h.kind, h.id.clone())).collect();
 
-        // 상위 엔티티 히트를 시드로 1-hop 이웃 점수를 모은다. 여러 시드에서 도달하면 최댓값
-        // (도달 순서 무관 - 결정성). 관계의 반대편 엔드포인트가 이웃이다.
+        // Using the top entity hits as seeds, gather 1-hop neighbor scores. If reached from multiple seeds, take the max
+        // (independent of arrival order - determinism). The relation's opposite endpoint is the neighbor.
         let mut neighbor_score: HashMap<String, f32> = HashMap::new();
         for seed in results
             .iter()
@@ -577,7 +577,7 @@ impl Engine {
             }
         }
 
-        // 해소 비용을 유계로: 상위 limit 개 이웃만 엔티티로 해소(이름/워크스페이스 확인).
+        // Bound the resolution cost: resolve only the top limit neighbors to entities (check name/workspace).
         let mut candidates: Vec<(String, f32)> = neighbor_score.into_iter().collect();
         candidates.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
@@ -588,7 +588,7 @@ impl Engine {
 
         for (id, score) in candidates {
             if let Some(entity) = self.store.get_entity(&id)? {
-                // 워크스페이스가 지정되면 그 안의 노드만(교차 워크스페이스 이웃 누출 방지).
+                // If a workspace is specified, only nodes within it (prevents cross-workspace neighbor leakage).
                 let in_ws =
                     workspace.is_none_or(|ws| entity.provenance.iter().any(|p| p.workspace == ws));
                 if !in_ws {
@@ -603,7 +603,7 @@ impl Engine {
             }
         }
 
-        // 전역 재정렬(점수 desc, id asc) 후 limit - 1차 히트와 이웃을 한 랭킹으로 통합한다.
+        // Global re-sort (score desc, id asc) then limit - unifies primary hits and neighbors into one ranking.
         results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -614,7 +614,7 @@ impl Engine {
         Ok(results)
     }
 
-    /// 엔티티에서 관계 방향(from->to)을 따라 최대 `max_depth` 홉까지 이웃을 순회한다.
+    /// Traverses neighbors from an entity following the relation direction (from->to) up to `max_depth` hops.
     pub fn traverse(
         &self,
         id: &str,
@@ -624,15 +624,15 @@ impl Engine {
         self.store.traverse(id, max_depth.max(1), limit)
     }
 
-    /// 이 노드의 기본 워크스페이스(MCP 리소스가 구체 URI 를 만들 때 참조).
+    /// This node's default workspace (referenced when an MCP resource builds a concrete URI).
     pub fn default_workspace(&self) -> &str {
         &self.default_workspace
     }
 
-    /// 지식이 존재하는 워크스페이스 목록(정렬, 결정적 - 원칙 16). 프로젝션된 그래프
-    /// (엔티티/관계)의 provenance.workspace 에서 유도한다 - 그래프를 그릴 수 있는
-    /// 워크스페이스의 집합이다. 별도 저장소 열거 없이 기존 읽기 포트만으로 계산한다.
-    /// BTreeSet 이 중복 제거 + 정렬을 동시에 주어 도착 순서에 무관한 결과를 보장한다.
+    /// The list of workspaces where knowledge exists (sorted, deterministic - Principle 16). Derived from the
+    /// provenance.workspace of the projected graph (entities/relations) - the set of workspaces for which a graph can
+    /// be drawn. Computed with the existing read ports alone, without a separate store enumeration.
+    /// BTreeSet gives dedup + sort at once, guaranteeing a result independent of arrival order.
     pub fn workspaces(&self) -> Result<Vec<String>, StoreError> {
         let mut set: BTreeSet<String> = BTreeSet::new();
         for e in self.store.all_entities(None)? {
@@ -646,16 +646,16 @@ impl Engine {
         Ok(set.into_iter().collect())
     }
 
-    /// 온톨로지 그래프를 node-link 뷰로 프로젝션한다(관측가능성/시각화의 읽기 경로).
-    /// 순수 읽기 - 관측 로그를 건드리지 않는다(원칙 1). 엣지는 양끝이 모두 노드 집합에
-    /// 있을 때만 포함해 닫힌(렌더 가능한) 그래프를 준다. 노드/엣지 순서는 결정적이다(원칙 16).
+    /// Projects the ontology graph into a node-link view (the read path for observability/visualization).
+    /// A pure read - it does not touch the observation log (Principle 1). An edge is included only when both endpoints
+    /// are in the node set, giving a closed (renderable) graph. Node/edge order is deterministic (Principle 16).
     pub fn graph(&self, workspace: Option<&str>) -> Result<GraphView, StoreError> {
         let entities = self.store.all_entities(workspace)?;
         let relations = self.store.all_relations(workspace)?;
 
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
 
-        // degree 는 그래프에 실제로 포함된 엣지 기준으로만 센다.
+        // degree is counted only against the edges actually included in the graph.
         let mut degree: HashMap<String, usize> = HashMap::new();
         let mut edges: Vec<GraphEdge> = Vec::new();
         for r in &relations {
@@ -678,7 +678,7 @@ impl Engine {
         let mut nodes: Vec<GraphNode> = entities
             .iter()
             .map(|e| {
-                // 대표 신뢰 = 출처들 중 최고 등급(원칙 18). 출처 없으면 기본값.
+                // Representative trust = the highest tier among the sources (Principle 18). Default if there are no sources.
                 let trust = e
                     .provenance
                     .iter()
@@ -698,7 +698,7 @@ impl Engine {
             })
             .collect();
 
-        // 결정적 순서(원칙 16): 노드는 id, 엣지는 (from, kind, to) 로 안정 정렬.
+        // Deterministic order (Principle 16): nodes stable-sorted by id, edges by (from, kind, to).
         nodes.sort_by(|a, b| a.id.cmp(&b.id));
         edges.sort_by(|a, b| {
             a.from
@@ -721,31 +721,31 @@ impl Engine {
         })
     }
 
-    /// 하이퍼그래프(공동출현 이차 구조)를 프로젝션한다 (원칙 11 "유도의 기반").
-    /// 관측 로그를 전수 읽어(순수 읽기 - 원칙 1) 각 관측이 공동 주장한 엔티티 이름을
-    /// 정규 id 로 해소하고, 그래프 노드 집합에 있는 멤버만 남긴 집합을 하이퍼엣지로
-    /// 삼는다. 크기 < 2 는 하이퍼엣지가 아니다(퇴화 - 원칙 11 이차 구조 주의점). 같은
-    /// 멤버 집합은 dedup 되어 sources/trust 가 누적된다(원칙 3). 순서/식별자 결정적(원칙 16).
+    /// Projects the hypergraph (the second-order structure of co-occurrence) (Principle 11 "the ground of induction").
+    /// Reads the entire observation log (a pure read - Principle 1), resolves the entity names co-asserted by each
+    /// observation to canonical ids, and takes the set with only the members in the graph node set as a hyperedge.
+    /// Size < 2 is not a hyperedge (degenerate - Principle 11 second-order structure caveat). The same member set is
+    /// deduped and its sources/trust accumulate (Principle 3). Order/identifiers are deterministic (Principle 16).
     ///
-    /// 이 뷰는 후보/신호를 **생성**할 뿐이다 - 병합/승격/스키마 정의 같은 확정은 기존
-    /// 게이트(해소/제안/사람 확인)를 거친다. 파생 뷰가 정본을 직접 쓰지 않는다(원칙 1/19).
+    /// This view only **generates** candidates/signals - decisions such as merge/promotion/schema definition go through
+    /// the existing gates (resolution/proposal/human confirmation). A derived view does not write the canonical record directly (Principle 1/19).
     pub fn hypergraph(&self, workspace: Option<&str>) -> Result<HyperGraphView, StoreError> {
         let entities = self.store.all_entities(workspace)?;
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
-        // id -> 대표 이름(가독성: 하이퍼엣지 멤버를 이름으로도 싣는다).
+        // id -> canonical name (readability: hyperedge members are carried as names too).
         let name_by_id: HashMap<&str, &str> = entities
             .iter()
             .map(|e| (e.id.as_str(), e.canonical_name.as_str()))
             .collect();
 
-        // 관측별 공동출현 집합 -> 멤버 집합으로 dedup 하며 하이퍼엣지를 누적한다.
-        // 값: (정렬된 members, sources 카운트, 기여 관측 중 최고 trust).
+        // Per-observation co-occurrence set -> accumulate hyperedges, deduping by member set.
+        // Value: (sorted members, sources count, highest trust among contributing observations).
         let mut acc: HashMap<String, (Vec<String>, usize, TrustTier)> = HashMap::new();
         for obs in self.store.all_observations(workspace)? {
             let ws = obs.workspace();
-            // 관측이 공동 주장한 엔티티: 엔티티 주장 + 관계 양끝. 정규 id 로 해소하고
-            // 그래프 노드 집합에 있는 것만(닫힌 hull - graph() 의 엣지 닫힘과 같은 규율).
-            // BTreeSet 이 중복 제거 + 정렬을 동시에 준다(도착 순서 무관 - 원칙 16).
+            // The entities co-asserted by an observation: entity assertions + both endpoints of relations. Resolved to
+            // canonical ids and keeping only those in the graph node set (closed hull - the same discipline as graph()'s edge closure).
+            // BTreeSet gives dedup + sort at once (independent of arrival order - Principle 16).
             let mut members: BTreeSet<String> = BTreeSet::new();
             for e in &obs.assertions.entities {
                 let id = Entity::make_id(ws, &e.name);
@@ -762,11 +762,11 @@ impl Engine {
                 }
             }
             if members.len() < HYPEREDGE_MIN_SIZE {
-                continue; // 퇴화(단일/0 멤버)는 하이퍼엣지가 아니다.
+                continue; // A degenerate set (single/0 members) is not a hyperedge.
             }
             let members: Vec<String> = members.into_iter().collect();
             let id = hyperedge_id(&members);
-            // 이 관측의 대표 신뢰 = provenance 중 최고 등급(원칙 18).
+            // This observation's representative trust = the highest tier among its provenance (Principle 18).
             let obs_trust = obs
                 .provenance
                 .iter()
@@ -798,12 +798,12 @@ impl Engine {
                 }
             })
             .collect();
-        // 결정적 순서(원칙 16): 크기 desc(큰 맥락 먼저), 동률은 id asc.
+        // Deterministic order (Principle 16): size desc (larger context first), ties broken by id asc.
         hyperedges.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.id.cmp(&b.id)));
         let max_size = hyperedges.iter().map(|h| h.size).max().unwrap_or(0);
 
-        // 노드별 하이퍼엣지-차수(원칙 11 이차 구조: 경계개념/허브 신호)를 degree 에 싣는다 -
-        // graph() 의 degree(이진 엣지 차수)와 달리 여기선 "몇 개의 맥락에 속하는가"다.
+        // Carry each node's hyperedge-degree (Principle 11 second-order structure: boundary-concept/hub signal) in degree -
+        // unlike graph()'s degree (binary edge degree), here it is "how many contexts it belongs to".
         let mut hyper_degree: HashMap<String, usize> = HashMap::new();
         for h in &hyperedges {
             for m in &h.members {
@@ -846,21 +846,21 @@ impl Engine {
     }
 }
 
-/// 그래프 문맥 보강에서 이웃에 적용하는 감쇠. 이웃은 시드(직접 매치)보다 약한 신호이므로
-/// 시드 점수의 절반으로 랭킹해 1차 히트 아래에 두되, 강한 시드의 이웃이 약한 1차 히트보다
-/// 위로 오는 것은 허용한다(그래프 근접성을 랭킹에 반영).
+/// The decay applied to neighbors in graph enrichment. A neighbor is a weaker signal than a seed (direct match), so it
+/// is ranked at half the seed score to keep it below primary hits, while allowing the neighbor of a strong seed to rise
+/// above a weak primary hit (reflecting graph proximity in the ranking).
 const GRAPH_ENRICH_DECAY: f32 = 0.5;
-/// 이웃을 확장할 시드(상위 엔티티 히트) 수 상한 - 비용/정밀도 제어(활발한 노드가 결과를
-/// 뒤덮지 못하게 유계로 잡는다).
+/// The cap on the number of seeds (top entity hits) whose neighbors are expanded - cost/precision control (bounded so an
+/// active node cannot flood the results).
 const GRAPH_ENRICH_SEEDS: usize = 5;
 
-/// 하이퍼엣지의 최소 크기(arity). 1(단일 엔티티)/0 은 공동출현이 아니라 하이퍼엣지가
-/// 성립하지 않는 퇴화 상태다 (원칙 11 이차 구조 주의점). 2 는 이진 공동언급에 수렴하나
-/// 여전히 "함께 말해진" 맥락이므로 포함한다.
+/// The minimum hyperedge size (arity). 1 (a single entity) / 0 is not co-occurrence but a degenerate state where a
+/// hyperedge does not hold (Principle 11 second-order structure caveat). 2 converges on a binary co-mention but is still
+/// a "said together" context, so it is included.
 const HYPEREDGE_MIN_SIZE: usize = 2;
 
-/// 엔티티를 임베딩할 텍스트: 정규명 + 별칭(있으면). 이름의 의미로 시맨틱 회상을 연다.
-/// 별칭이 표기 변형을 담으므로 함께 임베딩하면 같은 대상의 다른 표기에도 도달 폭이 넓어진다.
+/// The text to embed for an entity: canonical name + aliases (if any). Opens semantic recall by the meaning of the name.
+/// Since aliases hold notation variants, embedding them together widens the reach to other notations of the same target.
 fn entity_text(entity: &Entity) -> String {
     if entity.aliases.is_empty() {
         entity.canonical_name.clone()
@@ -869,11 +869,11 @@ fn entity_text(entity: &Entity) -> String {
     }
 }
 
-/// Reciprocal Rank Fusion. 스케일이 다른 랭킹들(키워드 score vs 코사인 유사도)을
-/// 순위만으로 융합해 스케일 정규화 없이 합친다. 같은 (kind, id) 는 기여를 합산한다.
-/// 결정적 함수(원칙 16) - 입력 순위가 같으면 어느 노드에서든 같은 결과.
+/// Reciprocal Rank Fusion. Fuses rankings on different scales (keyword score vs cosine similarity) by rank alone,
+/// combining them without scale normalization. The same (kind, id) has its contributions summed.
+/// A deterministic function (Principle 16) - the same input ranks give the same result on any node.
 fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
-    // RRF 상수. 클수록 상위 순위의 우위가 완만해진다(정보검색 관례값 60).
+    // RRF constant. Larger values flatten the advantage of top ranks (60 is the information-retrieval convention).
     const K: f32 = 60.0;
 
     let mut acc: HashMap<(SearchHitKind, String), (SearchHit, f32)> = HashMap::new();
@@ -894,7 +894,7 @@ fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
             hit
         })
         .collect();
-    // 동점은 id 로 안정 정렬해 결정성을 보장한다.
+    // Ties are stable-sorted by id to guarantee determinism.
     fused.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -946,23 +946,23 @@ mod tests {
         assert_eq!(out.entities.len(), 2);
         assert_eq!(out.relations.len(), 1);
 
-        // 결정적 id로 재조회 -> 관계도 함께.
+        // Re-lookup by deterministic id -> relations come along too.
         let rmcp_id = Entity::make_id("ws1", "rmcp");
         let view = engine.get_entity(&rmcp_id).unwrap().expect("entity exists");
         assert_eq!(view.entity.canonical_name, "rmcp");
         assert_eq!(view.entity.kind, "Tool");
         assert_eq!(view.relations.len(), 1);
 
-        // 재적재는 콘텐츠 주소라 동일 엔티티로 수렴(출처만 누적).
+        // Re-ingest converges to the same entity because of content addressing (only sources accumulate).
         let out = engine.search("rust", Some("ws1"), 10).unwrap();
         assert!(
             !out.hits.is_empty(),
             "keyword search should find the observation"
         );
-        // 임베더 없는 엔진의 mode 는 keyword (degrade 표기, 원칙 16 4차).
+        // An engine without an embedder has mode keyword (degrade marker, Principle 16 4th).
         assert_eq!(out.mode, SearchMode::Keyword);
 
-        // 다른 워크스페이스로는 안 보임.
+        // Not visible from another workspace.
         assert!(engine
             .search("rust", Some("other"), 10)
             .unwrap()
@@ -970,8 +970,8 @@ mod tests {
             .is_empty());
     }
 
-    /// 관계 kind 의 표기 요동(depends_on/dependsOn/depends-on)은 같은 엣지 하나로
-    /// 수렴하고, 관측 로그에는 주장이 **원문 표기 그대로** 남는다 (원칙 1).
+    /// Notation variance in the relation kind (depends_on/dependsOn/depends-on) converges to the same single edge,
+    /// while the observation log keeps the assertion **in its original notation** (Principle 1).
     #[test]
     fn relation_kind_variants_converge_and_assertions_are_logged() {
         let store = Arc::new(InMemoryStore::new());
@@ -999,19 +999,19 @@ mod tests {
                 .unwrap();
             relation_ids.push(out.relations[0].clone());
         }
-        // 세 표기가 전부 같은 관계 id.
+        // All three notations yield the same relation id.
         assert_eq!(relation_ids[0], relation_ids[1]);
         assert_eq!(relation_ids[0], relation_ids[2]);
 
-        // 프로젝션에는 정준형 kind 하나만 존재.
+        // The projection has only the single canonical kind.
         let sup_id = Entity::make_id("ws1", "supragnosis");
         let view = engine.get_entity(&sup_id).unwrap().unwrap();
         assert_eq!(view.relations.len(), 1);
         assert_eq!(view.relations[0].kind, "depends_on");
     }
 
-    /// 구조화 주장은 관측 로그에 동봉되고 id 에 반영된다 - 같은 텍스트에 다른 주장을
-    /// 실어도 dedup 으로 소실되지 않는다 (원칙 1: 로그만으로 그래프 재구성 가능).
+    /// Structured assertions are enclosed in the observation log and reflected in the id - carrying different assertions
+    /// on the same text is not lost to dedup (Principle 1: the graph can be reconstructed from the log alone).
     #[test]
     fn observations_carry_assertions_in_log() {
         let store = Arc::new(InMemoryStore::new());
@@ -1037,15 +1037,15 @@ mod tests {
         let first = observe_with_kind("Tool");
         let second = observe_with_kind("Project");
 
-        // 같은 텍스트라도 주장이 다르면 다른 관측 - 타입 재배정의 흔적이 로그에 남는다.
+        // Even with the same text, different assertions mean a different observation - the trace of type reassignment stays in the log.
         assert_ne!(first.observation_id, second.observation_id);
         let logged = store.get_observation(&second.observation_id).unwrap().unwrap();
         assert_eq!(logged.assertions.entities.len(), 1);
         assert_eq!(logged.assertions.entities[0].kind.as_deref(), Some("Project"));
     }
 
-    /// 원칙 2 스키마 수준 강제: 범위 밖 confidence 는 append-only 로그에 실리기 전에
-    /// 거부되고, 에러 메시지가 자기 교정을 유도한다 (원칙 21).
+    /// Principle 2 schema-level enforcement: an out-of-range confidence is rejected before it reaches the append-only
+    /// log, and the error message guides self-correction (Principle 21).
     #[test]
     fn confidence_out_of_range_is_rejected() {
         let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
@@ -1062,20 +1062,20 @@ mod tests {
             })
         };
         for bad in [-0.1f32, 1.5, f32::NAN] {
-            let err = observe_with_conf(bad).err().expect("범위 밖은 거부");
+            let err = observe_with_conf(bad).err().expect("out of range is rejected");
             assert!(
                 err.to_string().contains("0.0~1.0"),
-                "자기 교정 힌트가 있어야 한다: {err}"
+                "there should be a self-correction hint: {err}"
             );
         }
-        // 경계값은 유효하다.
+        // Boundary values are valid.
         assert!(observe_with_conf(0.0).is_ok());
         assert!(observe_with_conf(1.0).is_ok());
     }
 
-    /// 원칙 1 정형성 검증: 빈 지시어(이름/타입/끝점/kind)는 비주장이므로 영구 로그에
-    /// 실리기 전에 거부된다. 반면 표기 요동(공백 둘러싼 이름, 구분자 변형 kind)은
-    /// 내용이므로 통과한다 - 거부는 정형성까지, 표기는 검열하지 않는다.
+    /// Principle 1 well-formedness validation: an empty directive (name/type/endpoint/kind) is a non-assertion, so it is
+    /// rejected before it reaches the permanent log. Notation variance (a name surrounded by whitespace, a separator-varied
+    /// kind), by contrast, is content and passes - rejection goes only as far as well-formedness; notation is not censored.
     #[test]
     fn formless_assertions_are_rejected_before_logging() {
         let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
@@ -1103,26 +1103,26 @@ mod tests {
             valid_to: None,
         };
 
-        // 비주장: 빈/공백 이름, 빈 타입, 빈 끝점, 정규화하면 빈 kind - 전부 거부.
+        // Non-assertions: empty/whitespace name, empty type, empty endpoint, kind that normalizes to empty - all rejected.
         for (label, entities, relations) in [
-            ("빈 이름", vec![ent("", None)], vec![]),
-            ("공백 이름", vec![ent("   ", None)], vec![]),
-            ("빈 타입", vec![ent("thing", Some(""))], vec![]),
-            ("빈 from", vec![], vec![rel("", "depends_on", "b")]),
-            ("공백 to", vec![], vec![rel("a", "depends_on", "  ")]),
-            ("빈 kind", vec![], vec![rel("a", "", "b")]),
-            ("구분자만 kind", vec![], vec![rel("a", "-- __ ", "b")]),
+            ("empty name", vec![ent("", None)], vec![]),
+            ("whitespace name", vec![ent("   ", None)], vec![]),
+            ("empty type", vec![ent("thing", Some(""))], vec![]),
+            ("empty from", vec![], vec![rel("", "depends_on", "b")]),
+            ("whitespace to", vec![], vec![rel("a", "depends_on", "  ")]),
+            ("empty kind", vec![], vec![rel("a", "", "b")]),
+            ("separators-only kind", vec![], vec![rel("a", "-- __ ", "b")]),
         ] {
             let err = observe(entities, relations)
                 .err()
-                .unwrap_or_else(|| panic!("{label} 은 거부돼야 한다"));
+                .unwrap_or_else(|| panic!("{label} should be rejected"));
             assert!(
                 matches!(err, ObserveError::Invalid(_)),
-                "{label}: 검증 오류여야 한다: {err}"
+                "{label}: should be a validation error: {err}"
             );
         }
 
-        // 표기 요동은 내용이다 - 통과 (정규화/보존은 로그와 프로젝션의 일).
+        // Notation variance is content - it passes (normalization/preservation is the job of the log and projection).
         assert!(observe(
             vec![ent("  Padded Name  ", Some("Tool"))],
             vec![rel("a", "Depends-On", "b")],
@@ -1130,9 +1130,9 @@ mod tests {
         .is_ok());
     }
 
-    /// 원칙 4 캡처: 소급 관측("지난달까지 참이었다")의 유효구간이 관측 로그(주장)와
-    /// 프로젝션(관계) 양쪽에 실린다. 표면이 못 받으면 로그에 없고, 로그에 없으면
-    /// 재프로젝션으로도 복원할 수 없다 - 캡처는 이연할 수 없는 이유.
+    /// Principle 4 capture: the valid interval of a retroactive observation ("it was true until last month") is carried in
+    /// both the observation log (assertion) and the projection (relation). If the surface cannot receive it, it is not in
+    /// the log, and if it is not in the log it cannot be recovered by re-projection - the reason capture cannot be deferred.
     #[test]
     fn relation_valid_interval_is_captured_in_log_and_projection() {
         let store = Arc::new(InMemoryStore::new());
@@ -1160,26 +1160,26 @@ mod tests {
         };
         let out = observe_with_interval(Some(200));
 
-        // 로그: 주장에 유효구간이 원문 그대로 동봉된다.
+        // Log: the valid interval is enclosed in the assertion verbatim.
         let logged = store.get_observation(&out.observation_id).unwrap().unwrap();
         assert_eq!(logged.assertions.relations[0].valid_from, Some(100));
         assert_eq!(logged.assertions.relations[0].valid_to, Some(200));
 
-        // 프로젝션: 관계가 유효구간을 지닌다.
+        // Projection: the relation carries the valid interval.
         let kim = Entity::make_id("ws1", "kim");
         let rels = store.relations_of(&kim).unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].valid_from, Some(100));
         assert_eq!(rels[0].valid_to, Some(200));
 
-        // 유효구간이 다르면 다른 주장 - 다른 관측 id (내용 정체성에 포함).
+        // A different valid interval is a different assertion - a different observation id (part of content identity).
         let out2 = observe_with_interval(None);
         assert_ne!(out.observation_id, out2.observation_id);
     }
 
-    /// 원칙 3: 같은 content 재관측 시 로그가 attestation 을 모두 보존한다 - 엔티티
-    /// provenance 만 누적되고 로그는 마지막 1건이던 "진실의 원천 역전" 회귀를 막는다
-    /// (로그 재프로젝션으로 그래프의 attestation 을 복원할 수 있어야 한다).
+    /// Principle 3: on re-observing the same content, the log preserves all attestations - it prevents the "source-of-truth
+    /// inversion" regression where only the entity provenance accumulated while the log kept just the last one
+    /// (re-projecting the log must be able to recover the graph's attestation).
     #[test]
     fn log_retains_all_attestations_on_reobservation() {
         let store = Arc::new(InMemoryStore::new());
@@ -1204,7 +1204,7 @@ mod tests {
         };
         let first = observe("alice", 0.9);
         let second = observe("bob", 0.1);
-        assert_eq!(first.observation_id, second.observation_id, "콘텐츠 주소 dedup");
+        assert_eq!(first.observation_id, second.observation_id, "content-address dedup");
 
         let logged = store.get_observation(&first.observation_id).unwrap().unwrap();
         let entity = store
@@ -1212,8 +1212,8 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // 로그와 프로젝션이 같은 attestation 수를 지닌다 - 로그가 진실의 원천.
-        assert_eq!(logged.provenance.len(), 2, "로그에 두 attestation 보존");
+        // The log and the projection carry the same attestation count - the log is the source of truth.
+        assert_eq!(logged.provenance.len(), 2, "two attestations preserved in the log");
         assert_eq!(entity.provenance.len(), 2);
         let behalfs: Vec<Option<String>> = logged
             .provenance
@@ -1222,7 +1222,7 @@ mod tests {
             .collect();
         assert!(
             behalfs.contains(&Some("alice".into())) && behalfs.contains(&Some("bob".into())),
-            "첫 관측의 provenance 가 파괴되면 안 된다: {behalfs:?}"
+            "the first observation's provenance must not be destroyed: {behalfs:?}"
         );
     }
 
@@ -1241,8 +1241,8 @@ mod tests {
             .unwrap();
     }
 
-    /// 회상 회귀(부록 B): 임베더를 붙이면 하이브리드 검색이 키워드 부분일치가 놓치는
-    /// 관측을 의미(어휘 중첩) 경로로 회상한다. degrade(임베더 없음)와 대조한다.
+    /// Recall regression (Appendix B): with an embedder attached, hybrid search recalls observations that keyword
+    /// substring match misses via the semantic (lexical-overlap) path. Contrasted with degrade (no embedder).
     #[test]
     fn hybrid_search_adds_semantic_recall() {
         use supragnosis_embed::HashingEmbedder;
@@ -1255,21 +1255,21 @@ mod tests {
         observe_text(&hybrid, "python interpreter runs bytecode");
         observe_text(&hybrid, "banana bread recipe with walnuts");
 
-        // 질의는 어느 관측의 부분문자열도 아니다(단어 순서/형태가 다름).
+        // The query is not a substring of any observation (word order/form differ).
         let q = "native binary compiler";
 
-        // 키워드 전용(같은 저장소, 임베더 없음)은 이 질의를 놓친다.
+        // Keyword only (same store, no embedder) misses this query.
         let keyword_only = Engine::new(store.clone(), "h", "ws");
         let keyword_out = keyword_only.search(q, Some("ws"), 10).unwrap();
         assert!(
             keyword_out.hits.is_empty(),
             "substring keyword search should miss this query"
         );
-        assert_eq!(keyword_out.mode, SearchMode::Keyword, "degrade 는 keyword 표기");
+        assert_eq!(keyword_out.mode, SearchMode::Keyword, "degrade is marked keyword");
 
-        // 하이브리드는 어휘가 겹치는 rust 관측을 최상위로 회상한다.
+        // Hybrid recalls the lexically overlapping rust observation at the top.
         let out = hybrid.search(q, Some("ws"), 10).unwrap();
-        assert_eq!(out.mode, SearchMode::Hybrid, "의미 표면 참조 시 hybrid 표기");
+        assert_eq!(out.mode, SearchMode::Hybrid, "marked hybrid when the semantic surface is referenced");
         let hits = out.hits;
         assert!(
             !hits.is_empty(),
@@ -1282,9 +1282,9 @@ mod tests {
         );
     }
 
-    /// 원칙 19 degrade: 임베딩 어댑터가 매 호출 실패해도 적재는 막히지 않고
-    /// (best-effort 부착 - 실패는 로그로만 알린다), 검색은 키워드 전용으로
-    /// degrade 하며 mode 로 그 사실을 표기한다.
+    /// Principle 19 degrade: even if the embedding adapter fails on every call, ingest is not blocked
+    /// (best-effort attachment - a failure is reported only via the log), and search degrades to keyword only
+    /// while marking that fact via mode.
     #[test]
     fn embed_failure_degrades_without_blocking_ingest() {
         use supragnosis_core::{EmbedError, EmbeddingProvider};
@@ -1320,28 +1320,28 @@ mod tests {
                 }],
                 relations: vec![],
             })
-            .expect("임베딩 실패가 적재를 막으면 안 된다 (원칙 19: degrade)");
+            .expect("an embedding failure must not block ingest (Principle 19: degrade)");
 
-        // 관측/엔티티 모두 임베딩 없이 저장된다.
+        // Both the observation and the entity are stored without embeddings.
         let obs = store.get_observation(&out.observation_id).unwrap().unwrap();
         assert!(obs.embedding.is_none());
         let ent = store.get_entity(&out.entities[0]).unwrap().unwrap();
         assert!(ent.embedding.is_none());
 
-        // 질의 임베딩도 실패하므로 검색은 keyword 로 degrade 하되 동작한다.
+        // The query embedding also fails, so search degrades to keyword but still works.
         let found = engine.search("rust", Some("ws1"), 10).unwrap();
         assert_eq!(found.mode, SearchMode::Keyword);
         assert!(!found.hits.is_empty());
     }
 
-    /// 그래프 프로젝션: 관측이 만든 엔티티/관계를 node-link 뷰로 되돌린다.
-    /// 워크스페이스 스코핑, 닫힌 그래프(고아 엣지 배제), degree/stats, 결정적 순서를 검증한다.
+    /// Graph projection: turns the entities/relations created by observations back into a node-link view.
+    /// Verifies workspace scoping, the closed graph (orphan edges excluded), degree/stats, and deterministic order.
     #[test]
     fn graph_projection_nodes_edges_stats() {
         let store = Arc::new(InMemoryStore::new());
         let engine = Engine::new(store, "h", "ws1");
 
-        // ws1: supragnosis --depends_on--> rmcp (엔티티 2, 관계 1).
+        // ws1: supragnosis --depends_on--> rmcp (2 entities, 1 relation).
         engine
             .observe(ObserveInput {
                 content: "supragnosis depends on rmcp".into(),
@@ -1370,7 +1370,7 @@ mod tests {
             })
             .unwrap();
 
-        // 다른 워크스페이스의 지식 - ws1 그래프에 새면 안 된다.
+        // Knowledge in another workspace - must not leak into the ws1 graph.
         engine
             .observe(ObserveInput {
                 content: "unrelated".into(),
@@ -1388,46 +1388,46 @@ mod tests {
             .unwrap();
 
         let g = engine.graph(Some("ws1")).unwrap();
-        assert_eq!(g.stats.node_count, 2, "ws1 노드 2개");
-        assert_eq!(g.stats.edge_count, 1, "ws1 엣지 1개");
+        assert_eq!(g.stats.node_count, 2, "ws1 has 2 nodes");
+        assert_eq!(g.stats.edge_count, 1, "ws1 has 1 edge");
 
-        // 노드는 id 로 결정적 정렬.
+        // Nodes are deterministically sorted by id.
         let ids: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
         let mut sorted = ids.clone();
         sorted.sort_unstable();
-        assert_eq!(ids, sorted, "노드는 id 오름차순(결정성)");
+        assert_eq!(ids, sorted, "nodes are in ascending id order (determinism)");
 
-        // 관계 양끝의 degree 는 각각 1.
+        // The degree of each relation endpoint is 1.
         for n in &g.nodes {
-            assert_eq!(n.degree, 1, "각 노드는 관계 1개에 연결: {}", n.name);
+            assert_eq!(n.degree, 1, "each node is connected to 1 relation: {}", n.name);
         }
 
-        // 엣지는 depends_on, 양끝이 모두 노드 집합에 있다.
+        // The edge is depends_on, and both endpoints are in the node set.
         let e = &g.edges[0];
         assert_eq!(e.kind, "depends_on");
         assert!(ids.contains(&e.from.as_str()) && ids.contains(&e.to.as_str()));
 
-        // 타입 분포.
+        // Type distribution.
         assert_eq!(g.stats.type_counts.get("Project"), Some(&1));
         assert_eq!(g.stats.type_counts.get("Tool"), Some(&1));
 
-        // 워크스페이스 격리: other 의 엔티티는 없다.
+        // Workspace isolation: no entity from other.
         assert!(
             g.nodes.iter().all(|n| n.name != "elsewhere"),
-            "다른 워크스페이스 노드가 새면 안 된다"
+            "a node from another workspace must not leak"
         );
 
-        // 전체(None)로는 other 까지 포함해 노드 3개.
+        // With all (None), other is included too, for 3 nodes.
         assert_eq!(engine.graph(None).unwrap().stats.node_count, 3);
     }
 
-    /// workspaces(): 지식이 존재하는 워크스페이스를 중복 없이 정렬해 돌려준다(원칙 16).
+    /// workspaces(): returns the workspaces where knowledge exists, deduped and sorted (Principle 16).
     #[test]
     fn workspaces_lists_distinct_sorted() {
         let store = Arc::new(InMemoryStore::new());
         let engine = Engine::new(store, "h", "alpha");
 
-        assert!(engine.workspaces().unwrap().is_empty(), "빈 상태는 빈 목록");
+        assert!(engine.workspaces().unwrap().is_empty(), "an empty state is an empty list");
 
         let observe_in = |ws: &str, name: &str| {
             engine
@@ -1446,17 +1446,17 @@ mod tests {
                 })
                 .unwrap();
         };
-        // 도착 순서를 일부러 뒤섞고 같은 ws 를 중복 적재한다.
+        // Deliberately shuffle the arrival order and re-ingest the same ws.
         observe_in("gamma", "x");
         observe_in("alpha", "y");
         observe_in("gamma", "z");
 
-        // 중복 제거 + 정렬(도착 순서 무관).
+        // Dedup + sort (independent of arrival order).
         assert_eq!(engine.workspaces().unwrap(), vec!["alpha", "gamma"]);
     }
 
-    /// 하이퍼그래프: 한 관측이 공동 주장한 엔티티들이 하나의 하이퍼엣지로 회복된다 -
-    /// 이진 관계가 없어도(엔티티 공동 언급만으로) 맥락이 구조가 된다 (원칙 11 이차 구조).
+    /// Hypergraph: the entities co-asserted by one observation are recovered as a single hyperedge -
+    /// even with no binary relation (just co-mention of entities), context becomes structure (Principle 11 second-order structure).
     #[test]
     fn hypergraph_recovers_co_assertion() {
         let store = Arc::new(InMemoryStore::new());
@@ -1474,30 +1474,30 @@ mod tests {
                     EntityInput { name: "B".into(), kind: None },
                     EntityInput { name: "C".into(), kind: None },
                 ],
-                relations: vec![], // 이진 관계 없음 - 공동 언급만
+                relations: vec![], // no binary relation - co-mention only
             })
             .unwrap();
 
         let hg = engine.hypergraph(Some("ws1")).unwrap();
         assert_eq!(hg.stats.node_count, 3);
-        assert_eq!(hg.stats.hyperedge_count, 1, "세 엔티티가 한 하이퍼엣지로");
+        assert_eq!(hg.stats.hyperedge_count, 1, "three entities into one hyperedge");
         assert_eq!(hg.hyperedges[0].size, 3);
         assert_eq!(hg.stats.max_size, 3);
-        // 멤버는 정렬된 엔티티 id (결정적, 원칙 16).
+        // Members are sorted entity ids (deterministic, Principle 16).
         let mut expect: Vec<String> =
             ["A", "B", "C"].iter().map(|n| Entity::make_id("ws1", n)).collect();
         expect.sort();
         assert_eq!(hg.hyperedges[0].members, expect);
-        // 멤버 이름도 함께 실린다(가독성) - id-only 가 아니다.
+        // Member names are carried too (readability) - not id-only.
         let mut names = hg.hyperedges[0].member_names.clone();
         names.sort();
         assert_eq!(names, vec!["A", "B", "C"]);
-        // id 는 멤버 집합의 콘텐츠 주소 (core 와 일치).
+        // The id is the content address of the member set (matches core).
         assert_eq!(hg.hyperedges[0].id, hyperedge_id(&expect));
     }
 
-    /// 같은 멤버 집합을 만든 서로 다른 관측(다른 content)은 dedup 되어 하나의
-    /// 하이퍼엣지가 되고 sources 가 누적된다 (원칙 3/14: 멤버셋이 정체성, 관측이 attestation).
+    /// Different observations (different content) that produce the same member set are deduped into a single
+    /// hyperedge and sources accumulate (Principle 3/14: the member set is identity, observations are attestation).
     #[test]
     fn hypergraph_dedup_by_member_set_accumulates_sources() {
         let store = Arc::new(InMemoryStore::new());
@@ -1523,17 +1523,17 @@ mod tests {
         observe_xy("second, differently worded mention of X with Y");
 
         let hg = engine.hypergraph(Some("ws1")).unwrap();
-        assert_eq!(hg.hyperedges.len(), 1, "같은 멤버셋 -> 하이퍼엣지 하나");
-        assert_eq!(hg.hyperedges[0].sources, 2, "두 관측이 attestation 으로 누적");
+        assert_eq!(hg.hyperedges.len(), 1, "same member set -> one hyperedge");
+        assert_eq!(hg.hyperedges[0].sources, 2, "two observations accumulate as attestation");
     }
 
-    /// 크기 < 2 는 하이퍼엣지가 아니다(퇴화). 관계 양끝도 멤버에 기여한다 -
-    /// 엔티티 주장 없이 관계만으로도 공동출현 하이퍼엣지가 선다. 고아 노드는 차수 0.
+    /// Size < 2 is not a hyperedge (degenerate). Relation endpoints also contribute to members -
+    /// a co-occurrence hyperedge stands from relations alone, with no entity assertion. An orphan node has degree 0.
     #[test]
     fn hypergraph_min_size_and_relation_endpoints() {
         let store = Arc::new(InMemoryStore::new());
         let engine = Engine::new(store, "h", "ws1");
-        // 단일 엔티티 관측 - 퇴화(하이퍼엣지 아님).
+        // Single-entity observation - degenerate (not a hyperedge).
         engine
             .observe(ObserveInput {
                 content: "just P".into(),
@@ -1546,7 +1546,7 @@ mod tests {
                 relations: vec![],
             })
             .unwrap();
-        // 관계 두 개 - 끝점 {M, N, O} 가 한 관측의 공동출현.
+        // Two relations - endpoints {M, N, O} are the co-occurrence of one observation.
         engine
             .observe(ObserveInput {
                 content: "M relates to N and O".into(),
@@ -1576,20 +1576,20 @@ mod tests {
             .unwrap();
 
         let hg = engine.hypergraph(Some("ws1")).unwrap();
-        assert_eq!(hg.stats.node_count, 4, "P,M,N,O 네 노드");
-        assert_eq!(hg.hyperedges.len(), 1, "P 는 퇴화, 관계 관측만 하이퍼엣지");
+        assert_eq!(hg.stats.node_count, 4, "four nodes P,M,N,O");
+        assert_eq!(hg.hyperedges.len(), 1, "P is degenerate, only the relation observation is a hyperedge");
         assert_eq!(hg.hyperedges[0].size, 3);
         let members = &hg.hyperedges[0].members;
         for n in ["M", "N", "O"] {
-            assert!(members.contains(&Entity::make_id("ws1", n)), "{n} 은 멤버여야");
+            assert!(members.contains(&Entity::make_id("ws1", n)), "{n} should be a member");
         }
-        // 고아 노드(어떤 하이퍼엣지에도 없음)는 하이퍼엣지-차수 0.
+        // An orphan node (in no hyperedge) has hyperedge-degree 0.
         let p = Entity::make_id("ws1", "P");
         assert_eq!(hg.nodes.iter().find(|n| n.id == p).unwrap().degree, 0);
     }
 
-    /// 하이퍼그래프는 워크스페이스로 스코프되고 같은 상태에 결정적으로 재현된다(원칙 16).
-    /// 여러 하이퍼엣지(맥락)에 걸친 노드의 하이퍼엣지-차수가 degree 로 실린다(허브 신호).
+    /// The hypergraph is scoped by workspace and reproduces deterministically for the same state (Principle 16).
+    /// The hyperedge-degree of a node spanning multiple hyperedges (contexts) is carried in degree (hub signal).
     #[test]
     fn hypergraph_scoped_deterministic_and_hub_degree() {
         let store = Arc::new(InMemoryStore::new());
@@ -1611,24 +1611,24 @@ mod tests {
                 })
                 .unwrap();
         };
-        // H 가 두 맥락에 공통 등장 -> 허브.
+        // H appears in two contexts in common -> a hub.
         observe_pair("w", "H", "A", "H with A");
         observe_pair("w", "H", "B", "H with B");
-        // 다른 워크스페이스 - 새면 안 됨.
+        // Another workspace - must not leak.
         observe_pair("other", "Z", "Q", "elsewhere Z with Q");
 
         let hg = engine.hypergraph(Some("w")).unwrap();
         assert_eq!(hg.hyperedges.len(), 2, "{{H,A}}, {{H,B}}");
-        assert_eq!(hg.stats.node_count, 3, "H,A,B 만 (other 격리)");
-        assert!(hg.nodes.iter().all(|n| n.name != "Z"), "다른 ws 노드 누출 금지");
-        // H 는 두 하이퍼엣지에 속함 -> degree 2.
+        assert_eq!(hg.stats.node_count, 3, "only H,A,B (other isolated)");
+        assert!(hg.nodes.iter().all(|n| n.name != "Z"), "no leakage of nodes from another ws");
+        // H belongs to two hyperedges -> degree 2.
         let h = Entity::make_id("w", "H");
         assert_eq!(hg.nodes.iter().find(|n| n.id == h).unwrap().degree, 2);
-        // 결정성: 두 번 계산해도 동일 직렬화.
+        // Determinism: computing twice gives identical serialization.
         let s1 = serde_json::to_string(&engine.hypergraph(Some("w")).unwrap()).unwrap();
         let s2 = serde_json::to_string(&engine.hypergraph(Some("w")).unwrap()).unwrap();
         assert_eq!(s1, s2);
-        // 노드는 id 오름차순(결정성).
+        // Nodes in ascending id order (determinism).
         let ids: Vec<&str> = hg.nodes.iter().map(|n| n.id.as_str()).collect();
         let mut sorted = ids.clone();
         sorted.sort_unstable();

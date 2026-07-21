@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-embed"
-description = "supragnosis 임베딩 어댑터. 결정적 해싱(의존 0) + fastembed(ONNX, feature)."
+description = "supragnosis embedding adapters. Deterministic hashing (zero deps) + fastembed(ONNX, feature)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ workspace = true
 
 [features]
 default = []
-# fastembed(ONNX 로컬 모델)은 무거운 의존이라 opt-in 으로 격리한다(원칙 19: degrade).
+# fastembed(ONNX local model) is a heavy dependency, so it is isolated as opt-in (Principle 19: degrade).
 fastembed = ["dep:fastembed"]
 
 [dependencies]

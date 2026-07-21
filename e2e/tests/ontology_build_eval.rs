@@ -1,35 +1,38 @@
-//! Ontology build eval: 소형 모델이 작업 부산물로 온톨로지를 "잘 짓는가"를 채점한다.
+//! Ontology build eval: scores whether small models "build" an ontology well, as a by-product of work.
 //!
-//! delegation_eval 이 회수(읽기) 품질을 쟀다면, 이 하네스는 적재(쓰기) 품질을 잰다.
-//! 원칙 22(지식 관리는 작업의 부산물): 모델에게 2D 물리엔진 설계 노트를 청크로 주고,
-//! 각 청크를 읽으며 observe 로 엔티티/관계를 추출해 온톨로지를 스스로 구축하게 한다.
+//! Where delegation_eval measured recall (read) quality, this harness measures ingestion (write)
+//! quality. Principle 22 (knowledge management is a by-product of work): give the model the design
+//! notes of a 2D physics engine in chunks, and have it build the ontology itself by extracting
+//! entities/relations via observe as it reads each chunk.
 //!
-//! 정량 지표 (모델별):
-//!   - observe 호출률: 청크 10개 중 몇 개를 실제로 적재했는가.
-//!   - 노드/엣지/관계타입 수: 그래프의 부피와 구조.
-//!   - 핵심 개념 커버리지: 물리엔진 도메인의 골드 개념 11종이 노드로 존재하는가.
-//!   - 고립 노드: 관계 없이 엔티티만 던진 수(연결 실패).
-//!   - 중복 의심 쌍: 한 이름이 다른 이름을 포함하는 노드 쌍(정규화 실패 신호).
+//! Quantitative metrics (per model):
+//!   - observe call rate: how many of the 10 chunks it actually ingested.
+//!   - node/edge/relation-type counts: the volume and structure of the graph.
+//!   - core-concept coverage: whether the 11 gold concepts of the physics-engine domain exist as nodes.
+//!   - isolated nodes: the count of entities thrown in with no relation (connection failure).
+//!   - suspected-duplicate pairs: node pairs where one name contains the other (a normalization-failure signal).
 //!
-//! 정성 산출물 (사람 눈으로 검사하는 것이 목적):
-//!   - target/eval-reports/ontology_viewer.html - 모델별 온톨로지 그래프를 탭으로
-//!     전환하며 보는 자체 포함 포스 레이아웃 뷰어(외부 의존성 없음).
-//!   - target/eval-reports/ontology_build_eval.md - 청크별 추출 로그 + 지표.
+//! Qualitative artifacts (whose purpose is human inspection):
+//!   - target/eval-reports/ontology_viewer.html - a self-contained force-layout viewer (no external
+//!     dependencies) that switches between per-model ontology graphs via tabs.
+//!   - target/eval-reports/ontology_build_eval.md - per-chunk extraction log + metrics.
 //!
-//! 그래프는 실제 MCP 리소스(supragnosis://workspace/{ws}/graph)로도 한 번 읽어 표면을
-//! 검증하고, 뷰어 데이터는 engine.graph(None) 전체 프로젝션을 쓴다 - 모델이 workspace
-//! 인자를 지어내 다른 워크스페이스로 새는 실수까지 그래프에 드러나게 하기 위해서다.
+//! The graph is also read once via the real MCP resource (supragnosis://workspace/{ws}/graph) to
+//! validate the surface, while the viewer data uses the full engine.graph(None) projection - so
+//! that even the mistake of a model making up a workspace argument and leaking into another
+//! workspace shows up in the graph.
 //!
-//! 실행:
+//! Run:
 //!   OLLAMA_MODELS=gemma4,qwen2.5:3b,llama3.2:3b \
 //!     cargo test -p supragnosis-e2e --test ontology_build_eval -- --ignored --nocapture
-//! 선택 env: OLLAMA_BASE_URL (기본 http://localhost:11434), OLLAMA_MODELS (기본 gemma4),
-//!   EVAL_SCHEMA_HINT (기본 1) - 프롬프트에 observe 인자의 정확한 JSON 형태를 예시한다.
-//!   0 이면 도구 스키마만 주고 프롬프트 힌트를 뺀다 - 소형 모델이 스키마만으로 필드명을
-//!   맞추는지(표면 가독성, 원칙 21)를 재는 마찰 측정 모드. 첫 실측: 힌트 없이는 gemma4 가
-//!   from_entity_id/relation_type 등 필드명을 지어내 0/10 전멸했다(추출 자체는 정교했다).
+//! Optional env: OLLAMA_BASE_URL (default http://localhost:11434), OLLAMA_MODELS (default gemma4),
+//!   EVAL_SCHEMA_HINT (default 1) - illustrates in the prompt the exact JSON shape of the observe
+//!   arguments. 0 gives only the tool schema and drops the prompt hint - a friction-measurement
+//!   mode for whether small models match the field names from the schema alone (surface legibility,
+//!   Principle 21). First measurement: without the hint, gemma4 made up field names like
+//!   from_entity_id/relation_type and was wiped out 0/10 (the extraction itself was sophisticated).
 //!
-//! Ollama 가 안 떠 있으면 조용히 통과(skip)한다.
+//! If Ollama is not up, it silently passes (skips).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,7 +50,7 @@ use supragnosis_store::InMemoryStore;
 const DEFAULT_MODELS: &str = "gemma4";
 const WS: &str = "physics";
 
-/// 물리엔진 설계 노트. 모델은 청크마다 observe 로 엔티티/관계를 추출해야 한다.
+/// Physics-engine design notes. The model must extract entities/relations via observe for each chunk.
 const NOTES: [&str; 10] = [
     "the engine represents positions, velocities and forces as 2d vectors; vector addition, \
      scaling and dot product are the core operations",
@@ -71,7 +74,7 @@ const NOTES: [&str; 10] = [
      approximating drag and keeping the simulation stable",
 ];
 
-/// 골드 개념 커버리지: (이름, 노드명에서 찾을 부분문자열 any-of).
+/// Gold-concept coverage: (name, substrings to look for in node names, any-of).
 const GOLD_CONCEPTS: [(&str, &[&str]); 11] = [
     ("vector", &["vector"]),
     ("rigid body", &["rigid"]),
@@ -86,25 +89,25 @@ const GOLD_CONCEPTS: [(&str, &[&str]); 11] = [
     ("damping", &["damping", "drag"]),
 ];
 
-// --- Ollama 브리지 (delegation_eval.rs 와 같은 패턴) --------------------------
+// --- Ollama bridge (same pattern as delegation_eval.rs) ----------------------
 
-// --- 채점 --------------------------------------------------------------------
+// --- Scoring -----------------------------------------------------------------
 
-/// 한 청크의 적재 기록.
+/// Ingestion record for a single chunk.
 struct ChunkLog {
     note_idx: usize,
-    /// observe 를 불렀는가. 부르지 않았거나 실행이 에러면 이유를 담는다.
+    /// Whether observe was called. If it was not called, or execution errored, holds the reason.
     outcome: Result<(usize, usize), String>, // (entities, relations)
     args_summary: String,
 }
 
-/// 한 모델의 온톨로지 구축 결과.
+/// Ontology build result for a single model.
 struct BuildResult {
     model: String,
     chunks: Vec<ChunkLog>,
-    /// engine.graph(None) 전체 프로젝션 JSON (뷰어 데이터).
+    /// Full engine.graph(None) projection JSON (viewer data).
     graph: Value,
-    /// MCP 리소스 표면으로 읽은 기본 ws 그래프가 유효 JSON 이었는가.
+    /// Whether the default-ws graph read via the MCP resource surface was valid JSON.
     resource_ok: bool,
 }
 
@@ -148,7 +151,7 @@ impl BuildResult {
             .unwrap_or(0)
     }
 
-    /// 중복 의심 쌍: 한 노드명이 다른 노드명을 포함(둘 다 4자 이상, 서로 다른 id).
+    /// Suspected-duplicate pairs: one node name contains another (both >= 4 chars, different ids).
     fn dup_pairs(&self) -> usize {
         let names = self.node_names();
         let mut count = 0;
@@ -177,10 +180,10 @@ impl BuildResult {
     }
 }
 
-// --- 실행 --------------------------------------------------------------------
+// --- Execution ---------------------------------------------------------------
 
-/// 청크 프롬프트 템플릿. {i}/{n} = 청크 번호, {note} = 설계 노트, {hint} = 스키마 힌트.
-/// 실행과 리포트가 같은 원문을 쓴다.
+/// Chunk prompt template. {i}/{n} = chunk number, {note} = design note, {hint} = schema hint.
+/// Execution and the report use the same source text.
 const CHUNK_PROMPT: &str = "You are implementing a simple 2D physics engine. Knowledge \
 management is a by-product of your work: as you read each design note, you record it in the \
 knowledge base.\n\nDesign note {i}/{n}:\n{note}\n\nCall the observe tool now with:\n\
@@ -191,21 +194,21 @@ with a name and a type such as Concept, Component, Algorithm, Quantity)\n\
 uses, computes, produces, applies_to)\n\
 Extract only what this note supports.{hint}";
 
-/// 스키마 힌트(EVAL_SCHEMA_HINT=1, 기본). 힌트 없이는 소형 모델이 필드명을 지어내
-/// 전멸했던 실측이 헤더 주석에 있다.
+/// Schema hint (EVAL_SCHEMA_HINT=1, default). The header comment records the measurement where,
+/// without the hint, small models made up field names and were wiped out.
 const SCHEMA_HINT: &str = "\n\nThe observe tool expects exactly this argument shape (field \
 names matter):\n{\"content\": \"...\", \"entities\": [{\"name\": \"rigid body\", \
 \"type\": \"Concept\"}], \"relations\": [{\"from\": \"integrator\", \"type\": \
 \"uses\", \"to\": \"rigid body\"}]}\nUse exactly the field names name, type, from, to. \
 relations must reference entity names from the entities list.";
 
-/// 한 모델에게 노트 전체를 청크로 먹이며 온톨로지를 짓게 한다.
+/// Feeds the entire set of notes to a single model in chunks and has it build the ontology.
 async fn build_ontology(
     http: &reqwest::Client,
     base: &str,
     model: &str,
 ) -> BuildResult {
-    // 빈 엔진에서 시작한다 - 온톨로지는 전적으로 모델의 추출로 만들어진다.
+    // Start from an empty engine - the ontology is built entirely from the model's extraction.
     let engine = Arc::new(Engine::new(
         Arc::new(InMemoryStore::new()),
         "ontology-eval",
@@ -228,7 +231,7 @@ async fn build_ontology(
         let outcome = match chat(http, base, model, &messages, Some(&tools)).await {
             Err(e) => ChunkLog {
                 note_idx: i,
-                outcome: Err(format!("chat 오류: {e}")),
+                outcome: Err(format!("chat error: {e}")),
                 args_summary: String::new(),
             },
             Ok((msg, _)) => {
@@ -236,7 +239,7 @@ async fn build_ontology(
                 match calls.iter().find(|(_, n, _)| n == "observe") {
                     None => ChunkLog {
                         note_idx: i,
-                        outcome: Err("observe 미호출".into()),
+                        outcome: Err("observe not called".into()),
                         args_summary: String::new(),
                     },
                     Some((_, _, args)) => {
@@ -247,7 +250,7 @@ async fn build_ontology(
                         if result.contains("\"error\"") {
                             ChunkLog {
                                 note_idx: i,
-                                outcome: Err(format!("observe 실행 실패: {result}")),
+                                outcome: Err(format!("observe execution failed: {result}")),
                                 args_summary: summary,
                             }
                         } else {
@@ -262,14 +265,14 @@ async fn build_ontology(
             }
         };
         let label = match &outcome.outcome {
-            Ok((e, r)) => format!("ok (엔티티 {e}, 관계 {r})"),
+            Ok((e, r)) => format!("ok (entities {e}, relations {r})"),
             Err(why) => format!("miss - {why}"),
         };
         eprintln!("  [chunk {}] {label}", i + 1);
         chunks.push(outcome);
     }
 
-    // 표면 검증: MCP 리소스로 기본 ws 그래프를 읽는다.
+    // Surface validation: read the default-ws graph via the MCP resource.
     let resource_ok = match client
         .read_resource(ReadResourceRequestParams {
             meta: None,
@@ -290,7 +293,7 @@ async fn build_ontology(
         Err(_) => false,
     };
 
-    // 뷰어 데이터: 전체 프로젝션(워크스페이스 무제한) - 모델이 ws 를 지어내 샌 것도 보인다.
+    // Viewer data: the full projection (workspace-unrestricted) - even a model making up a ws and leaking shows up.
     let graph = serde_json::to_value(engine_view.graph(None).expect("graph projection"))
         .expect("graph serialize");
 
@@ -305,14 +308,14 @@ async fn build_ontology(
     }
 }
 
-// --- 리포트/뷰어 -------------------------------------------------------------
+// --- Report/viewer -----------------------------------------------------------
 
 fn render_markdown(results: &[BuildResult]) -> String {
     let mut md = String::new();
-    md.push_str("# ontology build eval 리포트\n\n");
-    md.push_str("물리엔진 설계 노트 10청크를 읽으며 모델이 observe 로 구축한 온톨로지 채점.\n\n");
-    md.push_str("## 정량 요약\n\n");
-    md.push_str("| 모델 | observe 호출 | 노드 | 엣지 | 관계타입 | 커버리지 | 고립 노드 | 중복 의심 쌍 | 리소스 표면 |\n");
+    md.push_str("# ontology build eval report\n\n");
+    md.push_str("Scoring of the ontology a model builds via observe as it reads 10 chunks of physics-engine design notes.\n\n");
+    md.push_str("## Quantitative summary\n\n");
+    md.push_str("| model | observe calls | nodes | edges | relation types | coverage | isolated nodes | suspected-duplicate pairs | resource surface |\n");
     md.push_str("|---|---|---|---|---|---|---|---|---|\n");
     for r in results {
         let (nodes, edges, kinds) = r.stats();
@@ -333,7 +336,7 @@ fn render_markdown(results: &[BuildResult]) -> String {
             if r.resource_ok { "ok" } else { "fail" }
         ));
     }
-    md.push_str("\n## 커버리지 상세\n\n");
+    md.push_str("\n## Coverage detail\n\n");
     for r in results {
         let miss: Vec<&str> = r
             .coverage()
@@ -342,28 +345,28 @@ fn render_markdown(results: &[BuildResult]) -> String {
             .map(|(l, _)| l)
             .collect();
         md.push_str(&format!(
-            "- {}: 누락 개념 = {}\n",
+            "- {}: missing concepts = {}\n",
             r.model,
-            if miss.is_empty() { "없음".to_string() } else { miss.join(", ") }
+            if miss.is_empty() { "none".to_string() } else { miss.join(", ") }
         ));
     }
-    md.push_str("\n## 사용 프롬프트 (전 모델 동일)\n\n");
-    md.push_str("청크 템플릿 ({i}/{n} = 청크 번호, {note} = 설계 노트, {hint} = 아래 힌트):\n\n```text\n");
+    md.push_str("\n## Prompts used (identical for all models)\n\n");
+    md.push_str("Chunk template ({i}/{n} = chunk number, {note} = design note, {hint} = the hint below):\n\n```text\n");
     md.push_str(CHUNK_PROMPT);
-    md.push_str("\n```\n\n스키마 힌트 (EVAL_SCHEMA_HINT=1 기본, 0 이면 생략):\n\n```text\n");
+    md.push_str("\n```\n\nSchema hint (EVAL_SCHEMA_HINT=1 default, omitted if 0):\n\n```text\n");
     md.push_str(SCHEMA_HINT);
-    md.push_str("\n```\n\n설계 노트 원문:\n\n");
+    md.push_str("\n```\n\nDesign note source text:\n\n");
     for (i, note) in NOTES.iter().enumerate() {
         md.push_str(&format!("{}. {}\n", i + 1, note));
     }
 
-    md.push_str("\n## 청크별 적재 로그\n");
+    md.push_str("\n## Per-chunk ingestion log\n");
     for r in results {
         md.push_str(&format!("\n### {}\n\n", r.model));
         for c in &r.chunks {
             match &c.outcome {
                 Ok((e, r_)) => md.push_str(&format!(
-                    "- chunk {}: ok - 엔티티 {e}, 관계 {r_}\n  - args: `{}`\n",
+                    "- chunk {}: ok - entities {e}, relations {r_}\n  - args: `{}`\n",
                     c.note_idx + 1,
                     c.args_summary.replace('`', "'")
                 )),
@@ -373,7 +376,7 @@ fn render_markdown(results: &[BuildResult]) -> String {
                         c.note_idx + 1,
                         why.replace('`', "'")
                     ));
-                    // 실패해도 모델이 보낸 인자를 남긴다 - 표면 마찰의 정성 증거.
+                    // Even on failure, keep the arguments the model sent - qualitative evidence of surface friction.
                     if !c.args_summary.is_empty() {
                         md.push_str(&format!(
                             "  - args: `{}`\n",
@@ -387,8 +390,8 @@ fn render_markdown(results: &[BuildResult]) -> String {
     md
 }
 
-/// 자체 포함 HTML 뷰어. 외부 의존성 없이 canvas 포스 레이아웃으로 그래프를 그린다.
-/// (물리 온톨로지를 미니 물리 시뮬레이션으로 그린다.)
+/// Self-contained HTML viewer. Draws the graph with a canvas force layout, no external dependencies.
+/// (Draws the physics ontology as a mini physics simulation.)
 const VIEWER_TEMPLATE: &str = r##"<!doctype html>
 <meta charset="utf-8">
 <title>supragnosis ontology viewer</title>
@@ -406,7 +409,7 @@ const VIEWER_TEMPLATE: &str = r##"<!doctype html>
   #tip { position: fixed; pointer-events: none; background: #0d0f12ee; border: 1px solid #3b4d68;
          padding: 6px 9px; border-radius: 6px; font-size: 12.5px; display: none; max-width: 320px; }
 </style>
-<header><h1>ontology viewer - 물리엔진 적재 결과</h1><div id="tabs"></div></header>
+<header><h1>ontology viewer - physics-engine ingestion result</h1><div id="tabs"></div></header>
 <div id="stats"></div>
 <div id="legend"></div>
 <canvas id="c"></canvas>
@@ -422,7 +425,7 @@ function pick(name) {
   current = name;
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.textContent === name));
   const g = GRAPHS[name];
-  // 노드 초기 위치는 인덱스 기반 결정적 배치(황금각 나선).
+  // Node initial positions are a deterministic, index-based layout (golden-angle spiral).
   nodes = g.nodes.map((n, i) => {
     const a = i * 2.39996, r = 40 + 14 * Math.sqrt(i);
     return { ...n, x: innerWidth/2 + r * Math.cos(a), y: innerHeight/2 + r * Math.sin(a), vx: 0, vy: 0 };
@@ -439,7 +442,7 @@ function pick(name) {
     ` / types ${Object.keys(g.stats.type_counts).map(t => t + " " + g.stats.type_counts[t]).join(", ")}`;
   document.getElementById("legend").innerHTML =
     Object.entries(typeColor).map(([t, c]) => `<span><span class="sw" style="background:${c}"></span>${t}</span>`).join("") +
-    `<span style="margin-left:auto">관계: ${Object.entries(kinds).map(([k, v]) => k + " x" + v).join(", ") || "없음"}</span>`;
+    `<span style="margin-left:auto">relations: ${Object.entries(kinds).map(([k, v]) => k + " x" + v).join(", ") || "none"}</span>`;
 }
 
 function resize() {
@@ -449,7 +452,7 @@ function resize() {
 addEventListener("resize", resize);
 
 function stepSim() {
-  // 반발 + 스프링 + 중심 인력. 노드 수십 개 규모라 O(n^2) 로 충분하다.
+  // Repulsion + spring + center attraction. At a scale of a few dozen nodes, O(n^2) is enough.
   for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
     const a = nodes[i], b = nodes[j];
     let dx = b.x - a.x, dy = b.y - a.y, d2 = dx*dx + dy*dy || 1, d = Math.sqrt(d2);
@@ -479,7 +482,7 @@ function draw() {
     ctx.setLineDash(e.valid_to ? [4, 4] : []);
     ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
     ctx.setLineDash([]);
-    // 화살촉.
+    // Arrowhead.
     const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx, dy) || 1;
     const tx = e.b.x - dx / d * 14, ty = e.b.y - dy / d * 14;
     ctx.beginPath();
@@ -547,10 +550,10 @@ fn write_outputs(results: &[BuildResult]) -> (std::path::PathBuf, std::path::Pat
     (md_path, html_path)
 }
 
-// --- 메인 --------------------------------------------------------------------
+// --- Main --------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "로컬 Ollama 필요 - 온톨로지 구축(적재 품질) 수동 eval"]
+#[ignore = "requires local Ollama - manual eval of ontology build (ingestion quality)"]
 async fn small_models_build_physics_ontology() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
@@ -566,17 +569,17 @@ async fn small_models_build_physics_ontology() {
         .expect("http client");
 
     if !ollama_reachable(&http, &base).await {
-        eprintln!("[skip] Ollama 에 연결 불가({base}) - `ollama serve` 후 재실행");
+        eprintln!("[skip] cannot reach Ollama ({base}) - rerun after `ollama serve`");
         return;
     }
 
     let mut results = Vec::new();
     for model in &models {
-        eprintln!("\n=== 모델: {model} ===");
+        eprintln!("\n=== model: {model} ===");
         results.push(build_ontology(&http, &base, model).await);
     }
 
-    eprintln!("\n=== 비교 (observe / 노드 / 엣지 / 관계타입 / 커버리지 / 고립 / 중복쌍) ===");
+    eprintln!("\n=== comparison (observe / nodes / edges / relation types / coverage / isolated / duplicate pairs) ===");
     for r in &results {
         let (nodes, edges, kinds) = r.stats();
         let cov = r.coverage();
@@ -600,9 +603,9 @@ async fn small_models_build_physics_ontology() {
     eprintln!("\n[report] {}", md_path.display());
     eprintln!("[viewer] {}", html_path.display());
 
-    // 하네스 건전성 가드: 어떤 모델도 청크 하나 못 적재하면 브리지/표면이 깨진 것.
+    // Harness sanity guard: if no model can ingest even one chunk, the bridge/surface is broken.
     assert!(
         results.iter().any(|r| r.observed() > 0),
-        "어떤 모델도 observe 를 한 번도 성공시키지 못함 - 브리지/표면 점검 필요"
+        "no model succeeded at observe even once - check the bridge/surface"
     );
 }

@@ -1,6 +1,6 @@
-//! Full M2 종단 검증: fastembed(ONNX) + Cozo HNSW(네이티브 ANN) + 하이브리드 검색.
-//! `fastembed` feature 에서만 컴파일되고, 모델 다운로드/추론이 필요해 기본 실행에서 제외한다.
-//! 수동 검증: `cargo test -p supragnosis-cli --features fastembed -- --ignored`
+//! Full M2 end-to-end verification: fastembed (ONNX) + Cozo HNSW (native ANN) + hybrid search.
+//! Compiled only under the `fastembed` feature, and excluded from the default run because it requires a model download/inference.
+//! Manual verification: `cargo test -p supragnosis-cli --features fastembed -- --ignored`
 #![cfg(feature = "fastembed")]
 
 use std::sync::Arc;
@@ -26,7 +26,7 @@ fn observe(engine: &Engine, content: &str) {
 }
 
 #[test]
-#[ignore = "fastembed 모델 다운로드 + ONNX 추론 - 수동 검증용"]
+#[ignore = "fastembed model download + ONNX inference - for manual verification"]
 fn fastembed_cozo_hnsw_end_to_end() {
     let embedder = Arc::new(FastEmbedProvider::try_default().expect("fastembed init"));
     let dim = embedder.dimensions();
@@ -48,7 +48,7 @@ fn fastembed_cozo_hnsw_end_to_end() {
         "python is a dynamically typed interpreted language",
     );
 
-    // 질의는 어느 관측의 부분문자열도 아니다 - 순수 의미(임베딩) 회상에 의존한다.
+    // The query is not a substring of any observation - it relies on purely semantic (embedding) recall.
     let hits = engine
         .search(
             "compiling systems code into executable binaries",

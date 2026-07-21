@@ -1,7 +1,7 @@
-//! supragnosis-store - 저장소 어댑터.
+//! supragnosis-store - storage adapter.
 //!
-//! 같은 [`supragnosis_core::KnowledgeStore`] 포트를 두 어댑터가 구현한다:
-//! 프로세스 메모리 기반 `InMemoryStore`(테스트/비영속)와 Cozo(RocksDB) 기반 `CozoStore`(파일 영속).
+//! Two adapters implement the same [`supragnosis_core::KnowledgeStore`] port:
+//! the process-memory `InMemoryStore` (test/non-persistent) and the Cozo(RocksDB)-backed `CozoStore` (file-persistent).
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -15,7 +15,7 @@ use supragnosis_core::{
 mod cozo_store;
 pub use cozo_store::CozoStore;
 
-/// 메모리 기반 지식 저장소. 테스트/개발/비영속 실행용.
+/// In-memory knowledge store. For test/development/non-persistent runs.
 #[derive(Default)]
 pub struct InMemoryStore {
     observations: RwLock<HashMap<String, Observation>>,
@@ -35,8 +35,8 @@ impl KnowledgeStore for InMemoryStore {
     }
 
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
-        // 같은 콘텐츠 주소의 재도착은 덮어쓰기가 아니라 단조 합집합으로 흡수한다
-        // (원칙 3: 로그 불변 - provenance/계보가 파괴되지 않는다).
+        // A re-arrival at the same content address is absorbed as a monotonic union, not an overwrite
+        // (Principle 3: log immutability - provenance/lineage is not destroyed).
         match self.observations.write().unwrap().entry(obs.id.clone()) {
             Entry::Occupied(mut e) => e.get_mut().absorb(obs),
             Entry::Vacant(v) => {
@@ -72,7 +72,7 @@ impl KnowledgeStore for InMemoryStore {
             .filter(|r| r.from == entity_id || r.to == entity_id)
             .cloned()
             .collect();
-        // id 정렬 - HashMap 반복 순서가 응답에 새지 않게 한다(원칙 16: 재현성).
+        // Sort by id - keep HashMap iteration order from leaking into the response (Principle 16: reproducibility).
         rels.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(rels)
     }
@@ -86,7 +86,7 @@ impl KnowledgeStore for InMemoryStore {
         let q = query.trim().to_lowercase();
         let mut hits: Vec<SearchHit> = Vec::new();
 
-        // 엔티티: 정규명/별칭 부분일치.
+        // Entity: substring match on canonical name/alias.
         for e in self.entities.read().unwrap().values() {
             let in_ws = workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws));
             if !in_ws {
@@ -104,7 +104,7 @@ impl KnowledgeStore for InMemoryStore {
             }
         }
 
-        // 관측: 본문 부분일치.
+        // Observation: substring match on content.
         for o in self.observations.read().unwrap().values() {
             let in_ws = workspace.is_none_or(|ws| o.workspace() == ws);
             if in_ws && o.content.to_lowercase().contains(&q) {
@@ -117,7 +117,7 @@ impl KnowledgeStore for InMemoryStore {
             }
         }
 
-        // 동점은 id 로 안정 정렬 - HashMap 반복 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
+        // Break ties by id for a stable sort - keep HashMap iteration order from leaking into results (Principle 16: reproducibility).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -143,9 +143,9 @@ impl KnowledgeStore for InMemoryStore {
 
         let mut depth = 1usize;
         while depth <= max_depth && !frontier.is_empty() {
-            // depth 단위로 이웃을 모아 id 정렬 후 방문/방출한다 - 출력은 (depth, id)
-            // 순서로 결정적이고, limit 절단도 가까운 이웃(얕은 depth) 우선으로
-            // 재현 가능하다 (원칙 16). HashMap 순회 순서가 결과에 새지 않는다.
+            // Gather neighbors per depth, sort by id, then visit/emit - output is deterministic
+            // in (depth, id) order, and limit truncation is reproducible with nearer neighbors
+            // (shallower depth) preferred (Principle 16). HashMap traversal order does not leak into results.
             let mut next: Vec<String> = frontier
                 .iter()
                 .flat_map(|node| {
@@ -239,7 +239,7 @@ impl KnowledgeStore for InMemoryStore {
             })
             .collect();
 
-        // 동점은 id 로 안정 정렬 - HashMap 반복 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
+        // Break ties by id for a stable sort - keep HashMap iteration order from leaking into results (Principle 16: reproducibility).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -273,7 +273,7 @@ impl KnowledgeStore for InMemoryStore {
             })
             .collect();
 
-        // 동점은 id 로 안정 정렬 - HashMap 반복 순서가 결과에 새지 않게 한다(원칙 16: 재현성).
+        // Break ties by id for a stable sort - keep HashMap iteration order from leaking into results (Principle 16: reproducibility).
         hits.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -314,12 +314,12 @@ mod tests {
         }
     }
 
-    /// InMemoryStore 어댑터 직접 검증 - Cozo 어댑터와 동작 parity를 맞춘다.
+    /// Directly verifies the InMemoryStore adapter - matches behavior parity with the Cozo adapter.
     #[test]
     fn in_memory_get_relations_search_traverse() {
         let store = InMemoryStore::new();
 
-        // 열린 세계(원칙 5): 없는 엔티티는 Ok(None) (부재는 에러가 아니다 - Err 는 고장 전용).
+        // Open world (Principle 5): a missing entity is Ok(None) (absence is not an error - Err is for backend failure only).
         assert!(store.get_entity("missing").unwrap().is_none());
 
         for n in ["a", "b", "c"] {
@@ -347,26 +347,26 @@ mod tests {
             .add_observation(Observation::new("hello rust world".into(), prov()))
             .unwrap();
 
-        // 조회 + 관계(b는 a->b, b->c 두 관계에 등장).
+        // Lookup + relations (b appears in two relations, a->b and b->c).
         assert_eq!(
             store.get_entity(&a).unwrap().unwrap().canonical_name,
             "a"
         );
         assert_eq!(store.relations_of(&b).unwrap().len(), 2);
 
-        // 검색: 워크스페이스 스코프.
+        // Search: workspace scope.
         assert!(!store.search("rust", Some("ws1"), 10).unwrap().is_empty());
         assert!(store.search("rust", Some("other"), 10).unwrap().is_empty());
 
-        // 순회: a -> b(1홉), c(2홉). 방향(from->to)을 따른다.
+        // Traverse: a -> b (1 hop), c (2 hops). Follows direction (from->to).
         let hits = store.traverse(&a, 5, 100).unwrap();
         let by_id: HashMap<_, _> = hits.iter().map(|h| (h.id.clone(), h.depth)).collect();
         assert_eq!(by_id.get(&b), Some(&1));
         assert_eq!(by_id.get(&c), Some(&2));
     }
 
-    /// 원칙 3: 같은 콘텐츠 주소의 재도착은 attestation/계보 합집합으로 흡수되고
-    /// (덮어쓰기 금지), 도착 순서와 무관하게 같은 로그로 수렴한다 (원칙 16).
+    /// Principle 3: a re-arrival at the same content address is absorbed as an attestation/lineage union
+    /// (no overwrite), and converges to the same log regardless of arrival order (Principle 16).
     #[test]
     fn reobservation_accumulates_attestations() {
         let make = |host: &str, conf: f32, derived: &str| {
@@ -394,11 +394,11 @@ mod tests {
         let f = forward.get_observation(&id).unwrap().unwrap();
         let r = reverse.get_observation(&id).unwrap().unwrap();
 
-        // 두 attestation 이 모두 보존된다 - 첫 관측이 파괴되지 않는다.
-        assert_eq!(f.provenance.len(), 2, "attestation 누적: {:?}", f.provenance);
+        // Both attestations are preserved - the first observation is not destroyed.
+        assert_eq!(f.provenance.len(), 2, "attestation accumulation: {:?}", f.provenance);
         assert_eq!(f.derived_from, vec!["o1".to_string(), "o2".to_string()]);
 
-        // 도착 순서 무관 수렴.
+        // Convergence independent of arrival order.
         let hosts = |o: &Observation| -> Vec<String> {
             o.provenance.iter().map(|p| p.host.clone()).collect()
         };

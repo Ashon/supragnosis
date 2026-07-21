@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-# e2e 는 배포물(crates/*)과 분리된 실모델 종단 측정 스위트다.
+# e2e is a real-model end-to-end measurement suite, separate from the deliverables (crates/*).
 members = ["crates/*", "e2e"]
 
 [workspace.package]
@@ -9,8 +9,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashon/supragnosis"
 
-# 워크스페이스 공통 lint. 각 crate 는 `[lints] workspace = true` 로 상속한다.
-# clippy 경고를 deny 로 고정해 정리 상태의 regression 을 막는다.
+# Workspace-wide lints. Each crate inherits them via `[lints] workspace = true`.
+# Pin clippy warnings to deny to prevent regression of the cleaned-up state.
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
@@ -18,7 +18,7 @@ unsafe_code = "forbid"
 all = { level = "deny", priority = -1 }
 
 [workspace.dependencies]
-# 외부
+# External
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blake3 = "1"
@@ -29,10 +29,10 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
 cozo = { version = "0.7", features = ["storage-rocksdb"] }
-# standalone 데몬: MCP streamable-http 서비스를 마운트할 HTTP 서버(cli 전용).
+# standalone daemon: HTTP server to mount the MCP streamable-http service (cli only).
 axum = "0.8"
 
-# 내부 (crate 간)
+# Internal (cross-crate)
 supragnosis-core = { path = "crates/supragnosis-core" }
 supragnosis-store = { path = "crates/supragnosis-store" }
 supragnosis-engine = { path = "crates/supragnosis-engine" }

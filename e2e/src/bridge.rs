@@ -1,9 +1,10 @@
-//! Ollama<->MCP 브리지: 살아있는 `SupragnosisServer` 를 in-process 로 띄우고, 도구
-//! 스키마를 OpenAI 호환 tool-calling 포맷으로 변환해 로컬 Ollama 모델에 넘긴 뒤,
-//! 모델의 tool_calls 를 실제 MCP call_tool 로 실행한다.
+//! Ollama<->MCP bridge: spins up a live `SupragnosisServer` in-process, converts the tool
+//! schemas into the OpenAI-compatible tool-calling format and hands them to a local Ollama
+//! model, then executes the model's tool_calls as real MCP call_tool invocations.
 //!
-//! Ollama 는 MCP 클라이언트가 아니라 추론 서버라서 이 브리지가 그 사이를 잇는다.
-//! (기존에 ollama_eval/delegation_eval/... 각 테스트 파일에 복붙돼 있던 것을 한 벌로 통합.)
+//! Ollama is an inference server, not an MCP client, so this bridge connects the two.
+//! (Consolidates into one copy what used to be pasted into each of the
+//! ollama_eval/delegation_eval/... test files.)
 
 use std::sync::Arc;
 
@@ -15,10 +16,10 @@ use serde_json::{json, Map, Value};
 use supragnosis_engine::Engine;
 use supragnosis_mcp::SupragnosisServer;
 
-/// 로컬 Ollama 기본 주소.
+/// Default address of the local Ollama.
 pub const DEFAULT_BASE: &str = "http://localhost:11434";
 
-/// 한 요청의 토큰 사용량 (Ollama OpenAI 호환 usage 필드).
+/// Token usage of a single request (Ollama OpenAI-compatible usage field).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TokenUsage {
     pub prompt: u64,
@@ -31,8 +32,8 @@ impl TokenUsage {
     }
 }
 
-/// 엔진을 실은 MCP 서버를 in-process duplex 로 띄우고 클라이언트를 돌려준다.
-/// 서버 태스크는 클라이언트 cancel 시 함께 내려간다.
+/// Spins up an MCP server carrying the engine over an in-process duplex and returns the client.
+/// The server task goes down together with the client when it is cancelled.
 pub async fn serve_engine(
     engine: Arc<Engine>,
 ) -> (RunningService<RoleClient, ()>, tokio::task::JoinHandle<()>) {
@@ -46,7 +47,7 @@ pub async fn serve_engine(
     (client, server)
 }
 
-/// MCP 도구 목록을 Ollama(OpenAI 호환) tools 배열로 변환한다.
+/// Converts the MCP tool list into an Ollama (OpenAI-compatible) tools array.
 pub async fn openai_tools(client: &RunningService<RoleClient, ()>) -> Value {
     let tools = client.list_all_tools().await.expect("list tools");
     Value::Array(
@@ -66,8 +67,8 @@ pub async fn openai_tools(client: &RunningService<RoleClient, ()>) -> Value {
     )
 }
 
-/// Ollama /v1/chat/completions 호출. (assistant 메시지, 토큰 사용량)을 돌려준다.
-/// `tools` 가 None 이면 도구 없는 일반 채팅이다.
+/// Calls Ollama /v1/chat/completions. Returns (assistant message, token usage).
+/// If `tools` is None this is a plain chat with no tools.
 pub async fn chat(
     http: &reqwest::Client,
     base: &str,
@@ -110,8 +111,8 @@ pub async fn chat(
     Ok((msg, usage))
 }
 
-/// assistant 메시지에서 tool_calls 를 (id, name, args) 로 뽑는다.
-/// arguments 는 보통 JSON 문자열, 드물게 객체로 오기도 한다 - 둘 다 수용.
+/// Extracts tool_calls from the assistant message as (id, name, args).
+/// arguments usually arrives as a JSON string, occasionally as an object - accept both.
 pub fn tool_calls(msg: &Value) -> Vec<(String, String, Value)> {
     let Some(calls) = msg.get("tool_calls").and_then(Value::as_array) else {
         return Vec::new();
@@ -137,7 +138,7 @@ pub fn tool_calls(msg: &Value) -> Vec<(String, String, Value)> {
         .collect()
 }
 
-/// MCP 도구를 실제 실행해 결과 텍스트를 돌려준다(에이전트 루프의 실행 단계).
+/// Actually executes the MCP tool and returns the result text (the execution step of the agent loop).
 pub async fn exec_tool(
     client: &RunningService<RoleClient, ()>,
     name: &str,
@@ -163,14 +164,14 @@ pub async fn exec_tool(
     }
 }
 
-/// 메시지 히스토리에 임의 메시지 Value 를 push 한다.
+/// Pushes an arbitrary message Value onto the message history.
 pub fn push_message(messages: &mut Value, msg: Value) {
     if let Some(arr) = messages.as_array_mut() {
         arr.push(msg);
     }
 }
 
-/// tool 실행 결과를 tool 역할 메시지로 push 한다.
+/// Pushes a tool execution result as a tool-role message.
 pub fn push_tool_result(messages: &mut Value, tool_call_id: &str, content: &str) {
     push_message(
         messages,
@@ -178,7 +179,7 @@ pub fn push_tool_result(messages: &mut Value, tool_call_id: &str, content: &str)
     );
 }
 
-/// 로컬 Ollama 가 떠 있는지(태그 엔드포인트) 빠르게 확인한다.
+/// Quickly checks whether the local Ollama is up (the tags endpoint).
 pub async fn ollama_reachable(http: &reqwest::Client, base: &str) -> bool {
     http.get(format!("{base}/api/tags"))
         .send()

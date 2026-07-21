@@ -1,14 +1,16 @@
-//! supragnosis-viz - 온톨로지 라이브 시각화(localhost HTTP 뷰어).
+//! supragnosis-viz - live ontology visualization (localhost HTTP viewer).
 //!
-//! MCP 도구 표면(원칙 21)과는 별개인 **사람용 읽기 채널**이다. 서버 프로세스 안에
-//! 얹혀 같은 `Arc<Engine>` 을 공유하므로(cozo/RocksDB 단일 프로세스 제약), 별도
-//! 프로세스로 db 를 여는 lock 충돌 없이 `engine.graph()` 프로젝션을 그대로 노출한다.
+//! A **human-facing read channel**, distinct from the MCP tool surface (Principle 21). It rides
+//! inside the server process and shares the same `Arc<Engine>` (cozo/RocksDB single-process
+//! constraint), so it exposes the `engine.graph()` projection directly, without the lock conflict
+//! that opening the db from a separate process would cause.
 //!
-//! - `GET /` -> 자기완결 canvas 뷰어(외부 CDN 0). 몇 초마다 `/api/graph` 를 폴링해 갱신.
-//! - `GET /api/graph[?workspace=<ws>]` -> `engine.graph(ws)` JSON(원칙 16: 결정적 정렬).
+//! - `GET /` -> self-contained canvas viewer (0 external CDNs). Polls `/api/graph` every few seconds to refresh.
+//! - `GET /api/graph[?workspace=<ws>]` -> `engine.graph(ws)` JSON (Principle 16: deterministic ordering).
 //!
-//! 순수 읽기다 - 관측 로그를 건드리지 않는다(원칙 1). 바인딩은 loopback 전용으로
-//! 강제해 원격 노출을 막는다(원칙 17: 지식 주권, 공유 가드 전까지 로컬 신뢰 표면 한정).
+//! Read-only - it never touches the observation log (Principle 1). The binding is forced to
+//! loopback only to prevent remote exposure (Principle 17: knowledge sovereignty, limited to the
+//! local trust surface until the sharing guard exists).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -19,9 +21,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
 
-/// MCP 이벤트를 브라우저(SSE)로 흘려보내는 [`EventSink`] 어댑터. 엔진에 붙으면 도구
-/// 호출이 여기로 발행되고, `/api/events` SSE 커넥션들이 broadcast 로 구독한다.
-/// 수신자(열린 뷰어)가 없으면 send 는 무시된다 - 관측가능성은 선택(원칙 19의 정신).
+/// [`EventSink`] adapter that streams MCP events to the browser (SSE). Once attached to the engine,
+/// tool calls are published here, and `/api/events` SSE connections subscribe via broadcast.
+/// With no receivers (no open viewer), send is dropped - observability is optional (the spirit of Principle 19).
 pub struct BroadcastSink {
     tx: broadcast::Sender<String>,
 }
@@ -34,40 +36,43 @@ impl BroadcastSink {
 
 impl EventSink for BroadcastSink {
     fn emit(&self, env: &EventEnvelope) {
-        // 동기 컨텍스트(도구 핸들러)에서 호출된다 - send 는 비블로킹. 직렬화 실패/수신자
-        // 없음은 조용히 버린다(뷰어가 안 열려 있어도 도구 동작에 영향 없어야 한다).
+        // Called from a synchronous context (tool handler) - send is non-blocking. A serialization
+        // failure or missing receiver is dropped silently (tool behavior must be unaffected even
+        // when no viewer is open).
         if let Ok(json) = serde_json::to_string(env) {
             let _ = self.tx.send(json);
         }
     }
 }
 
-/// 요청 라인 + 헤더를 읽어들이는 상한(바이트). GET 전용이라 바디는 없고, 이 상한을
-/// 넘으면 악의적/비정상 요청으로 보고 끊는다.
+/// Upper bound (bytes) for reading the request line + headers. GET-only, so there is no body; a
+/// request exceeding this bound is treated as malicious/malformed and dropped.
 const MAX_REQUEST_HEAD: usize = 16 * 1024;
 
-/// `SUPRAGNOSIS_VIZ_ADDR` 를 파싱하고 **loopback 인지 검증**한다 (원칙 17).
+/// Parses `SUPRAGNOSIS_VIZ_ADDR` and **verifies it is loopback** (Principle 17).
 ///
-/// `host:port` IP 리터럴만 받는다(예: `127.0.0.1:7373`). 비로opback 주소는 거부한다 -
-/// 원격 노출은 sync 경계의 공유 가드가 생기기 전까지 허용되지 않는다. 호스트명(localhost)은
-/// DNS 해석을 요구하므로 받지 않는다(모호함 제거).
+/// Accepts only a `host:port` IP literal (e.g. `127.0.0.1:7373`). Non-loopback addresses are
+/// rejected - remote exposure is not permitted until the sharing guard at the sync boundary
+/// exists. A hostname (localhost) is not accepted because it would require DNS resolution
+/// (removing ambiguity).
 pub fn parse_local_addr(s: &str) -> anyhow::Result<SocketAddr> {
     let addr: SocketAddr = s.trim().parse().with_context(|| {
-        format!("잘못된 SUPRAGNOSIS_VIZ_ADDR: {s:?} - IP:포트 형식이어야 한다 (예: 127.0.0.1:7373)")
+        format!("invalid SUPRAGNOSIS_VIZ_ADDR: {s:?} - must be in IP:port form (e.g. 127.0.0.1:7373)")
     })?;
     if !addr.ip().is_loopback() {
         anyhow::bail!(
-            "SUPRAGNOSIS_VIZ_ADDR {addr} 는 loopback 이 아니다 - 뷰어는 비로컬 바인드를 \
-             거부한다(원칙 17: 지식 주권). 127.0.0.1:<port> 를 사용하라"
+            "SUPRAGNOSIS_VIZ_ADDR {addr} is not loopback - the viewer rejects non-local binds \
+             (Principle 17: knowledge sovereignty). Use 127.0.0.1:<port>"
         );
     }
     Ok(addr)
 }
 
-/// 주입된 리스너에서 커넥션을 받아 뷰어/그래프 API 를 서빙한다(무한 accept 루프).
+/// Accepts connections on the injected listener and serves the viewer/graph API (infinite accept loop).
 ///
-/// 바인딩은 **호출자가** 한다(테스트가 포트 0 으로 바인드해 실제 포트를 조회할 수 있게).
-/// 커넥션마다 태스크로 분리하되, 개별 커넥션 실패는 삼켜 서버를 죽이지 않는다.
+/// Binding is done by **the caller** (so a test can bind port 0 and look up the actual port).
+/// Each connection is split off into a task, but an individual connection failure is swallowed
+/// so it does not kill the server.
 pub async fn serve(
     engine: Arc<Engine>,
     listener: TcpListener,
@@ -77,7 +82,7 @@ pub async fn serve(
         let (stream, _peer) = match listener.accept().await {
             Ok(pair) => pair,
             Err(e) => {
-                tracing::warn!(error = %e, "viz accept 실패 - 계속");
+                tracing::warn!(error = %e, "viz accept failed - continuing");
                 continue;
             }
         };
@@ -85,14 +90,14 @@ pub async fn serve(
         let events = events.clone();
         tokio::spawn(async move {
             if let Err(e) = handle_conn(&engine, &events, stream).await {
-                tracing::debug!(error = %e, "viz 커넥션 처리 실패");
+                tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
     }
 }
 
-/// 한 커넥션: 요청 라인만 파싱(헤더/바디 무시) -> 라우팅 -> 응답 후 close.
-/// 예외로 `/api/events` 는 SSE 스트림이라 닫지 않고 이벤트를 계속 흘린다.
+/// One connection: parse only the request line (ignore headers/body) -> route -> respond, then close.
+/// The exception is `/api/events`, which is an SSE stream: it is not closed and keeps streaming events.
 async fn handle_conn(
     engine: &Engine,
     events: &broadcast::Sender<String>,
@@ -118,7 +123,7 @@ async fn handle_conn(
     let target = parts.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
-    // SSE: 라이브 MCP 이벤트 스트림 - 응답을 닫지 않고 이벤트를 계속 흘린다.
+    // SSE: live MCP event stream - the response is not closed and events keep streaming.
     if method == "GET" && path == "/api/events" {
         return stream_events(stream, events.subscribe()).await;
     }
@@ -127,8 +132,8 @@ async fn handle_conn(
     write_response(&mut stream, &resp).await
 }
 
-/// SSE 스트림: `text/event-stream` 헤더 후 이벤트마다 `data: {json}\n\n` 를 흘린다.
-/// JSON 은 한 줄이라 프레임이 단순하다. 클라이언트가 끊기면(write 실패) 종료.
+/// SSE stream: after the `text/event-stream` header, emit `data: {json}\n\n` per event.
+/// The JSON is a single line, so the frame is simple. Terminates when the client disconnects (write fails).
 async fn stream_events(
     mut stream: TcpStream,
     mut rx: broadcast::Receiver<String>,
@@ -144,13 +149,13 @@ async fn stream_events(
             Ok(json) => {
                 let frame = format!("data: {json}\n\n");
                 if stream.write_all(frame.as_bytes()).await.is_err() {
-                    break; // 클라이언트 끊김
+                    break; // client disconnected
                 }
                 if stream.flush().await.is_err() {
                     break;
                 }
             }
-            // 느린 클라이언트가 뒤처지면 유실분은 건너뛰고 계속.
+            // If a slow client falls behind, skip the dropped items and continue.
             Err(broadcast::error::RecvError::Lagged(_)) => continue,
             Err(broadcast::error::RecvError::Closed) => break,
         }
@@ -158,7 +163,7 @@ async fn stream_events(
     Ok(())
 }
 
-/// (status line, content-type, body) - 응답의 결정된 3요소.
+/// (status line, content-type, body) - the three fixed components of a response.
 struct Response {
     status: &'static str,
     content_type: &'static str,
@@ -192,11 +197,11 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
     }
 }
 
-/// `/api/graph` - 쿼리의 workspace 를 해석해 그래프 프로젝션을 낸다.
-/// - 미지정 -> 노드 기본 워크스페이스(스코프된 뷰)
-/// - `*` / `all` / 빈 값 -> 전체(None)
+/// `/api/graph` - resolves the workspace from the query and produces the graph projection.
+/// - unspecified -> the node's default workspace (scoped view)
+/// - `*` / `all` / empty value -> everything (None)
 ///
-/// 저장소 고장은 500 + 에러 바디(원칙 5: 고장은 빈 그래프가 아니다).
+/// A storage failure is 500 + error body (Principle 5: a failure is not an empty graph).
 fn graph_response(engine: &Engine, query: &str) -> Response {
     let ws_param = query
         .split('&')
@@ -225,16 +230,16 @@ fn graph_response(engine: &Engine, query: &str) -> Response {
             content_type: "application/json",
             body: serde_json::json!({
                 "error": e.to_string(),
-                "note": "storage backend failure - NOT an empty graph (원칙 5)"
+                "note": "storage backend failure - NOT an empty graph (Principle 5)"
             })
             .to_string(),
         },
     }
 }
 
-/// `/api/hypergraph` - 공동출현 이차 구조(하이퍼엣지) 프로젝션(원칙 11 이차 구조).
-/// 워크스페이스 해석은 `/api/graph` 와 동일하다. 순수 읽기 파생 뷰이며(원칙 1), 뷰어가
-/// hull 오버레이로 소비한다. 저장소 고장은 500 + 에러 바디(원칙 5: 고장은 빈 그래프가 아니다).
+/// `/api/hypergraph` - co-occurrence second-order structure (hyperedge) projection (Principle 11 second-order structure).
+/// Workspace resolution is identical to `/api/graph`. A read-only derived view (Principle 1) that the viewer
+/// consumes as a hull overlay. A storage failure is 500 + error body (Principle 5: a failure is not an empty graph).
 fn hypergraph_response(engine: &Engine, query: &str) -> Response {
     let ws_param = query
         .split('&')
@@ -263,15 +268,15 @@ fn hypergraph_response(engine: &Engine, query: &str) -> Response {
             content_type: "application/json",
             body: serde_json::json!({
                 "error": e.to_string(),
-                "note": "storage backend failure - NOT an empty hypergraph (원칙 5)"
+                "note": "storage backend failure - NOT an empty hypergraph (Principle 5)"
             })
             .to_string(),
         },
     }
 }
 
-/// `/api/workspaces` - 지식이 있는 워크스페이스 목록(정렬, 원칙 16). 뷰어의 워크스페이스
-/// 피커가 소비한다 - 이름을 직접 타이핑하지 않고 클릭으로 고르게 한다. 고장은 500(원칙 5).
+/// `/api/workspaces` - the list of workspaces that hold knowledge (sorted, Principle 16). The viewer's
+/// workspace picker consumes it - letting you click to pick rather than type a name. A failure is 500 (Principle 5).
 fn workspaces_response(engine: &Engine) -> Response {
     match engine.workspaces() {
         Ok(list) => match serde_json::to_string(&list) {
@@ -291,7 +296,7 @@ fn workspaces_response(engine: &Engine) -> Response {
             content_type: "application/json",
             body: serde_json::json!({
                 "error": e.to_string(),
-                "note": "storage backend failure - NOT an empty list (원칙 5)"
+                "note": "storage backend failure - NOT an empty list (Principle 5)"
             })
             .to_string(),
         },
@@ -315,8 +320,8 @@ fn err_body(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
 }
 
-/// 최소 퍼센트 디코딩(`%XX` + `+` -> 공백). 워크스페이스 이름의 공백/특수문자를 위해.
-/// 잘못된 시퀀스는 원문 그대로 둔다(관용적).
+/// Minimal percent decoding (`%XX` + `+` -> space). For spaces/special characters in workspace names.
+/// Invalid sequences are left as-is (lenient).
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -347,11 +352,12 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// 자기완결 라이브 뷰어(외부 CDN 0). canvas 그래프 탐색기: 줌/팬, hover 이웃 하이라이트,
-/// 클릭 포커스/핀, 검색, fit-to-view, 타입 범례 필터, 라벨 정리. 색은 dataviz 스킬의
-/// 검증된 dark 카테고리 팔레트(고정 순서, 순환 대신 9번째부터 "other"). alpha 냉각 +
-/// 반지름 기반 충돌 분리로 겹침을 막는다. `/api/graph` 를 주기 폴링해 라이브 갱신하고,
-/// 노드 위치는 폴링 간 id 기준으로 유지해 화면이 튀지 않는다.
+/// Self-contained live viewer (0 external CDNs). A canvas graph explorer: zoom/pan, hover neighbor
+/// highlight, click focus/pin, search, fit-to-view, type-legend filter, label thinning. Colors come
+/// from the dataviz skill's validated dark categorical palette (fixed order, "other" from the 9th
+/// onward instead of cycling). alpha cooling + radius-based collision separation prevent overlap.
+/// It polls `/api/graph` periodically for live refresh, and keeps node positions across polls by id
+/// so the view does not jump.
 const VIEWER_HTML: &str = r###"<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -400,8 +406,8 @@ const VIEWER_HTML: &str = r###"<!doctype html>
                 display:flex; align-items:center; justify-content:center; }
   #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
            color:var(--muted); font-size:13px; pointer-events:none; }
-  /* 토글 버튼 상태: 꺼짐=흐리게(dim, muted), 켜짐=accent 강조 - 상태가 한눈에 보인다.
-     JS 는 .on 만 토글하고 .tog 는 유지한다. reload/zoom 같은 동작 버튼(.tog 없음)은 기본 그대로. */
+  /* Toggle button state: off = dim (muted), on = accent-highlighted - state is visible at a glance.
+     JS toggles only .on and keeps .tog. Action buttons like reload/zoom (no .tog) stay at their default. */
   button.tog { opacity:.5; color:var(--muted); }
   button.tog:hover { opacity:.8; }
   button.tog.on { opacity:1; background:#2b3a52; border-color:var(--accent); color:var(--ink); }
@@ -441,7 +447,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   <button id="reload">reload</button>
   <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
   <button id="clusterBtn" class="tog" title="group by type; keep cross-group links visible">group</button>
-  <button id="hyperBtn" class="tog" title="draw hyperedge hulls: co-occurrence sets (size>=3), 원칙 11 이차 구조">hulls</button>
+  <button id="hyperBtn" class="tog" title="draw hyperedge hulls: co-occurrence sets (size>=3), Principle 11 second-order structure">hulls</button>
   <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
   <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
   <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
@@ -466,27 +472,31 @@ const VIEWER_HTML: &str = r###"<!doctype html>
 </div>
 <script>
 "use strict";
-// --- 카테고리 색 생성기(node/edge/hull 공용) ---------------------------------------
-// hue 를 golden-angle(137.508deg)로 최대한 벌리고, 채도/명도를 단계별로 로테이션해 종류가
-// 많아도(고정 팔레트 한계를 넘어) 서로 구별되게 한다. dark 배경 가독을 위해 명도 53~81% /
-// 채도 62~92%. edge 는 라인이라 명도를 조금 높여 노드와 채널을 구분한다. 결정적 함수(같은
-// index -> 같은 색). 참고: 카테고리가 아주 많아지면 인지적 구별력은 어떤 방법으로도 한계가 있다.
+// --- Categorical color generator (shared by node/edge/hull) -------------------------
+// Spread hue as far apart as possible by the golden angle (137.508deg), and rotate
+// saturation/lightness in steps so that even with many kinds (beyond a fixed palette's limit) they
+// stay distinguishable. For dark-background readability, lightness 53-81% / saturation 62-92%.
+// Edges are lines, so lightness is raised a little to distinguish them from nodes. Deterministic
+// function (same index -> same color). Note: with very many categories, perceptual
+// distinguishability has limits no matter the method.
 function catColor(i, edge) {
   const h = (i * 137.508) % 360;
-  // 채도를 낮춰(약 50~74%) 라이트/다크 양쪽에서 튀지 않게, 명도는 중간대(양쪽 배경에서 대비
-  // 확보)로. edge 는 라인이라 명도만 조금 높여 노드와 채널을 구분한다.
+  // Lower saturation (roughly 50-74%) so it does not clash on either light/dark, and keep lightness
+  // in the mid range (securing contrast on both backgrounds). Edges are lines, so only lightness is
+  // raised a little to distinguish them from nodes.
   const l = edge ? [70, 62, 73][i % 3] : [58, 66, 50][i % 3];
   const s = [62, 50, 74][(i / 3 | 0) % 3];
   return `hsl(${h | 0}, ${s}%, ${l}%)`;
 }
-const OTHER = "#898781", EDGE_OTHER = "#6b6b64";   // 맵에 없는 타입의 방어적 중립색
+const OTHER = "#898781", EDGE_OTHER = "#6b6b64";   // defensive neutral color for types not in the map
 const EDGE = "#4a4a46", EDGE_HI = "#8fb4e6", EDGE_OLD = "#5a4a55";
-const EDGE_ALPHA = 0.3;          // 엣지 기본 불투명도(낮게 - 밀집 그래프에서 뒤로 물러남). hover/focus 시 연결 엣지는 1.0 으로 활성화
-// 노드 테두리는 마커 반경에 비례(zoom 시 마커와 함께 스케일 - 일관된 비율) + 화면 px 하한
-// (줌아웃 시 사라지지 않게). 배경색 halo 라 노드/엣지/이웃을 분리한다(시인성).
-const NODE_STROKE_RATIO = 0.35;  // 반경 대비 테두리 두께 비율(키움)
-const NODE_STROKE_MIN = 2;       // 테두리 최소 두께(화면 px)
-const NODE_STROKE_MAX = 5;       // 테두리 최대 두께(화면 px) - 큰 허브가 도넛처럼 두꺼워지지 않게
+const EDGE_ALPHA = 0.3;          // edge base opacity (low - recedes in a dense graph). On hover/focus, connected edges activate to 1.0
+// The node stroke is proportional to the marker radius (scales with the marker on zoom - a
+// consistent ratio) + a screen-px floor (so it does not vanish on zoom-out). It is a background-color
+// halo, separating node/edge/neighbor (visibility).
+const NODE_STROKE_RATIO = 0.35;  // stroke thickness ratio relative to radius (raised)
+const NODE_STROKE_MIN = 2;       // minimum stroke thickness (screen px)
+const NODE_STROKE_MAX = 5;       // maximum stroke thickness (screen px) - so a large hub does not thicken into a donut
 const INK = "#ffffff", INK2 = "#c3c2b7", SURFACE = "#1a1a19";
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
@@ -496,62 +506,64 @@ const chipBar = document.getElementById("wschips"), legendEl = document.getEleme
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
 const detailEl = document.getElementById("detail");
 
-let follow = true;               // 카메라가 최신 에이전트 활동 노드를 따라가는지
-let clusterMode = false;         // 타입 그룹으로 분리 배치 + 그룹 간 연결/브리지 강조
-let hyperMode = false;           // 하이퍼엣지(공동출현 이차 구조) hull 오버레이 - 원칙 11
+let follow = true;               // whether the camera follows the most recent agent-activity node
+let clusterMode = false;         // separate layout by type group + highlight cross-group links/bridges
+let hyperMode = false;           // hyperedge (co-occurrence second-order structure) hull overlay - Principle 11
 let hyperedges = [];             // [{id, members:[nodeId], size, sources, trust_tier}] - /api/hypergraph
-// 그래픽 요소 visibility 토글(전부 기본 on). 레이아웃엔 영향 없는 순수 렌더 스위치.
+// Graphic-element visibility toggles (all default on). Pure render switches with no effect on layout.
 let showLabels = true, showEdges = true, showArrows = true;
 let showFootprint = true, showPulses = true, showSuperseded = true;
-const bridgeSet = new Set();     // 다른 타입과 연결된 노드 id(그룹을 잇는 연결 노드)
-const pulses = new Map();        // id -> 남은 프레임(이벤트 노드 강조 링 애니메이션)
-const CLUSTER_PULL = 0.03;       // 그룹 목표점으로 끌어당기는 힘(중심 인력보다 강하게)
-const HYPER_PULL = 0.03;         // 하이퍼엣지 무게중심 응집력(hull 안 노드를 타이트하게 모음)
-const HULL_PAD = 24;             // hull 사이 목표 여백(월드 px). 밀도 높을 때 과분리 방지로 작게
-const HULL_SEP = 0.008;          // hull 간 분리력(완만히 - 냉각 alpha 스케일)
-const HULL_R_CAP = 160;          // 분리에 쓰는 hull 반경 상한 - 거대 grab-bag 이 전체를 밀지 못하게
-const HULL_MAX_PUSH = 4;         // hull 당 프레임 분리 변위 상한 - 다수 쌍 누적 발산 방지
-let footprintSession = null;     // 현재 발자국이 속한 세션(대화)
-const footprint = new Set();     // 이 세션이 만진 노드 id들 - 대화의 지식 발자국
+const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
+const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
+const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
+const HYPER_PULL = 0.03;         // hyperedge centroid cohesion (packs nodes inside a hull tightly)
+const HULL_PAD = 24;             // target gap between hulls (world px). Kept small to avoid over-separation at high density
+const HULL_SEP = 0.008;          // separation force between hulls (gentle - scaled by cooling alpha)
+const HULL_R_CAP = 160;          // upper bound on the hull radius used for separation - so a huge grab-bag cannot push the whole layout
+const HULL_MAX_PUSH = 4;         // per-frame separation displacement cap per hull - prevents divergence accumulating across many pairs
+let footprintSession = null;     // the session (conversation) the current footprint belongs to
+const footprint = new Set();     // ids of nodes this session touched - the conversation's knowledge footprint
 let nodes = [], edges = [], typeColor = {}, edgeTypeColor = {};
-const posById = new Map();       // id -> {x,y,vx,vy} - 폴링 간 레이아웃 안정
-const typeOff = new Set();       // 범례에서 숨긴 노드 타입
-const edgeTypeOff = new Set();   // 범례에서 숨긴 엣지 종류(관계 kind)
+const posById = new Map();       // id -> {x,y,vx,vy} - layout stability across polls
+const typeOff = new Set();       // node types hidden from the legend
+const edgeTypeOff = new Set();   // edge kinds (relation kind) hidden from the legend
 let spiralN = 0;
 let drag = null, hover = null, focus = null;
 let searchTerm = "";
-// 카메라: cam=현재(그리기), camT=목표. 매 프레임 cam 을 camT 로 이징해 줌/팬/포커스/맞춤을
-// 부드럽게 만든다(즉시 점프 제거). 좌표는 CSS 픽셀(마우스 이벤트와 동일계).
+// Camera: cam = current (drawn), camT = target. Each frame, ease cam toward camT to make
+// zoom/pan/focus/fit smooth (removing instant jumps). Coordinates are CSS pixels (same system as mouse events).
 let DPR = 1;
 const cam = { s: 1, x: 0, y: 0 }, camT = { s: 1, x: 0, y: 0 };
 let panning = null, downPos = null, userMoved = false, firstData = true, needFit = false;
 
-// --- force 시뮬레이션 (alpha 냉각 + 충돌 분리) ------------------------------------
+// --- force simulation (alpha cooling + collision separation) ------------------------------------
 let alpha = 1;
 const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.02;
-// 힘 base 파라미터. 큰 그래프일수록 넓게 퍼지도록 stepSim 에서 노드 수(spread)로 스케일한다.
+// Base force parameters. The larger the graph, the wider it should spread, so stepSim scales by node count (spread).
 const REPULSE = 7000, SPRING_LEN = 120, SPRING_K = 0.02;
-const CENTER_BASE = 0.0015; // 중심 인력 base - 큰 그래프에선 약화(중앙 뭉침 방지)
-const RANGE_BASE = 240;     // 반발 사거리 base - 큰 그래프에선 확대(더 넓게 밀어냄)
+const CENTER_BASE = 0.0015; // center-attraction base - weakened for large graphs (prevents central clumping)
+const RANGE_BASE = 240;     // repulsion range base - widened for large graphs (pushes out farther)
 const COLLIDE_PAD = 16, DAMPING = 0.85;
-const MIN_SEP = 12;        // 반발 분모 하한 - 근접 시 힘 폭발(튀어나감) 방지
-const MAX_V = 30;          // 프레임당 최대 속도 base - 큰 그래프에선 상향
-const MAX_PUSH = 6;        // 프레임당 노드별 충돌 변위 상한 - 허브 폭발 방지
-// 노드 크기는 이웃수(degree)에 비례한다(sqrt 로 넓은 범위를 완만히). 커진 반경이 충돌
-// 분리(minD)에 그대로 반영돼 간격도 이웃수에 비례해 넓어지고, 이웃이 적으면 작고 촘촘해진다.
-const NODE_R_BASE = 4;         // degree 0 반경
-const NODE_R_SCALE = 3.4;      // sqrt(degree) 계수
-const NODE_R_MAX = 28;         // 반경 상한(허브 폭주 방지)
-const REPULSE_HUB_MAX = 2.5;   // 허브-허브 반발 가중 상한(발산 방지)
+const MIN_SEP = 12;        // repulsion denominator floor - prevents force blowup (flinging) when very close
+const MAX_V = 30;          // per-frame max speed base - raised for large graphs
+const MAX_PUSH = 6;        // per-frame per-node collision displacement cap - prevents hub blowup
+// Node size is proportional to neighbor count (degree) (sqrt, to flatten a wide range). The enlarged
+// radius feeds directly into collision separation (minD), so spacing widens with neighbor count too,
+// and nodes with few neighbors stay small and dense.
+const NODE_R_BASE = 4;         // radius at degree 0
+const NODE_R_SCALE = 3.4;      // sqrt(degree) coefficient
+const NODE_R_MAX = 28;         // radius upper bound (prevents hub runaway)
+const REPULSE_HUB_MAX = 2.5;   // hub-hub repulsion weight cap (prevents divergence)
 function nodeRadius(n) { return Math.min(NODE_R_MAX, NODE_R_BASE + Math.sqrt(n.degree || 0) * NODE_R_SCALE); }
-// 노드 테두리 두께(월드 단위): 반경 비례 + 화면 px 하한. cam.s(현재 줌)를 반영해 zoom 시
-// 마커와 함께 스케일되면서도 줌아웃에서 최소 두께를 유지한다. draw 와 엣지 종단이 공유한다.
+// Node stroke thickness (world units): proportional to radius + a screen-px floor. It reflects
+// cam.s (current zoom), so it scales with the marker on zoom yet keeps a minimum thickness on
+// zoom-out. Shared by draw and the edge endpoints.
 function nodeStrokeW(n) { return Math.min(NODE_STROKE_MAX / cam.s, Math.max(nodeRadius(n) * NODE_STROKE_RATIO, NODE_STROKE_MIN / cam.s)); }
-// 시뮬레이션을 깨운다(discrete wakeup). 이벤트에서만 호출: 새 노드/삭제(applyGraph),
-// 드래그, 포커스. 연속 조건(겹침)으로는 절대 호출하지 않는다 - 정착 후 무한 재가열 방지.
+// Wake the simulation (discrete wakeup). Called only from events: new node/deletion (applyGraph),
+// drag, focus. Never called from a continuous condition (overlap) - prevents endless reheating after settling.
 function wake(a = 0.7) { alpha = Math.max(alpha, a); }
 
-// --- 카메라 (canvas 는 전체화면, 마우스는 client 좌표) ----------------------------
+// --- Camera (canvas is fullscreen, mouse uses client coordinates) ----------------------------
 function toWorld(sx, sy) { return [(sx - cam.x) / cam.s, (sy - cam.y) / cam.s]; }
 function easeCam() {
   const k = 0.22;
@@ -560,14 +572,14 @@ function easeCam() {
   if (Math.abs(camT.x - cam.x) < 0.25) cam.x = camT.x;
   if (Math.abs(camT.y - cam.y) < 0.25) cam.y = camT.y;
 }
-// 커서 아래 월드 점을 고정한 채 목표 배율을 바꾼다(이징으로 부드럽게 수렴).
+// Change the target scale while keeping the world point under the cursor fixed (converges smoothly via easing).
 function zoomAt(sx, sy, f) {
   const wx = (sx - camT.x) / camT.s, wy = (sy - camT.y) / camT.s;
   camT.s = Math.max(0.15, Math.min(4, camT.s * f));
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
-const TOP_INSET = 96;   // 상단 헤더/크롬이 가리는 높이 - 센터링/맞춤에서 보정
-// 노드를 화면 중앙으로 부드럽게(포커스-투-줌). 너무 축소돼 있으면 살짝 확대.
+const TOP_INSET = 96;   // height occluded by the top header/chrome - compensated in centering/fit
+// Smoothly bring a node to the screen center (focus-to-zoom). If zoomed too far out, zoom in slightly.
 function centerOn(n) {
   camT.s = Math.min(2.5, Math.max(cam.s, 1.1));
   camT.x = innerWidth / 2 - n.x * camT.s;
@@ -578,7 +590,7 @@ function assignColors() {
   const types = [...new Set(nodes.map(n => n.type))].sort();
   typeColor = {};
   types.forEach((t, i) => { typeColor[t] = catColor(i, false); });
-  // 엣지 종류(관계 kind)별 색 - 결정적(kind 정렬 순), edge 대역으로 생성.
+  // Color per edge kind (relation kind) - deterministic (in sorted kind order), generated in the edge band.
   const ek = [...new Set(edges.map(e => e.type))].sort();
   edgeTypeColor = {};
   ek.forEach((t, i) => { edgeTypeColor[t] = catColor(i, true); });
@@ -605,7 +617,7 @@ function applyGraph(g) {
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
   edges = g.edges.map(e => Object.assign({}, e, { a: byId[e.from], b: byId[e.to] }))
                  .filter(e => e.a && e.b);
-  // 브리지 노드: 다른 타입(그룹)과 연결된 노드 - 그룹을 잇는 연결/네비게이션 지점.
+  // Bridge nodes: nodes connected to another type (group) - linking/navigation points that join groups.
   bridgeSet.clear();
   for (const e of edges) if (e.a.type !== e.b.type) { bridgeSet.add(e.a.id); bridgeSet.add(e.b.id); }
   assignColors();
@@ -618,16 +630,16 @@ function applyGraph(g) {
     + (s.type_counts ? " / " + Object.entries(s.type_counts).map(([t,c]) => `${t} ${c}`).join(", ") : "");
   emptyEl.style.display = nodes.length ? "none" : "flex";
 
-  // 포커스 중이면 상세 인스펙터를 갱신(연결 변화 반영). 포커스 노드가 사라졌으면 해제.
+  // If focused, refresh the detail inspector (reflect connection changes). If the focus node is gone, clear it.
   if (focus) { if (nodes.includes(focus)) renderDetail(focus); else { focus = null; renderDetail(null); } }
 
-  // 초기 자동 맞춤: 레이아웃이 정착(냉각 완료)한 뒤 한 번, 사용자 조작 전에만(draw 에서).
+  // Initial auto-fit: once after the layout settles (cooling done), and only before user interaction (in draw).
   if (firstData && nodes.length) { firstData = false; needFit = true; }
 }
 
 function renderLegend() {
   legendEl.innerHTML = "";
-  // 노드 타입 + 엣지 종류를 각각 범례로. 클릭하면 해당 종류의 가시성을 토글한다(off 집합).
+  // A legend for node types and one for edge kinds. Clicking toggles that kind's visibility (the off set).
   const addGroup = (label, keys, colorOf, offSet, isEdge) => {
     if (!keys.length) return;
     const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = label;
@@ -636,7 +648,7 @@ function renderLegend() {
       const el = document.createElement("span");
       el.className = "lg" + (offSet.has(t) ? " off" : "");
       const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(t);
-      if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // 라인 느낌
+      if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // line-like look
       el.appendChild(sw); el.appendChild(document.createTextNode(t || "(none)"));
       el.title = "click to toggle visibility";
       el.onclick = () => { if (offSet.has(t)) offSet.delete(t); else offSet.add(t); renderLegend(); };
@@ -647,7 +659,7 @@ function renderLegend() {
   addGroup("edges:", Object.keys(edgeTypeColor).sort(), t => edgeTypeColor[t], edgeTypeOff, true);
 }
 
-// hover/focus/검색으로 강조할 노드/엣지 집합. 없으면 null(전부 동일 강조).
+// The set of nodes/edges to highlight from hover/focus/search. If none, null (everything highlighted equally).
 function activeSet() {
   const anchor = focus || hover;
   if (anchor) {
@@ -675,8 +687,8 @@ async function poll() {
     const g = await r.json();
     if (g.error) { statusEl.textContent = g.error; return; }
     applyGraph(g);
-    // 하이퍼엣지(이차 구조)는 hull 모드일 때만 가져온다 - 없으면 비운다. 보조 채널이라
-    // 실패해도 그래프 렌더는 유지한다(원칙 21: 관측가능성은 선택).
+    // Hyperedges (second-order structure) are fetched only in hull mode - otherwise cleared. As an
+    // auxiliary channel, a failure still keeps the graph rendering (Principle 21: observability is optional).
     if (hyperMode) {
       try {
         const hurl = "/api/hypergraph" + (ws ? "?workspace=" + encodeURIComponent(ws) : "");
@@ -689,9 +701,9 @@ async function poll() {
             document.getElementById("stats").textContent += ` / hyperedges ${hyperedges.length} (hull ${drawn})`;
           }
         }
-      } catch (e) { /* hull 은 보조 - 그래프는 그대로 */ }
+      } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
     } else { hyperedges = []; }
-  } catch (e) { statusEl.textContent = "연결 실패 - 서버 실행 확인"; }
+  } catch (e) { statusEl.textContent = "connection failed - check the server is running"; }
 }
 
 function currentWs() { return wsInput.value.trim(); }
@@ -714,10 +726,10 @@ async function loadWorkspaces() {
     };
     const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "workspaces:";
     chipBar.replaceChildren(lbl, mk("(all)", "*"), ...list.map(w => mk(w, w)));
-  } catch (e) { /* 서버 미기동 - 다음 주기에 재시도 */ }
+  } catch (e) { /* server not up - retry next cycle */ }
 }
 
-// --- 라이브 MCP 활동(SSE) --------------------------------------------------------
+// --- Live MCP activity (SSE) --------------------------------------------------------
 function nodeById(id) { return nodes.find(n => n.id === id); }
 function esc(s) { return String(s).replace(/[<&>]/g, c => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;" }[c])); }
 function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); }
@@ -737,20 +749,20 @@ function primaryNode(ev) {
   return id ? nodeById(id) : null;
 }
 async function handleEvent(ev) {
-  // 세션(대화)이 바뀌면 발자국 리셋 - 새 대화의 지식 사용을 처음부터 추적.
+  // If the session (conversation) changes, reset the footprint - track the new conversation's knowledge use from the start.
   if (ev.session && ev.session !== footprintSession) { footprintSession = ev.session; footprint.clear(); }
-  // follow 중 활동이 다른 워크스페이스에서 일어나면 그쪽으로 전환한다 - 안 그러면 추가된
-  // 노드/히트가 현재 스코프 밖이라 화면에 안 나타난다(SSE 이벤트는 와도 폴링 ws 불일치).
+  // While following, if activity happens in a different workspace, switch to it - otherwise added
+  // nodes/hits are outside the current scope and do not appear (the SSE event arrives, but the polling ws mismatches).
   const switched = follow && ev.workspace && currentWs() !== "*" && currentWs() !== ev.workspace;
   if (switched) { wsInput.value = ev.workspace; renderChipsActive(); }
   let ids = [];
   if (ev.kind === "observe") {
     logRow(`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${esc(ev.workspace)}</span>`);
-    await poll();                       // 새 노드가 그래프에 들어오길 기다렸다 펄스
+    await poll();                       // wait for the new nodes to enter the graph, then pulse
     ids = ev.entities || [];
   } else if (ev.kind === "search") {
     logRow(`<b>search</b> "${esc(ev.query)}" -> ${ev.hits} hits <span class="t">${esc(ev.mode)}</span>`);
-    if (switched) await poll();          // 워크스페이스 전환됐으면 그 그래프를 로드(히트 보이게)
+    if (switched) await poll();          // if the workspace switched, load that graph (so hits are visible)
     ids = ev.nodes || [];
   } else if (ev.kind === "get_entity") {
     logRow(`<b>get_entity</b> ${esc(ev.name || ev.id.slice(0,8))} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
@@ -761,7 +773,7 @@ async function handleEvent(ev) {
     ids = [ev.start, ...(ev.reached || [])];
   } else return;
   pulseNodes(ids);
-  for (const id of ids) if (id) footprint.add(id);   // 대화 발자국 누적(노드 존재 여부 무관)
+  for (const id of ids) if (id) footprint.add(id);   // accumulate the conversation footprint (regardless of whether the node exists)
   wake(0.3);
   if (follow) { const n = primaryNode(ev); if (n) centerOn(n); }
   const sEl = document.getElementById("session");
@@ -771,11 +783,11 @@ function connectEvents() {
   try {
     const es = new EventSource("/api/events");
     es.onmessage = e => { try { handleEvent(JSON.parse(e.data)); } catch (_) {} };
-    // 오류 시 EventSource 가 자동 재연결한다.
-  } catch (_) { /* EventSource 미지원 - 폴링만으로 동작 */ }
+    // On error, EventSource reconnects automatically.
+  } catch (_) { /* EventSource unsupported - works with polling alone */ }
 }
 
-// --- 상세 인스펙터: 클릭한 노드의 연결(이웃 + 관계)을 보여주고, 이웃 클릭으로 탐색 ---
+// --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
 function renderDetail(node) {
   if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
   const outs = edges.filter(e => e.a === node && !typeOff.has(e.b.type));
@@ -805,9 +817,9 @@ function renderDetail(node) {
   });
 }
 
-// 슈퍼샘플링(HiDPI): 백킹 스토어를 DPR 배로 키우고 CSS 크기는 뷰포트로 고정 -> 선명.
+// Supersampling (HiDPI): scale the backing store by DPR and fix the CSS size to the viewport -> sharp.
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);   // 성능 위해 2x 상한
+  DPR = Math.min(window.devicePixelRatio || 1, 2);   // cap at 2x for performance
   canvas.width = Math.round(innerWidth * DPR);
   canvas.height = Math.round(innerHeight * DPR);
   canvas.style.width = innerWidth + "px";
@@ -815,7 +827,7 @@ function resize() {
 }
 addEventListener("resize", resize);
 
-// 대상 노드 집합을 화면에 담도록 목표 카메라를 잡는다(이징으로 부드럽게). CSS 픽셀 기준.
+// Set the target camera so the given node set fits on screen (smoothly, via easing). In CSS pixels.
 function fitView(list, pad = 90) {
   const src = (list || nodes).filter(n => !typeOff.has(n.type));
   if (!src.length) return;
@@ -827,12 +839,12 @@ function fitView(list, pad = 90) {
   camT.y = (h + TOP_INSET)/2 - (b+d)/2*camT.s;
 }
 
-// 하이퍼엣지 id -> 팔레트 색(결정적 해시). 겹치는 hull 들이 반투명으로 블렌드된다(C1: 겹침=연결조직).
+// hyperedge id -> palette color (deterministic hash). Overlapping hulls blend semi-transparently (C1: overlap = connective tissue).
 function hyperColor(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return catColor(h % 512, false);   // id 해시 -> 생성 팔레트 인덱스(고정 8색 한계 제거)
+  return catColor(h % 512, false);   // id hash -> generated palette index (removes the fixed 8-color limit)
 }
-// 볼록 껍질(Andrew monotone chain). 결정적(입력 정렬) - 원칙 16. 3점 미만이면 그대로 반환.
+// Convex hull (Andrew monotone chain). Deterministic (sorted input) - Principle 16. Returns as-is if fewer than 3 points.
 function convexHull(pts) {
   if (pts.length < 3) return pts.slice();
   const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
@@ -844,7 +856,7 @@ function convexHull(pts) {
   lo.pop(); up.pop();
   return lo.concat(up);
 }
-// 두 하이퍼엣지가 노드를 공유하는가(작은 집합을 순회). 공유 = 연결된 맥락이라 분리하지 않는다(C1).
+// Do the two hyperedges share a node (iterate the smaller set). Shared = a connected context, so they are not separated (C1).
 function hullsShareMember(a, b) {
   const [s, l] = a.size <= b.size ? [a, b] : [b, a];
   for (const x of s) if (l.has(x)) return true;
@@ -856,19 +868,19 @@ function stepSim() {
   if (N === 0) return;
   const cooling = alpha >= ALPHA_MIN;
   if (cooling) alpha += (0 - alpha) * ALPHA_DECAY;
-  const active = alpha >= ALPHA_MIN;   // 냉각 완료면 휴면 - 어떤 힘도 적용하지 않는다
+  const active = alpha >= ALPHA_MIN;   // dormant once cooling is done - no force is applied
   const pinned = v => v === drag || v === focus;
 
-  // 노드 수로 스케일: 많을수록 넓게 퍼진다(반발 사거리/강도 up, 중심 인력 down).
-  // hairball(중앙 뭉침) 방지 - base 는 소규모 기준, 대규모는 spread 로 확장.
+  // Scale by node count: more nodes spread wider (repulsion range/strength up, center attraction down).
+  // Prevents a hairball (central clumping) - base is tuned for small graphs, large ones expand via spread.
   const spread = Math.min(4, Math.max(1, Math.sqrt(N / 20)));
   const range = RANGE_BASE * spread, centerG = CENTER_BASE / spread;
   const repulse = REPULSE * spread, maxV = MAX_V * Math.min(spread, 2);
 
-  // 충돌 변위는 노드별로 누적 후 상한 클램프한다 - 여러 이웃과 겹친 허브가 한 프레임에
-  // 멀리 튀는 것을 막는다(직접 이동 대신).
+  // Collision displacement is accumulated per node, then clamped to a cap - stops a hub overlapping
+  // many neighbors from flinging far in a single frame (instead of moving directly).
   const cdx = new Array(N).fill(0), cdy = new Array(N).fill(0);
-  // 반경(degree 비례)을 프레임당 한 번 계산해 반발 가중/충돌 분리가 공유한다.
+  // The radius (degree-proportional) is computed once per frame and shared by repulsion weighting/collision separation.
   const rad = new Array(N);
   for (let i = 0; i < N; i++) rad[i] = nodeRadius(nodes[i]);
 
@@ -876,20 +888,20 @@ function stepSim() {
     const a = nodes[i], b = nodes[j];
     let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
     if (d < 0.5) {
-      // (거의) 겹친 좌표는 방향이 0 이라 못 밀어낸다 - 결정적 방향으로 분리(퇴화 방지).
+      // (Nearly) coincident coordinates have a zero direction and cannot be pushed apart - separate in a deterministic direction (prevents degeneracy).
       const ang = ((i * 7 + j * 13) % 628) / 100;
       dx = Math.cos(ang); dy = Math.sin(ang); d = 0.5;
     } else { dx /= d; dy /= d; }
     const d2 = d * d;
-    // 반발은 active(냉각 중)일 때만, 그리고 근거리 전용(사거리 밖은 0). 휴면 상태에서
-    // 반발만 남아 응집(중력/스프링)과의 균형 없이 무한히 퍼지던 문제를 막는다.
+    // Repulsion only when active (cooling), and near-range only (0 outside the range). Prevents the
+    // problem where, when dormant, only repulsion remained and spread endlessly without the balance of cohesion (gravity/springs).
     if (active && d < range) {
-      // 이웃수(반경)가 큰 노드일수록 반발을 완만히 가중 - 허브 주변 간격이 넓어진다(상한 clamp).
+      // The larger a node's neighbor count (radius), the more gently repulsion is weighted up - spacing around a hub widens (clamped to a cap).
       const w = Math.min(REPULSE_HUB_MAX, (rad[i] + rad[j]) / (2 * NODE_R_BASE));
       const rf = repulse * alpha * w * (1 - d / range) / Math.max(d2, MIN_SEP * MIN_SEP);
       a.vx -= rf*dx; a.vy -= rf*dy; b.vx += rf*dx; b.vy += rf*dy;
     }
-    // 충돌 최소 간격 = 두 반경 합 + 패딩 -> 이웃 많은(큰) 노드일수록 주변 간격이 넓어진다.
+    // Collision minimum gap = sum of the two radii + padding -> a node with more neighbors (larger) gets wider spacing around it.
     const minD = rad[i] + rad[j] + COLLIDE_PAD;
     if (d < minD) {
       const push = (minD - d) / 2;
@@ -897,9 +909,9 @@ function stepSim() {
     }
   }
 
-  // 잔여 겹침은 아래 충돌 변위가 프레임마다 밀어 정리한다(휴면 중에도 위치 보정은 적용).
-  // 여기서 재가열하지 않는다 - 새 노드/드래그/리사이즈 같은 '이벤트'에서만 wake 로 깨운다
-  // (정착 후 매 프레임 재가열이 도는 문제 제거).
+  // Residual overlap is cleaned up by the collision displacement below, pushing each frame (position correction applies even while dormant).
+  // Do not reheat here - wake only from 'events' like a new node/drag/resize
+  // (removes the problem of reheating every frame after settling).
   if (active) {
     for (const e of edges) {
       let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx,dy) || 1;
@@ -908,14 +920,15 @@ function stepSim() {
     }
   }
 
-  // 하이퍼엣지 레이아웃(원칙 11 이차 구조 "잘 응집"): (1) 각 하이퍼엣지의 무게중심으로
-  // 멤버를 당겨 hull 을 타이트하게 응집시키고, (2) 겹치지 않는 hull 끼리는 무게중심을 밀어
-  // 간격을 벌린다. 노드를 공유하는(겹치는) hull 은 공유 노드가 양쪽 중심에 동시에 당겨져
-  // 자연히 붙어 있고, 분리 힘은 공유 노드에서 상쇄되어 겹침 관계가 보존된다(C1: 겹침=연결조직).
+  // Hyperedge layout (Principle 11 second-order structure "well cohered"): (1) pull members toward
+  // each hyperedge's centroid to cohere the hull tightly, and (2) push apart the centroids of
+  // non-overlapping hulls to widen the gap. Hulls that share a node (overlap) stay naturally close
+  // because the shared node is pulled to both centroids at once, and the separation force cancels at
+  // the shared node, preserving the overlap relationship (C1: overlap = connective tissue).
   if (hyperMode && active && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
-    // 지오메트리: 멤버 + 무게중심 + 평균 반경(상한 clamp - 거대 grab-bag 이 전체를 밀지 못하게)
-    // + 멤버 id 집합(공유 판정용).
+    // Geometry: members + centroid + mean radius (clamped to a cap - so a huge grab-bag cannot push the whole layout)
+    // + member id set (for share detection).
     const hgs = [];
     for (const h of hyperedges) {
       const ms = h.members.map(id => nb.get(id)).filter(Boolean);
@@ -926,20 +939,20 @@ function stepSim() {
       r = Math.min(r / ms.length, HULL_R_CAP);
       hgs.push({ ms, ids: new Set(ms.map(m => m.id)), cx, cy, r });
     }
-    // (1) 응집: 멤버 -> 자기 무게중심.
+    // (1) Cohesion: member -> its own centroid.
     for (const g of hgs) {
       for (const m of g.ms) {
         if (pinned(m)) continue;
         m.vx += (g.cx - m.x) * HYPER_PULL * alpha; m.vy += (g.cy - m.y) * HYPER_PULL * alpha;
       }
     }
-    // (2) 분리: **노드를 공유하지 않는(disjoint)** hull 쌍만 밀어낸다 - 공유 hull 은 연결된
-    // 맥락이라 붙어 있어야 하고(C1), 밀도 높을 때 모든 쌍을 밀면 레이아웃이 통째로 폭발한다.
-    // 각 hull 의 순 변위를 누적해 상한(HULL_MAX_PUSH)으로 클램프한 뒤 멤버에 실어 발산을 막는다.
+    // (2) Separation: push apart only **disjoint** hull pairs (not sharing a node) - a shared hull is
+    // a connected context and must stay attached (C1), and pushing every pair at high density blows up the whole layout.
+    // Accumulate each hull's net displacement, clamp it to the cap (HULL_MAX_PUSH), then apply it to members to prevent divergence.
     const sepx = new Array(hgs.length).fill(0), sepy = new Array(hgs.length).fill(0);
     for (let i = 0; i < hgs.length; i++) for (let j = i + 1; j < hgs.length; j++) {
       const a = hgs[i], b = hgs[j];
-      if (hullsShareMember(a.ids, b.ids)) continue;   // 연결된 맥락은 밀지 않는다(C1)
+      if (hullsShareMember(a.ids, b.ids)) continue;   // do not push a connected context (C1)
       const dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 0.01;
       const want = a.r + b.r + HULL_PAD;
       if (d < want) {
@@ -955,10 +968,10 @@ function stepSim() {
     }
   }
 
-  const wcx = innerWidth/2, wcy = innerHeight/2;   // 월드 좌표(CSS 픽셀계) - 카메라와 독립
-  // 그룹 모드: 타입별 목표점을 원형으로 배치해 그룹을 공간적으로 분리한다(결정적: 타입
-  // 정렬 순서로 각도 배정). 그룹 목표 인력이 중심 인력을 대체하고, 브리지 엣지(스프링)가
-  // 그룹 사이로 연결 노드를 당겨 "찾아갈 수 있는" 연결이 남는다.
+  const wcx = innerWidth/2, wcy = innerHeight/2;   // world coordinates (CSS pixel system) - independent of the camera
+  // Group mode: place per-type target points on a circle to spatially separate groups (deterministic:
+  // angle assigned in sorted type order). The group-target attraction replaces the center attraction, and
+  // bridge edges (springs) pull linking nodes between groups so a "navigable" connection remains.
   let tgt = null;
   if (clusterMode && active) {
     const types = Object.keys(typeColor).sort(), k = Math.max(1, types.length);
@@ -978,10 +991,10 @@ function stepSim() {
       }
     }
     v.vx *= DAMPING; v.vy *= DAMPING;
-    // 속도 상한 - 큰 힘이 걸려도 화면 밖으로 날아가지 않는다.
+    // speed cap - even under a large force, nothing flies off-screen.
     const sp = Math.hypot(v.vx, v.vy);
     if (sp > maxV) { v.vx *= maxV/sp; v.vy *= maxV/sp; }
-    // 충돌 변위도 노드별 상한으로 클램프해 더한다.
+    // the collision displacement is also clamped to a per-node cap before adding.
     let mx = cdx[k], my = cdy[k]; const m = Math.hypot(mx, my);
     if (m > MAX_PUSH) { mx *= MAX_PUSH/m; my *= MAX_PUSH/m; }
     v.x += v.vx + mx; v.y += v.vy + my;
@@ -991,7 +1004,7 @@ function stepSim() {
 function draw() {
   stepSim();
   easeCam();
-  // 초기 자동 맞춤: 레이아웃이 정착한 뒤 한 번(사용자 조작 전에만).
+  // Initial auto-fit: once after the layout settles (only before user interaction).
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
 
   const act = activeSet();
@@ -999,12 +1012,12 @@ function draw() {
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // 엣지 + 노드는 world 변환(줌/팬, DPR 슈퍼샘플링 포함), 라벨은 화면 좌표(가독성 유지).
+  // Edges + nodes use the world transform (zoom/pan, incl. DPR supersampling); labels use screen coordinates (keeping readability).
   ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
-  // 하이퍼엣지 hull 오버레이(엣지/노드 뒤에 깔린다). size>=3 만 그린다 - 2 는 이진 엣지에
-  // 수렴해 밀도 완화에 기여하지 않는다. 반투명이라 겹치는 맥락들이 블렌드된다(C1: 겹침=연결조직).
-  // hover 한 노드가 속한 hull 은 강조하고, 대표 개념(최고 degree 멤버)+크기 라벨을 모은다.
+  // Hyperedge hull overlay (laid behind edges/nodes). Only size>=3 is drawn - 2 converges to a binary
+  // edge and does not help ease density. Being semi-transparent, overlapping contexts blend (C1: overlap = connective tissue).
+  // The hull a hovered node belongs to is highlighted, and the representative concept (highest-degree member) + size label is collected.
   const hullLabels = [];
   if (hyperMode && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
@@ -1016,7 +1029,7 @@ function draw() {
       if (hull.length < 3) continue;
       let cx = 0, cy = 0; for (const q of hull) { cx += q.x; cy += q.y; } cx /= hull.length; cy /= hull.length;
       const col = hyperColor(h.id);
-      const hot = hover && h.members.includes(hover.id);   // hover 노드가 이 맥락에 속하나
+      const hot = hover && h.members.includes(hover.id);   // does the hovered node belong to this context
       ctx.beginPath();
       hull.forEach((q, i) => {
         const dx = q.x - cx, dy = q.y - cy, d = Math.hypot(dx, dy) || 1;
@@ -1024,10 +1037,10 @@ function draw() {
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       });
       ctx.closePath();
-      // stroke 없이 fill 로만(부드러운 영역). 아웃라인이 사라진 만큼 base alpha 를 약간 올려
-      // 개별 hull 가독을 지키고, 겹치는 영역은 alpha 누적으로 자연히 진해진다(밀도 단서, C1).
+      // Fill only, no stroke (a soft area). To offset the missing outline, base alpha is raised a little
+      // to keep individual hulls legible, and overlapping areas naturally darken via alpha accumulation (a density cue, C1).
       ctx.globalAlpha = hot ? 0.26 : 0.12; ctx.fillStyle = col; ctx.fill();
-      // 대표 개념 = 최고 degree 멤버(허브). 라벨은 화면 좌표로 나중에 그린다(크기 일정).
+      // Representative concept = highest-degree member (the hub). The label is drawn later in screen coordinates (constant size).
       let anchor = ms[0]; for (const m of ms) if ((m.degree||0) > (anchor.degree||0)) anchor = m;
       hullLabels.push({ cx, cy, text: anchor.name + " (" + ms.length + ")", col, hot });
     }
@@ -1036,34 +1049,35 @@ function draw() {
   if (showEdges) for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
-    if (edgeTypeOff.has(e.type)) continue;                 // 엣지 종류 토글(범례)
-    if (e.valid_to && !showSuperseded) continue;           // 대체된(과거) 엣지 숨김(history 토글)
+    if (edgeTypeOff.has(e.type)) continue;                 // edge-kind toggle (legend)
+    if (e.valid_to && !showSuperseded) continue;           // hide superseded (past) edges (history toggle)
     const dx = e.b.x-e.a.x, dy = e.b.y-e.a.y, d = Math.hypot(dx,dy) || 1, ux = dx/d, uy = dy/d;
-    // 노드 테두리 바깥에서 만나도록 반경을 각 노드 테두리 절반만큼 키운다(테두리가 반경 비례라
-    // 끝점마다 다르다) - 화살촉 tip 이 테두리 밖 경계에 닿아 gap/관통 없이 연결되고, zoom 해도 유지.
+    // Grow each radius by half of that node's stroke so the edge meets outside the node stroke (the
+    // stroke is radius-proportional, so it differs per endpoint) - the arrowhead tip touches the outer
+    // stroke boundary, connecting with no gap/penetration, and it holds on zoom.
     const ar = nodeRadius(e.a) + nodeStrokeW(e.a)/2, br = nodeRadius(e.b) + nodeStrokeW(e.b)/2, room = d - ar - br;
-    if (room <= 0.5) continue;   // (일시적) 겹침 - 이 프레임 엣지 생략
+    if (room <= 0.5) continue;   // (temporary) overlap - skip this frame's edge
     const hot = act ? act.es.has(i) : false;
-    // 선은 소스 노드 가장자리에서 시작해 화살촉 base(또는 화살표 끄면 tip)에서 끝난다.
-    const alen = Math.min(9/cam.s, Math.max(3/cam.s, room * 0.5));   // 화면상 ~9px, 가까우면 축소
+    // The line starts at the source node's edge and ends at the arrowhead base (or the tip if arrows are off).
+    const alen = Math.min(9/cam.s, Math.max(3/cam.s, room * 0.5));   // ~9px on screen, shrinks when close
     const sx0 = e.a.x + ux*ar, sy0 = e.a.y + uy*ar;
     const tipx = e.b.x - ux*br, tipy = e.b.y - uy*br;
     const basex = tipx - ux*alen, basey = tipy - uy*alen;
-    // 그룹 모드: 그룹 간(다른 타입) 엣지는 도드라지게, 그룹 내 엣지는 흐리게.
+    // Group mode: make cross-group (different-type) edges stand out, in-group edges dim.
     const cross = clusterMode && e.a.type !== e.b.type;
-    // 기본은 반투명(EDGE_ALPHA), hover/focus 시 연결 엣지(hot)는 1.0 으로 활성화하고 나머지는
-    // 흐리게. 그룹 모드는 그룹 간 연결을 도드라지게 하는 별도 강조.
+    // The default is semi-transparent (EDGE_ALPHA); on hover/focus a connected edge (hot) activates to
+    // 1.0 and the rest dim. Group mode is a separate emphasis that makes cross-group links stand out.
     ctx.globalAlpha = act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
-    // 색은 관계 종류(kind)로 - 어떤 연결인지 드러난다. 대체된 엣지는 EDGE_OLD(과거 신호, 점선).
+    // Color is by relation kind - it reveals what kind of connection this is. A superseded edge is EDGE_OLD (a past signal, dashed).
     ctx.strokeStyle = e.valid_to ? EDGE_OLD : (edgeTypeColor[e.type] || EDGE_OTHER);
-    ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // 화면상 일정 두께
+    ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // constant thickness on screen
     ctx.setLineDash(e.valid_to ? [5/cam.s, 5/cam.s] : []);
-    // 화살표 끄면 선을 노드 가장자리(tip)까지, 켜면 화살촉 base 까지.
+    // With arrows off, draw the line to the node edge (tip); with arrows on, to the arrowhead base.
     const endx = showArrows ? basex : tipx, endy = showArrows ? basey : tipy;
     ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(endx, endy); ctx.stroke();
     ctx.setLineDash([]);
     if (showArrows) {
-      // 화살촉: base -> tip(도착 노드 가장자리). 선이 base 에서 끝나 삼각형과 겹치지 않는다.
+      // Arrowhead: base -> tip (the destination node's edge). The line ends at base so it does not overlap the triangle.
       const hw = alen * 0.55;
       ctx.beginPath(); ctx.moveTo(tipx, tipy);
       ctx.lineTo(basex - uy*hw, basey + ux*hw);
@@ -1078,23 +1092,23 @@ function draw() {
     const r = nodeRadius(n);
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
     ctx.fillStyle = typeColor[n.type] || OTHER; ctx.fill();
-    // 기본 테두리(배경색 halo): 노드 경계를 또렷하게 하고 엣지/이웃과 분리한다(시인성).
-    // 배경색이라 테마가 바뀌어도 항상 배경과 맞는 컷아웃이 된다.
+    // Default stroke (background-color halo): sharpens the node boundary and separates it from edges/neighbors (visibility).
+    // Being the background color, it stays a cutout that matches the background even when the theme changes.
     ctx.lineWidth = nodeStrokeW(n); ctx.strokeStyle = SURFACE; ctx.stroke();
     if (n === anchor) { ctx.lineWidth = 2.5/cam.s; ctx.strokeStyle = INK; ctx.stroke(); }
-    // 대화 발자국: 이 세션이 만진 노드는 지속적인 얇은 보라 링으로 표시(footprint 토글).
+    // Conversation footprint: nodes this session touched are marked with a persistent thin purple ring (footprint toggle).
     if (showFootprint && footprint.has(n.id)) {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
       ctx.lineWidth = 1.5/cam.s; ctx.strokeStyle = "#9085e9"; ctx.stroke();
     }
-    // 그룹 모드: 브리지 노드(다른 그룹과 연결)는 연한 링으로 표시 - 그룹 간 이동 지점.
+    // Group mode: bridge nodes (connected to another group) are marked with a faint ring - cross-group transit points.
     if (clusterMode && bridgeSet.has(n.id)) {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, 7);
       ctx.lineWidth = 2/cam.s; ctx.strokeStyle = "#c0caf5"; ctx.stroke();
     }
   }
-  // 이벤트 펄스(에이전트가 만진 노드) - 확장하며 사라지는 링. rAF 는 항상 도므로 냉각
-  // 후에도 애니메이션된다.
+  // Event pulses (nodes the agent touched) - an expanding, fading ring. rAF always runs, so it keeps
+  // animating even after cooling.
   for (const [id, ttl] of pulses) {
     const n = nodeById(id);
     if (!n || ttl <= 0 || typeOff.has(n.type)) { pulses.delete(id); continue; }
@@ -1104,17 +1118,17 @@ function draw() {
       ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n) + 3 + t*22, 0, 7);
       ctx.lineWidth = 2/cam.s; ctx.strokeStyle = EDGE_HI; ctx.stroke();
     }
-    pulses.set(id, ttl - 1);   // 숨겨도 만료는 진행(토글 시 잔상 방지)
+    pulses.set(id, ttl - 1);   // expiry advances even when hidden (avoids afterimages on toggle)
   }
   ctx.globalAlpha = 1;
 
-  // 라벨(노드 + hull) - labels 토글로 켜고 끈다. 화면 좌표(DPR)라 줌 무관 일정 크기.
+  // Labels (nodes + hulls) - turned on/off by the labels toggle. In screen coordinates (DPR), so constant size regardless of zoom.
   if (showLabels) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.font = "12px system-ui,-apple-system,sans-serif";
     ctx.textBaseline = "middle";
-    // 라벨 정리: 소규모(<=40)이거나 충분히 확대(cam.s>1.4)면 전부, 큰 그래프에선 허브
-    // (고차수 >= cut)만 + hover/focus/active. hairball 의 라벨 벽을 없앤다.
+    // Label thinning: everything when small (<=40) or zoomed in enough (cam.s>1.4); on a large graph,
+    // only hubs (high degree >= cut) + hover/focus/active. Removes the hairball's wall of labels.
     const cut = (nodes.length <= 40 || cam.s > 1.4) ? 0 : Math.max(4, Math.round(nodes.length / 25));
     for (const n of nodes) {
       if (typeOff.has(n.type)) continue;
@@ -1127,7 +1141,7 @@ function draw() {
       ctx.fillStyle = (n === focus || n === hover) ? INK : INK2; ctx.fillText(n.name, px + r + 5, py);
     }
     ctx.globalAlpha = 1;
-    // 하이퍼엣지 hull 라벨(대표 개념 + 크기). hover 한 hull 은 진하게. textAlign 은 복원.
+    // Hyperedge hull labels (representative concept + size). The hovered hull is darker. textAlign is restored.
     if (hullLabels.length) {
       ctx.font = "11px system-ui,-apple-system,sans-serif";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1164,7 +1178,7 @@ function showTip(n, cx, cy) {
     + `<span class="k">sources</span> ${n.sources} &nbsp; <span class="k">trust</span> ${n.trust_tier}`;
 }
 
-// --- 상호작용 ---------------------------------------------------------------------
+// --- Interaction ---------------------------------------------------------------------
 canvas.addEventListener("wheel", ev => {
   ev.preventDefault();
   zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.12 : 0.89);
@@ -1179,7 +1193,7 @@ canvas.addEventListener("mousedown", ev => {
 addEventListener("mousemove", ev => {
   if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; showTip(null); return; }
   if (panning) {
-    // 팬은 즉시(1:1) - cam 과 camT 를 함께 옮겨 이징이 끌어당기지 않게 한다.
+    // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
     cam.x = camT.x = panning.px + (ev.clientX - panning.sx);
     cam.y = camT.y = panning.py + (ev.clientY - panning.sy);
     userMoved = true; showTip(null); return;
@@ -1191,9 +1205,9 @@ addEventListener("mouseup", ev => {
   const moved = downPos && Math.hypot(ev.clientX - downPos.x, ev.clientY - downPos.y) > 4;
   if (!moved && ev.target === canvas) {
     const n = nodeAt(ev.clientX, ev.clientY);
-    focus = n ? (focus === n ? null : n) : null;   // 노드 클릭=포커스 토글(핀), 빈곳=해제
-    if (focus) { wake(0.3); centerOn(focus); }    // 포커스-투-줌: 해당 노드로 부드럽게 센터
-    renderDetail(focus);                           // 상세 인스펙터 표시/해제
+    focus = n ? (focus === n ? null : n) : null;   // node click = toggle focus (pin), empty space = clear
+    if (focus) { wake(0.3); centerOn(focus); }    // focus-to-zoom: smoothly center on that node
+    renderDetail(focus);                           // show/clear the detail inspector
   }
   if (drag) wake(0.3);
   drag = null;
@@ -1219,7 +1233,7 @@ const clusterBtn = document.getElementById("clusterBtn");
 clusterBtn.onclick = () => { clusterMode = !clusterMode; clusterBtn.classList.toggle("on", clusterMode); wake(0.6); poll(); };
 const hyperBtn = document.getElementById("hyperBtn");
 hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); wake(0.6); poll(); };
-// 순수 렌더 토글(레이아웃/데이터 변화 없음 - rAF 가 매 프레임 반영하므로 wake/poll 불필요).
+// Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
 document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; e.currentTarget.classList.toggle("on", showArrows); };
@@ -1241,10 +1255,10 @@ mod tests {
         assert!(parse_local_addr("127.0.0.1:7373").is_ok());
         assert!(parse_local_addr("127.0.0.1:0").is_ok());
         assert!(parse_local_addr("[::1]:7373").is_ok());
-        // 비로opback 바인드는 거부(원칙 17).
+        // Non-loopback binds are rejected (Principle 17).
         assert!(parse_local_addr("0.0.0.0:7373").is_err());
         assert!(parse_local_addr("192.168.1.10:7373").is_err());
-        // 형식 오류.
+        // Format error.
         assert!(parse_local_addr("localhost:7373").is_err());
         assert!(parse_local_addr("nonsense").is_err());
     }
@@ -1254,7 +1268,7 @@ mod tests {
         assert_eq!(percent_decode("plain"), "plain");
         assert_eq!(percent_decode("a+b"), "a b");
         assert_eq!(percent_decode("a%20b"), "a b");
-        // 잘못된 시퀀스는 원문 유지.
+        // Invalid sequences keep the original text.
         assert_eq!(percent_decode("a%zz"), "a%zz");
     }
 }

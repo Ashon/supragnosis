@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-engine"
-description = "supragnosis 서비스 계층: observe/resolve/query/traverse."
+description = "supragnosis service layer: observe/resolve/query/traverse."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

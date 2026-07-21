@@ -1,24 +1,25 @@
-//! supragnosis-e2e - 실모델 종단(end-to-end) 측정 스위트.
+//! supragnosis-e2e - real-model end-to-end measurement suite.
 //!
-//! 이 크레이트는 회귀 가드가 아니라 **측정 도구**다: 실제 LLM(로컬 Ollama, Anthropic API)이
-//! supragnosis MCP 표면을 얼마나 잘 쓰는지, 지식 위임이 회상/적재/작업 산출물을 얼마나
-//! 개선하는지 채점표(scorecard)를 낸다. 모든 테스트는 `#[ignore]` + 외부 의존(모델 서버)
-//! + 비결정이므로 기본 `cargo test` 에서는 돌지 않고, 외부 의존이 없으면 조용히 skip 한다.
+//! This crate is not a regression guard but a **measurement tool**: it produces a scorecard of
+//! how well real LLMs (local Ollama, Anthropic API) use the supragnosis MCP surface, and of how
+//! much knowledge delegation improves recall/ingestion/work output. Every test is `#[ignore]` +
+//! externally dependent (model servers) + nondeterministic, so it does not run under the default
+//! `cargo test`, and it silently skips when the external dependency is absent.
 //!
-//! 배포물의 결정적 계약 테스트(예: supragnosis-mcp 의 mcp_surface)는 여기 두지 않는다 -
-//! 그런 테스트는 해당 크레이트에 남는 것이 맞다. 결정적 회귀 평가셋(recall_eval)도
-//! 마찬가지로 supragnosis-engine 에 상주한다.
+//! Deterministic contract tests for the shipped artifacts (for example supragnosis-mcp's
+//! mcp_surface) do not belong here - those tests are best left in their own crate. The
+//! deterministic regression eval set (recall_eval) likewise lives in supragnosis-engine.
 //!
-//! 스위트 구성 (tests/):
-//!   - ollama_eval          : 소형 모델의 MCP 도구 사용 정확도 (단일턴 + 에이전트 루프)
-//!   - llm_eval             : 위와 같되 Anthropic Messages API 판
-//!   - delegation_eval      : 지식 위임 이득 A/B (회수 QA, 토큰 손익, 부작위/환각)
-//!   - ontology_build_eval  : 작업 부산물로서의 온톨로지 적재 품질
-//!   - physics_coding_eval  : 공통 온톨로지 위임이 코딩 산출물에 반영되는가 (+ 행동 채점)
+//! Suite layout (tests/):
+//!   - ollama_eval          : small-model MCP tool-use accuracy (single-turn + agent loop)
+//!   - llm_eval             : same as above, but the Anthropic Messages API edition
+//!   - delegation_eval      : knowledge-delegation gain A/B (recall QA, token cost/benefit, abstention/hallucination)
+//!   - ontology_build_eval  : ontology ingestion quality as a by-product of work
+//!   - physics_coding_eval  : whether a shared-ontology delegation shows up in coding output (+ behavior scoring)
 //!
-//! 공용 하네스:
-//!   - [`bridge`] : MCP 서버 in-process 구동 + Ollama(OpenAI 호환) tool-calling 브리지
-//!   - [`report`] : 리포트/갤러리 출력 경로 (target/eval-reports/)
+//! Shared harness:
+//!   - [`bridge`] : in-process MCP server startup + Ollama (OpenAI-compatible) tool-calling bridge
+//!   - [`report`] : report/gallery output paths (target/eval-reports/)
 
 pub mod bridge;
 pub mod embedders;

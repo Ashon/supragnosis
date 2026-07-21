@@ -1,11 +1,11 @@
-//! MCP 표면 통합 테스트 (LLM 없이, 결정적).
+//! MCP surface integration tests (no LLM, deterministic).
 //!
-//! 실제 rmcp 클라이언트를 in-process duplex 파이프로 `SupragnosisServer` 에 연결해
-//! MCP 프로토콜 그대로 구동한다: 핸드셰이크 -> tools/list -> tools/call.
-//! LLM 이 실제로 보게 될 표면(도구 이름/설명/JSON 스키마)과 각 도구의 종단 동작을
-//! 검증한다. 어떤 LLM 평가(eval)든 이게 통과하는 표면 위에서만 의미가 있다.
+//! Connects a real rmcp client to `SupragnosisServer` over an in-process duplex pipe and
+//! drives the MCP protocol as-is: handshake -> tools/list -> tools/call.
+//! Verifies the surface an LLM will actually see (tool names/descriptions/JSON schema) and the
+//! end-to-end behavior of each tool. Any LLM eval is only meaningful on top of a surface that passes this.
 //!
-//! 이 테스트는 네트워크/모델이 필요 없어 기본 `cargo test` 에 포함된다.
+//! These tests need no network/model, so they are part of the default `cargo test`.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -21,8 +21,8 @@ use supragnosis_engine::Engine;
 use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::InMemoryStore;
 
-/// 도구가 돌려준 첫 텍스트 컨텐츠를 JSON 으로 파싱한다.
-/// (도구는 JSON 문자열을 반환하고 rmcp 가 이를 text content 로 감싼다.)
+/// Parse the first text content a tool returned as JSON.
+/// (Tools return a JSON string and rmcp wraps it as text content.)
 fn tool_json(res: &CallToolResult) -> Value {
     let text = res
         .content
@@ -33,32 +33,32 @@ fn tool_json(res: &CallToolResult) -> Value {
     serde_json::from_str(&text).expect("tool text should be valid JSON")
 }
 
-/// serde_json 객체 리터럴을 도구 인자(JsonObject)로.
+/// Turn a serde_json object literal into tool arguments (JsonObject).
 fn args(v: Value) -> Option<Map<String, Value>> {
     v.as_object().cloned()
 }
 
 #[tokio::test]
 async fn mcp_protocol_surface_end_to_end() {
-    // 결정적 임베더를 붙여 하이브리드 검색 경로까지 프로토콜로 태운다(비영속 스토어).
+    // Attach a deterministic embedder to drive even the hybrid search path through the protocol (non-persistent store).
     let engine = Arc::new(
         Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws")
             .with_embedder(Arc::new(HashingEmbedder::default())),
     );
 
-    // in-process 양방향 파이프로 서버<->클라이언트를 연결한다.
+    // Connect server<->client with an in-process bidirectional pipe.
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
     let server = tokio::spawn(async move {
         let running = SupragnosisServer::new(engine)
             .serve(server_io)
             .await
             .expect("server handshake");
-        // 클라이언트가 끝날 때까지 서버를 살려 둔다.
+        // Keep the server alive until the client finishes.
         let _ = running.waiting().await;
     });
     let client = ().serve(client_io).await.expect("client handshake");
 
-    // --- 1) tools/list: LLM 이 보게 될 표면 (원칙 21: 좁고 읽기 쉬운 표면) ---------
+    // --- 1) tools/list: the surface an LLM will see (Principle 21: a narrow, readable surface) ---
     let tools = client.list_all_tools().await.expect("list tools");
     let names: BTreeSet<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
     assert_eq!(
@@ -70,33 +70,33 @@ async fn mcp_protocol_surface_end_to_end() {
             "traverse",
             "workspace_map",
         ]),
-        "5개의 의도 단위 도구를 노출해야 한다(workspace_map = 공동출현 오리엔테이션)"
+        "must expose 5 intent-level tools (workspace_map = co-occurrence orientation)"
     );
     for t in &tools {
         let desc = t.description.as_deref().unwrap_or("");
         assert!(
             !desc.trim().is_empty(),
-            "도구 '{}' 는 LLM 이 읽을 설명이 있어야 한다",
+            "tool '{}' must have a description for the LLM to read",
             t.name
         );
-        // 각 도구는 입력 JSON 스키마(object + properties)를 노출한다.
+        // Each tool exposes an input JSON schema (object + properties).
         assert_eq!(
             t.input_schema.get("type").and_then(Value::as_str),
             Some("object"),
-            "도구 '{}' 의 input_schema 는 object 여야 한다",
+            "tool '{}' input_schema must be an object",
             t.name
         );
     }
-    // observe 스키마에 핵심 파라미터 content 가 노출되는지.
+    // Whether the key parameter content is exposed in the observe schema.
     let observe = tools.iter().find(|t| t.name == "observe").unwrap();
     let props = observe
         .input_schema
         .get("properties")
         .and_then(Value::as_object)
         .expect("observe schema has properties");
-    assert!(props.contains_key("content"), "observe 는 content 파라미터 노출");
+    assert!(props.contains_key("content"), "observe exposes the content parameter");
 
-    // --- 2) observe: 지식 적재 (엔티티 2 + 관계 1) --------------------------------
+    // --- 2) observe: ingest knowledge (2 entities + 1 relation) -------------------
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -119,18 +119,18 @@ async fn mcp_protocol_surface_end_to_end() {
     let out = tool_json(&res);
     assert!(
         out["observation_id"].as_str().is_some_and(|s| !s.is_empty()),
-        "observe 는 관측 id 를 돌려줘야 한다: {out}"
+        "observe must return an observation id: {out}"
     );
     let entity_ids = out["entities"].as_array().expect("entities array");
-    assert_eq!(entity_ids.len(), 2, "엔티티 2개가 링크돼야 한다: {out}");
+    assert_eq!(entity_ids.len(), 2, "2 entities must be linked: {out}");
     assert_eq!(
         out["relations"].as_array().map(Vec::len),
         Some(1),
-        "관계 1개가 링크돼야 한다: {out}"
+        "1 relation must be linked: {out}"
     );
     let supragnosis_id = entity_ids[0].as_str().unwrap().to_string();
 
-    // --- 3) search_knowledge: 하이브리드 검색으로 적재한 지식을 회상 -------------
+    // --- 3) search_knowledge: recall the ingested knowledge via hybrid search -----
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -143,18 +143,18 @@ async fn mcp_protocol_surface_end_to_end() {
     let found = tool_json(&res);
     assert!(
         found["hits"].as_array().is_some_and(|a| !a.is_empty()),
-        "검색은 적재한 지식을 찾아야 한다: {found}"
+        "search must find the ingested knowledge: {found}"
     );
-    // 응답은 사용 표면(mode)을 표기한다 (원칙 16 4차) - 이 조립은 임베더가 있어 hybrid.
+    // The response reports the surface used (mode) (Principle 16, 4th revision) - this assembly has an embedder, so hybrid.
     assert_eq!(
         found["mode"].as_str(),
         Some("hybrid"),
-        "mode 표기가 있어야 한다: {found}"
+        "the mode must be reported: {found}"
     );
 
-    // --- 3b) 빈 검색 결과: 열린 세계 노트 동반 (원칙 5) --------------------------
-    // 하이브리드는 유사도 임계 없이 최근접을 돌려주므로, 0건은 빈 워크스페이스
-    // 스코프로 만든다 (분산 노드의 동기화 전 부분 지식과 같은 상황).
+    // --- 3b) empty search result: accompanied by an open-world note (Principle 5) ---
+    // Hybrid returns the nearest neighbors with no similarity threshold, so we produce zero hits with an
+    // empty-workspace scope (like the pre-sync partial knowledge of a distributed node).
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -167,16 +167,16 @@ async fn mcp_protocol_surface_end_to_end() {
     let empty = tool_json(&res);
     assert!(
         empty["hits"].as_array().is_some_and(Vec::is_empty),
-        "0건이어야 하는 질의: {empty}"
+        "query that must yield zero hits: {empty}"
     );
     assert!(
         empty["note"]
             .as_str()
             .is_some_and(|n| n.contains("not a negation")),
-        "빈 결과는 부재!=부정 노트를 동반해야 한다(LLM 오독 방지): {empty}"
+        "an empty result must carry an absence!=negation note (to prevent LLM misreading): {empty}"
     );
 
-    // --- 4) get_entity: observe 가 돌려준 id 로 재조회 (관계 포함) ----------------
+    // --- 4) get_entity: re-query by the id observe returned (relations included) ---
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -190,20 +190,20 @@ async fn mcp_protocol_surface_end_to_end() {
     assert_eq!(
         ent["canonical_name"].as_str(),
         Some("supragnosis"),
-        "id 로 엔티티를 되찾아야 한다: {ent}"
+        "must retrieve the entity by id: {ent}"
     );
     assert_eq!(
         ent["relations"].as_array().map(Vec::len),
         Some(1),
-        "엔티티 조회에 관계가 함께 와야 한다: {ent}"
+        "entity lookup must come with its relations: {ent}"
     );
-    // 내부 회상 벡터는 LLM 표면으로 새면 안 된다(원칙 21: 좁고 읽기 쉬운 표면).
+    // The internal recall vector must not leak to the LLM surface (Principle 21: a narrow, readable surface).
     assert!(
         ent.get("embedding").is_none(),
-        "get_entity 응답에 임베딩 벡터가 노출되면 안 된다(컨텍스트 오염): {ent}"
+        "the get_entity response must not expose the embedding vector (context contamination): {ent}"
     );
 
-    // --- 5) traverse: supragnosis -> rmcp (depends_on, 1홉) ----------------------
+    // --- 5) traverse: supragnosis -> rmcp (depends_on, 1 hop) --------------------
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -218,10 +218,10 @@ async fn mcp_protocol_surface_end_to_end() {
         reached["hits"]
             .as_array()
             .is_some_and(|a| a.iter().any(|h| h["name"] == "rmcp")),
-        "순회는 depends_on 이웃 rmcp 에 도달해야 한다: {reached}"
+        "traverse must reach the depends_on neighbor rmcp: {reached}"
     );
 
-    // --- 5b) 미지 id 순회: 빈 결과 + 원인 구별 노트 (원칙 5/21) ------------------
+    // --- 5b) traverse an unknown id: empty result + cause-distinguishing note (Principles 5/21) ---
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -236,10 +236,10 @@ async fn mcp_protocol_surface_end_to_end() {
         empty_tr["note"]
             .as_str()
             .is_some_and(|n| n.contains("not found")),
-        "미지 시작점의 0건은 '시작 엔티티 부재' 노트를 동반해야 한다: {empty_tr}"
+        "zero hits from an unknown start point must carry a 'missing start entity' note: {empty_tr}"
     );
 
-    // --- 6) get_entity(미지 id): 열린 세계 - 에러가 아니라 unknown (원칙 5) -------
+    // --- 6) get_entity(unknown id): open-world - unknown, not an error (Principle 5) ---
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -253,11 +253,11 @@ async fn mcp_protocol_surface_end_to_end() {
     assert_eq!(
         unknown["found"].as_bool(),
         Some(false),
-        "부재는 에러가 아니라 found:false 여야 한다(LLM 오독 방지): {unknown}"
+        "absence must be found:false, not an error (to prevent LLM misreading): {unknown}"
     );
 
-    // --- 7) workspace_map: 공동출현 클러스터 개관 (원칙 11 이차 구조) ---------------
-    // supragnosis + rmcp 가 한 관측에서 공동 주장됨 -> 크기 2 클러스터 하나, 이름으로 노출.
+    // --- 7) workspace_map: survey co-occurrence clusters (Principle 11 second-order structure) ---
+    // supragnosis + rmcp are asserted together in a single observation -> one size-2 cluster, exposed by name.
     let res = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -269,7 +269,7 @@ async fn mcp_protocol_surface_end_to_end() {
         .expect("workspace_map call");
     let map = tool_json(&res);
     let clusters = map["clusters"].as_array().expect("clusters array");
-    assert!(!clusters.is_empty(), "공동출현 클러스터가 있어야 한다: {map}");
+    assert!(!clusters.is_empty(), "there must be a co-occurrence cluster: {map}");
     let concepts: Vec<&str> = clusters[0]["concepts"]
         .as_array()
         .unwrap()
@@ -278,21 +278,21 @@ async fn mcp_protocol_surface_end_to_end() {
         .collect();
     assert!(
         concepts.contains(&"supragnosis") && concepts.contains(&"rmcp"),
-        "클러스터는 id 가 아니라 이름으로 개념을 노출해야 한다(LLM 가독성): {map}"
+        "a cluster must expose concepts by name, not id (LLM readability): {map}"
     );
-    assert_eq!(clusters[0]["size"].as_u64(), Some(2), "공동출현 크기 2: {map}");
+    assert_eq!(clusters[0]["size"].as_u64(), Some(2), "co-occurrence size 2: {map}");
 
-    // 정리: 클라이언트를 종료하면 서버 파이프가 닫히고 서버 태스크가 끝난다.
+    // Cleanup: shutting down the client closes the server pipe and ends the server task.
     client.cancel().await.expect("client shutdown");
     let _ = server.await;
 }
 
-/// 리소스 표면: 온톨로지 그래프를 MCP 리소스로 노출하는 경로를 프로토콜 그대로 검증한다.
-/// list_resources/list_resource_templates 로 발견하고, read_resource 로 node-link JSON 을
-/// 받아 적재한 지식이 그래프에 반영됐는지, 미지 URI 는 에러가 나는지 확인한다.
+/// Resource surface: verifies, over the protocol as-is, the path that exposes the ontology graph as an MCP resource.
+/// Discovers via list_resources/list_resource_templates, receives node-link JSON via read_resource,
+/// and checks that the ingested knowledge is reflected in the graph and that an unknown URI errors.
 #[tokio::test]
 async fn mcp_resource_graph_surface() {
-    // 기본 워크스페이스 "ws" 로 엔진 구성(비영속).
+    // Build the engine with default workspace "ws" (non-persistent).
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
 
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
@@ -305,7 +305,7 @@ async fn mcp_resource_graph_surface() {
     });
     let client = ().serve(client_io).await.expect("client handshake");
 
-    // 지식 적재: supragnosis --depends_on--> rmcp (노드 2, 엣지 1).
+    // Ingest knowledge: supragnosis --depends_on--> rmcp (2 nodes, 1 edge).
     let observed = client
         .call_tool(CallToolRequestParams {
             meta: None,
@@ -329,23 +329,23 @@ async fn mcp_resource_graph_surface() {
         .expect("observation id")
         .to_string();
 
-    // --- 1) list_resources: 기본 워크스페이스 그래프 + 워크스페이스 목록 리소스 노출 ----
+    // --- 1) list_resources: expose the default workspace graph + workspace list resources ----
     let resources = client.list_all_resources().await.expect("list resources");
     let uris: Vec<&str> = resources.iter().map(|r| r.raw.uri.as_str()).collect();
     assert!(
         uris.contains(&"supragnosis://workspace/ws/graph"),
-        "기본 워크스페이스 그래프 리소스를 노출해야 한다: {uris:?}"
+        "must expose the default workspace graph resource: {uris:?}"
     );
     assert!(
         uris.contains(&"supragnosis://workspaces"),
-        "워크스페이스 목록 리소스를 노출해야 한다(발견 진입점): {uris:?}"
+        "must expose the workspace list resource (discovery entry point): {uris:?}"
     );
     assert!(
         uris.contains(&"supragnosis://workspace/ws/hypergraph"),
-        "기본 워크스페이스 하이퍼그래프 리소스도 노출해야 한다(발견성): {uris:?}"
+        "must also expose the default workspace hypergraph resource (discoverability): {uris:?}"
     );
 
-    // --- 1b) read_resource(workspaces): 지식이 있는 워크스페이스 이름 배열 --------------
+    // --- 1b) read_resource(workspaces): array of workspace names that hold knowledge --------------
     let read = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
@@ -362,10 +362,10 @@ async fn mcp_resource_graph_surface() {
         workspaces
             .as_array()
             .is_some_and(|a| a.iter().any(|w| w == "ws")),
-        "워크스페이스 목록에 적재한 'ws' 가 있어야 한다: {workspaces}"
+        "the workspace list must contain the ingested 'ws': {workspaces}"
     );
 
-    // --- 2) list_resource_templates: 임의 워크스페이스 조회용 템플릿 ------------------
+    // --- 2) list_resource_templates: templates for querying any workspace ------------------
     let templates = client
         .list_all_resource_templates()
         .await
@@ -374,16 +374,16 @@ async fn mcp_resource_graph_surface() {
         templates
             .iter()
             .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/graph"),
-        "그래프 리소스 템플릿을 노출해야 한다"
+        "must expose the graph resource template"
     );
     assert!(
         templates
             .iter()
             .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/hypergraph"),
-        "하이퍼그래프 리소스 템플릿도 노출해야 한다"
+        "must also expose the hypergraph resource template"
     );
 
-    // --- 3) read_resource: node-link 그래프 JSON 을 받아 적재 지식을 확인 -------------
+    // --- 3) read_resource: receive node-link graph JSON and confirm the ingested knowledge -------------
     let read = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
@@ -399,14 +399,14 @@ async fn mcp_resource_graph_surface() {
     assert_eq!(
         graph["stats"]["node_count"].as_u64(),
         Some(2),
-        "그래프에 노드 2개: {graph}"
+        "2 nodes in the graph: {graph}"
     );
     assert_eq!(
         graph["stats"]["edge_count"].as_u64(),
         Some(1),
-        "그래프에 엣지 1개: {graph}"
+        "1 edge in the graph: {graph}"
     );
-    // 엣지가 depends_on 이고 노드 이름이 그래프에 담긴다.
+    // The edge is depends_on and node names are carried in the graph.
     let names: Vec<&str> = graph["nodes"]
         .as_array()
         .unwrap()
@@ -415,11 +415,11 @@ async fn mcp_resource_graph_surface() {
         .collect();
     assert!(
         names.contains(&"supragnosis") && names.contains(&"rmcp"),
-        "노드 이름이 그래프에 있어야 한다: {names:?}"
+        "node names must be in the graph: {names:?}"
     );
     assert_eq!(graph["edges"][0]["type"].as_str(), Some("depends_on"));
 
-    // --- 3b) 하이퍼그래프 리소스: 공동출현 이차 구조(원칙 11) - 멤버를 이름으로 노출 --------
+    // --- 3b) hypergraph resource: co-occurrence second-order structure (Principle 11) - members exposed by name --------
     let read = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
@@ -432,11 +432,11 @@ async fn mcp_resource_graph_surface() {
         other => panic!("expected text resource contents, got {other:?}"),
     };
     let hg: Value = serde_json::from_str(&text).expect("hypergraph resource is JSON");
-    // supragnosis + rmcp 가 한 관측에서 공동 주장됨 -> 하이퍼엣지 1개(size 2).
+    // supragnosis + rmcp are asserted together in a single observation -> 1 hyperedge (size 2).
     assert_eq!(
         hg["stats"]["hyperedge_count"].as_u64(),
         Some(1),
-        "하이퍼엣지 1개여야 한다: {hg}"
+        "there must be 1 hyperedge: {hg}"
     );
     let member_names: Vec<&str> = hg["hyperedges"][0]["member_names"]
         .as_array()
@@ -446,10 +446,10 @@ async fn mcp_resource_graph_surface() {
         .collect();
     assert!(
         member_names.contains(&"supragnosis") && member_names.contains(&"rmcp"),
-        "하이퍼엣지가 멤버를 이름으로 노출해야 한다(id-only 아님): {hg}"
+        "a hyperedge must expose members by name (not id-only): {hg}"
     );
 
-    // --- 4) 관측 역참조 (원칙 2/14): 검색 히트/observe 가 준 id 로 원문+출처+계보 조회 --
+    // --- 4) observation back-reference (Principles 2/14): query raw content+provenance+lineage by the id from a search hit/observe --
     let read = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
@@ -465,35 +465,35 @@ async fn mcp_resource_graph_surface() {
     assert_eq!(
         obs["content"].as_str(),
         Some("supragnosis depends on rmcp"),
-        "관측 원문이 와야 한다: {obs}"
+        "the observation's raw content must come back: {obs}"
     );
     assert_eq!(
         obs["provenance"][0]["on_behalf_of"].as_str(),
         Some("ashon"),
-        "provenance(위임 사슬 포함)가 와야 한다 - '이 답이 어디서 왔는가'의 종점: {obs}"
+        "provenance (including the delegation chain) must come back - the terminus of 'where did this answer come from': {obs}"
     );
     assert!(
         obs.get("embedding").is_none(),
-        "관측 리소스에 임베딩 벡터가 노출되면 안 된다(원칙 21): {obs}"
+        "the observation resource must not expose the embedding vector (Principle 21): {obs}"
     );
 
-    // --- 5) 미지 관측 id: 부재는 not_found (열린 세계 힌트를 담아) -------------------
+    // --- 5) unknown observation id: absence is not_found (with an open-world hint) -------------------
     let missing = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
             uri: "supragnosis://observation/does-not-exist".into(),
         })
         .await;
-    assert!(missing.is_err(), "미지 관측 id 는 not_found 에러여야 한다");
+    assert!(missing.is_err(), "an unknown observation id must be a not_found error");
 
-    // --- 6) 미지 URI: 부재는 에러로(원칙 5의 자기 교정 힌트를 담아) ------------------
+    // --- 6) unknown URI: absence surfaces as an error (with a Principle 5 self-correction hint) ------------------
     let bad = client
         .read_resource(ReadResourceRequestParams {
             meta: None,
             uri: "supragnosis://nope".into(),
         })
         .await;
-    assert!(bad.is_err(), "알 수 없는 리소스 URI 는 에러여야 한다");
+    assert!(bad.is_err(), "an unknown resource URI must be an error");
 
     client.cancel().await.expect("client shutdown");
     let _ = server.await;

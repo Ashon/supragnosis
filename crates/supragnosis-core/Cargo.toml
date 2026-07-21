@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-core"
-description = "supragnosis 도메인 모델 + 포트(트레이트). IO 의존 없음."
+description = "supragnosis domain model + ports (traits). No IO dependencies."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

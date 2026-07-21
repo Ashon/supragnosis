@@ -1,12 +1,12 @@
-//! 회상 회귀 평가셋 (recall regression eval).
+//! Recall regression eval.
 //!
-//! 원칙 부록 B: "검색/회상 변경은 메모리 벤치마크 스타일의 회귀 평가셋으로 검증한다."
-//! 이 테스트가 그 평가셋이다 - 라벨링된 (질의 -> 정답 id) 픽스처 위에서 recall@k 를
-//! 재고, 임계값을 회귀 가드로 건다. 검색 경로를 바꾸는 어떤 변경도 이 수치를 통과해야 한다.
+//! Principles Appendix B: "search/recall changes are verified with a memory-benchmark-style regression eval."
+//! This test is that eval - it measures recall@k over labeled (query -> gold id) fixtures and sets a threshold
+//! as a regression guard. Any change to the search path must pass these numbers.
 //!
-//! 결정적/오프라인: [`HashingEmbedder`](supragnosis_embed::HashingEmbedder)(어휘 해싱)를
-//! 쓰므로 네트워크/모델 없이 `cargo test` 에 상주한다. "의미"는 어휘 중첩으로 근사되며,
-//! 이는 결정성(원칙 16)과 재현성을 위한 의도된 스탠드인이다 (실모델 종단은 semantic_e2e).
+//! Deterministic/offline: it uses [`HashingEmbedder`](supragnosis_embed::HashingEmbedder) (lexical hashing),
+//! so it stays resident in `cargo test` without a network/model. "Meaning" is approximated by lexical overlap,
+//! an intended stand-in for determinism (Principle 16) and reproducibility (the real-model end-to-end is semantic_e2e).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -18,23 +18,23 @@ use supragnosis_store::InMemoryStore;
 
 const WS: &str = "recall";
 
-/// 코퍼스 한 건: 관측 본문 + 동봉 엔티티/관계. 엔티티는 관측이 만들고 링크한다.
+/// One corpus entry: an observation body + enclosed entities/relations. The observation creates and links the entities.
 struct Doc {
     content: &'static str,
     entities: &'static [(&'static str, &'static str)], // (name, type)
     relations: &'static [(&'static str, &'static str, &'static str)], // (from, kind, to)
 }
 
-/// 질의 한 건: 자연어 질의 + 정답 id 집합(엔티티 정규명 또는 관측 본문으로 지정).
+/// One query: a natural-language query + the set of gold ids (specified as entity canonical names or observation bodies).
 struct Query {
     name: &'static str,
     query: &'static str,
-    /// 정답이 엔티티면 정규명, 관측이면 본문 전체를 그대로 적는다(id 로 해소한다).
+    /// If the gold is an entity, write its canonical name; if an observation, write its full body verbatim (resolved to an id).
     gold_entities: &'static [&'static str],
     gold_observations: &'static [&'static str],
 }
 
-/// 평가 코퍼스. 엔티티 정답 질의(Gap A 를 노출)와 관측 정답 질의(기존 시맨틱 경로)를 섞는다.
+/// The evaluation corpus. Mixes entity-gold queries (exposing Gap A) and observation-gold queries (the existing semantic path).
 fn corpus() -> Vec<Doc> {
     vec![
         Doc {
@@ -62,7 +62,7 @@ fn corpus() -> Vec<Doc> {
             entities: &[("reciprocal rank fusion", "Concept")],
             relations: &[],
         },
-        // 노이즈: 어떤 질의의 정답도 아니다.
+        // Noise: not the gold for any query.
         Doc {
             content: "a simple banana bread recipe with walnuts and cinnamon",
             entities: &[],
@@ -73,8 +73,8 @@ fn corpus() -> Vec<Doc> {
 
 fn queries() -> Vec<Query> {
     vec![
-        // --- 엔티티 정답 (Gap A: 엔티티 임베딩 없이는 도달 불가) ---
-        // 엔티티명과 토큰이 겹치지만, 질의가 엔티티명/관측의 부분문자열이 아니다.
+        // --- Entity gold (Gap A: unreachable without entity embeddings) ---
+        // Tokens overlap the entity name, but the query is not a substring of the entity name/observation.
         Query {
             name: "entity: vector index",
             query: "index for vector similarity lookups",
@@ -93,8 +93,8 @@ fn queries() -> Vec<Query> {
             gold_entities: &["delegation chain identity"],
             gold_observations: &[],
         },
-        // --- 관측 정답 (기존 시맨틱 관측 경로) ---
-        // 부분문자열은 아니지만 관측 본문과 토큰이 겹친다.
+        // --- Observation gold (the existing semantic observation path) ---
+        // Not a substring, but tokens overlap the observation body.
         Query {
             name: "obs: async runtime",
             query: "asynchronous runtime for the rust language",
@@ -112,8 +112,8 @@ fn queries() -> Vec<Query> {
     ]
 }
 
-/// 코퍼스를 적재하고 (관측 본문 -> 실제 관측 id) 매핑을 돌려준다. 관측 id 는 동봉 주장까지
-/// 해시에 포함하므로(core), 본문에서 재계산하지 않고 observe 가 돌려준 id 를 정답에 쓴다.
+/// Loads the corpus and returns an (observation body -> actual observation id) mapping. Since the observation id
+/// includes the enclosed assertions in its hash (core), we use the id observe returned as the gold, not one recomputed from the body.
 fn load(engine: &Engine) -> HashMap<&'static str, String> {
     let mut obs_ids = HashMap::new();
     for d in corpus() {
@@ -151,7 +151,7 @@ fn load(engine: &Engine) -> HashMap<&'static str, String> {
     obs_ids
 }
 
-/// 질의의 정답 id 집합. 엔티티는 정규명으로 결정적 해소, 관측은 적재 매핑에서 실제 id 를 찾는다.
+/// The set of gold ids for a query. Entities are deterministically resolved by canonical name; observations look up the actual id in the load mapping.
 fn gold_ids(q: &Query, obs_ids: &HashMap<&'static str, String>) -> HashSet<String> {
     use supragnosis_core::Entity;
     let mut set = HashSet::new();
@@ -164,7 +164,7 @@ fn gold_ids(q: &Query, obs_ids: &HashMap<&'static str, String>) -> HashSet<Strin
     set
 }
 
-/// 질의별 recall@k = |top-k ∩ gold| / |gold| 를 (질의, 엔티티정답여부, recall) 로 돌려준다.
+/// Returns per-query recall@k = |top-k intersect gold| / |gold| as (query, is-entity-gold, recall).
 fn recall_per_query(
     engine: &Engine,
     obs_ids: &HashMap<&'static str, String>,
@@ -184,12 +184,12 @@ fn recall_per_query(
         .collect()
 }
 
-/// 그래프 문맥 보강: 어휘로도 의미로도 안 걸리는 이웃을 그래프 엣지로 회상한다.
-/// 임베더 없는 degrade 모드로 짜, 키워드(부분일치)도 이웃을 못 잡게 한 뒤 - 이웃은 오직
-/// 매치된 시드의 1-hop 관계로만 도달한다. 그래프 엣지가 회상을 추가한다는 것을 격리 증명한다.
+/// Graph enrichment: recalls a neighbor caught by neither lexical nor semantic means via a graph edge.
+/// Written in degrade mode with no embedder, so keyword (substring) match cannot catch the neighbor either - the
+/// neighbor is reached only through the 1-hop relation of a matched seed. Proves in isolation that the graph edge adds the recall.
 #[test]
 fn graph_enrichment_recalls_neighbor() {
-    // 임베더 없음(degrade): 시맨틱 경로 0, 키워드 부분일치만.
+    // No embedder (degrade): zero semantic path, keyword substring only.
     let engine = Engine::new(Arc::new(InMemoryStore::new()), "enrich-host", WS);
 
     engine
@@ -217,23 +217,23 @@ fn graph_enrichment_recalls_neighbor() {
     let alpha = supragnosis_core::Entity::make_id(WS, "alpha service");
     let zeta = supragnosis_core::Entity::make_id(WS, "zeta backend");
 
-    // 질의는 "alpha service" 를 시드로 잡는다("zeta backend" 는 부분일치가 아니다).
+    // The query catches "alpha service" as the seed ("zeta backend" is not a substring match).
     let hits = engine.search("alpha service", Some(WS), 5).unwrap().hits;
     let ids: HashSet<String> = hits.iter().map(|h| h.id.clone()).collect();
 
-    assert!(ids.contains(&alpha), "시드(alpha service)가 매치돼야 한다: {ids:?}");
-    // 핵심: zeta backend 는 어떤 어휘/의미 경로로도 안 걸리는데 그래프 이웃으로 회상된다.
+    assert!(ids.contains(&alpha), "the seed (alpha service) should match: {ids:?}");
+    // Key point: zeta backend is caught by no lexical/semantic path yet is recalled as a graph neighbor.
     assert!(
         ids.contains(&zeta),
-        "그래프 이웃(zeta backend)이 보강으로 회상돼야 한다: {ids:?}"
+        "the graph neighbor (zeta backend) should be recalled by enrichment: {ids:?}"
     );
 
-    // 이웃은 시드보다 약한 신호: 감쇠된 점수로 시드 아래에 랭크된다(순서 확인).
+    // A neighbor is a weaker signal than a seed: with a decayed score it ranks below the seed (order check).
     let alpha_rank = hits.iter().position(|h| h.id == alpha).unwrap();
     let zeta_rank = hits.iter().position(|h| h.id == zeta).unwrap();
-    assert!(zeta_rank > alpha_rank, "이웃은 시드보다 아래여야 한다: {hits:?}");
+    assert!(zeta_rank > alpha_rank, "the neighbor should be below the seed: {hits:?}");
 
-    // 관계가 없으면 이웃은 회상되지 않는다 - 회상을 만든 것이 그래프 엣지임을 격리.
+    // With no relation, the neighbor is not recalled - isolating that the graph edge is what created the recall.
     let control = Engine::new(Arc::new(InMemoryStore::new()), "enrich-host", WS);
     control
         .observe(ObserveInput {
@@ -247,7 +247,7 @@ fn graph_enrichment_recalls_neighbor() {
                 EntityInput { name: "alpha service".into(), kind: Some("Component".into()) },
                 EntityInput { name: "zeta backend".into(), kind: Some("Component".into()) },
             ],
-            relations: vec![], // 관계 없음
+            relations: vec![], // no relation
         })
         .unwrap();
     let control_ids: HashSet<String> = control
@@ -259,7 +259,7 @@ fn graph_enrichment_recalls_neighbor() {
         .collect();
     assert!(
         !control_ids.contains(&zeta),
-        "관계가 없으면 zeta 는 회상되지 않아야 한다(그래프 엣지가 원인): {control_ids:?}"
+        "with no relation, zeta should not be recalled (the graph edge is the cause): {control_ids:?}"
     );
 }
 
@@ -273,15 +273,15 @@ fn recall_at_5_meets_baseline() {
     let mean = per_query.iter().map(|(_, _, r)| r).sum::<f32>() / per_query.len() as f32;
     eprintln!("[recall] mean recall@5 = {mean:.3}");
 
-    // 전체 회귀 가드: 임베딩 없던 베이스라인은 0.400(엔티티 정답 질의가 전부 miss).
-    // 엔티티 임베딩(Gap A) 도입 후 1.000. 회귀를 잡도록 0.9 로 못박는다.
+    // Overall regression guard: the baseline without embeddings was 0.400 (all entity-gold queries miss).
+    // After introducing entity embeddings (Gap A), 1.000. Pinned to 0.9 to catch regressions.
     assert!(
         mean >= 0.9,
-        "mean recall@5 = {mean:.3} - 회상 회귀(임계 0.9 하회)"
+        "mean recall@5 = {mean:.3} - recall regression (below the 0.9 threshold)"
     );
 
-    // Gap A 전용 가드: 엔티티 정답 질의는 엔티티 임베딩으로만 회상된다(관측 어휘로 도달
-    // 불가). 이 부분집합이 무너지면 엔티티 시맨틱 경로 회귀다 - 관측 경로와 구별해 잡는다.
+    // Gap A-specific guard: entity-gold queries are recalled only by entity embeddings (unreachable via observation
+    // lexicon). If this subset collapses it is an entity semantic-path regression - caught separately from the observation path.
     let entity_mean = {
         let e: Vec<f32> = per_query
             .iter()
@@ -292,6 +292,6 @@ fn recall_at_5_meets_baseline() {
     };
     assert!(
         entity_mean >= 0.99,
-        "엔티티 정답 recall@5 = {entity_mean:.3} - 엔티티 시맨틱(Gap A) 회귀"
+        "entity-gold recall@5 = {entity_mean:.3} - entity semantic (Gap A) regression"
     );
 }

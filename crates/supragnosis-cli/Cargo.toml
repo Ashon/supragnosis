@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-cli"
-description = "supragnosis 실행 바이너리."
+description = "supragnosis executable binary."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,8 +14,8 @@ path = "src/main.rs"
 
 [features]
 default = []
-# fastembed(ONNX 로컬 임베딩)을 켠다. 무거운 의존이라 opt-in - 끄면 키워드 검색으로 degrade.
-# 켠 빌드에서는 런타임 기본 임베더가 fastembed 가 된다(SUPRAGNOSIS_EMBED 로 재지정 가능).
+# Enables fastembed(ONNX local embedding). It is a heavy dependency, so opt-in - when off, it degrades to keyword search.
+# In a build with it on, the runtime default embedder becomes fastembed (can be overridden via SUPRAGNOSIS_EMBED).
 fastembed = ["supragnosis-embed/fastembed"]
 
 [dependencies]
@@ -25,19 +25,19 @@ supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
 supragnosis-mcp.workspace = true
 supragnosis-viz.workspace = true
-# transport-streamable-http-server: standalone 데몬(SUPRAGNOSIS_HTTP_ADDR)의 MCP HTTP 서비스.
+# transport-streamable-http-server: MCP HTTP service of the standalone daemon (SUPRAGNOSIS_HTTP_ADDR).
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
-# net: 뷰어/데몬 TcpListener 바인드. 워크스페이스 공통에 없어 국소 추가.
+# net: viewer/daemon TcpListener bind. Not in the workspace-wide set, so added locally.
 tokio = { workspace = true, features = ["net"] }
-# MCP streamable-http 서비스를 마운트하는 HTTP 서버(데몬 모드).
+# HTTP server that mounts the MCP streamable-http service (daemon mode).
 axum.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-# 서브커맨드/플래그 CLI.
+# Subcommand/flag CLI.
 clap = { version = "4", features = ["derive"] }
 
-# 백그라운드 데몬(start): fork/setsid/pidfile/로그 리다이렉트. unsafe_code=forbid 라 직접
-# 구현하지 않고 크레이트에 위임한다(내부 unsafe 는 의존 크레이트 소관). unix 전용.
+# Background daemon (start): fork/setsid/pidfile/log redirect. Since unsafe_code=forbid, we do not
+# implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern). unix only.
 [target.'cfg(unix)'.dependencies]
 daemonize = "0.5"

@@ -1,16 +1,17 @@
-//! LLM eval: 실제 모델이 MCP 도구 표면을 잘 쓰는지 채점한다.
+//! LLM eval: scores whether a real model uses the MCP tool surface well.
 //!
-//! 살아있는 `SupragnosisServer` 에서 도구 스키마를 프로토콜로 뽑아(= 실제 표면) 그대로
-//! Anthropic Messages API 의 tools 로 넘기고, 자연어 시나리오마다 모델이 올바른 도구를
-//! 올바른 인자로 부르는지 검증한다. "표면이 LLM 에게 읽히는가"(원칙 21)의 경험적 측정.
+//! Pulls the tool schemas from a live `SupragnosisServer` over the protocol (= the real surface),
+//! hands them as-is to the Anthropic Messages API's tools, and, for each natural-language
+//! scenario, verifies that the model calls the right tool with the right arguments. An empirical
+//! measurement of "is the surface legible to the LLM" (Principle 21).
 //!
-//! 비결정적(모델 호출)이고 네트워크+크레덴셜이 필요하므로 기본 실행에서 제외한다.
-//! 실행:
+//! Nondeterministic (model calls) and requiring network + credentials, so excluded from the default run.
+//! Run:
 //!   ANTHROPIC_API_KEY=... cargo test -p supragnosis-e2e --test llm_eval -- --ignored --nocapture
-//! 선택 env:
-//!   SUPRAGNOSIS_EVAL_MODEL (기본 claude-haiku-4-5-20251001)
+//! Optional env:
+//!   SUPRAGNOSIS_EVAL_MODEL (default claude-haiku-4-5-20251001)
 //!
-//! ANTHROPIC_API_KEY 가 없으면 조용히 통과(skip)한다 - CI 를 깨지 않기 위해서다.
+//! If ANTHROPIC_API_KEY is unset, it silently passes (skips) - so as not to break CI.
 
 use std::sync::Arc;
 
@@ -25,14 +26,14 @@ use supragnosis_store::InMemoryStore;
 const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-/// 한 시나리오: 자연어 요청 -> 기대 도구 + 인자 술어.
+/// A single scenario: natural-language request -> expected tool + argument predicate.
 struct Scenario {
     name: &'static str,
-    /// 사용자 턴(자연어). 모델은 이걸 보고 도구를 골라야 한다.
+    /// The user turn (natural language). The model must choose a tool from this.
     user: &'static str,
-    /// 첫 tool_use 가 이 도구여야 한다.
+    /// The first tool_use must be this tool.
     expect_tool: &'static str,
-    /// 도구 인자에 대한 술어. Ok(()) 면 통과, Err(reason) 면 실패.
+    /// Predicate over the tool arguments. Ok(()) passes, Err(reason) fails.
     check_args: fn(&Value) -> Result<(), String>,
 }
 
@@ -70,7 +71,7 @@ fn scenarios() -> Vec<Scenario> {
     ]
 }
 
-/// 응답 content 에서 첫 tool_use 블록의 (name, input) 을 꺼낸다.
+/// Extracts the (name, input) of the first tool_use block from the response content.
 fn first_tool_use(resp: &Value) -> Option<(String, Value)> {
     resp.get("content")?.as_array()?.iter().find_map(|block| {
         if block.get("type").and_then(Value::as_str) == Some("tool_use") {
@@ -84,17 +85,17 @@ fn first_tool_use(resp: &Value) -> Option<(String, Value)> {
 }
 
 #[tokio::test]
-#[ignore = "실제 모델 호출 - 네트워크 + ANTHROPIC_API_KEY 필요(수동 eval)"]
+#[ignore = "real model call - requires network + ANTHROPIC_API_KEY (manual eval)"]
 async fn model_uses_mcp_tools_correctly() {
     let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") else {
-        eprintln!("[skip] ANTHROPIC_API_KEY 미설정 - LLM eval 을 건너뛴다");
+        eprintln!("[skip] ANTHROPIC_API_KEY unset - skipping the LLM eval");
         return;
     };
     let base = std::env::var("ANTHROPIC_BASE_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
     let model = std::env::var("SUPRAGNOSIS_EVAL_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
-    // 살아있는 MCP 서버에서 도구 스키마를 프로토콜로 뽑는다(= 모델이 볼 실제 표면).
+    // Pull the tool schemas from a live MCP server over the protocol (= the real surface the model will see).
     let engine = Arc::new(
         Engine::new(Arc::new(InMemoryStore::new()), "eval-host", "ws")
             .with_embedder(Arc::new(HashingEmbedder::default())),
@@ -131,7 +132,7 @@ async fn model_uses_mcp_tools_correctly() {
             "model": model,
             "max_tokens": 1024,
             "tools": tools,
-            // 도구 사용을 유도하되 어떤 도구인지는 모델이 고르게 둔다.
+            // Encourage tool use, but let the model choose which tool.
             "tool_choice": {"type": "any"},
             "messages": [{"role": "user", "content": sc.user}],
         });
@@ -148,7 +149,7 @@ async fn model_uses_mcp_tools_correctly() {
         let payload: Value = resp.json().await.expect("anthropic json");
         assert!(
             status.is_success(),
-            "[{}] API 오류 {status}: {payload}",
+            "[{}] API error {status}: {payload}",
             sc.name
         );
 
@@ -158,23 +159,23 @@ async fn model_uses_mcp_tools_correctly() {
                     passed += 1;
                     eprintln!("[pass] {} -> {name}({input})", sc.name);
                 }
-                Err(why) => failures.push(format!("[{}] 인자 불일치: {why}", sc.name)),
+                Err(why) => failures.push(format!("[{}] argument mismatch: {why}", sc.name)),
             },
             Some((name, input)) => failures.push(format!(
-                "[{}] 도구 선택 오류: 기대 {}, 실제 {name}({input})",
+                "[{}] wrong tool choice: expected {}, got {name}({input})",
                 sc.name, sc.expect_tool
             )),
-            None => failures.push(format!("[{}] tool_use 없음: {payload}", sc.name)),
+            None => failures.push(format!("[{}] no tool_use: {payload}", sc.name)),
         }
     }
 
     let _ = client.cancel().await;
     let _ = server.await;
 
-    eprintln!("eval: {passed}/{} 통과", cases.len());
+    eprintln!("eval: {passed}/{} passed", cases.len());
     assert!(
         failures.is_empty(),
-        "LLM 이 MCP 도구를 잘못 사용한 시나리오:\n{}",
+        "scenarios where the LLM misused the MCP tools:\n{}",
         failures.join("\n")
     );
 }
