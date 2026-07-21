@@ -12,3 +12,5 @@ workspace = true
 supragnosis-core.workspace = true
 cozo.workspace = true
 serde_json.workspace = true
+# 열거 degrade(손상 행 제외)를 침묵하지 않고 기록한다 (원칙 19).
+tracing.workspace = true

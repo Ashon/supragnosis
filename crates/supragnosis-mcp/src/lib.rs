@@ -112,6 +112,19 @@ pub struct TraverseRequest {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WorkspaceMapRequest {
+    /// 작업 공간(생략 시 노드 기본값, '*'/'all' 은 전체).
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// 최대 클러스터 수(생략 시 20). 큰 순(크기)으로 잘린다.
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// 최소 클러스터 크기 = 공동출현 엔티티 수(생략 시 2). 3 이상이면 사소한 쌍을 제외한다.
+    #[serde(default)]
+    pub min_size: Option<usize>,
+}
+
 // --- 서버 --------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -316,6 +329,75 @@ impl SupragnosisServer {
         }
         resp.to_string()
     }
+
+    #[tool(
+        description = "워크스페이스의 주요 공동출현 맥락(하이퍼엣지 - 한 관측에서 함께 주장된 엔티티 집합)을 개관한다. cold-start 오리엔테이션용: 검색 전에 '여기 무엇이 어떤 덩어리로 있나'를 이름으로 파악한다. 클러스터는 크기(공동출현 엔티티 수) 순으로 정렬되고 sources 는 뒷받침 관측 수다. 이는 주장된 관계가 아니라 방향성 신호다 - 실제 관계/상세는 search_knowledge/get_entity 로 확인하라."
+    )]
+    async fn workspace_map(&self, Parameters(req): Parameters<WorkspaceMapRequest>) -> String {
+        // 워크스페이스 해석: 생략 -> 노드 기본, '*'/'all'/'' -> 전체(None) (graph 리소스와 동일).
+        let ws_arg: Option<String> = match req.workspace.as_deref() {
+            None => Some(self.engine.default_workspace().to_string()),
+            Some("") | Some("*") | Some("all") => None,
+            Some(s) => Some(s.to_string()),
+        };
+        let limit = req.limit.unwrap_or(20);
+        // 최소 크기는 2 미만으로 못 내린다(size<2 는 하이퍼엣지가 아니다).
+        let min_size = req.min_size.unwrap_or(2).max(2);
+        let engine = self.engine.clone();
+        let ws_call = ws_arg.clone();
+        let mapped =
+            tokio::task::spawn_blocking(move || engine.hypergraph(ws_call.as_deref())).await;
+        let hg = match mapped {
+            Ok(Ok(hg)) => hg,
+            Ok(Err(e)) => return store_failure_json(&e),
+            Err(e) => return err_json(&format!("task join error: {e}")),
+        };
+        // 이름 중심의 읽기 쉬운 요약(원칙 21). 하이퍼엣지는 이미 (크기 desc, id asc) 정렬.
+        let qualifying = hg.hyperedges.iter().filter(|h| h.size >= min_size).count();
+        let clusters: Vec<serde_json::Value> = hg
+            .hyperedges
+            .iter()
+            .filter(|h| h.size >= min_size)
+            .take(limit)
+            .map(|h| {
+                serde_json::json!({
+                    "concepts": h.member_names,
+                    "size": h.size,
+                    "sources": h.sources,
+                    "trust_tier": h.trust_tier,
+                })
+            })
+            .collect();
+        let shown = clusters.len();
+        let mut resp = serde_json::json!({
+            "workspace": ws_arg,
+            "clusters": clusters,
+            "stats": {
+                "node_count": hg.stats.node_count,
+                "hyperedge_count": hg.stats.hyperedge_count,
+                "max_size": hg.stats.max_size,
+                "shown": shown,
+                "matched": qualifying,
+            },
+        });
+        // 절단을 침묵하지 않는다(no silent caps) + 0건은 부재!=부정(원칙 5).
+        if qualifying > shown {
+            resp["note"] = serde_json::Value::String(format!(
+                "showing top {shown} of {qualifying} clusters (by size). raise limit or lower \
+                 min_size to see more. clusters are co-occurrence contexts (entities asserted \
+                 together), not asserted relations - drill in with search_knowledge/get_entity \
+                 by concept name"
+            ));
+        } else if shown == 0 {
+            resp["note"] = serde_json::Value::String(
+                "no co-occurrence clusters at this min_size - absence is unknown, not a negation \
+                 (open-world). Lower min_size, widen workspace ('*'), or the workspace may be \
+                 sparsely linked (entities observed alone). observe more, or use search_knowledge"
+                    .into(),
+            );
+        }
+        resp.to_string()
+    }
 }
 
 #[tool_handler]
@@ -330,9 +412,11 @@ impl ServerHandler for SupragnosisServer {
             instructions: Some(
                 "supragnosis: 여러 호스트/워크스페이스의 지식을 온톨로지화하는 MCP 서버. \
                  observe 로 지식을 적재하고 search_knowledge/get_entity/traverse 로 탐색한다. \
-                 리소스: supragnosis://workspace/{ws}/graph 는 온톨로지 그래프 전체(node-link), \
-                 supragnosis://observation/{id} 는 관측 역참조(원문+출처+계보 - 검색 히트의 \
-                 근거를 확인할 때 사용)."
+                 workspace_map 으로 워크스페이스의 주요 공동출현 맥락(클러스터)을 개관한다 \
+                 (검색 전 오리엔테이션). 리소스: supragnosis://workspace/{ws}/graph 는 온톨로지 \
+                 그래프 전체(node-link), supragnosis://workspace/{ws}/hypergraph 는 공동출현 \
+                 이차 구조(하이퍼엣지), supragnosis://observation/{id} 는 관측 역참조(원문+출처+ \
+                 계보 - 검색 히트의 근거를 확인할 때 사용)."
                     .to_string(),
             ),
             ..Default::default()
@@ -366,9 +450,21 @@ impl ServerHandler for SupragnosisServer {
                 .to_string(),
         );
         res.mime_type = Some("application/json".to_string());
+
+        // 공동출현 이차 구조(원칙 11) - 기본 워크스페이스의 하이퍼그래프도 구체 리소스로 노출.
+        let mut hyper = RawResource::new(
+            format!("supragnosis://workspace/{ws}/hypergraph"),
+            format!("{ws} 하이퍼그래프(공동출현)"),
+        );
+        hyper.description = Some(
+            "한 관측이 공동 주장한 엔티티 집합(하이퍼엣지)의 파생 뷰 - 이진 관계가 버린 맥락의 회복(원칙 11)."
+                .to_string(),
+        );
+        hyper.mime_type = Some("application/json".to_string());
         std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
             ws_list.no_annotation(),
             res.no_annotation(),
+            hyper.no_annotation(),
         ])))
     }
 
@@ -384,6 +480,19 @@ impl ServerHandler for SupragnosisServer {
             title: Some("워크스페이스 온톨로지 그래프".to_string()),
             description: Some(
                 "특정 워크스페이스의 엔티티-관계 그래프(node-link). {workspace} 를 채워 조회한다."
+                    .to_string(),
+            ),
+            mime_type: Some("application/json".to_string()),
+            icons: None,
+        };
+        // 공동출현 이차 구조(원칙 11): 한 관측이 공동 주장한 엔티티 집합 = 하이퍼엣지.
+        let hypergraph = RawResourceTemplate {
+            uri_template: "supragnosis://workspace/{workspace}/hypergraph".to_string(),
+            name: "workspace-hypergraph".to_string(),
+            title: Some("워크스페이스 하이퍼그래프 (공동출현 이차 구조)".to_string()),
+            description: Some(
+                "한 관측이 공동 주장한 엔티티 집합을 하이퍼엣지로 되살린 파생 뷰 - 이진 관계가 \
+                 버린 맥락(무엇이 함께 말해졌나)의 회복. {workspace} 를 채워 조회한다."
                     .to_string(),
             ),
             mime_type: Some("application/json".to_string()),
@@ -405,6 +514,7 @@ impl ServerHandler for SupragnosisServer {
         };
         std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
             graph.no_annotation(),
+            hypergraph.no_annotation(),
             observation.no_annotation(),
         ])))
     }
@@ -433,6 +543,16 @@ impl ServerHandler for SupragnosisServer {
                     contents: vec![ResourceContents::text(to_json(&graph), uri)],
                 }),
                 // 고장은 not_found(부재)가 아니라 내부 오류로 - 원칙 5 의 구별을 유지한다.
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("저장소 백엔드 실패 (리소스 부재가 아니다): {e}"),
+                    None,
+                )),
+            },
+            // 공동출현 이차 구조(원칙 11): 관측이 공동 주장한 엔티티 집합을 하이퍼엣지로.
+            Some(ResourceUri::Hypergraph(ws)) => match self.engine.hypergraph(Some(ws)) {
+                Ok(hg) => Ok(ReadResourceResult {
+                    contents: vec![ResourceContents::text(to_json(&hg), uri)],
+                }),
                 Err(e) => Err(ErrorData::internal_error(
                     format!("저장소 백엔드 실패 (리소스 부재가 아니다): {e}"),
                     None,
@@ -473,6 +593,8 @@ enum ResourceUri<'a> {
     Workspaces,
     /// `supragnosis://workspace/<ws>/graph` - 워크스페이스 온톨로지 그래프.
     Graph(&'a str),
+    /// `supragnosis://workspace/<ws>/hypergraph` - 공동출현 이차 구조(원칙 11 이차 구조).
+    Hypergraph(&'a str),
     /// `supragnosis://observation/<id>` - 관측 역참조 (원칙 2/14).
     Observation(&'a str),
 }
@@ -484,11 +606,21 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
         return Some(ResourceUri::Workspaces);
     }
     if let Some(rest) = uri.strip_prefix("supragnosis://workspace/") {
-        let ws = rest.strip_suffix("/graph")?;
-        if ws.is_empty() || ws.contains('/') {
-            return None;
+        // "/hypergraph" 를 먼저 본다 - "hypergraph" 는 "/graph" 로 끝나지 않으나(앞이 'r'),
+        // 의도를 분명히 하려 명시 순서로 둔다. 세그먼트에 '/' 가 있으면 거부(단일 세그먼트).
+        if let Some(ws) = rest.strip_suffix("/hypergraph") {
+            if ws.is_empty() || ws.contains('/') {
+                return None;
+            }
+            return Some(ResourceUri::Hypergraph(ws));
         }
-        return Some(ResourceUri::Graph(ws));
+        if let Some(ws) = rest.strip_suffix("/graph") {
+            if ws.is_empty() || ws.contains('/') {
+                return None;
+            }
+            return Some(ResourceUri::Graph(ws));
+        }
+        return None;
     }
     if let Some(id) = uri.strip_prefix("supragnosis://observation/") {
         if id.is_empty() || id.contains('/') {

@@ -63,8 +63,14 @@ async fn mcp_protocol_surface_end_to_end() {
     let names: BTreeSet<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
     assert_eq!(
         names,
-        BTreeSet::from(["observe", "get_entity", "search_knowledge", "traverse"]),
-        "정확히 4개의 의도 단위 도구를 노출해야 한다"
+        BTreeSet::from([
+            "observe",
+            "get_entity",
+            "search_knowledge",
+            "traverse",
+            "workspace_map",
+        ]),
+        "5개의 의도 단위 도구를 노출해야 한다(workspace_map = 공동출현 오리엔테이션)"
     );
     for t in &tools {
         let desc = t.description.as_deref().unwrap_or("");
@@ -250,6 +256,32 @@ async fn mcp_protocol_surface_end_to_end() {
         "부재는 에러가 아니라 found:false 여야 한다(LLM 오독 방지): {unknown}"
     );
 
+    // --- 7) workspace_map: 공동출현 클러스터 개관 (원칙 11 이차 구조) ---------------
+    // supragnosis + rmcp 가 한 관측에서 공동 주장됨 -> 크기 2 클러스터 하나, 이름으로 노출.
+    let res = client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "workspace_map".into(),
+            arguments: args(json!({"workspace": "ws"})),
+            task: None,
+        })
+        .await
+        .expect("workspace_map call");
+    let map = tool_json(&res);
+    let clusters = map["clusters"].as_array().expect("clusters array");
+    assert!(!clusters.is_empty(), "공동출현 클러스터가 있어야 한다: {map}");
+    let concepts: Vec<&str> = clusters[0]["concepts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c.as_str())
+        .collect();
+    assert!(
+        concepts.contains(&"supragnosis") && concepts.contains(&"rmcp"),
+        "클러스터는 id 가 아니라 이름으로 개념을 노출해야 한다(LLM 가독성): {map}"
+    );
+    assert_eq!(clusters[0]["size"].as_u64(), Some(2), "공동출현 크기 2: {map}");
+
     // 정리: 클라이언트를 종료하면 서버 파이프가 닫히고 서버 태스크가 끝난다.
     client.cancel().await.expect("client shutdown");
     let _ = server.await;
@@ -308,6 +340,10 @@ async fn mcp_resource_graph_surface() {
         uris.contains(&"supragnosis://workspaces"),
         "워크스페이스 목록 리소스를 노출해야 한다(발견 진입점): {uris:?}"
     );
+    assert!(
+        uris.contains(&"supragnosis://workspace/ws/hypergraph"),
+        "기본 워크스페이스 하이퍼그래프 리소스도 노출해야 한다(발견성): {uris:?}"
+    );
 
     // --- 1b) read_resource(workspaces): 지식이 있는 워크스페이스 이름 배열 --------------
     let read = client
@@ -339,6 +375,12 @@ async fn mcp_resource_graph_surface() {
             .iter()
             .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/graph"),
         "그래프 리소스 템플릿을 노출해야 한다"
+    );
+    assert!(
+        templates
+            .iter()
+            .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/hypergraph"),
+        "하이퍼그래프 리소스 템플릿도 노출해야 한다"
     );
 
     // --- 3) read_resource: node-link 그래프 JSON 을 받아 적재 지식을 확인 -------------
@@ -376,6 +418,36 @@ async fn mcp_resource_graph_surface() {
         "노드 이름이 그래프에 있어야 한다: {names:?}"
     );
     assert_eq!(graph["edges"][0]["type"].as_str(), Some("depends_on"));
+
+    // --- 3b) 하이퍼그래프 리소스: 공동출현 이차 구조(원칙 11) - 멤버를 이름으로 노출 --------
+    let read = client
+        .read_resource(ReadResourceRequestParams {
+            meta: None,
+            uri: "supragnosis://workspace/ws/hypergraph".into(),
+        })
+        .await
+        .expect("read hypergraph resource");
+    let text = match read.contents.first().expect("one content") {
+        ResourceContents::TextResourceContents { text, .. } => text.clone(),
+        other => panic!("expected text resource contents, got {other:?}"),
+    };
+    let hg: Value = serde_json::from_str(&text).expect("hypergraph resource is JSON");
+    // supragnosis + rmcp 가 한 관측에서 공동 주장됨 -> 하이퍼엣지 1개(size 2).
+    assert_eq!(
+        hg["stats"]["hyperedge_count"].as_u64(),
+        Some(1),
+        "하이퍼엣지 1개여야 한다: {hg}"
+    );
+    let member_names: Vec<&str> = hg["hyperedges"][0]["member_names"]
+        .as_array()
+        .expect("member_names array")
+        .iter()
+        .filter_map(|n| n.as_str())
+        .collect();
+    assert!(
+        member_names.contains(&"supragnosis") && member_names.contains(&"rmcp"),
+        "하이퍼엣지가 멤버를 이름으로 노출해야 한다(id-only 아님): {hg}"
+    );
 
     // --- 4) 관측 역참조 (원칙 2/14): 검색 히트/observe 가 준 id 로 원문+출처+계보 조회 --
     let read = client
