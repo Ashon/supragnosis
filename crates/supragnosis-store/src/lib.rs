@@ -308,6 +308,7 @@ mod tests {
             kind: "Concept".into(),
             canonical_name: name.into(),
             aliases: vec![],
+            description: None,
             properties: serde_json::Value::Null,
             provenance: vec![prov()],
             embedding: None,
@@ -332,7 +333,7 @@ mod tests {
         );
         for (from, to) in [(&a, &b), (&b, &c)] {
             store
-                .add_relation(Relation {
+                .add_relation(Relation { description: None,
                     id: Relation::make_id(from, "rel", to),
                     from: from.clone(),
                     to: to.clone(),

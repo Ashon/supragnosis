@@ -534,7 +534,7 @@ fn load_corpus(engine: &Engine, scale: usize) {
                 entities: f
                     .entities
                     .iter()
-                    .map(|(n, t)| EntityInput {
+                    .map(|(n, t)| EntityInput { description: None,
                         name: (*n).into(),
                         kind: Some((*t).into()),
                     })
@@ -542,7 +542,7 @@ fn load_corpus(engine: &Engine, scale: usize) {
                 relations: f
                     .relations
                     .iter()
-                    .map(|(from, kind, to, vf, vt)| RelationInput {
+                    .map(|(from, kind, to, vf, vt)| RelationInput { description: None,
                         from: (*from).into(),
                         kind: (*kind).into(),
                         to: (*to).into(),

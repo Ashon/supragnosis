@@ -60,6 +60,10 @@ pub struct EntityInput {
     /// Entity type (e.g. Concept, Person, Project, Tool). Defaults to Concept when omitted.
     #[serde(rename = "type", default)]
     pub kind: Option<String>,
+    /// (Optional) Human-readable explanation of this entity - what it is, so the ontology captures the
+    /// definition and not just the name/type. Updates the entity's description (latest wins).
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -72,6 +76,10 @@ pub struct RelationInput {
     pub kind: String,
     /// Name of the target entity.
     pub to: String,
+    /// (Optional) Human-readable explanation of this connection - what it means / why from relates to to
+    /// this way, so the ontology captures the reasoning behind the edge and not just its type.
+    #[serde(default)]
+    pub description: Option<String>,
     /// (Optional) Valid-time start, epoch millis. When the relation became true in the world - use it
     /// to retroactively record a fact that was true in the past. Interpreted as from the observation time when omitted.
     #[serde(default)]
@@ -145,7 +153,7 @@ impl SupragnosisServer {
 #[tool_router]
 impl SupragnosisServer {
     #[tool(
-        description = "Ingest a knowledge fragment. Stores it as an immutable observation (the source of truth) and links the entities/relations provided alongside it into the ontology. Returns the observation id and the linked entity/relation ids."
+        description = "Ingest a knowledge fragment. Stores it as an immutable observation (the source of truth) and links the entities/relations provided alongside it into the ontology. Each entity and each relation may carry an optional description - a human-readable explanation of what the entity is or what the connection means, so the ontology captures the definitions/reasoning, not just names and types. Returns the observation id and the linked entity/relation ids."
     )]
     async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
         // The workspace actually used (node default when omitted) - carried on the event so the viewer knows the scope.
@@ -166,6 +174,7 @@ impl SupragnosisServer {
                 .map(|e| EngineEntityInput {
                     name: e.name,
                     kind: e.kind,
+                    description: e.description,
                 })
                 .collect(),
             relations: req
@@ -175,6 +184,7 @@ impl SupragnosisServer {
                     from: r.from,
                     kind: r.kind,
                     to: r.to,
+                    description: r.description,
                     valid_from: r.valid_from,
                     valid_to: r.valid_to,
                 })
