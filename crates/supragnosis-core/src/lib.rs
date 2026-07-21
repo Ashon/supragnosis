@@ -419,6 +419,22 @@ impl Relation {
     }
 }
 
+/// 하이퍼엣지(공동출현 이차 구조, 원칙 11 "유도의 기반")의 결정적 식별자 =
+/// blake3(멤버 수 + 정렬된 멤버 id 들), length-prefix 인코딩. 하이퍼엣지는 저장
+/// 원소가 아니라 프로젝션이므로 core 에는 id 유도(순수 함수)만 두고 뷰 타입은
+/// engine 이 소유한다. **멤버 집합이 정체성**이라(원칙 14) 같은 집합은 어떤 관측에서
+/// 유도돼도 같은 id 로 수렴한다 - 관측은 그 집합의 attestation 이다(원칙 3). 호출자가
+/// 정렬/중복 제거한 id 슬라이스를 넘긴다. length-prefix 라 멤버 경계가 모호하지 않다
+/// ([`Observation`] 의 해시 규율과 동일 - 원칙 18).
+pub fn hyperedge_id(sorted_member_ids: &[String]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(sorted_member_ids.len() as u64).to_le_bytes());
+    for id in sorted_member_ids {
+        hash_field(&mut hasher, id.as_bytes());
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
 /// 검색 결과 한 건.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchHit {
@@ -489,6 +505,19 @@ pub trait KnowledgeStore: Send + Sync {
     /// 워크스페이스의 모든 관계를 열거한다(그래프 프로젝션의 엣지 집합). `None` 이면 전체.
     /// 관계의 워크스페이스는 provenance.workspace 로 판단한다.
     fn all_relations(&self, workspace: Option<&str>) -> Result<Vec<Relation>, StoreError>;
+    /// 워크스페이스의 모든 관측을 열거한다(로그 전수). `None` 이면 전체. search 처럼
+    /// 질의어가 아니라 전수 열거다 - 부재는 빈 Vec. 개별 get 만으로는 로그 재생/공동출현
+    /// 유도가 구조적으로 불가능하므로 열거를 포트에 둔다 - 하이퍼엣지(이차 구조, 원칙 11)와
+    /// 재프로젝션(원칙 1)의 공통 읽기 경로다.
+    ///
+    /// **degrade 규약**: 개별 행의 복원 실패(일부 legacy/손상 row)는 전체 열거를 막지
+    /// 않는다 - 그 행을 제외하고 나머지를 돌려주되 **침묵하지 않는다**(제외를 로그로 남긴다,
+    /// 원칙 19 의 degrade 정신). 파생 오버레이(하이퍼엣지)를 한 행 때문에 통째로 못 쓰게
+    /// 만들지 않기 위함이다. 반면 point-read([`KnowledgeStore::get_observation`])는 fail-fast 다
+    /// (재도착 병합의 기준 읽기라 실패를 부재로 오인하면 attestation 이 파괴된다, 원칙 3).
+    /// 질의/스키마 수준의 백엔드 고장(개별 행이 아닌)은 여전히 `Err`.
+    /// 주의: 완전성이 필요한 재프로젝션(M3)은 제외 행을 드롭이 아니라 복원/복구로 다뤄야 한다.
+    fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError>;
     /// 임베딩이 있는 관측을 질의 벡터와의 코사인 유사도로 검색한다 (원칙 19: 회상 확장).
     /// 임베딩이 없는 관측은 후보에서 제외된다. `score` 는 코사인 유사도(-1.0~1.0).
     /// 기본 구현은 빈 결과 - 벡터를 저장하지 않는 어댑터는 재정의할 필요가 없다.

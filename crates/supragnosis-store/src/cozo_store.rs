@@ -771,6 +771,41 @@ impl KnowledgeStore for CozoStore {
             .collect())
     }
 
+    fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
+        // observation 테이블은 workspace 컬럼을 지니므로 스토어에서 바로 필터한다.
+        let mut p = params(&[]);
+        let script = match workspace {
+            Some(ws) => {
+                p.insert("ws".to_string(), DataValue::from(ws));
+                "?[id, content, data] := *observation{id, content, workspace, data}, workspace == $ws"
+            }
+            None => "?[id, content, data] := *observation{id, content, data}",
+        };
+        let rows = self.run(script, p, false)?;
+        // 행 복원 실패는 부재가 아니라 고장이다(원칙 5) - 열거에서도 삼키지 않는다.
+        // observation_from_row 는 [content, data] 슬라이스를 받으므로 r[1..] 를 넘긴다.
+        let mut out = Vec::with_capacity(rows.rows.len());
+        for r in &rows.rows {
+            let Some(id) = r.first().and_then(|v| v.get_str()) else {
+                return Err(StoreError::Backend(
+                    "관측 열거: id 컬럼 손상 (부재가 아니라 고장이다)".into(),
+                ));
+            };
+            match observation_from_row(id, &r[1..]) {
+                Some(obs) => out.push(obs),
+                // 개별 행의 data JSON 복원 실패는 **전체 열거를 막지 않는다**(파생 오버레이가
+                // 한 행 때문에 통째로 못 쓰게 되는 것을 막는 degrade, 원칙 19). 침묵하지
+                // 않는다 - 제외를 경고로 남긴다(원칙 5: 부재가 아니라 고장이다). 원문은 로그
+                // 계층에 그대로 있으므로 재프로젝션(M3)에서 드롭이 아니라 복구 대상이다.
+                None => tracing::warn!(
+                    observation_id = %id,
+                    "관측 행 복원 실패 - 열거에서 제외(degrade). 원문은 로그에 보존됨"
+                ),
+            }
+        }
+        Ok(out)
+    }
+
     fn search_semantic(
         &self,
         query_embedding: &[f32],

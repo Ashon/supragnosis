@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use supragnosis_core::{
-    normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity, EntityAssertion,
-    KnowledgeStore, Observation, Provenance, Relation, RelationAssertion, SearchHit, SearchHitKind,
-    StoreError, Timestamp, TraverseHit, TrustTier,
+    hyperedge_id, normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity,
+    EntityAssertion, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
+    SearchHit, SearchHitKind, StoreError, Timestamp, TraverseHit, TrustTier,
 };
 // UI 관측가능성 포트/타입을 재노출 - mcp/viz 가 core 를 직접 의존하지 않고 쓴다.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink};
@@ -153,6 +153,50 @@ fn tier_label(t: TrustTier) -> &'static str {
         TrustTier::HostSigned => "host_signed",
         TrustTier::HumanConfirmed => "human_confirmed",
     }
+}
+
+/// 하이퍼그래프 프로젝션(공동출현 이차 구조 - 원칙 11 "유도의 기반").
+///
+/// 한 관측이 공동 주장한 엔티티 집합을 하나의 **하이퍼엣지**로 되살린다 - 이진 관계
+/// 프로젝션이 버린 "무엇이 함께 말해졌는가"(맥락)를 로그로부터 결정적으로 회복한 파생
+/// 뷰다(원칙 1). 저장 모델(이진 Relation)은 건드리지 않는다. 멤버 집합이 하이퍼엣지의
+/// 정체성이라 같은 집합을 만든 여러 관측은 dedup 되어 attestation(sources/trust)으로
+/// 누적된다(원칙 3/14). 노드/엣지 순서, 멤버 순서, 식별자 모두 결정적이다(원칙 16).
+#[derive(Serialize)]
+pub struct HyperGraphView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub nodes: Vec<GraphNode>,
+    pub hyperedges: Vec<HyperEdge>,
+    pub stats: HyperGraphStats,
+}
+
+/// 하이퍼엣지 = 한 관측(들)에서 공동 주장된 엔티티 집합. 무방향/무타입/n-항 -
+/// 이진 관계(방향/타입/쌍)의 쌍대이지 대체가 아니다.
+#[derive(Serialize)]
+pub struct HyperEdge {
+    /// 멤버 집합의 콘텐츠 주소(원칙 14) - 같은 집합은 어떤 관측에서 유도돼도 같은 id.
+    pub id: String,
+    /// 멤버 엔티티 id들 (정렬, 결정적). 그래프 노드 집합에 있는 것만(닫힌 hull).
+    pub members: Vec<String>,
+    /// 멤버의 대표 이름(canonical_name), `members` 와 같은 순서. id-only 응답은 LLM 이
+    /// 읽기 어렵고 뷰어 라벨도 이름이 필요하므로 프로젝션이 이름을 함께 싣는다(가독성).
+    pub member_names: Vec<String>,
+    /// arity = 멤버 수. 입도 신호(큰 약응집은 grab-bag/분할 후보 - 원칙 11 이차 구조).
+    pub size: usize,
+    /// 이 멤버 집합을 공동 주장한 관측 수 - corroboration 신호(원칙 6/18).
+    pub sources: usize,
+    /// 기여 관측들의 provenance 중 최고 신뢰 등급(원칙 18).
+    pub trust_tier: TrustTier,
+}
+
+/// 하이퍼그래프 요약 지표(관측가능성의 첫 계량).
+#[derive(Serialize)]
+pub struct HyperGraphStats {
+    pub node_count: usize,
+    pub hyperedge_count: usize,
+    /// 최대 하이퍼엣지 크기(arity) - grab-bag 탐지의 첫 계량.
+    pub max_size: usize,
 }
 
 pub struct Engine {
@@ -676,6 +720,130 @@ impl Engine {
             stats,
         })
     }
+
+    /// 하이퍼그래프(공동출현 이차 구조)를 프로젝션한다 (원칙 11 "유도의 기반").
+    /// 관측 로그를 전수 읽어(순수 읽기 - 원칙 1) 각 관측이 공동 주장한 엔티티 이름을
+    /// 정규 id 로 해소하고, 그래프 노드 집합에 있는 멤버만 남긴 집합을 하이퍼엣지로
+    /// 삼는다. 크기 < 2 는 하이퍼엣지가 아니다(퇴화 - 원칙 11 이차 구조 주의점). 같은
+    /// 멤버 집합은 dedup 되어 sources/trust 가 누적된다(원칙 3). 순서/식별자 결정적(원칙 16).
+    ///
+    /// 이 뷰는 후보/신호를 **생성**할 뿐이다 - 병합/승격/스키마 정의 같은 확정은 기존
+    /// 게이트(해소/제안/사람 확인)를 거친다. 파생 뷰가 정본을 직접 쓰지 않는다(원칙 1/19).
+    pub fn hypergraph(&self, workspace: Option<&str>) -> Result<HyperGraphView, StoreError> {
+        let entities = self.store.all_entities(workspace)?;
+        let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
+        // id -> 대표 이름(가독성: 하이퍼엣지 멤버를 이름으로도 싣는다).
+        let name_by_id: HashMap<&str, &str> = entities
+            .iter()
+            .map(|e| (e.id.as_str(), e.canonical_name.as_str()))
+            .collect();
+
+        // 관측별 공동출현 집합 -> 멤버 집합으로 dedup 하며 하이퍼엣지를 누적한다.
+        // 값: (정렬된 members, sources 카운트, 기여 관측 중 최고 trust).
+        let mut acc: HashMap<String, (Vec<String>, usize, TrustTier)> = HashMap::new();
+        for obs in self.store.all_observations(workspace)? {
+            let ws = obs.workspace();
+            // 관측이 공동 주장한 엔티티: 엔티티 주장 + 관계 양끝. 정규 id 로 해소하고
+            // 그래프 노드 집합에 있는 것만(닫힌 hull - graph() 의 엣지 닫힘과 같은 규율).
+            // BTreeSet 이 중복 제거 + 정렬을 동시에 준다(도착 순서 무관 - 원칙 16).
+            let mut members: BTreeSet<String> = BTreeSet::new();
+            for e in &obs.assertions.entities {
+                let id = Entity::make_id(ws, &e.name);
+                if node_ids.contains(id.as_str()) {
+                    members.insert(id);
+                }
+            }
+            for r in &obs.assertions.relations {
+                for name in [&r.from, &r.to] {
+                    let id = Entity::make_id(ws, name);
+                    if node_ids.contains(id.as_str()) {
+                        members.insert(id);
+                    }
+                }
+            }
+            if members.len() < HYPEREDGE_MIN_SIZE {
+                continue; // 퇴화(단일/0 멤버)는 하이퍼엣지가 아니다.
+            }
+            let members: Vec<String> = members.into_iter().collect();
+            let id = hyperedge_id(&members);
+            // 이 관측의 대표 신뢰 = provenance 중 최고 등급(원칙 18).
+            let obs_trust = obs
+                .provenance
+                .iter()
+                .map(|p| p.trust_tier)
+                .max()
+                .unwrap_or_default();
+            acc.entry(id)
+                .and_modify(|(_, sources, trust)| {
+                    *sources += 1;
+                    *trust = (*trust).max(obs_trust);
+                })
+                .or_insert((members, 1, obs_trust));
+        }
+
+        let mut hyperedges: Vec<HyperEdge> = acc
+            .into_iter()
+            .map(|(id, (members, sources, trust_tier))| {
+                let member_names = members
+                    .iter()
+                    .map(|m| name_by_id.get(m.as_str()).copied().unwrap_or("").to_string())
+                    .collect();
+                HyperEdge {
+                    size: members.len(),
+                    member_names,
+                    id,
+                    members,
+                    sources,
+                    trust_tier,
+                }
+            })
+            .collect();
+        // 결정적 순서(원칙 16): 크기 desc(큰 맥락 먼저), 동률은 id asc.
+        hyperedges.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.id.cmp(&b.id)));
+        let max_size = hyperedges.iter().map(|h| h.size).max().unwrap_or(0);
+
+        // 노드별 하이퍼엣지-차수(원칙 11 이차 구조: 경계개념/허브 신호)를 degree 에 싣는다 -
+        // graph() 의 degree(이진 엣지 차수)와 달리 여기선 "몇 개의 맥락에 속하는가"다.
+        let mut hyper_degree: HashMap<String, usize> = HashMap::new();
+        for h in &hyperedges {
+            for m in &h.members {
+                *hyper_degree.entry(m.clone()).or_default() += 1;
+            }
+        }
+
+        let mut nodes: Vec<GraphNode> = entities
+            .iter()
+            .map(|e| {
+                let trust = e
+                    .provenance
+                    .iter()
+                    .map(|p| p.trust_tier)
+                    .max()
+                    .unwrap_or_default();
+                GraphNode {
+                    id: e.id.clone(),
+                    name: e.canonical_name.clone(),
+                    kind: e.kind.clone(),
+                    degree: hyper_degree.get(&e.id).copied().unwrap_or(0),
+                    sources: e.provenance.len(),
+                    trust_tier: trust,
+                }
+            })
+            .collect();
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let stats = HyperGraphStats {
+            node_count: nodes.len(),
+            hyperedge_count: hyperedges.len(),
+            max_size,
+        };
+        Ok(HyperGraphView {
+            workspace: workspace.map(String::from),
+            nodes,
+            hyperedges,
+            stats,
+        })
+    }
 }
 
 /// 그래프 문맥 보강에서 이웃에 적용하는 감쇠. 이웃은 시드(직접 매치)보다 약한 신호이므로
@@ -685,6 +853,11 @@ const GRAPH_ENRICH_DECAY: f32 = 0.5;
 /// 이웃을 확장할 시드(상위 엔티티 히트) 수 상한 - 비용/정밀도 제어(활발한 노드가 결과를
 /// 뒤덮지 못하게 유계로 잡는다).
 const GRAPH_ENRICH_SEEDS: usize = 5;
+
+/// 하이퍼엣지의 최소 크기(arity). 1(단일 엔티티)/0 은 공동출현이 아니라 하이퍼엣지가
+/// 성립하지 않는 퇴화 상태다 (원칙 11 이차 구조 주의점). 2 는 이진 공동언급에 수렴하나
+/// 여전히 "함께 말해진" 맥락이므로 포함한다.
+const HYPEREDGE_MIN_SIZE: usize = 2;
 
 /// 엔티티를 임베딩할 텍스트: 정규명 + 별칭(있으면). 이름의 의미로 시맨틱 회상을 연다.
 /// 별칭이 표기 변형을 담으므로 함께 임베딩하면 같은 대상의 다른 표기에도 도달 폭이 넓어진다.
@@ -1280,5 +1453,185 @@ mod tests {
 
         // 중복 제거 + 정렬(도착 순서 무관).
         assert_eq!(engine.workspaces().unwrap(), vec!["alpha", "gamma"]);
+    }
+
+    /// 하이퍼그래프: 한 관측이 공동 주장한 엔티티들이 하나의 하이퍼엣지로 회복된다 -
+    /// 이진 관계가 없어도(엔티티 공동 언급만으로) 맥락이 구조가 된다 (원칙 11 이차 구조).
+    #[test]
+    fn hypergraph_recovers_co_assertion() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store, "h", "ws1");
+        engine
+            .observe(ObserveInput {
+                content: "A, B, C were discussed together".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![
+                    EntityInput { name: "A".into(), kind: None },
+                    EntityInput { name: "B".into(), kind: None },
+                    EntityInput { name: "C".into(), kind: None },
+                ],
+                relations: vec![], // 이진 관계 없음 - 공동 언급만
+            })
+            .unwrap();
+
+        let hg = engine.hypergraph(Some("ws1")).unwrap();
+        assert_eq!(hg.stats.node_count, 3);
+        assert_eq!(hg.stats.hyperedge_count, 1, "세 엔티티가 한 하이퍼엣지로");
+        assert_eq!(hg.hyperedges[0].size, 3);
+        assert_eq!(hg.stats.max_size, 3);
+        // 멤버는 정렬된 엔티티 id (결정적, 원칙 16).
+        let mut expect: Vec<String> =
+            ["A", "B", "C"].iter().map(|n| Entity::make_id("ws1", n)).collect();
+        expect.sort();
+        assert_eq!(hg.hyperedges[0].members, expect);
+        // 멤버 이름도 함께 실린다(가독성) - id-only 가 아니다.
+        let mut names = hg.hyperedges[0].member_names.clone();
+        names.sort();
+        assert_eq!(names, vec!["A", "B", "C"]);
+        // id 는 멤버 집합의 콘텐츠 주소 (core 와 일치).
+        assert_eq!(hg.hyperedges[0].id, hyperedge_id(&expect));
+    }
+
+    /// 같은 멤버 집합을 만든 서로 다른 관측(다른 content)은 dedup 되어 하나의
+    /// 하이퍼엣지가 되고 sources 가 누적된다 (원칙 3/14: 멤버셋이 정체성, 관측이 attestation).
+    #[test]
+    fn hypergraph_dedup_by_member_set_accumulates_sources() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store, "h", "ws1");
+        let observe_xy = |content: &str| {
+            engine
+                .observe(ObserveInput {
+                    content: content.into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![
+                        EntityInput { name: "X".into(), kind: None },
+                        EntityInput { name: "Y".into(), kind: None },
+                    ],
+                    relations: vec![],
+                })
+                .unwrap();
+        };
+        observe_xy("first mention of X and Y");
+        observe_xy("second, differently worded mention of X with Y");
+
+        let hg = engine.hypergraph(Some("ws1")).unwrap();
+        assert_eq!(hg.hyperedges.len(), 1, "같은 멤버셋 -> 하이퍼엣지 하나");
+        assert_eq!(hg.hyperedges[0].sources, 2, "두 관측이 attestation 으로 누적");
+    }
+
+    /// 크기 < 2 는 하이퍼엣지가 아니다(퇴화). 관계 양끝도 멤버에 기여한다 -
+    /// 엔티티 주장 없이 관계만으로도 공동출현 하이퍼엣지가 선다. 고아 노드는 차수 0.
+    #[test]
+    fn hypergraph_min_size_and_relation_endpoints() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store, "h", "ws1");
+        // 단일 엔티티 관측 - 퇴화(하이퍼엣지 아님).
+        engine
+            .observe(ObserveInput {
+                content: "just P".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput { name: "P".into(), kind: None }],
+                relations: vec![],
+            })
+            .unwrap();
+        // 관계 두 개 - 끝점 {M, N, O} 가 한 관측의 공동출현.
+        engine
+            .observe(ObserveInput {
+                content: "M relates to N and O".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![],
+                relations: vec![
+                    RelationInput {
+                        from: "M".into(),
+                        kind: "relates_to".into(),
+                        to: "N".into(),
+                        valid_from: None,
+                        valid_to: None,
+                    },
+                    RelationInput {
+                        from: "M".into(),
+                        kind: "relates_to".into(),
+                        to: "O".into(),
+                        valid_from: None,
+                        valid_to: None,
+                    },
+                ],
+            })
+            .unwrap();
+
+        let hg = engine.hypergraph(Some("ws1")).unwrap();
+        assert_eq!(hg.stats.node_count, 4, "P,M,N,O 네 노드");
+        assert_eq!(hg.hyperedges.len(), 1, "P 는 퇴화, 관계 관측만 하이퍼엣지");
+        assert_eq!(hg.hyperedges[0].size, 3);
+        let members = &hg.hyperedges[0].members;
+        for n in ["M", "N", "O"] {
+            assert!(members.contains(&Entity::make_id("ws1", n)), "{n} 은 멤버여야");
+        }
+        // 고아 노드(어떤 하이퍼엣지에도 없음)는 하이퍼엣지-차수 0.
+        let p = Entity::make_id("ws1", "P");
+        assert_eq!(hg.nodes.iter().find(|n| n.id == p).unwrap().degree, 0);
+    }
+
+    /// 하이퍼그래프는 워크스페이스로 스코프되고 같은 상태에 결정적으로 재현된다(원칙 16).
+    /// 여러 하이퍼엣지(맥락)에 걸친 노드의 하이퍼엣지-차수가 degree 로 실린다(허브 신호).
+    #[test]
+    fn hypergraph_scoped_deterministic_and_hub_degree() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store, "h", "w");
+        let observe_pair = |ws: &str, a: &str, b: &str, content: &str| {
+            engine
+                .observe(ObserveInput {
+                    content: content.into(),
+                    workspace: Some(ws.into()),
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![
+                        EntityInput { name: a.into(), kind: None },
+                        EntityInput { name: b.into(), kind: None },
+                    ],
+                    relations: vec![],
+                })
+                .unwrap();
+        };
+        // H 가 두 맥락에 공통 등장 -> 허브.
+        observe_pair("w", "H", "A", "H with A");
+        observe_pair("w", "H", "B", "H with B");
+        // 다른 워크스페이스 - 새면 안 됨.
+        observe_pair("other", "Z", "Q", "elsewhere Z with Q");
+
+        let hg = engine.hypergraph(Some("w")).unwrap();
+        assert_eq!(hg.hyperedges.len(), 2, "{{H,A}}, {{H,B}}");
+        assert_eq!(hg.stats.node_count, 3, "H,A,B 만 (other 격리)");
+        assert!(hg.nodes.iter().all(|n| n.name != "Z"), "다른 ws 노드 누출 금지");
+        // H 는 두 하이퍼엣지에 속함 -> degree 2.
+        let h = Entity::make_id("w", "H");
+        assert_eq!(hg.nodes.iter().find(|n| n.id == h).unwrap().degree, 2);
+        // 결정성: 두 번 계산해도 동일 직렬화.
+        let s1 = serde_json::to_string(&engine.hypergraph(Some("w")).unwrap()).unwrap();
+        let s2 = serde_json::to_string(&engine.hypergraph(Some("w")).unwrap()).unwrap();
+        assert_eq!(s1, s2);
+        // 노드는 id 오름차순(결정성).
+        let ids: Vec<&str> = hg.nodes.iter().map(|n| n.id.as_str()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted);
     }
 }

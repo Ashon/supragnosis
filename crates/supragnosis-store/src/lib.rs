@@ -205,6 +205,17 @@ impl KnowledgeStore for InMemoryStore {
             .collect())
     }
 
+    fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
+        Ok(self
+            .observations
+            .read()
+            .unwrap()
+            .values()
+            .filter(|o| workspace.is_none_or(|ws| o.workspace() == ws))
+            .cloned()
+            .collect())
+    }
+
     fn search_semantic(
         &self,
         query_embedding: &[f32],

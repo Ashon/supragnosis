@@ -4058,6 +4058,7 @@ dependencies = [
  "cozo",
  "serde_json",
  "supragnosis-core",
+ "tracing",
 ]
 
 [[package]]
