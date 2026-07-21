@@ -4064,7 +4064,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4084,7 +4084,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "serde",
@@ -4094,7 +4094,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-e2e"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pulldown-cmark",
  "regex-lite",
@@ -4111,7 +4111,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-embed"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fastembed",
  "supragnosis-core",
@@ -4119,7 +4119,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4132,7 +4132,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rmcp",
  "serde",
@@ -4146,7 +4146,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cozo",
  "serde_json",
@@ -4156,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-viz"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "reqwest",
