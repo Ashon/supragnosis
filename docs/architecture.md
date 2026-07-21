@@ -261,7 +261,7 @@ and (3) **relational queries over metadata/provenance**, and Cozo alone covers a
 - `supragnosis://observation/{id}` - observation (raw text + provenance + derived_from lineage).
   The dereference path for an observation id returned by a search hit - it fulfills the query surface's obligation to
   answer "where did this answer come from" (Principle 2) and the dereferenceability of observation identifiers (Principle 14).
-- `supragnosis://workspace/{ws}/schema` - the type schema (the T-Box is workspace-scoped - Principle 11)
+- `supragnosis://workspace/{ws}/types` - the type glossary (T-Box: entity/relation type definitions, workspace-scoped - Principles 8/11)
 - `supragnosis://workspace/{ws}/summary` - a summary of the workspace's knowledge
 - `supragnosis://proposal/{id}` - proposal (M3.5)
 - `supragnosis://workspace/{ws}/canon-policy` - canon policy (M3.5)
@@ -439,7 +439,14 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 18 (contamination defense) *schema*: introduced the provenance `trust_tier` (default `AgentExtracted`, promotion explicit) +
   the observation `derived_from` (lineage) field. The tier-ranking/quarantine/cleanup **logic** is deferred.
 - Principle 19 (deterministic core): storage/resolution/traversal are all deterministic, with no probabilistic element.
-- Principle 21 (narrow surface): four tools (observe/get_entity/search_knowledge/traverse) - each at the granularity of an intent.
+- Principle 21 (narrow surface): six tools (observe/define_type/get_entity/search_knowledge/traverse/workspace_map) -
+  each at the granularity of an intent (`workspace_map` = co-occurrence orientation, `define_type` = T-Box vocabulary).
+- Principle 8 (clarity) *capture*: `observe` accepts an optional `description` on each entity and each relation (a
+  human-readable definition of the instance), and `define_type` records **type-level** definitions and **rejects a type with
+  no description** (the Principle 8 enforcement: a type has no meaning without a natural-language definition). The type
+  glossary is a deterministic projection over the log (`types()`), exposed as the `supragnosis://workspace/{ws}/types` resource.
+  Type definitions ride the observation log like any other assertion (Principles 1/23: no parallel storage), so a future
+  proposal gate can wrap them without rework. Descriptions are content identity (folded into the observation hash - Principle 14).
 
 **Intentional deferrals (milestone-assigned)**
 - Principles 1/6 (assertion<->belief separation, conflict preservation): currently `observe` does an **inline simple projection**
@@ -470,7 +477,16 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   Ingest-surface capture is implemented: `observe`'s relation accepts optional `valid_from`/`valid_to` and encloses them in
   the log's assertions and the projection - separation of capture and processing, a clue of Principle 4.)
 - Principle 7 (forgetting/consolidation): deterministic idle-time reprojection + recall demotion -> **M6**.
-- Principle 11 (induced schema): propose type candidates from repeated patterns -> explicit `define_type` promotion -> **M3**.
+- Principle 11 (induced schema): the **explicit `define_type` promotion act** is implemented (records entity/relation type
+  definitions, workspace-scoped). What remains deferred is the **automatic candidate proposal** from repeated co-occurrence
+  patterns (hyperedge second-order structure -> type candidates) -> **M3**.
+- Principles 9/23 (T-Box coherence check / gate to canon) re `define_type`: `define_type` currently validates only
+  **well-formedness** (non-empty name/description, Principle 8) and writes to the canon **directly - there is no proposal gate
+  yet** (the proposal workflow is M3.5, [proposal-workflow.md](proposal-workflow.md) - where `tbox-change` is a gated intent and
+  T-Box consistency (cyclic subtype / domain-range, Principle 9) is a blocking check). This is acceptable now because the
+  deployment is a **single-user workspace** (Principle 23's single-person exception), but the **self-attested marker** that the
+  exception calls for is **not yet attached**, and no consistency check runs. Because type definitions are observations, the M3.5
+  gate + M3 consistency check attach to the existing flow without a redesign. -> gate/marker/consistency: **M3-M3.5**.
 - Principle 15 (resolution is the substrate's responsibility): currently exact match on the canonical name. Embedding candidates + conservative merge -> **M2-M3**.
 - Principle 16 (topology-independent convergence) + property test: HLC-based deterministic re-materialization and a random-order-injection
   property test -> **M4** (federation).

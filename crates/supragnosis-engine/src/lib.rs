@@ -10,10 +10,10 @@ use serde::Serialize;
 use supragnosis_core::{
     hyperedge_id, normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity,
     EntityAssertion, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
-    SearchHit, SearchHitKind, StoreError, Timestamp, TraverseHit, TrustTier,
+    SearchHit, SearchHitKind, StoreError, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
-pub use supragnosis_core::{Event, EventEnvelope, EventSink};
+pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
 
 /// Ingest input (the domain input mapped from the transport DTO).
 pub struct ObserveInput {
@@ -46,6 +46,21 @@ pub struct RelationInput {
     pub valid_from: Option<Timestamp>,
     /// Valid-time end (Principle 4, optional).
     pub valid_to: Option<Timestamp>,
+}
+
+/// One T-Box type definition to record (Principle 8/11).
+pub struct TypeDefInput {
+    pub target: TypeTarget,
+    pub name: String,
+    pub description: String,
+}
+
+/// define_type ingest input. Records type-vocabulary definitions as an observation (Principle 1/23).
+pub struct DefineTypeInput {
+    pub workspace: Option<String>,
+    pub source_ref: Option<String>,
+    pub on_behalf_of: Option<String>,
+    pub defs: Vec<TypeDefInput>,
 }
 
 #[derive(Serialize)]
@@ -105,6 +120,30 @@ pub struct GraphView {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub stats: GraphStats,
+}
+
+/// A projected T-Box type definition (the workspace glossary entry - Principle 8/11).
+#[derive(Serialize)]
+pub struct TypeDefView {
+    pub target: TypeTarget,
+    pub name: String,
+    pub description: String,
+    /// Number of observations that defined this type - a corroboration signal.
+    pub sources: usize,
+    /// Highest trust tier among the defining observations (Principle 18).
+    pub trust_tier: TrustTier,
+}
+
+/// Fold accumulator for [`Engine::types`] (internal).
+struct TypeDefAcc {
+    target: TypeTarget,
+    name: String,
+    description: String,
+    at: Timestamp,
+    oid: String,
+    sources: usize,
+    trust: TrustTier,
+    seeded: bool,
 }
 
 /// Graph node = entity. Carries visualization hints (type/degree/trust).
@@ -380,6 +419,8 @@ impl Engine {
                     valid_to: r.valid_to,
                 })
                 .collect(),
+            // observe does not define types (that is the define_type intent).
+            type_defs: Vec::new(),
         };
         let mut obs = Observation::with_assertions(input.content, prov.clone(), assertions);
         obs.derived_from = input.derived_from;
@@ -441,6 +482,128 @@ impl Engine {
             entities,
             relations,
         })
+    }
+
+    /// Records T-Box type definitions as an observation (Principle 8/11: an explicit define_type act,
+    /// scoped to the workspace). It rides the observation log like any other assertion (Principle 1/23:
+    /// no parallel provenance/storage), so the glossary is a deterministic projection ([`types`]) and a
+    /// future proposal gate (Principle 23) can wrap this without rework. Principle 8 is enforced here:
+    /// a definition with no name or an empty description is rejected before it reaches the permanent log.
+    pub fn define_type(&self, input: DefineTypeInput) -> Result<String, ObserveError> {
+        if input.defs.is_empty() {
+            return Err(ObserveError::Invalid(
+                "no type definitions provided. give at least one {target, name, description}".into(),
+            ));
+        }
+        for d in &input.defs {
+            if d.name.trim().is_empty() {
+                return Err(ObserveError::Invalid(
+                    "a type definition has an empty name - name the type you are defining".into(),
+                ));
+            }
+            // Principle 8 (Clarity): a type cannot be created without a natural-language definition.
+            if d.description.trim().is_empty() {
+                return Err(ObserveError::Invalid(format!(
+                    "type '{}' has an empty description. Principle 8 (clarity): a type needs a \
+                     natural-language definition of what it means - describe it, or drop the item",
+                    d.name
+                )));
+            }
+        }
+        let workspace = input
+            .workspace
+            .unwrap_or_else(|| self.default_workspace.clone());
+        let prov = self.provenance(&workspace, input.source_ref, None, input.on_behalf_of);
+
+        // Synthesize readable content so the definition is also keyword/semantic searchable (Principle 22).
+        let mut content = String::from("Type definitions:");
+        for d in &input.defs {
+            let axis = match d.target {
+                TypeTarget::Entity => "entity",
+                TypeTarget::Relation => "relation",
+            };
+            content.push_str(&format!("\n- {axis} type `{}`: {}", d.name.trim(), d.description.trim()));
+        }
+        let assertions = Assertions {
+            type_defs: input
+                .defs
+                .into_iter()
+                .map(|d| TypeDefAssertion {
+                    target: d.target,
+                    name: d.name.trim().to_string(),
+                    description: d.description.trim().to_string(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let mut obs = Observation::with_assertions(content, prov.clone(), assertions);
+        if let Some(embedder) = &self.embedder {
+            if let Ok(vec) = embedder.embed_one(&obs.content) {
+                obs.embedding = Some(vec);
+            }
+        }
+        let observation_id = obs.id.clone();
+        let _write = self
+            .write_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.store.add_observation(obs)?;
+        Ok(observation_id)
+    }
+
+    /// Projects the workspace type glossary from the observation log (a pure read, Principle 1). Folds every
+    /// type_def assertion, keeping the latest definition per (target, name) - last-write-wins by
+    /// (observed_at, observation id) so the tie-break is deterministic (Principle 16 reproducibility; full
+    /// cross-node convergence of the winner is the deferred M3 resolution layer, shared with entity `kind`).
+    /// Accumulates a corroboration count (sources) and the representative (highest) trust tier.
+    pub fn types(&self, workspace: Option<&str>) -> Result<Vec<TypeDefView>, StoreError> {
+        // key -> (best_observed_at, best_obs_id, description, sources, max_trust)
+        let mut acc: BTreeMap<(u8, String), TypeDefAcc> = BTreeMap::new();
+        for obs in self.store.all_observations(workspace)? {
+            // Representative attestation time/trust for this observation (highest tier, latest time).
+            let observed_at = obs.provenance.iter().map(|p| p.observed_at).max().unwrap_or(0);
+            let trust = obs.provenance.iter().map(|p| p.trust_tier).max().unwrap_or_default();
+            let oid = obs.id.clone();
+            for t in &obs.assertions.type_defs {
+                let disc: u8 = match t.target {
+                    TypeTarget::Entity => 0,
+                    TypeTarget::Relation => 1,
+                };
+                let key = (disc, t.name.clone());
+                let e = acc.entry(key).or_insert_with(|| TypeDefAcc {
+                    target: t.target,
+                    name: t.name.clone(),
+                    description: String::new(),
+                    at: 0,
+                    oid: String::new(),
+                    sources: 0,
+                    trust: TrustTier::default(),
+                    seeded: false,
+                });
+                e.sources += 1;
+                if trust > e.trust {
+                    e.trust = trust;
+                }
+                // Latest wins; deterministic tie-break by observation id.
+                if !e.seeded || (observed_at, oid.as_str()) > (e.at, e.oid.as_str()) {
+                    e.description = t.description.clone();
+                    e.at = observed_at;
+                    e.oid = oid.clone();
+                    e.seeded = true;
+                }
+            }
+        }
+        // Deterministic order: by (target, name) - BTreeMap key already gives it.
+        Ok(acc
+            .into_values()
+            .map(|a| TypeDefView {
+                target: a.target,
+                name: a.name,
+                description: a.description,
+                sources: a.sources,
+                trust_tier: a.trust,
+            })
+            .collect())
     }
 
     /// M0 resolution: exact match on the canonical name. If it exists, only append the source; otherwise create it.
