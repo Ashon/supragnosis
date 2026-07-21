@@ -17,6 +17,11 @@
 //! pidfile (~/.supragnosis/supragnosis.pid) and logs (~/.supragnosis/log), so it
 //! works without launchd (for OS service registration such as auto-start on login,
 //! see deploy/README.md).
+//!
+//! stop/restart/status are supervisor-aware: if the running daemon is managed by
+//! launchd (the macOS deploy) rather than this CLI's pidfile, they detect it and
+//! drive it via launchctl (restart = kickstart -k, stop = bootout). So a single
+//! `supragnosis restart` restarts the MCP server + viewer regardless of who started it.
 
 use std::sync::Arc;
 
@@ -382,6 +387,85 @@ fn port_open(addr: &str) -> bool {
         .unwrap_or(false)
 }
 
+// --- launchd (macOS) awareness -------------------------------------------------------
+// The deploy LaunchAgent supervises the daemon out-of-band (no pidfile). These helpers let
+// the lifecycle commands detect and drive it, so `supragnosis restart/stop` control the
+// actual running instance instead of a separate self-managed daemon.
+
+/// launchd label used by the deploy LaunchAgent (deploy/launchd/<label>.plist).
+#[cfg(target_os = "macos")]
+const LAUNCHD_LABEL: &str = "com.supragnosis.daemon";
+
+/// User id for the `gui/<uid>` launchd domain target (via `id -u` - no libc/unsafe).
+#[cfg(target_os = "macos")]
+fn launchd_uid() -> Option<String> {
+    let out = std::process::Command::new("id").arg("-u").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let uid = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!uid.is_empty()).then_some(uid)
+}
+
+/// Whether a launchd job with our label is currently loaded for this user.
+#[cfg(target_os = "macos")]
+fn launchd_loaded() -> bool {
+    std::process::Command::new("launchctl")
+        .arg("list")
+        .arg(LAUNCHD_LABEL)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Restart the launchd daemon in place (`kickstart -k`). The plist environment
+/// (including SUPRAGNOSIS_VIZ_ADDR) is re-applied, so the viewer comes back too.
+#[cfg(target_os = "macos")]
+fn launchd_kickstart() -> Result<()> {
+    let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
+    let target = format!("gui/{uid}/{LAUNCHD_LABEL}");
+    let st = std::process::Command::new("launchctl")
+        .arg("kickstart")
+        .arg("-k")
+        .arg(&target)
+        .status()
+        .with_context(|| "failed to run launchctl kickstart")?;
+    if !st.success() {
+        anyhow::bail!("launchctl kickstart {target} failed");
+    }
+    println!("restarted launchd daemon {LAUNCHD_LABEL} (MCP server + viewer).");
+    Ok(())
+}
+
+/// Stop the launchd daemon (`bootout`). It stays down until reloaded (so KeepAlive
+/// does not respawn it - unlike a bare SIGTERM).
+#[cfg(target_os = "macos")]
+fn launchd_bootout() -> Result<()> {
+    let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
+    let target = format!("gui/{uid}/{LAUNCHD_LABEL}");
+    let st = std::process::Command::new("launchctl")
+        .arg("bootout")
+        .arg(&target)
+        .status()
+        .with_context(|| "failed to run launchctl bootout")?;
+    if !st.success() {
+        anyhow::bail!("launchctl bootout {target} failed (already stopped?).");
+    }
+    println!("stopped launchd daemon {LAUNCHD_LABEL}. It stays down until reloaded (deploy/install.sh or launchctl bootstrap).");
+    Ok(())
+}
+
+/// Resolved MCP http address for status/lifecycle checks (env var or default).
+#[cfg(unix)]
+fn status_http_addr() -> String {
+    std::env::var("SUPRAGNOSIS_HTTP_ADDR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "127.0.0.1:7373".to_string())
+}
+
 #[cfg(unix)]
 fn start(cfg: Config) -> Result<()> {
     let http = cfg
@@ -418,22 +502,14 @@ fn start(cfg: Config) -> Result<()> {
     run_blocking(cfg)
 }
 
+/// Sends SIGTERM to the self-managed (pidfile) daemon and waits for graceful exit.
 #[cfg(unix)]
-fn stop() -> Result<()> {
-    let Some(pid) = read_pid() else {
-        println!("not running (no pidfile).");
-        return Ok(());
-    };
-    if !pid_alive(pid) {
-        let _ = std::fs::remove_file(pid_path());
-        println!("not running (cleaned up stale pidfile, pid {pid}).");
-        return Ok(());
-    }
+fn stop_pidfile(pid: i32) -> Result<()> {
     std::process::Command::new("kill")
         .arg(pid.to_string())
         .status()
         .with_context(|| "failed to run kill")?;
-    // Wait for shutdown (up to ~10s). Waits for a graceful exit after SIGTERM.
+    // Wait for shutdown (up to ~10s) - a graceful exit after SIGTERM.
     for _ in 0..50 {
         if !pid_alive(pid) {
             break;
@@ -449,33 +525,88 @@ fn stop() -> Result<()> {
 }
 
 #[cfg(unix)]
+fn stop() -> Result<()> {
+    // (1) Self-managed (pidfile) daemon takes priority.
+    if let Some(pid) = read_pid() {
+        if pid_alive(pid) {
+            return stop_pidfile(pid);
+        }
+        let _ = std::fs::remove_file(pid_path()); // stale - fall through to the supervisor check
+    }
+    // (2) launchd-managed daemon (macOS): stop via bootout so KeepAlive does not respawn it.
+    #[cfg(target_os = "macos")]
+    if launchd_loaded() {
+        return launchd_bootout();
+    }
+    // (3) Something else is responding but is not under our control.
+    let http = status_http_addr();
+    if port_open(&http) {
+        anyhow::bail!("a daemon is responding on {http} but is not managed by this CLI or launchd - stop it via its own supervisor.");
+    }
+    println!("not running.");
+    Ok(())
+}
+
+#[cfg(unix)]
 fn restart(cfg: Config) -> Result<()> {
-    let _ = stop();
-    std::thread::sleep(std::time::Duration::from_millis(400)); // wait for the port to be released
+    // (1) Self-managed daemon: stop then start.
+    if let Some(pid) = read_pid() {
+        if pid_alive(pid) {
+            stop_pidfile(pid)?;
+            std::thread::sleep(std::time::Duration::from_millis(400)); // wait for the port to release
+            return start(cfg);
+        }
+        let _ = std::fs::remove_file(pid_path());
+    }
+    // (2) launchd-managed daemon (macOS): restart in place - the viewer returns via the plist env.
+    #[cfg(target_os = "macos")]
+    if launchd_loaded() {
+        return launchd_kickstart();
+    }
+    // (3) Nothing under our control - start a fresh self-managed daemon (unless a stranger holds the port).
+    let http = cfg
+        .http
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    if port_open(&http) {
+        anyhow::bail!("a daemon is responding on {http} but is not managed by this CLI or launchd - cannot restart it from here.");
+    }
     start(cfg)
 }
 
 #[cfg(unix)]
 fn status() -> Result<()> {
-    let http = std::env::var("SUPRAGNOSIS_HTTP_ADDR")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    let http = status_http_addr();
     let up = port_open(&http);
-    match read_pid() {
-        // A daemon managed by this CLI (start).
-        Some(pid) if pid_alive(pid) => {
-            println!("running (pid {pid})");
+    // (1) Self-managed (pidfile) daemon.
+    if let Some(pid) = read_pid() {
+        if pid_alive(pid) {
+            println!("running (self-managed, pid {pid})");
             println!(
                 "  MCP http://{http}/mcp  ({})",
                 if up { "responding" } else { "port not responding" }
             );
+            return Ok(());
         }
-        // No pidfile but the port responds - an externally managed daemon (e.g. launchd serve, another instance).
-        _ if up => {
-            println!("running (external; no pidfile - e.g. launchd serve)");
-            println!("  MCP http://{http}/mcp  (responding)");
-        }
+    }
+    // (2) launchd-managed daemon (macOS) - controllable via supragnosis restart/stop.
+    #[cfg(target_os = "macos")]
+    if launchd_loaded() {
+        println!("running (launchd: {LAUNCHD_LABEL})");
+        println!(
+            "  MCP http://{http}/mcp  ({})",
+            if up { "responding" } else { "not responding" }
+        );
+        println!("  control: supragnosis restart | supragnosis stop");
+        return Ok(());
+    }
+    // (3) External/unknown supervisor, or stopped.
+    if up {
+        println!("running (external; no pidfile, not launchd)");
+        println!("  MCP http://{http}/mcp  (responding)");
+        return Ok(());
+    }
+    match read_pid() {
         Some(pid) => println!("stopped (stale pidfile, pid {pid})"),
         None => println!("stopped"),
     }

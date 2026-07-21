@@ -29,8 +29,8 @@ cp target/release/supragnosis ~/.local/bin/supragnosis
 pkill -f "target/release/supragnosis" || true
 
 # 3) Install + load the LaunchAgent (auto-start on login + restart if it dies)
-cp deploy/launchd/com.ashon.supragnosis.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.ashon.supragnosis.plist
+cp deploy/launchd/com.supragnosis.daemon.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.supragnosis.daemon.plist
 
 # 4) Register Claude Code with the http transport (no more spawning per chat)
 claude mcp remove supragnosis -s user 2>/dev/null || true
@@ -41,18 +41,31 @@ Now any chat/session attaches to this daemon. Open the viewer in a browser at `h
 
 ## Operations
 
+The daemon uses the canonical launchd label `com.supragnosis.daemon`, so the `supragnosis`
+CLI drives it directly (it detects the launchd job and delegates to launchctl). This restarts
+the MCP server **and** the viewer in one command:
+
+```sh
+supragnosis status    # server + viewer state (self-managed or launchd)
+supragnosis restart   # restart both (launchctl kickstart -k under the hood)
+supragnosis stop      # stop both (launchctl bootout; stays down until reloaded)
+```
+
+Underlying launchctl (equivalent to the above), plus logs:
+
 ```sh
 # status / logs
 launchctl list | grep supragnosis
 tail -f ~/.supragnosis/log/supragnosis.err.log
 
-# stop / restart
-launchctl unload ~/Library/LaunchAgents/com.ashon.supragnosis.plist
-launchctl load   ~/Library/LaunchAgents/com.ashon.supragnosis.plist
+# stop / restart (raw)
+launchctl bootout   gui/$(id -u)/com.supragnosis.daemon
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.supragnosis.daemon.plist
+launchctl kickstart -k gui/$(id -u)/com.supragnosis.daemon   # restart in place
 
 # full removal
-launchctl unload ~/Library/LaunchAgents/com.ashon.supragnosis.plist
-rm ~/Library/LaunchAgents/com.ashon.supragnosis.plist
+launchctl bootout gui/$(id -u)/com.supragnosis.daemon 2>/dev/null || true
+rm ~/Library/LaunchAgents/com.supragnosis.daemon.plist
 claude mcp remove supragnosis -s user
 ```
 

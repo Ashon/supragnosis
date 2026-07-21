@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   supragnosis standalone MCP daemon (launchd LaunchAgent).
+  Label is the canonical com.supragnosis.daemon so the CLI can drive it
+  (supragnosis restart/stop -> launchctl kickstart -k / bootout).
   Install: see deploy/README.md. Paths are absolute for user ashon.lee - other users should adjust.
   loopback only (Principle 17) - MCP http://127.0.0.1:7373/mcp, viewer http://127.0.0.1:7374.
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.ashon.supragnosis</string>
+    <string>com.supragnosis.daemon</string>
 
     <key>ProgramArguments</key>
     <array>
