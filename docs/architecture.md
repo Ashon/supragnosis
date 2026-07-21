@@ -371,6 +371,10 @@ HTTP 뷰어(`supragnosis-viz` 크레이트)를 함께 띄운다. 브라우저로
 - 엔드포인트: `GET /`(뷰어 HTML), `GET /api/graph[?workspace=<ws>]`(빈 값/`*`=전체),
   `GET /api/workspaces`(지식이 있는 워크스페이스 목록 - 뷰어가 클릭 가능한 피커로 렌더).
   같은 목록은 MCP 리소스 `supragnosis://workspaces` 로도 조회된다(에이전트의 워크스페이스 발견).
+- **계획(하이퍼엣지 뷰)**: 그래프 밀도가 높아질 때 공동출현 이차 구조(하이퍼엣지)를
+  bubble-set/concave 영역으로 오버레이하고 밀집 영역을 collapse/expand 한다 - 저장
+  모델(이진 Relation) 무변경의 파생 뷰이며(원칙 1/12), 멤버십은 결정적이고 hull 모양은
+  렌더링 재량이다(원칙 16). 이차 구조의 규범은 [`principles.md`](principles.md) 원칙 11(이차 구조).
 
 ---
 
@@ -391,11 +395,11 @@ HTTP 뷰어(`supragnosis-viz` 크레이트)를 함께 띄운다. 브라우저로
 1. **M0 - 골격 [o]**: workspace 스캐폴드, `core` 모델, in-memory 스토어, `observe`+`get_entity`+`search`(키워드) stdio MCP 서버. (rmcp 0.16, E2E 핸드셰이크 검증 완료)
 2. **M1 - 임베디드 스토어 [o]**: Cozo 어댑터(관측/엔티티/관계), `traverse`(재귀 Datalog), 파일 영속. (E2E 검증)
 3. **M2 - 의미 검색**: `EmbeddingProvider`(fastembed) + HNSW 하이브리드. 회상 벤치마크(부록 B) 회귀셋.
-4. **M3 - 해소/스키마/바이템포럴**: 보수적 해소 + 유도 스키마 제안->명시 승격(원칙 11), 그 선행 작업으로 **타입 사용 통계 집계 뷰**(엔티티/관계 kind 별 사용 빈도, Cozo 집계 - 유도의 입력), `define_type` 정합성 검증(원칙 9), 타입 배정을 주장으로 취급해 해소가 kind 를 계산(원칙 1 - 현재의 last-write-wins 프로젝션 대체), 유효구간/시간여행 질의(원칙 4), 신뢰등급 해소 가중(원칙 18).
+4. **M3 - 해소/스키마/바이템포럴**: 보수적 해소 + 유도 스키마 제안->명시 승격(원칙 11), 그 선행 작업으로 **타입 사용 통계 집계 뷰**(엔티티/관계 kind 별 사용 빈도, Cozo 집계 - 유도의 입력) 및 **하이퍼엣지(공동출현 이차 구조) 프로젝션**(반복 공동출현이 타입/해소 후보의 기준 - 원칙 11 이차 구조/15), `define_type` 정합성 검증(원칙 9), 타입 배정을 주장으로 취급해 해소가 kind 를 계산(원칙 1 - 현재의 last-write-wins 프로젝션 대체), 유효구간/시간여행 질의(원칙 4), 신뢰등급 해소 가중(원칙 18).
 5. **M3.5 - 제안 워크플로**: 정본 승격의 관문(원칙 23). 제안=관측 이벤트, 상태=결정적 폴드, 믿음 diff + blocking/informative 검사, `propose`/`get_proposal`/`review`. solo/단일 정본에서 동작(다중 노드 수렴은 M4의 HLC 전제). 설계 -> [proposal-workflow.md](proposal-workflow.md).
 6. **M4 - 페더레이션**: 버전벡터 델타 복제 + sync API(허브->피어->하이브리드), 위임사슬 서명(원칙 2), 선택적 공유(원칙 17), sync/consolidate를 **MCP Tasks**로/사람 중재를 **elicitation**으로(원칙 21). HLC 인과 순서로 제안 판정의 다중 노드 수렴 완성.
 7. **M5 - 추론/추출/오염방어**: 경량 추론, `Extractor` 포트, `derived_from` 계보 의무화/격리/소독(원칙 18).
-8. **M6 - 망각/응고**: 유휴시간 결정적 재프로젝션 + 회상 강등(원칙 7, sleep-time).
+8. **M6 - 망각/응고**: 유휴시간 결정적 재프로젝션 + 회상 강등(원칙 7, sleep-time). 응고 대상 선정은 하이퍼엣지의 안정/corroboration/응집 지표를 기준으로 한다(원칙 11 이차 구조).
 
 ---
 
