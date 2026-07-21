@@ -75,6 +75,9 @@ jobs:
           path: dist/*.tar.gz*
 
       # 태그 push 일 때만 Release 에 첨부(여러 잡이 같은 Release 에 자산을 누적한다).
+      # 릴리스 노트/본문은 건드리지 않는다(자산만 업로드) - 릴리스 노트는 태그를 만들 때
+      # 관리자가 직접 작성한다(gh release create --notes-file 등). 기존 본문을 덮어쓰지 않게
+      # generate_release_notes 를 쓰지 않는다.
       - name: publish to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -82,4 +85,3 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
-          generate_release_notes: true
