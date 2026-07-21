@@ -74,14 +74,31 @@ jobs:
           name: supragnosis-${{ matrix.target }}
           path: dist/*.tar.gz*
 
-      # 태그 push 일 때만 Release 에 첨부(여러 잡이 같은 Release 에 자산을 누적한다).
-      # 릴리스 노트/본문은 건드리지 않는다(자산만 업로드) - 릴리스 노트는 태그를 만들 때
-      # 관리자가 직접 작성한다(gh release create --notes-file 등). 기존 본문을 덮어쓰지 않게
-      # generate_release_notes 를 쓰지 않는다.
-      - name: publish to release
+      # 릴리스 노트는 저장소에 커밋된 docs/releases/<tag>.md 를 쓴다(관리자가 릴리스마다
+      # 직접 작성 - 버전 관리되는 노트). 파일이 없으면 GitHub 자동 생성으로 폴백한다.
+      - name: resolve release notes
+        id: notes
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "path=" >> "$GITHUB_OUTPUT"; fi
+
+      # 태그 push 일 때만 Release 에 자산 첨부(여러 잡이 같은 Release 에 누적).
+      - name: publish to release (committed notes)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path != ''
         uses: softprops/action-gh-release@v2
         with:
+          body_path: ${{ steps.notes.outputs.path }}
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+
+      - name: publish to release (auto notes)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path == ''
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
