@@ -248,6 +248,10 @@ pub async fn serve(
     tracing::info!(%listen, tls = tls.is_some(), "sync API listening");
     match tls {
         Some(paths) => {
+            // Pin the process-level CryptoProvider: with both aws-lc-rs (axum-server) and ring
+            // (reqwest) compiled in, rustls refuses to auto-select. Idempotent - a second install
+            // attempt is fine to ignore.
+            let _ = rustls::crypto::ring::default_provider().install_default();
             let cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(paths.cert_pem, paths.key_pem)
                 .await
                 .map_err(|e| TransportError::Tls(e.to_string()))?;
@@ -282,6 +286,8 @@ impl SyncClient {
     /// `insecure_tls` accepts a self-signed server certificate (an internal-VM hub before a real CA);
     /// the signature layer (F6) still authenticates content end-to-end even then.
     pub fn new(base_url: impl Into<String>, token: impl Into<String>, insecure_tls: bool) -> Result<Self, TransportError> {
+        // Same CryptoProvider pin as the server side (idempotent) - the client dials HTTPS hubs.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let http = reqwest::Client::builder()
             .danger_accept_invalid_certs(insecure_tls)
             .build()?;

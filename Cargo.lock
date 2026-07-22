@@ -4398,6 +4398,7 @@ dependencies = [
  "axum-server",
  "blake3",
  "reqwest",
+ "rustls 0.23.42",
  "serde",
  "serde_json",
  "supragnosis-core",

@@ -11,7 +11,7 @@ workspace = true
 [features]
 # M4 Phase 3 transport: axum sync API (advertise/pull/push) + rustls TLS + bearer/allowlist wire auth
 # + reqwest client. Off by default so the sync core stays IO-free (P20).
-http = ["dep:axum", "dep:axum-server", "dep:reqwest", "dep:tokio", "dep:blake3", "dep:tracing"]
+http = ["dep:axum", "dep:axum-server", "dep:reqwest", "dep:tokio", "dep:blake3", "dep:tracing", "dep:rustls"]
 
 [dependencies]
 supragnosis-core.workspace = true
@@ -24,6 +24,7 @@ reqwest = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
 
 [dev-dependencies]
 supragnosis-store.workspace = true
