@@ -30,7 +30,7 @@ use clap::{Args, Parser, Subcommand};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ServiceExt;
-use supragnosis_core::{EmbeddingProvider, KnowledgeStore};
+use supragnosis_core::{EmbeddingProvider, KnowledgeStore, VersionVector};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, Event, SearchMode};
 use supragnosis_mcp::SupragnosisServer;
@@ -276,13 +276,19 @@ async fn run(cfg: Config) -> Result<()> {
         .map(|_| tokio::sync::broadcast::channel::<String>(256).0);
     let engine = build_engine(&cfg, events.as_ref())?;
 
+    // Federation status blob (viewer /api/federation) - exists only when supragnosis.toml does.
+    let fedcfg = fed::load()?;
+    let fed_status: Option<supragnosis_viz::FedStatus> = fedcfg
+        .as_ref()
+        .map(|_| Arc::new(std::sync::RwLock::new(serde_json::json!({"configured": true}))));
+
     if let (Some(addr), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
-        spawn_viz(&engine, addr, tx.clone()).await;
+        spawn_viz(&engine, addr, tx.clone(), fed_status.clone()).await;
     }
 
     // Federation wiring (M4 Phase 4, docs/federation.md Section 9): optional supragnosis.toml.
     // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5).
-    let sync_ctx = build_sync_context(&engine, fed::load()?)?;
+    let sync_ctx = build_sync_context(&engine, fedcfg, fed_status)?;
 
     match cfg.http.as_deref() {
         Some(http) => {
@@ -306,6 +312,7 @@ async fn run(cfg: Config) -> Result<()> {
 fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
+    fed_status: Option<supragnosis_viz::FedStatus>,
 ) -> Result<Option<Arc<supragnosis_mcp::SyncContext>>> {
     let Some(fc) = fedcfg else { return Ok(None) };
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
@@ -359,14 +366,17 @@ fn build_sync_context(
     }
     let mut origin_keys = fc.sync.origin_keys.clone();
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
-    // Health-check the configured hubs at startup (connectivity + auth + authorization in one
-    // round trip), then keep watching - a state CHANGE is an event, steady state is quiet.
-    if !fc.sync.servers.is_empty() {
-        spawn_hub_health_check(
+    // Federation status task: health-checks the configured hubs (connectivity + auth +
+    // authorization in one round trip), computes per-workspace diffs vs each hub, snapshots the
+    // known-peer registry (hub role), and publishes it all to the viewer's /api/federation.
+    if let Some(fs) = fed_status {
+        spawn_fed_status(
             engine.clone(),
-            fc.sync.servers.clone(),
-            fc.sync.auth_token.clone().unwrap_or_default(),
-            fc.sync.insecure_tls,
+            fs,
+            node.node_id().to_string(),
+            fc.server.is_some(),
+            fc.sync.clone(),
+            peer_registry.clone(),
         );
     }
     Ok(Some(Arc::new(supragnosis_mcp::SyncContext {
@@ -381,45 +391,97 @@ fn build_sync_context(
     })))
 }
 
-/// Health-checks the configured hubs at startup and every 5 minutes after. The first result and
-/// every state CHANGE (up -> down, down -> up) are logged and streamed to the viewer activity feed
-/// (Event::Sync direction "hc-ok" / "hc-fail"); a steady healthy hub stays quiet.
-fn spawn_hub_health_check(engine: Arc<Engine>, servers: Vec<String>, token: String, insecure: bool) {
+/// The federation status loop (every 60s): pings each configured hub (an authenticated no-op that
+/// verifies connectivity, auth, and authorization in one round trip), computes the per-workspace
+/// version-vector diff against each healthy hub ("who is ahead by how many events"), snapshots the
+/// known-peer registry (hub role), and publishes everything to the viewer at /api/federation.
+/// Health state CHANGES stream to the activity feed (hc-ok / hc-fail); steady state stays quiet.
+fn spawn_fed_status(
+    engine: Arc<Engine>,
+    fed: supragnosis_viz::FedStatus,
+    node_id: String,
+    is_hub: bool,
+    sync: fed::SyncSection,
+    registry: Arc<supragnosis_sync::http::PeerRegistry>,
+) {
+    /// Events `a` holds that `b` lacks, approximated by per-(origin, workspace) seq gaps.
+    fn vv_ahead(a: &VersionVector, b: &VersionVector) -> u64 {
+        a.0.iter().map(|(k, sa)| sa.saturating_sub(*b.0.get(k).unwrap_or(&0))).sum()
+    }
     tokio::spawn(async move {
+        let token = sync.auth_token.clone().unwrap_or_default();
         let mut last: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
         loop {
-            for server in &servers {
-                let ok = match supragnosis_sync::http::SyncClient::new(server, &token, insecure) {
-                    Ok(c) => match c.ping().await {
+            let mut servers_json = Vec::new();
+            for server in &sync.servers {
+                let mut healthy = false;
+                let mut version = None;
+                let mut ws_json = Vec::new();
+                if let Ok(client) = supragnosis_sync::http::SyncClient::new(server, &token, sync.insecure_tls) {
+                    match client.ping().await {
                         Ok(p) => {
-                            if last.get(server).copied() != Some(true) {
-                                tracing::info!(%server, hub = %p.node_id, version = %p.version, shared = ?p.shared_workspaces, "hub health check ok");
+                            healthy = true;
+                            version = Some(p.version);
+                            for ws in &sync.share_workspaces {
+                                let store = engine.store();
+                                let ws_owned = ws.clone();
+                                let local = tokio::task::spawn_blocking(move || {
+                                    supragnosis_sync::version_vector(store.as_ref(), &ws_owned)
+                                })
+                                .await;
+                                let (Ok(Ok(local)), Ok(remote)) = (local, client.advertise(ws).await) else {
+                                    continue;
+                                };
+                                ws_json.push(serde_json::json!({
+                                    "workspace": ws,
+                                    "local_ahead": vv_ahead(&local, &remote.vv),
+                                    "hub_ahead": vv_ahead(&remote.vv, &local),
+                                }));
                             }
-                            true
                         }
                         Err(e) => {
                             if last.get(server).copied() != Some(false) {
                                 tracing::warn!(%server, error = %e, "hub health check failed");
                             }
-                            false
                         }
-                    },
-                    Err(e) => {
-                        tracing::warn!(%server, error = %e, "hub health check client build failed");
-                        false
                     }
-                };
-                if last.get(server).copied() != Some(ok) {
+                }
+                if healthy && last.get(server).copied() != Some(true) {
+                    tracing::info!(%server, "hub health check ok");
+                }
+                if last.get(server).copied() != Some(healthy) {
                     engine.emit(Event::Sync {
-                        direction: if ok { "hc-ok".into() } else { "hc-fail".into() },
+                        direction: if healthy { "hc-ok".into() } else { "hc-fail".into() },
                         peer: server.clone(),
                         workspace: "-".into(),
                         count: 0,
                     });
-                    last.insert(server.clone(), ok);
+                    last.insert(server.clone(), healthy);
                 }
+                servers_json.push(serde_json::json!({
+                    "url": server,
+                    "healthy": healthy,
+                    "version": version,
+                    "workspaces": ws_json,
+                }));
             }
-            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            let peers_json = if is_hub {
+                serde_json::to_value(registry.snapshot()).unwrap_or_default()
+            } else {
+                serde_json::Value::Array(Vec::new())
+            };
+            let blob = serde_json::json!({
+                "configured": true,
+                "node_id": node_id,
+                "role": if is_hub { "hub" } else { "client" },
+                "updated_ms": supragnosis_core::now_millis(),
+                "servers": servers_json,
+                "known_peers": peers_json,
+            });
+            if let Ok(mut w) = fed.write() {
+                *w = blob;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
     });
 }
@@ -579,6 +641,7 @@ async fn spawn_viz(
     engine: &Arc<Engine>,
     addr_str: &str,
     events: tokio::sync::broadcast::Sender<String>,
+    fed: Option<supragnosis_viz::FedStatus>,
 ) {
     // SUPRAGNOSIS_VIZ_PUBLIC=1: the owner's explicit opt-in to read-only network exposure of the
     // viewer (federation.md 6d interim; writes stay loopback-gated per connection, F19).
@@ -610,7 +673,7 @@ async fn spawn_viz(
     tracing::info!("ontology viewer started: http://{bound}");
     let engine = Arc::clone(engine);
     tokio::spawn(async move {
-        if let Err(e) = supragnosis_viz::serve(engine, listener, events).await {
+        if let Err(e) = supragnosis_viz::serve(engine, listener, events, fed).await {
             tracing::error!(error = %e, "viz server terminated");
         }
     });

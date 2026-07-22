@@ -278,6 +278,10 @@ pub struct GraphNode {
     pub degree: usize,
     /// The number of sources (attestations) accumulated on this entity - larger when more observations back it.
     pub sources: usize,
+    /// Distinct provenance hosts that attested this entity (sorted) - where the knowledge came
+    /// from, e.g. ["ashon-mac", "knowledge-vm"] on a hub after a sync (federation observability).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origins: Vec<String>,
     /// The **highest** trust tier among the sources (Principle 18) - the node's representative trust.
     pub trust_tier: TrustTier,
 }
@@ -1446,6 +1450,13 @@ impl Engine {
                     .max()
                     .unwrap_or_default();
                 let sources: usize = members.iter().map(|m| m.provenance.len()).sum();
+                let mut origins: Vec<String> = members
+                    .iter()
+                    .flat_map(|m| m.provenance.iter())
+                    .map(|p| p.host.clone())
+                    .collect();
+                origins.sort();
+                origins.dedup();
                 let mut aliases: Vec<String> = members
                     .iter()
                     .map(|m| m.canonical_name.clone())
@@ -1463,6 +1474,7 @@ impl Engine {
                     aliases,
                     degree: degree.get(cid).copied().unwrap_or(0),
                     sources,
+                    origins,
                     trust_tier: trust,
                 }
             })
@@ -1598,6 +1610,12 @@ impl Engine {
                     aliases: Vec::new(), // hypergraph does not yet apply merge forwarding (follow-up)
                     degree: hyper_degree.get(&e.id).copied().unwrap_or(0),
                     sources: e.provenance.len(),
+                    origins: {
+                        let mut o: Vec<String> = e.provenance.iter().map(|p| p.host.clone()).collect();
+                        o.sort();
+                        o.dedup();
+                        o
+                    },
                     trust_tier: trust,
                 }
             })
