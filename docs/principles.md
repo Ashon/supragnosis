@@ -38,6 +38,14 @@
 > human-facing curation console is a gated confirmation surface: its "accept" routes through the verdict
 > path, not a direct write, and a recall (retraction) acceptance stays a human's direct act. Concrete
 > design in [proposal-workflow.md](proposal-workflow.md) Section 14.
+> Revision: 2026-07 (8th) - Federation feedback from M4 Phases 1-2 (implementation -> norms). Enrichment
+> relation on the attestation union (3): an attestation may be superseded only by a strictly-more-
+> informative version of itself (the sync stamp) - element-wise upgrade keeps the join a semilattice, so
+> convergence is unchanged. Canonical signing/wire encodings join the compile-forced enumerating
+> functions (14): a new field must explicitly decide signed-versus-derived. Convergence points split
+> (16, in federation.md): fold-projections converge continuously with the log; materialized projections
+> converge at re-materialization (HLC-ordered replay). Concrete design in
+> [federation.md](federation.md) Sections 3/8a.
 
 ---
 
@@ -124,6 +132,13 @@ overwrite is forbidden.
     set union** - union is commutative/associative/idempotent, so it converges regardless of arrival
     order (Principle 16). Relay duplication (a fully identical attestation) is naturally deduped by the
     union, while an independent re-observation (an attestation differing in any field) accumulates.
+    The union is ordered by one **enrichment relation** (8th revision): an attestation may be
+    superseded ONLY by a strictly-more-informative version of itself - identical base fields gaining
+    transport metadata (the federation sync stamp) - never by a different attestation, and enrichment
+    never runs backwards (a stamp is never lost). An element-wise upgrade order on a set union keeps
+    the join commutative/associative/idempotent, so the convergence argument is unchanged; what it
+    rules out is double-counting one act as two attestations after backfill stamping
+    (federation.md Section 3/Phase 2).
     This norm resolves the point of collision between "provenance is first-class" (Principle 2) and
     "content is identity" (Principle 14) - content is the observation's identity, and provenance is
     the set of attestations about that observation.
@@ -381,13 +396,15 @@ principle). The identifier is invariant even when location/store/host changes.
     denotes (exposed as an MCP Resource).
   - **Mechanical enforcement of structural evolution**: functions that **define semantics by
     enumerating fields** - such as identity (content-address hash encoding), attestation total order
-    (the basis of merge dedup), and re-arrival merge (absorb) - are written so that review of those
+    (the basis of merge dedup), re-arrival merge (absorb), and **canonical signing/wire encodings**
+    (the attestation signing bytes of federation, 8th revision) - are written so that review of those
     functions is forced at the compile level when a field is added to the model (exhaustive
     destructuring, etc. - so that a missing enumeration becomes a compile error). Whether a new field
-    is content identity, an attestation-distinguishing axis, or a merge target must be an explicit
-    decision, not a silent default - an omission manifests as id collapse of distinct assertions (this
-    principle) or loss of attestation dedup (Principle 3), and the diligence of a review is not a
-    guarantee against it.
+    is content identity, an attestation-distinguishing axis, a merge target, or **inside the signed
+    bytes (origin-asserted) versus outside (receiver-locally derived)** must be an explicit decision,
+    not a silent default - an omission manifests as id collapse of distinct assertions (this
+    principle), loss of attestation dedup (Principle 3), or a field a relay can forge unnoticed
+    (Principle 18), and the diligence of a review is not a guarantee against it.
 
 ### Principle 15. Identity Resolution Is the Substrate's Responsibility (Resolution Is Substrate's Job)
 
