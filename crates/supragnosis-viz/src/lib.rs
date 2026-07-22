@@ -187,12 +187,20 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/graph" => graph_response(engine, query),
         "/api/hypergraph" => hypergraph_response(engine, query),
         "/api/types" => types_response(engine, query),
+        "/api/curation" => curation_response(engine, query),
+        "/api/proposals" => proposals_response(engine, query),
+        // Review verdict: a GET carrying the action in the query. GET-with-side-effect is intentional here -
+        // the minimal server does not parse request bodies, and the effect is a gated append-only verdict
+        // (engine.review_proposal records a verdict observation; the fold decides), which is idempotent for
+        // merge (absorbing state, I14/I16). Loopback-only local trust surface (Principle 17). It routes
+        // through the gate, never a direct projection/log write (I18 / proposal-workflow.md 14.3).
+        "/api/review" => review_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/workspaces, or /api/events",
+                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/workspaces, or /api/events",
             ),
         },
     }
@@ -309,6 +317,104 @@ fn types_response(engine: &Engine, query: &str) -> Response {
                 "note": "storage backend failure - NOT an empty glossary (Principle 5)"
             })
             .to_string(),
+        },
+    }
+}
+
+/// `/api/curation` - read-only curation signals (merge candidates / grab-bags / orphans, Principle 7
+/// "generate not commit"). Workspace resolution is identical to `/api/graph`. A pure projection
+/// (Principle 1/16); it commits nothing. A failure is 500 (Principle 5).
+fn curation_response(engine: &Engine, query: &str) -> Response {
+    let ws_param = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("workspace="))
+        .map(percent_decode);
+    let ws_owned: Option<String> = match ws_param.as_deref() {
+        None => Some(engine.default_workspace().to_string()),
+        Some("") | Some("*") | Some("all") => None,
+        Some(s) => Some(s.to_string()),
+    };
+    match engine.curation(ws_owned.as_deref()) {
+        Ok(report) => match serde_json::to_string(&report) {
+            Ok(json) => Response {
+                status: "200 OK",
+                content_type: "application/json",
+                body: json,
+            },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("serialize error: {e}")),
+            },
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: serde_json::json!({
+                "error": e.to_string(),
+                "note": "storage backend failure - NOT an empty curation report (Principle 5)"
+            })
+            .to_string(),
+        },
+    }
+}
+
+/// `/api/proposals` - the workspace's proposals with folded state (Principle 23). Read-only projection.
+fn proposals_response(engine: &Engine, query: &str) -> Response {
+    let ws_param = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("workspace="))
+        .map(percent_decode);
+    let ws_owned: Option<String> = match ws_param.as_deref() {
+        None => Some(engine.default_workspace().to_string()),
+        Some("") | Some("*") | Some("all") => None,
+        Some(s) => Some(s.to_string()),
+    };
+    match engine.list_proposals(ws_owned.as_deref()) {
+        Ok(list) => match serde_json::to_string(&list) {
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("serialize error: {e}")),
+            },
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: serde_json::json!({ "error": e.to_string(), "note": "storage backend failure (Principle 5)" }).to_string(),
+        },
+    }
+}
+
+/// `/api/review?proposal=<id>&decision=merge|reject|withdraw[&workspace=<ws>]` - cast a verdict from the
+/// curation console. Goes through the gated verdict path (engine.review_proposal appends a verdict
+/// observation, the fold decides) - never a direct projection/log write (I18). Self-attested (solo).
+fn review_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let (Some(proposal), Some(decision)) = (param("proposal"), param("decision")) else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("review needs ?proposal=<id>&decision=merge|reject|withdraw"),
+        };
+    };
+    let workspace = param("workspace");
+    match engine.review_proposal(workspace, proposal, decision, None, None) {
+        Ok(id) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::json!({ "observation_id": id }).to_string(),
+        },
+        Err(e) => Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(&e.to_string()),
         },
     }
 }
@@ -505,6 +611,36 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #glossaryBody .src { color:var(--muted); font-size:10px; margin-left:5px; }
   #glossaryBody .def { color:var(--ink2); font-size:11.5px; line-height:1.4; margin-top:1px; opacity:.9; word-break:break-word; }
   #glossaryBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
+  /* Curation (read-only signals). */
+  #curationBody .csec { color:var(--muted); font-size:10px; letter-spacing:.05em; text-transform:uppercase; margin:8px 0 3px; }
+  #curationBody .csec:first-child { margin-top:0; }
+  #curationBody .grp { border-top:1px solid #ffffff12; padding:4px 0; }
+  #curationBody .grp:first-of-type { border-top:none; }
+  #curationBody .gk { color:var(--ink); font-size:11.5px; }
+  #curationBody .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
+  #curationBody .nchip { padding:1px 7px; border-radius:9px; background:#22221f; border:1px solid var(--border);
+                         cursor:pointer; font-size:11px; color:var(--ink2); }
+  #curationBody .nchip:hover { border-color:var(--line-hi); color:var(--ink); }
+  #curationBody .nchip .ty { color:var(--muted); font-size:9.5px; margin-left:3px; }
+  #curationBody .gb { padding:3px 0; border-top:1px solid #ffffff12; font-size:11.5px; color:var(--ink2); }
+  #curationBody .gb .sz { color:var(--accent); font-weight:600; margin-right:5px; }
+  #curationBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
+  /* Proposals (the gated curation console). */
+  #proposalsBody .hint { color:var(--muted); font-size:10px; font-style:italic; margin-bottom:5px; }
+  #proposalsBody .prop { border-top:1px solid #ffffff12; padding:5px 0; }
+  #proposalsBody .prop:first-of-type { border-top:none; }
+  #proposalsBody .phead { display:flex; align-items:center; gap:6px; }
+  #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11.5px; }
+  #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px;
+                           border-radius:8px; border:1px solid var(--border); color:var(--muted); margin-left:auto; }
+  #proposalsBody .pstate.open { color:var(--accent); border-color:var(--accent); }
+  #proposalsBody .pstate.merged { color:#8fe0a8; border-color:#3f7a55; }
+  #proposalsBody .prat { color:var(--ink2); font-size:11px; line-height:1.35; margin:2px 0; opacity:.85; word-break:break-word; }
+  #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
+  #proposalsBody .nchip.into { border-color:var(--accent); color:var(--ink); }
+  #proposalsBody .pacts { display:flex; gap:5px; margin-top:3px; }
+  #proposalsBody .pacts button { padding:1px 9px; font-size:10.5px; border-radius:7px; }
+  #proposalsBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
 </style>
 <canvas id="c"></canvas>
 <div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
@@ -551,6 +687,14 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   <details id="secGloss">
     <summary>Type glossary <span class="ct" id="glossCt"></span></summary>
     <div class="body"><div id="glossaryBody"></div></div>
+  </details>
+  <details id="secReview">
+    <summary>Review <span class="ct" id="reviewCt"></span></summary>
+    <div class="body"><div id="curationBody"></div></div>
+  </details>
+  <details id="secProposals">
+    <summary>Proposals <span class="ct" id="propCt"></span></summary>
+    <div class="body"><div id="proposalsBody"></div></div>
   </details>
   <div id="stats"></div>
 </aside>
@@ -599,8 +743,14 @@ const emptyEl = document.getElementById("empty"), logEl = document.getElementByI
 const detailEl = document.getElementById("detail");
 const dockEl = document.getElementById("dock"), secGlossEl = document.getElementById("secGloss");
 const glossaryBodyEl = document.getElementById("glossaryBody"), glossCtEl = document.getElementById("glossCt");
+const secReviewEl = document.getElementById("secReview");
+const curationBodyEl = document.getElementById("curationBody"), reviewCtEl = document.getElementById("reviewCt");
+const secPropEl = document.getElementById("secProposals");
+const proposalsBodyEl = document.getElementById("proposalsBody"), propCtEl = document.getElementById("propCt");
 
 let glossaryTypes = [];          // [{target, name, description, sources, trust_tier}] - /api/types
+let curation = null;             // read-only curation signals - /api/curation (Principle 7, generate-not-commit)
+let proposals = [];              // proposals with folded state - /api/proposals (Principle 23 gate)
 let follow = true;               // whether the camera follows the most recent agent-activity node
 let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
@@ -814,8 +964,10 @@ async function poll() {
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
     } else { hyperedges = []; }
-    // Keep the type glossary panel current (no-op while it is closed).
+    // Keep the type glossary + curation + proposals panels current (no-op while their sections are closed).
     refreshGlossary();
+    refreshCuration();
+    refreshProposals();
   } catch (e) { statusEl.textContent = "connection failed - check the server is running"; }
 }
 
@@ -870,6 +1022,85 @@ async function refreshGlossary() {
     if (r.ok) { const t = await r.json(); if (Array.isArray(t)) glossaryTypes = t; }
   } catch (e) { /* glossary is auxiliary - keep the last render */ }
   renderGlossary();
+}
+
+// Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.
+// Clicking a node chip only focuses it - the panel commits nothing (no gate).
+function renderCuration() {
+  if (!curation) { curationBodyEl.innerHTML = '<div class="empty">no signals yet</div>'; reviewCtEl.textContent = ""; return; }
+  const nchip = n => `<span class="nchip" data-id="${esc(n.id)}" title="focus ${esc(n.name)} (deg ${n.degree}, ${n.sources} src)">${esc(n.name)}<span class="ty">${esc(n.type)}</span></span>`;
+  const dup = curation.duplicates || [], gb = curation.grab_bags || [], orph = curation.orphans || [];
+  let html = `<div class="csec">merge candidates (${dup.length})</div>`;
+  html += dup.length
+    ? dup.map(g => `<div class="grp"><span class="gk">${esc(g.key)}</span><div class="chips">${g.members.map(nchip).join("")}</div></div>`).join("")
+    : `<div class="empty">none - no name collisions</div>`;
+  html += `<div class="csec">grab-bag contexts (${gb.length})</div>`;
+  html += gb.length
+    ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return `<div class="gb"><span class="sz">${b.size}</span>${esc(nm)}</div>`; }).join("")
+    : `<div class="empty">none - no oversized clusters</div>`;
+  html += `<div class="csec">orphans (${orph.length})</div>`;
+  html += orph.length ? `<div class="chips">${orph.map(nchip).join("")}</div>` : `<div class="empty">none - all nodes linked</div>`;
+  curationBodyEl.innerHTML = html;
+  const s = curation.stats || {};
+  reviewCtEl.textContent = (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0) || "";
+  curationBodyEl.querySelectorAll(".nchip").forEach(c => {
+    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; wake(0.3); centerOn(n); renderDetail(n); } };
+  });
+}
+
+async function refreshCuration() {
+  if (!secReviewEl.open) return;
+  const ws = wsInput.value.trim();
+  try {
+    const r = await fetch("/api/curation" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    if (r.ok) { const c = await r.json(); if (!c.error) curation = c; }
+  } catch (e) { /* auxiliary - keep the last render */ }
+  renderCuration();
+}
+
+// Proposals panel (the gated curation console, Principle 23). Read + accept/reject. Accept goes through
+// the gated verdict path (/api/review -> engine.review_proposal, a verdict observation), not a direct write.
+function nameOf(id) { const n = nodeById(id); return n ? n.name : "(" + id.slice(0, 8) + ")"; }
+function renderProposals() {
+  const open = proposals.filter(p => p.state === "open");
+  propCtEl.textContent = open.length || (proposals.length ? proposals.length : "");
+  if (!proposals.length) { proposalsBodyEl.innerHTML = '<div class="empty">no proposals - open one with the propose tool, or from a merge candidate</div>'; return; }
+  const chip = (id, into) => `<span class="nchip${id === into ? " into" : ""}" data-id="${esc(id)}" title="focus ${esc(nameOf(id))}${id === into ? " (canonical / into)" : ""}">${esc(nameOf(id))}</span>`;
+  let html = `<div class="hint">accept records a gated verdict; the node-merge effect applies in a later step</div>`;
+  for (const p of proposals) {
+    const st = esc(p.state);
+    html += `<div class="prop"><div class="phead"><span class="pkind">${esc(p.kind)}</span>`
+      + `<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></div>`;
+    if (p.rationale) html += `<div class="prat">${esc(p.rationale)}</div>`;
+    html += `<div class="ptargets">${(p.targets || []).map(id => chip(id, p.into)).join("")}</div>`;
+    if (p.state === "open") {
+      html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}">accept</button>`
+        + `<button data-act="reject" data-id="${esc(p.id)}">reject</button></div>`;
+    }
+    html += `</div>`;
+  }
+  proposalsBodyEl.innerHTML = html;
+  proposalsBodyEl.querySelectorAll(".nchip").forEach(c => {
+    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; wake(0.3); centerOn(n); renderDetail(n); } };
+  });
+  proposalsBodyEl.querySelectorAll(".pacts button").forEach(b => {
+    b.onclick = async () => {
+      const ws = wsInput.value.trim();
+      const q = "?proposal=" + encodeURIComponent(b.dataset.id) + "&decision=" + b.dataset.act + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+      try { await fetch("/api/review" + q, { cache: "no-store" }); } catch (e) { /* ignore */ }
+      refreshProposals();
+    };
+  });
+}
+
+async function refreshProposals() {
+  if (!secPropEl.open) return;
+  const ws = wsInput.value.trim();
+  try {
+    const r = await fetch("/api/proposals" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    if (r.ok) { const p = await r.json(); if (Array.isArray(p)) proposals = p; }
+  } catch (e) { /* auxiliary - keep the last render */ }
+  renderProposals();
 }
 function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); }
 function logRow(html) {
@@ -944,6 +1175,7 @@ function renderDetail(node) {
     + `<h2>${esc(node.name)}</h2>`
     + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span> `
     + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
+    + (node.aliases && node.aliases.length ? `<div class="meta">merged: ${esc(node.aliases.join(", "))}</div>` : "")
     + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
     + `<div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}`
     + `<div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}`;
@@ -1423,6 +1655,8 @@ const dockBtn = document.getElementById("dockBtn");
 dockBtn.onclick = () => { const on = dockEl.classList.toggle("on"); dockBtn.classList.toggle("on", on); };
 // Fetch the glossary lazily when its section is expanded (and keep it fresh via poll while open).
 secGlossEl.addEventListener("toggle", () => { if (secGlossEl.open) refreshGlossary(); });
+secReviewEl.addEventListener("toggle", () => { if (secReviewEl.open) refreshCuration(); });
+secPropEl.addEventListener("toggle", () => { if (secPropEl.open) refreshProposals(); });
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
