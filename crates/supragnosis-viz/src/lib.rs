@@ -866,6 +866,7 @@ const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.02;
 // trigger the loader. `settling` starts true so the first layout comes up settled, not mid-flight.
 const SETTLE_ENTER = 0.5, REVEAL_ALPHA = 0.08;
 let settling = true;
+let refitOnReveal = false;   // re-frame the graph after a sync-driven re-layout settles (follow mode)
 // Base force parameters. The larger the graph, the wider it should spread, so stepSim scales by node count (spread).
 const REPULSE = 7000, SPRING_LEN = 120, SPRING_K = 0.02;
 const CENTER_BASE = 0.0015; // center-attraction base - weakened for large graphs (prevents central clumping)
@@ -1061,6 +1062,19 @@ async function poll() {
 }
 
 function currentWs() { return wsInput.value.trim(); }
+// Clean workspace transition: reset per-workspace view state, raise the loader immediately (no
+// flash of the old layout under a stale camera), and treat the new graph like a fresh load - the
+// reveal ends with an auto-fit, so switching workspaces always lands framed and zoomed sensibly.
+function beginWorkspaceTransition() {
+  focus = null; hover = null; renderDetail(null);
+  proposalSel = null;
+  pulses.clear();
+  settling = true;
+  needFit = true;
+  userMoved = false;
+  wake(1);
+}
+
 function renderChipsActive() {
   const cur = currentWs();
   chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.ws === cur));
@@ -1075,7 +1089,10 @@ async function loadWorkspaces() {
       const c = document.createElement("span");
       c.className = "chip" + (val === cur ? " on" : "");
       c.dataset.ws = val; c.textContent = label;
-      c.onclick = () => { wsInput.value = val; renderChipsActive(); poll(); };
+      c.onclick = () => {
+        if (wsInput.value.trim() === val) return;
+        wsInput.value = val; beginWorkspaceTransition(); renderChipsActive(); poll();
+      };
       return c;
     };
     const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "workspaces:";
@@ -1230,7 +1247,7 @@ async function handleEvent(ev) {
   // While following, if activity happens in a different workspace, switch to it - otherwise added
   // nodes/hits are outside the current scope and do not appear (the SSE event arrives, but the polling ws mismatches).
   const switched = follow && ev.workspace && currentWs() !== "*" && currentWs() !== ev.workspace;
-  if (switched) { wsInput.value = ev.workspace; renderChipsActive(); }
+  if (switched) { wsInput.value = ev.workspace; beginWorkspaceTransition(); renderChipsActive(); }
   let ids = [];
   if (ev.kind === "observe") {
     logRow(`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${esc(ev.workspace)}</span>`);
@@ -1246,6 +1263,12 @@ async function handleEvent(ev) {
   } else if (ev.kind === "sync") {
     // Federation hit: who touched this store, which direction, how much - the live remote feed.
     logRow(`<b>sync</b> ${esc(ev.direction)} ${esc(ev.workspace)} &lt;-&gt; ${esc(String(ev.peer).slice(0, 18))} (${ev.count})`);
+    if (ev.count > 0) {
+      // Knowledge landed: load it now, and re-frame once the re-layout settles (follow mode) so the
+      // camera presents the grown graph instead of staring at a stale corner of it.
+      refitOnReveal = follow;
+      await poll();
+    }
     ids = [];
   } else if (ev.kind === "traverse") {
     const sn = nodeById(ev.start);
@@ -1255,7 +1278,13 @@ async function handleEvent(ev) {
   pulseNodes(ids);
   for (const id of ids) if (id) footprint.add(id);   // accumulate the conversation footprint (regardless of whether the node exists)
   wake(0.3);
-  if (follow) { const n = primaryNode(ev); if (n) centerOn(n); }
+  if (follow) {
+    // Frame the WHOLE hit set: several hits fit into view together (pan + zoom as needed); a
+    // single hit centers smoothly. The camera narrates what the agent touched.
+    const hitNodes = ids.map(nodeById).filter(Boolean);
+    if (hitNodes.length > 1) fitView(hitNodes, 130);
+    else { const n = hitNodes[0] || primaryNode(ev); if (n) centerOn(n); }
+  }
   const sEl = document.getElementById("session");
   if (sEl) sEl.textContent = footprintSession ? `session ${footprintSession.slice(0,22)} / ${footprint.size} used` : "";
 }
@@ -1551,6 +1580,8 @@ function draw() {
   if (settling && alpha <= REVEAL_ALPHA) {
     settling = false;
     if (needFit && !userMoved) { needFit = false; fitView(); cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; }
+    else if (refitOnReveal) { fitView(); }   // smooth re-frame after synced knowledge landed
+    refitOnReveal = false;
   }
   // While settling, keep stepping the sim (above) but hide the graph behind the loader - the user sees
   // a calm spinner instead of nodes flying around during the violent early rearrangement.
@@ -1950,7 +1981,7 @@ searchEl.addEventListener("keydown", ev => {
   }
 });
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
-wsInput.addEventListener("keydown", e => { if (e.key === "Enter") { renderChipsActive(); poll(); } });
+wsInput.addEventListener("keydown", e => { if (e.key === "Enter") { beginWorkspaceTransition(); renderChipsActive(); poll(); } });
 document.getElementById("zin").onclick = () => zoomAt(innerWidth/2, innerHeight/2, 1.2);
 document.getElementById("zout").onclick = () => zoomAt(innerWidth/2, innerHeight/2, 1/1.2);
 document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
