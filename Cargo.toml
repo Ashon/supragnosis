@@ -22,6 +22,8 @@ all = { level = "deny", priority = -1 }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blake3 = "1"
+# Federation (M4 Phase 1): node identity / attestation signing (docs/federation.md Section 2/3).
+ed25519-dalek = "2"
 thiserror = "1"
 anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }

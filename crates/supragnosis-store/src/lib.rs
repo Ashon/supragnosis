@@ -288,7 +288,7 @@ impl KnowledgeStore for InMemoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use supragnosis_core::{Provenance, TrustTier};
+    use supragnosis_core::{Hlc, Provenance, SyncMeta, TrustTier, VersionVector};
 
     fn prov() -> Provenance {
         Provenance {
@@ -299,7 +299,46 @@ mod tests {
             observed_at: 1,
             confidence: Some(1.0),
             trust_tier: TrustTier::default(),
+            sync: None,
         }
+    }
+
+    /// M4 Phase 1 (docs/federation.md Section 5): the default `attestations_since` port scan - only
+    /// sync-stamped attestations, VV-filtered per (origin, workspace), deterministic (origin, seq) order.
+    #[test]
+    fn attestations_since_filters_by_version_vector() {
+        let store = InMemoryStore::new();
+        let stamp = |seq: u64| SyncMeta {
+            origin_node: "node-a".into(),
+            origin_seq: seq,
+            hlc: Hlc { wall: seq, counter: 0, node: "node-a".into() },
+            signature: "sig".into(),
+            lineage: Vec::new(),
+        };
+        // Two stamped observations (seq 1, 2) + one legacy (unstamped, local-only).
+        for (content, seq) in [("fact one", 1u64), ("fact two", 2u64)] {
+            let p = Provenance { sync: Some(stamp(seq)), ..prov() };
+            store.add_observation(Observation::new(content.into(), p)).unwrap();
+        }
+        store.add_observation(Observation::new("legacy fact".into(), prov())).unwrap();
+
+        // Empty VV -> both stamped events, ordered by (origin, seq); the legacy one never leaves (F7).
+        let all = store.attestations_since("ws1", &VersionVector::default()).unwrap();
+        assert_eq!(all.len(), 2, "legacy attestations are local-only until backfilled");
+        assert_eq!(all[0].attestation.sync.as_ref().unwrap().origin_seq, 1);
+        assert_eq!(all[1].attestation.sync.as_ref().unwrap().origin_seq, 2);
+
+        // A VV covering seq 1 -> only the newer event; a covering VV -> nothing.
+        let mut vv = VersionVector::default();
+        vv.advance("node-a", "ws1", 1);
+        let rest = store.attestations_since("ws1", &vv).unwrap();
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest[0].content, "fact two");
+        vv.advance("node-a", "ws1", 2);
+        assert!(store.attestations_since("ws1", &vv).unwrap().is_empty());
+
+        // Workspace scoping: another workspace sees nothing (selective sharing boundary input, F9).
+        assert!(store.attestations_since("ws-other", &VersionVector::default()).unwrap().is_empty());
     }
 
     fn ent(name: &str) -> Entity {

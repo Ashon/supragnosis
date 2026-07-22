@@ -99,7 +99,10 @@ so the receiver dedups and merges instead of duplicating. If any sync metadata w
 
 Where the fields live and how P14 is enforced. The content-address id is `blake3(workspace + content +
 assertions)` (`Observation::with_assertions`); `Assertions::hash_into` exhaustively destructures the
-assertions, and `Provenance` is **not** part of the hash at all. The four sync fields live on `Provenance`
+assertions, and `Provenance` is **not** part of the hash at all. (Storage form, Phase 1: one optional
+`sync` block on `Provenance` holding the four fields plus the origin's lineage declaration - the
+declaration must be stored so the signature stays verifiable after the observation-level `derived_from`
+union grows.) The four sync fields live on `Provenance`
 (the per-attestation record), so they are excluded from content identity **automatically** - not by a
 `hash_into` change. This is the correct home for a second reason: an observation can carry several
 attestations (the same content attested by several nodes), and each attestation has its own origin, seq,
@@ -457,9 +460,11 @@ changing the canon policy without a central admin - is out of scope.
   `all_observations(workspace)` exists today - a delta scan is new). Tests: cross-node identical id, HLC
   monotonicity, signature round-trip, absorb dedups relay copies but unions distinct attestations.
 - **Phase 2** - `supragnosis-sync`: VV diff, delta codec, apply pipeline (claimed-tier verbatim storage +
-  recall-side down-weighting hooks, F13 - no apply-time trust gating), selective sharing. Property test:
-  two in-memory nodes converge under any exchange order (F5); tampered event rejected (F6); a
-  workspace-filtered (hole-y) stream still converges (F7).
+  recall-side down-weighting hooks, F13 - no apply-time trust gating), selective sharing, authoring-time
+  stamping (per-workspace seq counter + HLC + signature at observe) and **backfill stamping of
+  pre-federation attestations at first export** (stamped by their own origin - unstamped attestations
+  never leave the node). Property test: two in-memory nodes converge under any exchange order (F5);
+  tampered event rejected (F6); a workspace-filtered (hole-y) stream still converges (F7).
 - **Phase 3** - transport: axum sync API + rustls + allowlist/bearer; reqwest client. Loopback guard for
   MCP/viz untouched.
 - **Phase 4** - CLI/config/roles + `sync_*` MCP tools.

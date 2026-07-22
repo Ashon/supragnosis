@@ -59,6 +59,233 @@ pub struct Provenance {
     /// Trust tier (Principle 18). Defaults to `AgentExtracted`; promotion only explicitly.
     #[serde(default)]
     pub trust_tier: TrustTier,
+    /// Federation sync metadata (M4, docs/federation.md Section 3) - assigned once by the origin at
+    /// authoring/stamping time, preserved verbatim through relays. `None` for pre-federation or
+    /// local-unsigned attestations (they stay local-only until backfill-stamped at first export).
+    /// **Not part of the content address** (F2): it lives on the attestation, and `Provenance` is not
+    /// hashed - identical content on two nodes keeps one id. It IS an attestation-distinguishing axis
+    /// (see [`provenance_order`], the P14 compile-forced enumeration).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<SyncMeta>,
+}
+
+/// The four sync fields of federation (docs/federation.md Section 3) plus the origin's lineage
+/// declaration, stored as one block: an attestation either is sync-stamped (all fields present) or is
+/// not (block absent). `lineage` is `derived_from` exactly as the origin declared it at stamping time -
+/// it rides inside the signed bytes so a relay cannot forge or strip lineage undetected (F13), and it is
+/// kept here so the signature stays verifiable after the observation-level `derived_from` union grows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncMeta {
+    /// The node_id (public-key fingerprint, [`NodeIdentity::node_id`]) that authored this attestation.
+    pub origin_node: String,
+    /// Monotonic counter the origin keeps per (origin_node, workspace) - dense within a workspace (F7).
+    pub origin_seq: u64,
+    /// Hybrid logical clock stamp at authoring time (federation.md Section 4, I11).
+    pub hlc: Hlc,
+    /// Hex ed25519 signature over [`attestation_signing_bytes`] by the origin's node key.
+    pub signature: String,
+    /// The origin's `derived_from` declaration at stamping time (inside the signed bytes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lineage: Vec<String>,
+}
+
+/// Hybrid logical clock (docs/federation.md Section 4). Total order by the derived
+/// `(wall, counter, node)` tuple - field declaration order makes `derive(Ord)` give exactly that.
+/// `now_millis()` alone is not a total order across hosts; the HLC is the deterministic order key for
+/// cross-node folds (I11). It does NOT replace `observed_at` (P4 transaction time stays human-facing).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+pub struct Hlc {
+    pub wall: u64,
+    pub counter: u32,
+    pub node: String,
+}
+
+impl Hlc {
+    /// Advance for a local event: wall catches up to physical time, the counter breaks same-wall ties.
+    pub fn tick(prev: &Hlc, now: Timestamp, node: &str) -> Hlc {
+        let wall = prev.wall.max(now);
+        let counter = if wall == prev.wall { prev.counter + 1 } else { 0 };
+        Hlc { wall, counter, node: node.to_string() }
+    }
+
+    /// Merge on receiving a remote stamp (standard HLC receive rule): never runs backwards, and lands
+    /// strictly after both `prev` and `remote` when physical time has not caught up.
+    pub fn merge(prev: &Hlc, remote: &Hlc, now: Timestamp, node: &str) -> Hlc {
+        let wall = prev.wall.max(remote.wall).max(now);
+        let c_prev = if wall == prev.wall { prev.counter + 1 } else { 0 };
+        let c_remote = if wall == remote.wall { remote.counter + 1 } else { 0 };
+        Hlc { wall, counter: c_prev.max(c_remote), node: node.to_string() }
+    }
+
+    /// Deterministic fallback for pre-federation attestations (no sync block): wall = `observed_at`,
+    /// counter 0, empty node. Keeps HLC-ordered folds total and arrival-order independent even over a
+    /// legacy log (federation.md Section 4).
+    pub fn legacy(observed_at: Timestamp) -> Hlc {
+        Hlc { wall: observed_at, counter: 0, node: String::new() }
+    }
+}
+
+/// Version vector (docs/federation.md Section 5): what a node holds, per (origin node, workspace) -
+/// dense within a shared workspace, whole workspaces absent under selective sharing (F7/F9).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VersionVector(pub std::collections::BTreeMap<(String, String), u64>);
+
+impl VersionVector {
+    /// Highest origin_seq held for (node, workspace); 0 = nothing held.
+    pub fn get(&self, node: &str, workspace: &str) -> u64 {
+        *self.0.get(&(node.to_string(), workspace.to_string())).unwrap_or(&0)
+    }
+
+    /// Monotonic advance (max) - never runs backwards, so relaying/replaying is idempotent.
+    pub fn advance(&mut self, node: &str, workspace: &str, seq: u64) {
+        let e = self.0.entry((node.to_string(), workspace.to_string())).or_insert(0);
+        *e = (*e).max(seq);
+    }
+
+    /// Is the attestation (node, workspace, seq) already covered (held)?
+    pub fn covers(&self, node: &str, workspace: &str, seq: u64) -> bool {
+        seq <= self.get(node, workspace)
+    }
+}
+
+/// Node identity for federation (docs/federation.md Section 2): an ed25519 keypair whose public-key
+/// fingerprint IS the node_id (self-certifying, immutable - it keys the version vector and is the final
+/// HLC tiebreak). Key material persistence (data_dir/node.key) is the caller's IO concern - core only
+/// takes the 32 secret bytes, staying zero-IO (P20).
+pub struct NodeIdentity {
+    signing: ed25519_dalek::SigningKey,
+}
+
+impl NodeIdentity {
+    /// Builds the identity from 32 secret bytes (generated once by the caller and persisted under
+    /// data_dir; tests may use fixed bytes).
+    pub fn from_secret_bytes(secret: [u8; 32]) -> Self {
+        Self { signing: ed25519_dalek::SigningKey::from_bytes(&secret) }
+    }
+
+    /// Hex public key - what other nodes put on their allowlist / the canon policy binding.
+    pub fn public_key_hex(&self) -> String {
+        hex_encode(self.signing.verifying_key().as_bytes())
+    }
+
+    /// node_id = blake3(public key), truncated to 32 hex chars (128 bits). Never configured, never
+    /// changed (F14) - a display label is a separate field.
+    pub fn node_id(&self) -> String {
+        node_id_from_public_key(self.signing.verifying_key().as_bytes())
+    }
+
+    /// Signs an attestation's canonical bytes ([`attestation_signing_bytes`]); returns hex.
+    /// `meta.signature` is ignored as input and is what this output should be stored into.
+    pub fn sign_attestation(&self, content_id: &str, p: &Provenance, meta: &SyncMeta) -> String {
+        use ed25519_dalek::Signer;
+        let bytes = attestation_signing_bytes(content_id, p, meta);
+        hex_encode(&self.signing.sign(&bytes).to_bytes())
+    }
+}
+
+/// Derives the immutable node_id from raw public-key bytes (federation.md Section 2).
+pub fn node_id_from_public_key(pubkey: &[u8]) -> String {
+    blake3::hash(pubkey).to_hex().to_string()[..32].to_string()
+}
+
+/// Verifies an attestation signature against a hex public key. `false` for any malformed input -
+/// verification failure is rejection, not an error path (F6).
+pub fn verify_attestation(pubkey_hex: &str, content_id: &str, p: &Provenance, meta: &SyncMeta) -> bool {
+    use ed25519_dalek::Verifier;
+    let Some(pk_bytes) = hex_decode(pubkey_hex) else { return false };
+    let Ok(pk_arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) else { return false };
+    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&pk_arr) else { return false };
+    let Some(sig_bytes) = hex_decode(&meta.signature) else { return false };
+    let Ok(sig_arr) = <[u8; 64]>::try_from(sig_bytes.as_slice()) else { return false };
+    let sig = ed25519_dalek::Signature::from_bytes(&sig_arr);
+    key.verify(&attestation_signing_bytes(content_id, p, meta), &sig).is_ok()
+}
+
+/// Canonical bytes an origin signs (docs/federation.md Section 3): `(content_id, origin_node,
+/// origin_seq, hlc, host, on_behalf_of, workspace, source_ref, observed_at, confidence, trust_tier,
+/// lineage-as-declared)`, in the same length-prefixed deterministic encoding as [`hash_field`]
+/// (P14 anti-collision) - a relay reproduces identical bytes, so the origin's signature verifies
+/// unchanged downstream. `meta.signature` itself is (necessarily) not part of the signed bytes.
+///
+/// Full destructuring (no `..`, Principle 14): adding a field to `Provenance`/`SyncMeta` breaks this
+/// function, forcing an explicit decision on whether the new field is signed (origin-asserted) or not.
+pub fn attestation_signing_bytes(content_id: &str, p: &Provenance, meta: &SyncMeta) -> Vec<u8> {
+    let Provenance {
+        host,
+        on_behalf_of,
+        workspace,
+        source_ref,
+        observed_at,
+        confidence,
+        trust_tier,
+        sync: _, // the block being signed is passed as `meta`; never sign a signature
+    } = p;
+    let SyncMeta { origin_node, origin_seq, hlc, signature: _, lineage } = meta;
+    let mut buf = Vec::new();
+    push_field(&mut buf, content_id.as_bytes());
+    push_field(&mut buf, origin_node.as_bytes());
+    buf.extend_from_slice(&origin_seq.to_le_bytes());
+    buf.extend_from_slice(&hlc.wall.to_le_bytes());
+    buf.extend_from_slice(&hlc.counter.to_le_bytes());
+    push_field(&mut buf, hlc.node.as_bytes());
+    push_field(&mut buf, host.as_bytes());
+    push_opt_field(&mut buf, on_behalf_of.as_deref());
+    push_field(&mut buf, workspace.as_bytes());
+    push_opt_field(&mut buf, source_ref.as_deref());
+    buf.extend_from_slice(&observed_at.to_le_bytes());
+    match confidence {
+        Some(c) => {
+            buf.push(1);
+            buf.extend_from_slice(&c.to_bits().to_le_bytes());
+        }
+        None => buf.push(0),
+    }
+    buf.push(match trust_tier {
+        TrustTier::Unverified => 0,
+        TrustTier::AgentExtracted => 1,
+        TrustTier::HostSigned => 2,
+        TrustTier::HumanConfirmed => 3,
+    });
+    buf.extend_from_slice(&(lineage.len() as u64).to_le_bytes());
+    for l in lineage {
+        push_field(&mut buf, l.as_bytes());
+    }
+    buf
+}
+
+/// Length-prefixed append (the signing-bytes counterpart of [`hash_field`]).
+fn push_field(buf: &mut Vec<u8>, bytes: &[u8]) {
+    buf.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    buf.extend_from_slice(bytes);
+}
+
+fn push_opt_field(buf: &mut Vec<u8>, v: Option<&str>) {
+    match v {
+        Some(s) => {
+            buf.push(1);
+            push_field(buf, s.as_bytes());
+        }
+        None => buf.push(0),
+    }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 /// Structured assertions enclosed in an observation (candidate entities/relations) - `assertions` in architecture.md 2.3.
@@ -389,17 +616,17 @@ impl Observation {
 /// axis that distinguishes attestations" - if silently omitted from the enumeration, dedup collapses two separate
 /// attestations differing only in that field into one (a Principle 3 violation).
 fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
-    fn key(
-        p: &Provenance,
-    ) -> (
-        &str,
-        Option<&str>,
-        &str,
-        Option<&str>,
+    type Key<'a> = (
+        &'a str,
+        Option<&'a str>,
+        &'a str,
+        Option<&'a str>,
         Timestamp,
         Option<u32>,
         TrustTier,
-    ) {
+        Option<(&'a str, u64, &'a Hlc, &'a str, &'a [String])>,
+    );
+    fn key(p: &Provenance) -> Key<'_> {
         let Provenance {
             host,
             on_behalf_of,
@@ -408,6 +635,7 @@ fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
             observed_at,
             confidence,
             trust_tier,
+            sync,
         } = p;
         (
             host.as_str(),
@@ -417,9 +645,30 @@ fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
             *observed_at,
             confidence.map(f32::to_bits),
             *trust_tier,
+            // Sync metadata IS an attestation-distinguishing axis (federation.md Section 3): a relay
+            // copy is byte-identical (dedups), while re-stamps / distinct origins stay separate
+            // attestations. Exhaustive destructuring, same discipline as the outer struct.
+            sync.as_ref().map(|s| {
+                let SyncMeta { origin_node, origin_seq, hlc, signature, lineage } = s;
+                (origin_node.as_str(), *origin_seq, hlc, signature.as_str(), lineage.as_slice())
+            }),
         )
     }
     key(a).cmp(&key(b))
+}
+
+/// The observation's deterministic fold-ordering key (federation.md Section 4): the earliest effective
+/// HLC over its attestations - the authoring attestation for the common single-attestation case, the
+/// minimum for the rare same-content-authored-twice case (convergent: a minimum over a fixed set).
+/// A pre-federation attestation falls back to [`Hlc::legacy`] on its `observed_at`. Convergent but not
+/// monotonic under true concurrency - finality rests on absorbing states + causal stability, never on
+/// this ordering alone (federation.md Section 4/7a).
+pub fn ordering_hlc(obs: &Observation) -> Hlc {
+    obs.provenance
+        .iter()
+        .map(|p| p.sync.as_ref().map(|s| s.hlc.clone()).unwrap_or_else(|| Hlc::legacy(p.observed_at)))
+        .min()
+        .unwrap_or_default()
 }
 
 /// Entity (concept node).
@@ -576,6 +825,18 @@ pub struct TraverseHit {
     pub kind: String,
 }
 
+/// The replication wire unit (docs/federation.md Section 3/5): one signed attestation bound to a
+/// content id. The receiver recomputes the content id from (workspace, content, assertions) - it is
+/// deliberately NOT carried, so a forged id cannot ride the wire - then CAS-dedups/absorbs (F3). The
+/// origin's lineage declaration travels inside `attestation.sync.lineage` (signed).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttestationEvent {
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Assertions::is_empty")]
+    pub assertions: Assertions,
+    pub attestation: Provenance,
+}
+
 /// Storage port. Implemented by adapters such as in-memory / Cozo (RocksDB).
 ///
 /// **Read contract** (the duty of every adapter):
@@ -631,6 +892,38 @@ pub trait KnowledgeStore: Send + Sync {
     /// A query/schema-level backend failure (not an individual row) is still `Err`.
     /// Note: a reprojection that needs completeness (M3) must treat excluded rows as restore/recovery, not a drop.
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError>;
+    /// The sync delta read (docs/federation.md Section 5, M4 Phase 1): every sync-stamped attestation
+    /// in `workspace` NOT yet covered by `since`, as wire-unit events, ordered deterministically by
+    /// (origin_node, origin_seq, content id). Attestations without a sync block (pre-federation /
+    /// local-unsigned) are local-only and never returned - they become exportable via backfill stamping
+    /// (Phase 2). The default implementation scans [`KnowledgeStore::all_observations`]; adapters may
+    /// override with an indexed scan.
+    fn attestations_since(
+        &self,
+        workspace: &str,
+        since: &VersionVector,
+    ) -> Result<Vec<AttestationEvent>, StoreError> {
+        let mut events = Vec::new();
+        for obs in self.all_observations(Some(workspace))? {
+            for p in &obs.provenance {
+                let Some(meta) = &p.sync else { continue };
+                if since.covers(&meta.origin_node, workspace, meta.origin_seq) {
+                    continue;
+                }
+                events.push(AttestationEvent {
+                    content: obs.content.clone(),
+                    assertions: obs.assertions.clone(),
+                    attestation: p.clone(),
+                });
+            }
+        }
+        events.sort_by(|a, b| {
+            let ka = a.attestation.sync.as_ref().map(|s| (s.origin_node.clone(), s.origin_seq));
+            let kb = b.attestation.sync.as_ref().map(|s| (s.origin_node.clone(), s.origin_seq));
+            ka.cmp(&kb).then_with(|| a.content.cmp(&b.content))
+        });
+        Ok(events)
+    }
     /// Searches observations that have an embedding by cosine similarity to the query vector (Principle 19: recall expansion).
     /// Observations without an embedding are excluded from the candidates. `score` is cosine similarity (-1.0~1.0).
     /// The default implementation returns an empty result - an adapter that does not store vectors need not override it.
@@ -815,6 +1108,7 @@ mod tests {
             observed_at: 1,
             confidence: Some(1.0),
             trust_tier: TrustTier::default(),
+            sync: None,
         }
     }
 
@@ -1051,5 +1345,115 @@ mod tests {
         // Defensive: length mismatch / zero vector is 0.0.
         assert_eq!(cosine_similarity(&[1.0], &[1.0, 0.0]), 0.0);
         assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
+
+    // --- M4 Phase 1: federation core foundations (docs/federation.md Section 10) -----------------
+
+    /// Builds a sync-stamped attestation from `identity` (signed - the test-side stamping pipeline).
+    fn stamped(identity: &NodeIdentity, content_id: &str, seq: u64, hlc: Hlc) -> Provenance {
+        let mut p = Provenance { host: "h".into(), sync: None, ..prov() };
+        let mut meta = SyncMeta {
+            origin_node: identity.node_id(),
+            origin_seq: seq,
+            hlc,
+            signature: String::new(),
+            lineage: vec!["parent-obs".into()],
+        };
+        meta.signature = identity.sign_attestation(content_id, &p, &meta);
+        p.sync = Some(meta);
+        p
+    }
+
+    #[test]
+    fn cross_node_identical_id_dedups_and_unions() {
+        // F2: identical content on two nodes -> identical id (sync metadata is outside the address).
+        let ida = NodeIdentity::from_secret_bytes([7u8; 32]);
+        let idb = NodeIdentity::from_secret_bytes([9u8; 32]);
+        let a = Observation::new("shared fact".into(), prov());
+        let pa = stamped(&ida, &a.id, 1, Hlc { wall: 10, counter: 0, node: ida.node_id() });
+        let pb = stamped(&idb, &a.id, 1, Hlc { wall: 11, counter: 0, node: idb.node_id() });
+        let mut obs_a = Observation::new("shared fact".into(), pa.clone());
+        let obs_b = Observation::new("shared fact".into(), pb);
+        assert_eq!(obs_a.id, obs_b.id, "sync metadata must not fork the content address (F2)");
+        // Distinct attestations union (P3)...
+        obs_a.absorb(obs_b.clone());
+        assert_eq!(obs_a.provenance.len(), 2, "independent origins accumulate");
+        // ...while a relay copy (byte-identical attestation) dedups.
+        obs_a.absorb(Observation::new("shared fact".into(), pa));
+        assert_eq!(obs_a.provenance.len(), 2, "a relay duplicate must dedup (F7)");
+    }
+
+    #[test]
+    fn hlc_is_monotonic_and_merge_lands_after_both() {
+        let mut clock = Hlc::default();
+        // Ticking never runs backwards, even when the wall clock stalls (same `now`).
+        for _ in 0..5 {
+            let next = Hlc::tick(&clock, 100, "n1");
+            assert!(next > clock, "tick must be strictly increasing");
+            clock = next;
+        }
+        // Receiving a remote stamp ahead of us lands strictly after both (I11 causal propagation).
+        let remote = Hlc { wall: 500, counter: 3, node: "n2".into() };
+        let merged = Hlc::merge(&clock, &remote, 100, "n1");
+        assert!(merged > clock && merged > remote, "merge must land after both sides");
+        // Legacy fallback is deterministic and orders by observed_at.
+        assert!(Hlc::legacy(5) < Hlc::legacy(6));
+    }
+
+    #[test]
+    fn signature_roundtrip_verifies_and_tamper_fails() {
+        let identity = NodeIdentity::from_secret_bytes([42u8; 32]);
+        let obs = Observation::new("signed fact".into(), prov());
+        let p = stamped(&identity, &obs.id, 1, Hlc { wall: 7, counter: 0, node: identity.node_id() });
+        let meta = p.sync.clone().expect("stamped");
+        let pubkey = identity.public_key_hex();
+        assert!(verify_attestation(&pubkey, &obs.id, &p, &meta), "round-trip must verify");
+        // Tampering any signed field breaks verification (F6): trust tier...
+        let mut t1 = p.clone();
+        t1.trust_tier = TrustTier::HumanConfirmed;
+        assert!(!verify_attestation(&pubkey, &obs.id, &t1, &meta), "tier tamper must fail");
+        // ...the lineage declaration (F13: a relay cannot forge/strip lineage)...
+        let mut m2 = meta.clone();
+        m2.lineage = Vec::new();
+        assert!(!verify_attestation(&pubkey, &obs.id, &p, &m2), "lineage strip must fail");
+        // ...and a different key cannot claim the event.
+        let other = NodeIdentity::from_secret_bytes([43u8; 32]);
+        assert!(!verify_attestation(&other.public_key_hex(), &obs.id, &p, &meta));
+    }
+
+    #[test]
+    fn version_vector_covers_and_advances_monotonically() {
+        let mut vv = VersionVector::default();
+        assert!(!vv.covers("n1", "ws", 1));
+        vv.advance("n1", "ws", 3);
+        assert!(vv.covers("n1", "ws", 3) && vv.covers("n1", "ws", 1));
+        assert!(!vv.covers("n1", "ws", 4));
+        assert!(!vv.covers("n1", "other-ws", 1), "scoped per (node, workspace)");
+        vv.advance("n1", "ws", 2); // never runs backwards
+        assert_eq!(vv.get("n1", "ws"), 3);
+    }
+
+    #[test]
+    fn ordering_hlc_takes_earliest_and_falls_back_to_legacy() {
+        // Legacy attestation -> Hlc::legacy(observed_at).
+        let legacy = Observation::new("old".into(), Provenance { observed_at: 40, ..prov() });
+        assert_eq!(ordering_hlc(&legacy), Hlc::legacy(40));
+        // Stamped + legacy mixed -> the earliest effective HLC wins (federation.md Section 4).
+        let identity = NodeIdentity::from_secret_bytes([1u8; 32]);
+        let mut obs = Observation::new("fact".into(), Provenance { observed_at: 100, ..prov() });
+        let stamped_p = stamped(&identity, &obs.id, 1, Hlc { wall: 60, counter: 2, node: identity.node_id() });
+        obs.absorb(Observation::new("fact".into(), stamped_p));
+        assert_eq!(ordering_hlc(&obs), Hlc { wall: 60, counter: 2, node: identity.node_id() });
+    }
+
+    #[test]
+    fn node_id_derives_from_public_key_and_is_stable() {
+        let a = NodeIdentity::from_secret_bytes([5u8; 32]);
+        let b = NodeIdentity::from_secret_bytes([5u8; 32]);
+        let c = NodeIdentity::from_secret_bytes([6u8; 32]);
+        assert_eq!(a.node_id(), b.node_id(), "same key -> same node_id (immutable, F14)");
+        assert_ne!(a.node_id(), c.node_id());
+        assert_eq!(a.node_id().len(), 32);
+        assert_eq!(a.node_id(), node_id_from_public_key(&hex_decode(&a.public_key_hex()).unwrap()));
     }
 }

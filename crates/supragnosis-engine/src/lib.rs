@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use supragnosis_core::{
-    hyperedge_id, normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity,
-    EntityAssertion, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
-    ProposalEventAssertion, ProposalEventKind, SearchHit, SearchHitKind, StoreError, Timestamp,
-    TraverseHit, TrustTier, TypeDefAssertion,
+    hyperedge_id, normalize_relation_kind, now_millis, ordering_hlc, Assertions, EmbeddingProvider,
+    Entity, EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation,
+    RelationAssertion, ProposalEventAssertion, ProposalEventKind, SearchHit, SearchHitKind,
+    StoreError, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
@@ -140,7 +140,8 @@ struct TypeDefAcc {
     target: TypeTarget,
     name: String,
     description: String,
-    at: Timestamp,
+    /// Fold-ordering key of the currently winning observation (HLC, federation.md Section 4).
+    at: Hlc,
     oid: String,
     sources: usize,
     trust: TrustTier,
@@ -443,6 +444,7 @@ impl Engine {
             confidence,
             // Trust tier promotion only happens in an explicit flow (human confirmation / cross-validation) - observe uses the default.
             trust_tier: TrustTier::default(),
+            sync: None,
         }
     }
 
@@ -663,15 +665,16 @@ impl Engine {
 
     /// Projects the workspace type glossary from the observation log (a pure read, Principle 1). Folds every
     /// type_def assertion, keeping the latest definition per (target, name) - last-write-wins by
-    /// (observed_at, observation id) so the tie-break is deterministic (Principle 16 reproducibility; full
-    /// cross-node convergence of the winner is the deferred M3 resolution layer, shared with entity `kind`).
+    /// (ordering HLC, observation id), the cross-node fold order of federation.md Section 4 (M4 Phase 1;
+    /// pre-federation observations fall back to a deterministic legacy HLC from observed_at), so the
+    /// winner is arrival-order independent (Principle 16) and converges across nodes once stamps exist.
     /// Accumulates a corroboration count (sources) and the representative (highest) trust tier.
     pub fn types(&self, workspace: Option<&str>) -> Result<Vec<TypeDefView>, StoreError> {
-        // key -> (best_observed_at, best_obs_id, description, sources, max_trust)
+        // key -> (best_hlc, best_obs_id, description, sources, max_trust)
         let mut acc: BTreeMap<(u8, String), TypeDefAcc> = BTreeMap::new();
         for obs in self.store.all_observations(workspace)? {
-            // Representative attestation time/trust for this observation (highest tier, latest time).
-            let observed_at = obs.provenance.iter().map(|p| p.observed_at).max().unwrap_or(0);
+            // Fold-ordering key (authoring HLC) + representative trust for this observation.
+            let okey = ordering_hlc(&obs);
             let trust = obs.provenance.iter().map(|p| p.trust_tier).max().unwrap_or_default();
             let oid = obs.id.clone();
             for t in &obs.assertions.type_defs {
@@ -684,7 +687,7 @@ impl Engine {
                     target: t.target,
                     name: t.name.clone(),
                     description: String::new(),
-                    at: 0,
+                    at: Hlc::default(),
                     oid: String::new(),
                     sources: 0,
                     trust: TrustTier::default(),
@@ -694,10 +697,10 @@ impl Engine {
                 if trust > e.trust {
                     e.trust = trust;
                 }
-                // Latest wins; deterministic tie-break by observation id.
-                if !e.seeded || (observed_at, oid.as_str()) > (e.at, e.oid.as_str()) {
+                // Latest wins (HLC order); deterministic tie-break by observation id.
+                if !e.seeded || (&okey, oid.as_str()) > (&e.at, e.oid.as_str()) {
                     e.description = t.description.clone();
-                    e.at = observed_at;
+                    e.at = okey.clone();
                     e.oid = oid.clone();
                     e.seeded = true;
                 }
@@ -1554,7 +1557,56 @@ fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use supragnosis_core::{SyncMeta, TypeDefAssertion};
     use supragnosis_store::InMemoryStore;
+
+    /// M4 Phase 1: the type-glossary fold orders by HLC, not observed_at (docs/federation.md Section 4).
+    /// Two definitions of the same (target, name): the one with the LATER observed_at but EARLIER sync
+    /// HLC must lose - the HLC is the cross-node fold order, and observed_at stays human-facing (P4).
+    #[test]
+    fn types_fold_orders_by_hlc_not_observed_at() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "test-host", "ws1");
+        let def = |desc: &str, observed_at: Timestamp, hlc_wall: u64, seq: u64| {
+            let p = Provenance {
+                host: "h".into(),
+                on_behalf_of: None,
+                workspace: "ws1".into(),
+                source_ref: None,
+                observed_at,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: Some(SyncMeta {
+                    origin_node: "node-a".into(),
+                    origin_seq: seq,
+                    hlc: Hlc { wall: hlc_wall, counter: 0, node: "node-a".into() },
+                    signature: "sig".into(),
+                    lineage: Vec::new(),
+                }),
+            };
+            let assertions = Assertions {
+                type_defs: vec![TypeDefAssertion {
+                    target: TypeTarget::Entity,
+                    name: "Driver".into(),
+                    description: desc.into(),
+                }],
+                ..Assertions::default()
+            };
+            Observation::with_assertions(format!("define Driver: {desc}"), p, assertions)
+        };
+        // Authored first (HLC 100) but with a LATER human-facing observed_at (900)...
+        store.add_observation(def("older definition", 900, 100, 1)).unwrap();
+        // ...vs authored later (HLC 200) with an earlier observed_at (500): the HLC winner.
+        store.add_observation(def("newer definition", 500, 200, 2)).unwrap();
+
+        let types = engine.types(Some("ws1")).unwrap();
+        assert_eq!(types.len(), 1);
+        assert_eq!(
+            types[0].description, "newer definition",
+            "last-write-wins must follow the HLC order (I11), not observed_at"
+        );
+        assert_eq!(types[0].sources, 2);
+    }
 
     /// Proposal gate skeleton (Principle 23, solo): open -> Open, verdict(merge) -> Merged (absorbing),
     /// and an independent reject-only proposal -> Rejected. The state is a deterministic fold (I2/I16).
