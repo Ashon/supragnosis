@@ -135,6 +135,14 @@ pub struct TypeDefView {
     pub trust_tier: TrustTier,
 }
 
+/// Result of a workspace re-materialization ([`Engine::reproject`]).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReprojectReport {
+    pub observations: usize,
+    pub entities: usize,
+    pub relations: usize,
+}
+
 /// Fold accumulator for [`Engine::types`] (internal).
 struct TypeDefAcc {
     target: TypeTarget,
@@ -1092,6 +1100,115 @@ impl Engine {
         Ok(id)
     }
 
+    /// Rebuilds the materialized entity/relation projection of a workspace from the observation log,
+    /// replayed in (ordering HLC, id) order - the deterministic re-materialization step after sync
+    /// apply (F1/F3; architecture.md: "orders by HLC, then re-materializes"). Same log -> same replay
+    /// order -> same materialization on every node (P16/F5), unlike observe-time upserts whose
+    /// last-write-wins fields depend on local arrival order. Builds fresh states and upserts them
+    /// (idempotent: a second run writes identical rows); rows with no support in the log are left in
+    /// place - removal is a curation concern, not reprojection's (Principle 3).
+    pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
+        let ws = workspace.unwrap_or(&self.default_workspace).to_string();
+        let mut obss = self.store.all_observations(Some(&ws))?;
+        obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
+
+        let mut ents: BTreeMap<String, Entity> = BTreeMap::new();
+        let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
+        // Fresh upsert against the replay state (NOT the store) - mirrors upsert_named's semantics
+        // (create with Concept default, kind/description last-write-wins only when supplied).
+        let mut touch = |ents: &mut BTreeMap<String, Entity>,
+                         name: &str,
+                         kind: Option<&str>,
+                         description: Option<&str>,
+                         prov: &Provenance|
+         -> String {
+            let id = Entity::make_id(&ws, name);
+            let e = ents.entry(id.clone()).or_insert_with(|| Entity {
+                id: id.clone(),
+                kind: "Concept".to_string(),
+                canonical_name: name.trim().to_string(),
+                aliases: Vec::new(),
+                description: None,
+                properties: serde_json::Value::Null,
+                provenance: Vec::new(),
+                embedding: None,
+            });
+            if let Some(k) = kind {
+                e.kind = k.to_string();
+            }
+            if let Some(d) = description {
+                e.description = Some(d.to_string());
+            }
+            e.provenance.push(prov.clone());
+            id
+        };
+
+        for obs in &obss {
+            // Representative attestation: the authoring one (earliest effective HLC; index breaks
+            // ties deterministically - the provenance list is kept sorted by absorb).
+            let Some(prov) = obs
+                .provenance
+                .iter()
+                .enumerate()
+                .min_by_key(|(i, p)| {
+                    (p.sync.as_ref().map(|s| s.hlc.clone()).unwrap_or_else(|| Hlc::legacy(p.observed_at)), *i)
+                })
+                .map(|(_, p)| p.clone())
+            else {
+                continue;
+            };
+            for ea in &obs.assertions.entities {
+                touch(&mut ents, &ea.name, ea.kind.as_deref(), ea.description.as_deref(), &prov);
+            }
+            for ra in &obs.assertions.relations {
+                let from = touch(&mut ents, &ra.from, None, None, &prov);
+                let to = touch(&mut ents, &ra.to, None, None, &prov);
+                let kind = normalize_relation_kind(&ra.kind);
+                let id = Relation::make_id(&from, &kind, &to);
+                // Last-write-wins per relation id by replay (HLC) order - matches the store's
+                // upsert-by-id semantics, now with a deterministic order.
+                rels.insert(
+                    id.clone(),
+                    Relation {
+                        id,
+                        from,
+                        to,
+                        kind,
+                        description: ra.description.clone(),
+                        provenance: prov.clone(),
+                        valid_from: ra.valid_from,
+                        valid_to: ra.valid_to,
+                    },
+                );
+            }
+        }
+
+        let report = ReprojectReport {
+            observations: obss.len(),
+            entities: ents.len(),
+            relations: rels.len(),
+        };
+        for (id, mut e) in ents {
+            // Preserve the recall aid (P19): an embedding is node-local and expensive - carry the
+            // stored one; compute best-effort only when absent and an embedder exists (like observe).
+            if let Some(existing) = self.store.get_entity(&id)? {
+                e.embedding = existing.embedding;
+            }
+            if e.embedding.is_none() {
+                if let Some(embedder) = &self.embedder {
+                    if let Ok(vec) = embedder.embed_one(&entity_text(&e)) {
+                        e.embedding = Some(vec);
+                    }
+                }
+            }
+            self.store.put_entity(e)?;
+        }
+        for (_, r) in rels {
+            self.store.add_relation(r)?;
+        }
+        Ok(report)
+    }
+
     /// Observation dereference (Principle 2/14): from an observation id returned by a search hit / derivation
     /// lineage, reach the original text, the full provenance, and the derived_from lineage - the terminus of "where did this answer come from".
     pub fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
@@ -1559,6 +1676,122 @@ mod tests {
     use super::*;
     use supragnosis_core::{SyncMeta, TypeDefAssertion};
     use supragnosis_store::InMemoryStore;
+
+    /// M4 Phase 2 (F5, engine level): two nodes author overlapping knowledge, exchange their logs via
+    /// the sync pipeline in BOTH directions, re-project, and must materialize the same entities,
+    /// relations, and type glossary - regardless of which direction applied first.
+    #[test]
+    fn cross_node_reprojection_converges() {
+        use std::collections::BTreeMap as Map;
+        use supragnosis_core::{NodeIdentity, VersionVector};
+        use supragnosis_sync::{export_delta, SyncNode};
+
+        let mk = |seed: u8| {
+            let store = Arc::new(InMemoryStore::new());
+            let engine = Engine::new(store.clone(), format!("host-{seed}"), "ws");
+            let node = SyncNode::new(NodeIdentity::from_secret_bytes([seed; 32]));
+            (store, engine, node)
+        };
+        let observe = |e: &Engine, content: &str, ents: Vec<(&str, Option<&str>, Option<&str>)>, rels: Vec<(&str, &str, &str)>| {
+            e.observe(ObserveInput {
+                workspace: None,
+                content: content.into(),
+                entities: ents
+                    .into_iter()
+                    .map(|(n, k, d)| EntityInput {
+                        name: n.into(),
+                        kind: k.map(String::from),
+                        description: d.map(String::from),
+                    })
+                    .collect(),
+                relations: rels
+                    .into_iter()
+                    .map(|(f, k, t)| RelationInput {
+                        from: f.into(),
+                        kind: k.into(),
+                        to: t.into(),
+                        description: None,
+                        valid_from: None,
+                        valid_to: None,
+                    })
+                    .collect(),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: Vec::new(),
+            })
+            .expect("observe");
+        };
+
+        let (store_a, engine_a, node_a) = mk(1);
+        let (store_b, engine_b, node_b) = mk(2);
+        // Overlapping knowledge: both mention Driver (different descriptions - LWW must converge to
+        // ONE winner by HLC on both sides), plus disjoint facts and a cross-entity relation each.
+        observe(&engine_a, "driver a", vec![("Driver", Some("Component"), Some("desc from A"))], vec![]);
+        observe(&engine_a, "kernel", vec![("Kernel", None, None)], vec![("Driver", "runs_on", "Kernel")]);
+        observe(&engine_b, "driver b", vec![("Driver", None, Some("desc from B"))], vec![]);
+        observe(&engine_b, "loader", vec![("Loader", None, None)], vec![("Loader", "loads", "Driver")]);
+        engine_a.define_type(DefineTypeInput {
+            workspace: None,
+            defs: vec![TypeDefInput { target: TypeTarget::Entity, name: "Component".into(), description: "a deployable part".into() }],
+            source_ref: None,
+            on_behalf_of: None,
+        }).unwrap();
+
+        // Stamp and exchange full logs both ways (share = ws), applying in opposite orders per side.
+        let share = vec!["ws".to_string()];
+        node_a.backfill(store_a.as_ref(), "ws").unwrap();
+        node_b.backfill(store_b.as_ref(), "ws").unwrap();
+        let keys: Map<String, String> = [
+            (node_a.node_id().to_string(), node_a.public_key_hex()),
+            (node_b.node_id().to_string(), node_b.public_key_hex()),
+        ]
+        .into_iter()
+        .collect();
+        let delta_a = export_delta(store_a.as_ref(), "ws", &VersionVector::default(), &share).unwrap();
+        let delta_b = export_delta(store_b.as_ref(), "ws", &VersionVector::default(), &share).unwrap();
+        let mut vv = VersionVector::default();
+        let ra = node_a.apply(store_a.as_ref(), "ws", delta_b, &keys, &mut vv).unwrap();
+        let mut vv = VersionVector::default();
+        let rb = node_b.apply(store_b.as_ref(), "ws", delta_a, &keys, &mut vv).unwrap();
+        assert!(ra.rejected.is_empty() && rb.rejected.is_empty());
+
+        // Re-materialize both sides and compare the projections.
+        engine_a.reproject(Some("ws")).unwrap();
+        engine_b.reproject(Some("ws")).unwrap();
+        let ents = |s: &InMemoryStore| -> Vec<(String, String, Option<String>, String)> {
+            let mut v: Vec<_> = s
+                .all_entities(Some("ws"))
+                .unwrap()
+                .into_iter()
+                .map(|e| (e.id, e.kind, e.description, e.canonical_name))
+                .collect();
+            v.sort();
+            v
+        };
+        let rels = |s: &InMemoryStore| -> Vec<(String, String, String, String)> {
+            let mut v: Vec<_> = s
+                .all_relations(Some("ws"))
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.id, r.from, r.kind, r.to))
+                .collect();
+            v.sort();
+            v
+        };
+        assert_eq!(ents(&store_a), ents(&store_b), "entity materialization must converge (F5)");
+        assert_eq!(rels(&store_a), rels(&store_b), "relation materialization must converge (F5)");
+        // Exactly one Driver description won on BOTH sides (HLC LWW, not arrival order).
+        let driver_id = Entity::make_id("ws", "Driver");
+        let da = store_a.get_entity(&driver_id).unwrap().unwrap().description;
+        let db = store_b.get_entity(&driver_id).unwrap().unwrap().description;
+        assert_eq!(da, db, "description LWW must pick the same winner everywhere");
+        assert!(da.is_some());
+        // The type glossary converges too (already a pure HLC fold).
+        let ta: Vec<_> = engine_a.types(Some("ws")).unwrap().into_iter().map(|t| (t.name, t.description)).collect();
+        let tb: Vec<_> = engine_b.types(Some("ws")).unwrap().into_iter().map(|t| (t.name, t.description)).collect();
+        assert_eq!(ta, tb, "type glossary must converge (F5)");
+    }
 
     /// M4 Phase 1: the type-glossary fold orders by HLC, not observed_at (docs/federation.md Section 4).
     /// Two definitions of the same (target, name): the one with the LATER observed_at but EARLIER sync

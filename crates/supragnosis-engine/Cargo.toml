@@ -18,3 +18,5 @@ tracing.workspace = true
 [dev-dependencies]
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
+# Cross-node convergence tests (M4 Phase 2): engine re-projection over sync-replicated logs.
+supragnosis-sync.workspace = true
