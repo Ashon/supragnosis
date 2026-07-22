@@ -59,6 +59,8 @@ enum Cmd {
     Identity(IdentityArgs),
     /// One-shot federation sync round against the configured servers (requires supragnosis.toml; stop the daemon first - the store is single-process)
     Sync(SyncArgs),
+    /// Re-materialize a workspace's entity/relation projection from the observation log (HLC-ordered replay; stop the daemon first)
+    Reproject(SyncArgs),
 }
 
 #[derive(Args, Clone, Default)]
@@ -113,6 +115,7 @@ fn main() -> Result<()> {
         Cmd::Status => status(),
         Cmd::Identity(a) => identity_cmd(a),
         Cmd::Sync(a) => sync_cmd(a),
+        Cmd::Reproject(a) => reproject_cmd(a),
     }
 }
 
@@ -308,7 +311,15 @@ fn build_sync_context(
     let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     if let Some(srv) = &fc.server {
-        spawn_sync_server(engine.store(), node.clone(), srv.clone())?;
+        // Post-apply hook: re-materialize the workspace after inbound pushes (Prop C).
+        let hook_engine = engine.clone();
+        let on_applied: supragnosis_sync::http::OnApplied = Arc::new(move |ws: &str| {
+            match hook_engine.reproject(Some(ws)) {
+                Ok(r) => tracing::info!(workspace = ws, entities = r.entities, relations = r.relations, "re-materialized after inbound sync"),
+                Err(e) => tracing::error!(workspace = ws, error = %e, "re-materialization after inbound sync failed"),
+            }
+        });
+        spawn_sync_server(engine.store(), node.clone(), srv.clone(), on_applied)?;
     }
     let mut origin_keys = fc.sync.origin_keys.clone();
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -329,6 +340,7 @@ fn spawn_sync_server(
     store: Arc<dyn KnowledgeStore>,
     node: Arc<supragnosis_sync::SyncNode>,
     srv: fed::ServerSection,
+    on_applied: supragnosis_sync::http::OnApplied,
 ) -> Result<()> {
     use supragnosis_sync::http as sync_http;
     let listen: std::net::SocketAddr = srv
@@ -344,7 +356,7 @@ fn spawn_sync_server(
     sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len())?;
     tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
     tokio::spawn(async move {
-        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist).await {
+        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist, Some(on_applied)).await {
             tracing::error!(error = %e, "federation sync API terminated");
         }
     });
@@ -362,6 +374,25 @@ fn identity_cmd(a: IdentityArgs) -> Result<()> {
         println!("bearer_hash: {}", blake3::hash(tok.as_bytes()).to_hex());
     }
     Ok(())
+}
+
+/// `supragnosis reproject` - one-shot re-materialization (HLC-ordered replay, Prop C). For a node
+/// whose log advanced without projection (e.g. a hub that received pushes before the reproject hook
+/// existed). The store is single-process: stop the daemon first.
+fn reproject_cmd(a: SyncArgs) -> Result<()> {
+    init_tracing();
+    let cfg = resolve(RunArgs::default(), false);
+    let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(async {
+        let engine = build_engine(&cfg, None)?;
+        let r = engine.reproject(Some(&ws))?;
+        println!(
+            "reprojected {}: {} observations -> {} entities, {} relations",
+            ws, r.observations, r.entities, r.relations
+        );
+        anyhow::Ok(())
+    })
 }
 
 /// `supragnosis sync` - one full sync round (push surplus, pull deficit, re-materialize) against
