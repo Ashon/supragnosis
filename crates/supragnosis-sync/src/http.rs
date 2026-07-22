@@ -315,8 +315,9 @@ async fn advertise_handler(
         .await
         .map_err(internal)?
         .map_err(internal)?;
+    // Recorded in the peer registry, but NOT streamed: advertise is a metadata handshake that the
+    // status loop fires every minute - the activity feed shows knowledge movement, not heartbeats.
     state.seen(&entry.node_id, "advertise");
-    state.activity("advertise", &entry.node_id, &ws, 0);
     Ok(Json(AdvertiseResp { node_id: state.node.node_id().to_string(), vv }))
 }
 
@@ -423,8 +424,8 @@ async fn ping_handler(
     headers: HeaderMap,
 ) -> Result<Json<PingResp>, HandlerError> {
     let entry = authenticate(&headers, &state.allowlist)?;
+    // Registry only (see advertise) - health checks are heartbeats, not knowledge movement.
     state.seen(&entry.node_id, "ping");
-    state.activity("hc", &entry.node_id, "-", 0);
     Ok(Json(PingResp {
         node_id: state.node.node_id().to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),

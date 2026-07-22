@@ -1355,7 +1355,9 @@ async function handleEvent(ev) {
   } else return;
   pulseNodes(ids);
   for (const id of ids) if (id) footprint.add(id);   // accumulate the conversation footprint (regardless of whether the node exists)
-  wake(0.3);
+  // Reheat only when the event touched actual nodes - sync/hc chatter (now periodic via the
+  // status loop) must never jiggle a settled layout.
+  if (ids.length) wake(0.3);
   if (follow) {
     // Frame the WHOLE hit set: several hits fit into view together (pan + zoom as needed); a
     // single hit centers smoothly. The camera narrates what the agent touched.
