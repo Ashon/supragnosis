@@ -534,6 +534,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
               cursor:pointer; font-size:12px; color:var(--ink2); user-select:none; }
   .chip.on { background:#2b3a52; border-color:var(--accent); color:var(--ink); }
   .lg { display:inline-flex; align-items:center; gap:6px; }
+  .lg:hover { border-color:var(--muted); }
   .lg.off { opacity:0.38; }
   .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
@@ -693,7 +694,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
     <div class="grp"><span class="ghdr">Layout</span><div class="btns">
       <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
       <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
-      <button id="hyperBtn" class="tog" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
+      <button id="hyperBtn" class="tog on" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
     </div></div>
     <div class="grp"><span class="ghdr">Show</span><div class="btns">
       <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
@@ -784,10 +785,13 @@ let proposalSel = null;          // the proposal currently previewed on the grap
 let follow = true;               // whether the camera follows the most recent agent-activity node
 let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
-let hyperMode = false;           // hyperedge hull OVERLAY (fills + labels) - visual only, independent of hullForce
+let hyperMode = true;            // hyperedge hull OVERLAY (fills + labels) - on by default, visual only, independent of hullForce
 let hyperedges = [];             // [{id, members:[nodeId], size, sources, trust_tier}] - /api/hypergraph
 // Graphic-element visibility toggles (all default on). Pure render switches with no effect on layout.
 let showLabels = true, showEdges = true, showArrows = true;
+let flowPhase = 0;   // per-frame counter driving the marching-dash flow animation on active edges
+let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
+const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
 let showFootprint = true, showPulses = true, showSuperseded = true;
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
@@ -946,6 +950,8 @@ function applyGraph(g) {
 function renderLegend() {
   // Node-type and edge-kind legends, each in its own dock section. Clicking a chip toggles that kind's
   // visibility (the off set). The section summary shows the count.
+  // Chips are recreated on every render - clear any hover highlight so it cannot stick to a dead chip.
+  typeHl = null; edgeTypeHl = null;
   const fill = (host, keys, colorOf, offSet, isEdge) => {
     host.innerHTML = "";
     if (!keys.length) { host.innerHTML = '<span class="lbl">none</span>'; return; }
@@ -957,6 +963,12 @@ function renderLegend() {
       el.appendChild(sw); el.appendChild(document.createTextNode(t || "(none)"));
       el.title = "click to toggle visibility";
       el.onclick = () => { if (offSet.has(t)) offSet.delete(t); else offSet.add(t); renderLegend(); };
+      // Hovering a chip highlights its nodes/edges on the graph (render-only - no sim wake).
+      el.onmouseenter = () => { if (isEdge) edgeTypeHl = t; else typeHl = t; };
+      el.onmouseleave = () => {
+        if (isEdge) { if (edgeTypeHl === t) edgeTypeHl = null; }
+        else if (typeHl === t) typeHl = null;
+      };
       host.appendChild(el);
     }
   };
@@ -1519,6 +1531,18 @@ function draw() {
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
 
   const act = activeSet();
+  flowPhase++;   // advance the active-edge flow animation (rAF runs every frame)
+  // Legend-chip hover highlight: for an edge-kind chip, collect the endpoint nodes of matching visible
+  // edges once per frame (nodes to keep lit). Node-type chips match on n.type directly.
+  let lgEndpoints = null;
+  if (edgeTypeHl) {
+    lgEndpoints = new Set();
+    for (const e of edges) {
+      if (e.type !== edgeTypeHl || typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
+      if (e.valid_to && !showSuperseded) continue;
+      lgEndpoints.add(e.a.id); lgEndpoints.add(e.b.id);
+    }
+  }
   const hlAnchor = focus || hover;   // the active node (click or hover) - drives hull emphasis + fade
   const anchor = focus || hover;
   ctx.setTransform(1,0,0,1,0,0);
@@ -1542,20 +1566,75 @@ function draw() {
       const g = hullGeom(ms);
       if (!g) continue;
       const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
+      // Legend-chip hover: does this context contain any highlighted member? Hulls without one fade,
+      // so the highlighted type/relation stands out against the hull layer too (same inspection language).
+      const lgHit = typeHl ? ms.some(m => m.type === typeHl)
+        : edgeTypeHl ? ms.some(m => lgEndpoints.has(m.id))
+        : false;
       const rep = ms.reduce((a, m) => (m.degree||0) > (a.degree||0) ? m : a, ms[0]);   // hub = highest-degree member
-      items.push({ g, col: hyperColor(h.id), hot, rep, size: ms.length });
+      items.push({ g, col: hyperColor(h.id), hot, lgHit, rep, size: ms.length });
     }
+    const lgActive = !!(typeHl || edgeTypeHl);
     const paint = (it) => {
       roundedHullPath(ctx, it.g);
-      ctx.globalAlpha = hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
+      ctx.globalAlpha = lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
+        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
       ctx.fillStyle = it.col; ctx.fill();
-      hullLabels.push({ cx: it.g.cx, cy: it.g.cy, text: it.rep.name + " (" + it.size + ")", col: it.col, hot: it.hot });
+      hullLabels.push({ cx: it.g.cx, cy: it.g.cy, text: it.rep.name + " (" + it.size + ")", col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
     };
     for (const it of items) if (!it.hot) paint(it);   // active hulls painted last so they sit on top
     for (const it of items) if (it.hot) paint(it);
     ctx.globalAlpha = 1;
+    // Group labels: their own layer, right after the hulls (below edges/nodes). Greedy placement -
+    // active first, then larger contexts - skips any label whose box overlaps one already placed, so
+    // the map reads as spaced region names instead of a wall of overlapping text. A soft pill keeps
+    // each name legible over the busy hull fills. Screen space, so restore the world transform after.
+    if (showLabels && hullLabels.length) {
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      if ("letterSpacing" in ctx) ctx.letterSpacing = "0.3px";
+      // Region-name style: font scales with context size (bigger domain -> bigger name), sorted so the
+      // largest / active contexts win placement; anything overlapping an already-placed one is skipped.
+      const cand = hullLabels
+        .map(l => ({ l, px: l.cx*cam.s + cam.x, py: l.cy*cam.s + cam.y, fs: Math.min(30, Math.round(12 + Math.sqrt(l.size) * 2.2)) }))
+        .filter(o => o.px > -80 && o.px < innerWidth + 80 && o.py > -30 && o.py < innerHeight + 30)
+        .sort((a, b) => (b.l.hot - a.l.hot) || (b.l.size - a.l.size));
+      const placed = [];
+      for (const o of cand) {
+        const l = o.l;
+        ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px system-ui,-apple-system,sans-serif";
+        const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
+        if (placed.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
+        placed.push({ x, y, w, h });
+        // Blend into the map without a chip: a crisp background-color stroke (a cutout that matches the
+        // canvas) keeps the group-color name sharp over the hull fills; lower idle opacity lets it recede.
+        const a = lgActive ? (l.lgHit ? 0.75 : HULL_LABEL_HOVER_FADE)
+          : hlAnchor ? (l.hot ? 1 : HULL_LABEL_HOVER_FADE) : 0.6;
+        ctx.globalAlpha = a;
+        ctx.lineWidth = Math.max(3, o.fs * 0.16); ctx.strokeStyle = SURFACE; ctx.strokeText(l.text, o.px, o.py);
+        ctx.fillStyle = l.col; ctx.fillText(l.text, o.px, o.py);
+      }
+      if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+      ctx.globalAlpha = 1; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);   // back to world for edges/nodes
+    }
   }
-  if (showEdges) for (let i = 0; i < edges.length; i++) {
+  // Relation labels for the active node's edges - collected during the edge draw (which has the curve
+  // geometry), rendered later in the label pass. Only when a node is active and labels are on.
+  const edgeLabels = (act && showLabels) ? [] : null;
+  if (showEdges) {
+    // Parallel-edge lanes: group visible edges by unordered node pair, so multiple links between the
+    // same two nodes - a reciprocal pair (a<->b) OR several verbs in one direction (a->b) - fan out
+    // into distinct arcs instead of stacking on one line. Same visibility filters as the loop.
+    const pairList = new Map();
+    for (let di = 0; di < edges.length; di++) {
+      const de = edges[di];
+      if (typeOff.has(de.a.type) || typeOff.has(de.b.type) || edgeTypeOff.has(de.type) || (de.valid_to && !showSuperseded)) continue;
+      const pk = de.a.id < de.b.id ? de.a.id + "|" + de.b.id : de.b.id + "|" + de.a.id;
+      if (!pairList.has(pk)) pairList.set(pk, []);
+      pairList.get(pk).push(di);
+    }
+    for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
     if (edgeTypeOff.has(e.type)) continue;                 // edge-kind toggle (legend)
@@ -1566,37 +1645,75 @@ function draw() {
     // stroke boundary, connecting with no gap/penetration, and it holds on zoom.
     const ar = nodeRadius(e.a) + nodeStrokeW(e.a)/2, br = nodeRadius(e.b) + nodeStrokeW(e.b)/2, room = d - ar - br;
     if (room <= 0.5) continue;   // (temporary) overlap - skip this frame's edge
-    const hot = act ? act.es.has(i) : false;
+    // Hovering an edge-kind chip treats its edges as hot (flow animation + weight) - same language as
+    // node hover, so "what does this relation connect" reads instantly.
+    const hot = act ? act.es.has(i) : (edgeTypeHl ? e.type === edgeTypeHl : false);
     // The line starts at the source node's edge and ends at the arrowhead base (or the tip if arrows are off).
-    const alen = Math.min(9/cam.s, Math.max(3/cam.s, room * 0.5));   // ~9px on screen, shrinks when close
+    // Arrowhead length in WORLD units (proportional to the target node, bounded 7..16) so it scales
+    // with zoom like the node markers. A fixed screen size looked tiny on large/zoomed-in nodes and
+    // clunky when zoomed out. Still clamped to half the free gap so short edges never overrun it.
+    const alen = Math.min(Math.max(7, Math.min(16, nodeRadius(e.b) * 0.7)), room * 0.5);
     const sx0 = e.a.x + ux*ar, sy0 = e.a.y + uy*ar;
     const tipx = e.b.x - ux*br, tipy = e.b.y - uy*br;
-    const basex = tipx - ux*alen, basey = tipy - uy*alen;
+    // Fan this edge onto its lane within the pair: lane index centered on 0, so a lone edge -> 0 ->
+    // straight (quadratic control on the midpoint = the original straight line). sign uses a canonical
+    // perpendicular (smaller id -> larger id) so lanes stay distinct regardless of each edge's
+    // direction - a reciprocal pair opens into a lens, several one-way verbs into a fan.
+    const pk = e.a.id < e.b.id ? e.a.id + "|" + e.b.id : e.b.id + "|" + e.a.id;
+    const lst = pairList.get(pk) || [i], lane = lst.indexOf(i) - (lst.length - 1) / 2;
+    const off = lane * Math.min(d * 0.30, 46) * (e.a.id < e.b.id ? 1 : -1);
+    const cpx = (sx0 + tipx)/2 + (-uy)*off, cpy = (sy0 + tipy)/2 + ux*off;   // quadratic control point
+    // Tip tangent = control -> tip; the line end and arrowhead align to it (reduces to ux,uy when straight).
+    let tdx = tipx - cpx, tdy = tipy - cpy; const tdl = Math.hypot(tdx, tdy) || 1; tdx /= tdl; tdy /= tdl;
+    const basex = tipx - tdx*alen, basey = tipy - tdy*alen;   // arrowhead base, back along the tip tangent
+    // Active-edge label: relation type at the curve midpoint (quadratic B(0.5)). len = distance so the
+    // shortest edges are labeled first when the count exceeds the cap.
+    if (hot && edgeLabels) edgeLabels.push({
+      mx: 0.25*sx0 + 0.5*cpx + 0.25*tipx, my: 0.25*sy0 + 0.5*cpy + 0.25*tipy,
+      text: e.type, len: d, col: e.valid_to ? EDGE_OLD : (edgeTypeColor[e.type] || EDGE_OTHER),
+    });
     // Group mode: make cross-group (different-type) edges stand out, in-group edges dim.
     const cross = clusterMode && e.a.type !== e.b.type;
     // The default is semi-transparent (EDGE_ALPHA); on hover/focus a connected edge (hot) activates to
     // 1.0 and the rest dim. Group mode is a separate emphasis that makes cross-group links stand out.
-    ctx.globalAlpha = act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
+    // Legend hover outranks the rest: node-type chip -> both-endpoint edges bright, one-endpoint dim
+    // halo, others faded; edge-kind chip -> matching edges full, others faded.
+    ctx.globalAlpha = typeHl
+      ? (e.a.type === typeHl && e.b.type === typeHl ? 0.9 : (e.a.type === typeHl || e.b.type === typeHl) ? 0.45 : 0.05)
+      : edgeTypeHl
+      ? (e.type === edgeTypeHl ? 1 : 0.05)
+      : act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
     // Color is by relation kind - it reveals what kind of connection this is. A superseded edge is EDGE_OLD (a past signal, dashed).
     ctx.strokeStyle = e.valid_to ? EDGE_OLD : (edgeTypeColor[e.type] || EDGE_OTHER);
     ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // constant thickness on screen
-    ctx.setLineDash(e.valid_to ? [5/cam.s, 5/cam.s] : []);
-    // With arrows off, draw the line to the node edge (tip); with arrows on, to the arrowhead base.
+    if (hot) {
+      // Active edges show flow direction: marching dashes travel source -> target. Screen-constant
+      // dash/speed (divide by cam.s) so it reads the same at any zoom. Negative offset -> forward flow.
+      ctx.setLineDash([7/cam.s, 6/cam.s]);
+      ctx.lineDashOffset = -(flowPhase * 0.6) / cam.s;
+    } else {
+      ctx.setLineDash(e.valid_to ? [5/cam.s, 5/cam.s] : []);
+      ctx.lineDashOffset = 0;
+    }
+    // With arrows off, draw the curve to the node edge (tip); with arrows on, to the arrowhead base.
     const endx = showArrows ? basex : tipx, endy = showArrows ? basey : tipy;
-    ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(endx, endy); ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.quadraticCurveTo(cpx, cpy, endx, endy); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
     if (showArrows) {
-      // Arrowhead: base -> tip (the destination node's edge). The line ends at base so it does not overlap the triangle.
+      // Arrowhead: base -> tip along the tip tangent (points the way the curve arrives).
       const hw = alen * 0.55;
       ctx.beginPath(); ctx.moveTo(tipx, tipy);
-      ctx.lineTo(basex - uy*hw, basey + ux*hw);
-      ctx.lineTo(basex + uy*hw, basey - ux*hw);
+      ctx.lineTo(basex - tdy*hw, basey + tdx*hw);
+      ctx.lineTo(basex + tdy*hw, basey - tdx*hw);
       ctx.closePath(); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+    }
     }
   }
   for (const n of nodes) {
     if (typeOff.has(n.type)) continue;
-    const on = act ? act.ns.has(n.id) : true;
+    const on = typeHl ? n.type === typeHl
+      : edgeTypeHl ? lgEndpoints.has(n.id)
+      : act ? act.ns.has(n.id) : true;
     ctx.globalAlpha = on ? 1 : 0.12;
     const r = nodeRadius(n);
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
@@ -1657,7 +1774,7 @@ function draw() {
         const tipx = into.x - ux*(nodeRadius(into) + 6), tipy = into.y - uy*(nodeRadius(into) + 6);
         ctx.strokeStyle = ACC; ctx.lineWidth = 2.5/cam.s;
         ctx.beginPath(); ctx.moveTo(t.x + ux*(nodeRadius(t) + 4), t.y + uy*(nodeRadius(t) + 4)); ctx.lineTo(tipx, tipy); ctx.stroke();
-        const hw = 6/cam.s, hl = 10/cam.s;   // arrowhead
+        const hl = Math.min(Math.max(8, nodeRadius(into) * 0.7), 16), hw = hl * 0.55;   // world units - scales with zoom like the edge arrowheads
         ctx.fillStyle = ACC; ctx.beginPath();
         ctx.moveTo(tipx, tipy);
         ctx.lineTo(tipx - ux*hl - uy*hw, tipy - uy*hl + ux*hw);
@@ -1681,8 +1798,11 @@ function draw() {
     const cut = (nodes.length <= 40 || cam.s > 1.4) ? 0 : Math.max(4, Math.round(nodes.length / 25));
     for (const n of nodes) {
       if (typeOff.has(n.type)) continue;
-      const on = act ? act.ns.has(n.id) : true;
-      const show = on && (n === hover || n === focus || (act && act.ns.has(n.id)) || (n.degree || 0) >= cut);
+      // Legend hover: label exactly the highlighted set (bypasses the degree cut - hover is transient).
+      const lg = typeHl ? n.type === typeHl : edgeTypeHl ? lgEndpoints.has(n.id) : null;
+      if (lg === false) continue;
+      const on = lg === true ? true : (act ? act.ns.has(n.id) : true);
+      const show = on && (lg === true || n === hover || n === focus || (act && act.ns.has(n.id)) || (n.degree || 0) >= cut);
       if (!show) continue;
       const px = n.x*cam.s + cam.x, py = n.y*cam.s + cam.y, r = nodeRadius(n)*cam.s;
       ctx.globalAlpha = on ? 1 : 0.25;
@@ -1690,19 +1810,34 @@ function draw() {
       ctx.fillStyle = (n === focus || n === hover) ? INK : INK2; ctx.fillText(n.name, px + r + 5, py);
     }
     ctx.globalAlpha = 1;
-    // Hyperedge hull labels (representative concept + size). Matches the hull fill: on hover the hovered
-    // node's own hull labels are emphasized (full opacity + bold) while others fade out. textAlign is restored.
-    if (hullLabels.length) {
+    // (Group / hull labels are drawn in their own pass right after the hulls - see drawHullLabels below.)
+    // Active-edge relation labels: only the hovered/focused node's edges, shortest first, capped so a
+    // hub does not flood the canvas; the overflow is summarized as "+K more" under the active node.
+    if (edgeLabels && edgeLabels.length) {
+      edgeLabels.sort((p, q) => p.len - q.len);
+      const shown = Math.min(edgeLabels.length, EDGE_LABEL_MAX);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      for (const l of hullLabels) {
-        const px = l.cx*cam.s + cam.x, py = l.cy*cam.s + cam.y;
-        const emph = hlAnchor && l.hot;
-        ctx.font = (emph ? "bold 11px " : "11px ") + "system-ui,-apple-system,sans-serif";
-        ctx.globalAlpha = hlAnchor ? (l.hot ? 1 : HULL_LABEL_HOVER_FADE) : HULL_LABEL_BASE;
-        ctx.lineWidth = 3.5; ctx.strokeStyle = SURFACE; ctx.strokeText(l.text, px, py);
-        ctx.fillStyle = l.col; ctx.fillText(l.text, px, py);
+      ctx.font = "10.5px system-ui,-apple-system,sans-serif";
+      const pill = (px, py, w) => {
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(px - w/2 - 5, py - 8, w + 10, 16, 4);
+        else ctx.rect(px - w/2 - 5, py - 8, w + 10, 16);
+        ctx.fill();
+      };
+      for (let k = 0; k < shown; k++) {
+        const L = edgeLabels[k];
+        const px = L.mx*cam.s + cam.x, py = L.my*cam.s + cam.y, w = ctx.measureText(L.text).width;
+        ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
+        ctx.globalAlpha = 1; ctx.fillStyle = L.col; ctx.fillText(L.text, px, py);
       }
-      ctx.textAlign = "left"; ctx.globalAlpha = 1;
+      const omitted = edgeLabels.length - shown, an = focus || hover;
+      if (omitted > 0 && an) {
+        ctx.font = "10px system-ui,-apple-system,sans-serif";
+        const t = "+" + omitted + " more", px = an.x*cam.s + cam.x, py = an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15, w = ctx.measureText(t).width;
+        ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
+        ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);
+      }
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.globalAlpha = 1;
     }
   }
   requestAnimationFrame(draw);
@@ -1731,11 +1866,13 @@ function showTip(n, cx, cy) {
 
 // --- Interaction ---------------------------------------------------------------------
 canvas.addEventListener("wheel", ev => {
+  if (settling) return;   // graph is hidden behind the loader - ignore interaction until it settles
   ev.preventDefault();
   zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.12 : 0.89);
 }, { passive: false });
 
 canvas.addEventListener("mousedown", ev => {
+  if (settling) return;   // graph hidden (loading) - no drag/pan/select
   downPos = { x: ev.clientX, y: ev.clientY };
   const n = nodeAt(ev.clientX, ev.clientY);
   if (n) { drag = n; }   // press alone does not reheat - wake only once the pointer actually drags (mousemove)
@@ -1746,6 +1883,7 @@ canvas.addEventListener("mousedown", ev => {
   }
 });
 addEventListener("mousemove", ev => {
+  if (settling) { showTip(null); return; }   // no hover/drag/pan while the graph is hidden behind the loader
   if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; wake(0.3); showTip(null); return; }
   if (panning) {
     // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
@@ -1757,6 +1895,7 @@ addEventListener("mousemove", ev => {
   showTip(hover, ev.clientX, ev.clientY);
 });
 addEventListener("mouseup", ev => {
+  if (settling) { drag = null; panning = null; canvas.classList.remove("grabbing"); return; }   // drop any gesture that spanned into a reload
   const moved = downPos && Math.hypot(ev.clientX - downPos.x, ev.clientY - downPos.y) > 4;
   if (!moved && ev.target === canvas) {
     const n = nodeAt(ev.clientX, ev.clientY);
