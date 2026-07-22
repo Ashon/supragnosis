@@ -62,6 +62,11 @@ pub fn validate_bind(addr: &SocketAddr, tls: bool, allowlist_len: usize) -> Resu
     Ok(())
 }
 
+/// Post-apply hook: called with the workspace after a push lands new events - the wiring layer
+/// injects the engine's re-materialization here (Prop C: replay is the convergence point; the sync
+/// crate itself stays projection-free).
+pub type OnApplied = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Shared state of the sync API handlers.
 pub struct ServerState {
     pub store: Arc<dyn KnowledgeStore>,
@@ -69,6 +74,7 @@ pub struct ServerState {
     pub allowlist: Vec<AllowEntry>,
     /// Origin-key directory for apply verification: every allowlisted key plus this node's own.
     pub origin_keys: BTreeMap<String, String>,
+    on_applied: Option<OnApplied>,
 }
 
 impl ServerState {
@@ -78,7 +84,13 @@ impl ServerState {
             .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
             .collect();
         origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
-        Self { store, node, allowlist, origin_keys }
+        Self { store, node, allowlist, origin_keys, on_applied: None }
+    }
+
+    /// Injects the post-apply re-materialization hook (the engine's reproject).
+    pub fn with_on_applied(mut self, f: OnApplied) -> Self {
+        self.on_applied = Some(f);
+        self
     }
 }
 
@@ -200,6 +212,7 @@ async fn push_handler(
     let store = state.store.clone();
     let node = state.node.clone();
     let keys = state.origin_keys.clone();
+    let ws = req.workspace.clone();
     let report = tokio::task::spawn_blocking(move || {
         let mut vv = VersionVector::default();
         node.apply(store.as_ref(), &req.workspace, req.events, &keys, &mut vv)
@@ -207,6 +220,12 @@ async fn push_handler(
     .await
     .map_err(internal)?
     .map_err(internal)?;
+    // Re-materialize after new events land (Prop C) - injected by the wiring layer.
+    if report.accepted > 0 {
+        if let Some(hook) = state.on_applied.clone() {
+            let _ = tokio::task::spawn_blocking(move || hook(&ws)).await;
+        }
+    }
     Ok(Json(PushResp {
         accepted: report.accepted,
         rejected: report
@@ -241,9 +260,14 @@ pub async fn serve(
     listen: SocketAddr,
     tls: Option<TlsPaths>,
     allowlist: Vec<AllowEntry>,
+    on_applied: Option<OnApplied>,
 ) -> Result<(), TransportError> {
     validate_bind(&listen, tls.is_some(), allowlist.len())?;
-    let state = Arc::new(ServerState::new(store, node, allowlist));
+    let mut state = ServerState::new(store, node, allowlist);
+    if let Some(hook) = on_applied {
+        state = state.with_on_applied(hook);
+    }
+    let state = Arc::new(state);
     let app = router(state);
     tracing::info!(%listen, tls = tls.is_some(), "sync API listening");
     match tls {
