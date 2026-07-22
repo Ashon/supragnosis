@@ -4302,6 +4302,7 @@ dependencies = [
  "getrandom 0.2.17",
  "rmcp",
  "serde",
+ "serde_json",
  "supragnosis-core",
  "supragnosis-embed",
  "supragnosis-engine",

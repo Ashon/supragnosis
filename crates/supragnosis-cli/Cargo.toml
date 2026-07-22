@@ -39,6 +39,7 @@ clap = { version = "4", features = ["derive"] }
 # Federation wiring (M4 Phase 4): sync server/client + supragnosis.toml + node keypair generation.
 supragnosis-sync = { workspace = true, features = ["http"] }
 serde.workspace = true
+serde_json.workspace = true
 blake3.workspace = true
 toml = "0.8"
 getrandom = "0.2"

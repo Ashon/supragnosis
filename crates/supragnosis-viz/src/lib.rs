@@ -85,10 +85,15 @@ pub fn parse_viz_addr(s: &str, allow_public: bool) -> anyhow::Result<SocketAddr>
 /// Binding is done by **the caller** (so a test can bind port 0 and look up the actual port).
 /// Each connection is split off into a task, but an individual connection failure is swallowed
 /// so it does not kill the server.
+/// Live federation status blob, maintained by the wiring layer (the CLI's status task) and served
+/// verbatim at /api/federation - the viz stays decoupled from the sync crate (it renders JSON).
+pub type FedStatus = Arc<std::sync::RwLock<serde_json::Value>>;
+
 pub async fn serve(
     engine: Arc<Engine>,
     listener: TcpListener,
     events: broadcast::Sender<String>,
+    fed: Option<FedStatus>,
 ) -> anyhow::Result<()> {
     loop {
         let (stream, peer) = match listener.accept().await {
@@ -100,11 +105,12 @@ pub async fn serve(
         };
         let engine = Arc::clone(&engine);
         let events = events.clone();
+        let fed = fed.clone();
         // Per-connection trust: only a loopback peer may reach the write endpoint (/api/review).
         // Under the interim read-only network exposure a remote peer gets every read, never a write.
         let peer_loopback = peer.ip().is_loopback();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(&engine, &events, stream, peer_loopback).await {
+            if let Err(e) = handle_conn(&engine, &events, stream, peer_loopback, fed.as_ref()).await {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
@@ -118,6 +124,7 @@ async fn handle_conn(
     events: &broadcast::Sender<String>,
     mut stream: TcpStream,
     peer_loopback: bool,
+    fed: Option<&FedStatus>,
 ) -> anyhow::Result<()> {
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
@@ -146,7 +153,17 @@ async fn handle_conn(
 
     // Write gate (F19): the verdict endpoint is only reachable from a loopback peer - under the
     // interim read-only network exposure a remote peer gets 403 here, never a write.
-    let resp = if path == "/api/review" && !peer_loopback {
+    let resp = if path == "/api/federation" {
+        // Federation status (hubs, health, per-workspace diff, known peers) - maintained by the
+        // wiring layer; absent on a standalone node.
+        Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: fed
+                .map(|f| f.read().map(|v| v.to_string()).unwrap_or_else(|_| "{}".into()))
+                .unwrap_or_else(|| "{\"configured\":false}".to_string()),
+        }
+    } else if path == "/api/review" && !peer_loopback {
         Response {
             status: "403 Forbidden",
             content_type: "application/json",
@@ -704,6 +721,12 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #proposalsBody .pacts { display:flex; gap:5px; margin-top:3px; }
   #proposalsBody .pacts button { padding:1px 9px; font-size:10.5px; border-radius:7px; }
   #proposalsBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
+  #peersBody .fsec { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin:8px 0 4px; }
+  #peersBody .fed { display:flex; align-items:center; gap:6px; padding:3px 2px; font-size:11.5px; color:var(--ink2); min-width:0; }
+  #peersBody .fed .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  #peersBody .fed .furl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #peersBody .fws { color:var(--muted); font-size:10.5px; margin:0 0 2px 15px; }
+  #peersBody .empty { color:var(--muted); font-style:italic; }
 </style>
 <canvas id="c"></canvas>
 <div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
@@ -745,11 +768,13 @@ const VIEWER_HTML: &str = r###"<!doctype html>
     <button class="tab on" data-tab="proposals">Proposals<span class="ct" id="propCt"></span></button>
     <button class="tab" data-tab="review">Review<span class="ct" id="reviewCt"></span></button>
     <button class="tab" data-tab="glossary">Types<span class="ct" id="glossCt"></span></button>
+    <button class="tab" data-tab="peers">Peers<span class="ct" id="peersCt"></span></button>
   </div>
   <div class="panels">
     <div class="tabpanel on" data-panel="proposals"><div id="proposalsBody"></div></div>
     <div class="tabpanel" data-panel="review"><div id="curationBody"></div></div>
     <div class="tabpanel" data-panel="glossary"><div id="glossaryBody"></div></div>
+    <div class="tabpanel" data-panel="peers"><div id="peersBody"></div></div>
   </div>
 </aside>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
@@ -962,6 +987,9 @@ function applyGraph(g) {
   for (const e of edges) if (e.a.type !== e.b.type) { bridgeSet.add(e.a.id); bridgeSet.add(e.b.id); }
   assignColors();
   renderLegend();
+  // Keep the federation panel fresh while it is open (hub health / diff / peers move on their own).
+  const peersPanel = document.querySelector('.tabpanel[data-panel="peers"]');
+  if (peersPanel && peersPanel.classList.contains("on")) refreshPeers();
   const s = g.stats || {};
   statusEl.textContent = "updated " + new Date().toLocaleTimeString();
   document.getElementById("stats").textContent =
@@ -975,6 +1003,56 @@ function applyGraph(g) {
 
   // Initial auto-fit: once after the layout settles (cooling done), and only before user interaction (in draw).
   if (firstData && nodes.length) { firstData = false; needFit = true; }
+}
+
+// Federation panel: hubs (health + per-workspace diff vs this node) and, on a hub, the known-peer
+// registry (who checked in, what they did, how long ago). Data = /api/federation (wiring-layer blob).
+async function refreshPeers() {
+  const host = document.getElementById("peersBody");
+  const ct = document.getElementById("peersCt");
+  try {
+    const r = await fetch("/api/federation", { cache: "no-store" });
+    const f = await r.json();
+    if (!f || f.configured === false) {
+      host.innerHTML = '<div class="empty">federation is not configured on this node</div>';
+      ct.textContent = "";
+      return;
+    }
+    let html = `<div class="hint">this node: ${esc(String(f.node_id || "").slice(0, 16))} (${esc(f.role || "client")})</div>`;
+    const hubs = f.servers || [];
+    if (hubs.length) {
+      html += `<div class="fsec">Hubs</div>`;
+      for (const s of hubs) {
+        const dot = s.healthy ? "#5fd18a" : "#e05f5f";
+        html += `<div class="fed"><span class="dot" style="background:${dot}"></span>`
+          + `<span class="furl" title="${esc(s.url)}">${esc(s.url.replace(/^https?:\/\//, ""))}</span>`
+          + (s.version ? `<span class="hint">v${esc(s.version)}</span>` : "") + `</div>`;
+        for (const w of (s.workspaces || [])) {
+          const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
+          html += `<div class="fws">${esc(w.workspace)}: ` + (insync
+            ? `<span style="color:#5fd18a">in sync</span>`
+            : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`) + `</div>`;
+        }
+      }
+    }
+    const peers = f.known_peers || [];
+    if (peers.length) {
+      html += `<div class="fsec">Known peers</div>`;
+      for (const p of peers) {
+        const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
+        html += `<div class="fed"><span class="dot" style="background:#8fb4e6"></span>`
+          + `<span class="furl" title="${esc(p.node_id)}">${esc(p.node_id.slice(0, 16))}</span>`
+          + `<span class="hint">${esc(p.last_action)}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})</span></div>`;
+      }
+    } else if (f.role === "hub") {
+      html += `<div class="fsec">Known peers</div><div class="empty">no peer has checked in yet</div>`;
+    }
+    host.innerHTML = html;
+    const healthy = hubs.filter(s => s.healthy).length;
+    ct.textContent = hubs.length ? `${healthy}/${hubs.length}` : (peers.length || "");
+  } catch (e) {
+    host.innerHTML = '<div class="empty">federation status unavailable</div>';
+  }
 }
 
 function renderLegend() {
@@ -1315,6 +1393,7 @@ function renderDetail(node) {
     + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span> `
     + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
     + (node.aliases && node.aliases.length ? `<div class="meta">merged: ${esc(node.aliases.join(", "))}</div>` : "")
+    + (node.origins && node.origins.length ? `<div class="meta">from: ${esc(node.origins.join(", "))}</div>` : "")
     + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
     + `<div class="rels">`
     +   `<div class="relcol"><div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}</div>`
@@ -2007,6 +2086,7 @@ document.querySelectorAll(".dock .tabs").forEach(tabs => {
     tabs.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === btn));
     dock.querySelectorAll(".tabpanel").forEach(p => p.classList.toggle("on", p.dataset.panel === btn.dataset.tab));
     if (btn.dataset.tab === "glossary") refreshGlossary();
+    if (btn.dataset.tab === "peers") refreshPeers();
     else if (btn.dataset.tab === "review") refreshCuration();
     else if (btn.dataset.tab === "proposals") refreshProposals();
   });

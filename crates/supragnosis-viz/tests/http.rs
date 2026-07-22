@@ -57,7 +57,7 @@ async fn viz_serves_graph_index_and_404() {
     // port 0 -> look up the actual OS-assigned port (deterministic/no collision).
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel()));
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
 
     let base = format!("http://{addr}");
     let client = reqwest::Client::new();
@@ -139,7 +139,7 @@ async fn viz_lists_workspaces_sorted_distinct() {
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel()));
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
 
     let list: Vec<String> = reqwest::Client::new()
         .get(format!("http://{addr}/api/workspaces"))
@@ -165,7 +165,7 @@ async fn viz_streams_mcp_events_via_sse() {
     );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, tx.clone()));
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, tx.clone(), None));
 
     // After the SSE connect, read the header first (a signal the handler has finished subscribe - guarantees emit ordering).
     let mut sock = TcpStream::connect(addr).await.unwrap();
@@ -231,7 +231,7 @@ async fn viz_serves_hypergraph() {
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel()));
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
 
     let hg: serde_json::Value = reqwest::Client::new()
         .get(format!("http://{addr}/api/hypergraph?workspace=ws"))
