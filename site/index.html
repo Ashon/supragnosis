@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supragnosis - knowledge above knowledge</title>
+  <meta name="description" content="An embedded, file-based Rust knowledge graph server. Immutable observation logs, deterministic projection, local-first federation, and hybrid recall over MCP.">
+  <meta property="og:title" content="supragnosis">
+  <meta property="og:description" content="Knowledge above knowledge. An embedded Rust knowledge graph server with MCP interface and multi-host federation.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://blog.ashon.dev/supragnosis/">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head">
+    <a class="wordmark" href="#top">supragnosis</a>
+    <nav aria-label="Site">
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md">principles</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">federation</a>
+      <a class="nav-gh" href="https://github.com/Ashon/supragnosis">github</a>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <!-- ================= hero ================= -->
+    <section class="hero" id="top">
+      <svg class="constellation" viewBox="0 0 1200 640" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <g class="edges">
+          <line class="e" style="--d:.2s"  x1="140"  y1="180" x2="320"  y2="120" pathLength="1"/>
+          <line class="e" style="--d:.5s"  x1="320"  y1="120" x2="520"  y2="180" pathLength="1"/>
+          <line class="e" style="--d:.8s"  x1="520"  y1="180" x2="720"  y2="120" pathLength="1"/>
+          <line class="e" style="--d:1.1s" x1="720"  y1="120" x2="880"  y2="220" pathLength="1"/>
+          <line class="e" style="--d:1.4s" x1="880"  y1="220" x2="1050" y2="150" pathLength="1"/>
+          <line class="e" style="--d:.6s"  x1="140"  y1="180" x2="240"  y2="340" pathLength="1"/>
+          <line class="e" style="--d:.9s"  x1="240"  y1="340" x2="460"  y2="400" pathLength="1"/>
+          <line class="e" style="--d:1.2s" x1="460"  y1="400" x2="660"  y2="340" pathLength="1"/>
+          <line class="e" style="--d:1.5s" x1="660"  y1="340" x2="860"  y2="420" pathLength="1"/>
+          <line class="e" style="--d:1.8s" x1="860"  y1="420" x2="1060" y2="360" pathLength="1"/>
+          <line class="e" style="--d:1.3s" x1="240"  y1="340" x2="620"  y2="520" pathLength="1"/>
+          <line class="e" style="--d:1.0s" x1="520"  y1="180" x2="880"  y2="220" pathLength="1"/>
+          <line class="e" style="--d:1.6s" x1="660"  y1="340" x2="720"  y2="120" pathLength="1"/>
+        </g>
+        <g class="nodes">
+          <g class="n" style="--d:.1s"><circle cx="140" cy="180" r="4"/><text x="152" y="176">observation</text></g>
+          <g class="n pulse" style="--d:.4s"><circle cx="320" cy="120" r="5"/><text x="332" y="116">event log</text></g>
+          <g class="n" style="--d:.7s"><circle cx="520" cy="180" r="4"/><text x="532" y="176">projection</text></g>
+          <g class="n pulse" style="--d:1.0s"><circle cx="720" cy="120" r="6"/><text x="734" y="116">ontology</text></g>
+          <g class="n" style="--d:1.3s"><circle cx="880" cy="220" r="4"/><text x="892" y="216">entity</text></g>
+          <g class="n" style="--d:1.6s"><circle cx="1050" cy="150" r="3.5"/><text x="1062" y="146">relation</text></g>
+          <g class="n" style="--d:.5s"><circle cx="240" cy="340" r="4"/><text x="252" y="336">provenance</text></g>
+          <g class="n" style="--d:.8s"><circle cx="460" cy="400" r="4"/><text x="472" y="396">workspace</text></g>
+          <g class="n" style="--d:1.1s"><circle cx="660" cy="340" r="4"/><text x="672" y="336">host</text></g>
+          <g class="n pulse" style="--d:1.4s"><circle cx="860" cy="420" r="5"/><text x="874" y="416">hub</text></g>
+          <g class="n" style="--d:1.7s"><circle cx="1060" cy="360" r="4"/><text x="1072" y="356">peer</text></g>
+          <g class="n" style="--d:1.5s"><circle cx="620" cy="520" r="3.5"/><text x="632" y="516">trust tier</text></g>
+        </g>
+      </svg>
+
+      <div class="hero-inner">
+        <p class="etymology">supra <span>(above)</span> &nbsp;+&nbsp; gnosis <span>(knowing)</span></p>
+        <h1>Knowledge<br><em>above</em> knowledge.</h1>
+        <p class="lede">
+          supragnosis is an embedded, file-based knowledge server written in Rust.
+          It structures what your agents learn across hosts and workspaces into an
+          ontology - a living concept/relation graph - and serves it to any MCP client.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-gold" href="https://github.com/Ashon/supragnosis">View on GitHub</a>
+          <a class="btn btn-ghost" href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Read the architecture</a>
+        </div>
+        <div class="install">
+          <span class="install-label">install</span>
+          <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh</code>
+          <button class="copy" data-copy="#install-cmd" aria-label="Copy install command">copy</button>
+        </div>
+        <ul class="badges" aria-label="Project facts">
+          <li>v0.1.5</li>
+          <li>Rust</li>
+          <li>MIT OR Apache-2.0</li>
+          <li>macOS arm64 / x86_64</li>
+          <li>Linux x86_64</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= core ideas ================= -->
+    <section class="section reveal" id="ideas">
+      <p class="eyebrow">01 / core ideas</p>
+      <h2>Three commitments, held everywhere.</h2>
+      <div class="grid grid-3">
+        <article class="card">
+          <h3>Observations are the truth</h3>
+          <p>
+            Knowledge arrives as immutable observation events: append-only,
+            provenance-preserving. The entity/relation graph is a deterministic
+            projection of the log. Replay the log anywhere and the same graph
+            materializes.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Local-first, topology-free</h3>
+          <p>
+            Local-only, central hub, direct peer, or hybrid: every connection
+            topology converges without conflict under the same merge semantics.
+            Events are ed25519-signed and replicated over TLS.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Swappable by construction</h3>
+          <p>
+            A hexagonal core with zero IO. Stores, embedders, and extractors are
+            ports with adapters: CozoDB today, Oxigraph tomorrow, in-memory for
+            tests. The domain never notices.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================= how it works ================= -->
+    <section class="section reveal" id="flow">
+      <p class="eyebrow">02 / how it works</p>
+      <h2>From observation to ontology.</h2>
+      <div class="flow" role="img" aria-label="Pipeline: observe, then observation log, then projector, then ontology, then recall">
+        <div class="flow-step"><strong>observe</strong><span>MCP tool call</span></div>
+        <span class="flow-arrow">-&gt;</span>
+        <div class="flow-step"><strong>observation log</strong><span>immutable, signed</span></div>
+        <span class="flow-arrow">-&gt;</span>
+        <div class="flow-step"><strong>projector</strong><span>deterministic</span></div>
+        <span class="flow-arrow">-&gt;</span>
+        <div class="flow-step"><strong>ontology</strong><span>entities + relations</span></div>
+        <span class="flow-arrow">-&gt;</span>
+        <div class="flow-step"><strong>recall</strong><span>search / traverse / map</span></div>
+      </div>
+      <p class="section-note">
+        The log is the source of truth. Delete the graph, replay the log, and you
+        get the same graph back - on any node, in any topology.
+      </p>
+    </section>
+
+    <!-- ================= capabilities ================= -->
+    <section class="section reveal" id="features">
+      <p class="eyebrow">03 / capabilities</p>
+      <h2>Small binary, serious semantics.</h2>
+      <div class="grid grid-3">
+        <article class="card">
+          <h3>Hybrid recall</h3>
+          <p>
+            HNSW vector search over local ONNX embeddings (fastembed), fused with
+            keyword search. Ranking is deterministic; without embeddings it
+            degrades gracefully to keyword.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Embedded, file-based</h3>
+          <p>
+            One process, one directory. CozoDB on RocksDB unifies relational,
+            graph, and vector under <code>~/.supragnosis/db</code>. No external
+            database to run.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Proposal gate</h3>
+          <p>
+            Changes to canon - tier promotions, merges, T-Box edits, recalls -
+            flow through PR-like proposals with a curation console.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Provenance and trust</h3>
+          <p>
+            Every fact carries host, workspace, delegation chain, and trust tier.
+            Contaminated sources can be quarantined and recalled in bulk, even
+            across the federation.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Live ontology viewer</h3>
+          <p>
+            A loopback-only web viewer streams entities, relations, and sync
+            chatter as they land. Watch your agents learn.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Self-managed daemon</h3>
+          <p>
+            <code>start</code> / <code>stop</code> / <code>status</code> /
+            <code>restart</code> with pidfile and logs under
+            <code>~/.supragnosis</code>. stdio for MCP-client children,
+            streamable HTTP for everything else.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================= mcp surface ================= -->
+    <section class="section reveal" id="mcp">
+      <p class="eyebrow">04 / mcp surface</p>
+      <h2>Speak MCP, remember everything.</h2>
+      <div class="mcp-wrap">
+        <div class="terminal">
+          <div class="terminal-bar"><span class="terminal-title">register with your MCP client</span></div>
+          <pre><code><span class="c"># stdio (client launches supragnosis as a child process)</span>
+claude mcp add supragnosis -- $(command -v supragnosis)
+
+<span class="c"># or point at the background daemon over HTTP</span>
+supragnosis start
+claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pre>
+        </div>
+        <dl class="tools">
+          <div><dt>observe</dt><dd>load knowledge: entities, relations, and text become observation events</dd></div>
+          <div><dt>search_knowledge</dt><dd>semantic + keyword hybrid recall, deterministically ranked</dd></div>
+          <div><dt>get_entity</dt><dd>one entity with its relations and full provenance</dd></div>
+          <div><dt>traverse</dt><dd>n-hop walks over the relation graph</dd></div>
+          <div><dt>workspace_map</dt><dd>co-occurrence contexts (hyperedges) across a workspace</dd></div>
+          <div class="tools-more"><dt>and more</dt><dd>federation (sync_*), proposal, and curation tools - 13+ in total</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ================= federation ================= -->
+    <section class="section reveal" id="federation">
+      <p class="eyebrow">05 / federation</p>
+      <h2>Any topology. Same graph.</h2>
+      <p class="section-note wide">
+        Hosts replicate observation logs, not merged state. Because projection is
+        deterministic and merge semantics are shared, hub-and-spoke, peer-to-peer,
+        and hybrid meshes all converge to the same ontology. Node identity is an
+        ed25519 keypair; events are signed and shipped over TLS with per-node auth.
+      </p>
+      <div class="grid grid-3 topologies">
+        <figure class="topo">
+          <svg viewBox="0 0 220 150" aria-hidden="true">
+            <line class="t-edge" x1="110" y1="75" x2="40"  y2="30"/>
+            <line class="t-edge" x1="110" y1="75" x2="180" y2="30"/>
+            <line class="t-edge" x1="110" y1="75" x2="30"  y2="105"/>
+            <line class="t-edge" x1="110" y1="75" x2="190" y2="105"/>
+            <line class="t-edge" x1="110" y1="75" x2="110" y2="130"/>
+            <circle class="t-hub"  cx="110" cy="75"  r="8"/>
+            <circle class="t-node" cx="40"  cy="30"  r="5"/>
+            <circle class="t-node" cx="180" cy="30"  r="5"/>
+            <circle class="t-node" cx="30"  cy="105" r="5"/>
+            <circle class="t-node" cx="190" cy="105" r="5"/>
+            <circle class="t-node" cx="110" cy="130" r="5"/>
+          </svg>
+          <figcaption>hub-and-spoke</figcaption>
+        </figure>
+        <figure class="topo">
+          <svg viewBox="0 0 220 150" aria-hidden="true">
+            <line class="t-edge" x1="60"  y1="35"  x2="160" y2="35"/>
+            <line class="t-edge" x1="160" y1="35"  x2="190" y2="100"/>
+            <line class="t-edge" x1="190" y1="100" x2="110" y2="130"/>
+            <line class="t-edge" x1="110" y1="130" x2="30"  y2="100"/>
+            <line class="t-edge" x1="30"  y1="100" x2="60"  y2="35"/>
+            <line class="t-edge" x1="60"  y1="35"  x2="190" y2="100"/>
+            <circle class="t-node" cx="60"  cy="35"  r="5"/>
+            <circle class="t-node" cx="160" cy="35"  r="5"/>
+            <circle class="t-node" cx="190" cy="100" r="5"/>
+            <circle class="t-node" cx="110" cy="130" r="5"/>
+            <circle class="t-node" cx="30"  cy="100" r="5"/>
+          </svg>
+          <figcaption>peer-to-peer</figcaption>
+        </figure>
+        <figure class="topo">
+          <svg viewBox="0 0 220 150" aria-hidden="true">
+            <line class="t-edge" x1="60"  y1="55"  x2="160" y2="95"/>
+            <line class="t-edge" x1="60"  y1="55"  x2="25"  y2="25"/>
+            <line class="t-edge" x1="60"  y1="55"  x2="25"  y2="90"/>
+            <line class="t-edge" x1="160" y1="95"  x2="195" y2="60"/>
+            <line class="t-edge" x1="160" y1="95"  x2="195" y2="125"/>
+            <line class="t-edge" x1="25"  y1="25"  x2="110" y2="20"/>
+            <line class="t-edge" x1="110" y1="20"  x2="195" y2="60"/>
+            <circle class="t-hub"  cx="60"  cy="55"  r="7"/>
+            <circle class="t-hub"  cx="160" cy="95"  r="7"/>
+            <circle class="t-node" cx="25"  cy="25"  r="5"/>
+            <circle class="t-node" cx="25"  cy="90"  r="5"/>
+            <circle class="t-node" cx="195" cy="60"  r="5"/>
+            <circle class="t-node" cx="195" cy="125" r="5"/>
+            <circle class="t-node" cx="110" cy="20"  r="5"/>
+          </svg>
+          <figcaption>hybrid mesh</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ================= crates ================= -->
+    <section class="section reveal" id="crates">
+      <p class="eyebrow">06 / inside</p>
+      <h2>A workspace of eight crates.</h2>
+      <div class="grid grid-4 crates">
+        <div class="crate"><strong>core</strong><span>domain models + ports, zero IO</span></div>
+        <div class="crate"><strong>store</strong><span>CozoDB and in-memory adapters</span></div>
+        <div class="crate"><strong>engine</strong><span>ingest, projection, query, sync</span></div>
+        <div class="crate"><strong>embed</strong><span>fastembed / hashing / none</span></div>
+        <div class="crate"><strong>sync</strong><span>identity, signing, replication</span></div>
+        <div class="crate"><strong>mcp</strong><span>rmcp tools, resources, prompts</span></div>
+        <div class="crate"><strong>viz</strong><span>live ontology viewer</span></div>
+        <div class="crate"><strong>cli</strong><span>the supragnosis binary</span></div>
+      </div>
+    </section>
+
+    <!-- ================= status ================= -->
+    <section class="section reveal" id="status">
+      <p class="eyebrow">07 / status</p>
+      <h2>Where it honestly stands.</h2>
+      <ul class="checklist">
+        <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
+        <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like curation console for promotions, merges, T-Box changes, recalls.</div></li>
+        <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
+        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3 - resolution layer.</strong> Not started: entity identity is still exact canonical-name match.</div></li>
+        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
+      </ul>
+      <p class="section-note">
+        The roadmap keeps an honest record of what shipped and what is deferred -
+        see <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> sections 12 and 14.
+      </p>
+    </section>
+
+    <!-- ================= get started ================= -->
+    <section class="section reveal" id="get-started">
+      <p class="eyebrow">08 / get started</p>
+      <h2>Up and running in a minute.</h2>
+      <div class="grid grid-2 starts">
+        <div class="terminal">
+          <div class="terminal-bar"><span class="terminal-title">prebuilt binary</span></div>
+          <pre><code><span class="c"># macOS (arm64 / x86_64), Linux (x86_64)</span>
+<span class="c"># installs to ~/.local/bin with checksum verification</span>
+curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+
+supragnosis start     <span class="c"># daemon: MCP :7373 + viewer :7374</span>
+supragnosis status
+supragnosis stop</code></pre>
+        </div>
+        <div class="terminal">
+          <div class="terminal-bar"><span class="terminal-title">from source (with semantic search)</span></div>
+          <pre><code>git clone https://github.com/Ashon/supragnosis
+cd supragnosis
+
+<span class="c"># includes local ONNX semantic search</span>
+cargo build -p supragnosis-cli --features fastembed
+
+cargo test</code></pre>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-foot">
+    <p class="foot-ety">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="https://github.com/Ashon/supragnosis/releases">Releases</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md">Principles</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Architecture</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">Federation</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">Proposal workflow</a>
+    </nav>
+    <p class="foot-fine">MIT OR Apache-2.0. Plain HTML and CSS, no build step. This page lives in <code>site/</code>.</p>
+  </footer>
+
+  <script>
+    // copy-to-clipboard for the install command
+    document.querySelectorAll('.copy').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var el = document.querySelector(btn.dataset.copy);
+        if (!el) return;
+        navigator.clipboard.writeText(el.textContent).then(function () {
+          btn.textContent = 'copied';
+          btn.classList.add('ok');
+          setTimeout(function () {
+            btn.textContent = 'copy';
+            btn.classList.remove('ok');
+          }, 1600);
+        });
+      });
+    });
+
+    // reveal sections as they enter the viewport
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          en.target.classList.add('in');
+          io.unobserve(en.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+  </script>
+</body>
+</html>
