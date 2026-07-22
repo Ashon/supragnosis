@@ -36,6 +36,9 @@ axum = "0.8"
 # Federation sync transport (M4 Phase 3, sync crate "http" feature only): in-process TLS + HTTP client.
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Pin the process-level rustls CryptoProvider (axum-server pulls aws-lc-rs, reqwest pulls ring -
+# with both features present rustls refuses to auto-select; we install ring explicitly).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Internal (cross-crate)
 supragnosis-core = { path = "crates/supragnosis-core" }
