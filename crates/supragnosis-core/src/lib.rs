@@ -127,8 +127,25 @@ impl Hlc {
 
 /// Version vector (docs/federation.md Section 5): what a node holds, per (origin node, workspace) -
 /// dense within a shared workspace, whole workspaces absent under selective sharing (F7/F9).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Serde note: JSON object keys must be strings, so the tuple-keyed map cannot derive its wire form.
+/// The wire representation is a sorted list of `(node, workspace, seq)` triples - deterministic
+/// (BTreeMap order), language-neutral, and stable for the sync API (Phase 3).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VersionVector(pub std::collections::BTreeMap<(String, String), u64>);
+
+impl Serialize for VersionVector {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.0.iter().map(|((n, w), q)| (n, w, q)))
+    }
+}
+
+impl<'de> Deserialize<'de> for VersionVector {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let triples: Vec<(String, String, u64)> = Vec::deserialize(d)?;
+        Ok(VersionVector(triples.into_iter().map(|(n, w, q)| ((n, w), q)).collect()))
+    }
+}
 
 impl VersionVector {
     /// Highest origin_seq held for (node, workspace); 0 = nothing held.
