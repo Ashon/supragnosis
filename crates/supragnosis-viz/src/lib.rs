@@ -552,123 +552,168 @@ const VIEWER_HTML: &str = r###"<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>supragnosis ontology viewer</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230c0e14'/%3E%3Cg stroke='%23f0c469' stroke-width='5.5' stroke-linecap='round'%3E%3Cline x1='32' y1='32' x2='32' y2='17'/%3E%3Cline x1='32' y1='32' x2='46.3' y2='27.4'/%3E%3Cline x1='32' y1='32' x2='40.8' y2='44.1'/%3E%3Cline x1='32' y1='32' x2='23.2' y2='44.1'/%3E%3Cline x1='32' y1='32' x2='17.7' y2='27.4'/%3E%3C/g%3E%3C/svg%3E">
 <style>
+  /* Candlelight theme - the viewer speaks the same design language as site/ (the landing):
+     warm gold on near-black ink, parchment text, mono chrome, serif prose, grain + glow.
+     Fonts stay self-contained (no webfont fetch - the viewer must work offline): the landing's
+     fallback stacks are used directly. */
   :root {
     color-scheme: dark;
-    --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
-    --line:#4a4a46; --line-hi:#8fb4e6; --border:rgba(255,255,255,0.10); --accent:#3987e5;
+    --surface:#08090d; --panel:#10131b; --panel-2:#131722;
+    --glass:rgba(13,16,23,0.92); --glass-deep:rgba(9,11,16,0.95);
+    --ink:#e9e4d6; --ink2:#aab1bd; --muted:#8e96a5; --faint:#5c6472;
+    --line:#222836; --line-soft:#1a1f2b; --border:#1e2431;
+    --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
+    --gold-glass:rgba(217,165,68,0.12); --teal:#56b3a2;
+    --line-hi:var(--gold-dim);
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --prose:"Newsreader","Iowan Old Style",Georgia,serif;
   }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
   body { background:var(--surface); color:var(--ink2); overflow:hidden;
-         font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+         font:12.5px/1.5 var(--mono); }
+  /* Atmosphere: candlelight glow beneath the (transparent) canvas, grain above it. Chrome (header,
+     rails, z>=5) sits above both, so panels stay crisp while the graph floats in the atmosphere. */
+  body::before { content:""; position:fixed; inset:0; pointer-events:none;
+    background:radial-gradient(900px 520px at 50% -10%, rgba(217,165,68,0.09), transparent 65%),
+               radial-gradient(700px 500px at 85% 8%, rgba(86,179,162,0.04), transparent 60%); }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:0.045; z-index:2;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
   canvas { display:block; position:fixed; inset:0; cursor:grab; }
   canvas.grabbing { cursor:grabbing; }
   header { position:fixed; top:0; left:0; right:0; z-index:5; padding:9px 14px;
            display:flex; gap:9px; align-items:center; flex-wrap:wrap;
-           background:var(--surface); border-bottom:1px solid var(--border); }
-  h1 { font-size:14px; margin:0 6px 0 0; font-weight:600; color:var(--ink); }
-  input,button { background:#22221f; border:1px solid var(--border); color:var(--ink);
-                 padding:5px 9px; border-radius:7px; font:inherit; font-size:12.5px; }
-  input::placeholder { color:var(--muted); }
-  button { cursor:pointer; } button:hover { border-color:var(--line-hi); }
-  .hint { color:var(--muted); font-size:12px; }
-  #status { color:var(--muted); font-size:12px; margin-left:auto; white-space:nowrap; }
+           background:rgba(8,9,13,0.88); border-bottom:1px solid var(--line-soft);
+           backdrop-filter:blur(6px); }
+  h1 { font:600 13px/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink); }
+  h1::before { content:"* "; color:var(--accent); }
+  input,button { background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+                 padding:5px 9px; border-radius:5px; font:inherit; font-size:12px; }
+  input::placeholder { color:var(--faint); }
+  input:focus { outline:none; border-color:var(--gold-dim); }
+  button { cursor:pointer; transition:border-color 0.15s ease, color 0.15s ease; }
+  button:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  .hint { color:var(--muted); font-size:11.5px; }
+  #status { color:var(--muted); font-size:11.5px; margin-left:auto; white-space:nowrap; }
   #wschips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }
-  .lbl { color:var(--muted); font-size:11.5px; margin-right:2px; }
-  .chip,.lg { padding:2px 9px; border-radius:11px; background:#22221f; border:1px solid var(--border);
-              cursor:pointer; font-size:12px; color:var(--ink2); user-select:none; }
-  .chip.on { background:#2b3a52; border-color:var(--accent); color:var(--ink); }
+  .lbl { color:var(--muted); font-size:11px; margin-right:2px; }
+  .chip,.lg { padding:2px 10px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line-soft);
+              cursor:pointer; font-size:11.5px; letter-spacing:0.03em; color:var(--ink2); user-select:none;
+              transition:border-color 0.15s ease, color 0.15s ease; }
+  .chip:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  .chip.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
   .lg { display:inline-flex; align-items:center; gap:6px; }
   .lg:hover { border-color:var(--muted); }
   .lg.off { opacity:0.38; }
   .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
-         background:#0d0d0df2; border:1px solid var(--border); border-radius:8px;
-         padding:7px 10px; font-size:12.5px; color:var(--ink2); box-shadow:0 6px 20px #000a; }
+         background:var(--glass-deep); border:1px solid var(--line); border-radius:8px;
+         padding:7px 10px; font-size:12px; color:var(--ink2); box-shadow:0 8px 28px #000c; }
   #tip b { color:var(--ink); }
-  #tip .k { color:var(--muted); }
-  #hud { position:fixed; right:312px; top:52px; z-index:8; display:flex; gap:6px; }  /* top-right, under the header (mirrors #log) - leaves the bottom clear for the detail panel */
-  #hud button { width:34px; height:34px; padding:0; font-size:16px; line-height:1;
-                display:flex; align-items:center; justify-content:center; }
+  #tip .k { color:var(--faint); }
+  /* Type-definition tooltip (legend chips): the definition reads as prose, like the glossary. */
+  #tip .tdef { font:12.5px/1.45 var(--prose); color:var(--ink); margin:3px 0 2px; word-break:break-word; }
+  #tip .tdef.none { font-style:italic; color:var(--muted); }
+  /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
+     above the statusbar. The right island grows downward from the top and the detail panel stops
+     at right:324, so this corner is the stable empty spot. */
+  #hud { position:fixed; right:12px; bottom:36px; z-index:8; display:flex; flex-direction:column; gap:6px; }
+  #hud button { width:34px; height:34px; padding:0; font-size:15px; line-height:1;
+                display:flex; align-items:center; justify-content:center; background:var(--glass); }
+  #hud #fit { font-size:10.5px; letter-spacing:.03em; }
   #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-           color:var(--muted); font-size:13px; pointer-events:none; }
+           color:var(--muted); font:italic 14px/1.5 var(--prose); pointer-events:none; }
   /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
      hidden until it settles, so the user sees a calm spinner instead of nodes flying around. */
   #loader { position:fixed; inset:0; display:none; flex-direction:column; align-items:center;
             justify-content:center; gap:13px; z-index:6; pointer-events:none;
-            color:var(--muted); font-size:12px; letter-spacing:.04em; }
+            color:var(--muted); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; }
   #loader.on { display:flex; }
-  #loader .spin { width:34px; height:34px; border-radius:50%; border:3px solid var(--border);
+  #loader .spin { width:34px; height:34px; border-radius:50%; border:2px solid var(--line);
                   border-top-color:var(--accent); animation:ldspin 0.8s linear infinite; }
   @keyframes ldspin { to { transform:rotate(360deg); } }
-  /* Toggle button state: off = dim (muted), on = accent-highlighted - state is visible at a glance.
+  /* Toggle button state: off = dim (muted), on = gold-lit - state is visible at a glance.
      JS toggles only .on and keeps .tog. Action buttons like reload/zoom (no .tog) stay at their default. */
   button.tog { opacity:.5; color:var(--muted); }
   button.tog:hover { opacity:.8; }
-  button.tog.on { opacity:1; background:#2b3a52; border-color:var(--accent); color:var(--ink); }
-  #log { position:fixed; left:262px; top:52px; z-index:6; width:280px; max-width:38vw;
+  button.tog.on { opacity:1; background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
+  #log { position:fixed; left:274px; top:56px; z-index:6; width:280px; max-width:38vw;
          display:flex; flex-direction:column; gap:4px; pointer-events:none; }
-  #log .row { background:#0d0d0de6; border:1px solid var(--border); border-radius:7px;
-              padding:4px 9px; font-size:11.5px; color:var(--ink2); animation:logfade 8s forwards; }
-  #log .row b { color:var(--accent); font-weight:600; }
-  #log .row .t { color:var(--muted); margin-right:5px; }
+  #log .row { background:var(--glass); border:1px solid var(--line-soft); border-radius:6px;
+              padding:4px 9px; font-size:11px; color:var(--ink2); animation:logfade 8s forwards; }
+  #log .row b { color:var(--gold-bright); font-weight:600; }
+  #log .row .t { color:var(--faint); margin-right:5px; }
   @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
                        82%{opacity:1;} 100%{opacity:0;} }
   /* Node detail: a wide panel docked center-bottom (between the rails, above the status bar). Header block
      (name / meta / description) stays put; the relations split into two scrolling columns (out | in). */
-  #detail { position:fixed; left:262px; right:312px; bottom:30px; margin:0 auto; max-width:960px;
+  #detail { position:fixed; left:274px; right:324px; bottom:36px; margin:0 auto; max-width:960px;
             z-index:8; max-height:36vh; overflow:hidden; display:none;
-            background:#0d0d0df2; border:1px solid var(--border); border-radius:10px;
-            padding:11px 15px 13px; font-size:12.5px; color:var(--ink2); box-shadow:0 8px 28px #000a; }
+            background:var(--glass-deep); border:1px solid var(--line); border-radius:10px;
+            padding:11px 15px 13px; font-size:12px; color:var(--ink2); box-shadow:0 14px 34px #000c; }
   #detail.on { display:flex; flex-direction:column; }
-  #detail h2 { font-size:15px; margin:0 22px 2px 0; color:var(--ink); font-weight:600; word-break:break-word; }
-  #detail .meta { color:var(--muted); font-size:11.5px; margin-bottom:4px; }
-  #detail .desc { color:var(--ink); font-size:11.5px; line-height:1.4; margin:2px 0 6px; opacity:.85; word-break:break-word; }
+  #detail h2 { font:600 14px/1.4 var(--mono); margin:0 22px 2px 0; color:var(--gold-bright); word-break:break-word; }
+  #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; }
+  #detail .desc { color:var(--ink); font:13px/1.45 var(--prose); margin:2px 0 6px; opacity:.9; word-break:break-word; }
   #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
   #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
-  #detail .sec { color:var(--muted); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
-                 margin:0 0 4px; position:sticky; top:0; background:#0d0d0df2; padding-bottom:3px; }
-  #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:6px; cursor:pointer; }
-  #detail .row:hover { background:#ffffff14; }
-  #detail .row .rel { color:var(--muted); font-size:11px; white-space:nowrap; }
+  #detail .sec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+                 margin:0 0 4px; position:sticky; top:0; background:var(--glass-deep); padding-bottom:3px; }
+  #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:5px; cursor:pointer; }
+  #detail .row:hover { background:var(--gold-glass); }
+  #detail .row .rel { color:var(--muted); font-size:10.5px; white-space:nowrap; }
   #detail .row .nm { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
-  #detail .close { position:absolute; top:9px; right:11px; cursor:pointer; color:var(--muted);
-                   border:none; background:none; font-size:15px; line-height:1; padding:0; }
-  #detail .close:hover { color:var(--ink); }
-  #detail .empty { color:var(--muted); font-style:italic; padding:2px 5px; }
+  /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
+     asterisk). A square hit target with a soft hover fill, not a bare text glyph. */
+  #detail .close { position:absolute; top:8px; right:8px; cursor:pointer; color:var(--muted);
+                   border:none; background:none; border-radius:5px; padding:0;
+                   width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+                   transition:color 0.15s ease, background 0.15s ease; }
+  #detail .close:hover { color:var(--gold-bright); background:var(--gold-glass); }
+  #detail .close svg { display:block; }
+  #detail .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 5px; }
   /* Control dock (left) - collapsible sections for layers/legend/glossary. detail panel stays on the
      right, so the two never collide. Toggled open/closed by the header 'panels' button. */
   /* Two full-height side rails: left = observe the graph (Layers + legends + stats), right = manage
      knowledge (proposals + review + glossary). Below the header, top to bottom, using the whole side. */
-  .dock { position:fixed; top:44px; bottom:24px; z-index:7; display:none; flex-direction:column;
-          background:#0d0d0df2; border:0 solid var(--border);
-          padding:8px 11px; box-shadow:0 0 26px #0007; }
-  #dockL { left:0; width:250px; border-right-width:1px; }
-  #dockR { right:0; width:300px; border-left-width:1px; }
+  /* Floating card islands: inset from every screen edge so the canvas visibly continues behind and
+     around them - an overlay on the graph, not walls beside it. Height hugs the content and caps at
+     the statusbar; the rail body scrolls inside. */
+  .dock { position:fixed; top:56px; z-index:7; display:none; flex-direction:column;
+          max-height:calc(100vh - 92px);
+          background:var(--glass); border:1px solid var(--line);
+          border-radius:12px; padding:10px 12px;
+          box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
+  #dockL { left:12px; width:250px; }
+  /* The right island shares its screen edge with the camera HUD (bottom-right stack, ~114px tall
+     at bottom:36): its height cap additionally reserves that corner (56 top + 36 bottom + 114 HUD
+     + 12 gap = 218) so a full proposals list can never slide under the zoom buttons. */
+  #dockR { right:12px; width:300px; max-height:calc(100vh - 218px); }
   .dock.on { display:flex; }
   .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
   /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
   .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
-  .rsec { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.04em;
-          margin:11px 0 4px; padding-top:8px; border-top:1px solid #ffffff12; }
+  .rsec { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.14em;
+          margin:11px 0 4px; padding-top:8px; border-top:1px solid var(--line-soft); }
   /* IDE-style bottom status bar (full width, below the rails). */
   #statusbar { position:fixed; left:0; right:0; bottom:0; height:24px; z-index:9; display:flex;
-               align-items:center; gap:14px; padding:0 12px; background:#141413;
-               border-top:1px solid var(--border); font-size:11px; color:var(--muted); }
+               align-items:center; gap:14px; padding:0 12px; background:var(--panel);
+               border-top:1px solid var(--line-soft); font-size:10.5px; letter-spacing:.03em; color:var(--muted); }
   #statusbar #stats { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #statusbar #status { margin-left:auto; white-space:nowrap; }
   #statusbar #session { white-space:nowrap; }
   /* Tabs instead of accordions: one section shows at a time in a fixed-height body, so expanding never
      pushes the bottom-anchored panel upward. */
   .dock .tabs { display:flex; gap:3px; margin:3px 0 5px; }
-  .dock .tab { flex:1 1 0; min-width:0; padding:4px 5px; font-size:10px; letter-spacing:.02em;
-               text-transform:uppercase; border:1px solid var(--border); background:#22221f;
-               color:var(--muted); border-radius:7px; cursor:pointer; white-space:nowrap;
+  .dock .tab { flex:1 1 0; min-width:0; padding:4px 3px; font-size:9.5px; letter-spacing:.03em;
+               text-transform:uppercase; border:1px solid var(--line-soft); background:var(--panel-2);
+               color:var(--muted); border-radius:5px; cursor:pointer; white-space:nowrap;
                overflow:hidden; text-overflow:ellipsis; }
-  .dock .tab:hover { color:var(--ink); }
-  .dock .tab.on { background:#2b3a52; border-color:var(--accent); color:var(--ink); }
+  .dock .tab:hover { color:var(--gold-bright); }
+  .dock .tab.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
   .dock .tab .ct { opacity:.75; margin-left:3px; }
   .dock .panels { flex:1 1 auto; min-height:0; overflow-y:auto; }
   .dock .tabpanel { display:none; padding:2px; }
@@ -676,57 +721,60 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   /* Grouped toggles inside the Layers section. */
   .grp { margin-bottom:7px; }
   .grp:last-child { margin-bottom:2px; }
-  .ghdr { color:var(--muted); font-size:10px; letter-spacing:.05em; text-transform:uppercase; display:block; margin:2px 0 4px; }
+  .ghdr { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; display:block; margin:2px 0 4px; }
   .grp .btns { display:flex; flex-wrap:wrap; gap:5px; }
   /* Legend chips live in the dock sections now. */
   #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   /* Glossary entries. */
-  #glossaryBody .item { padding:4px 0 5px; border-top:1px solid #ffffff12; }
+  #glossaryBody .item { padding:4px 0 5px; border-top:1px solid var(--line-soft); }
   #glossaryBody .item:first-child { border-top:none; }
-  #glossaryBody .gsec { color:var(--muted); font-size:10px; letter-spacing:.05em; text-transform:uppercase; margin:6px 0 3px; }
+  #glossaryBody .gsec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:6px 0 3px; }
   #glossaryBody .gsec:first-child { margin-top:0; }
-  #glossaryBody .nm { color:var(--ink); font-weight:600; font-size:12px; }
-  #glossaryBody .src { color:var(--muted); font-size:10px; margin-left:5px; }
-  #glossaryBody .def { color:var(--ink2); font-size:11.5px; line-height:1.4; margin-top:1px; opacity:.9; word-break:break-word; }
-  #glossaryBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
+  #glossaryBody .nm { color:var(--gold-bright); font-weight:600; font-size:11.5px; }
+  #glossaryBody .src { color:var(--faint); font-size:10px; margin-left:5px; }
+  #glossaryBody .def { color:var(--ink2); font:12.5px/1.45 var(--prose); margin-top:1px; opacity:.95; word-break:break-word; }
+  #glossaryBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
   /* Curation (read-only signals). */
-  #curationBody .csec { color:var(--muted); font-size:10px; letter-spacing:.05em; text-transform:uppercase; margin:8px 0 3px; }
+  #curationBody .csec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:8px 0 3px; }
   #curationBody .csec:first-child { margin-top:0; }
-  #curationBody .grp { border-top:1px solid #ffffff12; padding:4px 0; }
+  #curationBody .grp { border-top:1px solid var(--line-soft); padding:4px 0; }
   #curationBody .grp:first-of-type { border-top:none; }
   #curationBody .gk { color:var(--ink); font-size:11.5px; }
   #curationBody .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
-  #curationBody .nchip { padding:1px 7px; border-radius:9px; background:#22221f; border:1px solid var(--border);
-                         cursor:pointer; font-size:11px; color:var(--ink2); }
-  #curationBody .nchip:hover { border-color:var(--line-hi); color:var(--ink); }
-  #curationBody .nchip .ty { color:var(--muted); font-size:9.5px; margin-left:3px; }
-  #curationBody .gb { padding:3px 0; border-top:1px solid #ffffff12; font-size:11.5px; color:var(--ink2); }
-  #curationBody .gb .sz { color:var(--accent); font-weight:600; margin-right:5px; }
-  #curationBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
+  #curationBody .nchip { padding:1px 8px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line-soft);
+                         cursor:pointer; font-size:10.5px; color:var(--ink2); }
+  #curationBody .nchip:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  #curationBody .nchip .ty { color:var(--faint); font-size:9.5px; margin-left:3px; }
+  #curationBody .gb { padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; color:var(--ink2); }
+  #curationBody .gb .sz { color:var(--gold-bright); font-weight:600; margin-right:5px; }
+  #curationBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
   /* Proposals (the gated curation console). */
-  #proposalsBody .hint { color:var(--muted); font-size:10px; font-style:italic; margin-bottom:5px; }
-  #proposalsBody .prop { border-top:1px solid #ffffff12; padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }
+  #proposalsBody .hint { color:var(--muted); font:italic 11.5px/1.4 var(--prose); margin-bottom:5px; }
+  #proposalsBody .prop { border-top:1px solid var(--line-soft); padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }
   #proposalsBody .prop:first-of-type { border-top:none; }
-  #proposalsBody .prop:hover { background:#ffffff08; }
-  #proposalsBody .prop.sel { background:#ffffff12; border-left-color:var(--accent); }
+  #proposalsBody .prop:hover { background:rgba(217,165,68,0.05); }
+  #proposalsBody .prop.sel { background:var(--gold-glass); border-left-color:var(--accent); }
   #proposalsBody .phead { display:flex; align-items:center; gap:6px; }
-  #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11.5px; }
-  #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px;
-                           border-radius:8px; border:1px solid var(--border); color:var(--muted); margin-left:auto; }
-  #proposalsBody .pstate.open { color:var(--accent); border-color:var(--accent); }
-  #proposalsBody .pstate.merged { color:#8fe0a8; border-color:#3f7a55; }
-  #proposalsBody .prat { color:var(--ink2); font-size:11px; line-height:1.35; margin:2px 0; opacity:.85; word-break:break-word; }
+  #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11px; }
+  #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.06em; padding:1px 7px;
+                           border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:auto; }
+  #proposalsBody .pstate.open { color:var(--gold-bright); border-color:var(--gold-dim); }
+  #proposalsBody .pstate.merged { color:var(--teal); border-color:rgba(86,179,162,0.4); }
+  #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--prose); margin:2px 0; opacity:.9; word-break:break-word; }
   #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
-  #proposalsBody .nchip.into { border-color:var(--accent); color:var(--ink); }
+  #proposalsBody .nchip.into { border-color:var(--gold-dim); color:var(--gold-bright); }
   #proposalsBody .pacts { display:flex; gap:5px; margin-top:3px; }
-  #proposalsBody .pacts button { padding:1px 9px; font-size:10.5px; border-radius:7px; }
-  #proposalsBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
-  #peersBody .fsec { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin:8px 0 4px; }
-  #peersBody .fed { display:flex; align-items:center; gap:6px; padding:3px 2px; font-size:11.5px; color:var(--ink2); min-width:0; }
+  #proposalsBody .pacts button { padding:1px 10px; font-size:10px; letter-spacing:.04em; border-radius:5px; }
+  /* Accept is the gate's primary act - it gets the landing's solid-gold button voice. */
+  #proposalsBody .pacts button[data-act="merge"] { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
+  #proposalsBody .pacts button[data-act="merge"]:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
+  #proposalsBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
+  #peersBody .fsec { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.14em; margin:8px 0 4px; }
+  #peersBody .fed { display:flex; align-items:center; gap:6px; padding:3px 2px; font-size:11px; color:var(--ink2); min-width:0; }
   #peersBody .fed .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
   #peersBody .fed .furl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #peersBody .fws { color:var(--muted); font-size:10.5px; margin:0 0 2px 15px; }
-  #peersBody .empty { color:var(--muted); font-style:italic; }
+  #peersBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); }
 </style>
 <canvas id="c"></canvas>
 <div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
@@ -802,16 +850,19 @@ function catColor(i, edge) {
   const s = [62, 50, 74][(i / 3 | 0) % 3];
   return `hsl(${h | 0}, ${s}%, ${l}%)`;
 }
-const OTHER = "#898781", EDGE_OTHER = "#6b6b64";   // defensive neutral color for types not in the map
-const EDGE = "#4a4a46", EDGE_HI = "#8fb4e6", EDGE_OLD = "#5a4a55";
-const EDGE_ALPHA = 0.3;          // edge base opacity (low - recedes in a dense graph). On hover/focus, connected edges activate to 1.0
+const OTHER = "#8e96a5", EDGE_OTHER = "#5c6472";   // defensive neutral color for types not in the map
+const EDGE = "#2b3345", EDGE_HI = "#f0c469", EDGE_OLD = "#4d4340";
+const EDGE_ALPHA = 0.42;         // edge base opacity (low - recedes in a dense graph; raised for the darker ink). On hover/focus, connected edges activate to 1.0
 // The node stroke is proportional to the marker radius (scales with the marker on zoom - a
 // consistent ratio) + a screen-px floor (so it does not vanish on zoom-out). It is a background-color
 // halo, separating node/edge/neighbor (visibility).
 const NODE_STROKE_RATIO = 0.35;  // stroke thickness ratio relative to radius (raised)
 const NODE_STROKE_MIN = 2;       // minimum stroke thickness (screen px)
 const NODE_STROKE_MAX = 5;       // maximum stroke thickness (screen px) - so a large hub does not thicken into a donut
-const INK = "#ffffff", INK2 = "#c3c2b7", SURFACE = "#1a1a19";
+// Canvas palette - mirrors the CSS tokens (the landing's candlelight theme). SURFACE doubles as the
+// halo/cutout color, so it must match the body background exactly.
+const INK = "#e9e4d6", INK2 = "#aab1bd", SURFACE = "#08090d";
+const GOLD = "#d9a544", TEAL = "#56b3a2";
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
@@ -857,9 +908,9 @@ const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HY
 // Hull rendering: each hull is a single outward-offset rounded path (see roundedHullPath) filled once,
 // directly on the canvas, at the opacity below. No stroke -> no fill/stroke seam; no offscreen -> cheap.
 // A hull's whole area gets uniform transparency, while different hulls blend where they overlap.
-const HULL_LAYER_ALPHA = 0.2;    // per-hull fill opacity (no node active)
-const HULL_LAYER_DIM = 0.05;     // non-active hulls fade to this while a node is active (inspection view)
-const HULL_ACTIVE_ALPHA = 0.42;  // the active node's own hulls, painted on top
+const HULL_LAYER_ALPHA = 0.13;   // per-hull fill opacity (no node active) - tuned down for the darker candlelight ink, where the old value read as heavy plum slabs
+const HULL_LAYER_DIM = 0.04;     // non-active hulls fade to this while a node is active (inspection view)
+const HULL_ACTIVE_ALPHA = 0.34;  // the active node's own hulls, painted on top
 const HULL_LABEL_BASE = 0.7;     // hull label opacity with no active node
 const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this while a node is active
 const HULL_NODE_GAP = 14;        // world px: extra gap past the largest member glyph when expanding a hull
@@ -890,6 +941,10 @@ const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.02;
 // alpha cools to REVEAL_ALPHA. Small wakes (drag/focus at 0.3) stay below SETTLE_ENTER, so those never
 // trigger the loader. `settling` starts true so the first layout comes up settled, not mid-flight.
 const SETTLE_ENTER = 0.5, REVEAL_ALPHA = 0.08;
+// Reduced motion (same respect the landing pays to prefers-reduced-motion): instead of animating
+// the violent early rearrangement behind a loader, burst-step the sim to convergence within one
+// frame and reveal the layout already still.
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let settling = true;
 let refitOnReveal = false;   // re-frame the graph after a sync-driven re-layout settles (follow mode)
 // Base force parameters. The larger the graph, the wider it should spread, so stepSim scales by node count (spread).
@@ -934,7 +989,7 @@ function zoomAt(sx, sy, f) {
 }
 const TOP_INSET = 52;      // height occluded by the top header - compensated in centering/fit
 const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
-const DOCK_L = 250, DOCK_R = 300;   // side-rail widths (match the CSS) - reserved so content is not hidden under them
+const DOCK_L = 262, DOCK_R = 312;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
 function insetL() { return dockLEl.classList.contains("on") ? DOCK_L : 0; }
 function insetR() { return dockREl.classList.contains("on") ? DOCK_R : 0; }
 // Bottom occlusion: the status bar, plus the detail panel when it is open (panel sits at bottom:30,
@@ -942,7 +997,7 @@ function insetR() { return dockREl.classList.contains("on") ? DOCK_R : 0; }
 function insetB() {
   if (!detailEl.classList.contains("on")) return BOTTOM_INSET;
   const h = detailEl.getBoundingClientRect().height;
-  return h ? 30 + h + 8 : BOTTOM_INSET;
+  return h ? 36 + h + 8 : BOTTOM_INSET;   // 36 = the detail panel's bottom offset (match the CSS)
 }
 // Smoothly bring a node to the screen center (focus-to-zoom). If zoomed too far out, zoom in slightly.
 function centerOn(n) {
@@ -1023,14 +1078,14 @@ async function refreshPeers() {
     if (hubs.length) {
       html += `<div class="fsec">Hubs</div>`;
       for (const s of hubs) {
-        const dot = s.healthy ? "#5fd18a" : "#e05f5f";
+        const dot = s.healthy ? TEAL : "#d96a5f";
         html += `<div class="fed"><span class="dot" style="background:${dot}"></span>`
           + `<span class="furl" title="${esc(s.url)}">${esc(s.url.replace(/^https?:\/\//, ""))}</span>`
           + (s.version ? `<span class="hint">v${esc(s.version)}</span>` : "") + `</div>`;
         for (const w of (s.workspaces || [])) {
           const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
           html += `<div class="fws">${esc(w.workspace)}: ` + (insync
-            ? `<span style="color:#5fd18a">in sync</span>`
+            ? `<span style="color:${TEAL}">in sync</span>`
             : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`) + `</div>`;
         }
       }
@@ -1040,7 +1095,7 @@ async function refreshPeers() {
       html += `<div class="fsec">Known peers</div>`;
       for (const p of peers) {
         const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
-        html += `<div class="fed"><span class="dot" style="background:#8fb4e6"></span>`
+        html += `<div class="fed"><span class="dot" style="background:${GOLD}"></span>`
           + `<span class="furl" title="${esc(p.node_id)}">${esc(p.node_id.slice(0, 16))}</span>`
           + `<span class="hint">${esc(p.last_action)}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})</span></div>`;
       }
@@ -1058,8 +1113,9 @@ async function refreshPeers() {
 function renderLegend() {
   // Node-type and edge-kind legends, each in its own dock section. Clicking a chip toggles that kind's
   // visibility (the off set). The section summary shows the count.
-  // Chips are recreated on every render - clear any hover highlight so it cannot stick to a dead chip.
-  typeHl = null; edgeTypeHl = null;
+  // Chips are recreated on every render - clear any hover highlight (and the chip tooltip) so
+  // neither can stick to a dead chip that will never fire mouseleave.
+  typeHl = null; edgeTypeHl = null; tip.style.display = "none";
   const fill = (host, keys, colorOf, offSet, isEdge) => {
     host.innerHTML = "";
     if (!keys.length) { host.innerHTML = '<span class="lbl">none</span>'; return; }
@@ -1069,13 +1125,15 @@ function renderLegend() {
       const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(t);
       if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // line-like look
       el.appendChild(sw); el.appendChild(document.createTextNode(t || "(none)"));
-      el.title = "click to toggle visibility";
       el.onclick = () => { if (offSet.has(t)) offSet.delete(t); else offSet.add(t); renderLegend(); };
-      // Hovering a chip highlights its nodes/edges on the graph (render-only - no sim wake).
-      el.onmouseenter = () => { if (isEdge) edgeTypeHl = t; else typeHl = t; };
+      // Hovering a chip highlights its nodes/edges on the graph (render-only - no sim wake) and
+      // shows the type's T-Box definition in the styled tooltip (Principle 8: a type has a stated
+      // meaning - surfaced right where the type is read, not only in the Types tab).
+      el.onmouseenter = () => { if (isEdge) edgeTypeHl = t; else typeHl = t; showTypeTip(el, t, isEdge); };
       el.onmouseleave = () => {
         if (isEdge) { if (edgeTypeHl === t) edgeTypeHl = null; }
         else if (typeHl === t) typeHl = null;
+        tip.style.display = "none";
       };
       host.appendChild(el);
     }
@@ -1085,6 +1143,22 @@ function renderLegend() {
   fill(legendEdgesEl, edgeKeys, t => edgeTypeColor[t], edgeTypeOff, true);
   nodeCtEl.textContent = nodeKeys.length || "";
   edgeCtEl.textContent = edgeKeys.length || "";
+}
+
+// Legend chip tooltip: the type's glossary definition (T-Box), anchored beside the chip. A type
+// with no recorded definition gets a nudge toward define_type instead of silence - curation as a
+// micro-decision in the reading flow (Principle 22), not a separate chore.
+function showTypeTip(el, t, isEdge) {
+  const target = isEdge ? "relation" : "entity";
+  const def = glossaryTypes.find(x => x.target === target && x.name === t);
+  const r = el.getBoundingClientRect();
+  tip.style.display = "block";
+  tip.style.left = Math.min(r.right + 10, innerWidth - 330) + "px";
+  tip.style.top = Math.max(6, r.top - 4) + "px";
+  tip.innerHTML = `<b>${esc(t || "(none)")}</b> <span class="k">${target} type</span>`
+    + (def
+      ? `<div class="tdef">${esc(def.description)}</div><span class="k">${def.sources} src</span>`
+      : `<div class="tdef none">no definition recorded - give this type a meaning with define_type</div>`);
 }
 
 // The set of nodes/edges to highlight from hover/focus/search. If none, null (everything highlighted equally).
@@ -1210,7 +1284,8 @@ function renderGlossary() {
 
 // Fetch the glossary for the current workspace, then render (only meaningful while the section is open).
 async function refreshGlossary() {
-  if (!panelOn("glossary")) return;
+  // Always fetched (not gated on the Types tab): the legend chip tooltips read glossaryTypes too,
+  // so the vocabulary must be warm even when the glossary panel is closed. Tiny loopback GET.
   const ws = wsInput.value.trim();
   try {
     const r = await fetch("/api/types" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
@@ -1401,7 +1476,10 @@ function renderDetail(node) {
     ? arr.map(e => rowHtml(e.type, dir === "->" ? e.b : e.a, dir, e.description)).join("")
     : `<div class="empty">none</div>`;
   detailEl.innerHTML =
-    `<button class="close" title="close">x</button>`
+    `<button class="close" title="close" aria-label="close">`
+      + `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
+      + `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`
+      + `</svg></button>`
     + `<h2>${esc(node.name)}</h2>`
     + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span> `
     + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
@@ -1667,6 +1745,9 @@ function stepSim() {
 function draw() {
   stepSim();
   easeCam();
+  // Reduced motion: settle synchronously (bounded - alpha decays multiplicatively, so convergence
+  // takes ~110 steps; the cap only guards a pathological graph from locking the frame).
+  if (settling && REDUCED_MOTION) { for (let i = 0; i < 600 && alpha > REVEAL_ALPHA; i++) stepSim(); }
   // Reveal transition: the layout has calmed enough to show. Frame it first (auto-fit + snap the
   // camera, before any user interaction) so the graph appears already fitted rather than mid-zoom.
   if (settling && alpha <= REVEAL_ALPHA) {
@@ -1758,7 +1839,7 @@ function draw() {
       const placed = [];
       for (const o of cand) {
         const l = o.l;
-        ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px system-ui,-apple-system,sans-serif";
+        ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
         if (placed.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
         placed.push({ x, y, w, h });
@@ -1878,15 +1959,15 @@ function draw() {
     // Being the background color, it stays a cutout that matches the background even when the theme changes.
     ctx.lineWidth = nodeStrokeW(n); ctx.strokeStyle = SURFACE; ctx.stroke();
     if (n === anchor) { ctx.lineWidth = 2.5/cam.s; ctx.strokeStyle = INK; ctx.stroke(); }
-    // Conversation footprint: nodes this session touched are marked with a persistent thin purple ring (footprint toggle).
+    // Conversation footprint: nodes this session touched are marked with a persistent thin teal ring (footprint toggle).
     if (showFootprint && footprint.has(n.id)) {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
-      ctx.lineWidth = 1.5/cam.s; ctx.strokeStyle = "#9085e9"; ctx.stroke();
+      ctx.lineWidth = 1.5/cam.s; ctx.strokeStyle = TEAL; ctx.stroke();
     }
     // Group mode: bridge nodes (connected to another group) are marked with a faint ring - cross-group transit points.
     if (clusterMode && bridgeSet.has(n.id)) {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, 7);
-      ctx.lineWidth = 2/cam.s; ctx.strokeStyle = "#c0caf5"; ctx.stroke();
+      ctx.lineWidth = 2/cam.s; ctx.strokeStyle = INK; ctx.stroke();
     }
   }
   // Event pulses (nodes the agent touched) - an expanding, fading ring. rAF always runs, so it keeps
@@ -1913,7 +1994,7 @@ function draw() {
     const into = nodeById(proposalSel.into);
     const tgts = (proposalSel.targets || []).map(nodeById).filter(n => n && (!into || n.id !== into.id));
     const tgtIds = new Set(tgts.map(n => n.id));
-    const ACC = "#e5a53f", CANON = "#5fd18a";
+    const ACC = GOLD, CANON = TEAL;
     ctx.setLineDash([5/cam.s, 4/cam.s]);
     for (const e of edges) {   // edges that will rewire onto the canonical
       if (tgtIds.has(e.a.id) || tgtIds.has(e.b.id)) {
@@ -1947,7 +2028,7 @@ function draw() {
   // Labels (nodes + hulls) - turned on/off by the labels toggle. In screen coordinates (DPR), so constant size regardless of zoom.
   if (showLabels) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.font = "12px system-ui,-apple-system,sans-serif";
+    ctx.font = "12px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
     ctx.textBaseline = "middle";
     // Label thinning: everything when small (<=40) or zoomed in enough (cam.s>1.4); on a large graph,
     // only hubs (high degree >= cut) + hover/focus/active. Removes the hairball's wall of labels.
@@ -1973,7 +2054,7 @@ function draw() {
       edgeLabels.sort((p, q) => p.len - q.len);
       const shown = Math.min(edgeLabels.length, EDGE_LABEL_MAX);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "10.5px system-ui,-apple-system,sans-serif";
+      ctx.font = "10.5px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
       const pill = (px, py, w) => {
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(px - w/2 - 5, py - 8, w + 10, 16, 4);
@@ -1988,7 +2069,7 @@ function draw() {
       }
       const omitted = edgeLabels.length - shown, an = focus || hover;
       if (omitted > 0 && an) {
-        ctx.font = "10px system-ui,-apple-system,sans-serif";
+        ctx.font = "10px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
         const t = "+" + omitted + " more", px = an.x*cam.s + cam.x, py = an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15, w = ctx.measureText(t).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);
@@ -2039,7 +2120,6 @@ canvas.addEventListener("mousedown", ev => {
   }
 });
 addEventListener("mousemove", ev => {
-  if (settling) { showTip(null); return; }   // no hover/drag/pan while the graph is hidden behind the loader
   if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; wake(0.3); showTip(null); return; }
   if (panning) {
     // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
@@ -2047,6 +2127,11 @@ addEventListener("mousemove", ev => {
     cam.y = camT.y = panning.py + (ev.clientY - panning.sy);
     userMoved = true; showTip(null); return;
   }
+  // Only canvas-targeted moves drive node hover from here on. Over the chrome (docks, header,
+  // statusbar) the shared #tip belongs to whatever chrome element is showing it (legend chip
+  // definitions) - and node hover through an opaque panel was wrong anyway.
+  if (ev.target !== canvas) return;
+  if (settling) { showTip(null); return; }   // no hover while the graph is hidden behind the loader
   hover = nodeAt(ev.clientX, ev.clientY);
   showTip(hover, ev.clientX, ev.clientY);
 });
