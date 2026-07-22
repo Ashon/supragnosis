@@ -1,0 +1,18 @@
+[package]
+name = "supragnosis-sync"
+description = "supragnosis federation sync core: version-vector delta replication, stamping, verify/apply. Transport-agnostic (M4 Phase 2)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+supragnosis-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+supragnosis-store.workspace = true

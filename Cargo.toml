@@ -37,6 +37,7 @@ axum = "0.8"
 # Internal (cross-crate)
 supragnosis-core = { path = "crates/supragnosis-core" }
 supragnosis-store = { path = "crates/supragnosis-store" }
+supragnosis-sync = { path = "crates/supragnosis-sync" }
 supragnosis-engine = { path = "crates/supragnosis-engine" }
 supragnosis-embed = { path = "crates/supragnosis-embed" }
 supragnosis-mcp = { path = "crates/supragnosis-mcp" }

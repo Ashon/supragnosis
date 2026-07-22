@@ -4279,6 +4279,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "supragnosis-sync"
+version = "0.1.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "supragnosis-core",
+ "supragnosis-store",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "supragnosis-viz"
 version = "0.1.3"
 dependencies = [

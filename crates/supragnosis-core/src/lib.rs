@@ -597,6 +597,25 @@ impl Observation {
         self.provenance.sort_by(provenance_order);
         self.provenance
             .dedup_by(|a, b| provenance_order(a, b) == std::cmp::Ordering::Equal);
+        // Stamp upgrade (federation.md Phase 2, backfill): a sync-stamped attestation SUPERSEDES an
+        // unstamped attestation with identical base fields - the stamp is transport metadata enriching
+        // the same attestation, not a second attestation, so keeping both would double-count one act.
+        // Monotonic (a stamp is never lost, only gained - same family as embedding take-when-absent),
+        // commutative/idempotent, so union convergence (P16) is preserved.
+        if self.provenance.iter().any(|p| p.sync.is_some()) {
+            let stamped_bases: Vec<Provenance> = self
+                .provenance
+                .iter()
+                .filter(|p| p.sync.is_some())
+                .map(|p| Provenance { sync: None, ..p.clone() })
+                .collect();
+            self.provenance.retain(|p| {
+                p.sync.is_some()
+                    || !stamped_bases
+                        .iter()
+                        .any(|b| provenance_order(b, p) == std::cmp::Ordering::Equal)
+            });
+        }
         self.derived_from.extend(derived_from);
         self.derived_from.sort();
         self.derived_from.dedup();
@@ -1444,6 +1463,35 @@ mod tests {
         let stamped_p = stamped(&identity, &obs.id, 1, Hlc { wall: 60, counter: 2, node: identity.node_id() });
         obs.absorb(Observation::new("fact".into(), stamped_p));
         assert_eq!(ordering_hlc(&obs), Hlc { wall: 60, counter: 2, node: identity.node_id() });
+    }
+
+    #[test]
+    fn absorb_stamp_upgrade_supersedes_unstamped_base() {
+        // The stamped version of the same attestation REPLACES its unstamped base (backfill
+        // write-back, federation.md Phase 2) - both directions, so the upgrade is commutative (P16).
+        let identity = NodeIdentity::from_secret_bytes([3u8; 32]);
+        let base = Observation::new("fact".into(), prov());
+        let stamped_p = stamped(&identity, &base.id, 1, Hlc { wall: 5, counter: 0, node: identity.node_id() });
+
+        // unstamped + stamped -> single stamped attestation.
+        let mut o = Observation::new("fact".into(), prov());
+        o.absorb(Observation::new("fact".into(), stamped_p.clone()));
+        assert_eq!(o.provenance.len(), 1, "stamp must upgrade, not duplicate");
+        assert!(o.provenance[0].sync.is_some());
+
+        // stamped + unstamped (reverse arrival) -> still the single stamped attestation.
+        let mut o2 = Observation::new("fact".into(), stamped_p);
+        o2.absorb(Observation::new("fact".into(), prov()));
+        assert_eq!(o2.provenance.len(), 1, "upgrade must be arrival-order independent");
+        assert!(o2.provenance[0].sync.is_some());
+
+        // A genuinely different attestation (different observed_at) is NOT superseded (P3).
+        let mut o3 = Observation::new("fact".into(), prov());
+        let other = Provenance { observed_at: 99, ..prov() };
+        let s2 = stamped(&identity, &o3.id, 2, Hlc { wall: 6, counter: 0, node: identity.node_id() });
+        o3.absorb(Observation::new("fact".into(), s2));
+        o3.absorb(Observation::new("fact".into(), other));
+        assert_eq!(o3.provenance.len(), 2, "distinct attestations still union");
     }
 
     #[test]
