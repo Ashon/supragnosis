@@ -557,6 +557,20 @@ pub struct Observation {
     pub embedding: Option<Vec<f32>>,
 }
 
+/// The current content-address formula: blake3(workspace + content + assertions), length-prefixed.
+/// Exposed so callers can detect **legacy-format rows** - observations stored under an earlier id
+/// formula (0.x evolution: the description field, type_defs, proposal_events each extended the
+/// assertion encoding). A row whose stored id no longer matches this recomputation is local history:
+/// its signatures cannot verify remotely, so it never crosses the sync wire (the migrate command
+/// re-creates it under the current id).
+pub fn observation_content_id(workspace: &str, content: &str, assertions: &Assertions) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hash_field(&mut hasher, workspace.as_bytes());
+    hash_field(&mut hasher, content.as_bytes());
+    assertions.hash_into(&mut hasher);
+    hasher.finalize().to_hex().to_string()
+}
+
 impl Observation {
     /// Content-address ID = blake3(workspace + content). The same id no matter the path (server/peer) it comes in through -> dedup.
     pub fn new(content: String, provenance: Provenance) -> Self {
@@ -567,11 +581,7 @@ impl Observation {
     /// and if there are assertions they are included in the id computation. Every field is encoded with a
     /// length-prefix, so boundary manipulation that plants a delimiter in content cannot collide it with another observation.
     pub fn with_assertions(content: String, provenance: Provenance, assertions: Assertions) -> Self {
-        let mut hasher = blake3::Hasher::new();
-        hash_field(&mut hasher, provenance.workspace.as_bytes());
-        hash_field(&mut hasher, content.as_bytes());
-        assertions.hash_into(&mut hasher);
-        let id = hasher.finalize().to_hex().to_string();
+        let id = observation_content_id(&provenance.workspace, &content, &assertions);
         Self {
             id,
             content,
@@ -941,6 +951,12 @@ pub trait KnowledgeStore: Send + Sync {
     ) -> Result<Vec<AttestationEvent>, StoreError> {
         let mut events = Vec::new();
         for obs in self.all_observations(Some(workspace))? {
+            // Legacy-format guard: a stored id that no longer matches the current content-address
+            // formula cannot verify remotely (signatures bind the recomputed id) - such rows are
+            // local history and never cross the wire. See [`observation_content_id`] / migrate.
+            if observation_content_id(workspace, &obs.content, &obs.assertions) != obs.id {
+                continue;
+            }
             for p in &obs.provenance {
                 let Some(meta) = &p.sync else { continue };
                 if since.covers(&meta.origin_node, workspace, meta.origin_seq) {

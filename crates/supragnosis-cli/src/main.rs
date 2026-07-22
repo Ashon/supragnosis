@@ -61,6 +61,8 @@ enum Cmd {
     Sync(SyncArgs),
     /// Re-materialize a workspace's entity/relation projection from the observation log (HLC-ordered replay; stop the daemon first)
     Reproject(SyncArgs),
+    /// Migrate legacy-id observations (pre-0.1.x content-address eras) to the current formula so they can sync (stop the daemon first)
+    Migrate(SyncArgs),
 }
 
 #[derive(Args, Clone, Default)]
@@ -116,6 +118,7 @@ fn main() -> Result<()> {
         Cmd::Identity(a) => identity_cmd(a),
         Cmd::Sync(a) => sync_cmd(a),
         Cmd::Reproject(a) => reproject_cmd(a),
+        Cmd::Migrate(a) => migrate_cmd(a),
     }
 }
 
@@ -374,6 +377,26 @@ fn identity_cmd(a: IdentityArgs) -> Result<()> {
         println!("bearer_hash: {}", blake3::hash(tok.as_bytes()).to_hex());
     }
     Ok(())
+}
+
+/// `supragnosis migrate` - one-shot legacy-id migration (docs/federation.md: a stored id that
+/// predates the current content-address formula cannot verify remotely; the row is re-created under
+/// the current id with lineage back to the legacy row). Re-materializes afterwards.
+fn migrate_cmd(a: SyncArgs) -> Result<()> {
+    init_tracing();
+    let cfg = resolve(RunArgs::default(), false);
+    let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(async {
+        let engine = build_engine(&cfg, None)?;
+        let migrated = supragnosis_sync::migrate_legacy_ids(engine.store().as_ref(), &ws)?;
+        let r = engine.reproject(Some(&ws))?;
+        println!(
+            "migrated {} legacy-id observation(s); reprojected {}: {} observations -> {} entities, {} relations",
+            migrated, ws, r.observations, r.entities, r.relations
+        );
+        anyhow::Ok(())
+    })
 }
 
 /// `supragnosis reproject` - one-shot re-materialization (HLC-ordered replay, Prop C). For a node
