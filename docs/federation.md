@@ -1,7 +1,7 @@
 # Federation (M4)
 
-Status: living spec - Phases 0-2 implemented (core foundations, sync core, re-materialization),
-Phase 3+ pending. This document is the specification agreed before the code; implementation feedback
+Status: living spec - Phases 0-3 implemented (core foundations, sync core, re-materialization,
+transport); Phase 3.5+ pending. This document is the specification agreed before the code; implementation feedback
 is folded back as revisions (see the 8th revision note in principles.md). It fixes the data model, the
 sync protocol, the trust/auth model, the invariants (F1..), and the propositions deriving convergence
 from them (8a). It refines the M4 sketch in [architecture.md](architecture.md) Section 5 and Section 10, and
@@ -580,8 +580,10 @@ input, not nondeterminism - F16).
   step `Engine::reproject` (HLC-ordered replay - Prop C). Property test: two in-memory nodes converge
   under any exchange order (F5); tampered event rejected (F6); a workspace-filtered (hole-y) stream
   still converges (F7); cross-node reprojection materializes identically. [done]
-- **Phase 3** - transport: axum sync API + rustls + allowlist/bearer; reqwest client. Loopback guard for
-  MCP/viz untouched.
+- **Phase 3** - transport: axum sync API (`/sync/advertise|pull|push`) + in-process rustls TLS +
+  allowlist/bearer wire auth + reqwest client (`sync-http` = the sync crate's `http` feature); the F10
+  bind guard refuses non-loopback without TLS + a non-empty allowlist. Loopback guard for MCP/viz
+  untouched. [done]
 - **Phase 3.5** - **hub human surface, read tier** (6d, F19): user-key enrollment + admin-managed user
   whitelist with per-workspace grants, challenge-response session auth, `sync+web-read` share grades,
   all write endpoints disabled, workspace enumeration filtered, and the web-hardening checklist

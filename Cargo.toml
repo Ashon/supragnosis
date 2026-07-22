@@ -33,6 +33,9 @@ rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
 cozo = { version = "0.7", features = ["storage-rocksdb"] }
 # standalone daemon: HTTP server to mount the MCP streamable-http service (cli only).
 axum = "0.8"
+# Federation sync transport (M4 Phase 3, sync crate "http" feature only): in-process TLS + HTTP client.
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Internal (cross-crate)
 supragnosis-core = { path = "crates/supragnosis-core" }

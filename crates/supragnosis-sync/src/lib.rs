@@ -12,6 +12,9 @@
 //! upgrade on `Observation::absorb` (core) makes the write-back an in-place enrichment rather than a
 //! duplicated attestation.
 
+#[cfg(feature = "http")]
+pub mod http;
+
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
