@@ -1243,6 +1243,10 @@ async function handleEvent(ev) {
   } else if (ev.kind === "get_entity") {
     logRow(`<b>get_entity</b> ${esc(ev.name || ev.id.slice(0,8))} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
     ids = ev.found ? [ev.id] : [];
+  } else if (ev.kind === "sync") {
+    // Federation hit: who touched this store, which direction, how much - the live remote feed.
+    logRow(`<b>sync</b> ${esc(ev.direction)} ${esc(ev.workspace)} &lt;-&gt; ${esc(String(ev.peer).slice(0, 18))} (${ev.count})`);
+    ids = [];
   } else if (ev.kind === "traverse") {
     const sn = nodeById(ev.start);
     logRow(`<b>traverse</b> ${esc(sn ? sn.name : ev.start.slice(0,8))} -> ${(ev.reached||[]).length}`);

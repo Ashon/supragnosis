@@ -1090,6 +1090,18 @@ pub enum Event {
         start: String,
         reached: Vec<String>,
     },
+    /// Federation sync activity (M4): a peer hit this node's sync API (hub side), or this node ran
+    /// a round against a server (client side) - streamed to the viewer so remote hits are visible
+    /// live in the activity feed.
+    Sync {
+        /// Hub side: "advertise" | "pull-served" | "push-received". Client side: "pull" | "push".
+        direction: String,
+        /// Counterparty: the peer node_id (hub side) or the server URL (client side).
+        peer: String,
+        workspace: String,
+        /// Events served/accepted in this hit.
+        count: usize,
+    },
 }
 
 /// Event envelope: event + **session id** (the grouping key for a conversation footprint). To view together which

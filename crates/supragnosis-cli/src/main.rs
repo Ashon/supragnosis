@@ -32,7 +32,7 @@ use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ServiceExt;
 use supragnosis_core::{EmbeddingProvider, KnowledgeStore};
 use supragnosis_embed::HashingEmbedder;
-use supragnosis_engine::Engine;
+use supragnosis_engine::{Engine, Event};
 use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::{CozoStore, InMemoryStore};
 
@@ -322,7 +322,17 @@ fn build_sync_context(
                 Err(e) => tracing::error!(workspace = ws, error = %e, "re-materialization after inbound sync failed"),
             }
         });
-        spawn_sync_server(engine.store(), node.clone(), srv.clone(), on_applied)?;
+        // Live observability: stream sync hits into the viewer's event feed (SSE activity log).
+        let act_engine = engine.clone();
+        let on_activity: supragnosis_sync::http::OnActivity = Arc::new(move |a: supragnosis_sync::http::SyncActivity| {
+            act_engine.emit(Event::Sync {
+                direction: a.direction.to_string(),
+                peer: a.peer,
+                workspace: a.workspace,
+                count: a.count,
+            });
+        });
+        spawn_sync_server(engine.store(), node.clone(), srv.clone(), on_applied, on_activity)?;
     }
     let mut origin_keys = fc.sync.origin_keys.clone();
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -344,6 +354,7 @@ fn spawn_sync_server(
     node: Arc<supragnosis_sync::SyncNode>,
     srv: fed::ServerSection,
     on_applied: supragnosis_sync::http::OnApplied,
+    on_activity: supragnosis_sync::http::OnActivity,
 ) -> Result<()> {
     use supragnosis_sync::http as sync_http;
     let listen: std::net::SocketAddr = srv
@@ -359,7 +370,7 @@ fn spawn_sync_server(
     sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len())?;
     tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
     tokio::spawn(async move {
-        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist, Some(on_applied)).await {
+        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist, Some(on_applied), Some(on_activity)).await {
             tracing::error!(error = %e, "federation sync API terminated");
         }
     });

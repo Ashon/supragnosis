@@ -715,11 +715,19 @@ impl SupragnosisServer {
                     let ws2 = ws.clone();
                     let mut vv = mine;
                     match tokio::task::spawn_blocking(move || node.apply(store.as_ref(), &ws2, events, &keys, &mut vv)).await {
-                        Ok(Ok(report)) => results.push(serde_json::json!({
-                            "server": server,
-                            "applied": report.accepted,
-                            "rejected": report.rejected.len(),
-                        })),
+                        Ok(Ok(report)) => {
+                            self.engine.emit(Event::Sync {
+                                direction: "pull".into(),
+                                peer: server.clone(),
+                                workspace: ws.clone(),
+                                count: report.accepted,
+                            });
+                            results.push(serde_json::json!({
+                                "server": server,
+                                "applied": report.accepted,
+                                "rejected": report.rejected.len(),
+                            }))
+                        }
                         Ok(Err(e)) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
                         Err(e) => results.push(serde_json::json!({"server": server, "error": format!("join: {e}")})),
                     }
@@ -794,11 +802,19 @@ impl SupragnosisServer {
                 continue;
             }
             match client.push(&ws, surplus).await {
-                Ok(resp) => results.push(serde_json::json!({
-                    "server": server,
-                    "pushed": resp.accepted,
-                    "rejected": resp.rejected,
-                })),
+                Ok(resp) => {
+                    self.engine.emit(Event::Sync {
+                        direction: "push".into(),
+                        peer: server.clone(),
+                        workspace: ws.clone(),
+                        count: resp.accepted,
+                    });
+                    results.push(serde_json::json!({
+                        "server": server,
+                        "pushed": resp.accepted,
+                        "rejected": resp.rejected,
+                    }))
+                }
                 Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
             }
         }

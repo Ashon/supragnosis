@@ -67,6 +67,19 @@ pub fn validate_bind(addr: &SocketAddr, tls: bool, allowlist_len: usize) -> Resu
 /// crate itself stays projection-free).
 pub type OnApplied = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// One sync-API hit, for live observability (the hub viewer's activity feed): who (peer node_id),
+/// what (direction), where (workspace), and how much (events served/accepted).
+#[derive(Debug, Clone)]
+pub struct SyncActivity {
+    pub direction: &'static str,
+    pub peer: String,
+    pub workspace: String,
+    pub count: usize,
+}
+
+/// Activity hook: the wiring layer forwards hits into the node's event stream (viewer SSE).
+pub type OnActivity = Arc<dyn Fn(SyncActivity) + Send + Sync>;
+
 /// Shared state of the sync API handlers.
 pub struct ServerState {
     pub store: Arc<dyn KnowledgeStore>,
@@ -75,6 +88,7 @@ pub struct ServerState {
     /// Origin-key directory for apply verification: every allowlisted key plus this node's own.
     pub origin_keys: BTreeMap<String, String>,
     on_applied: Option<OnApplied>,
+    on_activity: Option<OnActivity>,
 }
 
 impl ServerState {
@@ -84,13 +98,30 @@ impl ServerState {
             .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
             .collect();
         origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
-        Self { store, node, allowlist, origin_keys, on_applied: None }
+        Self { store, node, allowlist, origin_keys, on_applied: None, on_activity: None }
     }
 
     /// Injects the post-apply re-materialization hook (the engine's reproject).
     pub fn with_on_applied(mut self, f: OnApplied) -> Self {
         self.on_applied = Some(f);
         self
+    }
+
+    /// Injects the live-activity hook (streams sync hits to the viewer).
+    pub fn with_on_activity(mut self, f: OnActivity) -> Self {
+        self.on_activity = Some(f);
+        self
+    }
+
+    fn activity(&self, direction: &'static str, peer: &str, workspace: &str, count: usize) {
+        if let Some(hook) = &self.on_activity {
+            hook(SyncActivity {
+                direction,
+                peer: peer.to_string(),
+                workspace: workspace.to_string(),
+                count,
+            });
+        }
     }
 }
 
@@ -173,11 +204,13 @@ async fn advertise_handler(
     let entry = authenticate(&headers, &state.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
+    let ws = req.workspace.clone();
     // Store calls are offloaded so a blocking backend cannot starve the async runtime (F11).
     let vv = tokio::task::spawn_blocking(move || version_vector(store.as_ref(), &req.workspace))
         .await
         .map_err(internal)?
         .map_err(internal)?;
+    state.activity("advertise", &entry.node_id, &ws, 0);
     Ok(Json(AdvertiseResp { node_id: state.node.node_id().to_string(), vv }))
 }
 
@@ -190,6 +223,7 @@ async fn pull_handler(
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     let node = state.node.clone();
+    let ws = req.workspace.clone();
     let events = tokio::task::spawn_blocking(move || {
         // Stamp anything still unstamped before exporting (export-boundary stamping, Phase 2), then
         // serve the delta. The per-node share list is the allowlist entry's workspaces (6c).
@@ -199,6 +233,7 @@ async fn pull_handler(
     .await
     .map_err(internal)?
     .map_err(internal)?;
+    state.activity("pull-served", &entry.node_id, &ws, events.len());
     Ok(Json(PullResp { events }))
 }
 
@@ -220,6 +255,7 @@ async fn push_handler(
     .await
     .map_err(internal)?
     .map_err(internal)?;
+    state.activity("push-received", &entry.node_id, &ws, report.accepted);
     // Re-materialize after new events land (Prop C) - injected by the wiring layer.
     if report.accepted > 0 {
         if let Some(hook) = state.on_applied.clone() {
@@ -261,11 +297,15 @@ pub async fn serve(
     tls: Option<TlsPaths>,
     allowlist: Vec<AllowEntry>,
     on_applied: Option<OnApplied>,
+    on_activity: Option<OnActivity>,
 ) -> Result<(), TransportError> {
     validate_bind(&listen, tls.is_some(), allowlist.len())?;
     let mut state = ServerState::new(store, node, allowlist);
     if let Some(hook) = on_applied {
         state = state.with_on_applied(hook);
+    }
+    if let Some(hook) = on_activity {
+        state = state.with_on_activity(hook);
     }
     let state = Arc::new(state);
     let app = router(state);
