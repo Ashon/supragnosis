@@ -1,7 +1,7 @@
 # Federation (M4)
 
-Status: living spec - Phases 0-3 implemented (core foundations, sync core, re-materialization,
-transport); Phase 3.5+ pending. This document is the specification agreed before the code; implementation feedback
+Status: living spec - Phases 0-4 implemented (core foundations, sync core, re-materialization,
+transport, CLI/config wiring); Phases 3.5 and 5+ pending. This document is the specification agreed before the code; implementation feedback
 is folded back as revisions (see the 8th revision note in principles.md). It fixes the data model, the
 sync protocol, the trust/auth model, the invariants (F1..), and the propositions deriving convergence
 from them (8a). It refines the M4 sketch in [architecture.md](architecture.md) Section 5 and Section 10, and
@@ -589,7 +589,12 @@ input, not nondeterminism - F16).
   all write endpoints disabled, workspace enumeration filtered, and the web-hardening checklist
   (escaping audit, CSP, no credentials in URLs, no state-changing GET). Reuses the Phase 3 TLS
   infrastructure.
-- **Phase 4** - CLI/config/roles + `sync_*` MCP tools.
+- **Phase 4** - CLI/config/roles + `sync_*` MCP tools: supragnosis.toml (SUPRAGNOSIS_CONFIG or
+  ~/.supragnosis/supragnosis.toml; unknown keys rejected loudly), node keypair persisted once at
+  ~/.supragnosis/node.key (0600), `supragnosis identity` (+ --hash-token for allowlist entries),
+  `supragnosis sync` one-shot round, the `[server]` role started alongside the daemon (F10 validated
+  at startup), and the MCP tools `sync_status` / `sync_pull` / `sync_push` (13-tool surface). One
+  SyncNode per process - the server role and the tools share the clock and seq counters. [done]
 - **Phase 5** - **governance enforcement** (prerequisite for multi-principal operation, F15-F18): the
   canon-policy as a log-borne signed artifact incl. the principal-to-key binding and the default-solo
   fallback (7a); I9/I17 checks in the proposal fold (today the fold hardcodes the solo self-attested path);
@@ -635,7 +640,7 @@ property of the spec: no dangling dependency.
 | VV diff, delta codec, hole-tolerant apply, sharing filter, claimed-tier storage + recall hooks | Phase 2 |
 | Sync transport (axum/rustls/reqwest), allowlist/bearer | Phase 3 |
 | Hub human surface: read tier (user-key enrollment + grants, share grades, RO, web hardening) | Phase 3.5 |
-| Config (`host_label`, anchor key, allowlist), CLI roles, `sync_*` tools | Phase 4 |
+| Config (supragnosis.toml: `host_label`, origin keys, allowlist), node.key identity, CLI roles, `sync_*` tools | Phase 4 |
 | Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (principal-signed acts, F20) | Phase 5 |
 | Hub deployment (systemd, single-principal until Phase 5) | Phase 6 |
 | Mesh/NAT/discovery, gRPC, key rotation, quorum/auto-merge/conflict UI, fine-grained redaction, hub-withholding mitigation, cross-workspace lineage redaction | Deferred (Section 11) |

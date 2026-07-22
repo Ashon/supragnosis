@@ -36,6 +36,12 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 # Subcommand/flag CLI.
 clap = { version = "4", features = ["derive"] }
+# Federation wiring (M4 Phase 4): sync server/client + supragnosis.toml + node keypair generation.
+supragnosis-sync = { workspace = true, features = ["http"] }
+serde.workspace = true
+blake3.workspace = true
+toml = "0.8"
+getrandom = "0.2"
 
 # Background daemon (start): fork/setsid/pidfile/log redirect. Since unsafe_code=forbid, we do not
 # implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern). unix only.

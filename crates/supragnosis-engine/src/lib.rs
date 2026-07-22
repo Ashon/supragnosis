@@ -1116,7 +1116,7 @@ impl Engine {
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
         // Fresh upsert against the replay state (NOT the store) - mirrors upsert_named's semantics
         // (create with Concept default, kind/description last-write-wins only when supplied).
-        let mut touch = |ents: &mut BTreeMap<String, Entity>,
+        let touch = |ents: &mut BTreeMap<String, Entity>,
                          name: &str,
                          kind: Option<&str>,
                          description: Option<&str>,
@@ -1207,6 +1207,12 @@ impl Engine {
             self.store.add_relation(r)?;
         }
         Ok(report)
+    }
+
+    /// The shared store port - the federation sync layer operates on the same log the engine
+    /// projects from (M4 Phase 4 wiring; one process, one store, one clock).
+    pub fn store(&self) -> Arc<dyn KnowledgeStore> {
+        self.store.clone()
     }
 
     /// Observation dereference (Principle 2/14): from an observation id returned by a search hit / derivation

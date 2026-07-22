@@ -168,6 +168,27 @@ pub struct GetProposalRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SyncStatusRequest {
+    /// Workspace to report (node default when omitted).
+    #[serde(default)]
+    pub workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SyncPullRequest {
+    /// Workspace to pull (node default when omitted).
+    #[serde(default)]
+    pub workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SyncPushRequest {
+    /// Workspace to push (node default when omitted; must be on the share whitelist).
+    #[serde(default)]
+    pub workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetEntityRequest {
     /// Entity id.
     pub id: String,
@@ -213,8 +234,27 @@ pub struct WorkspaceMapRequest {
 // --- Server ------------------------------------------------------------------
 
 #[derive(Clone)]
+/// Federation wiring handed to the MCP surface (M4 Phase 4, docs/federation.md Section 9).
+/// Present only when the node is configured for sync (supragnosis.toml); without it the `sync_*`
+/// tools answer with setup guidance instead of failing (P5: absence is explained, not an error).
+pub struct SyncContext {
+    pub node: Arc<supragnosis_sync::SyncNode>,
+    /// Outbound share whitelist (P17/F9) - what may leave this node.
+    pub share_workspaces: Vec<String>,
+    /// Sync server base URLs (hubs) this node talks to.
+    pub servers: Vec<String>,
+    /// Bearer token presented to those servers.
+    pub auth_token: String,
+    /// Accept a self-signed hub certificate (internal VMs; content authenticity stays with F6).
+    pub insecure_tls: bool,
+    /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
+    /// Phase 5 supersedes this with the log-borne canon-policy binding.
+    pub origin_keys: std::collections::BTreeMap<String, String>,
+}
+
 pub struct SupragnosisServer {
     engine: Arc<Engine>,
+    sync: Option<Arc<SyncContext>>,
     tool_router: ToolRouter<SupragnosisServer>,
 }
 
@@ -222,8 +262,15 @@ impl SupragnosisServer {
     pub fn new(engine: Arc<Engine>) -> Self {
         Self {
             engine,
+            sync: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Attaches the federation sync wiring (M4 Phase 4) - enables the `sync_*` tools.
+    pub fn with_sync(mut self, sync: Arc<SyncContext>) -> Self {
+        self.sync = Some(sync);
+        self
     }
 }
 
@@ -597,6 +644,175 @@ impl SupragnosisServer {
             Err(e) => err_json(&format!("task join error: {e}")),
         }
     }
+
+    // --- Federation sync tools (M4 Phase 4, docs/federation.md Section 9) ------------------------
+    // Administrative surface over the sync client. Wire auth/trust semantics live in the sync layer
+    // (F6/F10/F13); these tools only drive rounds and report. Without sync configuration they answer
+    // with setup guidance (P5: an unconfigured capability is explained, never a silent failure).
+
+    #[tool(
+        description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, and the workspace's version vector (what this node holds per origin). Read-only."
+    )]
+    async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
+        let Some(ctx) = &self.sync else { return sync_unconfigured() };
+        let ws = req
+            .workspace
+            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let store = self.engine.store();
+        let vv = match tokio::task::spawn_blocking({
+            let ws = ws.clone();
+            move || supragnosis_sync::version_vector(store.as_ref(), &ws)
+        })
+        .await
+        {
+            Ok(Ok(vv)) => vv,
+            Ok(Err(e)) => return err_json(&format!("store failure while reading the version vector: {e}")),
+            Err(e) => return err_json(&format!("task join error: {e}")),
+        };
+        to_json(&serde_json::json!({
+            "node_id": ctx.node.node_id(),
+            "public_key": ctx.node.public_key_hex(),
+            "workspace": ws,
+            "share_workspaces": ctx.share_workspaces,
+            "servers": ctx.servers,
+            "version_vector": vv,
+        }))
+    }
+
+    #[tool(
+        description = "Pull the workspace's missing knowledge from the configured sync servers and apply it (verify signatures -> dedup/absorb -> re-materialize the projection). Returns per-server accepted/rejected counts."
+    )]
+    async fn sync_pull(&self, Parameters(req): Parameters<SyncPullRequest>) -> String {
+        let Some(ctx) = &self.sync else { return sync_unconfigured() };
+        let ws = req
+            .workspace
+            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let mut results = Vec::new();
+        for server in &ctx.servers {
+            let client = match supragnosis_sync::http::SyncClient::new(server, &ctx.auth_token, ctx.insecure_tls) {
+                Ok(c) => c,
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            let store = self.engine.store();
+            let mine = match tokio::task::spawn_blocking({
+                let ws = ws.clone();
+                move || supragnosis_sync::version_vector(store.as_ref(), &ws)
+            })
+            .await
+            {
+                Ok(Ok(vv)) => vv,
+                Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
+                Err(e) => return err_json(&format!("task join error: {e}")),
+            };
+            match client.pull(&ws, &mine).await {
+                Ok(events) => {
+                    let store = self.engine.store();
+                    let node = ctx.node.clone();
+                    let keys = ctx.origin_keys.clone();
+                    let ws2 = ws.clone();
+                    let mut vv = mine;
+                    match tokio::task::spawn_blocking(move || node.apply(store.as_ref(), &ws2, events, &keys, &mut vv)).await {
+                        Ok(Ok(report)) => results.push(serde_json::json!({
+                            "server": server,
+                            "applied": report.accepted,
+                            "rejected": report.rejected.len(),
+                        })),
+                        Ok(Err(e)) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+                        Err(e) => results.push(serde_json::json!({"server": server, "error": format!("join: {e}")})),
+                    }
+                }
+                Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+            }
+        }
+        // Re-materialize once after all pulls (Prop C: convergence point).
+        let engine = self.engine.clone();
+        let ws2 = ws.clone();
+        let reprojected = match tokio::task::spawn_blocking(move || engine.reproject(Some(&ws2))).await {
+            Ok(Ok(r)) => serde_json::json!({"observations": r.observations, "entities": r.entities, "relations": r.relations}),
+            Ok(Err(e)) => serde_json::json!({"error": e.to_string()}),
+            Err(e) => serde_json::json!({"error": format!("join: {e}")}),
+        };
+        to_json(&serde_json::json!({"workspace": ws, "pulled": results, "reprojected": reprojected}))
+    }
+
+    #[tool(
+        description = "Push the workspace's local knowledge to the configured sync servers (backfill-stamp unstamped attestations, then send what each server lacks per its advertised version vector). Only share-whitelisted workspaces leave this node."
+    )]
+    async fn sync_push(&self, Parameters(req): Parameters<SyncPushRequest>) -> String {
+        let Some(ctx) = &self.sync else { return sync_unconfigured() };
+        let ws = req
+            .workspace
+            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        if !ctx.share_workspaces.iter().any(|w| w == &ws) {
+            return err_json(&format!(
+                "workspace {ws:?} is not on the share whitelist (P17: nothing leaves by default) - \
+                 add it to [sync] share_workspaces in supragnosis.toml to share it"
+            ));
+        }
+        // Stamp before export (export-boundary stamping, Phase 2).
+        {
+            let store = self.engine.store();
+            let node = ctx.node.clone();
+            let ws2 = ws.clone();
+            if let Ok(Err(e)) = tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await {
+                return err_json(&format!("backfill stamping failed: {e}"));
+            }
+        }
+        let mut results = Vec::new();
+        for server in &ctx.servers {
+            let client = match supragnosis_sync::http::SyncClient::new(server, &ctx.auth_token, ctx.insecure_tls) {
+                Ok(c) => c,
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            let remote = match client.advertise(&ws).await {
+                Ok(r) => r,
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            let store = self.engine.store();
+            let share = ctx.share_workspaces.clone();
+            let ws2 = ws.clone();
+            let surplus = match tokio::task::spawn_blocking(move || {
+                supragnosis_sync::export_delta(store.as_ref(), &ws2, &remote.vv, &share)
+            })
+            .await
+            {
+                Ok(Ok(ev)) => ev,
+                Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
+                Err(e) => return err_json(&format!("task join error: {e}")),
+            };
+            if surplus.is_empty() {
+                results.push(serde_json::json!({"server": server, "pushed": 0}));
+                continue;
+            }
+            match client.push(&ws, surplus).await {
+                Ok(resp) => results.push(serde_json::json!({
+                    "server": server,
+                    "pushed": resp.accepted,
+                    "rejected": resp.rejected,
+                })),
+                Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+            }
+        }
+        to_json(&serde_json::json!({"workspace": ws, "pushed": results}))
+    }
+}
+
+/// Guidance answer for the `sync_*` tools on a node with no sync configuration (P5).
+fn sync_unconfigured() -> String {
+    err_json(
+        "federation sync is not configured on this node. Create supragnosis.toml (next to the data \
+         dir, or set SUPRAGNOSIS_CONFIG) with a [sync] section - servers, auth_token, \
+         share_workspaces - and restart. See docs/federation.md Section 9",
+    )
 }
 
 #[tool_handler]

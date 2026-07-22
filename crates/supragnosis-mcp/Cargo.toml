@@ -10,6 +10,8 @@ workspace = true
 
 [dependencies]
 supragnosis-engine.workspace = true
+# Federation sync tools (M4 Phase 4): sync_status / sync_pull / sync_push drive the sync client.
+supragnosis-sync = { workspace = true, features = ["http"] }
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
