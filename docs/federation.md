@@ -296,8 +296,13 @@ governance identity and the login identity are the same key, not two systems to 
 The tiers compose with, never replace, the spoke console: a stakeholder with a local node keeps full
 sovereignty (P17) and casts verdicts under their own node key; the hub surface serves those who have not
 installed a node. Enrollment/revocation of user keys is a hub-admin act (rotation shares the deferred
-key-rotation workflow). Until Phase 3.5 lands, the supported remote access is an SSH tunnel to the
-loopback viewer (authentication = SSH key, read and write as the tunnel owner's local trust surface).
+key-rotation workflow). Until Phase 3.5 lands, remote access is an SSH tunnel to the loopback viewer
+(authentication = SSH key, read and write as the tunnel owner's local trust surface), or the **interim
+read-only exposure**: the knowledge owner may explicitly opt in (SUPRAGNOSIS_VIZ_PUBLIC=1) to bind the
+viewer beyond loopback - sharing is the creator's decision (P17) - with the write endpoint
+(/api/review) gated per connection to loopback peers, so F19's hard line (no unauthenticated write
+surface) holds. Suitable only for a single-principal internal network; superseded by the user-key
+read tier.
 
 ## 7. Topology
 
