@@ -4250,6 +4250,7 @@ dependencies = [
  "supragnosis-core",
  "supragnosis-embed",
  "supragnosis-store",
+ "supragnosis-sync",
  "thiserror 1.0.69",
  "tracing",
 ]
