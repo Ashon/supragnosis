@@ -313,6 +313,8 @@ fn build_sync_context(
     let identity = fed::load_or_create_identity()?;
     let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
+    // Runtime peer observability (hub role): who actually checked in, when, how much.
+    let peer_registry = Arc::new(supragnosis_sync::http::PeerRegistry::default());
     if let Some(srv) = &fc.server {
         // Post-apply hook: re-materialize the workspace after inbound pushes (Prop C).
         let hook_engine = engine.clone();
@@ -351,11 +353,22 @@ fn build_sync_context(
             on_applied: Some(on_applied),
             on_activity: Some(on_activity),
             on_search: Some(on_search),
+            peer_registry: Some(peer_registry.clone()),
         };
         spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?;
     }
     let mut origin_keys = fc.sync.origin_keys.clone();
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
+    // Health-check the configured hubs at startup (connectivity + auth + authorization in one
+    // round trip), then keep watching - a state CHANGE is an event, steady state is quiet.
+    if !fc.sync.servers.is_empty() {
+        spawn_hub_health_check(
+            engine.clone(),
+            fc.sync.servers.clone(),
+            fc.sync.auth_token.clone().unwrap_or_default(),
+            fc.sync.insecure_tls,
+        );
+    }
     Ok(Some(Arc::new(supragnosis_mcp::SyncContext {
         node,
         share_workspaces: fc.sync.share_workspaces.clone(),
@@ -363,7 +376,52 @@ fn build_sync_context(
         auth_token: fc.sync.auth_token.clone().unwrap_or_default(),
         insecure_tls: fc.sync.insecure_tls,
         origin_keys,
+        // Only a hub (server role) observes peers; a client-only node reports none.
+        peer_registry: fc.server.is_some().then_some(peer_registry),
     })))
+}
+
+/// Health-checks the configured hubs at startup and every 5 minutes after. The first result and
+/// every state CHANGE (up -> down, down -> up) are logged and streamed to the viewer activity feed
+/// (Event::Sync direction "hc-ok" / "hc-fail"); a steady healthy hub stays quiet.
+fn spawn_hub_health_check(engine: Arc<Engine>, servers: Vec<String>, token: String, insecure: bool) {
+    tokio::spawn(async move {
+        let mut last: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+        loop {
+            for server in &servers {
+                let ok = match supragnosis_sync::http::SyncClient::new(server, &token, insecure) {
+                    Ok(c) => match c.ping().await {
+                        Ok(p) => {
+                            if last.get(server).copied() != Some(true) {
+                                tracing::info!(%server, hub = %p.node_id, version = %p.version, shared = ?p.shared_workspaces, "hub health check ok");
+                            }
+                            true
+                        }
+                        Err(e) => {
+                            if last.get(server).copied() != Some(false) {
+                                tracing::warn!(%server, error = %e, "hub health check failed");
+                            }
+                            false
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(%server, error = %e, "hub health check client build failed");
+                        false
+                    }
+                };
+                if last.get(server).copied() != Some(ok) {
+                    engine.emit(Event::Sync {
+                        direction: if ok { "hc-ok".into() } else { "hc-fail".into() },
+                        peer: server.clone(),
+                        workspace: "-".into(),
+                        count: 0,
+                    });
+                    last.insert(server.clone(), ok);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+        }
+    });
 }
 
 /// Starts the federation sync API (the ONLY surface allowed to bind non-loopback - and only with

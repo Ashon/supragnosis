@@ -172,6 +172,10 @@ HTTPS (JSON wire format initially; gRPC is a later optimization):
   where the caller is behind, shared workspaces only.
 - `push(events)` -> the caller sends events for ranges where it is ahead. The receiver verifies, dedups by
   CAS, absorbs provenance, and re-projects.
+- `ping` -> **health check**: an authenticated no-op that verifies connectivity, auth, and the
+  caller's per-workspace authorization in one round trip (the response carries the hub identity,
+  version, and the caller's shared workspaces). A spoke pings its hubs at startup and on a slow
+  interval; state changes stream to the activity feed.
 - `search(workspace, query)` -> **federated recall**: an authenticated read of the SERVER's ontology,
   answered from that node's recall surface (hybrid/keyword, mode-labeled). Local state can lag the
   remote store, so a local miss may mean "not synced yet" - this call lets an agent check without
@@ -206,6 +210,9 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 - AuthZ (wire): the server holds an **allowlist** of `{node_id -> public_key, bearer_token_hash,
   shared_workspaces}`. An event signed by a key not on the allowlist, or a token that does not match, is
   rejected and never applied (F6).
+- **Known-peer registry** (runtime observability): the hub records, per authenticated peer, the last
+  seen time, last action, and hit count - reported via `sync_status`. Distinct from the allowlist:
+  the allowlist ADMITS, the registry OBSERVES; it is in-memory and resets with the process.
 - **Key distribution (three anchors)** - who verifies what with which key, incl. events the hub merely
   relays: (1) the hub's transport allowlist (above) decides who may connect and push; (2) the **origin
   public keys** a spoke needs to verify a relayed event (authored by another spoke) travel in the

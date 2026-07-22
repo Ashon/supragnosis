@@ -256,6 +256,9 @@ pub struct SyncContext {
     /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
     /// Phase 5 supersedes this with the log-borne canon-policy binding.
     pub origin_keys: std::collections::BTreeMap<String, String>,
+    /// Known-peer registry (hub role): runtime observability of who checked in (None on a
+    /// client-only node).
+    pub peer_registry: Option<std::sync::Arc<supragnosis_sync::http::PeerRegistry>>,
 }
 
 pub struct SupragnosisServer {
@@ -729,14 +732,20 @@ impl SupragnosisServer {
             Ok(Err(e)) => return err_json(&format!("store failure while reading the version vector: {e}")),
             Err(e) => return err_json(&format!("task join error: {e}")),
         };
-        to_json(&serde_json::json!({
+        let mut status = serde_json::json!({
             "node_id": ctx.node.node_id(),
             "public_key": ctx.node.public_key_hex(),
             "workspace": ws,
             "share_workspaces": ctx.share_workspaces,
             "servers": ctx.servers,
             "version_vector": vv,
-        }))
+        });
+        // Hub role: the runtime known-peer registry (who checked in, when, how much - resets with
+        // the process; the allowlist stays the admission authority).
+        if let Some(reg) = &ctx.peer_registry {
+            status["known_peers"] = serde_json::to_value(reg.snapshot()).unwrap_or_default();
+        }
+        to_json(&status)
     }
 
     #[tool(
