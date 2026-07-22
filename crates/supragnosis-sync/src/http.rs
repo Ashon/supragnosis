@@ -86,6 +86,44 @@ pub type OnActivity = Arc<dyn Fn(SyncActivity) + Send + Sync>;
 pub type OnSearch =
     Arc<dyn Fn(&str, &str, usize) -> Result<(Vec<SearchHit>, String), String> + Send + Sync>;
 
+/// Runtime peer observability (docs/federation.md 6a): which admitted peers have actually checked
+/// in, when, and how much. Distinct from the allowlist - the allowlist ADMITS, this OBSERVES.
+/// In-memory (resets with the process); persistence is not a goal, liveness insight is.
+#[derive(Default)]
+pub struct PeerRegistry {
+    peers: std::sync::Mutex<BTreeMap<String, PeerStatus>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PeerStatus {
+    pub node_id: String,
+    /// Epoch millis of the most recent authenticated request.
+    pub last_seen_ms: u64,
+    /// The most recent action ("ping" | "advertise" | "pull" | "push" | "search").
+    pub last_action: String,
+    /// Authenticated requests since process start.
+    pub hits: u64,
+}
+
+impl PeerRegistry {
+    pub fn record(&self, node_id: &str, action: &str) {
+        let mut m = self.peers.lock().unwrap();
+        let e = m.entry(node_id.to_string()).or_insert_with(|| PeerStatus {
+            node_id: node_id.to_string(),
+            last_seen_ms: 0,
+            last_action: String::new(),
+            hits: 0,
+        });
+        e.last_seen_ms = supragnosis_core::now_millis();
+        e.last_action = action.to_string();
+        e.hits += 1;
+    }
+
+    pub fn snapshot(&self) -> Vec<PeerStatus> {
+        self.peers.lock().unwrap().values().cloned().collect()
+    }
+}
+
 /// The wiring-layer hooks injected into the sync API (all optional): re-materialization after
 /// inbound pushes, activity streaming to the viewer, and the engine-backed federated recall.
 #[derive(Default)]
@@ -93,6 +131,8 @@ pub struct Hooks {
     pub on_applied: Option<OnApplied>,
     pub on_activity: Option<OnActivity>,
     pub on_search: Option<OnSearch>,
+    /// Shared known-peer registry - the wiring layer keeps a clone so the MCP surface can report it.
+    pub peer_registry: Option<Arc<PeerRegistry>>,
 }
 
 /// Shared state of the sync API handlers.
@@ -105,6 +145,7 @@ pub struct ServerState {
     on_applied: Option<OnApplied>,
     on_activity: Option<OnActivity>,
     on_search: Option<OnSearch>,
+    peers: Option<Arc<PeerRegistry>>,
 }
 
 impl ServerState {
@@ -114,7 +155,7 @@ impl ServerState {
             .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
             .collect();
         origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
-        Self { store, node, allowlist, origin_keys, on_applied: None, on_activity: None, on_search: None }
+        Self { store, node, allowlist, origin_keys, on_applied: None, on_activity: None, on_search: None, peers: None }
     }
 
     /// Injects the post-apply re-materialization hook (the engine's reproject).
@@ -133,6 +174,18 @@ impl ServerState {
     pub fn with_on_search(mut self, f: OnSearch) -> Self {
         self.on_search = Some(f);
         self
+    }
+
+    /// Shares the known-peer registry (runtime observability, 6a).
+    pub fn with_peers(mut self, r: Arc<PeerRegistry>) -> Self {
+        self.peers = Some(r);
+        self
+    }
+
+    fn seen(&self, node_id: &str, action: &str) {
+        if let Some(r) = &self.peers {
+            r.record(node_id, action);
+        }
     }
 
     fn activity(&self, direction: &'static str, peer: &str, workspace: &str, count: usize) {
@@ -198,6 +251,16 @@ pub struct SearchResp {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct PingResp {
+    /// The hub's node id.
+    pub node_id: String,
+    /// The hub's binary version.
+    pub version: String,
+    /// The workspaces the CALLER is authorized to sync (diagnostics for setup mistakes).
+    pub shared_workspaces: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PushResp {
     pub accepted: usize,
     /// (origin_node, origin_seq, reason) - rejections are reported, never silently dropped (P5).
@@ -252,6 +315,7 @@ async fn advertise_handler(
         .await
         .map_err(internal)?
         .map_err(internal)?;
+    state.seen(&entry.node_id, "advertise");
     state.activity("advertise", &entry.node_id, &ws, 0);
     Ok(Json(AdvertiseResp { node_id: state.node.node_id().to_string(), vv }))
 }
@@ -275,6 +339,7 @@ async fn pull_handler(
     .await
     .map_err(internal)?
     .map_err(internal)?;
+    state.seen(&entry.node_id, "pull");
     state.activity("pull-served", &entry.node_id, &ws, events.len());
     Ok(Json(PullResp { events }))
 }
@@ -297,6 +362,7 @@ async fn push_handler(
     .await
     .map_err(internal)?
     .map_err(internal)?;
+    state.seen(&entry.node_id, "push");
     state.activity("push-received", &entry.node_id, &ws, report.accepted);
     // Re-materialize after new events land (Prop C) - injected by the wiring layer.
     if report.accepted > 0 {
@@ -344,13 +410,32 @@ async fn search_handler(
             (hits, "keyword".to_string())
         }
     };
+    state.seen(&entry.node_id, "search");
     state.activity("search-served", &entry.node_id, &req.workspace, hits.len());
     Ok(Json(SearchResp { mode, hits }))
+}
+
+/// Health check (liveness): an authenticated no-op that registers the peer as seen and answers
+/// with the hub's identity/version plus the caller's authorized workspaces - so a spoke can verify
+/// connectivity, auth, AND authorization at startup in one round trip.
+async fn ping_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+) -> Result<Json<PingResp>, HandlerError> {
+    let entry = authenticate(&headers, &state.allowlist)?;
+    state.seen(&entry.node_id, "ping");
+    state.activity("hc", &entry.node_id, "-", 0);
+    Ok(Json(PingResp {
+        node_id: state.node.node_id().to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        shared_workspaces: entry.shared_workspaces.clone(),
+    }))
 }
 
 /// The sync API router - exposed so the daemon (Phase 4 wiring) can mount it.
 pub fn router(state: Arc<ServerState>) -> Router {
     Router::new()
+        .route("/sync/ping", post(ping_handler))
         .route("/sync/advertise", post(advertise_handler))
         .route("/sync/pull", post(pull_handler))
         .route("/sync/push", post(push_handler))
@@ -385,6 +470,9 @@ pub async fn serve(
     }
     if let Some(hook) = hooks.on_search {
         state = state.with_on_search(hook);
+    }
+    if let Some(r) = hooks.peer_registry {
+        state = state.with_peers(r);
     }
     let state = Arc::new(state);
     let app = router(state);
@@ -472,6 +560,11 @@ impl SyncClient {
 
     pub async fn push(&self, workspace: &str, events: Vec<AttestationEvent>) -> Result<PushResp, TransportError> {
         self.call("/sync/push", &PushReq { workspace: workspace.into(), events }).await
+    }
+
+    /// Health check: verifies connectivity, auth, and per-workspace authorization in one call.
+    pub async fn ping(&self) -> Result<PingResp, TransportError> {
+        self.call("/sync/ping", &serde_json::json!({})).await
     }
 
     /// Federated recall: search the SERVER's ontology (its recall surface, mode-labeled). Results
