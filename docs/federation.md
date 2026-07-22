@@ -245,10 +245,37 @@ P18/P17) for good, because the two never meet on the same axis:
   whitelisted `share_workspaces`; the server additionally enforces, per node, which workspaces that node
   may read/write. Content outside the whitelist is filtered **before** it crosses the boundary, never as a
   delete-after-arrival (F9).
-- **The second-door rule** (P17): the sharing boundary must also govern any remote read surface. This
-  milestone keeps MCP/viz loopback-only, so no second door is opened. If a remote MCP query surface is ever
-  added, it MUST enforce the same `share_workspaces` whitelist (and a no-workspace-scope global query stays
-  limited to the local trust surface) - otherwise knowledge leaves through a different door.
+- **The second-door rule** (P17): the sharing boundary must also govern any remote read surface. The
+  local MCP/viz binds stay loopback-only; the hub MAY open a governed human surface (6d), and when it
+  does, that surface MUST enforce the same `share_workspaces` whitelist (and a no-workspace-scope global
+  query stays limited to the local trust surface) - otherwise knowledge leaves through a different door.
+
+### 6d. Hub human surface - people managing knowledge at the hub
+
+A hub is only a *service* if people can browse and govern the shared knowledge there. The native console
+remains the **spoke**: every stakeholder's own node has the full viewer/curation console over its local
+replica, offline-capable, no extra auth surface (the local-first answer). The hub adds a convenience
+surface on top - opened in two tiers, because reads and writes carry very different risks:
+
+- **Read tier (Phase 3.5)**: the hub serves its viewer / read APIs over the network - TLS in-process,
+  per-user bearer token, and the P17 second-door rule enforced (only `share_workspaces` content; no
+  global no-workspace query). ALL write endpoints (`observe`, `propose`, `review`, `define_type` - and
+  the viewer's `/api/review`) are disabled on this surface. Team members without a local node can *see*
+  the shared ontology, proposals, and curation signals by opening a URL.
+- **Write tier (Phase 5+)**: knowledge management (casting verdicts, opening proposals) through the hub
+  requires **login-to-principal binding**. The attribution pitfall is the reason this tier waits: the
+  viewer's review action is a write, and behind a shared loopback-less surface without per-user identity,
+  every verdict would be attributed to the hub's own host identity - I9's self-approval comparison and
+  P2's delegation chain would collapse into one principal (F19). With authentication, a hub-mediated act
+  is recorded with the delegation chain `host = hub, on_behalf_of = <logged-in principal>`, and the canon
+  policy decides how much a hub-mediated verdict counts for - including whether the hub is a trusted
+  console for I17's "human's direct act" (recall), or whether recall verdicts demand the principal's own
+  node/key. Authentication strength is policy, not hardcoded.
+
+The tiers compose with, never replace, the spoke console: a stakeholder with a local node keeps full
+sovereignty (P17) and casts verdicts under their own key; the hub surface serves those who have not
+installed a node. Until Phase 3.5 lands, the supported remote access is an SSH tunnel to the loopback
+viewer (authentication = SSH key, read and write as the tunnel owner's local trust surface).
 
 ## 7. Topology
 
@@ -436,6 +463,11 @@ changing the canon policy without a central admin - is out of scope.
   ungated `define_type` (working-set last-write-wins, 1a) is tolerable only under the single-principal
   solo exception (P23). Until the gate is enforced, federated deployment stays single-principal (Phasing,
   Phase 5/6).
+- **F19** The hub human surface (6d) opens in tiers: the read tier is TLS + per-user token, read-only
+  (every write endpoint disabled), and whitelist-governed (P17 second door); a **write is never accepted
+  from a surface that cannot attribute it to a principal** - an unauthenticated write surface would
+  collapse every actor into the hub's host identity and void I9/P2. Hub-mediated writes carry the
+  delegation chain `host = hub, on_behalf_of = principal`, weighted by the canon policy.
 
 ## 9. Crate / config / surface layout
 
@@ -467,13 +499,17 @@ changing the canon policy without a central admin - is out of scope.
   tampered event rejected (F6); a workspace-filtered (hole-y) stream still converges (F7).
 - **Phase 3** - transport: axum sync API + rustls + allowlist/bearer; reqwest client. Loopback guard for
   MCP/viz untouched.
+- **Phase 3.5** - **hub human surface, read tier** (6d, F19): the hub's viewer / read APIs over TLS with
+  per-user bearer tokens, all write endpoints disabled, `share_workspaces` whitelist enforced (P17).
+  Reuses the Phase 3 TLS/token infrastructure.
 - **Phase 4** - CLI/config/roles + `sync_*` MCP tools.
 - **Phase 5** - **governance enforcement** (prerequisite for multi-principal operation, F15-F18): the
   canon-policy as a log-borne signed artifact incl. the principal-to-key binding and the default-solo
   fallback (7a); I9/I17 checks in the proposal fold (today the fold hardcodes the solo self-attested path);
   `tbox_change` gate enforcement for shared workspaces (F18, 1a); the representative-tier evaluation change
   (F13, 6b - stop maxing in unverified remote claimed tiers); the causal-stability watermark for verdict
-  finality (7a, F16).
+  finality (7a, F16); and the **hub human surface write tier** (6d, F19: login-to-principal binding, so a
+  hub-mediated verdict is attributed `host = hub, on_behalf_of = principal`).
 - **Phase 6** - deploy knowledge.vm as the hub (systemd unit, config with server role, TLS, allowlist),
   register a client, verify end-to-end convergence. May go live after Phase 4 **restricted to
   single-principal workspaces** (the P23 solo exception - one principal across many machines); onboarding a
@@ -509,7 +545,8 @@ property of the spec: no dangling dependency.
 | Keypair + `node_id`, HLC, VV, Provenance sync fields (+ signed lineage declaration), store delta scan | Phase 1 |
 | VV diff, delta codec, hole-tolerant apply, sharing filter, claimed-tier storage + recall hooks | Phase 2 |
 | Sync transport (axum/rustls/reqwest), allowlist/bearer | Phase 3 |
+| Hub human surface: read tier (TLS + user token, RO, whitelist) | Phase 3.5 |
 | Config (`host_label`, anchor key, allowlist), CLI roles, `sync_*` tools | Phase 4 |
-| Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark | Phase 5 |
+| Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (login-to-principal) | Phase 5 |
 | Hub deployment (systemd, single-principal until Phase 5) | Phase 6 |
 | Mesh/NAT/discovery, gRPC, key rotation, quorum/auto-merge/conflict UI, fine-grained redaction, hub-withholding mitigation, cross-workspace lineage redaction | Deferred (Section 11) |
