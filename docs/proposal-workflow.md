@@ -61,6 +61,7 @@ a direct consequence of a principle.
 | I14 | **Merge effects are idempotent.** Duplicate loading of the same effect is harmless, and entity-merge canonicalizes by canonical id order so concurrent duplicate proposals do not diverge. | 3 |
 | I15 | **The fold re-validates the routing conditions of an automatic verdict.** A policy executor's (automatic) verdict is valid only when the fold recomputes its routing premises (zero new contradictions, impact radius at or below the threshold) at the merge-time state and they pass - even if a contaminated/buggy executor auto-merges a high-impact proposal, the fold invalidates it. This does not apply to human verdicts. | 8, 16, 18 |
 | I16 | **Finality is monotonic.** Promotion (Merged) is a monotonic function of the event set and an absorbing state - as long as a valid merge exists in the log, no later event arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). | 16, 3 |
+| I18 | **Consolidation generates, never commits.** A consolidation/curation pass (Principle 7) may only emit read-only curation signals and candidate proposals; it never loads a `verdict_cast` or a merge effect directly. The sole commit path to canon is the proposal verdict (I1/I3/I6), so "generate != commit" is mechanical rather than a discipline. A human-facing curation console (the viewer, or an agent via elicitation) casts its accept as a `verdict_cast` observation - it does not write the projection/log - and a recall acceptance stays a human's direct act (I17). | 7, 19, 23 |
 
 ---
 
@@ -103,6 +104,11 @@ proposal**.
 5. **recall** - bulk retraction of the derivation tree from a contamination source (the sanitization of Principle 18)
 
 Each kind shares the same state machine and differs only in its check suite (Section 6).
+
+Consolidation (Principle 7) is **not a sixth kind** but a **source** that emits proposals of these
+five: a duplicate -> entity-merge, stale/low-value knowledge -> claim-demotion, an induced type ->
+tbox-change, a contamination source -> recall. It generates candidates, never commits (I18). See
+Section 14.
 
 ### 3.4 Events (all are observations - I1)
 
@@ -497,6 +503,10 @@ between M3 and M4 (pre-value in solo/hub environments).
 - M3.5b: belief diff + blocking checks + `propose`/`get_proposal`/`review`.
 - M4+: quorum policy, the entity-merge/tbox-change/recall kinds, the auto-merge policy
   executor.
+- M6 (consolidation, Principle 7) feeds this workflow: the consolidation pass emits candidate
+  proposals (I18). The read-only **curation signals** (duplicate/grab-bag/orphan/contradiction) ship
+  earlier as a pure projection with no gate (a safe first increment), and the belief-diff **curation
+  console** (accept in the viewer) rides M3.5b's diff + `review`. See Section 14.
 
 Open decisions:
 
@@ -519,3 +529,62 @@ Open decisions:
   frontier (I7, I8) so validity does not flip after the fact (the Section 6 monotonicity
   note), continuously verified by a property test that checks the conclusion is identical
   even when the same event set is injected in random order/partitioning (Principle 16).
+
+---
+
+## 14. Consolidation and the Curation Console
+
+This is where the workflow earns its keep for a single user: the system **proposes how to tidy its
+own knowledge**, and the user accepts or rejects a diff. Consolidation (Principle 7) closes the
+self-refinement loop of Principle 11 - but only through the same gate as everything else.
+
+### 14.1 Consolidation is a generator (I18)
+
+A consolidation pass runs off the user-request critical path (Principle 7) and produces two things,
+**never a direct commit**:
+
+- **Read-only curation signals** - duplicate-entity candidates, grab-bag / low-cohesion hyperedges,
+  orphans, and contradiction points, computed deterministically from the log + the hyperedge
+  second-order structure (Principles 11/16). This is a pure projection; surfacing it commits nothing
+  and needs no gate, so it is the safe first increment (before any proposal machinery exists).
+- **Candidate proposals** of the five kinds (Section 3.3). An LLM may enrich a candidate (a summary,
+  a merge rationale), but that enrichment enters as a **derived, lowest-trust, lineage-bearing**
+  observation (Principles 18/19), and the LLM never casts the verdict (Principle 19: not a judge -
+  an agent review is a comment, Section 9).
+
+The intelligence therefore sits at the edge (generation), and the decision at the core (a gated,
+human/rule verdict) - Principle 19 exactly.
+
+### 14.2 The diff is the review artifact
+
+Every candidate carries a **belief diff** (Section 5) - what enters canon, what belief is overturned,
+which contradictions appear, and the blast radius - computed deterministically (I8/I16). The diff, not
+the raw payload, is what the user reviews. A candidate whose diff is empty (nothing would change) is
+not surfaced.
+
+### 14.3 The curation console (accept in the UI)
+
+The human-facing surface - the viewer, or an agent via elicitation - lists pending proposals with
+their diffs + check results (`list_proposals` / `get_proposal`, Section 11) and casts a verdict with
+`review`. The constraints that keep the console inside the gate:
+
+- **Accept is a verdict observation, not a write.** The console never mutates the projection or the
+  log; it appends a `verdict_cast` observation and the fold derives the effect (I1/I6/I18). The viewer,
+  otherwise a read-only projection, thus gains exactly one write path - the gated verdict - and no
+  other. A path that writes the graph directly from the UI is a violation (Principle 23: no bypass).
+- **Loopback / local trust only.** The console is a write surface only on the local trust surface
+  (Principle 17); it is not exposed to a remote client.
+- **Solo, self-attested.** In a single-user workspace the user is both proposer and reviewer; the
+  policy permits self-approval, but the verdict carries the self-attested mark (Section 10) so trust is
+  still distinguished when the canon federates (Principle 18).
+- **Recall stays a human's direct act (I17).** A recall (retraction) acceptance cannot be delegated to
+  an agent, even from the console.
+
+### 14.4 Applied to the orphan / duplicate problem
+
+The stale-id and duplicate nodes that accumulate across id/schema changes are the first customer.
+Instead of a destructive store reset, consolidation emits an **entity-merge** proposal (a resolution
+candidate, Principle 15); the diff shows which references rewire (Section 5 item 5) and that the old
+id forwards to the new (id stability, Principle 14); the user accepts. Nothing is deleted (Principle 3)
+- the merge is an appended event and the pre-merge ids keep forwarding. This is the principled
+alternative to `rm` on the store.
