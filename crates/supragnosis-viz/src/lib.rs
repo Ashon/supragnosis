@@ -1143,7 +1143,18 @@ function currentWs() { return wsInput.value.trim(); }
 // Clean workspace transition: reset per-workspace view state, raise the loader immediately (no
 // flash of the old layout under a stale camera), and treat the new graph like a fresh load - the
 // reveal ends with an auto-fit, so switching workspaces always lands framed and zoomed sensibly.
+// Reflect the selected workspace in the URL (?workspace=...) - shareable, bookmarkable, and it
+// survives a reload. Empty (the node default) keeps the URL clean; "*" (all) is kept as-is.
+function syncUrlWorkspace() {
+  const ws = wsInput.value.trim();
+  const url = new URL(location.href);
+  if (ws) url.searchParams.set("workspace", ws);
+  else url.searchParams.delete("workspace");
+  history.replaceState(null, "", url);
+}
+
 function beginWorkspaceTransition() {
+  syncUrlWorkspace();
   focus = null; hover = null; renderDetail(null);
   proposalSel = null;
   pulses.clear();
@@ -2101,6 +2112,11 @@ document.getElementById("footBtn").onclick = e => { showFootprint = !showFootpri
 document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e.currentTarget.classList.toggle("on", showPulses); };
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
 
+// Restore the workspace selection from the URL (deep link / reload) before the first poll.
+{
+  const qws = new URLSearchParams(location.search).get("workspace");
+  if (qws !== null) wsInput.value = qws;
+}
 resize(); loadWorkspaces(); poll(); connectEvents();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); draw();
 </script>
