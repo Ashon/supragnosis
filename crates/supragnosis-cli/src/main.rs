@@ -55,6 +55,24 @@ enum Cmd {
     Restart(RunArgs),
     /// Query daemon status
     Status,
+    /// Show this node's federation identity (node id + public key); --hash-token hashes a bearer token for an allowlist entry
+    Identity(IdentityArgs),
+    /// One-shot federation sync round against the configured servers (requires supragnosis.toml; stop the daemon first - the store is single-process)
+    Sync(SyncArgs),
+}
+
+#[derive(Args, Clone, Default)]
+struct IdentityArgs {
+    /// Print the blake3 hash of this bearer token (what a server allowlist entry stores).
+    #[arg(long, value_name = "TOKEN")]
+    hash_token: Option<String>,
+}
+
+#[derive(Args, Clone, Default)]
+struct SyncArgs {
+    /// Workspace to sync (default: the node default workspace).
+    #[arg(long)]
+    workspace: Option<String>,
 }
 
 /// Shared run options for serve/start/restart. When unspecified, resolved in the order SUPRAGNOSIS_* environment variable -> default.
@@ -93,6 +111,8 @@ fn main() -> Result<()> {
         Cmd::Stop => stop(),
         Cmd::Restart(a) => restart(resolve(a, true)),
         Cmd::Status => status(),
+        Cmd::Identity(a) => identity_cmd(a),
+        Cmd::Sync(a) => sync_cmd(a),
     }
 }
 
@@ -254,15 +274,143 @@ async fn run(cfg: Config) -> Result<()> {
         spawn_viz(&engine, addr, tx.clone()).await;
     }
 
+    // Federation wiring (M4 Phase 4, docs/federation.md Section 9): optional supragnosis.toml.
+    // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5).
+    let sync_ctx = build_sync_context(&engine, fed::load()?)?;
+
     match cfg.http.as_deref() {
-        Some(http) => serve_http_daemon(engine, http, &cfg.host, &cfg.workspace, &cfg.session).await,
+        Some(http) => {
+            serve_http_daemon(engine, sync_ctx, http, &cfg.host, &cfg.workspace, &cfg.session).await
+        }
         None => {
             tracing::info!(host = %cfg.host, workspace = %cfg.workspace, session = %cfg.session, "supragnosis / starting stdio MCP server");
-            let service = SupragnosisServer::new(engine).serve(stdio()).await?;
+            let mut server = SupragnosisServer::new(engine);
+            if let Some(ctx) = sync_ctx {
+                server = server.with_sync(ctx);
+            }
+            let service = server.serve(stdio()).await?;
             service.waiting().await?;
             Ok(())
         }
     }
+}
+
+/// Builds the MCP sync context from supragnosis.toml (and starts the sync API server when a
+/// `[server]` section is present). Returns None on a standalone node.
+fn build_sync_context(
+    engine: &Arc<Engine>,
+    fedcfg: Option<fed::FileConfig>,
+) -> Result<Option<Arc<supragnosis_mcp::SyncContext>>> {
+    let Some(fc) = fedcfg else { return Ok(None) };
+    // One identity + one SyncNode per process - the server role and the sync tools share the HLC
+    // clock and the per-workspace seq counters (two live counters over one store would collide).
+    let identity = fed::load_or_create_identity()?;
+    let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
+    tracing::info!(node_id = %node.node_id(), "federation identity loaded");
+    if let Some(srv) = &fc.server {
+        spawn_sync_server(engine.store(), node.clone(), srv.clone())?;
+    }
+    let mut origin_keys = fc.sync.origin_keys.clone();
+    origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
+    Ok(Some(Arc::new(supragnosis_mcp::SyncContext {
+        node,
+        share_workspaces: fc.sync.share_workspaces.clone(),
+        servers: fc.sync.servers.clone(),
+        auth_token: fc.sync.auth_token.clone().unwrap_or_default(),
+        insecure_tls: fc.sync.insecure_tls,
+        origin_keys,
+    })))
+}
+
+/// Starts the federation sync API (the ONLY surface allowed to bind non-loopback - and only with
+/// TLS + a non-empty allowlist, F10). A misconfigured [server] section fails daemon startup loudly
+/// (P5) instead of silently running without the role.
+fn spawn_sync_server(
+    store: Arc<dyn KnowledgeStore>,
+    node: Arc<supragnosis_sync::SyncNode>,
+    srv: fed::ServerSection,
+) -> Result<()> {
+    use supragnosis_sync::http as sync_http;
+    let listen: std::net::SocketAddr = srv
+        .listen
+        .parse()
+        .with_context(|| format!("invalid [server] listen address: {:?} (IP:port)", srv.listen))?;
+    let tls = match (&srv.tls_cert, &srv.tls_key) {
+        (Some(c), Some(k)) => Some(sync_http::TlsPaths { cert_pem: c.into(), key_pem: k.into() }),
+        (None, None) => None,
+        _ => anyhow::bail!("[server] tls_cert and tls_key must be set together"),
+    };
+    // Validate at startup so a misconfigured daemon dies here, not inside a spawned task (F10).
+    sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len())?;
+    tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
+    tokio::spawn(async move {
+        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist).await {
+            tracing::error!(error = %e, "federation sync API terminated");
+        }
+    });
+    Ok(())
+}
+
+/// `supragnosis identity` - prints the node's federation identity (generating the keypair on first
+/// use); --hash-token prints what a server allowlist entry stores for a peer's bearer token.
+fn identity_cmd(a: IdentityArgs) -> Result<()> {
+    init_tracing();
+    let id = fed::load_or_create_identity()?;
+    println!("node_id:     {}", id.node_id());
+    println!("public_key:  {}", id.public_key_hex());
+    if let Some(tok) = a.hash_token {
+        println!("bearer_hash: {}", blake3::hash(tok.as_bytes()).to_hex());
+    }
+    Ok(())
+}
+
+/// `supragnosis sync` - one full sync round (push surplus, pull deficit, re-materialize) against
+/// every configured server. Requires supragnosis.toml with [sync] servers + auth_token. The store
+/// is single-process (RocksDB lock): with a running daemon, use the sync_* MCP tools instead.
+fn sync_cmd(a: SyncArgs) -> Result<()> {
+    init_tracing();
+    let cfg = resolve(RunArgs::default(), false);
+    let fc = fed::load()?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no federation config at {} - create it with a [sync] section (servers, auth_token, \
+             share_workspaces). See docs/federation.md Section 9",
+            fed::config_path().display()
+        )
+    })?;
+    if fc.sync.servers.is_empty() {
+        anyhow::bail!("[sync] servers is empty - nothing to sync against");
+    }
+    let token = fc
+        .sync
+        .auth_token
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("[sync] auth_token is not set"))?;
+    let identity = fed::load_or_create_identity()?;
+    let node = supragnosis_sync::SyncNode::new(identity);
+    let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(async {
+        let engine = build_engine(&cfg, None)?;
+        let store = engine.store();
+        let mut keys = fc.sync.origin_keys.clone();
+        keys.insert(node.node_id().to_string(), node.public_key_hex());
+        for server in &fc.sync.servers {
+            let client = supragnosis_sync::http::SyncClient::new(server, &token, fc.sync.insecure_tls)?;
+            let s = client
+                .sync_workspace(&store, &node, &ws, &fc.sync.share_workspaces, &keys)
+                .await?;
+            println!(
+                "{server}: pushed {} pulled {} (rejected: by server {}, locally {})",
+                s.pushed, s.pulled, s.rejected_by_server, s.rejected_locally
+            );
+        }
+        let r = engine.reproject(Some(&ws))?;
+        println!(
+            "reprojected {}: {} observations -> {} entities, {} relations",
+            ws, r.observations, r.entities, r.relations
+        );
+        anyhow::Ok(())
+    })
 }
 
 /// Initializes the stderr log subscriber (idempotent). stdout is the MCP stdio channel, so logs must go to stderr.
@@ -320,6 +468,7 @@ async fn spawn_viz(
 /// no authentication is justified).
 async fn serve_http_daemon(
     engine: Arc<Engine>,
+    sync_ctx: Option<Arc<supragnosis_mcp::SyncContext>>,
     http_addr: &str,
     host: &str,
     workspace: &str,
@@ -327,7 +476,13 @@ async fn serve_http_daemon(
 ) -> Result<()> {
     let addr = supragnosis_viz::parse_local_addr(http_addr)?; // reject non-local binds (Principle 17)
     let service = StreamableHttpService::new(
-        move || Ok(SupragnosisServer::new(engine.clone())),
+        move || {
+            let mut server = SupragnosisServer::new(engine.clone());
+            if let Some(ctx) = &sync_ctx {
+                server = server.with_sync(ctx.clone());
+            }
+            Ok(server)
+        },
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );
@@ -629,4 +784,149 @@ fn restart(_cfg: Config) -> Result<()> {
 #[cfg(not(unix))]
 fn status() -> Result<()> {
     anyhow::bail!("the background daemon is unix-only.")
+}
+
+// --- Federation configuration + node identity (M4 Phase 4, docs/federation.md Section 9) ---------
+
+mod fed {
+    use anyhow::{Context, Result};
+    use std::path::PathBuf;
+
+    /// supragnosis.toml - federation wiring. Absent file = a standalone node (every field optional);
+    /// a present-but-malformed file is a loud error (P5: explicit configuration must work or fail,
+    /// never silently degrade). Unknown keys are rejected so a typo cannot silently disable a role.
+    #[derive(Debug, Default, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct FileConfig {
+        /// Display-only label. node_id derives from the keypair and is never configured (F14).
+        #[allow(dead_code)]
+        pub host_label: Option<String>,
+        #[serde(default)]
+        pub sync: SyncSection,
+        pub server: Option<ServerSection>,
+    }
+
+    #[derive(Debug, Default, Clone, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct SyncSection {
+        /// Outbound share whitelist (P17/F9: nothing leaves by default).
+        #[serde(default)]
+        pub share_workspaces: Vec<String>,
+        /// Sync server (hub) base URLs, e.g. "https://10.60.16.75:7420".
+        #[serde(default)]
+        pub servers: Vec<String>,
+        /// Bearer token presented to those servers.
+        pub auth_token: Option<String>,
+        /// Accept a self-signed hub certificate (internal VM) - content authenticity stays with the
+        /// event signatures (F6), this only affects transport privacy against an active MITM.
+        #[serde(default)]
+        pub insecure_tls: bool,
+        /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
+        /// Superseded by the log-borne canon-policy binding in Phase 5.
+        #[serde(default)]
+        pub origin_keys: std::collections::BTreeMap<String, String>,
+    }
+
+    #[derive(Debug, Clone, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ServerSection {
+        /// Sync API bind (IP:port). Non-loopback demands TLS + a non-empty allowlist (F10).
+        pub listen: String,
+        pub tls_cert: Option<String>,
+        pub tls_key: Option<String>,
+        #[serde(default)]
+        pub allowlist: Vec<supragnosis_sync::http::AllowEntry>,
+    }
+
+    fn fed_base_dir() -> PathBuf {
+        PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".supragnosis")
+    }
+
+    /// SUPRAGNOSIS_CONFIG, or ~/.supragnosis/supragnosis.toml.
+    pub fn config_path() -> PathBuf {
+        std::env::var("SUPRAGNOSIS_CONFIG")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| fed_base_dir().join("supragnosis.toml"))
+    }
+
+    pub fn load() -> Result<Option<FileConfig>> {
+        let path = config_path();
+        if !path.exists() {
+            return Ok(None);
+        }
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let cfg = toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        Ok(Some(cfg))
+    }
+
+    /// Loads (or generates exactly once) the node keypair at ~/.supragnosis/node.key - 32 raw
+    /// secret bytes, mode 0600. The node_id derives from the public key and never changes (F14).
+    pub fn load_or_create_identity() -> Result<supragnosis_core::NodeIdentity> {
+        let path = fed_base_dir().join("node.key");
+        if path.exists() {
+            let bytes =
+                std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+            let arr: [u8; 32] = bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("{} must be exactly 32 bytes", path.display()))?;
+            return Ok(supragnosis_core::NodeIdentity::from_secret_bytes(arr));
+        }
+        let mut secret = [0u8; 32];
+        getrandom::getrandom(&mut secret)
+            .map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&path, secret)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        tracing::info!(path = %path.display(), "generated the node keypair (once - the node_id is immutable, F14)");
+        Ok(supragnosis_core::NodeIdentity::from_secret_bytes(secret))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The documented supragnosis.toml shape parses; unknown keys are rejected loudly (P5).
+        #[test]
+        fn config_parses_and_rejects_typos() {
+            let good = r#"
+                host_label = "knowledge-vm"
+                [sync]
+                share_workspaces = ["supragnosis"]
+                servers = ["https://10.60.16.75:7420"]
+                auth_token = "tok"
+                insecure_tls = true
+                [sync.origin_keys]
+                "abc" = "deadbeef"
+                [server]
+                listen = "0.0.0.0:7420"
+                tls_cert = "/etc/supragnosis/cert.pem"
+                tls_key = "/etc/supragnosis/key.pem"
+                [[server.allowlist]]
+                node_id = "abc"
+                public_key_hex = "deadbeef"
+                bearer_hash = "hash"
+                shared_workspaces = ["supragnosis"]
+            "#;
+            let cfg: FileConfig = toml::from_str(good).expect("documented shape must parse");
+            assert_eq!(cfg.sync.servers.len(), 1);
+            assert!(cfg.sync.insecure_tls);
+            let srv = cfg.server.expect("server section");
+            assert_eq!(srv.allowlist.len(), 1);
+            assert_eq!(cfg.sync.origin_keys.get("abc").map(String::as_str), Some("deadbeef"));
+
+            // A typo must fail loudly, not silently disable a role (P5).
+            let typo = "share_workspace = [\"x\"]\n";
+            assert!(toml::from_str::<FileConfig>(typo).is_err());
+        }
+    }
 }

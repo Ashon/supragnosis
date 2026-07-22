@@ -74,8 +74,11 @@ async fn mcp_protocol_surface_end_to_end() {
             "review",
             "list_proposals",
             "get_proposal",
+            "sync_status",
+            "sync_pull",
+            "sync_push",
         ]),
-        "must expose the intent-level tools (workspace_map = orientation, define_type = T-Box, propose/review/list_proposals/get_proposal = the canon gate)"
+        "must expose the intent-level tools (workspace_map = orientation, define_type = T-Box, propose/review/list_proposals/get_proposal = the canon gate, sync_* = federation administration)"
     );
     for t in &tools {
         let desc = t.description.as_deref().unwrap_or("");
