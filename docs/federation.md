@@ -1,8 +1,10 @@
 # Federation (M4)
 
-Status: design (Phase 0). This document is the specification agreed before writing code. It fixes the
-data model, the sync protocol, the trust/auth model, and the invariants (F1..) that the implementation
-must uphold. It refines the M4 sketch in [architecture.md](architecture.md) Section 5 and Section 10, and
+Status: living spec - Phases 0-2 implemented (core foundations, sync core, re-materialization),
+Phase 3+ pending. This document is the specification agreed before the code; implementation feedback
+is folded back as revisions (see the 8th revision note in principles.md). It fixes the data model, the
+sync protocol, the trust/auth model, the invariants (F1..), and the propositions deriving convergence
+from them (8a). It refines the M4 sketch in [architecture.md](architecture.md) Section 5 and Section 10, and
 the multi-node convergence note in [proposal-workflow.md](proposal-workflow.md).
 
 Scope of this milestone: **hub-and-spoke** (client-server). A persistent "server" node aggregates and
@@ -428,13 +430,21 @@ changing the canon policy without a central admin - is out of scope.
   content on two nodes -> identical id -> dedup, not duplication.
 - **F3** Apply = verify (signature/allowlist) -> CAS dedup/absorb -> advance VV -> re-project.
   Deterministic, append-only; trust evaluation is read-time (6b), never an apply gate.
-- **F4** Provenance is a monotonic union across nodes (P3). No attestation is ever removed or overwritten.
-- **F5** Given the same observation set, every node materializes the same **working-set projection** (1a),
-  and - within a shared canon policy (F16) - the same **canon layer**, independent of exchange order and
-  topology (P16); policy is a deterministic input, not nondeterminism. Trust weighting and embeddings / ANN
-  recall are **node-local aids** on the generate/recall side and are NOT subject to cross-node convergence
-  (P16/P19, F13); query responses label their `mode` so a client can tell the convergence surface from the
-  recall aid.
+- **F4** Provenance is a monotonic, **enrichment-ordered** union across nodes (P3, 8th revision): no
+  attestation is ever removed, overwritten, or superseded by a DIFFERENT attestation; the sole
+  exception is enrichment - a strictly-more-informative version of the SAME attestation (identical
+  base fields gaining the sync stamp, backfill) supersedes its unstamped base, and enrichment never
+  runs backwards. Element-wise upgrade keeps the join commutative/associative/idempotent (Prop A).
+- **F5** Given the same observation set, every node computes the same projections - at two distinct
+  convergence points (8a). **Fold-projections** (type glossary, proposal states, curation signals -
+  pure functions of the log) converge **continuously** as the logs converge (Prop B). **Materialized
+  projections** (the entity/relation tables) converge **at re-materialization points** - the
+  HLC-ordered replay (`reproject`, the "re-project" step of F3) - and may transiently diverge between
+  observe-time upserts and the next replay (Prop C). The **canon layer** converges within a shared
+  canon policy (F16, Prop D). Policy is a deterministic input, not nondeterminism. Trust weighting and
+  embeddings / ANN recall are **node-local aids** on the generate/recall side and are NOT subject to
+  cross-node convergence (P16/P19, F13); query responses label their `mode` so a client can tell the
+  convergence surface from the recall aid.
 - **F6** An event with an invalid signature, an unknown origin key, or a bad bearer token is rejected and
   never applied.
 - **F7** `origin_seq` is monotonic per **(origin node, workspace)**, so a shared workspace's stream is
@@ -497,6 +507,47 @@ changing the canon policy without a central admin - is out of scope.
   and `HumanConfirmed` promotion (P18) require strength (ii) by default; the canon policy may relax
   only low-stakes acts to (i), never those two.
 
+## 8a. Propositions - how convergence follows from the invariants
+
+The convergence claims of this spec are not independent assumptions; each is derived from named
+invariants, and each derivation is pinned by a test. If an invariant above is ever weakened, this
+section says exactly which conclusions fall.
+
+- **Prop A (log convergence - the log is a join-semilattice).** Premises: F2 (content-address
+  identity - one id per content, sync metadata outside it), F4 (enrichment-ordered monotonic union -
+  commutative, associative, idempotent), F7 (apply is idempotent and hole-tolerant - no ordering or
+  density precondition). Conclusion: node log state forms a join-semilattice under "receive event";
+  any delivery schedule covering the same event set - any order, any duplication, any partitioning
+  into batches - reaches the same log. Pinned by:
+  `supragnosis-sync::two_nodes_converge_under_any_exchange_order`,
+  `supragnosis-core::absorb_stamp_upgrade_supersedes_unstamped_base` (upgrade keeps idempotence),
+  `supragnosis-core::cross_node_identical_id_dedups_and_unions`.
+- **Prop B (fold convergence - continuous).** Premises: Prop A, F8 (HLC total order; observations
+  keyed by authoring HLC), and folds that are pure functions of the log ordered by that key (no wall
+  clock, no arrival order, no map iteration order - P16). Conclusion: fold-projections (type
+  glossary, proposal states, curation signals) are equal on any two nodes whose logs are equal - at
+  every moment, with no separate step. Pinned by:
+  `supragnosis-engine::types_fold_orders_by_hlc_not_observed_at` and the glossary assertion inside
+  `cross_node_reprojection_converges`.
+- **Prop C (materialization convergence - at replay points).** Premises: Prop A and a deterministic
+  replay (`Engine::reproject`: fresh states, (ordering-HLC, id) order, deterministic representative
+  attestation). Conclusion: after both nodes re-materialize over equal logs, their entity/relation
+  tables are equal - including every last-write-wins field. Between an observe-time upsert and the
+  next replay a node's tables may transiently diverge (F5); replay is the convergence point.
+  Pinned by: `supragnosis-engine::cross_node_reprojection_converges`.
+- **Prop D (canon convergence and finality).** Premises: Prop B applied to the verdict fold (I1/I2),
+  F16 (the accept gate is the sole commit path, governed by the log-borne canon policy at the
+  verdict's HLC), F15 (I9/I17 checks are deterministic functions of the signed log). Conclusion: the
+  canon layer is equal across nodes in the same canon-policy domain; a verdict's effect is
+  operationally final once causally stable (7a - per-origin HLC monotonicity + per-(origin,
+  workspace) density make the watermark computable). Enforcement of the full premise set lands in
+  Phase 5; the fold mechanics are pinned today by `supragnosis-engine::proposal_open_verdict_fold`.
+
+What the chain does NOT claim: materialized tables between replays (transient divergence, F5),
+recall aids and trust weighting (node-local by design, F13), hub availability (a hub may withhold -
+Section 11), and canon equality across DIFFERENT policy domains (a policy difference is a different
+input, not nondeterminism - F16).
+
 ## 9. Crate / config / surface layout
 
 - New crate `supragnosis-sync` (transport-agnostic core): VV diff, delta encode/decode, apply pipeline,
@@ -512,19 +563,23 @@ changing the canon policy without a central admin - is out of scope.
 
 ## 10. Phasing
 
-- **Phase 0** (this doc) - specification and invariants. [current]
+- **Phase 0** (this doc) - specification and invariants. [done]
 - **Phase 1** - core foundations: node keypair + pubkey-derived `node_id`, HLC type, version-vector type,
   the four sync metadata fields on `Provenance` (automatically outside the content address; the P14
   compile-forced update is in the attestation total-order/dedup and `Observation::absorb`, not `hash_into`),
   fold ordering by HLC, and a **store-port method to scan the log per (node, workspace) since a `VV`** (only
   `all_observations(workspace)` exists today - a delta scan is new). Tests: cross-node identical id, HLC
-  monotonicity, signature round-trip, absorb dedups relay copies but unions distinct attestations.
+  monotonicity, signature round-trip, absorb dedups relay copies but unions distinct attestations. [done]
 - **Phase 2** - `supragnosis-sync`: VV diff, delta codec, apply pipeline (claimed-tier verbatim storage +
-  recall-side down-weighting hooks, F13 - no apply-time trust gating), selective sharing, authoring-time
-  stamping (per-workspace seq counter + HLC + signature at observe) and **backfill stamping of
-  pre-federation attestations at first export** (stamped by their own origin - unstamped attestations
-  never leave the node). Property test: two in-memory nodes converge under any exchange order (F5);
-  tampered event rejected (F6); a workspace-filtered (hole-y) stream still converges (F7).
+  recall-side down-weighting hooks, F13 - no apply-time trust gating), selective sharing, and
+  **export-boundary stamping** (implemented model): one backfill pass stamps pre-federation and new
+  local attestations uniformly, in deterministic (ordering-HLC, id) order, with the stamp upgrade on
+  absorb making the write-back an in-place enrichment (F4) - unstamped attestations never leave the
+  node. Observe-time stamping is an optional Phase 4 wiring (once the daemon holds the node identity);
+  it changes when the stamp is applied, not its meaning. Plus the deterministic re-materialization
+  step `Engine::reproject` (HLC-ordered replay - Prop C). Property test: two in-memory nodes converge
+  under any exchange order (F5); tampered event rejected (F6); a workspace-filtered (hole-y) stream
+  still converges (F7); cross-node reprojection materializes identically. [done]
 - **Phase 3** - transport: axum sync API + rustls + allowlist/bearer; reqwest client. Loopback guard for
   MCP/viz untouched.
 - **Phase 3.5** - **hub human surface, read tier** (6d, F19): user-key enrollment + admin-managed user
