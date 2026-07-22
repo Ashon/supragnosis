@@ -536,23 +536,31 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   .lg { display:inline-flex; align-items:center; gap:6px; }
   .lg.off { opacity:0.38; }
   .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
-  #stats { color:var(--muted); font-size:11px; margin-top:8px; padding-top:6px; border-top:1px solid #ffffff12; line-height:1.5; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
          background:#0d0d0df2; border:1px solid var(--border); border-radius:8px;
          padding:7px 10px; font-size:12.5px; color:var(--ink2); box-shadow:0 6px 20px #000a; }
   #tip b { color:var(--ink); }
   #tip .k { color:var(--muted); }
-  #hud { position:fixed; right:12px; bottom:12px; z-index:5; display:flex; gap:6px; }
+  #hud { position:fixed; right:312px; top:52px; z-index:8; display:flex; gap:6px; }  /* top-right, under the header (mirrors #log) - leaves the bottom clear for the detail panel */
   #hud button { width:34px; height:34px; padding:0; font-size:16px; line-height:1;
                 display:flex; align-items:center; justify-content:center; }
   #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
            color:var(--muted); font-size:13px; pointer-events:none; }
+  /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
+     hidden until it settles, so the user sees a calm spinner instead of nodes flying around. */
+  #loader { position:fixed; inset:0; display:none; flex-direction:column; align-items:center;
+            justify-content:center; gap:13px; z-index:6; pointer-events:none;
+            color:var(--muted); font-size:12px; letter-spacing:.04em; }
+  #loader.on { display:flex; }
+  #loader .spin { width:34px; height:34px; border-radius:50%; border:3px solid var(--border);
+                  border-top-color:var(--accent); animation:ldspin 0.8s linear infinite; }
+  @keyframes ldspin { to { transform:rotate(360deg); } }
   /* Toggle button state: off = dim (muted), on = accent-highlighted - state is visible at a glance.
      JS toggles only .on and keeps .tog. Action buttons like reload/zoom (no .tog) stay at their default. */
   button.tog { opacity:.5; color:var(--muted); }
   button.tog:hover { opacity:.8; }
   button.tog.on { opacity:1; background:#2b3a52; border-color:var(--accent); color:var(--ink); }
-  #log { position:fixed; left:12px; bottom:12px; z-index:6; width:300px; max-width:42vw;
+  #log { position:fixed; left:262px; top:52px; z-index:6; width:280px; max-width:38vw;
          display:flex; flex-direction:column; gap:4px; pointer-events:none; }
   #log .row { background:#0d0d0de6; border:1px solid var(--border); border-radius:7px;
               padding:4px 9px; font-size:11.5px; color:var(--ink2); animation:logfade 8s forwards; }
@@ -560,15 +568,20 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #log .row .t { color:var(--muted); margin-right:5px; }
   @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
                        82%{opacity:1;} 100%{opacity:0;} }
-  #detail { position:fixed; top:92px; right:12px; z-index:7; width:272px; max-width:44vw;
-            max-height:calc(100vh - 150px); overflow-y:auto; display:none;
+  /* Node detail: a wide panel docked center-bottom (between the rails, above the status bar). Header block
+     (name / meta / description) stays put; the relations split into two scrolling columns (out | in). */
+  #detail { position:fixed; left:262px; right:312px; bottom:30px; margin:0 auto; max-width:960px;
+            z-index:8; max-height:36vh; overflow:hidden; display:none;
             background:#0d0d0df2; border:1px solid var(--border); border-radius:10px;
-            padding:11px 13px; font-size:12.5px; color:var(--ink2); box-shadow:0 8px 28px #000a; }
-  #detail.on { display:block; }
-  #detail h2 { font-size:14px; margin:0 22px 2px 0; color:var(--ink); font-weight:600; word-break:break-word; }
+            padding:11px 15px 13px; font-size:12.5px; color:var(--ink2); box-shadow:0 8px 28px #000a; }
+  #detail.on { display:flex; flex-direction:column; }
+  #detail h2 { font-size:15px; margin:0 22px 2px 0; color:var(--ink); font-weight:600; word-break:break-word; }
   #detail .meta { color:var(--muted); font-size:11.5px; margin-bottom:4px; }
-  #detail .desc { color:var(--ink); font-size:11.5px; line-height:1.4; margin:2px 0 4px; opacity:.85; word-break:break-word; }
-  #detail .sec { color:var(--muted); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; margin:10px 0 3px; }
+  #detail .desc { color:var(--ink); font-size:11.5px; line-height:1.4; margin:2px 0 6px; opacity:.85; word-break:break-word; }
+  #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
+  #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
+  #detail .sec { color:var(--muted); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
+                 margin:0 0 4px; position:sticky; top:0; background:#0d0d0df2; padding-bottom:3px; }
   #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:6px; cursor:pointer; }
   #detail .row:hover { background:#ffffff14; }
   #detail .row .rel { color:var(--muted); font-size:11px; white-space:nowrap; }
@@ -580,21 +593,39 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #detail .empty { color:var(--muted); font-style:italic; padding:2px 5px; }
   /* Control dock (left) - collapsible sections for layers/legend/glossary. detail panel stays on the
      right, so the two never collide. Toggled open/closed by the header 'panels' button. */
-  #dock { position:fixed; top:52px; left:12px; z-index:7; width:270px; max-width:46vw;
-          max-height:calc(100vh - 74px); overflow-y:auto; display:none;
-          background:#0d0d0df2; border:1px solid var(--border); border-radius:10px;
-          padding:6px 10px 9px; box-shadow:0 8px 28px #000a; }
-  #dock.on { display:block; }
-  #dock details { border-top:1px solid #ffffff12; }
-  #dock details:first-child { border-top:none; }
-  #dock summary { list-style:none; cursor:pointer; padding:7px 2px 6px; color:var(--ink);
-                  font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
-                  display:flex; align-items:center; gap:6px; user-select:none; }
-  #dock summary::-webkit-details-marker { display:none; }
-  #dock summary::before { content:"+"; color:var(--muted); font-weight:600; width:9px; }
-  #dock details[open] > summary::before { content:"-"; }
-  #dock summary .ct { color:var(--muted); font-weight:400; font-size:10.5px; margin-left:auto; }
-  #dock .body { padding:2px 2px 8px; }
+  /* Two full-height side rails: left = observe the graph (Layers + legends + stats), right = manage
+     knowledge (proposals + review + glossary). Below the header, top to bottom, using the whole side. */
+  .dock { position:fixed; top:44px; bottom:24px; z-index:7; display:none; flex-direction:column;
+          background:#0d0d0df2; border:0 solid var(--border);
+          padding:8px 11px; box-shadow:0 0 26px #0007; }
+  #dockL { left:0; width:250px; border-right-width:1px; }
+  #dockR { right:0; width:300px; border-left-width:1px; }
+  .dock.on { display:flex; }
+  .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
+  /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
+  .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .rsec { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.04em;
+          margin:11px 0 4px; padding-top:8px; border-top:1px solid #ffffff12; }
+  /* IDE-style bottom status bar (full width, below the rails). */
+  #statusbar { position:fixed; left:0; right:0; bottom:0; height:24px; z-index:9; display:flex;
+               align-items:center; gap:14px; padding:0 12px; background:#141413;
+               border-top:1px solid var(--border); font-size:11px; color:var(--muted); }
+  #statusbar #stats { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #statusbar #status { margin-left:auto; white-space:nowrap; }
+  #statusbar #session { white-space:nowrap; }
+  /* Tabs instead of accordions: one section shows at a time in a fixed-height body, so expanding never
+     pushes the bottom-anchored panel upward. */
+  .dock .tabs { display:flex; gap:3px; margin:3px 0 5px; }
+  .dock .tab { flex:1 1 0; min-width:0; padding:4px 5px; font-size:10px; letter-spacing:.02em;
+               text-transform:uppercase; border:1px solid var(--border); background:#22221f;
+               color:var(--muted); border-radius:7px; cursor:pointer; white-space:nowrap;
+               overflow:hidden; text-overflow:ellipsis; }
+  .dock .tab:hover { color:var(--ink); }
+  .dock .tab.on { background:#2b3a52; border-color:var(--accent); color:var(--ink); }
+  .dock .tab .ct { opacity:.75; margin-left:3px; }
+  .dock .panels { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .dock .tabpanel { display:none; padding:2px; }
+  .dock .tabpanel.on { display:block; }
   /* Grouped toggles inside the Layers section. */
   .grp { margin-bottom:7px; }
   .grp:last-child { margin-bottom:2px; }
@@ -627,8 +658,10 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #curationBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
   /* Proposals (the gated curation console). */
   #proposalsBody .hint { color:var(--muted); font-size:10px; font-style:italic; margin-bottom:5px; }
-  #proposalsBody .prop { border-top:1px solid #ffffff12; padding:5px 0; }
+  #proposalsBody .prop { border-top:1px solid #ffffff12; padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }
   #proposalsBody .prop:first-of-type { border-top:none; }
+  #proposalsBody .prop:hover { background:#ffffff08; }
+  #proposalsBody .prop.sel { background:#ffffff12; border-left-color:var(--accent); }
   #proposalsBody .phead { display:flex; align-items:center; gap:6px; }
   #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11.5px; }
   #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px;
@@ -644,60 +677,52 @@ const VIEWER_HTML: &str = r###"<!doctype html>
 </style>
 <canvas id="c"></canvas>
 <div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
+<div id="loader"><div class="spin"></div><span>settling layout...</span></div>
 <header>
   <h1>supragnosis ontology</h1>
   <input id="search" placeholder="search nodes" size="16" autocomplete="off">
   <label class="hint">ws <input id="ws" placeholder="(default)" size="11" autocomplete="off"></label>
   <span class="hint">*=all</span>
-  <button id="dockBtn" class="tog on" title="show/hide the controls panel (layers, legend, glossary)">panels</button>
-  <span id="session" class="hint"></span>
-  <span id="status"></span>
+  <button id="dockBtn" class="tog on" title="show/hide the side panels (layers, legend, glossary, proposals)">panels</button>
 </header>
 <div id="log"></div>
 <div id="detail"></div>
-<aside id="dock" class="on">
+<aside id="dockL" class="dock on">
   <div id="wschips"></div>
-  <details open>
-    <summary>Layers</summary>
-    <div class="body">
-      <div class="grp"><span class="ghdr">Layout</span><div class="btns">
-        <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
-        <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
-        <button id="hyperBtn" class="tog" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
-      </div></div>
-      <div class="grp"><span class="ghdr">Show</span><div class="btns">
-        <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
-        <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
-        <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
-        <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
-        <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
-        <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
-      </div></div>
-      <div class="grp"><div class="btns"><button id="reload">reload</button></div></div>
-    </div>
-  </details>
-  <details>
-    <summary>Node types <span class="ct" id="nodeCt"></span></summary>
-    <div class="body"><div id="legendNodes"></div></div>
-  </details>
-  <details>
-    <summary>Edge types <span class="ct" id="edgeCt"></span></summary>
-    <div class="body"><div id="legendEdges"></div></div>
-  </details>
-  <details id="secGloss">
-    <summary>Type glossary <span class="ct" id="glossCt"></span></summary>
-    <div class="body"><div id="glossaryBody"></div></div>
-  </details>
-  <details id="secReview">
-    <summary>Review <span class="ct" id="reviewCt"></span></summary>
-    <div class="body"><div id="curationBody"></div></div>
-  </details>
-  <details id="secProposals">
-    <summary>Proposals <span class="ct" id="propCt"></span></summary>
-    <div class="body"><div id="proposalsBody"></div></div>
-  </details>
-  <div id="stats"></div>
+  <div class="railbody">
+    <div class="grp"><span class="ghdr">Layout</span><div class="btns">
+      <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
+      <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
+      <button id="hyperBtn" class="tog" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
+    </div></div>
+    <div class="grp"><span class="ghdr">Show</span><div class="btns">
+      <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
+      <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
+      <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
+      <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
+      <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
+      <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
+    </div></div>
+    <div class="grp"><div class="btns"><button id="reload">reload</button></div></div>
+    <div class="rsec">Node types <span class="ct" id="nodeCt"></span></div>
+    <div id="legendNodes"></div>
+    <div class="rsec">Edge types <span class="ct" id="edgeCt"></span></div>
+    <div id="legendEdges"></div>
+  </div>
 </aside>
+<aside id="dockR" class="dock on">
+  <div class="tabs">
+    <button class="tab on" data-tab="proposals">Proposals<span class="ct" id="propCt"></span></button>
+    <button class="tab" data-tab="review">Review<span class="ct" id="reviewCt"></span></button>
+    <button class="tab" data-tab="glossary">Types<span class="ct" id="glossCt"></span></button>
+  </div>
+  <div class="panels">
+    <div class="tabpanel on" data-panel="proposals"><div id="proposalsBody"></div></div>
+    <div class="tabpanel" data-panel="review"><div id="curationBody"></div></div>
+    <div class="tabpanel" data-panel="glossary"><div id="glossaryBody"></div></div>
+  </div>
+</aside>
+<div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
 <div id="tip"></div>
 <div id="hud">
   <button id="zin" title="zoom in">+</button>
@@ -740,17 +765,22 @@ const chipBar = document.getElementById("wschips");
 const legendNodesEl = document.getElementById("legendNodes"), legendEdgesEl = document.getElementById("legendEdges");
 const nodeCtEl = document.getElementById("nodeCt"), edgeCtEl = document.getElementById("edgeCt");
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
+const loaderEl = document.getElementById("loader");
 const detailEl = document.getElementById("detail");
-const dockEl = document.getElementById("dock"), secGlossEl = document.getElementById("secGloss");
+const dockLEl = document.getElementById("dockL"), dockREl = document.getElementById("dockR");
 const glossaryBodyEl = document.getElementById("glossaryBody"), glossCtEl = document.getElementById("glossCt");
-const secReviewEl = document.getElementById("secReview");
 const curationBodyEl = document.getElementById("curationBody"), reviewCtEl = document.getElementById("reviewCt");
-const secPropEl = document.getElementById("secProposals");
 const proposalsBodyEl = document.getElementById("proposalsBody"), propCtEl = document.getElementById("propCt");
+// A dock tab-panel is "live" when its tab is active and its dock is shown (replaces the old details.open).
+function panelOn(name) {
+  const p = document.querySelector('.tabpanel[data-panel="' + name + '"]');
+  return !!(p && p.classList.contains("on") && p.closest(".dock").classList.contains("on"));
+}
 
 let glossaryTypes = [];          // [{target, name, description, sources, trust_tier}] - /api/types
 let curation = null;             // read-only curation signals - /api/curation (Principle 7, generate-not-commit)
 let proposals = [];              // proposals with folded state - /api/proposals (Principle 23 gate)
+let proposalSel = null;          // the proposal currently previewed on the graph (click to select/toggle)
 let follow = true;               // whether the camera follows the most recent agent-activity node
 let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
@@ -797,9 +827,16 @@ let panning = null, downPos = null, userMoved = false, firstData = true, needFit
 // --- force simulation (alpha cooling + collision separation) ------------------------------------
 let alpha = 1;
 const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.02;
+// Layout-loader gating: while the sim is reheated at/above SETTLE_ENTER (initial load, data change,
+// group toggle - the big rearrangements), the graph is hidden behind a loader; it is revealed once
+// alpha cools to REVEAL_ALPHA. Small wakes (drag/focus at 0.3) stay below SETTLE_ENTER, so those never
+// trigger the loader. `settling` starts true so the first layout comes up settled, not mid-flight.
+const SETTLE_ENTER = 0.5, REVEAL_ALPHA = 0.08;
+let settling = true;
 // Base force parameters. The larger the graph, the wider it should spread, so stepSim scales by node count (spread).
 const REPULSE = 7000, SPRING_LEN = 120, SPRING_K = 0.02;
 const CENTER_BASE = 0.0015; // center-attraction base - weakened for large graphs (prevents central clumping)
+const ANCHOR_K = 0.5;       // central-axis anchor: fraction of the centroid-offset corrected each frame (rigid recenter, positions only) - pins the whole cluster to the world center so it cannot drift off, even when dormant
 const RANGE_BASE = 240;     // repulsion range base - widened for large graphs (pushes out farther)
 const COLLIDE_PAD = 16, DAMPING = 0.85;
 const MIN_SEP = 12;        // repulsion denominator floor - prevents force blowup (flinging) when very close
@@ -819,7 +856,7 @@ function nodeRadius(n) { return Math.min(NODE_R_MAX, NODE_R_BASE + Math.sqrt(n.d
 function nodeStrokeW(n) { return Math.min(NODE_STROKE_MAX / cam.s, Math.max(nodeRadius(n) * NODE_STROKE_RATIO, NODE_STROKE_MIN / cam.s)); }
 // Wake the simulation (discrete wakeup). Called only from events: new node/deletion (applyGraph),
 // drag, focus. Never called from a continuous condition (overlap) - prevents endless reheating after settling.
-function wake(a = 0.7) { alpha = Math.max(alpha, a); }
+function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) settling = true; }
 
 // --- Camera (canvas is fullscreen, mouse uses client coordinates) ----------------------------
 function toWorld(sx, sy) { return [(sx - cam.x) / cam.s, (sy - cam.y) / cam.s]; }
@@ -836,12 +873,23 @@ function zoomAt(sx, sy, f) {
   camT.s = Math.max(0.15, Math.min(4, camT.s * f));
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
-const TOP_INSET = 52;   // height occluded by the top header - compensated in centering/fit (the dock is a left overlay, not top)
+const TOP_INSET = 52;      // height occluded by the top header - compensated in centering/fit
+const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
+const DOCK_L = 250, DOCK_R = 300;   // side-rail widths (match the CSS) - reserved so content is not hidden under them
+function insetL() { return dockLEl.classList.contains("on") ? DOCK_L : 0; }
+function insetR() { return dockREl.classList.contains("on") ? DOCK_R : 0; }
+// Bottom occlusion: the status bar, plus the detail panel when it is open (panel sits at bottom:30,
+// measured live so centering keeps the focused node visible above it). Render detail before centerOn.
+function insetB() {
+  if (!detailEl.classList.contains("on")) return BOTTOM_INSET;
+  const h = detailEl.getBoundingClientRect().height;
+  return h ? 30 + h + 8 : BOTTOM_INSET;
+}
 // Smoothly bring a node to the screen center (focus-to-zoom). If zoomed too far out, zoom in slightly.
 function centerOn(n) {
   camT.s = Math.min(2.5, Math.max(cam.s, 1.1));
-  camT.x = innerWidth / 2 - n.x * camT.s;
-  camT.y = (innerHeight + TOP_INSET) / 2 - n.y * camT.s; userMoved = true;
+  camT.x = (insetL() + innerWidth - insetR()) / 2 - n.x * camT.s;   // center in the strip between the rails
+  camT.y = (innerHeight + TOP_INSET - insetB()) / 2 - n.y * camT.s; userMoved = true;   // above the detail panel
 }
 
 function assignColors() {
@@ -1015,7 +1063,7 @@ function renderGlossary() {
 
 // Fetch the glossary for the current workspace, then render (only meaningful while the section is open).
 async function refreshGlossary() {
-  if (!secGlossEl.open) return;
+  if (!panelOn("glossary")) return;
   const ws = wsInput.value.trim();
   try {
     const r = await fetch("/api/types" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
@@ -1044,12 +1092,12 @@ function renderCuration() {
   const s = curation.stats || {};
   reviewCtEl.textContent = (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0) || "";
   curationBodyEl.querySelectorAll(".nchip").forEach(c => {
-    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; wake(0.3); centerOn(n); renderDetail(n); } };
+    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
   });
 }
 
 async function refreshCuration() {
-  if (!secReviewEl.open) return;
+  if (!panelOn("review")) return;
   const ws = wsInput.value.trim();
   try {
     const r = await fetch("/api/curation" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
@@ -1066,10 +1114,11 @@ function renderProposals() {
   propCtEl.textContent = open.length || (proposals.length ? proposals.length : "");
   if (!proposals.length) { proposalsBodyEl.innerHTML = '<div class="empty">no proposals - open one with the propose tool, or from a merge candidate</div>'; return; }
   const chip = (id, into) => `<span class="nchip${id === into ? " into" : ""}" data-id="${esc(id)}" title="focus ${esc(nameOf(id))}${id === into ? " (canonical / into)" : ""}">${esc(nameOf(id))}</span>`;
-  let html = `<div class="hint">accept records a gated verdict; the node-merge effect applies in a later step</div>`;
+  let html = `<div class="hint">click a proposal to preview the change on the graph; accept records a gated verdict</div>`;
   for (const p of proposals) {
     const st = esc(p.state);
-    html += `<div class="prop"><div class="phead"><span class="pkind">${esc(p.kind)}</span>`
+    const sel = proposalSel && proposalSel.id === p.id ? " sel" : "";
+    html += `<div class="prop${sel}" data-pid="${esc(p.id)}"><div class="phead"><span class="pkind">${esc(p.kind)}</span>`
       + `<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></div>`;
     if (p.rationale) html += `<div class="prat">${esc(p.rationale)}</div>`;
     html += `<div class="ptargets">${(p.targets || []).map(id => chip(id, p.into)).join("")}</div>`;
@@ -1080,11 +1129,17 @@ function renderProposals() {
     html += `</div>`;
   }
   proposalsBodyEl.innerHTML = html;
+  // Click a proposal row -> preview the change on the graph (belief-diff visualization). Chips/buttons
+  // keep their own actions (stopPropagation), so only the row body toggles the preview.
+  proposalsBodyEl.querySelectorAll(".prop").forEach(row => {
+    row.onclick = () => selectProposal(proposals.find(x => x.id === row.dataset.pid));
+  });
   proposalsBodyEl.querySelectorAll(".nchip").forEach(c => {
-    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; wake(0.3); centerOn(n); renderDetail(n); } };
+    c.onclick = (ev) => { ev.stopPropagation(); const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
   });
   proposalsBodyEl.querySelectorAll(".pacts button").forEach(b => {
-    b.onclick = async () => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
       const ws = wsInput.value.trim();
       const q = "?proposal=" + encodeURIComponent(b.dataset.id) + "&decision=" + b.dataset.act + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
       try { await fetch("/api/review" + q, { cache: "no-store" }); } catch (e) { /* ignore */ }
@@ -1093,8 +1148,18 @@ function renderProposals() {
   });
 }
 
+// Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node if present.
+function selectProposal(p) {
+  proposalSel = (proposalSel && p && proposalSel.id === p.id) ? null : p;
+  if (proposalSel) {
+    const into = nodeById(proposalSel.into);
+    if (into) { focus = into; renderDetail(into); centerOn(into); }
+  }
+  renderProposals();
+}
+
 async function refreshProposals() {
-  if (!secPropEl.open) return;
+  if (!panelOn("proposals")) return;
   const ws = wsInput.value.trim();
   try {
     const r = await fetch("/api/proposals" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
@@ -1177,14 +1242,16 @@ function renderDetail(node) {
     + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
     + (node.aliases && node.aliases.length ? `<div class="meta">merged: ${esc(node.aliases.join(", "))}</div>` : "")
     + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
-    + `<div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}`
-    + `<div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}`;
+    + `<div class="rels">`
+    +   `<div class="relcol"><div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}</div>`
+    +   `<div class="relcol"><div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}</div>`
+    + `</div>`;
   detailEl.className = "on";
   detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
   detailEl.querySelectorAll(".row").forEach(r => {
     r.onclick = () => {
       const n = nodeById(r.dataset.id);
-      if (n) { focus = n; wake(0.3); centerOn(n); renderDetail(n); }
+      if (n) { focus = n; renderDetail(n); centerOn(n); }
     };
   });
 }
@@ -1206,9 +1273,10 @@ function fitView(list, pad = 90) {
   let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
   for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
   const w = innerWidth, h = innerHeight, gw = Math.max(1, c-a), gh = Math.max(1, d-b);
-  camT.s = Math.max(0.15, Math.min(2.5, Math.min((w - pad*2) / gw, (h - pad*2 - TOP_INSET) / gh)));
-  camT.x = w/2 - (a+c)/2*camT.s;
-  camT.y = (h + TOP_INSET)/2 - (b+d)/2*camT.s;
+  const il = insetL(), ir = insetR();   // fit into the strip between the side rails
+  camT.s = Math.max(0.15, Math.min(2.5, Math.min((w - il - ir - pad*2) / gw, (h - pad*2 - TOP_INSET - BOTTOM_INSET) / gh)));
+  camT.x = (il + w - ir)/2 - (a+c)/2*camT.s;
+  camT.y = (h + TOP_INSET - BOTTOM_INSET)/2 - (b+d)/2*camT.s;
 }
 
 // hyperedge id -> palette color (deterministic hash). Overlapping hulls blend semi-transparently (C1: overlap = connective tissue).
@@ -1414,11 +1482,39 @@ function stepSim() {
     if (m > MAX_PUSH) { mx *= MAX_PUSH/m; my *= MAX_PUSH/m; }
     v.x += v.vx + mx; v.y += v.vy + my;
   }
+
+  // Central-axis anchor: the pairwise forces are action-reaction symmetric (zero net force on the
+  // whole-graph centroid), but the per-node / per-hull clamps (maxV, MAX_PUSH, HULL_MAX_PUSH) and the
+  // collision push that keeps correcting while dormant break that symmetry, so the constellation
+  // slowly drifts to one side. Rigidly translate every node so the centroid returns to the world
+  // center - positions only (no velocity -> no momentum/oscillation), applied every frame including
+  // when dormant, which fixes the cluster to the center after cooling and across simulation restarts.
+  // Skipped while dragging (do not fight the pointer); pinned nodes (drag/focus) are held in place.
+  if (!drag) {
+    let sx = 0, sy = 0;
+    for (const v of nodes) { sx += v.x; sy += v.y; }
+    const offx = (wcx - sx / N) * ANCHOR_K, offy = (wcy - sy / N) * ANCHOR_K;
+    if (offx || offy) for (const v of nodes) if (!pinned(v)) { v.x += offx; v.y += offy; }
+  }
 }
 
 function draw() {
   stepSim();
   easeCam();
+  // Reveal transition: the layout has calmed enough to show. Frame it first (auto-fit + snap the
+  // camera, before any user interaction) so the graph appears already fitted rather than mid-zoom.
+  if (settling && alpha <= REVEAL_ALPHA) {
+    settling = false;
+    if (needFit && !userMoved) { needFit = false; fitView(); cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; }
+  }
+  // While settling, keep stepping the sim (above) but hide the graph behind the loader - the user sees
+  // a calm spinner instead of nodes flying around during the violent early rearrangement.
+  if (settling && nodes.length) {
+    ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
+    loaderEl.classList.add("on");
+    requestAnimationFrame(draw); return;
+  }
+  loaderEl.classList.remove("on");
   // Initial auto-fit: once after the layout settles (only before user interaction).
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
 
@@ -1535,6 +1631,46 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
+  // Proposal preview (belief-diff visualization): when a proposal is selected, show on the graph what it
+  // would change. For entity_merge: a dashed arrow from each fold-away target to the canonical `into`,
+  // the target's incident edges accented (they rewire), a ring on each target and a canonical ring on
+  // `into`. For an open proposal both nodes are still present (a before-preview); for a merged one the
+  // targets are already folded away, so only the canonical is highlighted (the result).
+  if (proposalSel && proposalSel.kind === "entity_merge") {
+    const into = nodeById(proposalSel.into);
+    const tgts = (proposalSel.targets || []).map(nodeById).filter(n => n && (!into || n.id !== into.id));
+    const tgtIds = new Set(tgts.map(n => n.id));
+    const ACC = "#e5a53f", CANON = "#5fd18a";
+    ctx.setLineDash([5/cam.s, 4/cam.s]);
+    for (const e of edges) {   // edges that will rewire onto the canonical
+      if (tgtIds.has(e.a.id) || tgtIds.has(e.b.id)) {
+        ctx.globalAlpha = 0.95; ctx.strokeStyle = ACC; ctx.lineWidth = 2/cam.s;
+        ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    for (const t of tgts) {
+      ctx.beginPath(); ctx.arc(t.x, t.y, nodeRadius(t) + 4, 0, 7); ctx.lineWidth = 2.5/cam.s; ctx.strokeStyle = ACC; ctx.stroke();
+      if (into) {   // fold arrow target -> into, with an arrowhead near into
+        const dx = into.x - t.x, dy = into.y - t.y, d = Math.hypot(dx, dy) || 1, ux = dx/d, uy = dy/d;
+        const tipx = into.x - ux*(nodeRadius(into) + 6), tipy = into.y - uy*(nodeRadius(into) + 6);
+        ctx.strokeStyle = ACC; ctx.lineWidth = 2.5/cam.s;
+        ctx.beginPath(); ctx.moveTo(t.x + ux*(nodeRadius(t) + 4), t.y + uy*(nodeRadius(t) + 4)); ctx.lineTo(tipx, tipy); ctx.stroke();
+        const hw = 6/cam.s, hl = 10/cam.s;   // arrowhead
+        ctx.fillStyle = ACC; ctx.beginPath();
+        ctx.moveTo(tipx, tipy);
+        ctx.lineTo(tipx - ux*hl - uy*hw, tipy - uy*hl + ux*hw);
+        ctx.lineTo(tipx - ux*hl + uy*hw, tipy - uy*hl - ux*hw);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    if (into) {
+      ctx.beginPath(); ctx.arc(into.x, into.y, nodeRadius(into) + 6, 0, 7); ctx.lineWidth = 3/cam.s; ctx.strokeStyle = CANON; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Labels (nodes + hulls) - turned on/off by the labels toggle. In screen coordinates (DPR), so constant size regardless of zoom.
   if (showLabels) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1602,11 +1738,15 @@ canvas.addEventListener("wheel", ev => {
 canvas.addEventListener("mousedown", ev => {
   downPos = { x: ev.clientX, y: ev.clientY };
   const n = nodeAt(ev.clientX, ev.clientY);
-  if (n) { drag = n; wake(0.3); }
-  else { panning = { sx: ev.clientX, sy: ev.clientY, px: cam.x, py: cam.y }; canvas.classList.add("grabbing"); }
+  if (n) { drag = n; }   // press alone does not reheat - wake only once the pointer actually drags (mousemove)
+  else {
+    // Clicking empty canvas clears any proposal preview.
+    if (proposalSel) { proposalSel = null; renderProposals(); }
+    panning = { sx: ev.clientX, sy: ev.clientY, px: cam.x, py: cam.y }; canvas.classList.add("grabbing");
+  }
 });
 addEventListener("mousemove", ev => {
-  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; showTip(null); return; }
+  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; wake(0.3); showTip(null); return; }
   if (panning) {
     // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
     cam.x = camT.x = panning.px + (ev.clientX - panning.sx);
@@ -1621,10 +1761,10 @@ addEventListener("mouseup", ev => {
   if (!moved && ev.target === canvas) {
     const n = nodeAt(ev.clientX, ev.clientY);
     focus = n ? (focus === n ? null : n) : null;   // node click = toggle focus (pin), empty space = clear
-    if (focus) { wake(0.3); centerOn(focus); }    // focus-to-zoom: smoothly center on that node
+    if (focus) centerOn(focus);    // node click just centers the camera - no reheat, the layout stays put
     renderDetail(focus);                           // show/clear the detail inspector
   }
-  if (drag) wake(0.3);
+  if (drag && moved) wake(0.3);   // settle neighbors only after a real drag, not a plain click
   drag = null;
   if (panning) { panning = null; canvas.classList.remove("grabbing"); }
   downPos = null;
@@ -1652,11 +1792,22 @@ const hyperBtn = document.getElementById("hyperBtn");
 hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); if (hyperMode && !hyperedges.length) poll(); };
 const dockBtn = document.getElementById("dockBtn");
 // The controls dock is a side panel (not a canvas layer) - toggling never reheats the sim.
-dockBtn.onclick = () => { const on = dockEl.classList.toggle("on"); dockBtn.classList.toggle("on", on); };
+dockBtn.onclick = () => { const on = !dockLEl.classList.contains("on"); dockLEl.classList.toggle("on", on); dockREl.classList.toggle("on", on); dockBtn.classList.toggle("on", on); };
 // Fetch the glossary lazily when its section is expanded (and keep it fresh via poll while open).
-secGlossEl.addEventListener("toggle", () => { if (secGlossEl.open) refreshGlossary(); });
-secReviewEl.addEventListener("toggle", () => { if (secReviewEl.open) refreshCuration(); });
-secPropEl.addEventListener("toggle", () => { if (secPropEl.open) refreshProposals(); });
+// Dock tabs: clicking a tab shows only that panel (one at a time, fixed-height body - no upward growth),
+// and refreshes the newly active data panel.
+document.querySelectorAll(".dock .tabs").forEach(tabs => {
+  tabs.addEventListener("click", ev => {
+    const btn = ev.target.closest(".tab");
+    if (!btn) return;
+    const dock = tabs.closest(".dock");
+    tabs.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === btn));
+    dock.querySelectorAll(".tabpanel").forEach(p => p.classList.toggle("on", p.dataset.panel === btn.dataset.tab));
+    if (btn.dataset.tab === "glossary") refreshGlossary();
+    else if (btn.dataset.tab === "review") refreshCuration();
+    else if (btn.dataset.tab === "proposals") refreshProposals();
+  });
+});
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
