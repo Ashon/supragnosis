@@ -32,7 +32,7 @@ use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ServiceExt;
 use supragnosis_core::{EmbeddingProvider, KnowledgeStore};
 use supragnosis_embed::HashingEmbedder;
-use supragnosis_engine::{Engine, Event};
+use supragnosis_engine::{Engine, Event, SearchMode};
 use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::{CozoStore, InMemoryStore};
 
@@ -332,7 +332,27 @@ fn build_sync_context(
                 count: a.count,
             });
         });
-        spawn_sync_server(engine.store(), node.clone(), srv.clone(), on_applied, on_activity)?;
+        // Federated recall: remote peers search THIS node's full recall surface (hybrid when the
+        // embedder is present), not just the store's keyword path.
+        let search_engine = engine.clone();
+        let on_search: supragnosis_sync::http::OnSearch = Arc::new(move |ws, q, lim| {
+            search_engine
+                .search(q, Some(ws), lim)
+                .map(|o| {
+                    let mode = match o.mode {
+                        SearchMode::Hybrid => "hybrid",
+                        SearchMode::Keyword => "keyword",
+                    };
+                    (o.hits, mode.to_string())
+                })
+                .map_err(|e| e.to_string())
+        });
+        let hooks = supragnosis_sync::http::Hooks {
+            on_applied: Some(on_applied),
+            on_activity: Some(on_activity),
+            on_search: Some(on_search),
+        };
+        spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?;
     }
     let mut origin_keys = fc.sync.origin_keys.clone();
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -353,8 +373,7 @@ fn spawn_sync_server(
     store: Arc<dyn KnowledgeStore>,
     node: Arc<supragnosis_sync::SyncNode>,
     srv: fed::ServerSection,
-    on_applied: supragnosis_sync::http::OnApplied,
-    on_activity: supragnosis_sync::http::OnActivity,
+    hooks: supragnosis_sync::http::Hooks,
 ) -> Result<()> {
     use supragnosis_sync::http as sync_http;
     let listen: std::net::SocketAddr = srv
@@ -370,7 +389,7 @@ fn spawn_sync_server(
     sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len())?;
     tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
     tokio::spawn(async move {
-        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist, Some(on_applied), Some(on_activity)).await {
+        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist, hooks).await {
             tracing::error!(error = %e, "federation sync API terminated");
         }
     });

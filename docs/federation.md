@@ -25,7 +25,7 @@ Two connection kinds stay distinct and independent:
 |--|----------------|------------------------------|
 | Target | agent <-> node | node <-> node/server |
 | Surface | MCP (stdio local / streamable-HTTP loopback) | dedicated sync API (HTTPS) |
-| Payload | observe/search/traverse tool calls | signed observation-log delta exchange |
+| Payload | observe/search/traverse tool calls | signed observation-log delta exchange + federated recall (search) |
 | Bind | loopback only (P17, unchanged) | network bind allowed, but only with auth + TLS (see 6) |
 
 "Connecting to a server" happens at both levels: (a) a remote agent connects to a node's MCP-HTTP; (b) a
@@ -172,6 +172,13 @@ HTTPS (JSON wire format initially; gRPC is a later optimization):
   where the caller is behind, shared workspaces only.
 - `push(events)` -> the caller sends events for ranges where it is ahead. The receiver verifies, dedups by
   CAS, absorbs provenance, and re-projects.
+- `search(workspace, query)` -> **federated recall**: an authenticated read of the SERVER's ontology,
+  answered from that node's recall surface (hybrid/keyword, mode-labeled). Local state can lag the
+  remote store, so a local miss may mean "not synced yet" - this call lets an agent check without
+  pulling first. Gated by the same per-node workspace authorization as sync (the P17 second door,
+  honored); results are a recall aid (P16 exemption, P19) - to become local graph material or commit
+  input they must arrive via pull (the log is the only transport of knowledge, F1). Served hits are
+  streamed to the activity feed like every other hit.
 
 Apply pipeline on receipt (F3): verify signature and allowlist (6a) -> CAS dedup / `absorb` (the claimed
 trust tier is stored verbatim) -> advance `VV` -> re-project. Trust evaluation happens at read/generate
