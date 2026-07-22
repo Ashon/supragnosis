@@ -196,6 +196,12 @@ pub struct GetEntityRequest {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SearchRequest {
+    /// Search scope: "local" (this node only, default), "remote" (the configured sync servers'
+    /// ontologies - federated recall), or "both". Local state can lag the remote store - use
+    /// remote/both when a local miss may just mean "not synced yet". Remote hits are the server's
+    /// recall surface: sync_pull the workspace to materialize them locally before traverse/get_entity.
+    #[serde(default)]
+    pub scope: Option<String>,
     /// Search query.
     pub query: String,
     /// Scope to a workspace (all workspaces when omitted).
@@ -371,6 +377,57 @@ impl SupragnosisServer {
         description = "Search knowledge (entities/observations). The response mode reports the surface actually used: hybrid (semantic+keyword) or keyword (keyword-only degrade - an empty result in this mode may be a recall failure). score is for rank comparison only - its scale differs per mode, so the absolute value is not a confidence."
     )]
     async fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
+        let scope = req.scope.as_deref().unwrap_or("local");
+        // Federated recall (scope remote/both): query the configured sync servers' ontologies -
+        // local state can lag the remote store, so a local miss may just mean "not synced yet".
+        let mut remote_results: Vec<serde_json::Value> = Vec::new();
+        if scope == "remote" || scope == "both" {
+            match &self.sync {
+                None => remote_results.push(serde_json::json!({
+                    "error": "no sync servers configured on this node (supragnosis.toml [sync])"
+                })),
+                Some(ctx) => {
+                    let ws_name = req
+                        .workspace
+                        .clone()
+                        .unwrap_or_else(|| self.engine.default_workspace().to_string());
+                    for server in &ctx.servers {
+                        let client = match supragnosis_sync::http::SyncClient::new(
+                            server,
+                            &ctx.auth_token,
+                            ctx.insecure_tls,
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                remote_results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                                continue;
+                            }
+                        };
+                        match client.search(&ws_name, &req.query, req.limit.unwrap_or(20)).await {
+                            Ok(resp) => {
+                                self.engine.emit(Event::Sync {
+                                    direction: "search".into(),
+                                    peer: server.clone(),
+                                    workspace: ws_name.clone(),
+                                    count: resp.hits.len(),
+                                });
+                                remote_results.push(serde_json::json!({
+                                    "server": server,
+                                    "mode": resp.mode,
+                                    "hits": resp.hits,
+                                    "note": "remote recall surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
+                                }));
+                            }
+                            Err(e) => remote_results
+                                .push(serde_json::json!({"server": server, "error": e.to_string()})),
+                        }
+                    }
+                }
+            }
+        }
+        if scope == "remote" {
+            return to_json(&serde_json::json!({ "scope": "remote", "remote": remote_results }));
+        }
         let query = req.query.clone();
         let ws = req.workspace.clone();
         let limit = req.limit.unwrap_or(20);
@@ -396,6 +453,9 @@ impl SupragnosisServer {
                     .to_string(),
                 });
                 let mut resp = serde_json::json!({ "mode": out.mode, "hits": out.hits });
+                if !remote_results.is_empty() {
+                    resp["remote"] = serde_json::Value::Array(remote_results);
+                }
                 // Open-world assumption (Principle 5): zero hits is unknown, not a negation. For a keyword
                 // degrade, we also signal that zero hits is more likely a recall failure, to aid self-correction (Principle 21).
                 if out.hits.is_empty() {

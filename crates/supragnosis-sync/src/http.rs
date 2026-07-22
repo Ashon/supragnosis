@@ -15,7 +15,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use supragnosis_core::{AttestationEvent, KnowledgeStore, VersionVector};
+use supragnosis_core::{AttestationEvent, KnowledgeStore, SearchHit, VersionVector};
 
 use crate::{export_delta, version_vector, SyncError, SyncNode};
 
@@ -80,6 +80,21 @@ pub struct SyncActivity {
 /// Activity hook: the wiring layer forwards hits into the node's event stream (viewer SSE).
 pub type OnActivity = Arc<dyn Fn(SyncActivity) + Send + Sync>;
 
+/// Federated-recall hook: the wiring layer injects the engine's hybrid search so a remote read
+/// query answers from this node's full recall surface (hits, mode). Without it the handler falls
+/// back to the store's keyword path.
+pub type OnSearch =
+    Arc<dyn Fn(&str, &str, usize) -> Result<(Vec<SearchHit>, String), String> + Send + Sync>;
+
+/// The wiring-layer hooks injected into the sync API (all optional): re-materialization after
+/// inbound pushes, activity streaming to the viewer, and the engine-backed federated recall.
+#[derive(Default)]
+pub struct Hooks {
+    pub on_applied: Option<OnApplied>,
+    pub on_activity: Option<OnActivity>,
+    pub on_search: Option<OnSearch>,
+}
+
 /// Shared state of the sync API handlers.
 pub struct ServerState {
     pub store: Arc<dyn KnowledgeStore>,
@@ -89,6 +104,7 @@ pub struct ServerState {
     pub origin_keys: BTreeMap<String, String>,
     on_applied: Option<OnApplied>,
     on_activity: Option<OnActivity>,
+    on_search: Option<OnSearch>,
 }
 
 impl ServerState {
@@ -98,7 +114,7 @@ impl ServerState {
             .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
             .collect();
         origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
-        Self { store, node, allowlist, origin_keys, on_applied: None, on_activity: None }
+        Self { store, node, allowlist, origin_keys, on_applied: None, on_activity: None, on_search: None }
     }
 
     /// Injects the post-apply re-materialization hook (the engine's reproject).
@@ -110,6 +126,12 @@ impl ServerState {
     /// Injects the live-activity hook (streams sync hits to the viewer).
     pub fn with_on_activity(mut self, f: OnActivity) -> Self {
         self.on_activity = Some(f);
+        self
+    }
+
+    /// Injects the federated-recall hook (the engine's hybrid search).
+    pub fn with_on_search(mut self, f: OnSearch) -> Self {
+        self.on_search = Some(f);
         self
     }
 
@@ -153,6 +175,26 @@ pub struct PullResp {
 pub struct PushReq {
     pub workspace: String,
     pub events: Vec<AttestationEvent>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchReq {
+    pub workspace: String,
+    pub query: String,
+    #[serde(default = "default_search_limit")]
+    pub limit: usize,
+}
+
+fn default_search_limit() -> usize {
+    20
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResp {
+    /// The recall surface the SERVER used (hybrid/keyword) - results are the server's node-local
+    /// recall aid (P16 exemption): to become local graph material they must arrive via pull (F1).
+    pub mode: String,
+    pub hits: Vec<SearchHit>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -272,12 +314,47 @@ async fn push_handler(
     }))
 }
 
+/// Federated recall (P17 second door, honored): an authenticated peer searches THIS node's
+/// ontology - gated by the same per-node workspace authorization as sync, answered from the node's
+/// recall surface, and streamed to the activity feed like any other hit.
+async fn search_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Json(req): Json<SearchReq>,
+) -> Result<Json<SearchResp>, HandlerError> {
+    let entry = authenticate(&headers, &state.allowlist)?;
+    authorize_workspace(&entry, &req.workspace)?;
+    let limit = req.limit.min(100);
+    let ws = req.workspace.clone();
+    let (hits, mode) = match state.on_search.clone() {
+        Some(hook) => {
+            let q = req.query.clone();
+            tokio::task::spawn_blocking(move || hook(&ws, &q, limit))
+                .await
+                .map_err(internal)?
+                .map_err(internal)?
+        }
+        None => {
+            let store = state.store.clone();
+            let q = req.query.clone();
+            let hits = tokio::task::spawn_blocking(move || store.search(&q, Some(&ws), limit))
+                .await
+                .map_err(internal)?
+                .map_err(internal)?;
+            (hits, "keyword".to_string())
+        }
+    };
+    state.activity("search-served", &entry.node_id, &req.workspace, hits.len());
+    Ok(Json(SearchResp { mode, hits }))
+}
+
 /// The sync API router - exposed so the daemon (Phase 4 wiring) can mount it.
 pub fn router(state: Arc<ServerState>) -> Router {
     Router::new()
         .route("/sync/advertise", post(advertise_handler))
         .route("/sync/pull", post(pull_handler))
         .route("/sync/push", post(push_handler))
+        .route("/sync/search", post(search_handler))
         .with_state(state)
 }
 
@@ -296,16 +373,18 @@ pub async fn serve(
     listen: SocketAddr,
     tls: Option<TlsPaths>,
     allowlist: Vec<AllowEntry>,
-    on_applied: Option<OnApplied>,
-    on_activity: Option<OnActivity>,
+    hooks: Hooks,
 ) -> Result<(), TransportError> {
     validate_bind(&listen, tls.is_some(), allowlist.len())?;
     let mut state = ServerState::new(store, node, allowlist);
-    if let Some(hook) = on_applied {
+    if let Some(hook) = hooks.on_applied {
         state = state.with_on_applied(hook);
     }
-    if let Some(hook) = on_activity {
+    if let Some(hook) = hooks.on_activity {
         state = state.with_on_activity(hook);
+    }
+    if let Some(hook) = hooks.on_search {
+        state = state.with_on_search(hook);
     }
     let state = Arc::new(state);
     let app = router(state);
@@ -393,6 +472,12 @@ impl SyncClient {
 
     pub async fn push(&self, workspace: &str, events: Vec<AttestationEvent>) -> Result<PushResp, TransportError> {
         self.call("/sync/push", &PushReq { workspace: workspace.into(), events }).await
+    }
+
+    /// Federated recall: search the SERVER's ontology (its recall surface, mode-labeled). Results
+    /// are remote ids - pull the workspace to materialize them locally before traverse/get_entity.
+    pub async fn search(&self, workspace: &str, query: &str, limit: usize) -> Result<SearchResp, TransportError> {
+        self.call("/sync/search", &SearchReq { workspace: workspace.into(), query: query.into(), limit }).await
     }
 
     /// One full sync round for a workspace: backfill-stamp local knowledge, push what the server
