@@ -257,25 +257,45 @@ remains the **spoke**: every stakeholder's own node has the full viewer/curation
 replica, offline-capable, no extra auth surface (the local-first answer). The hub adds a convenience
 surface on top - opened in two tiers, because reads and writes carry very different risks:
 
+**Hub user identity is a key, set up once.** A hub user enrolls by generating a keypair (browser
+WebCrypto/passkey or CLI) exactly once; the hub admin adds the public key to the **user whitelist**:
+`{principal -> user public key(s), per-workspace read/write grants}`. This is deliberately symmetric with
+the node allowlist (6a) - the hub knows machines by node keys and humans by user keys, and admitting
+either is the same hub-admin act (7b meta-authority). One enrollment serves double duty: it is the wire
+credential for the human surface AND it **seeds the canon policy's principal-to-key binding** (7a) - the
+governance identity and the login identity are the same key, not two systems to reconcile.
+
 - **Read tier (Phase 3.5)**: the hub serves its viewer / read APIs over the network - TLS in-process,
-  per-user bearer token, and the P17 second-door rule enforced (only `share_workspaces` content; no
-  global no-workspace query). ALL write endpoints (`observe`, `propose`, `review`, `define_type` - and
-  the viewer's `/api/review`) are disabled on this surface. Team members without a local node can *see*
-  the shared ontology, proposals, and curation signals by opening a URL.
-- **Write tier (Phase 5+)**: knowledge management (casting verdicts, opening proposals) through the hub
-  requires **login-to-principal binding**. The attribution pitfall is the reason this tier waits: the
-  viewer's review action is a write, and behind a shared loopback-less surface without per-user identity,
-  every verdict would be attributed to the hub's own host identity - I9's self-approval comparison and
-  P2's delegation chain would collapse into one principal (F19). With authentication, a hub-mediated act
-  is recorded with the delegation chain `host = hub, on_behalf_of = <logged-in principal>`, and the canon
-  policy decides how much a hub-mediated verdict counts for - including whether the hub is a trusted
-  console for I17's "human's direct act" (recall), or whether recall verdicts demand the principal's own
-  node/key. Authentication strength is policy, not hardcoded.
+  authentication by **proof of possession of a whitelisted user key** (challenge-response establishing a
+  short-lived session), authorization by that entry's **workspace grants** (a user sees exactly the
+  granted workspaces; workspace enumeration is filtered too; no global no-workspace query). ALL write
+  endpoints (`observe`, `propose`, `review`, `define_type` - and the viewer's `/api/review`) are disabled
+  on this surface. **Republication consent** (P17): a spoke's share to the hub is `sync-only` by default -
+  serving that workspace to hub users is a *further* disclosure that requires the spoke's explicit
+  `sync+web-read` share grade. Both gates must pass: the spoke offered the workspace for web reading AND
+  the user holds a grant for it.
+- **Write tier (Phase 5+)**: knowledge management (casting verdicts, opening proposals) through the hub,
+  in two strength levels. (i) **Key-authenticated session**: the act is recorded with the delegation
+  chain `host = hub, on_behalf_of = <principal>` - honest but weak, because every hub-mediated act is
+  signed by the hub's single node key, so a compromised hub could still forge any enrolled principal's
+  `on_behalf_of` (the impersonation defense of 7a re-concentrates into one point; detectable by audit,
+  not prevented). (ii) **Principal-signed acts**: the act bytes are signed client-side with the user's
+  own key and the principal signature rides in the attestation alongside the hub's node signature - the
+  hub relays but **cannot forge** a principal's act, I9 compares real keys, and I17's "human's direct
+  act" stays cryptographically checkable even hub-mediated. The canon policy states which acts demand
+  level (ii); **recall verdicts (I17) and `HumanConfirmed` promotion (P18) demand it by default** -
+  level (i) is acceptable only for low-stakes acts under a policy that says so.
+- **Web hardening (Phase 3.5 requirement, P18 in the browser)**: opening the viewer to users turns it
+  into a multi-user web app whose displayed content (entity names, descriptions, proposal rationale) is
+  **synced, attacker-influenceable input** - a contaminated spoke must not achieve stored XSS in another
+  user's browser. Required: a full output-escaping audit of the viewer, a Content-Security-Policy header,
+  credentials never in query strings, and no state-changing GET endpoints on the exposed surface.
 
 The tiers compose with, never replace, the spoke console: a stakeholder with a local node keeps full
-sovereignty (P17) and casts verdicts under their own key; the hub surface serves those who have not
-installed a node. Until Phase 3.5 lands, the supported remote access is an SSH tunnel to the loopback
-viewer (authentication = SSH key, read and write as the tunnel owner's local trust surface).
+sovereignty (P17) and casts verdicts under their own node key; the hub surface serves those who have not
+installed a node. Enrollment/revocation of user keys is a hub-admin act (rotation shares the deferred
+key-rotation workflow). Until Phase 3.5 lands, the supported remote access is an SSH tunnel to the
+loopback viewer (authentication = SSH key, read and write as the tunnel owner's local trust surface).
 
 ## 7. Topology
 
@@ -463,11 +483,19 @@ changing the canon policy without a central admin - is out of scope.
   ungated `define_type` (working-set last-write-wins, 1a) is tolerable only under the single-principal
   solo exception (P23). Until the gate is enforced, federated deployment stays single-principal (Phasing,
   Phase 5/6).
-- **F19** The hub human surface (6d) opens in tiers: the read tier is TLS + per-user token, read-only
-  (every write endpoint disabled), and whitelist-governed (P17 second door); a **write is never accepted
-  from a surface that cannot attribute it to a principal** - an unauthenticated write surface would
-  collapse every actor into the hub's host identity and void I9/P2. Hub-mediated writes carry the
-  delegation chain `host = hub, on_behalf_of = principal`, weighted by the canon policy.
+- **F19** The hub **human surface** (6d) authenticates by whitelisted **user keys** (enrolled once,
+  admin-admitted, seeding the canon-policy principal binding) and authorizes by per-user workspace
+  grants; the read tier disables every write endpoint, and a workspace is served to users only under the
+  spoke's explicit `sync+web-read` share grade (consent to sync is not consent to republish, P17). The
+  human surface never accepts a write it cannot attribute to an enrolled principal - anonymous writes
+  would collapse every actor into the hub's host identity and void I9/P2. (Scope: this governs the human
+  surface only - the sync surface legitimately accepts node-attributed attestations whose principal is
+  absent, which are simply trusted less, P2/P18.)
+- **F20** A hub-mediated act is forgeable by a compromised hub at strength (i) (session-authenticated,
+  `host = hub, on_behalf_of = principal`) and unforgeable at strength (ii) (**principal-signed**: the
+  act bytes carry the user key's signature alongside the hub's node signature). Recall verdicts (I17)
+  and `HumanConfirmed` promotion (P18) require strength (ii) by default; the canon policy may relax
+  only low-stakes acts to (i), never those two.
 
 ## 9. Crate / config / surface layout
 
@@ -499,17 +527,21 @@ changing the canon policy without a central admin - is out of scope.
   tampered event rejected (F6); a workspace-filtered (hole-y) stream still converges (F7).
 - **Phase 3** - transport: axum sync API + rustls + allowlist/bearer; reqwest client. Loopback guard for
   MCP/viz untouched.
-- **Phase 3.5** - **hub human surface, read tier** (6d, F19): the hub's viewer / read APIs over TLS with
-  per-user bearer tokens, all write endpoints disabled, `share_workspaces` whitelist enforced (P17).
-  Reuses the Phase 3 TLS/token infrastructure.
+- **Phase 3.5** - **hub human surface, read tier** (6d, F19): user-key enrollment + admin-managed user
+  whitelist with per-workspace grants, challenge-response session auth, `sync+web-read` share grades,
+  all write endpoints disabled, workspace enumeration filtered, and the web-hardening checklist
+  (escaping audit, CSP, no credentials in URLs, no state-changing GET). Reuses the Phase 3 TLS
+  infrastructure.
 - **Phase 4** - CLI/config/roles + `sync_*` MCP tools.
 - **Phase 5** - **governance enforcement** (prerequisite for multi-principal operation, F15-F18): the
   canon-policy as a log-borne signed artifact incl. the principal-to-key binding and the default-solo
   fallback (7a); I9/I17 checks in the proposal fold (today the fold hardcodes the solo self-attested path);
   `tbox_change` gate enforcement for shared workspaces (F18, 1a); the representative-tier evaluation change
   (F13, 6b - stop maxing in unverified remote claimed tiers); the causal-stability watermark for verdict
-  finality (7a, F16); and the **hub human surface write tier** (6d, F19: login-to-principal binding, so a
-  hub-mediated verdict is attributed `host = hub, on_behalf_of = principal`).
+  finality (7a, F16); and the **hub human surface write tier** (6d, F19/F20: session-attributed acts
+  `host = hub, on_behalf_of = principal`, plus **principal-signed acts** - client-side user-key
+  signatures required for recall/`HumanConfirmed` - with the user whitelist unified into the
+  canon-policy principal binding).
 - **Phase 6** - deploy knowledge.vm as the hub (systemd unit, config with server role, TLS, allowlist),
   register a client, verify end-to-end convergence. May go live after Phase 4 **restricted to
   single-principal workspaces** (the P23 solo exception - one principal across many machines); onboarding a
@@ -545,8 +577,8 @@ property of the spec: no dangling dependency.
 | Keypair + `node_id`, HLC, VV, Provenance sync fields (+ signed lineage declaration), store delta scan | Phase 1 |
 | VV diff, delta codec, hole-tolerant apply, sharing filter, claimed-tier storage + recall hooks | Phase 2 |
 | Sync transport (axum/rustls/reqwest), allowlist/bearer | Phase 3 |
-| Hub human surface: read tier (TLS + user token, RO, whitelist) | Phase 3.5 |
+| Hub human surface: read tier (user-key enrollment + grants, share grades, RO, web hardening) | Phase 3.5 |
 | Config (`host_label`, anchor key, allowlist), CLI roles, `sync_*` tools | Phase 4 |
-| Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (login-to-principal) | Phase 5 |
+| Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (principal-signed acts, F20) | Phase 5 |
 | Hub deployment (systemd, single-principal until Phase 5) | Phase 6 |
 | Mesh/NAT/discovery, gRPC, key rotation, quorum/auto-merge/conflict UI, fine-grained redaction, hub-withholding mitigation, cross-workspace lineage redaction | Deferred (Section 11) |
