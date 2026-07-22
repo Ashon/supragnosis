@@ -25,7 +25,10 @@ jobs:
             target: aarch64-apple-darwin
           - os: macos-14        # Intel 바이너리는 arm64 러너에서 크로스 컴파일 - 희소한
             target: x86_64-apple-darwin   # macos-13(Intel) 러너 의존을 제거한다.
-          - os: ubuntu-latest
+          # build on the oldest supported glibc (22.04 = 2.35) so the binary runs on
+          # 22.04+ - ubuntu-latest(24.04) produced GLIBC_2.38+ binaries that fail on
+          # 22.04 servers.
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
