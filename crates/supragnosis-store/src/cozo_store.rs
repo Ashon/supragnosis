@@ -878,6 +878,7 @@ mod tests {
             observed_at: 1,
             confidence: Some(1.0),
             trust_tier: supragnosis_core::TrustTier::default(),
+            sync: None,
         }
     }
 
