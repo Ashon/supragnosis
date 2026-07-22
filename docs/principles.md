@@ -31,6 +31,13 @@
 > input to systematization (induction 11 / resolution 15 / consolidation 7 / contradiction
 > localization 6 / health metrics 22) but not its judge - commitment goes through the existing gates
 > (deterministic resolution, proposal 23, human confirmation 18).
+> Revision: 2026-07 (7th) - Consolidation and curation (7/11/23): a consolidation/curation pass only
+> GENERATES - it emits read-only curation signals (a pure projection) and candidate proposals, and never
+> commits to the canon. A change to the current belief is surfaced as a deterministic belief diff and
+> applied only through a proposal verdict (an appended observation, never a destructive edit). A
+> human-facing curation console is a gated confirmation surface: its "accept" routes through the verdict
+> path, not a direct write, and a recall (retraction) acceptance stays a human's direct act. Concrete
+> design in [proposal-workflow.md](proposal-workflow.md) Section 14.
 
 ---
 
@@ -201,6 +208,16 @@ summarizes/promotes/demotes accumulated observations. The log is eternal, but re
     **derived observation** carrying confidence and `derived_from` lineage (subsumed under Principles
     1/18/19) - consolidation does not supersede the original.
   - Consolidation/re-indexing runs off the critical path of user requests (idle/batch).
+  - **Consolidation generates, it does not commit.** A consolidation pass may emit (a) read-only
+    **curation signals** - duplicate/grab-bag/orphan/contradiction candidates, a pure projection over the
+    log + hyperedge second-order structure (Principle 11/16), surfacing them commits nothing and needs no
+    gate - and (b) candidate **proposals**. But any change to the current belief goes only through the
+    proposal gate (Principle 23): a deterministic **belief diff** is computed and shown, and the change is
+    applied solely by an appended **verdict observation** (never a destructive edit - Principle 3). A
+    human-facing **curation console** (e.g. the viewer) is therefore a gated confirmation surface - its
+    accept casts a verdict, it does not write the projection/log - and a recall (retraction) acceptance is
+    a human's direct act (Principle 23, non-delegable). See [proposal-workflow.md](proposal-workflow.md)
+    Section 14.
 
 ---
 
@@ -634,6 +651,9 @@ Questions to apply quickly during design/PR review:
 - Is there logic that confuses valid time with transaction time? (Principle 4)
 - Is there logic that interprets absence as negation? (Principle 5)
 - Does forgetting/consolidation touch the observation log? (Principle 7)
+- Does a consolidation/curation pass commit to the canon directly, bypassing the proposal gate and the
+  belief diff? Does a curation UI mutate the projection/log instead of casting a gated verdict
+  observation, or accept a recall on an agent's behalf? (Principles 7, 19, 23)
 - Is something modeled as a subtype actually a role? (Principle 13)
 - Does adding a model field force compile-time review of the identity/total-order/merge functions?
   (Principle 14)
