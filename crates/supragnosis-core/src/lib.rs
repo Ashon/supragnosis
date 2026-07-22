@@ -76,6 +76,10 @@ pub struct Assertions {
     /// proposal gate can wrap it without rework.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub type_defs: Vec<TypeDefAssertion>,
+    /// Proposal-workflow events (Principle 23 / I1: a proposal and its verdicts are observations, no
+    /// separate side store). The proposal state is a deterministic fold of these events (I2).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proposal_events: Vec<ProposalEventAssertion>,
 }
 
 /// Which vocabulary a type definition targets - entity types vs relation types (the two T-Box axes).
@@ -103,6 +107,46 @@ pub struct TypeDefAssertion {
     pub target: TypeTarget,
     pub name: String,
     pub description: String,
+}
+
+/// Kind of proposal-workflow event (I1: all are observations). The state machine folds these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalEventKind {
+    /// Open a proposal (the opening observation's id becomes the proposal id).
+    Opened,
+    /// Cast a verdict (merge/reject - carried in the payload). The deciding event (I3).
+    Verdict,
+    /// Withdraw by the proposer.
+    Withdrawn,
+    /// A review comment (not a verdict).
+    Comment,
+}
+
+impl ProposalEventKind {
+    /// Stable discriminant byte for content-address hashing.
+    fn tag(self) -> u8 {
+        match self {
+            ProposalEventKind::Opened => 0,
+            ProposalEventKind::Verdict => 1,
+            ProposalEventKind::Withdrawn => 2,
+            ProposalEventKind::Comment => 3,
+        }
+    }
+}
+
+/// One proposal-workflow event enclosed in an observation (Principle 23 / I1). The `payload` is a JSON
+/// string whose shape depends on `event` (opened: {kind, targets, into, rationale}; verdict:
+/// {decision}) - kept as an opaque string here so the core stays free of workflow-specific structs; the
+/// engine parses it. Content identity: a different event/payload is a different observation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalEventAssertion {
+    /// Target proposal id. Empty on `opened` (the opening observation's id becomes the proposal id).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub proposal: String,
+    pub event: ProposalEventKind,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub payload: String,
 }
 
 /// Feeds a field into the hash with a length-prefix. Delimiter (`\0`) concatenation has ambiguous boundaries, so
@@ -141,7 +185,10 @@ fn hash_opt_u64(hasher: &mut blake3::Hasher, v: Option<u64>) {
 
 impl Assertions {
     pub fn is_empty(&self) -> bool {
-        self.entities.is_empty() && self.relations.is_empty() && self.type_defs.is_empty()
+        self.entities.is_empty()
+            && self.relations.is_empty()
+            && self.type_defs.is_empty()
+            && self.proposal_events.is_empty()
     }
 
     /// Deterministic byte encoding for the content-address hash. A hand-rolled encoding not coupled to the
@@ -157,6 +204,7 @@ impl Assertions {
             entities,
             relations,
             type_defs,
+            proposal_events,
         } = self;
         hasher.update(&(entities.len() as u64).to_le_bytes());
         for e in entities {
@@ -188,6 +236,13 @@ impl Assertions {
             hasher.update(&[target.tag()]);
             hash_field(hasher, name.as_bytes());
             hash_field(hasher, description.as_bytes());
+        }
+        hasher.update(&(proposal_events.len() as u64).to_le_bytes());
+        for p in proposal_events {
+            let ProposalEventAssertion { proposal, event, payload } = p;
+            hash_field(hasher, proposal.as_bytes());
+            hasher.update(&[event.tag()]);
+            hash_field(hasher, payload.as_bytes());
         }
     }
 }
@@ -785,6 +840,7 @@ mod tests {
                 }],
                 relations: vec![],
                 type_defs: vec![],
+                proposal_events: vec![],
             },
         );
         assert_ne!(plain.id, asserted.id);
@@ -800,6 +856,7 @@ mod tests {
                 }],
                 relations: vec![],
                 type_defs: vec![],
+                proposal_events: vec![],
             },
         );
         assert_ne!(asserted.id, retyped.id);
@@ -815,6 +872,7 @@ mod tests {
                 }],
                 relations: vec![],
                 type_defs: vec![],
+                proposal_events: vec![],
             },
         );
         assert_eq!(asserted.id, again.id);
@@ -835,6 +893,7 @@ mod tests {
                 }],
                 relations: vec![],
                 type_defs: vec![],
+                proposal_events: vec![],
             },
         );
         assert_ne!(crafted.id, asserted.id, "a boundary manipulation collision must be blocked");
@@ -847,6 +906,7 @@ mod tests {
                 entities: vec![EntityAssertion { description: None, name: "rmcp".into(), kind: None }],
                 relations: vec![],
                 type_defs: vec![],
+                proposal_events: vec![],
             },
         );
         let empty_typed = Observation::with_assertions(
@@ -859,6 +919,7 @@ mod tests {
                 }],
                 relations: vec![],
                 type_defs: vec![],
+                proposal_events: vec![],
             },
         );
         assert_ne!(untyped.id, empty_typed.id);

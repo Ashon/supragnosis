@@ -10,7 +10,8 @@ use serde::Serialize;
 use supragnosis_core::{
     hyperedge_id, normalize_relation_kind, now_millis, Assertions, EmbeddingProvider, Entity,
     EntityAssertion, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
-    SearchHit, SearchHitKind, StoreError, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
+    ProposalEventAssertion, ProposalEventKind, SearchHit, SearchHitKind, StoreError, Timestamp,
+    TraverseHit, TrustTier, TypeDefAssertion,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
@@ -146,6 +147,111 @@ struct TypeDefAcc {
     seeded: bool,
 }
 
+/// Grab-bag detection threshold: a hyperedge with this many members is flagged as a loose co-occurrence
+/// context (a split/refine candidate, Principle 11). Tunable.
+const CURATION_GRAB_BAG_MIN: usize = 10;
+
+/// Read-only curation signals (Principle 7 consolidation, "generate, do not commit"): candidates a
+/// human/agent might act on to tidy the knowledge, computed as a pure deterministic projection
+/// (Principle 16). Surfacing them commits nothing and needs no gate - they are NOT proposals or edits,
+/// just "here is what looks worth reviewing". See docs/proposal-workflow.md Section 14.
+#[derive(Serialize)]
+pub struct CurationReport {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// Entities whose names collide under normalization but have distinct ids - entity-merge candidates (Principle 15).
+    pub duplicates: Vec<DuplicateGroup>,
+    /// Oversized co-occurrence contexts - loose grab-bags, split/refine candidates (Principle 11).
+    pub grab_bags: Vec<GrabBag>,
+    /// Entities with no relation in the graph - observed alone, weakly integrated.
+    pub orphans: Vec<CurationNode>,
+    pub stats: CurationStats,
+}
+
+/// A set of entities sharing one normalized name but distinct ids (a merge candidate).
+#[derive(Serialize)]
+pub struct DuplicateGroup {
+    pub key: String,
+    pub members: Vec<CurationNode>,
+}
+
+/// An oversized hyperedge flagged as a grab-bag.
+#[derive(Serialize)]
+pub struct GrabBag {
+    pub id: String,
+    pub size: usize,
+    pub sources: usize,
+    pub member_names: Vec<String>,
+}
+
+/// A node reference in a curation signal (enough for the UI to display + focus it).
+#[derive(Serialize)]
+pub struct CurationNode {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub sources: usize,
+    pub degree: usize,
+}
+
+#[derive(Serialize)]
+pub struct CurationStats {
+    pub duplicate_groups: usize,
+    pub grab_bags: usize,
+    pub orphans: usize,
+}
+
+/// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
+pub const PROPOSAL_KINDS: [&str; 5] = [
+    "entity_merge",
+    "claim_promotion",
+    "claim_demotion",
+    "tbox_change",
+    "recall",
+];
+
+/// Input to open a proposal.
+pub struct ProposeInput {
+    pub workspace: Option<String>,
+    pub kind: String,
+    /// Referenced entity/observation ids the proposal acts on.
+    pub targets: Vec<String>,
+    /// For entity_merge: the canonical target the others fold into (must be one of `targets`).
+    pub into: Option<String>,
+    pub rationale: Option<String>,
+    pub source_ref: Option<String>,
+    pub on_behalf_of: Option<String>,
+}
+
+/// Folded proposal state (a deterministic read view over the proposal's events, I2).
+#[derive(Serialize)]
+pub struct ProposalView {
+    pub id: String,
+    pub kind: String,
+    pub targets: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub into: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    /// open | merged | rejected | withdrawn (solo fold; merge is the absorbing state, I16).
+    pub state: String,
+    pub verdicts: usize,
+    pub opened_at: Timestamp,
+    pub proposer: String,
+    /// Solo single-user marker (Principle 23 self-approval exception): proposer == reviewer.
+    pub self_attested: bool,
+}
+
+/// Transient verdict accumulator for the proposal fold.
+#[derive(Default)]
+struct ProposalTally {
+    merge: bool,
+    reject: bool,
+    withdraw: bool,
+    verdicts: usize,
+}
+
 /// Graph node = entity. Carries visualization hints (type/degree/trust).
 #[derive(Serialize)]
 pub struct GraphNode {
@@ -156,6 +262,9 @@ pub struct GraphNode {
     /// (Optional) Human-readable explanation of this entity - shown in the viewer inspector.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Names of entities merged into this canonical node (Principle 15) - empty when nothing folded in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
     /// The number of edges included in the graph that connect to this node (only edges whose both endpoints are in the node set).
     pub degree: usize,
     /// The number of sources (attestations) accumulated on this entity - larger when more observations back it.
@@ -419,8 +528,9 @@ impl Engine {
                     valid_to: r.valid_to,
                 })
                 .collect(),
-            // observe does not define types (that is the define_type intent).
+            // observe does not define types or open proposals (those are the define_type/propose intents).
             type_defs: Vec::new(),
+            proposal_events: Vec::new(),
         };
         let mut obs = Observation::with_assertions(input.content, prov.clone(), assertions);
         obs.derived_from = input.derived_from;
@@ -604,6 +714,327 @@ impl Engine {
                 trust_tier: a.trust,
             })
             .collect())
+    }
+
+    /// Read-only curation signals over the workspace (Principle 7 "generate, do not commit"): merge
+    /// candidates (name-collision), grab-bag hyperedges, and orphan entities. A pure deterministic read
+    /// (Principle 1/16) - it computes nothing into the canon, so no gate is involved. The commit side
+    /// (proposals/verdicts) is a separate, gated flow (docs/proposal-workflow.md).
+    pub fn curation(&self, workspace: Option<&str>) -> Result<CurationReport, StoreError> {
+        let all_entities = self.store.all_entities(workspace)?;
+        let relations = self.store.all_relations(workspace)?;
+        // Apply accepted merges: a merged-away entity is resolved, so drop it from the candidate set and
+        // rewire relations through its canonical id (so an accepted dedup stops showing as a candidate).
+        let fwd = self.merge_forwarding(workspace)?;
+        let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let entities: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
+        let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
+        // Graph degree = relations whose both (canonical) endpoints are in the node set; dedup + no self-loops.
+        let mut degree: HashMap<String, usize> = HashMap::new();
+        let mut seen: HashSet<(String, String, String)> = HashSet::new();
+        for r in &relations {
+            let (f, t) = (canon(&r.from), canon(&r.to));
+            if f == t || !node_ids.contains(f.as_str()) || !node_ids.contains(t.as_str()) {
+                continue;
+            }
+            if !seen.insert((f.clone(), r.kind.clone(), t.clone())) {
+                continue;
+            }
+            *degree.entry(f).or_default() += 1;
+            *degree.entry(t).or_default() += 1;
+        }
+        let node = |e: &Entity| CurationNode {
+            id: e.id.clone(),
+            name: e.canonical_name.clone(),
+            kind: e.kind.clone(),
+            sources: e.provenance.len(),
+            degree: degree.get(&e.id).copied().unwrap_or(0),
+        };
+        // (1) Merge candidates: entities sharing a normalized name but with distinct ids (Principle 15).
+        // BTreeMap keeps the groups ordered by key (Principle 16 deterministic read).
+        let mut by_name: BTreeMap<String, Vec<&Entity>> = BTreeMap::new();
+        for &e in &entities {
+            by_name.entry(e.canonical_name.trim().to_lowercase()).or_default().push(e);
+        }
+        let duplicates: Vec<DuplicateGroup> = by_name
+            .into_iter()
+            .filter(|(_, v)| v.len() > 1)
+            .map(|(key, mut v)| {
+                v.sort_by(|a, b| a.id.cmp(&b.id));
+                DuplicateGroup { key, members: v.iter().map(|e| node(e)).collect() }
+            })
+            .collect();
+        // (2) Orphans: no relation in the graph (degree 0). Sorted by (name, id).
+        let mut orphans: Vec<CurationNode> = entities
+            .iter()
+            .copied()
+            .filter(|e| degree.get(&e.id).copied().unwrap_or(0) == 0)
+            .map(&node)
+            .collect();
+        orphans.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+        // (3) Grab-bags: oversized hyperedges (Principle 11). Reuse the hypergraph projection.
+        let mut grab_bags: Vec<GrabBag> = self
+            .hypergraph(workspace)?
+            .hyperedges
+            .into_iter()
+            .filter(|h| h.size >= CURATION_GRAB_BAG_MIN)
+            .map(|h| GrabBag { id: h.id, size: h.size, sources: h.sources, member_names: h.member_names })
+            .collect();
+        grab_bags.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.id.cmp(&b.id)));
+        let stats = CurationStats {
+            duplicate_groups: duplicates.len(),
+            grab_bags: grab_bags.len(),
+            orphans: orphans.len(),
+        };
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, stats })
+    }
+
+    // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
+    // A proposal and its verdicts are observations (I1); the state is a deterministic fold (I2). This is
+    // the gate skeleton - it records/folds open+verdict, but the belief diff, blocking checks, and the
+    // merge EFFECT (id forwarding) are later steps. Solo scope: no HLC/quorum; self-approval is the
+    // single-user exception, marked self_attested (Principle 23).
+
+    /// Open a proposal (Principle 23). Records an `opened` event as an observation; the observation id
+    /// becomes the proposal id. Validates only well-formedness (kind known, targets present, entity_merge
+    /// has a valid `into`) - it does not yet commit or check the canon.
+    pub fn propose(&self, input: ProposeInput) -> Result<String, ObserveError> {
+        if !PROPOSAL_KINDS.contains(&input.kind.as_str()) {
+            return Err(ObserveError::Invalid(format!(
+                "unknown proposal kind '{}'. use one of {PROPOSAL_KINDS:?}",
+                input.kind
+            )));
+        }
+        if input.targets.iter().any(|t| t.trim().is_empty()) || input.targets.is_empty() {
+            return Err(ObserveError::Invalid(
+                "a proposal needs at least one non-empty target id".into(),
+            ));
+        }
+        if input.kind == "entity_merge" {
+            if input.targets.len() < 2 {
+                return Err(ObserveError::Invalid(
+                    "entity_merge needs at least 2 target ids (the entities to merge)".into(),
+                ));
+            }
+            match &input.into {
+                None => {
+                    return Err(ObserveError::Invalid(
+                        "entity_merge needs `into` - the canonical target id the others fold into".into(),
+                    ))
+                }
+                Some(into) if !input.targets.contains(into) => {
+                    return Err(ObserveError::Invalid(
+                        "`into` must be one of the targets".into(),
+                    ))
+                }
+                _ => {}
+            }
+        }
+        let workspace = input
+            .workspace
+            .unwrap_or_else(|| self.default_workspace.clone());
+        let prov = self.provenance(&workspace, input.source_ref, None, input.on_behalf_of);
+        let payload = serde_json::json!({
+            "kind": input.kind,
+            "targets": input.targets,
+            "into": input.into,
+            "rationale": input.rationale,
+        })
+        .to_string();
+        let content = format!("proposal(open) {}: {:?}", input.kind, input.targets);
+        let assertions = Assertions {
+            proposal_events: vec![ProposalEventAssertion {
+                proposal: String::new(),
+                event: ProposalEventKind::Opened,
+                payload,
+            }],
+            ..Default::default()
+        };
+        let obs = Observation::with_assertions(content, prov, assertions);
+        let id = obs.id.clone();
+        let _write = self
+            .write_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.store.add_observation(obs)?;
+        Ok(id)
+    }
+
+    /// Cast a verdict / comment / withdrawal on a proposal (Principle 23). Records the event as an
+    /// observation (I1); the fold derives the resulting state. `decision` is merge|reject|comment|withdraw.
+    pub fn review_proposal(
+        &self,
+        workspace: Option<String>,
+        proposal: String,
+        decision: String,
+        note: Option<String>,
+        on_behalf_of: Option<String>,
+    ) -> Result<String, ObserveError> {
+        let event = match decision.as_str() {
+            "merge" | "reject" => ProposalEventKind::Verdict,
+            "comment" => ProposalEventKind::Comment,
+            "withdraw" => ProposalEventKind::Withdrawn,
+            other => {
+                return Err(ObserveError::Invalid(format!(
+                    "unknown decision '{other}'. use merge | reject | comment | withdraw"
+                )))
+            }
+        };
+        if proposal.trim().is_empty() {
+            return Err(ObserveError::Invalid("proposal id is required".into()));
+        }
+        let workspace = workspace.unwrap_or_else(|| self.default_workspace.clone());
+        let prov = self.provenance(&workspace, None, None, on_behalf_of);
+        let payload = serde_json::json!({ "decision": decision, "note": note }).to_string();
+        let content = format!("proposal({decision}) {proposal}");
+        let assertions = Assertions {
+            proposal_events: vec![ProposalEventAssertion {
+                proposal,
+                event,
+                payload,
+            }],
+            ..Default::default()
+        };
+        let obs = Observation::with_assertions(content, prov, assertions);
+        let id = obs.id.clone();
+        let _write = self
+            .write_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.store.add_observation(obs)?;
+        Ok(id)
+    }
+
+    /// Folds the proposal events in the workspace into their current states (I2). Solo decision rule:
+    /// merge is the absorbing state (I16), then withdrawn, then rejected, else open.
+    fn fold_proposals(&self, workspace: Option<&str>) -> Result<BTreeMap<String, ProposalView>, StoreError> {
+        let obss = self.store.all_observations(workspace)?;
+        let mut views: BTreeMap<String, ProposalView> = BTreeMap::new();
+        let mut tally: HashMap<String, ProposalTally> = HashMap::new();
+        // Pass 1: opened events define the proposals (id = the opening observation id).
+        for obs in &obss {
+            let observed_at = obs.provenance.iter().map(|p| p.observed_at).max().unwrap_or(0);
+            let proposer = obs
+                .provenance
+                .first()
+                .map(|p| match &p.on_behalf_of {
+                    Some(who) => format!("{}@{}", who, p.host),
+                    None => p.host.clone(),
+                })
+                .unwrap_or_default();
+            for ev in &obs.assertions.proposal_events {
+                if ev.event != ProposalEventKind::Opened {
+                    continue;
+                }
+                let v: serde_json::Value =
+                    serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
+                let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let targets = v
+                    .get("targets")
+                    .and_then(|x| x.as_array())
+                    .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let into = v.get("into").and_then(|x| x.as_str()).map(String::from);
+                let rationale = v.get("rationale").and_then(|x| x.as_str()).map(String::from);
+                views.entry(obs.id.clone()).or_insert(ProposalView {
+                    id: obs.id.clone(),
+                    kind,
+                    targets,
+                    into,
+                    rationale,
+                    state: "open".into(),
+                    verdicts: 0,
+                    opened_at: observed_at,
+                    proposer: proposer.clone(),
+                    self_attested: true,
+                });
+            }
+        }
+        // Pass 2: verdicts/withdrawals accumulate (order-independent - set semantics, I3).
+        for obs in &obss {
+            for ev in &obs.assertions.proposal_events {
+                match ev.event {
+                    ProposalEventKind::Verdict => {
+                        let v: serde_json::Value =
+                            serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
+                        let t = tally.entry(ev.proposal.clone()).or_default();
+                        t.verdicts += 1;
+                        match v.get("decision").and_then(|x| x.as_str()) {
+                            Some("merge") => t.merge = true,
+                            Some("reject") => t.reject = true,
+                            _ => {}
+                        }
+                    }
+                    ProposalEventKind::Withdrawn => {
+                        tally.entry(ev.proposal.clone()).or_default().withdraw = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for (id, view) in views.iter_mut() {
+            if let Some(t) = tally.get(id) {
+                view.verdicts = t.verdicts;
+                view.state = if t.merge {
+                    "merged"
+                } else if t.withdraw {
+                    "withdrawn"
+                } else if t.reject {
+                    "rejected"
+                } else {
+                    "open"
+                }
+                .into();
+            }
+        }
+        Ok(views)
+    }
+
+    /// All proposals in the workspace, newest first (opened_at desc, id asc for ties - deterministic).
+    pub fn list_proposals(&self, workspace: Option<&str>) -> Result<Vec<ProposalView>, StoreError> {
+        let mut v: Vec<ProposalView> = self.fold_proposals(workspace)?.into_values().collect();
+        v.sort_by(|a, b| b.opened_at.cmp(&a.opened_at).then_with(|| a.id.cmp(&b.id)));
+        Ok(v)
+    }
+
+    /// One proposal's folded state by id (None if there is no such proposal).
+    pub fn get_proposal(&self, workspace: Option<&str>, id: &str) -> Result<Option<ProposalView>, StoreError> {
+        Ok(self.fold_proposals(workspace)?.remove(id))
+    }
+
+    /// Resolved id-forwarding from ACCEPTED entity-merge proposals (Principle 14/15): each merged-away
+    /// target id -> its canonical (`into`) id, transitively resolved to the root. Projections apply this to
+    /// collapse merged duplicates while the log keeps both (Principle 3 - un-merge is a new proposal). Pure
+    /// deterministic function of the log (Principle 16).
+    fn merge_forwarding(&self, workspace: Option<&str>) -> Result<HashMap<String, String>, StoreError> {
+        let props = self.fold_proposals(workspace)?;
+        let mut fwd: HashMap<String, String> = HashMap::new();
+        for p in props.values() {
+            if p.kind == "entity_merge" && p.state == "merged" {
+                if let Some(into) = &p.into {
+                    for t in &p.targets {
+                        if t != into {
+                            fwd.insert(t.clone(), into.clone());
+                        }
+                    }
+                }
+            }
+        }
+        // Resolve transitively (a->b, b->c => a->c) with a hop cap as a cycle guard.
+        let mut resolved: HashMap<String, String> = HashMap::new();
+        for k in fwd.keys() {
+            let mut cur = k.clone();
+            let mut hops = 0usize;
+            while let Some(n) = fwd.get(&cur) {
+                if n == &cur || hops > fwd.len() {
+                    break;
+                }
+                cur = n.clone();
+                hops += 1;
+            }
+            resolved.insert(k.clone(), cur);
+        }
+        Ok(resolved)
     }
 
     /// M0 resolution: exact match on the canonical name. If it exists, only append the source; otherwise create it.
@@ -837,49 +1268,75 @@ impl Engine {
     pub fn graph(&self, workspace: Option<&str>) -> Result<GraphView, StoreError> {
         let entities = self.store.all_entities(workspace)?;
         let relations = self.store.all_relations(workspace)?;
+        // Apply accepted entity-merges (Principle 15): fold merged-away ids into their canonical, at
+        // projection time only - the log keeps both (Principle 3). Deterministic (Principle 16).
+        let fwd = self.merge_forwarding(workspace)?;
+        let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
 
-        let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
+        let by_id: HashMap<&str, &Entity> = entities.iter().map(|e| (e.id.as_str(), e)).collect();
+        // Group entities by canonical id - merged duplicates collapse into one node.
+        let mut groups: BTreeMap<String, Vec<&Entity>> = BTreeMap::new();
+        for e in &entities {
+            groups.entry(canon(&e.id)).or_default().push(e);
+        }
+        let node_ids: HashSet<&str> = groups.keys().map(|s| s.as_str()).collect();
 
-        // degree is counted only against the edges actually included in the graph.
+        // Edges: rewire endpoints through canon, drop merge self-loops and duplicates, count degree.
         let mut degree: HashMap<String, usize> = HashMap::new();
+        let mut seen: HashSet<(String, String, String)> = HashSet::new();
         let mut edges: Vec<GraphEdge> = Vec::new();
         for r in &relations {
-            if node_ids.contains(r.from.as_str()) && node_ids.contains(r.to.as_str()) {
-                *degree.entry(r.from.clone()).or_default() += 1;
-                *degree.entry(r.to.clone()).or_default() += 1;
-                edges.push(GraphEdge {
-                    from: r.from.clone(),
-                    to: r.to.clone(),
-                    kind: r.kind.clone(),
-                    description: r.description.clone(),
-                    trust_tier: r.provenance.trust_tier,
-                    confidence: r.provenance.confidence,
-                    valid_to: r.valid_to,
-                });
+            let (f, t) = (canon(&r.from), canon(&r.to));
+            if f == t || !node_ids.contains(f.as_str()) || !node_ids.contains(t.as_str()) {
+                continue; // self-loop from a merge, or an endpoint outside the node set
             }
+            if !seen.insert((f.clone(), r.kind.clone(), t.clone())) {
+                continue; // the merge can produce duplicate edges - keep the first
+            }
+            *degree.entry(f.clone()).or_default() += 1;
+            *degree.entry(t.clone()).or_default() += 1;
+            edges.push(GraphEdge {
+                from: f,
+                to: t,
+                kind: r.kind.clone(),
+                description: r.description.clone(),
+                trust_tier: r.provenance.trust_tier,
+                confidence: r.provenance.confidence,
+                valid_to: r.valid_to,
+            });
         }
 
         let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut trust_counts: BTreeMap<String, usize> = BTreeMap::new();
-        let mut nodes: Vec<GraphNode> = entities
+        let mut nodes: Vec<GraphNode> = groups
             .iter()
-            .map(|e| {
-                // Representative trust = the highest tier among the sources (Principle 18). Default if there are no sources.
-                let trust = e
-                    .provenance
+            .map(|(cid, members)| {
+                // Canonical entity = the one whose id is the canonical id (fallback: first member).
+                let ce = by_id.get(cid.as_str()).copied().unwrap_or(members[0]);
+                let trust = members
                     .iter()
+                    .flat_map(|m| m.provenance.iter())
                     .map(|p| p.trust_tier)
                     .max()
                     .unwrap_or_default();
-                *type_counts.entry(e.kind.clone()).or_default() += 1;
+                let sources: usize = members.iter().map(|m| m.provenance.len()).sum();
+                let mut aliases: Vec<String> = members
+                    .iter()
+                    .map(|m| m.canonical_name.clone())
+                    .filter(|n| n != &ce.canonical_name)
+                    .collect();
+                aliases.sort();
+                aliases.dedup();
+                *type_counts.entry(ce.kind.clone()).or_default() += 1;
                 *trust_counts.entry(tier_label(trust).to_string()).or_default() += 1;
                 GraphNode {
-                    id: e.id.clone(),
-                    name: e.canonical_name.clone(),
-                    kind: e.kind.clone(),
-                    description: e.description.clone(),
-                    degree: degree.get(&e.id).copied().unwrap_or(0),
-                    sources: e.provenance.len(),
+                    id: cid.clone(),
+                    name: ce.canonical_name.clone(),
+                    kind: ce.kind.clone(),
+                    description: ce.description.clone(),
+                    aliases,
+                    degree: degree.get(cid).copied().unwrap_or(0),
+                    sources,
                     trust_tier: trust,
                 }
             })
@@ -1012,6 +1469,7 @@ impl Engine {
                     name: e.canonical_name.clone(),
                     kind: e.kind.clone(),
                     description: e.description.clone(),
+                    aliases: Vec::new(), // hypergraph does not yet apply merge forwarding (follow-up)
                     degree: hyper_degree.get(&e.id).copied().unwrap_or(0),
                     sources: e.provenance.len(),
                     trust_tier: trust,
@@ -1097,6 +1555,69 @@ fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
 mod tests {
     use super::*;
     use supragnosis_store::InMemoryStore;
+
+    /// Proposal gate skeleton (Principle 23, solo): open -> Open, verdict(merge) -> Merged (absorbing),
+    /// and an independent reject-only proposal -> Rejected. The state is a deterministic fold (I2/I16).
+    #[test]
+    fn proposal_open_verdict_fold() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws1");
+        let pid = engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: "entity_merge".into(),
+                targets: vec!["idA".into(), "idB".into()],
+                into: Some("idB".into()),
+                rationale: Some("A and B are the same entity".into()),
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("open proposal");
+        // Freshly opened -> state open, no verdicts.
+        let p = engine.get_proposal(Some("ws1"), &pid).unwrap().expect("proposal exists");
+        assert_eq!(p.state, "open");
+        assert_eq!(p.kind, "entity_merge");
+        assert_eq!(p.into.as_deref(), Some("idB"));
+        assert_eq!(p.verdicts, 0);
+
+        // A merge verdict is the absorbing outcome.
+        engine
+            .review_proposal(None, pid.clone(), "merge".into(), None, None)
+            .expect("cast merge verdict");
+        let p = engine.get_proposal(Some("ws1"), &pid).unwrap().unwrap();
+        assert_eq!(p.state, "merged");
+        assert_eq!(p.verdicts, 1);
+
+        // A second, reject-only proposal folds to rejected.
+        let pid2 = engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: "claim_demotion".into(),
+                targets: vec!["idC".into()],
+                into: None,
+                rationale: None,
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .unwrap();
+        engine.review_proposal(None, pid2.clone(), "reject".into(), None, None).unwrap();
+        assert_eq!(engine.get_proposal(Some("ws1"), &pid2).unwrap().unwrap().state, "rejected");
+
+        // list_proposals returns both.
+        assert_eq!(engine.list_proposals(Some("ws1")).unwrap().len(), 2);
+
+        // A malformed entity_merge (no `into`) is rejected at open (well-formedness only).
+        assert!(engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: "entity_merge".into(),
+                targets: vec!["x".into(), "y".into()],
+                into: None,
+                rationale: None,
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .is_err());
+    }
 
     #[test]
     fn observe_then_get_and_search() {

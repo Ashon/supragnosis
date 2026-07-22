@@ -70,8 +70,12 @@ async fn mcp_protocol_surface_end_to_end() {
             "search_knowledge",
             "traverse",
             "workspace_map",
+            "propose",
+            "review",
+            "list_proposals",
+            "get_proposal",
         ]),
-        "must expose the intent-level tools (workspace_map = co-occurrence orientation, define_type = T-Box vocabulary)"
+        "must expose the intent-level tools (workspace_map = orientation, define_type = T-Box, propose/review/list_proposals/get_proposal = the canon gate)"
     );
     for t in &tools {
         let desc = t.description.as_deref().unwrap_or("");
