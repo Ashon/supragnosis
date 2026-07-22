@@ -56,13 +56,25 @@ const MAX_REQUEST_HEAD: usize = 16 * 1024;
 /// exists. A hostname (localhost) is not accepted because it would require DNS resolution
 /// (removing ambiguity).
 pub fn parse_local_addr(s: &str) -> anyhow::Result<SocketAddr> {
+    parse_viz_addr(s, false)
+}
+
+/// Parses a viewer bind address. `allow_public = false` is the loopback invariant (Principle 17).
+/// `allow_public = true` is the **interim read-only network exposure** (federation.md 6d): the owner
+/// of the knowledge explicitly opts in (SUPRAGNOSIS_VIZ_PUBLIC=1) to serve the viewer beyond
+/// loopback - reads only: the write endpoint (/api/review) stays gated per connection to loopback
+/// peers (F19: a write is never accepted from a surface that cannot attribute it to a principal).
+/// Superseded by the Phase 3.5 user-key read tier.
+pub fn parse_viz_addr(s: &str, allow_public: bool) -> anyhow::Result<SocketAddr> {
     let addr: SocketAddr = s.trim().parse().with_context(|| {
         format!("invalid SUPRAGNOSIS_VIZ_ADDR: {s:?} - must be in IP:port form (e.g. 127.0.0.1:7373)")
     })?;
-    if !addr.ip().is_loopback() {
+    if !addr.ip().is_loopback() && !allow_public {
         anyhow::bail!(
             "SUPRAGNOSIS_VIZ_ADDR {addr} is not loopback - the viewer rejects non-local binds \
-             (Principle 17: knowledge sovereignty). Use 127.0.0.1:<port>"
+             (Principle 17: knowledge sovereignty). Use 127.0.0.1:<port>, or set \
+             SUPRAGNOSIS_VIZ_PUBLIC=1 to opt in to read-only network exposure (writes stay \
+             loopback-gated; the authenticated read tier is federation Phase 3.5)"
         );
     }
     Ok(addr)
@@ -79,7 +91,7 @@ pub async fn serve(
     events: broadcast::Sender<String>,
 ) -> anyhow::Result<()> {
     loop {
-        let (stream, _peer) = match listener.accept().await {
+        let (stream, peer) = match listener.accept().await {
             Ok(pair) => pair,
             Err(e) => {
                 tracing::warn!(error = %e, "viz accept failed - continuing");
@@ -88,8 +100,11 @@ pub async fn serve(
         };
         let engine = Arc::clone(&engine);
         let events = events.clone();
+        // Per-connection trust: only a loopback peer may reach the write endpoint (/api/review).
+        // Under the interim read-only network exposure a remote peer gets every read, never a write.
+        let peer_loopback = peer.ip().is_loopback();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(&engine, &events, stream).await {
+            if let Err(e) = handle_conn(&engine, &events, stream, peer_loopback).await {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
@@ -102,6 +117,7 @@ async fn handle_conn(
     engine: &Engine,
     events: &broadcast::Sender<String>,
     mut stream: TcpStream,
+    peer_loopback: bool,
 ) -> anyhow::Result<()> {
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
@@ -128,7 +144,20 @@ async fn handle_conn(
         return stream_events(stream, events.subscribe()).await;
     }
 
-    let resp = route(engine, method, path, query);
+    // Write gate (F19): the verdict endpoint is only reachable from a loopback peer - under the
+    // interim read-only network exposure a remote peer gets 403 here, never a write.
+    let resp = if path == "/api/review" && !peer_loopback {
+        Response {
+            status: "403 Forbidden",
+            content_type: "application/json",
+            body: err_body(
+                "the network-exposed viewer is read-only - verdicts require the local trust \
+                 surface (loopback) or the authenticated tier (federation.md 6d, Phase 3.5/5)",
+            ),
+        }
+    } else {
+        route(engine, method, path, query)
+    };
     write_response(&mut stream, &resp).await
 }
 

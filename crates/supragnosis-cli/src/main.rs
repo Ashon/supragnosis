@@ -492,13 +492,25 @@ async fn spawn_viz(
     addr_str: &str,
     events: tokio::sync::broadcast::Sender<String>,
 ) {
-    let addr = match supragnosis_viz::parse_local_addr(addr_str) {
+    // SUPRAGNOSIS_VIZ_PUBLIC=1: the owner's explicit opt-in to read-only network exposure of the
+    // viewer (federation.md 6d interim; writes stay loopback-gated per connection, F19).
+    let viz_public = std::env::var("SUPRAGNOSIS_VIZ_PUBLIC")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes"))
+        .unwrap_or(false);
+    let addr = match supragnosis_viz::parse_viz_addr(addr_str, viz_public) {
         Ok(addr) => addr,
         Err(e) => {
             tracing::error!(error = %e, "ignoring SUPRAGNOSIS_VIZ_ADDR - proceeding without the viewer");
             return;
         }
     };
+    if !addr.ip().is_loopback() {
+        tracing::warn!(
+            %addr,
+            "viewer exposed beyond loopback (owner opt-in, READ-ONLY: /api/review stays \
+             loopback-gated) - the authenticated read tier is federation Phase 3.5"
+        );
+    }
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(listener) => listener,
         Err(e) => {
