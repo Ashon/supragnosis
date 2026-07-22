@@ -186,12 +186,13 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         },
         "/api/graph" => graph_response(engine, query),
         "/api/hypergraph" => hypergraph_response(engine, query),
+        "/api/types" => types_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/workspaces, or /api/events",
+                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/workspaces, or /api/events",
             ),
         },
     }
@@ -269,6 +270,43 @@ fn hypergraph_response(engine: &Engine, query: &str) -> Response {
             body: serde_json::json!({
                 "error": e.to_string(),
                 "note": "storage backend failure - NOT an empty hypergraph (Principle 5)"
+            })
+            .to_string(),
+        },
+    }
+}
+
+/// `/api/types` - the workspace type glossary (T-Box: entity/relation type definitions - Principles 8/11).
+/// Workspace resolution is identical to `/api/graph`. A read-only projection (Principle 1). A failure is 500 (Principle 5).
+fn types_response(engine: &Engine, query: &str) -> Response {
+    let ws_param = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("workspace="))
+        .map(percent_decode);
+    let ws_owned: Option<String> = match ws_param.as_deref() {
+        None => Some(engine.default_workspace().to_string()),
+        Some("") | Some("*") | Some("all") => None,
+        Some(s) => Some(s.to_string()),
+    };
+    match engine.types(ws_owned.as_deref()) {
+        Ok(types) => match serde_json::to_string(&types) {
+            Ok(json) => Response {
+                status: "200 OK",
+                content_type: "application/json",
+                body: json,
+            },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("serialize error: {e}")),
+            },
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: serde_json::json!({
+                "error": e.to_string(),
+                "note": "storage backend failure - NOT an empty glossary (Principle 5)"
             })
             .to_string(),
         },
@@ -384,10 +422,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   button { cursor:pointer; } button:hover { border-color:var(--line-hi); }
   .hint { color:var(--muted); font-size:12px; }
   #status { color:var(--muted); font-size:12px; margin-left:auto; white-space:nowrap; }
-  #chrome { position:fixed; top:47px; left:0; right:0; z-index:5; padding:6px 14px 0;
-            display:flex; flex-direction:column; gap:5px; pointer-events:none; }
-  #chrome > * { pointer-events:auto; }
-  #wschips,#legend { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  #wschips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }
   .lbl { color:var(--muted); font-size:11.5px; margin-right:2px; }
   .chip,.lg { padding:2px 9px; border-radius:11px; background:#22221f; border:1px solid var(--border);
               cursor:pointer; font-size:12px; color:var(--ink2); user-select:none; }
@@ -395,7 +430,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   .lg { display:inline-flex; align-items:center; gap:6px; }
   .lg.off { opacity:0.38; }
   .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
-  #stats { color:var(--muted); font-size:11.5px; }
+  #stats { color:var(--muted); font-size:11px; margin-top:8px; padding-top:6px; border-top:1px solid #ffffff12; line-height:1.5; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
          background:#0d0d0df2; border:1px solid var(--border); border-radius:8px;
          padding:7px 10px; font-size:12.5px; color:var(--ink2); box-shadow:0 6px 20px #000a; }
@@ -437,6 +472,39 @@ const VIEWER_HTML: &str = r###"<!doctype html>
                    border:none; background:none; font-size:15px; line-height:1; padding:0; }
   #detail .close:hover { color:var(--ink); }
   #detail .empty { color:var(--muted); font-style:italic; padding:2px 5px; }
+  /* Control dock (left) - collapsible sections for layers/legend/glossary. detail panel stays on the
+     right, so the two never collide. Toggled open/closed by the header 'panels' button. */
+  #dock { position:fixed; top:52px; left:12px; z-index:7; width:270px; max-width:46vw;
+          max-height:calc(100vh - 74px); overflow-y:auto; display:none;
+          background:#0d0d0df2; border:1px solid var(--border); border-radius:10px;
+          padding:6px 10px 9px; box-shadow:0 8px 28px #000a; }
+  #dock.on { display:block; }
+  #dock details { border-top:1px solid #ffffff12; }
+  #dock details:first-child { border-top:none; }
+  #dock summary { list-style:none; cursor:pointer; padding:7px 2px 6px; color:var(--ink);
+                  font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+                  display:flex; align-items:center; gap:6px; user-select:none; }
+  #dock summary::-webkit-details-marker { display:none; }
+  #dock summary::before { content:"+"; color:var(--muted); font-weight:600; width:9px; }
+  #dock details[open] > summary::before { content:"-"; }
+  #dock summary .ct { color:var(--muted); font-weight:400; font-size:10.5px; margin-left:auto; }
+  #dock .body { padding:2px 2px 8px; }
+  /* Grouped toggles inside the Layers section. */
+  .grp { margin-bottom:7px; }
+  .grp:last-child { margin-bottom:2px; }
+  .ghdr { color:var(--muted); font-size:10px; letter-spacing:.05em; text-transform:uppercase; display:block; margin:2px 0 4px; }
+  .grp .btns { display:flex; flex-wrap:wrap; gap:5px; }
+  /* Legend chips live in the dock sections now. */
+  #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  /* Glossary entries. */
+  #glossaryBody .item { padding:4px 0 5px; border-top:1px solid #ffffff12; }
+  #glossaryBody .item:first-child { border-top:none; }
+  #glossaryBody .gsec { color:var(--muted); font-size:10px; letter-spacing:.05em; text-transform:uppercase; margin:6px 0 3px; }
+  #glossaryBody .gsec:first-child { margin-top:0; }
+  #glossaryBody .nm { color:var(--ink); font-weight:600; font-size:12px; }
+  #glossaryBody .src { color:var(--muted); font-size:10px; margin-left:5px; }
+  #glossaryBody .def { color:var(--ink2); font-size:11.5px; line-height:1.4; margin-top:1px; opacity:.9; word-break:break-word; }
+  #glossaryBody .empty { color:var(--muted); font-style:italic; padding:2px 0; }
 </style>
 <canvas id="c"></canvas>
 <div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
@@ -445,26 +513,47 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   <input id="search" placeholder="search nodes" size="16" autocomplete="off">
   <label class="hint">ws <input id="ws" placeholder="(default)" size="11" autocomplete="off"></label>
   <span class="hint">*=all</span>
-  <button id="reload">reload</button>
-  <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
-  <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
-  <button id="hyperBtn" class="tog" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
-  <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
-  <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
-  <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
-  <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
-  <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
-  <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
+  <button id="dockBtn" class="tog on" title="show/hide the controls panel (layers, legend, glossary)">panels</button>
   <span id="session" class="hint"></span>
   <span id="status"></span>
 </header>
 <div id="log"></div>
 <div id="detail"></div>
-<div id="chrome">
+<aside id="dock" class="on">
   <div id="wschips"></div>
-  <div id="legend"></div>
+  <details open>
+    <summary>Layers</summary>
+    <div class="body">
+      <div class="grp"><span class="ghdr">Layout</span><div class="btns">
+        <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
+        <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
+        <button id="hyperBtn" class="tog" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
+      </div></div>
+      <div class="grp"><span class="ghdr">Show</span><div class="btns">
+        <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
+        <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
+        <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
+        <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
+        <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
+        <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
+      </div></div>
+      <div class="grp"><div class="btns"><button id="reload">reload</button></div></div>
+    </div>
+  </details>
+  <details>
+    <summary>Node types <span class="ct" id="nodeCt"></span></summary>
+    <div class="body"><div id="legendNodes"></div></div>
+  </details>
+  <details>
+    <summary>Edge types <span class="ct" id="edgeCt"></span></summary>
+    <div class="body"><div id="legendEdges"></div></div>
+  </details>
+  <details id="secGloss">
+    <summary>Type glossary <span class="ct" id="glossCt"></span></summary>
+    <div class="body"><div id="glossaryBody"></div></div>
+  </details>
   <div id="stats"></div>
-</div>
+</aside>
 <div id="tip"></div>
 <div id="hud">
   <button id="zin" title="zoom in">+</button>
@@ -503,10 +592,15 @@ const INK = "#ffffff", INK2 = "#c3c2b7", SURFACE = "#1a1a19";
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
 const wsInput = document.getElementById("ws"), searchEl = document.getElementById("search");
-const chipBar = document.getElementById("wschips"), legendEl = document.getElementById("legend");
+const chipBar = document.getElementById("wschips");
+const legendNodesEl = document.getElementById("legendNodes"), legendEdgesEl = document.getElementById("legendEdges");
+const nodeCtEl = document.getElementById("nodeCt"), edgeCtEl = document.getElementById("edgeCt");
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
 const detailEl = document.getElementById("detail");
+const dockEl = document.getElementById("dock"), secGlossEl = document.getElementById("secGloss");
+const glossaryBodyEl = document.getElementById("glossaryBody"), glossCtEl = document.getElementById("glossCt");
 
+let glossaryTypes = [];          // [{target, name, description, sources, trust_tier}] - /api/types
 let follow = true;               // whether the camera follows the most recent agent-activity node
 let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
@@ -592,7 +686,7 @@ function zoomAt(sx, sy, f) {
   camT.s = Math.max(0.15, Math.min(4, camT.s * f));
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
-const TOP_INSET = 96;   // height occluded by the top header/chrome - compensated in centering/fit
+const TOP_INSET = 52;   // height occluded by the top header - compensated in centering/fit (the dock is a left overlay, not top)
 // Smoothly bring a node to the screen center (focus-to-zoom). If zoomed too far out, zoom in slightly.
 function centerOn(n) {
   camT.s = Math.min(2.5, Math.max(cam.s, 1.1));
@@ -652,12 +746,11 @@ function applyGraph(g) {
 }
 
 function renderLegend() {
-  legendEl.innerHTML = "";
-  // A legend for node types and one for edge kinds. Clicking toggles that kind's visibility (the off set).
-  const addGroup = (label, keys, colorOf, offSet, isEdge) => {
-    if (!keys.length) return;
-    const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = label;
-    legendEl.appendChild(lbl);
+  // Node-type and edge-kind legends, each in its own dock section. Clicking a chip toggles that kind's
+  // visibility (the off set). The section summary shows the count.
+  const fill = (host, keys, colorOf, offSet, isEdge) => {
+    host.innerHTML = "";
+    if (!keys.length) { host.innerHTML = '<span class="lbl">none</span>'; return; }
     for (const t of keys) {
       const el = document.createElement("span");
       el.className = "lg" + (offSet.has(t) ? " off" : "");
@@ -666,11 +759,14 @@ function renderLegend() {
       el.appendChild(sw); el.appendChild(document.createTextNode(t || "(none)"));
       el.title = "click to toggle visibility";
       el.onclick = () => { if (offSet.has(t)) offSet.delete(t); else offSet.add(t); renderLegend(); };
-      legendEl.appendChild(el);
+      host.appendChild(el);
     }
   };
-  addGroup("nodes:", Object.keys(typeColor).sort(), t => typeColor[t], typeOff, false);
-  addGroup("edges:", Object.keys(edgeTypeColor).sort(), t => edgeTypeColor[t], edgeTypeOff, true);
+  const nodeKeys = Object.keys(typeColor).sort(), edgeKeys = Object.keys(edgeTypeColor).sort();
+  fill(legendNodesEl, nodeKeys, t => typeColor[t], typeOff, false);
+  fill(legendEdgesEl, edgeKeys, t => edgeTypeColor[t], edgeTypeOff, true);
+  nodeCtEl.textContent = nodeKeys.length || "";
+  edgeCtEl.textContent = edgeKeys.length || "";
 }
 
 // The set of nodes/edges to highlight from hover/focus/search. If none, null (everything highlighted equally).
@@ -718,6 +814,8 @@ async function poll() {
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
     } else { hyperedges = []; }
+    // Keep the type glossary panel current (no-op while it is closed).
+    refreshGlossary();
   } catch (e) { statusEl.textContent = "connection failed - check the server is running"; }
 }
 
@@ -747,6 +845,32 @@ async function loadWorkspaces() {
 // --- Live MCP activity (SSE) --------------------------------------------------------
 function nodeById(id) { return nodes.find(n => n.id === id); }
 function esc(s) { return String(s).replace(/[<&>]/g, c => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;" }[c])); }
+
+// Type glossary (T-Box) section body: entity types and relation types with their define_type definitions.
+function renderGlossary() {
+  const group = t => glossaryTypes.filter(x => x.target === t);
+  const section = (title, items) => `<div class="gsec">${title} (${items.length})</div>`
+    + (items.length
+      ? items.map(x =>
+          `<div class="item"><span class="nm">${esc(x.name)}</span>`
+          + `<span class="src">${x.sources} src</span>`
+          + `<div class="def">${esc(x.description)}</div></div>`).join("")
+      : `<div class="empty">none defined - use define_type</div>`);
+  glossaryBodyEl.innerHTML =
+    section("entity types", group("entity")) + section("relation types", group("relation"));
+  glossCtEl.textContent = glossaryTypes.length || "";
+}
+
+// Fetch the glossary for the current workspace, then render (only meaningful while the section is open).
+async function refreshGlossary() {
+  if (!secGlossEl.open) return;
+  const ws = wsInput.value.trim();
+  try {
+    const r = await fetch("/api/types" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    if (r.ok) { const t = await r.json(); if (Array.isArray(t)) glossaryTypes = t; }
+  } catch (e) { /* glossary is auxiliary - keep the last render */ }
+  renderGlossary();
+}
 function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); }
 function logRow(html) {
   const row = document.createElement("div");
@@ -1294,6 +1418,11 @@ const hyperBtn = document.getElementById("hyperBtn");
 // Overlay is render-only (the draw loop shows it next frame) - do not reheat the sim. Fetch hyperedge
 // data only if we do not already have it (e.g. when leaving group mode, where it was cleared).
 hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); if (hyperMode && !hyperedges.length) poll(); };
+const dockBtn = document.getElementById("dockBtn");
+// The controls dock is a side panel (not a canvas layer) - toggling never reheats the sim.
+dockBtn.onclick = () => { const on = dockEl.classList.toggle("on"); dockBtn.classList.toggle("on", on); };
+// Fetch the glossary lazily when its section is expanded (and keep it fresh via poll while open).
+secGlossEl.addEventListener("toggle", () => { if (secGlossEl.open) refreshGlossary(); });
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
