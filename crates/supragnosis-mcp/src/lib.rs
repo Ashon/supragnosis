@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use supragnosis_engine::{
     DefineTypeInput, Engine, EntityInput as EngineEntityInput, Event, ObserveInput,
-    RelationInput as EngineRelationInput, SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget,
+    ProposeInput as EngineProposeInput, RelationInput as EngineRelationInput, SearchMode,
+    TypeDefInput as EngineTypeDefInput, TypeTarget,
 };
 
 // --- Transport DTOs (JSON Schema auto-generated) ----------------------------
@@ -113,6 +114,57 @@ pub struct TypeDefItem {
     pub name: String,
     /// Natural-language definition of what this type means. Required (Principle 8: a type has no meaning without it).
     pub description: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ProposeRequest {
+    /// Workspace (defaults to the node default when omitted).
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// Proposal kind: entity_merge | claim_promotion | claim_demotion | tbox_change | recall.
+    pub kind: String,
+    /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
+    pub targets: Vec<String>,
+    /// For entity_merge: the canonical target id the other targets fold into (must be one of targets).
+    #[serde(default)]
+    pub into: Option<String>,
+    /// Why (natural language) - the proposal rationale.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    #[serde(default)]
+    pub source_ref: Option<String>,
+    #[serde(default)]
+    pub on_behalf_of: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ReviewRequest {
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// The proposal id (from propose / list_proposals).
+    pub proposal: String,
+    /// Verdict/action: merge | reject | comment | withdraw.
+    pub decision: String,
+    /// Optional note/comment.
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub on_behalf_of: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListProposalsRequest {
+    /// Scope to a workspace (node default when omitted; '*'/'all' means all workspaces).
+    #[serde(default)]
+    pub workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetProposalRequest {
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// The proposal id.
+    pub id: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -470,6 +522,78 @@ impl SupragnosisServer {
                 serde_json::json!({ "observation_id": observation_id }).to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
+            Err(e) => err_json(&format!("task join error: {e}")),
+        }
+    }
+
+    #[tool(
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), claim_promotion, claim_demotion, tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state (and, once available, its belief diff). For entity_merge, pass the entity ids in `targets` and the canonical one in `into`."
+    )]
+    async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
+        let input = EngineProposeInput {
+            workspace: req.workspace,
+            kind: req.kind,
+            targets: req.targets,
+            into: req.into,
+            rationale: req.rationale,
+            source_ref: req.source_ref,
+            on_behalf_of: req.on_behalf_of,
+        };
+        let engine = self.engine.clone();
+        match tokio::task::spawn_blocking(move || engine.propose(input)).await {
+            Ok(Ok(id)) => serde_json::json!({ "proposal_id": id }).to_string(),
+            Ok(Err(e)) => err_json(&e.to_string()),
+            Err(e) => err_json(&format!("task join error: {e}")),
+        }
+    }
+
+    #[tool(
+        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. Returns the recorded observation id."
+    )]
+    async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
+        let engine = self.engine.clone();
+        let (ws, prop, dec, note, obo) =
+            (req.workspace, req.proposal, req.decision, req.note, req.on_behalf_of);
+        match tokio::task::spawn_blocking(move || engine.review_proposal(ws, prop, dec, note, obo)).await {
+            Ok(Ok(id)) => serde_json::json!({ "observation_id": id }).to_string(),
+            Ok(Err(e)) => err_json(&e.to_string()),
+            Err(e) => err_json(&format!("task join error: {e}")),
+        }
+    }
+
+    #[tool(
+        description = "List proposals in a workspace (newest first) with their folded state (open/merged/rejected/withdrawn), kind, targets, and verdict count."
+    )]
+    async fn list_proposals(&self, Parameters(req): Parameters<ListProposalsRequest>) -> String {
+        let ws: Option<String> = match req.workspace.as_deref() {
+            None => Some(self.engine.default_workspace().to_string()),
+            Some("") | Some("*") | Some("all") => None,
+            Some(s) => Some(s.to_string()),
+        };
+        let engine = self.engine.clone();
+        match tokio::task::spawn_blocking(move || engine.list_proposals(ws.as_deref())).await {
+            Ok(Ok(list)) => to_json(&list),
+            Ok(Err(e)) => store_failure_json(&e),
+            Err(e) => err_json(&format!("task join error: {e}")),
+        }
+    }
+
+    #[tool(description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts) by id.")]
+    async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
+        let ws: Option<String> = match req.workspace.as_deref() {
+            None => Some(self.engine.default_workspace().to_string()),
+            Some("") | Some("*") | Some("all") => None,
+            Some(s) => Some(s.to_string()),
+        };
+        let id = req.id.clone();
+        let engine = self.engine.clone();
+        match tokio::task::spawn_blocking(move || engine.get_proposal(ws.as_deref(), &id)).await {
+            Ok(Ok(Some(p))) => to_json(&p),
+            Ok(Ok(None)) => err_json(&format!(
+                "proposal not found: {} - absence is not a negation (open-world). Use list_proposals",
+                req.id
+            )),
+            Ok(Err(e)) => store_failure_json(&e),
             Err(e) => err_json(&format!("task join error: {e}")),
         }
     }
