@@ -895,7 +895,8 @@ let proposalSel = null;          // the proposal currently previewed on the grap
 let follow = true;               // whether the camera follows the most recent agent-activity node
 let peersOn = false;             // server mode: draw federated peers as roaming cursor-dots (hub)
 let serverMode = false;          // this node is a hub (auto-detected from /api/federation role)
-const peerMarkers = new Map();   // peer node_id -> {x,y,tx,ty,color,phase,flare,action,count,seen,sx,sy}
+const peerMarkers = new Map();   // peer node_id -> {x,y,tx,ty,color,phase,flare,action,count,seen,sx,sy,queue,qi,dwell,arrivedAt}
+const peerEdgeFlash = new Map();  // edge key -> {e,color,life} - an edge a peer marker just visited
 let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
 let hyperMode = true;            // hyperedge hull OVERLAY (fills + labels) - on by default, visual only, independent of hullForce
@@ -1464,17 +1465,18 @@ async function handleEvent(ev) {
   } else if (ev.kind === "sync") {
     // Federation hit: who touched this store, which direction, how much - the live remote feed.
     logRow(`<b>sync</b> ${esc(ev.direction)} ${esc(ev.workspace)} &lt;-&gt; ${esc(String(ev.peer).slice(0, 18))} (${ev.count})`);
-    let added = [];
+    let addedNodes = [], addedEdges = [];
     if (ev.count > 0) {
       // Knowledge landed: load it now, and re-frame once the re-layout settles (follow mode) so the
-      // camera presents the grown graph instead of staring at a stale corner of it. Diff the node set
-      // across the reload so a peer's cursor can glide onto exactly what it just contributed.
-      const before = new Set(nodes.map(n => n.id));
+      // camera presents the grown graph instead of staring at a stale corner of it. Diff the node AND
+      // edge sets across the reload so a peer's cursor can tour exactly what it just contributed.
+      const beforeN = new Set(nodes.map(n => n.id)), beforeE = new Set(edges.map(edgeKey));
       refitOnReveal = follow;
       await poll();
-      added = nodes.filter(n => !before.has(n.id));
+      addedNodes = nodes.filter(n => !beforeN.has(n.id));
+      addedEdges = edges.filter(e => !beforeE.has(edgeKey(e)));
     }
-    if (peersOn) notePeer(ev, added);   // server mode: move the peer's marker, not the camera
+    if (peersOn) notePeer(ev, addedNodes, addedEdges);   // server mode: tour the peer's marker, not the camera
     ids = [];
   } else if (ev.kind === "traverse") {
     const sn = nodeById(ev.start);
@@ -1521,36 +1523,85 @@ function peerMarker(id) {
     const [cx, cy] = viewCentroid();
     const a = ((parseInt(id.slice(0, 4), 16) || 0) / 65535) * 6.283;   // stable per-peer angle
     m = { x: cx + Math.cos(a) * 140, y: cy + Math.sin(a) * 140, tx: cx, ty: cy,
-          color: peerColor(id), phase: a, flare: 0, action: "", count: 0, seen: 0, sx: null, sy: null };
+          color: peerColor(id), phase: a, flare: 0, action: "", count: 0, seen: 0, sx: null, sy: null,
+          queue: null, qi: 0, dwell: 0, arrivedAt: false };
     peerMarkers.set(id, m);
   }
   return m;
 }
-// A sync hit from `ev.peer`: glide its dot onto the nodes it just touched (added on a push), else toward
-// the workspace centroid, with a small per-peer offset so several peers on one region do not stack.
-function notePeer(ev, added) {
+function edgeKey(e) { return e.from + "|" + e.type + "|" + e.to; }
+// A tour of what a peer just touched: for every uploaded edge, visit its endpoints and the edge itself
+// (node -> edge -> node), then any standalone uploaded nodes. Capped so a big push stays a quick hop, not
+// a marathon. Targets hold live node/edge refs so the marker tracks them as the layout moves.
+function buildTour(addedNodes, addedEdges) {
+  const q = [], onEdge = new Set();
+  for (const e of addedEdges) {
+    if (e.a) { q.push({ node: e.a }); onEdge.add(e.a.id); }
+    q.push({ edge: e });
+    if (e.b) { q.push({ node: e.b }); onEdge.add(e.b.id); }
+  }
+  for (const n of addedNodes) if (!onEdge.has(n.id)) q.push({ node: n });
+  return q.slice(0, 12);
+}
+function targetPos(t) {
+  if (t.node) return [t.node.x, t.node.y];
+  if (t.edge && t.edge.a && t.edge.b) return [(t.edge.a.x + t.edge.b.x) / 2, (t.edge.a.y + t.edge.b.y) / 2];
+  return null;
+}
+// A sync hit from `ev.peer`. With per-node detail (an upload we could diff) the marker tours the exact
+// nodes/edges it touched, hopping node -> edge -> node; otherwise (a pull/heartbeat we cannot attribute to
+// specific nodes) it just drifts toward the workspace area. A small per-peer offset keeps peers from stacking.
+function notePeer(ev, addedNodes, addedEdges) {
   if (!ev.peer) return;
   const m = peerMarker(ev.peer);
-  const hasNodes = added && added.length;
-  const [cx, cy] = viewCentroid(hasNodes ? added : null);
-  const jit = hasNodes ? 14 : 64;
-  m.tx = cx + Math.cos(m.phase) * jit; m.ty = cy + Math.sin(m.phase) * jit;
   m.flare = 1; m.action = ev.direction || ""; m.count = ev.count | 0; m.seen = Date.now();
-  if (hasNodes) pulseNodes(added.map(n => n.id));   // light up what the peer contributed
+  const tour = ((addedNodes && addedNodes.length) || (addedEdges && addedEdges.length))
+    ? buildTour(addedNodes || [], addedEdges || []) : [];
+  if (tour.length) { m.queue = tour; m.qi = 0; m.dwell = 0; m.arrivedAt = false; }
+  else {
+    m.queue = null;   // no attributable nodes - a soft glide toward where the peer is active
+    const [cx, cy] = viewCentroid(null);
+    m.tx = cx + Math.cos(m.phase) * 64; m.ty = cy + Math.sin(m.phase) * 64;
+  }
 }
 function stepPeers() {
   if (!peersOn) return;
   for (const m of peerMarkers.values()) {
-    m.x += (m.tx - m.x) * 0.07; m.y += (m.ty - m.y) * 0.07;
+    if (m.queue && m.qi < m.queue.length) {
+      const t = m.queue[m.qi], p = targetPos(t);
+      if (p) { m.tx = p[0]; m.ty = p[1]; }
+      m.x += (m.tx - m.x) * 0.2; m.y += (m.ty - m.y) * 0.2;   // fast hop between things it touched
+      if (Math.hypot(m.tx - m.x, m.ty - m.y) < 6 / cam.s) {
+        if (!m.arrivedAt) {   // attach once on arrival: ring the node / flash the edge
+          m.arrivedAt = true;
+          if (t.node) pulseNodes([t.node.id]);
+          else if (t.edge) peerEdgeFlash.set(edgeKey(t.edge), { e: t.edge, color: m.color, life: 40 });
+        }
+        if (++m.dwell > 7) { m.qi++; m.dwell = 0; m.arrivedAt = false; }   // brief dwell, then next
+      }
+    } else {
+      m.x += (m.tx - m.x) * 0.07; m.y += (m.ty - m.y) * 0.07;   // idle drift toward the resting target
+    }
     m.flare = m.flare > 0.002 ? m.flare * 0.95 : 0;
   }
+  for (const [k, f] of peerEdgeFlash) if (--f.life <= 0) peerEdgeFlash.delete(k);
 }
 function drawPeers() {
-  if (!peersOn || !peerMarkers.size) return;
+  if (!peersOn || (!peerMarkers.size && !peerEdgeFlash.size)) return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // Edges a peer just visited (fading), so an upload reads as the cursor attaching to the connections
+  // it created, not only the nodes.
+  for (const f of peerEdgeFlash.values()) {
+    const e = f.e; if (!e.a || !e.b) continue;
+    const ax = e.a.x * cam.s + cam.x, ay = e.a.y * cam.s + cam.y, bx = e.b.x * cam.s + cam.x, by = e.b.y * cam.s + cam.y;
+    ctx.globalAlpha = Math.min(1, f.life / 40) * 0.85;
+    ctx.strokeStyle = f.color; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
   const t = performance.now() / 1000, now = Date.now();
   for (const m of peerMarkers.values()) {
-    const bob = Math.sin(t * 1.2 + m.phase) * 2.5;   // gentle idle drift so quiet peers still breathe
+    const touring = m.queue && m.qi < m.queue.length;
+    const bob = touring ? 0 : Math.sin(t * 1.2 + m.phase) * 2.5;   // idle drift; hold steady while touring
     const px = m.x * cam.s + cam.x, py = m.y * cam.s + cam.y + bob;
     m.sx = px; m.sy = py;
     const live = Math.max(0, 1 - (m.seen ? (now - m.seen) / 1000 : 999) / 90);   // dim as a peer goes quiet
@@ -1559,6 +1610,10 @@ function drawPeers() {
     g.addColorStop(0, m.color); g.addColorStop(1, "rgba(0,0,0,0)");
     ctx.globalAlpha = 0.22 * (0.4 + 0.6 * live) + m.flare * 0.5;
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r * 3.4, 0, 7); ctx.fill();
+    if (touring && m.arrivedAt) {   // attached ring at the node/edge it is currently on
+      ctx.globalAlpha = 0.9; ctx.strokeStyle = m.color; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(px, py, r + 4, 0, 7); ctx.stroke();
+    }
     ctx.globalAlpha = 0.45 + 0.55 * live;
     ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
