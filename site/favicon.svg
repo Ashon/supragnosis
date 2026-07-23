@@ -1,11 +1,13 @@
+<!-- Mirrors the app icon design (app/icons/icon.svg) - one mark on every surface:
+     transparent margin 6.25/64, rounded tile 51.5/64 (rx 11.56), 5-spoke asterisk. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#0c0e14"/>
+  <rect x="6.25" y="6.25" width="51.5" height="51.5" rx="11.56" fill="#0c0e14"/>
   <!-- the asterisk: 5 spokes at 72 degree steps, one arm pointing up -->
-  <g stroke="#f0c469" stroke-width="5.5" stroke-linecap="round">
-    <line x1="32" y1="32" x2="32" y2="17"/>
-    <line x1="32" y1="32" x2="46.3" y2="27.4"/>
-    <line x1="32" y1="32" x2="40.8" y2="44.1"/>
-    <line x1="32" y1="32" x2="23.2" y2="44.1"/>
-    <line x1="32" y1="32" x2="17.7" y2="27.4"/>
+  <g stroke="#f0c469" stroke-width="4.44" stroke-linecap="round">
+    <line x1="32" y1="32" x2="32" y2="19.9"/>
+    <line x1="32" y1="32" x2="43.5" y2="28.3"/>
+    <line x1="32" y1="32" x2="39.1" y2="41.8"/>
+    <line x1="32" y1="32" x2="24.9" y2="41.8"/>
+    <line x1="32" y1="32" x2="20.5" y2="28.3"/>
   </g>
 </svg>
