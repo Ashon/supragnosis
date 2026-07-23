@@ -9,3 +9,5 @@ Cargo.lock.orig
 # viewer 프론트 에셋의 dev-only 린트 툴링 (빌드는 include_str! 로 순수 cargo - node_modules 는 커밋 금지)
 **/node_modules/
 .eslintcache
+# tauri-build 가 생성하는 capability 스키마 (app 데스크탑 셸)
+/app/gen/

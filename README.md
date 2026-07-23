@@ -44,7 +44,8 @@ cargo test                                           # unit tests (network-depen
   - `SUPRAGNOSIS_DATA_DIR` - Cozo data directory (default `~/.supragnosis/db`).
   - `SUPRAGNOSIS_EMBED` - `fastembed` (default when compiled with the feature, local ONNX) | `hashing` (for development) | `none`. If it is absent or fails, degrades to keyword search.
   - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml` (default `~/.supragnosis/supragnosis.toml`). No file = a standalone node.
-  - `SUPRAGNOSIS_VIZ_PUBLIC=1` - opt in to read-only viewer exposure beyond loopback (writes stay loopback-gated).
+  - `SUPRAGNOSIS_VIZ_SOCK` - viewer unix socket path (daemon default `~/.supragnosis/viz.sock`). The
+    viewer serves HTTP over UDS only - no TCP port; the socket file's 0600 mode is the access control.
 - Tools (13): `observe`, `search_knowledge` (hybrid recall, `scope` = local | remote | both),
   `get_entity`, `traverse`, `workspace_map` (co-occurrence hyperedges), `define_type` (T-Box glossary),
   `propose` / `review` / `list_proposals` / `get_proposal` (the canon gate, Principle 23),
@@ -57,14 +58,30 @@ cargo test                                           # unit tests (network-depen
   `e2e/` is a separate real-model measurement suite (Ollama/Anthropic scorecards, `#[ignore]`d by
   default) - a scorecard, not a regression guard.
 
+## Desktop app (macOS)
+`app/` is a thin Tauri shell over the daemon's unix-socket viewer: it attaches to a running
+daemon (launchd / `supragnosis start`) or spawns one as a child (reaped on quit), proxies the
+webview onto the viz socket via a `viz://` custom protocol, and bridges the SSE event stream.
+The UI itself is served by the daemon - the shell embeds no frontend.
+
+The shell is **tray-resident**: closing the window hides it (macOS: the app leaves the dock too)
+while the daemon keeps running in the background; the menu-bar mark reopens the viewer, shows
+daemon status (spawned vs externally managed), restarts the daemon, and quits. Quit reaps a
+spawned daemon but never an attached external one.
+```bash
+cargo run -p supragnosis-app    # dev run (finds the server binary via SUPRAGNOSIS_BIN,
+                                # ~/.local/bin, the debug build, or PATH)
+```
+Bundling (.app/.dmg with the server as a sidecar) and code signing are not wired up yet.
+
 ## Usage (CLI)
 The single binary is controlled through subcommands. Run it **with no arguments** and it
 comes up as a stdio MCP server (the backward-compatible path where the MCP client launches
 it as a child process).
 ```bash
 supragnosis                     # stdio MCP server (default, no arguments)
-supragnosis serve --http 127.0.0.1:7373 --viz 127.0.0.1:7374   # foreground (HTTP daemon + viewer)
-supragnosis start               # start the background daemon (default MCP :7373 + viewer :7374)
+supragnosis serve --http 127.0.0.1:7373 --viz ~/.supragnosis/viz.sock   # foreground (HTTP daemon + viewer)
+supragnosis start               # start the background daemon (default MCP :7373 + viewer socket ~/.supragnosis/viz.sock)
 supragnosis status              # status (pid + port health)
 supragnosis stop                # stop
 supragnosis restart             # restart
@@ -79,9 +96,10 @@ supragnosis --help              # all options
 - Option precedence: flags > `SUPRAGNOSIS_*` environment variables > defaults.
 - The `start` daemon is self-managed (no launchd needed): pidfile `~/.supragnosis/supragnosis.pid` + logs
   `~/.supragnosis/log`. For OS service registration such as auto-start on login, see [`deploy/README.md`](deploy/README.md).
-- The MCP HTTP daemon is **loopback-only** (no auth = local trust surface). The viewer is loopback-only
-  unless `SUPRAGNOSIS_VIZ_PUBLIC=1` opts in to read-only network exposure; writes (verdicts) stay
-  loopback-gated and answer 403 to a remote peer. Example MCP client registration:
+- The MCP HTTP daemon is **loopback-only** (no auth = local trust surface). The viewer has no TCP
+  port at all: it serves HTTP over a unix socket (0600, owner-only), e.g.
+  `curl --unix-socket ~/.supragnosis/viz.sock http://viz/api/graph`. The authenticated network read
+  tier is federation Phase 3.5. Example MCP client registration:
   - stdio: `claude mcp add supragnosis -- $(command -v supragnosis)`
   - HTTP (daemon): `claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp`
 

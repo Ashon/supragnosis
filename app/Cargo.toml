@@ -1,0 +1,24 @@
+[package]
+name = "supragnosis-app"
+description = "supragnosis desktop shell - a thin Tauri client over the daemon's unix-socket viewer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# The shell owns no engine and no store (single-process constraint: the daemon owns the db).
+# It is webview + daemon lifecycle + a viz:// -> unix-socket proxy + the SSE event bridge.
+# tray-icon + image-png: the shell lives in the menu bar (template tray mark, icons/tray.png).
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+anyhow.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# UnixStream + AsyncRead/Write + timeouts for the HTTP-over-UDS client and the SSE bridge.
+tokio = { workspace = true, features = ["net", "io-util", "time"] }

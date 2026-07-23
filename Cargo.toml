@@ -1,7 +1,11 @@
 [workspace]
 resolver = "2"
 # e2e is a real-model end-to-end measurement suite, separate from the deliverables (crates/*).
-members = ["crates/*", "e2e"]
+# app is the desktop shell (Tauri) - a thin client over the daemon's unix-socket viewer.
+members = ["crates/*", "e2e", "app"]
+# The shell needs platform webview toolchains (WebKit/GTK), so a bare `cargo build`/`cargo test`
+# skips it - build it explicitly with `cargo build -p supragnosis-app`.
+default-members = ["crates/*", "e2e"]
 
 [workspace.package]
 version = "0.1.9"

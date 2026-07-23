@@ -337,6 +337,7 @@ supragnosis/
 |  |- supragnosis-mcp/        # rmcp server: tools/resources + transport
 |  |- supragnosis-viz/        # live viewer + curation console (embedded HTML/JS, no build step)
 |  `- supragnosis-cli/        # bin: `supragnosis serve|start|sync|reproject|migrate|identity|...`
+|- app/                       # desktop shell (Tauri, tray-resident): daemon lifecycle + viz:// -> unix-socket proxy + SSE bridge
 `- e2e/                       # real-model measurement suite (scorecard, not a regression guard)
 ```
 

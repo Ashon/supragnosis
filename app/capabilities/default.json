@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Main window baseline: core IPC (the EventSource facade listens for viz-event), plus window dragging for the header-as-title-bar (drag region + double-click zoom).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
+}
