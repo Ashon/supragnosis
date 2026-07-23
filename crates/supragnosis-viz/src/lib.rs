@@ -1041,7 +1041,11 @@ function applyGraph(g) {
   });
   let removed = 0;
   for (const id of [...posById.keys()]) if (!seen.has(id)) { posById.delete(id); removed++; }
-  if (added || removed) wake();
+  // First data = full settle behind the loader (the initial layout is violent). Later add/remove
+  // (an agent observing, a peer pushing) warms the sim BELOW the loader threshold so the graph stays
+  // on screen and new nodes ease in - hiding the whole graph on every incremental hit was wrong, and it
+  // hid the very peer-marker tour that a push triggers.
+  if (added || removed) wake(firstData ? 0.7 : 0.4);
 
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
   edges = g.edges.map(e => Object.assign({}, e, { a: byId[e.from], b: byId[e.to] }))
