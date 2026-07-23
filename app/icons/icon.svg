@@ -1,0 +1,16 @@
+<!-- Canonical icon design (source of truth). macOS app-icon geometry: transparent canvas,
+     centered rounded tile at 824/1024 of the canvas (margin 100/1024), corner radius 185/1024,
+     scaled here to a 64 viewBox. The favicons (site/favicon.svg, the viewer's inline data URI)
+     use these exact numbers so every surface shows one mark. PNG/icns are rendered by
+     generate.py - rerun it after editing this design. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="6.25" y="6.25" width="51.5" height="51.5" rx="11.56" fill="#0c0e14"/>
+  <!-- the asterisk: 5 spokes at 72 degree steps, one arm pointing up -->
+  <g stroke="#f0c469" stroke-width="4.44" stroke-linecap="round">
+    <line x1="32" y1="32" x2="32" y2="19.9"/>
+    <line x1="32" y1="32" x2="43.5" y2="28.3"/>
+    <line x1="32" y1="32" x2="39.1" y2="41.8"/>
+    <line x1="32" y1="32" x2="24.9" y2="41.8"/>
+    <line x1="32" y1="32" x2="20.5" y2="28.3"/>
+  </g>
+</svg>
