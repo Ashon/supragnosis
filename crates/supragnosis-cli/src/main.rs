@@ -145,6 +145,15 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
         .host
         .or_else(|| env("SUPRAGNOSIS_HOST"))
         .unwrap_or_else(|| "localhost".to_string());
+    let http = a
+        .http
+        .or_else(|| env("SUPRAGNOSIS_HTTP_ADDR"))
+        .or_else(|| daemon.then(|| "127.0.0.1:7373".to_string()));
+    // An http daemon defaults the viewer socket on, exactly like `start`: a daemon without its
+    // socket strands every client of the human channel - worse, the desktop shell would try to
+    // spawn a second daemon into the single-process store lock. This matters for supervisors
+    // that run `serve --http` directly (brew services, systemd) rather than `start`.
+    let daemonish = daemon || http.is_some();
     Config {
         workspace: a
             .workspace
@@ -167,14 +176,11 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
             .or_else(|| env("SUPRAGNOSIS_SESSION"))
             .or_else(|| env("CLAUDE_CODE_SESSION_ID"))
             .unwrap_or_else(|| format!("{host}-{}", supragnosis_core::now_millis())),
-        http: a
-            .http
-            .or_else(|| env("SUPRAGNOSIS_HTTP_ADDR"))
-            .or_else(|| daemon.then(|| "127.0.0.1:7373".to_string())),
         viz: a
             .viz
             .or_else(|| env("SUPRAGNOSIS_VIZ_SOCK"))
-            .or_else(|| daemon.then(default_viz_sock)),
+            .or_else(|| daemonish.then(default_viz_sock)),
+        http,
         host,
     }
 }
