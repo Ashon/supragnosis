@@ -309,7 +309,6 @@ async fn advertise_handler(
     let entry = authenticate(&headers, &state.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
-    let ws = req.workspace.clone();
     // Store calls are offloaded so a blocking backend cannot starve the async runtime (F11).
     let vv = tokio::task::spawn_blocking(move || version_vector(store.as_ref(), &req.workspace))
         .await
