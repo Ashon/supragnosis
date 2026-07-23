@@ -1,0 +1,14 @@
+{
+  "name": "supragnosis-viewer-assets",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only lint tooling for the supragnosis viewer frontend assets. The crate build embeds viewer.html/css/js via include_str! and does NOT need Node - this exists only so ESLint (no-unsanitized) can guard the innerHTML sinks in CI/editor.",
+  "scripts": {
+    "lint": "eslint viewer.js"
+  },
+  "devDependencies": {
+    "eslint": "^9.15.0",
+    "eslint-plugin-no-unsanitized": "^4.1.2"
+  }
+}

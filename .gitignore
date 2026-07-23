@@ -6,3 +6,6 @@ Cargo.lock.orig
 *.log
 # fastembed 로컬 모델 캐시 (대용량 ONNX 바이너리 - 커밋 금지)
 **/.fastembed_cache/
+# viewer 프론트 에셋의 dev-only 린트 툴링 (빌드는 include_str! 로 순수 cargo - node_modules 는 커밋 금지)
+**/node_modules/
+.eslintcache

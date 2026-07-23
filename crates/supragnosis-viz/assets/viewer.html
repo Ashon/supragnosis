@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>supragnosis ontology viewer</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230c0e14'/%3E%3Cg stroke='%23f0c469' stroke-width='5.5' stroke-linecap='round'%3E%3Cline x1='32' y1='32' x2='32' y2='17'/%3E%3Cline x1='32' y1='32' x2='46.3' y2='27.4'/%3E%3Cline x1='32' y1='32' x2='40.8' y2='44.1'/%3E%3Cline x1='32' y1='32' x2='23.2' y2='44.1'/%3E%3Cline x1='32' y1='32' x2='17.7' y2='27.4'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="/viewer.css">
+<canvas id="c"></canvas>
+<div id="empty">no nodes in this workspace - observe knowledge, or pick another workspace</div>
+<div id="loader"><div class="spin"></div><span>settling layout...</span></div>
+<header>
+  <h1>supragnosis ontology</h1>
+  <input id="search" placeholder="search nodes" size="16" autocomplete="off">
+  <label class="hint">ws <input id="ws" placeholder="(default)" size="11" autocomplete="off"></label>
+  <span class="hint">*=all</span>
+  <button id="dockBtn" class="tog on" title="show/hide the side panels (layers, legend, glossary, proposals)">panels</button>
+</header>
+<div id="log"></div>
+<div id="detail"></div>
+<aside id="dockL" class="dock on">
+  <div id="wschips"></div>
+  <div class="railbody">
+    <div class="grp"><span class="ghdr">Layout</span><div class="btns">
+      <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
+      <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">peers</button>
+      <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
+      <button id="hyperBtn" class="tog on" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
+    </div></div>
+    <div class="grp"><span class="ghdr">Show</span><div class="btns">
+      <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
+      <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
+      <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
+      <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
+      <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
+      <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
+    </div></div>
+    <div class="grp"><div class="btns"><button id="reload">reload</button></div></div>
+    <div class="rsec">Node types <span class="ct" id="nodeCt"></span></div>
+    <div id="legendNodes"></div>
+    <div class="rsec">Edge types <span class="ct" id="edgeCt"></span></div>
+    <div id="legendEdges"></div>
+  </div>
+</aside>
+<aside id="dockR" class="dock on">
+  <div class="tabs">
+    <button class="tab on" data-tab="proposals">Proposals<span class="ct" id="propCt"></span></button>
+    <button class="tab" data-tab="review">Review<span class="ct" id="reviewCt"></span></button>
+    <button class="tab" data-tab="glossary">Types<span class="ct" id="glossCt"></span></button>
+    <button class="tab" data-tab="peers">Peers<span class="ct" id="peersCt"></span></button>
+  </div>
+  <div class="panels">
+    <div class="tabpanel on" data-panel="proposals"><div id="proposalsBody"></div></div>
+    <div class="tabpanel" data-panel="review"><div id="curationBody"></div></div>
+    <div class="tabpanel" data-panel="glossary"><div id="glossaryBody"></div></div>
+    <div class="tabpanel" data-panel="peers"><div id="peersBody"></div></div>
+  </div>
+</aside>
+<div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
+<div id="tip"></div>
+<div id="hud">
+  <button id="zin" title="zoom in">+</button>
+  <button id="zout" title="zoom out">-</button>
+  <button id="fit" title="fit to view">fit</button>
+</div>
+<script src="/viewer.js"></script>
