@@ -8,7 +8,7 @@ members = ["crates/*", "e2e", "app"]
 default-members = ["crates/*", "e2e"]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashon/supragnosis"
