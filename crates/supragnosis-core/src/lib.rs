@@ -238,13 +238,18 @@ pub fn attestation_signing_bytes(content_id: &str, p: &Provenance, meta: &SyncMe
         sync: _, // the block being signed is passed as `meta`; never sign a signature
     } = p;
     let SyncMeta { origin_node, origin_seq, hlc, signature: _, lineage } = meta;
+    // Exhaustively destructure the nested Hlc too (Principle 14: mechanical enforcement). Field access
+    // (`hlc.wall`) would compile silently when a field is added to Hlc, letting that field ride the wire
+    // and distinguish attestations (via Hlc's derive(Ord)) while staying OUTSIDE the signed bytes - a
+    // field a relay could forge unnoticed. Destructuring forces an explicit signed-vs-derived decision.
+    let Hlc { wall, counter, node: hlc_node } = hlc;
     let mut buf = Vec::new();
     push_field(&mut buf, content_id.as_bytes());
     push_field(&mut buf, origin_node.as_bytes());
     buf.extend_from_slice(&origin_seq.to_le_bytes());
-    buf.extend_from_slice(&hlc.wall.to_le_bytes());
-    buf.extend_from_slice(&hlc.counter.to_le_bytes());
-    push_field(&mut buf, hlc.node.as_bytes());
+    buf.extend_from_slice(&wall.to_le_bytes());
+    buf.extend_from_slice(&counter.to_le_bytes());
+    push_field(&mut buf, hlc_node.as_bytes());
     push_field(&mut buf, host.as_bytes());
     push_opt_field(&mut buf, on_behalf_of.as_deref());
     push_field(&mut buf, workspace.as_bytes());
@@ -596,6 +601,46 @@ impl Observation {
     /// attestation carries the same workspace - the first item is representative.
     pub fn workspace(&self) -> &str {
         self.provenance.first().map(|p| p.workspace.as_str()).unwrap_or("")
+    }
+
+    /// Well-formedness of a reconstructed observation - the ingest gate every surface must apply before
+    /// the permanent, append-only log accepts it (Principle 1: well-formedness only, never content
+    /// censorship; Principle 2: the confidence range is schema-enforced at ingest). A signature proves
+    /// origin, not that the content holds (Principle 18), so the sync apply path runs this on a verified
+    /// peer event: without it a signed-but-malformed event (an out-of-range confidence, an empty-referent
+    /// assertion) would contaminate the log even though the local observe path refuses the same shape.
+    /// This checks structure only - notation is preserved verbatim and normalization stays the projection's job.
+    pub fn check_well_formed(&self) -> Result<(), String> {
+        for p in &self.provenance {
+            if let Some(c) = p.confidence {
+                // `contains` is false for NaN too, so a non-finite confidence is caught here.
+                if !(0.0..=1.0).contains(&c) {
+                    return Err(format!("confidence is out of the range 0.0~1.0 (received: {c})"));
+                }
+            }
+        }
+        for e in &self.assertions.entities {
+            if e.name.trim().is_empty() {
+                return Err("an entity assertion has an empty name (a non-assertion with no referent)".into());
+            }
+            if e.kind.as_deref().is_some_and(|k| k.trim().is_empty()) {
+                return Err(format!("entity '{}' has an empty-string type (omit the type instead)", e.name));
+            }
+        }
+        for r in &self.assertions.relations {
+            if r.from.trim().is_empty() || r.to.trim().is_empty() {
+                return Err(format!("a relation endpoint is empty (from: {:?}, to: {:?})", r.from, r.to));
+            }
+            if normalize_relation_kind(&r.kind).is_empty() {
+                return Err(format!("the relation type normalizes to an empty string (received: {:?})", r.kind));
+            }
+        }
+        for t in &self.assertions.type_defs {
+            if t.name.trim().is_empty() || t.description.trim().is_empty() {
+                return Err("a type definition has an empty name or description (Principle 8)".into());
+            }
+        }
+        Ok(())
     }
 
     /// **Monotonically merges** a re-arrival at the same content address (Principle 3: no overwriting).

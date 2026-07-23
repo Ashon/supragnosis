@@ -344,20 +344,26 @@ const ENT_TARGET: SemanticTarget = SemanticTarget {
 };
 
 /// Reconstructs an observation row (content, data JSON) into a domain Observation.
-/// Returns None if a required field (content/provenance) is broken - the caller promotes it to a backend failure.
+/// Returns None if a log-critical field is broken (content, provenance, assertions, derived_from) so
+/// the caller promotes it to a backend failure. assertions/derived_from must NOT degrade to empty on a
+/// parse failure: assertions are part of the content id and the reprojection input, and add_observation
+/// reads this row as its merge baseline, so a silent empty would rewrite the row with the fields erased
+/// (Principle 3: no destructive overwrite - the exact hazard the read-vs-absence distinction guards).
+/// An absent key is a legitimately empty value (compat); only a present-but-unparseable value is a failure.
+/// The embedding is exempt: it is a recall aid (Principle 19), re-derivable, so a corrupt one defaults to None.
 fn observation_from_row(id: &str, row: &[DataValue]) -> Option<Observation> {
     let content = row.first()?.get_str()?.to_string();
     let data: serde_json::Value = serde_json::from_str(row.get(1)?.get_str()?).ok()?;
     let provenance: Vec<Provenance> =
         serde_json::from_value(data.get("provenance")?.clone()).ok()?;
-    let assertions: Assertions = data
-        .get("assertions")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-    let derived_from: Vec<String> = data
-        .get("derived_from")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
+    let assertions: Assertions = match data.get("assertions") {
+        None => Assertions::default(),                       // absent -> legitimately empty
+        Some(v) => serde_json::from_value(v.clone()).ok()?,  // present-but-corrupt -> None -> Err
+    };
+    let derived_from: Vec<String> = match data.get("derived_from") {
+        None => Vec::new(),
+        Some(v) => serde_json::from_value(v.clone()).ok()?,
+    };
     let embedding: Option<Vec<f32>> = data
         .get("embedding")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -1226,6 +1232,62 @@ mod tests {
                 .unwrap();
             assert_eq!(hits.first().map(|h| h.id.clone()), Some(x.clone()));
         }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A stored row whose assertions JSON is present but unparseable must surface as a backend Err on
+    /// read, and a re-arrival must refuse rather than overwrite the row with erased assertions
+    /// (Principle 3: no destructive overwrite; the read-vs-absence distinction is what protects it).
+    #[test]
+    fn corrupt_assertions_row_errs_and_is_not_overwritten() {
+        let dir = tmp_dir();
+        let store = CozoStore::open(&dir).unwrap();
+        let o = Observation::with_assertions(
+            "fact".into(),
+            prov(),
+            Assertions {
+                entities: vec![supragnosis_core::EntityAssertion {
+                    name: "rmcp".into(),
+                    kind: None,
+                    description: None,
+                }],
+                ..Default::default()
+            },
+        );
+        let id = o.id.clone();
+        store.add_observation(o.clone()).unwrap();
+        assert!(store.get_observation(&id).unwrap().is_some(), "the well-formed row reads back");
+
+        // Corrupt the stored row: provenance still parses, but assertions is a number, not an object.
+        let corrupt = json!({
+            "provenance": [prov()],
+            "assertions": 12345,
+            "derived_from": [],
+        })
+        .to_string();
+        store
+            .run(
+                "?[id, content, workspace, data] <- [[$id, $content, $workspace, $data]]\n\
+                 :put observation {id => content, workspace, data}",
+                params(&[
+                    ("id", id.clone()),
+                    ("content", "fact".into()),
+                    ("workspace", "ws1".into()),
+                    ("data", corrupt),
+                ]),
+                true,
+            )
+            .unwrap();
+
+        assert!(
+            store.get_observation(&id).is_err(),
+            "corrupt assertions must be a backend Err, not a silent empty"
+        );
+        assert!(
+            store.add_observation(o).is_err(),
+            "a re-arrival on a corrupt baseline must not destructively overwrite the row"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

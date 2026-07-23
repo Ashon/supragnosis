@@ -43,6 +43,10 @@ pub enum RejectReason {
     BadSignature,
     /// The attestation's workspace does not match the stream's workspace (share-boundary integrity).
     WorkspaceMismatch,
+    /// The event is signed by a known origin but its content is not well-formed (out-of-range
+    /// confidence, empty-referent assertion). A signature proves origin, not well-formedness (P18),
+    /// so a malformed peer event is refused before it reaches the permanent log (P1/P2).
+    Malformed(String),
 }
 
 /// One rejected event: enough identity to audit without trusting the event's own claims.
@@ -238,6 +242,10 @@ fn check_event(
     if !verify_attestation(pubkey, &obs.id, &ev.attestation, meta) {
         return Err(RejectReason::BadSignature);
     }
+    // A valid signature proves the origin, not that the content is well-formed (P18). Refuse a
+    // signed-but-malformed event before it reaches the permanent log - the local observe path refuses
+    // the same shape (P1 well-formedness, P2 confidence range), and F7 allows per-event rejection.
+    obs.check_well_formed().map_err(RejectReason::Malformed)?;
     obs.derived_from = meta.lineage.clone();
     Ok(obs)
 }
@@ -461,6 +469,36 @@ mod tests {
         // Workspace mismatch -> rejected (share-boundary integrity).
         let r = b.apply(&store_b, "other-ws", delta, &dir, &mut vv_b).unwrap();
         assert_eq!(r.rejected[0].reason, RejectReason::WorkspaceMismatch);
+    }
+
+    /// A signed-but-malformed peer event (out-of-range confidence) is refused before the log
+    /// (P18: a signature proves origin, not well-formedness; P1/P2 gate every ingest surface).
+    #[test]
+    fn apply_rejects_signed_but_malformed_event() {
+        let store_a = InMemoryStore::new();
+        let a = node(1);
+        let b = node(2);
+        let mut bad_prov = prov("ws", 7);
+        bad_prov.confidence = Some(5.0); // out of [0.0, 1.0]
+        store_a.add_observation(Observation::new("over-confident".into(), bad_prov)).unwrap();
+        a.backfill(&store_a, "ws").unwrap();
+        let delta = export_delta(&store_a, "ws", &VersionVector::default(), &[String::from("ws")]).unwrap();
+        assert_eq!(delta.len(), 1, "the origin still signs and exports it - the gate is the receiver's");
+
+        let store_b = InMemoryStore::new();
+        let dir = keys(&[&a, &b]);
+        let mut vv_b = VersionVector::default();
+        let r = b.apply(&store_b, "ws", delta, &dir, &mut vv_b).unwrap();
+        assert_eq!(r.accepted, 0, "a malformed event must not reach the log");
+        assert!(
+            matches!(r.rejected[0].reason, RejectReason::Malformed(_)),
+            "expected Malformed, got: {:?}",
+            r.rejected[0].reason
+        );
+        assert!(
+            store_b.all_observations(Some("ws")).unwrap().is_empty(),
+            "the permanent log stays clean"
+        );
     }
 
     /// Legacy-format rows (stored id != current formula) never cross the wire; migration re-creates
