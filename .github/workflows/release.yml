@@ -105,3 +105,4 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
+
