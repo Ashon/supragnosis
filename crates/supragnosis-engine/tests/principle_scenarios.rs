@@ -53,6 +53,7 @@ fn propose_merge(engine: &Engine, targets: &[&str], into: &str, principal: &str)
             targets: targets.iter().map(|s| s.to_string()).collect(),
             into: Some(into.into()),
             rationale: None,
+            affected_types: vec![],
             source_ref: None,
             on_behalf_of: Some(principal.into()),
         })

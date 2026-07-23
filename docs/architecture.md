@@ -415,7 +415,8 @@ which a human visually inspects and curates the knowledge graph.
   `/api/events` (SSE live activity stream).
 - **Implemented views**: the hyperedge overlay (co-occurrence hulls with density-based opacity),
   the **curation console** (duplicate/grab-bag/orphan signals, proposal list, accept/reject casting a
-  verdict, and a belief-diff preview drawn on the canvas), the **type glossary** panel, and the
+  verdict, and a belief-diff preview drawn on the canvas - entity_merge fold arrows, tbox_change type
+  scope), the **type glossary** panel, and the
   **federation panel** (this node's id/role, per-hub health and per-workspace version-vector diff,
   known peers with last action). A derived view with no change to the storage model (binary Relation)
   (Principles 1/12): membership is deterministic and the hull shape is a rendering discretion
@@ -461,10 +462,13 @@ which a human visually inspects and curates the knowledge graph.
    `propose`/`list_proposals`/`get_proposal`/`review`, entity-merge effect with transitive id
    forwarding, read-only curation signals (duplicates/grab-bags/orphans), curation console in the viewer.
    Design -> [proposal-workflow.md](proposal-workflow.md).
-   - Open: **only `entity_merge` has an effect.** `claim_promotion` / `claim_demotion` / `tbox_change` /
-     `recall` are accepted and folded but enforce nothing. The **belief diff** exists as a canvas
-     preview in the viewer, not as a computed artifact on `get_proposal` - so "no merge without a diff"
-     is honored by UI convention, not by the gate. Blocking/informative checks are not implemented.
+   - Open: **only `entity_merge` has a commit effect** (transitive id forwarding). `claim_promotion` /
+     `claim_demotion` / `tbox_change` / `recall` are accepted and folded but enforce nothing. The
+     **belief diff** exists as a canvas preview in the viewer, not as a computed artifact on
+     `get_proposal`: `entity_merge` previews the fold (targets -> canonical), and `tbox_change` previews
+     its scope by highlighting the affected edges/nodes carried on the proposal's `affected_types`
+     (relation names normalized to the graph's edge kinds). So "no merge without a diff" is honored by UI
+     convention, not by the gate. Blocking/informative checks are not implemented.
 6. **M4 - Federation [o] Phases 0-4; Phase 3.5 and 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
    (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated recall, legacy-id
