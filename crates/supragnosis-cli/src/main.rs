@@ -703,13 +703,79 @@ async fn serve_http_daemon(
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );
-    let router = axum::Router::new().nest_service("/mcp", service);
+    // DNS-rebinding defense (MCP spec: validate Origin). The daemon is loopback-bound, so a rebound
+    // browser page (attacker.com -> 127.0.0.1) is the only way a foreign origin reaches it; the guard
+    // refuses any non-loopback Host/Origin so such a page cannot drive observe/search/review.
+    let router = axum::Router::new()
+        .nest_service("/mcp", service)
+        .layer(axum::middleware::from_fn(guard_local_origin));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
     tracing::info!(%host, %workspace, %session, %addr, "supragnosis / MCP streamable-http daemon: http://{addr}/mcp");
     axum::serve(listener, router).await?;
     Ok(())
+}
+
+/// DNS-rebinding guard for the loopback MCP daemon (MCP spec: validate Origin/Host). A non-browser
+/// MCP client omits Origin and presents a loopback Host, so it passes; a browser page rebound from a
+/// foreign name carries that name in Host/Origin and is refused before it reaches the service.
+async fn guard_local_origin(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, axum::http::StatusCode> {
+    use axum::http::header::{HOST, ORIGIN};
+    let headers = req.headers();
+    let host_ok = headers
+        .get(HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(host_hdr_is_loopback)
+        .unwrap_or(true); // absent Host: a non-browser client on the loopback-bound socket
+    let origin_ok = headers
+        .get(ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .map(origin_is_loopback)
+        .unwrap_or(true); // absent Origin: a non-browser MCP client (no CSRF risk)
+    if host_ok && origin_ok {
+        Ok(next.run(req).await)
+    } else {
+        Err(axum::http::StatusCode::FORBIDDEN)
+    }
+}
+
+/// True if a `host[:port]` (Host header value) names a loopback address.
+fn host_hdr_is_loopback(h: &str) -> bool {
+    let hostname = if let Some(rest) = h.strip_prefix('[') {
+        rest.split_once(']').map(|(a, _)| a).unwrap_or(rest) // IPv6 literal: [::1] or [::1]:port
+    } else {
+        h.rsplit_once(':').map(|(a, _)| a).unwrap_or(h) // host or host:port
+    };
+    matches!(hostname, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// True if an Origin (`scheme://host[:port]`) names a loopback address.
+fn origin_is_loopback(o: &str) -> bool {
+    let after = o.split_once("://").map(|(_, r)| r).unwrap_or(o);
+    host_hdr_is_loopback(after)
+}
+
+#[cfg(test)]
+mod daemon_guard_tests {
+    use super::{host_hdr_is_loopback, origin_is_loopback};
+
+    #[test]
+    fn loopback_hosts_and_origins_pass_foreign_ones_refused() {
+        // IPv6 always arrives bracketed in a Host header ([::1] / [::1]:port), never bare.
+        for ok in ["127.0.0.1", "127.0.0.1:7373", "localhost:7373", "[::1]:7373", "[::1]"] {
+            assert!(host_hdr_is_loopback(ok), "{ok} should be loopback");
+        }
+        for bad in ["evil.example.com", "evil.example.com:7373", "10.0.0.5:7373", "attacker.127.0.0.1.nip.io"] {
+            assert!(!host_hdr_is_loopback(bad), "{bad} must be refused");
+        }
+        assert!(origin_is_loopback("http://127.0.0.1:7373"));
+        assert!(origin_is_loopback("http://localhost"));
+        assert!(!origin_is_loopback("https://evil.example.com"));
+    }
 }
 
 // --- Background daemon lifecycle (start/stop/restart/status) -------------------------

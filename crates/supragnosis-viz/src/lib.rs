@@ -117,8 +117,9 @@ pub async fn serve(
     }
 }
 
-/// One connection: parse only the request line (ignore headers/body) -> route -> respond, then close.
-/// The exception is `/api/events`, which is an SSE stream: it is not closed and keeps streaming events.
+/// One connection: parse the request line plus the few headers the trust checks need (Host,
+/// Sec-Fetch-Site) -> route -> respond, then close. The exception is `/api/events`, which is an SSE
+/// stream: it is not closed and keeps streaming events.
 async fn handle_conn(
     engine: &Engine,
     events: &broadcast::Sender<String>,
@@ -146,6 +147,21 @@ async fn handle_conn(
     let target = parts.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
+    // DNS-rebinding defense: a browser tricked via a rebound hostname (attacker.com -> 127.0.0.1)
+    // reaches us over loopback but still carries the attacker's Host header. A loopback peer must
+    // therefore present a loopback Host; a mismatch means a foreign page is being treated as
+    // same-origin with us, so refuse every path (reads included). A genuine remote reader in public
+    // mode (peer not loopback) is exempt - we cannot know its expected hostname, and its surface is
+    // read-only anyway (the write path stays loopback-gated below).
+    if peer_loopback && !host_is_loopback(&head) {
+        let resp = Response {
+            status: "403 Forbidden",
+            content_type: "application/json",
+            body: err_body("Host header is not a loopback name - refusing (DNS-rebinding defense)"),
+        };
+        return write_response(&mut stream, &resp).await;
+    }
+
     // SSE: live MCP event stream - the response is not closed and events keep streaming.
     if method == "GET" && path == "/api/events" {
         return stream_events(stream, events.subscribe()).await;
@@ -170,6 +186,18 @@ async fn handle_conn(
             body: err_body(
                 "the network-exposed viewer is read-only - verdicts require the local trust \
                  surface (loopback) or the authenticated tier (federation.md 6d, Phase 3.5/5)",
+            ),
+        }
+    } else if path == "/api/review" && !csrf_ok(&head) {
+        // CSRF defense: a verdict mutates the canon (entity_merge forwards ids), so a cross-site
+        // <img>/fetch from a page the operator happens to be visiting must not be able to fire it
+        // even though the request arrives over trusted loopback.
+        Response {
+            status: "403 Forbidden",
+            content_type: "application/json",
+            body: err_body(
+                "cross-site request refused - a verdict must originate from the viewer page \
+                 (CSRF defense: the X-Supragnosis-Viz request header is required)",
             ),
         }
     } else {
@@ -214,6 +242,48 @@ struct Response {
     status: &'static str,
     content_type: &'static str,
     body: String,
+}
+
+/// Case-insensitive lookup of one request header value from the raw request head.
+fn header_value<'a>(head: &'a str, name: &str) -> Option<&'a str> {
+    head.lines()
+        .skip(1) // the request line
+        .take_while(|l| !l.is_empty()) // headers end at the blank line
+        .find_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            k.trim().eq_ignore_ascii_case(name).then_some(v.trim())
+        })
+}
+
+/// True if the Host header names a loopback address, or is absent (HTTP/1.0 / non-browser client).
+/// Basis of the DNS-rebinding defense: a rebound request carries a non-loopback Host.
+fn host_is_loopback(head: &str) -> bool {
+    let Some(h) = header_value(head, "host") else { return true };
+    let hostname = if let Some(rest) = h.strip_prefix('[') {
+        rest.split_once(']').map(|(a, _)| a).unwrap_or(rest) // IPv6 literal: [::1] or [::1]:port
+    } else {
+        h.rsplit_once(':').map(|(a, _)| a).unwrap_or(h) // host or host:port
+    };
+    matches!(hostname, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// CSRF defense for the write path, robust on every browser (unlike a Sec-Fetch-Site-only check, which
+/// is absent on pre-2023 browsers and would fail open there). The viewer's verdict fetch carries the
+/// custom `X-Supragnosis-Viz` header. A cross-site `<img>`/`<form>` GET cannot set a custom header, so a
+/// forged request lacks it and is refused; a cross-site `fetch` that tried to set it would trigger a
+/// CORS preflight this server never approves (it sets no Access-Control-Allow-* headers), so the browser
+/// blocks the real request before it is sent; a same-origin fetch from the viewer page sends it freely
+/// (same-origin needs no preflight). The DNS-rebinding Host check above independently closes the
+/// same-origin-after-rebinding case, and Sec-Fetch-Site is additionally required to be non-cross-site as
+/// defense in depth where present. A non-browser client (curl) must send the header explicitly - it is a
+/// write endpoint.
+fn csrf_ok(head: &str) -> bool {
+    let has_viewer_header = header_value(head, "x-supragnosis-viz").is_some();
+    let not_cross_site = match header_value(head, "sec-fetch-site") {
+        None => true, // non-browser client, or a browser without Fetch Metadata
+        Some(s) => s.eq_ignore_ascii_case("same-origin") || s.eq_ignore_ascii_case("none"),
+    };
+    has_viewer_header && not_cross_site
 }
 
 fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
@@ -1278,7 +1348,11 @@ async function loadWorkspaces() {
 
 // --- Live MCP activity (SSE) --------------------------------------------------------
 function nodeById(id) { return nodes.find(n => n.id === id); }
-function esc(s) { return String(s).replace(/[<&>]/g, c => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;" }[c])); }
+// Escape for both element-text and quoted-attribute contexts. Quotes must be escaped too: entity/type
+// names come from untrusted observe calls (including federation sync - Principle 18, writes are an attack
+// surface), and they are interpolated into `title="..."` / `data-id="..."` attributes below; without quote
+// escaping a name like `x" onmouseover=alert(1) z="` breaks out of the attribute into an event handler.
+function esc(s) { return String(s).replace(/[<&>"']/g, c => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 // Type glossary (T-Box) section body: entity types and relation types with their define_type definitions.
 function renderGlossary() {
@@ -1381,7 +1455,10 @@ function renderProposals() {
       ev.stopPropagation();
       const ws = wsInput.value.trim();
       const q = "?proposal=" + encodeURIComponent(b.dataset.id) + "&decision=" + b.dataset.act + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-      try { await fetch("/api/review" + q, { cache: "no-store" }); } catch (e) { /* ignore */ }
+      // The custom header is the CSRF gate: a cross-site <img>/<form> cannot set it, and a cross-site
+      // fetch that tries would trigger a CORS preflight the server never approves. A same-origin fetch
+      // from this page sends it freely (no preflight). Works on every browser (unlike Sec-Fetch-Site).
+      try { await fetch("/api/review" + q, { cache: "no-store", headers: { "X-Supragnosis-Viz": "1" } }); } catch (e) { /* ignore */ }
       refreshProposals();
     };
   });
@@ -2332,9 +2409,11 @@ function showTip(n, cx, cy) {
   tip.style.display = "block";
   tip.style.left = Math.min(cx + 14, innerWidth - 330) + "px";
   tip.style.top = (cy + 14) + "px";
-  tip.innerHTML = `<b>${n.name}</b><br>`
-    + `<span class="k">type</span> ${n.type} &nbsp; <span class="k">degree</span> ${n.degree || 0}<br>`
-    + `<span class="k">sources</span> ${n.sources} &nbsp; <span class="k">trust</span> ${n.trust_tier}`;
+  // esc() every string field: node name/type come from untrusted observe calls and land in innerHTML
+  // here (Principle 18). Numeric fields are coerced, not escaped.
+  tip.innerHTML = `<b>${esc(n.name)}</b><br>`
+    + `<span class="k">type</span> ${esc(n.type)} &nbsp; <span class="k">degree</span> ${n.degree || 0}<br>`
+    + `<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${esc(n.trust_tier)}`;
 }
 
 // --- Interaction ---------------------------------------------------------------------

@@ -112,6 +112,107 @@ async fn viz_serves_graph_index_and_404() {
     assert_eq!(nf.status(), 404);
 }
 
+/// XSS regression (Principle 18): entity/type names come from untrusted observe calls and are
+/// interpolated into the console's innerHTML/attributes. The embedded JS must escape them.
+#[tokio::test]
+async fn viz_index_escapes_untrusted_names_in_js() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(
+        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
+
+    let html = reqwest::Client::new()
+        .get(format!("http://{addr}/"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    // esc() must escape quotes too, not just <&> - otherwise a name breaks out of a title="..."
+    // attribute into an event handler (attribute-injection XSS).
+    assert!(
+        html.contains(r#"replace(/[<&>"']/g"#),
+        "esc() must escape quotes for the attribute-injection defense"
+    );
+    assert!(
+        html.contains("&quot;") && html.contains("&#39;"),
+        "esc() map must translate double and single quotes"
+    );
+    // The node hover tooltip must route the name/type through esc(), never raw interpolation.
+    assert!(
+        html.contains("<b>${esc(n.name)}</b>"),
+        "showTip must escape the node name (stored-XSS vector)"
+    );
+    assert!(
+        !html.contains("<b>${n.name}</b>"),
+        "showTip must not interpolate the raw node name into innerHTML"
+    );
+}
+
+/// Send a raw HTTP/1.1 GET with caller-controlled headers, return the full response text.
+/// reqwest normalizes Host/Sec-Fetch-* headers, so the trust checks need a hand-built request.
+async fn raw_get(addr: std::net::SocketAddr, path: &str, extra_headers: &str) -> String {
+    let mut s = TcpStream::connect(addr).await.unwrap();
+    let req = format!("GET {path} HTTP/1.1\r\n{extra_headers}Connection: close\r\n\r\n");
+    s.write_all(req.as_bytes()).await.unwrap();
+    let mut resp = String::new();
+    s.read_to_string(&mut resp).await.unwrap();
+    resp
+}
+
+/// DNS-rebinding + CSRF defenses on the write path (Principle 17/23). A verdict mutates the canon,
+/// so a foreign page must not reach it even over trusted loopback.
+#[tokio::test]
+async fn viz_write_path_rejects_rebinding_and_csrf() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(
+        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
+
+    // DNS rebinding: loopback peer presents a foreign Host -> refuse every path, reads included.
+    let rebind = raw_get(addr, "/api/graph", "Host: evil.example.com\r\n").await;
+    assert!(rebind.starts_with("HTTP/1.1 403"), "rebound Host must be refused, got: {}", rebind.lines().next().unwrap_or(""));
+    assert!(rebind.contains("DNS-rebinding"), "the refusal must name the defense");
+
+    // A loopback Host reads fine.
+    let ok = raw_get(addr, "/api/graph", "Host: 127.0.0.1\r\n").await;
+    assert!(ok.starts_with("HTTP/1.1 200"), "a loopback Host must be served");
+
+    // CSRF: a request lacking the viewer's custom header is refused - this is the <img>/<form>
+    // vector (those cannot set custom headers), and it holds on every browser regardless of whether
+    // Sec-Fetch-Site is sent. Loopback Host, no custom header -> 403.
+    let no_header = raw_get(addr, "/api/review?proposal=x&decision=merge", "Host: 127.0.0.1\r\n").await;
+    assert!(no_header.starts_with("HTTP/1.1 403"), "a verdict without the viewer header must be refused, got: {}", no_header.lines().next().unwrap_or(""));
+    assert!(no_header.contains("CSRF defense"), "the refusal must name the defense");
+
+    // Defense in depth: even if a cross-site request carried the header, an explicit cross-site
+    // Sec-Fetch-Site is still refused.
+    let cross = raw_get(
+        addr,
+        "/api/review?proposal=x&decision=merge",
+        "Host: 127.0.0.1\r\nX-Supragnosis-Viz: 1\r\nSec-Fetch-Site: cross-site\r\n",
+    )
+    .await;
+    assert!(cross.starts_with("HTTP/1.1 403"), "cross-site verdict must be refused, got: {}", cross.lines().next().unwrap_or(""));
+
+    // The viewer's own request (custom header + same-origin) passes the CSRF gate.
+    let same = raw_get(
+        addr,
+        "/api/review?proposal=x&decision=merge",
+        "Host: 127.0.0.1\r\nX-Supragnosis-Viz: 1\r\nSec-Fetch-Site: same-origin\r\n",
+    )
+    .await;
+    assert!(!same.contains("CSRF defense"), "the viewer's own verdict must not be CSRF-blocked");
+}
+
 #[tokio::test]
 async fn viz_lists_workspaces_sorted_distinct() {
     let store = Arc::new(InMemoryStore::new());
@@ -169,7 +270,7 @@ async fn viz_streams_mcp_events_via_sse() {
 
     // After the SSE connect, read the header first (a signal the handler has finished subscribe - guarantees emit ordering).
     let mut sock = TcpStream::connect(addr).await.unwrap();
-    sock.write_all(b"GET /api/events HTTP/1.1\r\nHost: x\r\n\r\n")
+    sock.write_all(b"GET /api/events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
         .await
         .unwrap();
     let mut buf = [0u8; 1024];
