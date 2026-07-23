@@ -1,0 +1,225 @@
+  /* Candlelight theme - the viewer speaks the same design language as site/ (the landing):
+     warm gold on near-black ink, parchment text, mono chrome, serif prose, grain + glow.
+     Fonts stay self-contained (no webfont fetch - the viewer must work offline): the landing's
+     fallback stacks are used directly. */
+  :root {
+    color-scheme: dark;
+    --surface:#08090d; --panel:#10131b; --panel-2:#131722;
+    --glass:rgba(13,16,23,0.92); --glass-deep:rgba(9,11,16,0.95);
+    --ink:#e9e4d6; --ink2:#aab1bd; --muted:#8e96a5; --faint:#5c6472;
+    --line:#222836; --line-soft:#1a1f2b; --border:#1e2431;
+    --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
+    --gold-glass:rgba(217,165,68,0.12); --teal:#56b3a2;
+    --line-hi:var(--gold-dim);
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --prose:"Newsreader","Iowan Old Style",Georgia,serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { background:var(--surface); color:var(--ink2); overflow:hidden;
+         font:12.5px/1.5 var(--mono); }
+  /* Atmosphere: candlelight glow beneath the (transparent) canvas, grain above it. Chrome (header,
+     rails, z>=5) sits above both, so panels stay crisp while the graph floats in the atmosphere. */
+  body::before { content:""; position:fixed; inset:0; pointer-events:none;
+    background:radial-gradient(900px 520px at 50% -10%, rgba(217,165,68,0.09), transparent 65%),
+               radial-gradient(700px 500px at 85% 8%, rgba(86,179,162,0.04), transparent 60%); }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:0.045; z-index:2;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
+  canvas { display:block; position:fixed; inset:0; cursor:grab; }
+  canvas.grabbing { cursor:grabbing; }
+  header { position:fixed; top:0; left:0; right:0; z-index:5; padding:9px 14px;
+           display:flex; gap:9px; align-items:center; flex-wrap:wrap;
+           background:rgba(8,9,13,0.88); border-bottom:1px solid var(--line-soft);
+           backdrop-filter:blur(6px); }
+  h1 { font:600 13px/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink); }
+  h1::before { content:"* "; color:var(--accent); }
+  input,button { background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+                 padding:5px 9px; border-radius:5px; font:inherit; font-size:12px; }
+  input::placeholder { color:var(--faint); }
+  input:focus { outline:none; border-color:var(--gold-dim); }
+  button { cursor:pointer; transition:border-color 0.15s ease, color 0.15s ease; }
+  button:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  .hint { color:var(--muted); font-size:11.5px; }
+  #status { color:var(--muted); font-size:11.5px; margin-left:auto; white-space:nowrap; }
+  #wschips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }
+  .lbl { color:var(--muted); font-size:11px; margin-right:2px; }
+  .chip,.lg { padding:2px 10px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line-soft);
+              cursor:pointer; font-size:11.5px; letter-spacing:0.03em; color:var(--ink2); user-select:none;
+              transition:border-color 0.15s ease, color 0.15s ease; }
+  .chip:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  .chip.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
+  .lg { display:inline-flex; align-items:center; gap:6px; }
+  .lg:hover { border-color:var(--muted); }
+  .lg.off { opacity:0.38; }
+  .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
+         background:var(--glass-deep); border:1px solid var(--line); border-radius:8px;
+         padding:7px 10px; font-size:12px; color:var(--ink2); box-shadow:0 8px 28px #000c; }
+  #tip b { color:var(--ink); }
+  #tip .k { color:var(--faint); }
+  /* Type-definition tooltip (legend chips): the definition reads as prose, like the glossary. */
+  #tip .tdef { font:12.5px/1.45 var(--prose); color:var(--ink); margin:3px 0 2px; word-break:break-word; }
+  #tip .tdef.none { font-style:italic; color:var(--muted); }
+  /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
+     above the statusbar. The right island grows downward from the top and the detail panel stops
+     at right:324, so this corner is the stable empty spot. */
+  #hud { position:fixed; right:12px; bottom:36px; z-index:8; display:flex; flex-direction:column; gap:6px; }
+  #hud button { width:34px; height:34px; padding:0; font-size:15px; line-height:1;
+                display:flex; align-items:center; justify-content:center; background:var(--glass); }
+  #hud #fit { font-size:10.5px; letter-spacing:.03em; }
+  #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+           color:var(--muted); font:italic 14px/1.5 var(--prose); pointer-events:none; }
+  /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
+     hidden until it settles, so the user sees a calm spinner instead of nodes flying around. */
+  #loader { position:fixed; inset:0; display:none; flex-direction:column; align-items:center;
+            justify-content:center; gap:13px; z-index:6; pointer-events:none;
+            color:var(--muted); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; }
+  #loader.on { display:flex; }
+  #loader .spin { width:34px; height:34px; border-radius:50%; border:2px solid var(--line);
+                  border-top-color:var(--accent); animation:ldspin 0.8s linear infinite; }
+  @keyframes ldspin { to { transform:rotate(360deg); } }
+  /* Toggle button state: off = dim (muted), on = gold-lit - state is visible at a glance.
+     JS toggles only .on and keeps .tog. Action buttons like reload/zoom (no .tog) stay at their default. */
+  button.tog { opacity:.5; color:var(--muted); }
+  button.tog:hover { opacity:.8; }
+  button.tog.on { opacity:1; background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
+  #log { position:fixed; left:274px; top:56px; z-index:6; width:280px; max-width:38vw;
+         display:flex; flex-direction:column; gap:4px; pointer-events:none; }
+  #log .row { background:var(--glass); border:1px solid var(--line-soft); border-radius:6px;
+              padding:4px 9px; font-size:11px; color:var(--ink2); animation:logfade 8s forwards; }
+  #log .row b { color:var(--gold-bright); font-weight:600; }
+  #log .row .t { color:var(--faint); margin-right:5px; }
+  @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
+                       82%{opacity:1;} 100%{opacity:0;} }
+  /* Node detail: a wide panel docked center-bottom (between the rails, above the status bar). Header block
+     (name / meta / description) stays put; the relations split into two scrolling columns (out | in). */
+  #detail { position:fixed; left:274px; right:324px; bottom:36px; margin:0 auto; max-width:960px;
+            z-index:8; max-height:36vh; overflow:hidden; display:none;
+            background:var(--glass-deep); border:1px solid var(--line); border-radius:10px;
+            padding:11px 15px 13px; font-size:12px; color:var(--ink2); box-shadow:0 14px 34px #000c; }
+  #detail.on { display:flex; flex-direction:column; }
+  #detail h2 { font:600 14px/1.4 var(--mono); margin:0 22px 2px 0; color:var(--gold-bright); word-break:break-word; }
+  #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; }
+  #detail .desc { color:var(--ink); font:13px/1.45 var(--prose); margin:2px 0 6px; opacity:.9; word-break:break-word; }
+  #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
+  #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
+  #detail .sec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+                 margin:0 0 4px; position:sticky; top:0; background:var(--glass-deep); padding-bottom:3px; }
+  #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:5px; cursor:pointer; }
+  #detail .row:hover { background:var(--gold-glass); }
+  #detail .row .rel { color:var(--muted); font-size:10.5px; white-space:nowrap; }
+  #detail .row .nm { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
+  /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
+     asterisk). A square hit target with a soft hover fill, not a bare text glyph. */
+  #detail .close { position:absolute; top:8px; right:8px; cursor:pointer; color:var(--muted);
+                   border:none; background:none; border-radius:5px; padding:0;
+                   width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+                   transition:color 0.15s ease, background 0.15s ease; }
+  #detail .close:hover { color:var(--gold-bright); background:var(--gold-glass); }
+  #detail .close svg { display:block; }
+  #detail .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 5px; }
+  /* Control dock (left) - collapsible sections for layers/legend/glossary. detail panel stays on the
+     right, so the two never collide. Toggled open/closed by the header 'panels' button. */
+  /* Two full-height side rails: left = observe the graph (Layers + legends + stats), right = manage
+     knowledge (proposals + review + glossary). Below the header, top to bottom, using the whole side. */
+  /* Floating card islands: inset from every screen edge so the canvas visibly continues behind and
+     around them - an overlay on the graph, not walls beside it. Height hugs the content and caps at
+     the statusbar; the rail body scrolls inside. */
+  .dock { position:fixed; top:56px; z-index:7; display:none; flex-direction:column;
+          max-height:calc(100vh - 92px);
+          background:var(--glass); border:1px solid var(--line);
+          border-radius:12px; padding:10px 12px;
+          box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
+  #dockL { left:12px; width:250px; }
+  /* The right island shares its screen edge with the camera HUD (bottom-right stack, ~114px tall
+     at bottom:36): its height cap additionally reserves that corner (56 top + 36 bottom + 114 HUD
+     + 12 gap = 218) so a full proposals list can never slide under the zoom buttons. */
+  #dockR { right:12px; width:300px; max-height:calc(100vh - 218px); }
+  .dock.on { display:flex; }
+  .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
+  /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
+  .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .rsec { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.14em;
+          margin:11px 0 4px; padding-top:8px; border-top:1px solid var(--line-soft); }
+  /* IDE-style bottom status bar (full width, below the rails). */
+  #statusbar { position:fixed; left:0; right:0; bottom:0; height:24px; z-index:9; display:flex;
+               align-items:center; gap:14px; padding:0 12px; background:var(--panel);
+               border-top:1px solid var(--line-soft); font-size:10.5px; letter-spacing:.03em; color:var(--muted); }
+  #statusbar #stats { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #statusbar #status { margin-left:auto; white-space:nowrap; }
+  #statusbar #session { white-space:nowrap; }
+  /* Tabs instead of accordions: one section shows at a time in a fixed-height body, so expanding never
+     pushes the bottom-anchored panel upward. */
+  .dock .tabs { display:flex; gap:3px; margin:3px 0 5px; }
+  .dock .tab { flex:1 1 0; min-width:0; padding:4px 3px; font-size:9.5px; letter-spacing:.03em;
+               text-transform:uppercase; border:1px solid var(--line-soft); background:var(--panel-2);
+               color:var(--muted); border-radius:5px; cursor:pointer; white-space:nowrap;
+               overflow:hidden; text-overflow:ellipsis; }
+  .dock .tab:hover { color:var(--gold-bright); }
+  .dock .tab.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
+  .dock .tab .ct { opacity:.75; margin-left:3px; }
+  .dock .panels { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .dock .tabpanel { display:none; padding:2px; }
+  .dock .tabpanel.on { display:block; }
+  /* Grouped toggles inside the Layers section. */
+  .grp { margin-bottom:7px; }
+  .grp:last-child { margin-bottom:2px; }
+  .ghdr { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; display:block; margin:2px 0 4px; }
+  .grp .btns { display:flex; flex-wrap:wrap; gap:5px; }
+  /* Legend chips live in the dock sections now. */
+  #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  /* Glossary entries. */
+  #glossaryBody .item { padding:4px 0 5px; border-top:1px solid var(--line-soft); }
+  #glossaryBody .item:first-child { border-top:none; }
+  #glossaryBody .gsec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:6px 0 3px; }
+  #glossaryBody .gsec:first-child { margin-top:0; }
+  #glossaryBody .nm { color:var(--gold-bright); font-weight:600; font-size:11.5px; }
+  #glossaryBody .src { color:var(--faint); font-size:10px; margin-left:5px; }
+  #glossaryBody .def { color:var(--ink2); font:12.5px/1.45 var(--prose); margin-top:1px; opacity:.95; word-break:break-word; }
+  #glossaryBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
+  /* Curation (read-only signals). */
+  #curationBody .csec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:8px 0 3px; }
+  #curationBody .csec:first-child { margin-top:0; }
+  #curationBody .grp { border-top:1px solid var(--line-soft); padding:4px 0; }
+  #curationBody .grp:first-of-type { border-top:none; }
+  #curationBody .gk { color:var(--ink); font-size:11.5px; }
+  #curationBody .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
+  #curationBody .nchip { padding:1px 8px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line-soft);
+                         cursor:pointer; font-size:10.5px; color:var(--ink2); }
+  #curationBody .nchip:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  #curationBody .nchip .ty { color:var(--faint); font-size:9.5px; margin-left:3px; }
+  #curationBody .gb { padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; color:var(--ink2); }
+  #curationBody .gb .sz { color:var(--gold-bright); font-weight:600; margin-right:5px; }
+  #curationBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
+  /* Proposals (the gated curation console). */
+  #proposalsBody .hint { color:var(--muted); font:italic 11.5px/1.4 var(--prose); margin-bottom:5px; }
+  #proposalsBody .prop { border-top:1px solid var(--line-soft); padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }
+  #proposalsBody .prop:first-of-type { border-top:none; }
+  #proposalsBody .prop:hover { background:rgba(217,165,68,0.05); }
+  #proposalsBody .prop.sel { background:var(--gold-glass); border-left-color:var(--accent); }
+  #proposalsBody .phead { display:flex; align-items:center; gap:6px; }
+  #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11px; }
+  #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.06em; padding:1px 7px;
+                           border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:auto; }
+  #proposalsBody .pstate.open { color:var(--gold-bright); border-color:var(--gold-dim); }
+  #proposalsBody .pstate.merged { color:var(--teal); border-color:rgba(86,179,162,0.4); }
+  #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--prose); margin:2px 0; opacity:.9; word-break:break-word; }
+  #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
+  #proposalsBody .atypes { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0 1px; }
+  #proposalsBody .atype { font:10px var(--mono); color:var(--gold-bright); border:1px solid var(--gold-dim);
+    border-radius:5px; padding:1px 6px; opacity:.92; }
+  #proposalsBody .atype .ax { color:var(--muted); margin-left:5px; letter-spacing:.04em; }
+  #proposalsBody .nchip.into { border-color:var(--gold-dim); color:var(--gold-bright); }
+  #proposalsBody .pacts { display:flex; gap:5px; margin-top:3px; }
+  #proposalsBody .pacts button { padding:1px 10px; font-size:10px; letter-spacing:.04em; border-radius:5px; }
+  /* Accept is the gate's primary act - it gets the landing's solid-gold button voice. */
+  #proposalsBody .pacts button[data-act="merge"] { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
+  #proposalsBody .pacts button[data-act="merge"]:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
+  #proposalsBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
+  #peersBody .fsec { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.14em; margin:8px 0 4px; }
+  #peersBody .fed { display:flex; align-items:center; gap:6px; padding:3px 2px; font-size:11px; color:var(--ink2); min-width:0; }
+  #peersBody .fed .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  #peersBody .fed .furl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #peersBody .fws { color:var(--muted); font-size:10.5px; margin:0 0 2px 15px; }
+  #peersBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); }

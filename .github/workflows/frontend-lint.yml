@@ -1,0 +1,29 @@
+# Security lint for the viewer frontend assets. This is SEPARATE from the crate build: the binary
+# embeds viewer.html/css/js via include_str! and builds with pure cargo (no Node). This job only runs
+# ESLint's no-unsanitized rule so a new innerHTML sink that forgets to escape untrusted content
+# (the XSS class - Principle 18) fails CI instead of shipping.
+name: frontend-lint
+
+on:
+  push:
+    paths:
+      - "crates/supragnosis-viz/assets/**"
+      - ".github/workflows/frontend-lint.yml"
+  pull_request:
+    paths:
+      - "crates/supragnosis-viz/assets/**"
+      - ".github/workflows/frontend-lint.yml"
+
+jobs:
+  eslint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/supragnosis-viz/assets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run lint

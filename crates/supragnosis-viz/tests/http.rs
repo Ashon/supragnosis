@@ -96,7 +96,7 @@ async fn viz_serves_graph_index_and_404() {
         .unwrap();
     assert_eq!(g3["stats"]["node_count"], 2);
 
-    // Index HTML - the canvas viewer.
+    // Index HTML - the canvas viewer, now linking the split-out assets.
     let idx = client.get(format!("{base}/")).send().await.unwrap();
     assert_eq!(idx.status(), 200);
     assert_eq!(
@@ -105,7 +105,23 @@ async fn viz_serves_graph_index_and_404() {
     );
     let html = idx.text().await.unwrap();
     assert!(html.contains("<canvas"), "the viewer HTML must contain a canvas");
-    assert!(html.contains("/api/graph"), "the viewer must poll the graph API");
+    // Path substrings (not full attribute text) so the assertion survives release HTML minification,
+    // which may drop the attribute quotes.
+    assert!(html.contains("/viewer.css"), "the index must link the stylesheet asset");
+    assert!(html.contains("/viewer.js"), "the index must link the script asset");
+
+    // The split-out JS asset is served (same origin) with a JS content type and drives the API.
+    let js = client.get(format!("{base}/viewer.js")).send().await.unwrap();
+    assert_eq!(js.status(), 200);
+    assert_eq!(js.headers()["content-type"], "text/javascript; charset=utf-8");
+    let js_body = js.text().await.unwrap();
+    assert!(js_body.contains("/api/graph"), "the script must poll the graph API");
+
+    // The split-out CSS asset is served with a CSS content type.
+    let css = client.get(format!("{base}/viewer.css")).send().await.unwrap();
+    assert_eq!(css.status(), 200);
+    assert_eq!(css.headers()["content-type"], "text/css; charset=utf-8");
+    assert!(!css.text().await.unwrap().is_empty(), "the stylesheet must not be empty");
 
     // Unknown path -> 404.
     let nf = client.get(format!("{base}/nope")).send().await.unwrap();
@@ -113,43 +129,29 @@ async fn viz_serves_graph_index_and_404() {
 }
 
 /// XSS regression (Principle 18): entity/type names come from untrusted observe calls and are
-/// interpolated into the console's innerHTML/attributes. The embedded JS must escape them.
-#[tokio::test]
-async fn viz_index_escapes_untrusted_names_in_js() {
-    let store = Arc::new(InMemoryStore::new());
-    let engine = Arc::new(
-        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
-    );
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
-
-    let html = reqwest::Client::new()
-        .get(format!("http://{addr}/"))
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
+/// interpolated into the console's innerHTML/attributes. Assert against the viewer SOURCE (not the
+/// served bytes, which are minified in release); ESLint no-unsanitized guards the same source in CI.
+#[test]
+fn viz_source_escapes_untrusted_names() {
+    let js = include_str!("../assets/viewer.js");
 
     // esc() must escape quotes too, not just <&> - otherwise a name breaks out of a title="..."
     // attribute into an event handler (attribute-injection XSS).
     assert!(
-        html.contains(r#"replace(/[<&>"']/g"#),
+        js.contains(r#"replace(/[<&>"']/g"#),
         "esc() must escape quotes for the attribute-injection defense"
     );
     assert!(
-        html.contains("&quot;") && html.contains("&#39;"),
+        js.contains("&quot;") && js.contains("&#39;"),
         "esc() map must translate double and single quotes"
     );
     // The node hover tooltip must route the name/type through esc(), never raw interpolation.
     assert!(
-        html.contains("<b>${esc(n.name)}</b>"),
+        js.contains("<b>${esc(n.name)}</b>"),
         "showTip must escape the node name (stored-XSS vector)"
     );
     assert!(
-        !html.contains("<b>${n.name}</b>"),
+        !js.contains("<b>${n.name}</b>"),
         "showTip must not interpolate the raw node name into innerHTML"
     );
 }
