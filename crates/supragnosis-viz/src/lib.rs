@@ -797,6 +797,7 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   <div class="railbody">
     <div class="grp"><span class="ghdr">Layout</span><div class="btns">
       <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
+      <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">peers</button>
       <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
       <button id="hyperBtn" class="tog on" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
     </div></div>
@@ -892,6 +893,9 @@ let curation = null;             // read-only curation signals - /api/curation (
 let proposals = [];              // proposals with folded state - /api/proposals (Principle 23 gate)
 let proposalSel = null;          // the proposal currently previewed on the graph (click to select/toggle)
 let follow = true;               // whether the camera follows the most recent agent-activity node
+let peersOn = false;             // server mode: draw federated peers as roaming cursor-dots (hub)
+let serverMode = false;          // this node is a hub (auto-detected from /api/federation role)
+const peerMarkers = new Map();   // peer node_id -> {x,y,tx,ty,color,phase,flare,action,count,seen,sx,sy}
 let clusterMode = false;         // group by type: type-circle layout + cross-group link emphasis (an alternative organizer)
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
 let hyperMode = true;            // hyperedge hull OVERLAY (fills + labels) - on by default, visual only, independent of hullForce
@@ -1460,12 +1464,17 @@ async function handleEvent(ev) {
   } else if (ev.kind === "sync") {
     // Federation hit: who touched this store, which direction, how much - the live remote feed.
     logRow(`<b>sync</b> ${esc(ev.direction)} ${esc(ev.workspace)} &lt;-&gt; ${esc(String(ev.peer).slice(0, 18))} (${ev.count})`);
+    let added = [];
     if (ev.count > 0) {
       // Knowledge landed: load it now, and re-frame once the re-layout settles (follow mode) so the
-      // camera presents the grown graph instead of staring at a stale corner of it.
+      // camera presents the grown graph instead of staring at a stale corner of it. Diff the node set
+      // across the reload so a peer's cursor can glide onto exactly what it just contributed.
+      const before = new Set(nodes.map(n => n.id));
       refitOnReveal = follow;
       await poll();
+      added = nodes.filter(n => !before.has(n.id));
     }
+    if (peersOn) notePeer(ev, added);   // server mode: move the peer's marker, not the camera
     ids = [];
   } else if (ev.kind === "traverse") {
     const sn = nodeById(ev.start);
@@ -1477,15 +1486,128 @@ async function handleEvent(ev) {
   // Reheat only when the event touched actual nodes - sync/hc chatter (now periodic via the
   // status loop) must never jiggle a settled layout.
   if (ids.length) wake(0.3);
-  if (follow) {
+  if (follow && !peersOn) {
     // Frame the WHOLE hit set: several hits fit into view together (pan + zoom as needed); a
-    // single hit centers smoothly. The camera narrates what the agent touched.
+    // single hit centers smoothly. The camera narrates what the agent touched. In server mode the
+    // camera holds still and the peer markers move instead (a hub would otherwise jump on every hit).
     const hitNodes = ids.map(nodeById).filter(Boolean);
     if (hitNodes.length > 1) fitView(hitNodes, 130);
     else { const n = hitNodes[0] || primaryNode(ev); if (n) centerOn(n); }
   }
   const sEl = document.getElementById("session");
   if (sEl) sEl.textContent = footprintSession ? `session ${footprintSession.slice(0,22)} / ${footprint.size} used` : "";
+}
+// --- Peer markers (server mode) -----------------------------------------------------
+// On a hub, many peers sync at once. Instead of the camera chasing every remote hit, each federated
+// peer is a minimal cursor-dot that glides to the nodes it touched (like a remote cursor): a push shows
+// the peer drifting onto the knowledge it just contributed. Deterministic per-peer color; hover for id.
+function peerColor(id) {
+  let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 68% 63%)`;
+}
+// Centroid of a node set (or the whole visible graph) in world coords; parks at the view center when empty.
+function viewCentroid(list) {
+  const src = (list && list.length ? list : nodes).filter(n => !typeOff.has(n.type));
+  if (!src.length) {
+    const wx = (insetL() + innerWidth - insetR()) / 2, wy = (innerHeight + TOP_INSET - insetB()) / 2;
+    return [(wx - cam.x) / cam.s, (wy - cam.y) / cam.s];
+  }
+  let sx = 0, sy = 0; for (const n of src) { sx += n.x; sy += n.y; }
+  return [sx / src.length, sy / src.length];
+}
+function peerMarker(id) {
+  let m = peerMarkers.get(id);
+  if (!m) {
+    const [cx, cy] = viewCentroid();
+    const a = ((parseInt(id.slice(0, 4), 16) || 0) / 65535) * 6.283;   // stable per-peer angle
+    m = { x: cx + Math.cos(a) * 140, y: cy + Math.sin(a) * 140, tx: cx, ty: cy,
+          color: peerColor(id), phase: a, flare: 0, action: "", count: 0, seen: 0, sx: null, sy: null };
+    peerMarkers.set(id, m);
+  }
+  return m;
+}
+// A sync hit from `ev.peer`: glide its dot onto the nodes it just touched (added on a push), else toward
+// the workspace centroid, with a small per-peer offset so several peers on one region do not stack.
+function notePeer(ev, added) {
+  if (!ev.peer) return;
+  const m = peerMarker(ev.peer);
+  const hasNodes = added && added.length;
+  const [cx, cy] = viewCentroid(hasNodes ? added : null);
+  const jit = hasNodes ? 14 : 64;
+  m.tx = cx + Math.cos(m.phase) * jit; m.ty = cy + Math.sin(m.phase) * jit;
+  m.flare = 1; m.action = ev.direction || ""; m.count = ev.count | 0; m.seen = Date.now();
+  if (hasNodes) pulseNodes(added.map(n => n.id));   // light up what the peer contributed
+}
+function stepPeers() {
+  if (!peersOn) return;
+  for (const m of peerMarkers.values()) {
+    m.x += (m.tx - m.x) * 0.07; m.y += (m.ty - m.y) * 0.07;
+    m.flare = m.flare > 0.002 ? m.flare * 0.95 : 0;
+  }
+}
+function drawPeers() {
+  if (!peersOn || !peerMarkers.size) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const t = performance.now() / 1000, now = Date.now();
+  for (const m of peerMarkers.values()) {
+    const bob = Math.sin(t * 1.2 + m.phase) * 2.5;   // gentle idle drift so quiet peers still breathe
+    const px = m.x * cam.s + cam.x, py = m.y * cam.s + cam.y + bob;
+    m.sx = px; m.sy = py;
+    const live = Math.max(0, 1 - (m.seen ? (now - m.seen) / 1000 : 999) / 90);   // dim as a peer goes quiet
+    const r = 3.5 + m.flare * 5;
+    const g = ctx.createRadialGradient(px, py, 0, px, py, r * 3.4);
+    g.addColorStop(0, m.color); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 0.22 * (0.4 + 0.6 * live) + m.flare * 0.5;
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r * 3.4, 0, 7); ctx.fill();
+    ctx.globalAlpha = 0.45 + 0.55 * live;
+    ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function peerAt(cx, cy) {
+  if (!peersOn) return null;
+  for (const [id, m] of peerMarkers) if (m.sx != null && Math.hypot(cx - m.sx, cy - m.sy) <= 11) return { id, m };
+  return null;
+}
+function showPeerTip(m, id, cx, cy) {
+  tip.style.display = "block";
+  tip.style.left = Math.min(cx + 14, innerWidth - 330) + "px";
+  tip.style.top = (cy + 14) + "px";
+  const ago = m.seen ? Math.max(0, Math.round((Date.now() - m.seen) / 1000)) : null;
+  tip.innerHTML = `<b>peer ${esc(id.slice(0, 6))}</b><br>`
+    + `<span class="k">node</span> ${esc(id.slice(0, 16))}<br>`
+    + `<span class="k">last</span> ${esc(m.action || "-")}${ago !== null ? " " + ago + "s ago" : ""} `
+    + `&nbsp; <span class="k">hits</span> ${m.count | 0}`;
+}
+// Seed/refresh markers from the peer roster so idle peers (that only advertise, which is not a live
+// event) still appear and stay lit. Only metadata + `seen` are touched - a marker's glide target/flare
+// belong to the live Sync events (notePeer), so a roster refresh never yanks a moving cursor.
+function seedPeers(f) {
+  for (const p of (f.known_peers || [])) {
+    const m = peerMarker(p.node_id);
+    m.action = p.last_action || ""; m.count = p.hits | 0;
+    const ageMs = f.updated_ms && p.last_seen_ms ? Math.max(0, f.updated_ms - p.last_seen_ms) : 0;
+    m.seen = Date.now() - ageMs;   // keep `seen` in client-clock terms (avoid hub/viewer clock skew)
+  }
+}
+// A hub gathers peers - auto-enter server mode: draw peer cursors and stop the camera from chasing
+// remote hits (the owner can still toggle either). On a client/loopback viewer this is a no-op.
+async function detectServerMode() {
+  try {
+    const f = await (await fetch("/api/federation", { cache: "no-store" })).json();
+    if (!f || f.role !== "hub") return;
+    serverMode = true;
+    peersOn = true; peersBtn.classList.add("on");
+    follow = false; followBtn.classList.toggle("on", false);
+    seedPeers(f);
+  } catch (_) { /* federation status unavailable - stay in client mode */ }
+}
+// Keep the roster fresh on a hub so a peer that only heartbeats (advertise emits no live event) still
+// shows up within a few seconds of checking in, and quiet peers do not fade out while still present.
+async function refreshPeerRoster() {
+  if (!serverMode) return;
+  try { seedPeers(await (await fetch("/api/federation", { cache: "no-store" })).json()); } catch (_) {}
 }
 function connectEvents() {
   try {
@@ -2130,6 +2252,8 @@ function draw() {
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.globalAlpha = 1;
     }
   }
+  // Peer cursor-dots (server mode) - drawn last so they float above the graph and labels.
+  stepPeers(); drawPeers();
   requestAnimationFrame(draw);
 }
 
@@ -2185,6 +2309,8 @@ addEventListener("mousemove", ev => {
   // definitions) - and node hover through an opaque panel was wrong anyway.
   if (ev.target !== canvas) return;
   if (settling) { showTip(null); return; }   // no hover while the graph is hidden behind the loader
+  const ph = peerAt(ev.clientX, ev.clientY);   // peer cursor-dots sit above the graph - test them first
+  if (ph) { hover = null; showPeerTip(ph.m, ph.id, ev.clientX, ev.clientY); return; }
   hover = nodeAt(ev.clientX, ev.clientY);
   showTip(hover, ev.clientX, ev.clientY);
 });
@@ -2217,6 +2343,8 @@ document.getElementById("zout").onclick = () => zoomAt(innerWidth/2, innerHeight
 document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
 const followBtn = document.getElementById("followBtn");
 followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", follow); };
+const peersBtn = document.getElementById("peersBtn");
+peersBtn.onclick = () => { peersOn = !peersOn; peersBtn.classList.toggle("on", peersOn); };
 const clusterBtn = document.getElementById("clusterBtn");
 clusterBtn.onclick = () => { clusterMode = !clusterMode; clusterBtn.classList.toggle("on", clusterMode); wake(0.6); poll(); };
 const hyperBtn = document.getElementById("hyperBtn");
@@ -2255,8 +2383,8 @@ document.getElementById("histBtn").onclick = e => { showSuperseded = !showSupers
   const qws = new URLSearchParams(location.search).get("workspace");
   if (qws !== null) wsInput.value = qws;
 }
-resize(); loadWorkspaces(); poll(); connectEvents();
-setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); draw();
+resize(); loadWorkspaces(); poll(); connectEvents(); detectServerMode();
+setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); setInterval(refreshPeerRoster, 5000); draw();
 </script>
 "###;
 
