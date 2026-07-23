@@ -30,7 +30,7 @@
   header { position:fixed; top:0; left:0; right:0; z-index:5; padding:9px 14px;
            display:flex; gap:9px; align-items:center; flex-wrap:wrap;
            background:rgba(8,9,13,0.88); border-bottom:1px solid var(--line-soft);
-           backdrop-filter:blur(6px); }
+           backdrop-filter:blur(7px); }
   h1 { font:600 13px/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink); }
   h1::before { content:"* "; color:var(--accent); }
   input,button { background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
@@ -54,7 +54,8 @@
   .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
          background:var(--glass-deep); border:1px solid var(--line); border-radius:8px;
-         padding:7px 10px; font-size:12px; color:var(--ink2); box-shadow:0 8px 28px #000c; }
+         padding:7px 10px; font-size:12px; color:var(--ink2); box-shadow:0 8px 28px #000c;
+         backdrop-filter:blur(7px); }
   #tip b { color:var(--ink); }
   #tip .k { color:var(--faint); }
   /* Type-definition tooltip (legend chips): the definition reads as prose, like the glossary. */
@@ -64,9 +65,14 @@
      above the statusbar. The right island grows downward from the top and the detail panel stops
      at right:324, so this corner is the stable empty spot. */
   #hud { position:fixed; right:12px; bottom:36px; z-index:8; display:flex; flex-direction:column; gap:6px; }
-  #hud button { width:34px; height:34px; padding:0; font-size:15px; line-height:1;
-                display:flex; align-items:center; justify-content:center; background:var(--glass); }
-  #hud #fit { font-size:10.5px; letter-spacing:.03em; }
+  #hud button { width:34px; height:34px; padding:0;
+                display:flex; align-items:center; justify-content:center; background:var(--glass);
+                backdrop-filter:blur(7px); }
+  #hud button svg { width:16px; height:16px; fill:none; stroke:currentColor;
+                    stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  /* The eye stays lit while its popover is open (the popover is detached, so the button is
+     the only anchor telling you where it came from). */
+  #hud button.on { border-color:var(--gold-dim); color:var(--gold-bright); }
   #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
            color:var(--muted); font:italic 14px/1.5 var(--prose); pointer-events:none; }
   /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
@@ -86,25 +92,30 @@
   #log { position:fixed; left:274px; top:56px; z-index:6; width:280px; max-width:38vw;
          display:flex; flex-direction:column; gap:4px; pointer-events:none; }
   #log .row { background:var(--glass); border:1px solid var(--line-soft); border-radius:6px;
-              padding:4px 9px; font-size:11px; color:var(--ink2); animation:logfade 8s forwards; }
+              padding:4px 9px; font-size:11px; color:var(--ink2); animation:logfade 8s forwards;
+              backdrop-filter:blur(7px); }
   #log .row b { color:var(--gold-bright); font-weight:600; }
   #log .row .t { color:var(--faint); margin-right:5px; }
   @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
                        82%{opacity:1;} 100%{opacity:0;} }
   /* Node detail: a wide panel docked center-bottom (between the rails, above the status bar). Header block
      (name / meta / description) stays put; the relations split into two scrolling columns (out | in). */
+  /* Same material as the docks/popover: one glass system across every floating surface. */
   #detail { position:fixed; left:274px; right:324px; bottom:36px; margin:0 auto; max-width:960px;
             z-index:8; max-height:36vh; overflow:hidden; display:none;
-            background:var(--glass-deep); border:1px solid var(--line); border-radius:10px;
-            padding:11px 15px 13px; font-size:12px; color:var(--ink2); box-shadow:0 14px 34px #000c; }
+            background:var(--glass); border:1px solid var(--line); border-radius:10px;
+            padding:11px 15px 13px; font-size:12px; color:var(--ink2);
+            box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
   #detail.on { display:flex; flex-direction:column; }
   #detail h2 { font:600 14px/1.4 var(--mono); margin:0 22px 2px 0; color:var(--gold-bright); word-break:break-word; }
   #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; }
   #detail .desc { color:var(--ink); font:13px/1.45 var(--prose); margin:2px 0 6px; opacity:.9; word-break:break-word; }
   #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
   #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
+  /* No own background: the panel is translucent glass, so any child fill reads as a dark box
+     (the old sticky-header mask). Headers scroll with their list instead. */
   #detail .sec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
-                 margin:0 0 4px; position:sticky; top:0; background:var(--glass-deep); padding-bottom:3px; }
+                 margin:0 0 4px; padding-bottom:3px; }
   #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:5px; cursor:pointer; }
   #detail .row:hover { background:var(--gold-glass); }
   #detail .row .rel { color:var(--muted); font-size:10.5px; white-space:nowrap; }
@@ -126,17 +137,35 @@
   /* Floating card islands: inset from every screen edge so the canvas visibly continues behind and
      around them - an overlay on the graph, not walls beside it. Height hugs the content and caps at
      the statusbar; the rail body scrolls inside. */
-  .dock { position:fixed; top:56px; z-index:7; display:none; flex-direction:column;
+  /* Drawer handles: a door handle rides its door. Each tab sits on the dock card's outer edge
+     near the top and slides WITH the dock (same motion curve), landing flush on the screen edge
+     when the dock is away. One glyph, no floating chrome over the panel content. */
+  .docktab { position:fixed; top:64px; z-index:8; width:16px; height:44px;
+             padding:0; display:flex; align-items:center; justify-content:center;
+             color:var(--faint); font-size:12px; line-height:1;
+             transition:left .18s ease, right .18s ease, color .15s ease; }
+  .docktab:hover { color:var(--gold-bright); }
+  .docktab.left { left:0; border-left:none; border-radius:0 7px 7px 0; }
+  .docktab.left.open { left:262px; }
+  .docktab.right { right:0; border-right:none; border-radius:7px 0 0 7px; }
+  .docktab.right.open { right:312px; }
+  /* Docks slide off-screen instead of popping (visibility flips after the transform settles,
+     so a hidden dock takes no clicks). The handles above share the motion curve. */
+  .dock { position:fixed; top:56px; z-index:7; display:flex; flex-direction:column;
           max-height:calc(100vh - 92px);
           background:var(--glass); border:1px solid var(--line);
           border-radius:12px; padding:10px 12px;
-          box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
+          box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px);
+          visibility:hidden; opacity:0;
+          transition:transform .18s ease, opacity .18s ease, visibility 0s linear .18s; }
+  #dockL:not(.on) { transform:translateX(-110%); }
+  #dockR:not(.on) { transform:translateX(110%); }
   #dockL { left:12px; width:250px; }
   /* The right island shares its screen edge with the camera HUD (bottom-right stack, ~114px tall
      at bottom:36): its height cap additionally reserves that corner (56 top + 36 bottom + 114 HUD
      + 12 gap = 218) so a full proposals list can never slide under the zoom buttons. */
   #dockR { right:12px; width:300px; max-height:calc(100vh - 218px); }
-  .dock.on { display:flex; }
+  .dock.on { visibility:visible; opacity:1; transition:transform .18s ease, opacity .18s ease; }
   .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
   /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
   .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
@@ -144,15 +173,16 @@
           margin:11px 0 4px; padding-top:8px; border-top:1px solid var(--line-soft); }
   /* IDE-style bottom status bar (full width, below the rails). */
   #statusbar { position:fixed; left:0; right:0; bottom:0; height:24px; z-index:9; display:flex;
-               align-items:center; gap:14px; padding:0 12px; background:var(--panel);
-               border-top:1px solid var(--line-soft); font-size:10.5px; letter-spacing:.03em; color:var(--muted); }
+               align-items:center; gap:14px; padding:0 12px; background:var(--glass-deep);
+               border-top:1px solid var(--line-soft); font-size:10.5px; letter-spacing:.03em; color:var(--muted);
+               backdrop-filter:blur(7px); }
   #statusbar #stats { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #statusbar #status { margin-left:auto; white-space:nowrap; }
   #statusbar #session { white-space:nowrap; }
   /* Tabs instead of accordions: one section shows at a time in a fixed-height body, so expanding never
      pushes the bottom-anchored panel upward. */
   .dock .tabs { display:flex; gap:3px; margin:3px 0 5px; }
-  .dock .tab { flex:1 1 0; min-width:0; padding:4px 3px; font-size:9.5px; letter-spacing:.03em;
+  .dock .tab { flex:1 1 0; min-width:0; padding:5px 3px; font-size:9.5px; letter-spacing:.03em;
                text-transform:uppercase; border:1px solid var(--line-soft); background:var(--panel-2);
                color:var(--muted); border-radius:5px; cursor:pointer; white-space:nowrap;
                overflow:hidden; text-overflow:ellipsis; }
@@ -166,7 +196,21 @@
   .grp { margin-bottom:7px; }
   .grp:last-child { margin-bottom:2px; }
   .ghdr { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; display:block; margin:2px 0 4px; }
-  .grp .btns { display:flex; flex-wrap:wrap; gap:5px; }
+  /* View options popover: preferences live off the primary panels, behind the HUD's view
+     button (map-tool convention). Options render as compact monospace checkbox rows -
+     "[x] labels" - because they are on/off view state, not actions. */
+  #viewpop { position:fixed; right:54px; bottom:36px; z-index:9; display:none; flex-direction:column;
+             width:168px; background:var(--glass); border:1px solid var(--line); border-radius:10px;
+             padding:9px 11px; box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
+  #viewpop.on { display:flex; }
+  #viewpop .btns { display:flex; flex-direction:column; gap:1px; }
+  #viewpop button.tog { text-align:left; background:none; border:none; padding:2.5px 3px;
+                        font-size:11.5px; color:var(--muted); border-radius:4px; }
+  #viewpop button.tog::before { content:"[ ] "; color:var(--faint); }
+  #viewpop button.tog.on { color:var(--ink); background:none; border:none; }
+  #viewpop button.tog.on::before { content:"[x] "; color:var(--accent); }
+  #viewpop button.tog:hover { color:var(--gold-bright); background:var(--gold-glass); border:none; }
+  #viewpop #reload { margin-top:7px; padding:4px 8px; font-size:11px; }
   /* Legend chips live in the dock sections now. */
   #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   /* Glossary entries. */
