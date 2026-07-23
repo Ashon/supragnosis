@@ -1587,9 +1587,39 @@ const hyperBtn = document.getElementById("hyperBtn");
 // Overlay is render-only (the draw loop shows it next frame) - do not reheat the sim. Fetch hyperedge
 // data only if we do not already have it (e.g. when leaving group mode, where it was cleared).
 hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); if (hyperMode && !hyperedges.length) poll(); };
-const dockBtn = document.getElementById("dockBtn");
-// The controls dock is a side panel (not a canvas layer) - toggling never reheats the sim.
-dockBtn.onclick = () => { const on = !dockLEl.classList.contains("on"); dockLEl.classList.toggle("on", on); dockREl.classList.toggle("on", on); dockBtn.classList.toggle("on", on); };
+// Per-dock drawer handles (screen-edge tabs) replace the old all-or-nothing header toggle: each
+// dock collapses independently, the header stays a pure title/search bar, and the choice persists
+// across reloads. The docks are side panels (not canvas layers) - toggling never reheats the sim.
+// Chevron points where clicking will move the edge: outward "<" collapses, inward ">" expands.
+const dockLTab = document.getElementById("dockLTab"), dockRTab = document.getElementById("dockRTab");
+function applyDock(isLeft, on) {
+  (isLeft ? dockLEl : dockREl).classList.toggle("on", on);
+  const tab = isLeft ? dockLTab : dockRTab;
+  tab.classList.toggle("open", on); // the handle slides with its dock (CSS .docktab.open)
+  tab.textContent = (isLeft ? on : !on) ? "<" : ">";
+  try { localStorage.setItem(isLeft ? "supra.dockL" : "supra.dockR", on ? "1" : "0"); } catch (_) { /* private mode */ }
+}
+function toggleDock(isLeft) { applyDock(isLeft, !(isLeft ? dockLEl : dockREl).classList.contains("on")); }
+dockLTab.onclick = () => toggleDock(true);
+dockRTab.onclick = () => toggleDock(false);
+// View options popover (HUD "view" button): preferences stay off the data rails; a click
+// elsewhere or Escape dismisses it.
+const viewBtn = document.getElementById("viewBtn"), viewPop = document.getElementById("viewpop");
+function setViewPop(on) { viewPop.classList.toggle("on", on); viewBtn.classList.toggle("on", on); }
+viewBtn.onclick = ev => { ev.stopPropagation(); setViewPop(!viewPop.classList.contains("on")); };
+document.addEventListener("click", ev => { if (viewPop.classList.contains("on") && !viewPop.contains(ev.target)) setViewPop(false); });
+// [ / ] toggle the docks - but never while typing in a field.
+window.addEventListener("keydown", e => {
+  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+  if (e.key === "[") toggleDock(true);
+  else if (e.key === "]") toggleDock(false);
+  else if (e.key === "Escape") setViewPop(false);
+});
+// Restore the persisted state (default: both open).
+try {
+  applyDock(true, localStorage.getItem("supra.dockL") !== "0");
+  applyDock(false, localStorage.getItem("supra.dockR") !== "0");
+} catch (_) { /* private mode - defaults stand */ }
 // Fetch the glossary lazily when its section is expanded (and keep it fresh via poll while open).
 // Dock tabs: clicking a tab shows only that panel (one at a time, fixed-height body - no upward growth),
 // and refreshes the newly active data panel.

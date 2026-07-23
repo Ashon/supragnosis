@@ -12,28 +12,16 @@
   <input id="search" placeholder="search nodes" size="16" autocomplete="off">
   <label class="hint">ws <input id="ws" placeholder="(default)" size="11" autocomplete="off"></label>
   <span class="hint">*=all</span>
-  <button id="dockBtn" class="tog on" title="show/hide the side panels (layers, legend, glossary, proposals)">panels</button>
 </header>
+<!-- Per-dock drawer handles: each tab rides its dock's outer edge (a door handle on the door)
+     and slides with it to the screen edge when collapsed. Keyboard: [ left, ] right. -->
+<button id="dockLTab" class="docktab left open" title="show/hide the left panel (layers, legend) - shortcut [">&lt;</button>
+<button id="dockRTab" class="docktab right open" title="show/hide the right panel (proposals, glossary, peers) - shortcut ]">&gt;</button>
 <div id="log"></div>
 <div id="detail"></div>
 <aside id="dockL" class="dock on">
   <div id="wschips"></div>
   <div class="railbody">
-    <div class="grp"><span class="ghdr">Layout</span><div class="btns">
-      <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
-      <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">peers</button>
-      <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
-      <button id="hyperBtn" class="tog on" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
-    </div></div>
-    <div class="grp"><span class="ghdr">Show</span><div class="btns">
-      <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
-      <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
-      <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
-      <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
-      <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
-      <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
-    </div></div>
-    <div class="grp"><div class="btns"><button id="reload">reload</button></div></div>
     <div class="rsec">Node types <span class="ct" id="nodeCt"></span></div>
     <div id="legendNodes"></div>
     <div class="rsec">Edge types <span class="ct" id="edgeCt"></span></div>
@@ -56,9 +44,40 @@
 </aside>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
 <div id="tip"></div>
+<!-- View options live OFF the primary panels (they are preferences, not data): a compact
+     checkbox popover behind the HUD's view button, map-tool style. Same button ids and .tog/.on
+     mechanics as before - only the presentation moved. -->
+<div id="viewpop">
+  <div class="grp"><span class="ghdr">Layout</span><div class="btns">
+    <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
+    <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">peers</button>
+    <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
+    <button id="hyperBtn" class="tog on" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
+  </div></div>
+  <div class="grp"><span class="ghdr">Show</span><div class="btns">
+    <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
+    <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
+    <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
+    <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
+    <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
+    <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
+  </div></div>
+  <button id="reload" title="re-fetch the graph now (it also refreshes on its own)">reload</button>
+</div>
+<!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
+     inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">
-  <button id="zin" title="zoom in">+</button>
-  <button id="zout" title="zoom out">-</button>
-  <button id="fit" title="fit to view">fit</button>
+  <button id="viewBtn" title="view options (layout / show)" aria-label="view options">
+    <svg viewBox="0 0 18 18"><path d="M1.5 9s3-5 7.5-5 7.5 5 7.5 5-3 5-7.5 5-7.5-5-7.5-5z"/><circle cx="9" cy="9" r="2.4"/></svg>
+  </button>
+  <button id="zin" title="zoom in" aria-label="zoom in">
+    <svg viewBox="0 0 18 18"><path d="M9 4.5v9M4.5 9h9"/></svg>
+  </button>
+  <button id="zout" title="zoom out" aria-label="zoom out">
+    <svg viewBox="0 0 18 18"><path d="M4.5 9h9"/></svg>
+  </button>
+  <button id="fit" title="fit to view" aria-label="fit to view">
+    <svg viewBox="0 0 18 18"><path d="M6.5 2.5H4A1.5 1.5 0 0 0 2.5 4v2.5M11.5 2.5H14A1.5 1.5 0 0 1 15.5 4v2.5M15.5 11.5V14a1.5 1.5 0 0 1-1.5 1.5h-2.5M2.5 11.5V14A1.5 1.5 0 0 0 4 15.5h2.5"/></svg>
+  </button>
 </div>
 <script src="/viewer.js"></script>
