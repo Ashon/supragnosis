@@ -25,3 +25,8 @@ supragnosis-embed.workspace = true
 # Integration test that fires real GETs at a local port. localhost http, so no TLS needed.
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros"] }
+
+[build-dependencies]
+lightningcss = "1.0.0-alpha.72"
+minify-html = "0.18.1"
+oxc = { version = "0.141.0", features = ["codegen"] }
