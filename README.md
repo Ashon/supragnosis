@@ -8,7 +8,7 @@ and lets you query and explore it over **MCP**.
 
 - Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
 - Store: **embedded, file-based** `cozo`/RocksDB - unifies relational + graph + vector (HNSW).
-- Status: **M4 Phase 4 - federation is live** (v0.1.6). Semantic + keyword hybrid recall (M2), the
+- Status: **M4 Phase 4 - federation is live** (v0.1.7). Semantic + keyword hybrid recall (M2), the
   proposal gate and curation console (M3.5), and hub-and-spoke log replication with ed25519-signed
   events over TLS (M4 Phases 0-4) are implemented. The **resolution layer (M3) has not started** -
   entity identity is still exact canonical-name match, so `M3` items in the roadmap remain open even
