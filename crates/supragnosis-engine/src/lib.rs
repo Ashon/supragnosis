@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use supragnosis_core::{
     hyperedge_id, normalize_relation_kind, now_millis, ordering_hlc, Assertions, EmbeddingProvider,
     Entity, EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation,
@@ -220,6 +220,18 @@ pub const PROPOSAL_KINDS: [&str; 5] = [
     "recall",
 ];
 
+/// A T-Box type (entity or relation) that a proposal defines or changes. Carried by `tbox_change`
+/// proposals so the viewer can highlight the affected graph elements when previewing the change - a
+/// structured belief-diff hint, not parsed out of the rationale prose. Relation names are stored
+/// normalized (they must match the graph's edge kinds, which the viewer highlights by `kind`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffectedType {
+    /// Which vocabulary axis: an entity (node) type or a relation (edge) type.
+    pub target: TypeTarget,
+    /// The type name (e.g. `Driver`, `depends_on`).
+    pub name: String,
+}
+
 /// Input to open a proposal.
 pub struct ProposeInput {
     pub workspace: Option<String>,
@@ -229,6 +241,9 @@ pub struct ProposeInput {
     /// For entity_merge: the canonical target the others fold into (must be one of `targets`).
     pub into: Option<String>,
     pub rationale: Option<String>,
+    /// For tbox_change: the entity/relation types this proposal defines or changes (viewer highlight
+    /// hint). Empty for other kinds and for tbox_change proposals that do not declare their scope.
+    pub affected_types: Vec<AffectedType>,
     pub source_ref: Option<String>,
     pub on_behalf_of: Option<String>,
 }
@@ -243,6 +258,9 @@ pub struct ProposalView {
     pub into: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
+    /// For tbox_change: the T-Box types this proposal defines/changes - the viewer's highlight hint.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub affected_types: Vec<AffectedType>,
     /// open | merged | rejected | withdrawn (solo fold; merge is the absorbing state, I16).
     pub state: String,
     pub verdicts: usize,
@@ -849,11 +867,25 @@ impl Engine {
             .workspace
             .unwrap_or_else(|| self.default_workspace.clone());
         let prov = self.provenance(&workspace, input.source_ref, None, input.on_behalf_of);
+        // Relation type names are normalized so they match the graph's edge kinds exactly (the viewer
+        // highlights edges by `kind`); entity type names are labels, kept verbatim.
+        let affected_types: Vec<AffectedType> = input
+            .affected_types
+            .into_iter()
+            .map(|a| AffectedType {
+                name: match a.target {
+                    TypeTarget::Relation => normalize_relation_kind(&a.name),
+                    TypeTarget::Entity => a.name,
+                },
+                target: a.target,
+            })
+            .collect();
         let payload = serde_json::json!({
             "kind": input.kind,
             "targets": input.targets,
             "into": input.into,
             "rationale": input.rationale,
+            "affected_types": affected_types,
         })
         .to_string();
         let content = format!("proposal(open) {}: {:?}", input.kind, input.targets);
@@ -951,12 +983,18 @@ impl Engine {
                     .unwrap_or_default();
                 let into = v.get("into").and_then(|x| x.as_str()).map(String::from);
                 let rationale = v.get("rationale").and_then(|x| x.as_str()).map(String::from);
+                // affected_types is absent on pre-M3.5 proposals and on kinds that do not declare it.
+                let affected_types: Vec<AffectedType> = v
+                    .get("affected_types")
+                    .and_then(|x| serde_json::from_value(x.clone()).ok())
+                    .unwrap_or_default();
                 views.entry(obs.id.clone()).or_insert(ProposalView {
                     id: obs.id.clone(),
                     kind,
                     targets,
                     into,
                     rationale,
+                    affected_types,
                     state: "open".into(),
                     verdicts: 0,
                     opened_at: observed_at,
@@ -1877,6 +1915,7 @@ mod tests {
                 targets: vec!["idA".into(), "idB".into()],
                 into: Some("idB".into()),
                 rationale: Some("A and B are the same entity".into()),
+                affected_types: vec![],
                 source_ref: None,
                 on_behalf_of: None,
             })
@@ -1904,6 +1943,7 @@ mod tests {
                 targets: vec!["idC".into()],
                 into: None,
                 rationale: None,
+                affected_types: vec![],
                 source_ref: None,
                 on_behalf_of: None,
             })
@@ -1922,10 +1962,58 @@ mod tests {
                 targets: vec!["x".into(), "y".into()],
                 into: None,
                 rationale: None,
+                affected_types: vec![],
                 source_ref: None,
                 on_behalf_of: None,
             })
             .is_err());
+    }
+
+    /// A tbox_change carries its affected T-Box types through the opened payload and the fold, so the
+    /// viewer has a structured belief-diff hint to highlight (Principle 23 / M3.5b). Relation names are
+    /// normalized (matching the graph's edge kinds); entity names are kept verbatim.
+    #[test]
+    fn tbox_change_affected_types_round_trip() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws1");
+        let pid = engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: "tbox_change".into(),
+                targets: vec!["obs-def".into()],
+                into: None,
+                rationale: Some("define relation types from the census".into()),
+                affected_types: vec![
+                    AffectedType { target: TypeTarget::Relation, name: "dependsOn".into() },
+                    AffectedType { target: TypeTarget::Entity, name: "Driver".into() },
+                ],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("open tbox_change");
+        let p = engine.get_proposal(Some("ws1"), &pid).unwrap().expect("proposal exists");
+        assert_eq!(p.kind, "tbox_change");
+        assert_eq!(p.into, None);
+        assert_eq!(p.affected_types.len(), 2);
+        // Relation names are normalized to the graph's edge-kind form; entity labels stay verbatim.
+        assert_eq!(p.affected_types[0].name, "depends_on");
+        assert_eq!(p.affected_types[0].target, TypeTarget::Relation);
+        assert_eq!(p.affected_types[1].name, "Driver");
+        assert_eq!(p.affected_types[1].target, TypeTarget::Entity);
+
+        // An entity_merge carries no affected_types (the field folds to empty).
+        let mid = engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: "entity_merge".into(),
+                targets: vec!["idA".into(), "idB".into()],
+                into: Some("idB".into()),
+                rationale: None,
+                affected_types: vec![],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .unwrap();
+        assert!(engine.get_proposal(Some("ws1"), &mid).unwrap().unwrap().affected_types.is_empty());
     }
 
     #[test]

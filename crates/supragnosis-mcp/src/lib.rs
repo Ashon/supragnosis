@@ -18,9 +18,9 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 
 use supragnosis_engine::{
-    DefineTypeInput, Engine, EntityInput as EngineEntityInput, Event, ObserveInput,
-    ProposeInput as EngineProposeInput, RelationInput as EngineRelationInput, SearchMode,
-    TypeDefInput as EngineTypeDefInput, TypeTarget,
+    AffectedType as EngineAffectedType, DefineTypeInput, Engine, EntityInput as EngineEntityInput,
+    Event, ObserveInput, ProposeInput as EngineProposeInput, RelationInput as EngineRelationInput,
+    SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget,
 };
 
 // --- Transport DTOs (JSON Schema auto-generated) ----------------------------
@@ -131,10 +131,23 @@ pub struct ProposeRequest {
     /// Why (natural language) - the proposal rationale.
     #[serde(default)]
     pub rationale: Option<String>,
+    /// For tbox_change: the entity/relation types this proposal defines or changes, so the viewer can
+    /// highlight the affected nodes (entity types) / edges (relation types) when previewing it. Each
+    /// item is {target, name} where target is "entity" or "relation".
+    #[serde(default)]
+    pub affected_types: Vec<AffectedTypeItem>,
     #[serde(default)]
     pub source_ref: Option<String>,
     #[serde(default)]
     pub on_behalf_of: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AffectedTypeItem {
+    /// Which vocabulary: "entity" (a node type, e.g. Driver) or "relation" (an edge type, e.g. depends_on).
+    pub target: String,
+    /// The type name being defined or changed (e.g. Driver, depends_on).
+    pub name: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -637,15 +650,32 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), claim_promotion, claim_demotion, tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state (and, once available, its belief diff). For entity_merge, pass the entity ids in `targets` and the canonical one in `into`."
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), claim_promotion, claim_demotion, tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state (and, once available, its belief diff). For entity_merge, pass the entity ids in `targets` and the canonical one in `into`. For tbox_change, list the T-Box types you define/change in `affected_types` ({target: \"entity\"|\"relation\", name}) so the viewer can highlight the affected nodes/edges when the proposal is previewed."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
+        // Map each affected type's string axis to the typed vocabulary (mirror define_type).
+        let mut affected_types = Vec::with_capacity(req.affected_types.len());
+        for a in req.affected_types {
+            let target = match a.target.trim().to_lowercase().as_str() {
+                "entity" => TypeTarget::Entity,
+                "relation" => TypeTarget::Relation,
+                other => {
+                    return err_json(&format!(
+                        "unknown target '{other}' for affected type '{}'. use \"entity\" \
+                         (a node type) or \"relation\" (an edge type)",
+                        a.name
+                    ))
+                }
+            };
+            affected_types.push(EngineAffectedType { target, name: a.name });
+        }
         let input = EngineProposeInput {
             workspace: req.workspace,
             kind: req.kind,
             targets: req.targets,
             into: req.into,
             rationale: req.rationale,
+            affected_types,
             source_ref: req.source_ref,
             on_behalf_of: req.on_behalf_of,
         };

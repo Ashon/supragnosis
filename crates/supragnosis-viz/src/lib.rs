@@ -762,6 +762,10 @@ const VIEWER_HTML: &str = r###"<!doctype html>
   #proposalsBody .pstate.merged { color:var(--teal); border-color:rgba(86,179,162,0.4); }
   #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--prose); margin:2px 0; opacity:.9; word-break:break-word; }
   #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
+  #proposalsBody .atypes { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0 1px; }
+  #proposalsBody .atype { font:10px var(--mono); color:var(--gold-bright); border:1px solid var(--gold-dim);
+    border-radius:5px; padding:1px 6px; opacity:.92; }
+  #proposalsBody .atype .ax { color:var(--muted); margin-left:5px; letter-spacing:.04em; }
   #proposalsBody .nchip.into { border-color:var(--gold-dim); color:var(--gold-bright); }
   #proposalsBody .pacts { display:flex; gap:5px; margin-top:3px; }
   #proposalsBody .pacts button { padding:1px 10px; font-size:10px; letter-spacing:.04em; border-radius:5px; }
@@ -1344,6 +1348,10 @@ function renderProposals() {
       + `<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></div>`;
     if (p.rationale) html += `<div class="prat">${esc(p.rationale)}</div>`;
     html += `<div class="ptargets">${(p.targets || []).map(id => chip(id, p.into)).join("")}</div>`;
+    if (p.affected_types && p.affected_types.length) {   // tbox_change scope - what lights up on the graph
+      const aty = a => `<span class="atype" title="${esc(a.target)} type"><span>${esc(a.name)}</span><span class="ax">${a.target === "relation" ? "edge" : "node"}</span></span>`;
+      html += `<div class="atypes">${p.affected_types.map(aty).join("")}</div>`;
+    }
     if (p.state === "open") {
       html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}">accept</button>`
         + `<button data-act="reject" data-id="${esc(p.id)}">reject</button></div>`;
@@ -1370,12 +1378,37 @@ function renderProposals() {
   });
 }
 
-// Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node if present.
+// The T-Box types a proposal touches, split by axis. Relation names match the graph's edge kinds
+// (normalized at propose time); entity names match node types. Empty sets when the proposal declares none.
+function affectedTypeSets(p) {
+  const rel = new Set(), ent = new Set();
+  for (const a of (p && p.affected_types) || []) {
+    if (a.target === "relation") rel.add(a.name);
+    else if (a.target === "entity") ent.add(a.name);
+  }
+  return { rel, ent };
+}
+// The nodes a tbox_change preview touches: endpoints of edges whose kind is (re)defined, plus nodes
+// whose entity type is. Used to frame the preview (a tbox_change has no single `into` to center on).
+function affectedNodes(p) {
+  const { rel, ent } = affectedTypeSets(p);
+  if (!rel.size && !ent.size) return [];
+  const out = new Set();
+  if (rel.size) for (const e of edges) if (rel.has(e.type)) { out.add(e.a); out.add(e.b); }
+  if (ent.size) for (const n of nodes) if (ent.has(n.type)) out.add(n);
+  return [...out];
+}
+
+// Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node when
+// present (entity_merge); otherwise frames the affected T-Box elements (tbox_change).
 function selectProposal(p) {
   proposalSel = (proposalSel && p && proposalSel.id === p.id) ? null : p;
   if (proposalSel) {
     const into = nodeById(proposalSel.into);
     if (into) { focus = into; renderDetail(into); centerOn(into); }
+    // No single canonical node (tbox_change): frame the affected members and mark the view user-driven
+    // so a pending auto-fit does not stomp the preview (same as the search-result fit).
+    else { const framed = affectedNodes(proposalSel); if (framed.length) { fitView(framed); userMoved = true; } }
   }
   renderProposals();
 }
@@ -2021,6 +2054,26 @@ function draw() {
     }
     if (into) {
       ctx.beginPath(); ctx.arc(into.x, into.y, nodeRadius(into) + 6, 0, 7); ctx.lineWidth = 3/cam.s; ctx.strokeStyle = CANON; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Proposal preview - T-Box change (belief-diff hint via affected_types): accent every edge whose
+  // relation kind is being (re)defined and ring every node whose entity type is. A tbox_change edits
+  // type definitions, which are edge kinds / node types (not first-class nodes), so the change shows as
+  // a highlight over the members of those types rather than as a fold arrow. Kinds hidden via the legend
+  // stay hidden (respect typeOff/edgeTypeOff) so the preview never contradicts the visible graph.
+  if (proposalSel && proposalSel.affected_types && proposalSel.affected_types.length) {
+    const { rel, ent } = affectedTypeSets(proposalSel);
+    const ACC = GOLD;
+    ctx.strokeStyle = ACC; ctx.globalAlpha = 0.95; ctx.lineWidth = 2.5/cam.s;
+    if (rel.size) for (const e of edges) {
+      if (typeOff.has(e.a.type) || typeOff.has(e.b.type) || edgeTypeOff.has(e.type)) continue;
+      if (rel.has(e.type)) { ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke(); }
+    }
+    if (ent.size) for (const n of nodes) {
+      if (typeOff.has(n.type)) continue;
+      if (ent.has(n.type)) { ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n) + 4, 0, 7); ctx.stroke(); }
     }
     ctx.globalAlpha = 1;
   }
