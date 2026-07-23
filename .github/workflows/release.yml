@@ -105,3 +105,95 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
+
+  # 데스크탑 셸(.app, universal 바이너리)을 빌드해 서명/노터라이즈 후 zip 으로 릴리스에
+  # 첨부한다. Homebrew cask 가 이 zip 을 소스로 쓴다(DMG 없음 - deploy/homebrew/README.md).
+  # 서명 시크릿이 없으면(workflow_dispatch, 포크) 서명 없이 빌드만 검증한다.
+  app:
+    name: build desktop app (macos universal)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: app-universal
+
+      # 시크릿이 있을 때만 tauri 번들러의 서명/노터라이즈 환경 변수를 켠다. 빈 문자열을
+      # 넘기면 번들러가 서명을 시도하다 실패하므로, 존재 확인 후 GITHUB_ENV 로만 내보낸다.
+      - name: enable signing + notarization (when secrets exist)
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_S: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD_S: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_S: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_S: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_S: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_S: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APPLE_SIGNING_IDENTITY_S" ]; then
+            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              s="${v}_S"
+              printf '%s<<__EOV__\n%s\n__EOV__\n' "$v" "${!s}" >> "$GITHUB_ENV"
+            done
+            echo "signing + notarization enabled"
+          else
+            echo "no APPLE_SIGNING_IDENTITY secret - building unsigned"
+          fi
+
+      # tauri-cli 는 npm 패키지의 prebuilt 바이너리를 쓴다(cargo install 보다 수 분 빠름).
+      # 프론트엔드 빌드는 없다 - 뷰어는 데몬이 서빙하고 셸은 정적 자산뿐이다.
+      - name: build the desktop app (universal, signed when enabled)
+        working-directory: app
+        run: npx --yes @tauri-apps/cli@^2 build --target universal-apple-darwin
+
+      - name: package app zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME:-dev}"
+          app="target/universal-apple-darwin/release/bundle/macos/Supragnosis.app"
+          name="Supragnosis-${version}-macos-universal.app.zip"
+          mkdir -p dist
+          # ditto 가 리소스 포크/서명을 보존한다(zip 대신 필수) - 노터라이즈 스테이플 유지.
+          ditto -c -k --keepParent "$app" "dist/${name}"
+          cd dist && shasum -a 256 "${name}" > "${name}.sha256"
+
+      - name: upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supragnosis-app-macos-universal
+          path: dist/*.app.zip*
+
+      - name: resolve release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "path=" >> "$GITHUB_OUTPUT"; fi
+
+      - name: publish to release (committed notes)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ steps.notes.outputs.path }}
+          files: |
+            dist/*.app.zip
+            dist/*.app.zip.sha256
+
+      - name: publish to release (auto notes)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path == ''
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.app.zip
+            dist/*.app.zip.sha256
