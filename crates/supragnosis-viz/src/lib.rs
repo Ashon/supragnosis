@@ -1,4 +1,4 @@
-//! supragnosis-viz - live ontology visualization (localhost HTTP viewer).
+//! supragnosis-viz - live ontology visualization (local unix-socket viewer).
 //!
 //! A **human-facing read channel**, distinct from the MCP tool surface (Principle 21). It rides
 //! inside the server process and shares the same `Arc<Engine>` (cozo/RocksDB single-process
@@ -8,17 +8,21 @@
 //! - `GET /` -> self-contained canvas viewer (0 external CDNs). Polls `/api/graph` every few seconds to refresh.
 //! - `GET /api/graph[?workspace=<ws>]` -> `engine.graph(ws)` JSON (Principle 16: deterministic ordering).
 //!
-//! Read-only - it never touches the observation log (Principle 1). The binding is forced to
-//! loopback only to prevent remote exposure (Principle 17: knowledge sovereignty, limited to the
-//! local trust surface until the sharing guard exists).
+//! It speaks HTTP over a **unix domain socket**, never TCP (Principle 17: knowledge sovereignty).
+//! The socket file (0600, inside the 0700 `~/.supragnosis` dir) is the whole access control: only
+//! the owning user can connect, so every request is attributable to the local principal (F19), and
+//! the browser-borne attack classes a localhost port invites (DNS rebinding, CSRF, cross-site
+//! fetch) cannot reach a unix socket at all. Clients are the desktop shell, or any HTTP-over-UDS
+//! client (e.g. `curl --unix-socket`). The authenticated network read tier is federation Phase 3.5
+//! and rides the sync crate's TLS stack, not this server.
 
-use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
 use supragnosis_engine::{Engine, EventEnvelope, EventSink};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::broadcast;
 
 /// [`EventSink`] adapter that streams MCP events to the browser (SSE). Once attached to the engine,
@@ -49,35 +53,41 @@ impl EventSink for BroadcastSink {
 /// request exceeding this bound is treated as malicious/malformed and dropped.
 const MAX_REQUEST_HEAD: usize = 16 * 1024;
 
-/// Parses `SUPRAGNOSIS_VIZ_ADDR` and **verifies it is loopback** (Principle 17).
+/// Binds the viewer's unix socket at `path` and locks it down to the owning user.
 ///
-/// Accepts only a `host:port` IP literal (e.g. `127.0.0.1:7373`). Non-loopback addresses are
-/// rejected - remote exposure is not permitted until the sharing guard at the sync boundary
-/// exists. A hostname (localhost) is not accepted because it would require DNS resolution
-/// (removing ambiguity).
-pub fn parse_local_addr(s: &str) -> anyhow::Result<SocketAddr> {
-    parse_viz_addr(s, false)
-}
-
-/// Parses a viewer bind address. `allow_public = false` is the loopback invariant (Principle 17).
-/// `allow_public = true` is the **interim read-only network exposure** (federation.md 6d): the owner
-/// of the knowledge explicitly opts in (SUPRAGNOSIS_VIZ_PUBLIC=1) to serve the viewer beyond
-/// loopback - reads only: the write endpoint (/api/review) stays gated per connection to loopback
-/// peers (F19: a write is never accepted from a surface that cannot attribute it to a principal).
-/// Superseded by the Phase 3.5 user-key read tier.
-pub fn parse_viz_addr(s: &str, allow_public: bool) -> anyhow::Result<SocketAddr> {
-    let addr: SocketAddr = s.trim().parse().with_context(|| {
-        format!("invalid SUPRAGNOSIS_VIZ_ADDR: {s:?} - must be in IP:port form (e.g. 127.0.0.1:7373)")
-    })?;
-    if !addr.ip().is_loopback() && !allow_public {
-        anyhow::bail!(
-            "SUPRAGNOSIS_VIZ_ADDR {addr} is not loopback - the viewer rejects non-local binds \
-             (Principle 17: knowledge sovereignty). Use 127.0.0.1:<port>, or set \
-             SUPRAGNOSIS_VIZ_PUBLIC=1 to opt in to read-only network exposure (writes stay \
-             loopback-gated; the authenticated read tier is federation Phase 3.5)"
-        );
+/// - The parent directory is created 0700 (defense in depth: the dir already denies foreign users
+///   before the socket mode is even consulted).
+/// - A leftover socket file from a crashed process is replaced, but only after probing it: if
+///   something still accepts connections there, this is a second live instance and binding fails
+///   loud (Principle 5) instead of silently stealing the path.
+/// - The bound socket is chmod 0600 - the socket file is the whole access control (F19: every
+///   connection is attributable to the local principal, enforced by the OS).
+pub async fn bind_uds(path: &Path) -> anyhow::Result<UnixListener> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    if let Some(dir) = path.parent() {
+        if !dir.as_os_str().is_empty() && !dir.exists() {
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)
+                .with_context(|| format!("failed to create viewer socket dir {}", dir.display()))?;
+        }
     }
-    Ok(addr)
+    if path.exists() {
+        if UnixStream::connect(path).await.is_ok() {
+            anyhow::bail!(
+                "another instance is already serving the viewer socket at {} - stop it first",
+                path.display()
+            );
+        }
+        std::fs::remove_file(path)
+            .with_context(|| format!("failed to remove stale viewer socket {}", path.display()))?;
+    }
+    let listener = UnixListener::bind(path)
+        .with_context(|| format!("failed to bind viewer socket {}", path.display()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to chmod viewer socket {}", path.display()))?;
+    Ok(listener)
 }
 
 /// Accepts connections on the injected listener and serves the viewer/graph API (infinite accept loop).
@@ -91,12 +101,14 @@ pub type FedStatus = Arc<std::sync::RwLock<serde_json::Value>>;
 
 pub async fn serve(
     engine: Arc<Engine>,
-    listener: TcpListener,
+    listener: UnixListener,
     events: broadcast::Sender<String>,
     fed: Option<FedStatus>,
 ) -> anyhow::Result<()> {
     loop {
-        let (stream, peer) = match listener.accept().await {
+        // Peer trust is settled before accept ever runs: the socket file is 0600, so the OS only
+        // lets the owning user connect (F19) - there is no per-connection trust decision left.
+        let (stream, _peer) = match listener.accept().await {
             Ok(pair) => pair,
             Err(e) => {
                 tracing::warn!(error = %e, "viz accept failed - continuing");
@@ -106,25 +118,25 @@ pub async fn serve(
         let engine = Arc::clone(&engine);
         let events = events.clone();
         let fed = fed.clone();
-        // Per-connection trust: only a loopback peer may reach the write endpoint (/api/review).
-        // Under the interim read-only network exposure a remote peer gets every read, never a write.
-        let peer_loopback = peer.ip().is_loopback();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(&engine, &events, stream, peer_loopback, fed.as_ref()).await {
+            if let Err(e) = handle_conn(&engine, &events, stream, fed.as_ref()).await {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
     }
 }
 
-/// One connection: parse the request line plus the few headers the trust checks need (Host,
-/// Sec-Fetch-Site) -> route -> respond, then close. The exception is `/api/events`, which is an SSE
-/// stream: it is not closed and keeps streaming events.
-async fn handle_conn(
+/// One connection: parse the request line -> route -> respond, then close. The exception is
+/// `/api/events`, which is an SSE stream: it is not closed and keeps streaming events.
+///
+/// Generic over the stream so tests can drive it with any duplex byte stream. There are no
+/// browser-facing trust checks here: a unix socket is unreachable from a web page, so the Host
+/// (DNS-rebinding) and CSRF gates the TCP listener needed do not apply - admission was already
+/// decided by the socket file's 0600 mode.
+async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     engine: &Engine,
     events: &broadcast::Sender<String>,
-    mut stream: TcpStream,
-    peer_loopback: bool,
+    mut stream: S,
     fed: Option<&FedStatus>,
 ) -> anyhow::Result<()> {
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
@@ -147,28 +159,11 @@ async fn handle_conn(
     let target = parts.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
-    // DNS-rebinding defense: a browser tricked via a rebound hostname (attacker.com -> 127.0.0.1)
-    // reaches us over loopback but still carries the attacker's Host header. A loopback peer must
-    // therefore present a loopback Host; a mismatch means a foreign page is being treated as
-    // same-origin with us, so refuse every path (reads included). A genuine remote reader in public
-    // mode (peer not loopback) is exempt - we cannot know its expected hostname, and its surface is
-    // read-only anyway (the write path stays loopback-gated below).
-    if peer_loopback && !host_is_loopback(&head) {
-        let resp = Response {
-            status: "403 Forbidden",
-            content_type: "application/json",
-            body: err_body("Host header is not a loopback name - refusing (DNS-rebinding defense)"),
-        };
-        return write_response(&mut stream, &resp).await;
-    }
-
     // SSE: live MCP event stream - the response is not closed and events keep streaming.
     if method == "GET" && path == "/api/events" {
         return stream_events(stream, events.subscribe()).await;
     }
 
-    // Write gate (F19): the verdict endpoint is only reachable from a loopback peer - under the
-    // interim read-only network exposure a remote peer gets 403 here, never a write.
     let resp = if path == "/api/federation" {
         // Federation status (hubs, health, per-workspace diff, known peers) - maintained by the
         // wiring layer; absent on a standalone node.
@@ -179,27 +174,6 @@ async fn handle_conn(
                 .map(|f| f.read().map(|v| v.to_string()).unwrap_or_else(|_| "{}".into()))
                 .unwrap_or_else(|| "{\"configured\":false}".to_string()),
         }
-    } else if path == "/api/review" && !peer_loopback {
-        Response {
-            status: "403 Forbidden",
-            content_type: "application/json",
-            body: err_body(
-                "the network-exposed viewer is read-only - verdicts require the local trust \
-                 surface (loopback) or the authenticated tier (federation.md 6d, Phase 3.5/5)",
-            ),
-        }
-    } else if path == "/api/review" && !csrf_ok(&head) {
-        // CSRF defense: a verdict mutates the canon (entity_merge forwards ids), so a cross-site
-        // <img>/fetch from a page the operator happens to be visiting must not be able to fire it
-        // even though the request arrives over trusted loopback.
-        Response {
-            status: "403 Forbidden",
-            content_type: "application/json",
-            body: err_body(
-                "cross-site request refused - a verdict must originate from the viewer page \
-                 (CSRF defense: the X-Supragnosis-Viz request header is required)",
-            ),
-        }
     } else {
         route(engine, method, path, query)
     };
@@ -208,8 +182,8 @@ async fn handle_conn(
 
 /// SSE stream: after the `text/event-stream` header, emit `data: {json}\n\n` per event.
 /// The JSON is a single line, so the frame is simple. Terminates when the client disconnects (write fails).
-async fn stream_events(
-    mut stream: TcpStream,
+async fn stream_events<S: AsyncWrite + Unpin>(
+    mut stream: S,
     mut rx: broadcast::Receiver<String>,
 ) -> anyhow::Result<()> {
     stream
@@ -242,48 +216,6 @@ struct Response {
     status: &'static str,
     content_type: &'static str,
     body: String,
-}
-
-/// Case-insensitive lookup of one request header value from the raw request head.
-fn header_value<'a>(head: &'a str, name: &str) -> Option<&'a str> {
-    head.lines()
-        .skip(1) // the request line
-        .take_while(|l| !l.is_empty()) // headers end at the blank line
-        .find_map(|l| {
-            let (k, v) = l.split_once(':')?;
-            k.trim().eq_ignore_ascii_case(name).then_some(v.trim())
-        })
-}
-
-/// True if the Host header names a loopback address, or is absent (HTTP/1.0 / non-browser client).
-/// Basis of the DNS-rebinding defense: a rebound request carries a non-loopback Host.
-fn host_is_loopback(head: &str) -> bool {
-    let Some(h) = header_value(head, "host") else { return true };
-    let hostname = if let Some(rest) = h.strip_prefix('[') {
-        rest.split_once(']').map(|(a, _)| a).unwrap_or(rest) // IPv6 literal: [::1] or [::1]:port
-    } else {
-        h.rsplit_once(':').map(|(a, _)| a).unwrap_or(h) // host or host:port
-    };
-    matches!(hostname, "127.0.0.1" | "localhost" | "::1")
-}
-
-/// CSRF defense for the write path, robust on every browser (unlike a Sec-Fetch-Site-only check, which
-/// is absent on pre-2023 browsers and would fail open there). The viewer's verdict fetch carries the
-/// custom `X-Supragnosis-Viz` header. A cross-site `<img>`/`<form>` GET cannot set a custom header, so a
-/// forged request lacks it and is refused; a cross-site `fetch` that tried to set it would trigger a
-/// CORS preflight this server never approves (it sets no Access-Control-Allow-* headers), so the browser
-/// blocks the real request before it is sent; a same-origin fetch from the viewer page sends it freely
-/// (same-origin needs no preflight). The DNS-rebinding Host check above independently closes the
-/// same-origin-after-rebinding case, and Sec-Fetch-Site is additionally required to be non-cross-site as
-/// defense in depth where present. A non-browser client (curl) must send the header explicitly - it is a
-/// write endpoint.
-fn csrf_ok(head: &str) -> bool {
-    let has_viewer_header = header_value(head, "x-supragnosis-viz").is_some();
-    let not_cross_site = match header_value(head, "sec-fetch-site") {
-        None => true, // non-browser client, or a browser without Fetch Metadata
-        Some(s) => s.eq_ignore_ascii_case("same-origin") || s.eq_ignore_ascii_case("none"),
-    };
-    has_viewer_header && not_cross_site
 }
 
 fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
@@ -322,8 +254,9 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // Review verdict: a GET carrying the action in the query. GET-with-side-effect is intentional here -
         // the minimal server does not parse request bodies, and the effect is a gated append-only verdict
         // (engine.review_proposal records a verdict observation; the fold decides), which is idempotent for
-        // merge (absorbing state, I14/I16). Loopback-only local trust surface (Principle 17). It routes
-        // through the gate, never a direct projection/log write (I18 / proposal-workflow.md 14.3).
+        // merge (absorbing state, I14/I16). The unix socket's 0600 mode is the write gate (Principle 17 /
+        // F19: only the owning user can connect, and no web page can). It routes through the gate, never
+        // a direct projection/log write (I18 / proposal-workflow.md 14.3).
         "/api/review" => review_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         _ => Response {
@@ -577,7 +510,7 @@ fn workspaces_response(engine: &Engine) -> Response {
     }
 }
 
-async fn write_response(stream: &mut TcpStream, r: &Response) -> anyhow::Result<()> {
+async fn write_response<S: AsyncWrite + Unpin>(stream: &mut S, r: &Response) -> anyhow::Result<()> {
     let header = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n",
         r.status,
@@ -640,19 +573,6 @@ const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.js"));
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_local_addr_accepts_loopback_rejects_public() {
-        assert!(parse_local_addr("127.0.0.1:7373").is_ok());
-        assert!(parse_local_addr("127.0.0.1:0").is_ok());
-        assert!(parse_local_addr("[::1]:7373").is_ok());
-        // Non-loopback binds are rejected (Principle 17).
-        assert!(parse_local_addr("0.0.0.0:7373").is_err());
-        assert!(parse_local_addr("192.168.1.10:7373").is_err());
-        // Format error.
-        assert!(parse_local_addr("localhost:7373").is_err());
-        assert!(parse_local_addr("nonsense").is_err());
-    }
 
     #[test]
     fn percent_decode_basics() {

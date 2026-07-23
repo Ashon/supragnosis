@@ -1,19 +1,64 @@
-//! viz HTTP surface integration test. Assembles a deterministic Engine (InMemory + hashing
-//! embedder) in-process and fires GETs via reqwest at a real listener bound to port 0
-//! (following the in-process bring-up convention of crates/supragnosis-mcp/tests/mcp_surface.rs).
+//! viz unix-socket HTTP surface integration test. Assembles a deterministic Engine (InMemory +
+//! hashing embedder) in-process, binds a real unix socket under a per-test temp path, and fires
+//! raw HTTP/1.1 GETs over `UnixStream` (no TCP anywhere - the surface under test is the socket).
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, EntityInput, Event, ObserveInput, RelationInput};
 use supragnosis_store::InMemoryStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::UnixStream;
 use tokio::sync::broadcast;
 
 /// Event channel for tests - the broadcast Sender to pass to serve.
 fn ev_channel() -> broadcast::Sender<String> {
     broadcast::channel::<String>(16).0
+}
+
+/// Per-test socket path under the OS temp dir. Short (macOS caps sun_path at 104 bytes) and unique
+/// per process + test name, so parallel test runs cannot collide.
+fn sock_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("supra-viz-{}-{name}.sock", std::process::id()))
+}
+
+/// Bring up the viewer on a fresh unix socket and return its path (the server task runs detached).
+async fn serve_uds(
+    name: &str,
+    engine: Arc<Engine>,
+    events: broadcast::Sender<String>,
+) -> PathBuf {
+    let path = sock_path(name);
+    let _ = std::fs::remove_file(&path); // leftover from a previous run of this same test
+    let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
+    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None));
+    path
+}
+
+/// One raw HTTP/1.1 GET over the unix socket; returns the full response text (head + body).
+/// Responses are Connection: close, so read-to-EOF terminates.
+async fn uds_get(path: &PathBuf, target: &str) -> String {
+    let mut s = UnixStream::connect(path).await.expect("connect viewer socket");
+    let req = format!("GET {target} HTTP/1.1\r\nConnection: close\r\n\r\n");
+    s.write_all(req.as_bytes()).await.unwrap();
+    let mut resp = String::new();
+    s.read_to_string(&mut resp).await.unwrap();
+    resp
+}
+
+/// Splits a raw response into (status line, body) and asserts the expected status.
+fn body_of<'a>(resp: &'a str, want_status: &str) -> &'a str {
+    let status = resp.lines().next().unwrap_or("");
+    assert!(
+        status.contains(want_status),
+        "expected {want_status}, got: {status}"
+    );
+    resp.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("")
+}
+
+fn json_get(resp: &str) -> serde_json::Value {
+    serde_json::from_str(body_of(resp, "200")).expect("valid JSON body")
 }
 
 fn observe_depends(engine: &Engine) {
@@ -53,57 +98,26 @@ async fn viz_serves_graph_index_and_404() {
         Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
     );
     observe_depends(&engine);
-
-    // port 0 -> look up the actual OS-assigned port (deterministic/no collision).
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
-
-    let base = format!("http://{addr}");
-    let client = reqwest::Client::new();
+    let sock = serve_uds("graph", engine, ev_channel()).await;
 
     // /api/graph?workspace=ws -> 2 nodes, 1 edge.
-    let resp = client
-        .get(format!("{base}/api/graph?workspace=ws"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-    let g: serde_json::Value = resp.json().await.unwrap();
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
     assert_eq!(g["stats"]["node_count"], 2, "graph: {g}");
     assert_eq!(g["stats"]["edge_count"], 1);
     assert_eq!(g["edges"][0]["type"], "depends_on");
 
     // workspace unspecified -> the node's default ws ("ws") scope -> same 2 nodes.
-    let g2: serde_json::Value = client
-        .get(format!("{base}/api/graph"))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let g2 = json_get(&uds_get(&sock, "/api/graph").await);
     assert_eq!(g2["stats"]["node_count"], 2);
 
     // '*' -> everything (None) -> same.
-    let g3: serde_json::Value = client
-        .get(format!("{base}/api/graph?workspace=*"))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let g3 = json_get(&uds_get(&sock, "/api/graph?workspace=*").await);
     assert_eq!(g3["stats"]["node_count"], 2);
 
-    // Index HTML - the canvas viewer, now linking the split-out assets.
-    let idx = client.get(format!("{base}/")).send().await.unwrap();
-    assert_eq!(idx.status(), 200);
-    assert_eq!(
-        idx.headers()["content-type"],
-        "text/html; charset=utf-8"
-    );
-    let html = idx.text().await.unwrap();
+    // Index HTML - the canvas viewer, linking the split-out assets.
+    let idx = uds_get(&sock, "/").await;
+    assert!(idx.contains("Content-Type: text/html; charset=utf-8"), "index content-type");
+    let html = body_of(&idx, "200");
     assert!(html.contains("<canvas"), "the viewer HTML must contain a canvas");
     // Path substrings (not full attribute text) so the assertion survives release HTML minification,
     // which may drop the attribute quotes.
@@ -111,21 +125,20 @@ async fn viz_serves_graph_index_and_404() {
     assert!(html.contains("/viewer.js"), "the index must link the script asset");
 
     // The split-out JS asset is served (same origin) with a JS content type and drives the API.
-    let js = client.get(format!("{base}/viewer.js")).send().await.unwrap();
-    assert_eq!(js.status(), 200);
-    assert_eq!(js.headers()["content-type"], "text/javascript; charset=utf-8");
-    let js_body = js.text().await.unwrap();
-    assert!(js_body.contains("/api/graph"), "the script must poll the graph API");
+    let js = uds_get(&sock, "/viewer.js").await;
+    assert!(js.contains("Content-Type: text/javascript; charset=utf-8"), "js content-type");
+    assert!(body_of(&js, "200").contains("/api/graph"), "the script must poll the graph API");
 
     // The split-out CSS asset is served with a CSS content type.
-    let css = client.get(format!("{base}/viewer.css")).send().await.unwrap();
-    assert_eq!(css.status(), 200);
-    assert_eq!(css.headers()["content-type"], "text/css; charset=utf-8");
-    assert!(!css.text().await.unwrap().is_empty(), "the stylesheet must not be empty");
+    let css = uds_get(&sock, "/viewer.css").await;
+    assert!(css.contains("Content-Type: text/css; charset=utf-8"), "css content-type");
+    assert!(!body_of(&css, "200").is_empty(), "the stylesheet must not be empty");
 
     // Unknown path -> 404.
-    let nf = client.get(format!("{base}/nope")).send().await.unwrap();
-    assert_eq!(nf.status(), 404);
+    let nf = uds_get(&sock, "/nope").await;
+    body_of(&nf, "404");
+
+    let _ = std::fs::remove_file(&sock);
 }
 
 /// XSS regression (Principle 18): entity/type names come from untrusted observe calls and are
@@ -156,63 +169,47 @@ fn viz_source_escapes_untrusted_names() {
     );
 }
 
-/// Send a raw HTTP/1.1 GET with caller-controlled headers, return the full response text.
-/// reqwest normalizes Host/Sec-Fetch-* headers, so the trust checks need a hand-built request.
-async fn raw_get(addr: std::net::SocketAddr, path: &str, extra_headers: &str) -> String {
-    let mut s = TcpStream::connect(addr).await.unwrap();
-    let req = format!("GET {path} HTTP/1.1\r\n{extra_headers}Connection: close\r\n\r\n");
-    s.write_all(req.as_bytes()).await.unwrap();
-    let mut resp = String::new();
-    s.read_to_string(&mut resp).await.unwrap();
-    resp
-}
-
-/// DNS-rebinding + CSRF defenses on the write path (Principle 17/23). A verdict mutates the canon,
-/// so a foreign page must not reach it even over trusted loopback.
+/// The socket file IS the access control (F19): bind_uds must chmod it 0600, refuse to steal a
+/// live socket, and replace a stale one. The browser-facing gates (Host / CSRF) are gone with the
+/// TCP listener - /api/review is reachable over the socket with no special headers.
 #[tokio::test]
-async fn viz_write_path_rejects_rebinding_and_csrf() {
+async fn viz_socket_is_owner_only_and_review_needs_no_browser_headers() {
+    use std::os::unix::fs::PermissionsExt;
     let store = Arc::new(InMemoryStore::new());
     let engine = Arc::new(
         Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
     );
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
+    let sock = serve_uds("perm", engine, ev_channel()).await;
 
-    // DNS rebinding: loopback peer presents a foreign Host -> refuse every path, reads included.
-    let rebind = raw_get(addr, "/api/graph", "Host: evil.example.com\r\n").await;
-    assert!(rebind.starts_with("HTTP/1.1 403"), "rebound Host must be refused, got: {}", rebind.lines().next().unwrap_or(""));
-    assert!(rebind.contains("DNS-rebinding"), "the refusal must name the defense");
+    // 0600: only the owning user may connect.
+    let mode = std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "socket must be owner-only");
 
-    // A loopback Host reads fine.
-    let ok = raw_get(addr, "/api/graph", "Host: 127.0.0.1\r\n").await;
-    assert!(ok.starts_with("HTTP/1.1 200"), "a loopback Host must be served");
+    // A second bind on a LIVE socket must fail loud (two instances), not steal the path.
+    let second = supragnosis_viz::bind_uds(&sock).await;
+    assert!(second.is_err(), "binding a live socket must be refused");
+    assert!(
+        second.unwrap_err().to_string().contains("another instance"),
+        "the refusal must name the cause"
+    );
 
-    // CSRF: a request lacking the viewer's custom header is refused - this is the <img>/<form>
-    // vector (those cannot set custom headers), and it holds on every browser regardless of whether
-    // Sec-Fetch-Site is sent. Loopback Host, no custom header -> 403.
-    let no_header = raw_get(addr, "/api/review?proposal=x&decision=merge", "Host: 127.0.0.1\r\n").await;
-    assert!(no_header.starts_with("HTTP/1.1 403"), "a verdict without the viewer header must be refused, got: {}", no_header.lines().next().unwrap_or(""));
-    assert!(no_header.contains("CSRF defense"), "the refusal must name the defense");
+    // The write endpoint routes with no browser-trust headers: the verdict reaches the engine
+    // (append-only verdict observation; the fold decides) instead of a 403 transport gate.
+    let r = uds_get(&sock, "/api/review?proposal=missing&decision=merge").await;
+    assert!(
+        body_of(&r, "200").contains("observation_id"),
+        "the verdict must reach the gated engine path: {r}"
+    );
 
-    // Defense in depth: even if a cross-site request carried the header, an explicit cross-site
-    // Sec-Fetch-Site is still refused.
-    let cross = raw_get(
-        addr,
-        "/api/review?proposal=x&decision=merge",
-        "Host: 127.0.0.1\r\nX-Supragnosis-Viz: 1\r\nSec-Fetch-Site: cross-site\r\n",
-    )
-    .await;
-    assert!(cross.starts_with("HTTP/1.1 403"), "cross-site verdict must be refused, got: {}", cross.lines().next().unwrap_or(""));
+    let _ = std::fs::remove_file(&sock);
 
-    // The viewer's own request (custom header + same-origin) passes the CSRF gate.
-    let same = raw_get(
-        addr,
-        "/api/review?proposal=x&decision=merge",
-        "Host: 127.0.0.1\r\nX-Supragnosis-Viz: 1\r\nSec-Fetch-Site: same-origin\r\n",
-    )
-    .await;
-    assert!(!same.contains("CSRF defense"), "the viewer's own verdict must not be CSRF-blocked");
+    // A STALE socket file (nothing accepting) is replaced on the next bind.
+    let stale = sock_path("stale");
+    let _ = std::fs::remove_file(&stale);
+    drop(supragnosis_viz::bind_uds(&stale).await.expect("first bind")); // listener dropped -> stale file remains
+    let rebound = supragnosis_viz::bind_uds(&stale).await;
+    assert!(rebound.is_ok(), "a stale socket file must be replaced: {rebound:?}");
+    let _ = std::fs::remove_file(&stale);
 }
 
 #[tokio::test]
@@ -239,21 +236,12 @@ async fn viz_lists_workspaces_sorted_distinct() {
             })
             .unwrap();
     }
+    let sock = serve_uds("ws", engine, ev_channel()).await;
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
-
-    let list: Vec<String> = reqwest::Client::new()
-        .get(format!("http://{addr}/api/workspaces"))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let list = json_get(&uds_get(&sock, "/api/workspaces").await);
     // Deduplicated + sorted (Principle 16).
-    assert_eq!(list, vec!["alpha", "gamma"]);
+    assert_eq!(list, serde_json::json!(["alpha", "gamma"]));
+    let _ = std::fs::remove_file(&sock);
 }
 
 /// SSE: whether engine events stream to /api/events - attach a BroadcastSink to the engine, give
@@ -266,17 +254,13 @@ async fn viz_streams_mcp_events_via_sse() {
         Engine::new(store, "h", "ws")
             .with_events(Arc::new(supragnosis_viz::BroadcastSink::new(tx.clone()))),
     );
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, tx.clone(), None));
+    let sock = serve_uds("sse", engine.clone(), tx.clone()).await;
 
     // After the SSE connect, read the header first (a signal the handler has finished subscribe - guarantees emit ordering).
-    let mut sock = TcpStream::connect(addr).await.unwrap();
-    sock.write_all(b"GET /api/events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
-        .await
-        .unwrap();
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    s.write_all(b"GET /api/events HTTP/1.1\r\n\r\n").await.unwrap();
     let mut buf = [0u8; 1024];
-    let n = sock.read(&mut buf).await.unwrap();
+    let n = s.read(&mut buf).await.unwrap();
     let head = String::from_utf8_lossy(&buf[..n]);
     assert!(head.contains("text/event-stream"), "SSE content-type: {head}");
 
@@ -288,7 +272,7 @@ async fn viz_streams_mcp_events_via_sse() {
     });
     let mut got = String::new();
     for _ in 0..5 {
-        let n = sock.read(&mut buf).await.unwrap();
+        let n = s.read(&mut buf).await.unwrap();
         if n == 0 {
             break;
         }
@@ -304,10 +288,11 @@ async fn viz_streams_mcp_events_via_sse() {
             && got.contains("\"session\""),
         "an SSE event frame (including session) must arrive: {got}"
     );
+    let _ = std::fs::remove_file(&sock);
 }
 
 /// `/api/hypergraph`: the set of entities co-asserted in one observation surfaces as a hyperedge
-/// (Principle 11 second-order structure). Guards routing + serialization + engine wiring end-to-end over HTTP.
+/// (Principle 11 second-order structure). Guards routing + serialization + engine wiring end-to-end.
 #[tokio::test]
 async fn viz_serves_hypergraph() {
     let store = Arc::new(InMemoryStore::new());
@@ -331,23 +316,14 @@ async fn viz_serves_hypergraph() {
             relations: vec![],
         })
         .unwrap();
+    let sock = serve_uds("hyper", engine, ev_channel()).await;
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(supragnosis_viz::serve(engine.clone(), listener, ev_channel(), None));
-
-    let hg: serde_json::Value = reqwest::Client::new()
-        .get(format!("http://{addr}/api/hypergraph?workspace=ws"))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let hg = json_get(&uds_get(&sock, "/api/hypergraph?workspace=ws").await);
     assert_eq!(hg["stats"]["node_count"], 3, "hypergraph: {hg}");
     assert_eq!(hg["stats"]["hyperedge_count"], 1);
     assert_eq!(hg["stats"]["max_size"], 3);
     assert_eq!(hg["hyperedges"][0]["size"], 3);
     // Members are 3 sorted entity ids (deterministic - Principle 16).
     assert_eq!(hg["hyperedges"][0]["members"].as_array().unwrap().len(), 3);
+    let _ = std::fs::remove_file(&sock);
 }

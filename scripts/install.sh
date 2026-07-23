@@ -121,8 +121,8 @@ Install complete. Onboarding:
        claude mcp add supragnosis -- "${BIN_DIR}/supragnosis"
 
   2) (Optional) Run as an always-on daemon + live viewer
-       SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373 SUPRAGNOSIS_VIZ_ADDR=127.0.0.1:7374 "${BIN_DIR}/supragnosis"
-       # MCP: http://127.0.0.1:7373/mcp   Viewer: http://127.0.0.1:7374
+       SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373 SUPRAGNOSIS_VIZ_SOCK=~/.supragnosis/viz.sock "${BIN_DIR}/supragnosis"
+       # MCP: http://127.0.0.1:7373/mcp   Viewer: HTTP over unix socket ~/.supragnosis/viz.sock
        # For auto-start at login (launchd), see the repository's deploy/README.md.
 
   - Search: the prebuilt uses keyword/hashing. For semantic search, build from source with --features fastembed.

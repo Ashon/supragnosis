@@ -5,8 +5,8 @@ and exposes MCP streamable-http. Agents (Claude Code, etc.) just connect over ht
 daemon is the sole holder of the db, the Cozo single-process lock problem also disappears.
 
 - MCP: `http://127.0.0.1:7373/mcp` (loopback-only, no auth = local trust surface, Principle 17)
-- Viewer: `http://127.0.0.1:7374`
-- All on localhost. Non-local exposure / auth / TLS is not supported yet (later).
+- Viewer: `~/.supragnosis/viz.sock` (HTTP over a unix socket, 0600 owner-only - no TCP port)
+- All local. Non-local exposure / auth / TLS is not supported yet (later).
 
 ## Quick install (recommended)
 
@@ -37,7 +37,9 @@ claude mcp remove supragnosis -s user 2>/dev/null || true
 claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp --scope user
 ```
 
-Now any chat/session attaches to this daemon. Open the viewer in a browser at `http://127.0.0.1:7374`.
+Now any chat/session attaches to this daemon. The viewer serves HTTP over the unix socket, e.g.
+`curl --unix-socket ~/.supragnosis/viz.sock http://viz/api/graph` (the desktop shell is the
+graphical client).
 
 ## Operations
 

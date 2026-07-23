@@ -550,10 +550,9 @@ function renderProposals() {
       ev.stopPropagation();
       const ws = wsInput.value.trim();
       const q = "?proposal=" + encodeURIComponent(b.dataset.id) + "&decision=" + b.dataset.act + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-      // The custom header is the CSRF gate: a cross-site <img>/<form> cannot set it, and a cross-site
-      // fetch that tries would trigger a CORS preflight the server never approves. A same-origin fetch
-      // from this page sends it freely (no preflight). Works on every browser (unlike Sec-Fetch-Site).
-      try { await fetch("/api/review" + q, { cache: "no-store", headers: { "X-Supragnosis-Viz": "1" } }); } catch (e) { /* ignore */ }
+      // No CSRF header needed: the server sits behind a unix socket (0600) no web page can reach -
+      // the transport itself is the write gate.
+      try { await fetch("/api/review" + q, { cache: "no-store" }); } catch (e) { /* ignore */ }
       refreshProposals();
     };
   });
