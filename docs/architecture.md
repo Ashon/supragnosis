@@ -291,8 +291,8 @@ Principle 22 (curation as a by-product of work) on the MCP surface.
   Principle 21 violation once a round can outlast a tool-call timeout.
 - Target: merge approval / contradiction mediation / trust-tier promotion requesting human confirmation
   at the protocol level via MCP **elicitation (multi-round input)**.
-  **Today**: human mediation happens out-of-band in the viewer's curation console (a loopback-gated
-  confirmation surface that casts a verdict through `review`, never a direct write). The protocol-level
+  **Today**: human mediation happens out-of-band in the viewer's curation console (a local
+  unix-socket confirmation surface that casts a verdict through `review`, never a direct write). The protocol-level
   elicitation path does not exist, so an agent-only client cannot route a decision to a human.
 
 ### LLM-friendly response conventions (Principles 5/21)
@@ -391,21 +391,24 @@ sections are present, and `peers` awaits the P2P phase.
 
 ### Ontology live viewer (for local inspection)
 
-Given `--viz` / `SUPRAGNOSIS_VIZ_ADDR` (daemon default `127.0.0.1:7374`), it brings up an HTTP viewer
-(the `supragnosis-viz` crate) in the **same process** as the MCP server, over a hand-rolled tokio TCP
-server with the whole UI as one embedded HTML/JS string (no CDN, no build step). It draws the
+Given `--viz` / `SUPRAGNOSIS_VIZ_SOCK` (daemon default `~/.supragnosis/viz.sock`), it brings up an
+HTTP-over-unix-socket viewer (the `supragnosis-viz` crate) in the **same process** as the MCP server,
+over a hand-rolled tokio server with the UI as embedded HTML/CSS/JS assets (no CDN). It draws the
 `engine.graph()` projection on a canvas force-graph and refreshes by polling. It is the channel by
-which a human visually inspects and curates the knowledge graph.
+which a human visually inspects and curates the knowledge graph; clients are the desktop shell or any
+HTTP-over-UDS client (`curl --unix-socket`).
 
 - **Read-only with one gated exception** (Principle 1): it does not touch the observation log. The sole
   write is `/api/review`, which casts a **verdict observation** through `engine.review_proposal` - it
   routes through the Principle 23 gate, never a direct projection/log write. Ingest remains exclusively
   via `observe`.
-- **Bind policy** (Principle 17): loopback-only by default. `SUPRAGNOSIS_VIZ_PUBLIC=1` is the owner's
-  explicit opt-in to **read-only** network exposure; a non-loopback peer is answered 403 on the write
-  endpoint, per connection. This is an interim surface, superseded by the authenticated read tier
-  (federation Phase 3.5). See the standing caveat in Section 14 (a `workspace=*` read is not
-  workspace-scoped).
+- **Bind policy** (Principle 17): a unix socket only - never TCP. The socket file (0600, in the 0700
+  `~/.supragnosis` dir) is the whole access control: the OS admits only the owning user, so every
+  request is attributable to the local principal (F19), and the browser-borne attack classes of a
+  localhost port (DNS rebinding, CSRF, cross-site fetch) cannot reach it - those defenses were deleted
+  with the TCP listener. The authenticated network read tier is federation Phase 3.5 and rides the sync
+  crate's TLS stack, not this server. See the standing caveat in Section 14 (a `workspace=*` read is
+  not workspace-scoped).
 - **Independent of the MCP tool surface** (Principle 21): being a separate human-facing channel, it does not add to the LLM's tools.
 - **Single-process constraint**: because cozo/RocksDB is single-process, the viewer must be in-process with the server
   (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
@@ -696,13 +699,12 @@ re-scheduled.
    first creates partial-ingest state.
 
 **Overdue [x] - from "on introducing remote transport"**
-4. **No transport-aware guard confines workspace-scope-less global queries to the local trust surface**, and the state
-   is now reachable: with `SUPRAGNOSIS_VIZ_PUBLIC=1`, `GET /api/graph?workspace=*` serves **every workspace** to an
-   unauthenticated remote reader, bypassing the share whitelist that governs the sync door. Principle 17's "the sharing
-   boundary applies to the remote query surface too" is honored by sync and federated recall, but **not** by the
-   viewer. Until the guard lands, treat `SUPRAGNOSIS_VIZ_PUBLIC=1` as "publish this entire node, all workspaces,
-   read-only" and set it only on a node whose whole contents are already shareable. Superseded by the authenticated
-   read tier (federation Phase 3.5).
+4. **No transport-aware guard confines workspace-scope-less global queries to the local trust surface** - RETIRED by
+   removing the reachable state, not by building the guard: the viewer's TCP listener and the `SUPRAGNOSIS_VIZ_PUBLIC`
+   opt-in were deleted when the viewer moved to a local unix socket, so `GET /api/graph?workspace=*` is once again
+   reachable only by the local principal. The guard itself is still owed: the moment federation Phase 3.5 opens the
+   authenticated network read tier, workspace enumeration and `workspace=*` MUST be filtered by that user's grants
+   (already stated as a Phase 3.5 requirement in federation.md 6d).
 
 **Still latent - M3 entry conditions, unreachable today**
 - Restore alias-matching parity for Cozo keyword search the moment alias accumulation begins (only InMemory matches

@@ -203,8 +203,9 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 ### 6a. Transport authentication and network bind (P2, P18)
 
 - Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the sync surface ONLY, and ONLY when all of
-  {TLS enabled, allowlist non-empty} hold. The MCP/viz `parse_local_addr` loopback guard is unchanged - it
-  is NOT relaxed; federation adds a separately-guarded surface.
+  {TLS enabled, allowlist non-empty} hold. The MCP loopback bind guard is unchanged - it is NOT
+  relaxed - and the viewer does not bind TCP at all (it serves over a local unix socket); federation
+  adds a separately-guarded surface.
 - TLS: terminated in-process with `rustls`. A cert/key path is required to bind non-loopback (F10).
 - AuthN: every request carries a per-node bearer token; every event is ed25519-signed by its `origin_node`.
 - AuthZ (wire): the server holds an **allowlist** of `{node_id -> public_key, bearer_token_hash,
@@ -262,7 +263,8 @@ P18/P17) for good, because the two never meet on the same axis:
   may read/write. Content outside the whitelist is filtered **before** it crosses the boundary, never as a
   delete-after-arrival (F9).
 - **The second-door rule** (P17): the sharing boundary must also govern any remote read surface. The
-  local MCP/viz binds stay loopback-only; the hub MAY open a governed human surface (6d), and when it
+  local MCP bind stays loopback-only and the viewer stays on its local unix socket; the hub MAY open a
+  governed human surface (6d), and when it
   does, that surface MUST enforce the same `share_workspaces` whitelist (and a no-workspace-scope global
   query stays limited to the local trust surface) - otherwise knowledge leaves through a different door.
 
@@ -310,13 +312,12 @@ governance identity and the login identity are the same key, not two systems to 
 The tiers compose with, never replace, the spoke console: a stakeholder with a local node keeps full
 sovereignty (P17) and casts verdicts under their own node key; the hub surface serves those who have not
 installed a node. Enrollment/revocation of user keys is a hub-admin act (rotation shares the deferred
-key-rotation workflow). Until Phase 3.5 lands, remote access is an SSH tunnel to the loopback viewer
-(authentication = SSH key, read and write as the tunnel owner's local trust surface), or the **interim
-read-only exposure**: the knowledge owner may explicitly opt in (SUPRAGNOSIS_VIZ_PUBLIC=1) to bind the
-viewer beyond loopback - sharing is the creator's decision (P17) - with the write endpoint
-(/api/review) gated per connection to loopback peers, so F19's hard line (no unauthenticated write
-surface) holds. Suitable only for a single-principal internal network; superseded by the user-key
-read tier.
+key-rotation workflow). Until Phase 3.5 lands, remote access is an SSH tunnel to the viewer's unix
+socket (`ssh -L <port>:<viz.sock path>` - authentication = SSH key, read and write as the tunnel
+owner's local trust surface). The former interim read-only TCP exposure (SUPRAGNOSIS_VIZ_PUBLIC) was
+removed together with the viewer's TCP listener: the viewer now binds only a 0600 unix socket, so
+F19's hard line (no unauthenticated write surface) holds by transport. Network reads return with the
+user-key read tier.
 
 ## 7. Topology
 
@@ -478,8 +479,8 @@ changing the canon policy without a central admin - is out of scope.
 - **F9** Only whitelisted workspaces cross the sync boundary (opt-in, default nothing, P17); the server
   enforces per-node access, filtering before the boundary. Any remote read surface obeys the same whitelist
   (P17 second-door rule).
-- **F10** The sync surface binds non-loopback ONLY with TLS enabled and a non-empty allowlist. MCP/viz stay
-  loopback-only (their `parse_local_addr` guard unchanged).
+- **F10** The sync surface binds non-loopback ONLY with TLS enabled and a non-empty allowlist. MCP stays
+  loopback-only (its bind guard unchanged); the viewer has no TCP bind (local unix socket only).
 - **F11** Sync is a non-blocking, pollable task (P21). It never blocks tool handlers; store calls offload
   via `spawn_blocking`.
 - **F12** A storage/transport failure is reported as a failure, never as "empty" or "converged" (P5).
@@ -601,8 +602,8 @@ input, not nondeterminism - F16).
   still converges (F7); cross-node reprojection materializes identically. [done]
 - **Phase 3** - transport: axum sync API (`/sync/advertise|pull|push`) + in-process rustls TLS +
   allowlist/bearer wire auth + reqwest client (`sync-http` = the sync crate's `http` feature); the F10
-  bind guard refuses non-loopback without TLS + a non-empty allowlist. Loopback guard for MCP/viz
-  untouched. [done]
+  bind guard refuses non-loopback without TLS + a non-empty allowlist. Loopback guard for MCP
+  untouched; the viewer later moved off TCP entirely (local unix socket). [done]
 - **Phase 3.5** - **hub human surface, read tier** (6d, F19): user-key enrollment + admin-managed user
   whitelist with per-workspace grants, challenge-response session auth, `sync+web-read` share grades,
   all write endpoints disabled, workspace enumeration filtered, and the web-hardening checklist

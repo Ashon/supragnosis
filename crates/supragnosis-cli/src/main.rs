@@ -6,7 +6,7 @@
 //!
 //!   supragnosis                  stdio MCP server (default, no arguments)
 //!   supragnosis serve [options]   foreground run (--http for a streamable-http daemon, --viz for the viewer)
-//!   supragnosis start [options]   start the background daemon (default MCP 127.0.0.1:7373 + viewer :7374)
+//!   supragnosis start [options]   start the background daemon (default MCP 127.0.0.1:7373 + viewer socket ~/.supragnosis/viz.sock)
 //!   supragnosis stop             stop the background daemon
 //!   supragnosis restart [options] stop then start
 //!   supragnosis status           daemon status
@@ -47,7 +47,7 @@ struct Cli {
 enum Cmd {
     /// Foreground run (stdio by default; --http for a streamable-http daemon)
     Serve(RunArgs),
-    /// Start the background daemon (default MCP :7373 + viewer :7374)
+    /// Start the background daemon (default MCP :7373 + viewer socket ~/.supragnosis/viz.sock)
     Start(RunArgs),
     /// Stop the background daemon
     Stop,
@@ -85,8 +85,8 @@ struct RunArgs {
     /// MCP streamable-http bind address (loopback). When omitted, serve uses stdio and start uses 127.0.0.1:7373.
     #[arg(long, value_name = "ADDR")]
     http: Option<String>,
-    /// Live ontology viewer bind address (loopback). start defaults to 127.0.0.1:7374.
-    #[arg(long, value_name = "ADDR")]
+    /// Live ontology viewer unix socket path. start defaults to ~/.supragnosis/viz.sock.
+    #[arg(long, value_name = "PATH")]
     viz: Option<String>,
     /// Store: cozo (default, file-persistent) | mem (non-persistent).
     #[arg(long)]
@@ -132,7 +132,7 @@ struct Config {
     session: String,
     /// Some = streamable-http daemon, None = stdio.
     http: Option<String>,
-    /// Some = accompanied by the live viewer.
+    /// Some = accompanied by the live viewer (unix socket path).
     viz: Option<String>,
 }
 
@@ -173,8 +173,8 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
             .or_else(|| daemon.then(|| "127.0.0.1:7373".to_string())),
         viz: a
             .viz
-            .or_else(|| env("SUPRAGNOSIS_VIZ_ADDR"))
-            .or_else(|| daemon.then(|| "127.0.0.1:7374".to_string())),
+            .or_else(|| env("SUPRAGNOSIS_VIZ_SOCK"))
+            .or_else(|| daemon.then(default_viz_sock)),
         host,
     }
 }
@@ -182,6 +182,13 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
 fn default_data_dir() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     format!("{home}/.supragnosis/db")
+}
+
+/// Default viewer socket path (the viewer serves HTTP over UDS only - no TCP; the socket file's
+/// 0600 mode is the access control).
+fn default_viz_sock() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    format!("{home}/.supragnosis/viz.sock")
 }
 
 /// Default embedder kind based on the compiled features. If built with fastembed enabled, that is the default.
@@ -282,8 +289,8 @@ async fn run(cfg: Config) -> Result<()> {
         .as_ref()
         .map(|_| Arc::new(std::sync::RwLock::new(serde_json::json!({"configured": true}))));
 
-    if let (Some(addr), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
-        spawn_viz(&engine, addr, tx.clone(), fed_status.clone()).await;
+    if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
+        spawn_viz(&engine, sock, tx.clone(), fed_status.clone()).await;
     }
 
     // Federation wiring (M4 Phase 4, docs/federation.md Section 9): optional supragnosis.toml.
@@ -639,38 +646,34 @@ fn run_blocking(cfg: Config) -> Result<()> {
 /// - Principle 21). `events` is the same broadcast Sender as the engine sink.
 async fn spawn_viz(
     engine: &Arc<Engine>,
-    addr_str: &str,
+    sock_path: &str,
     events: tokio::sync::broadcast::Sender<String>,
     fed: Option<supragnosis_viz::FedStatus>,
 ) {
-    // SUPRAGNOSIS_VIZ_PUBLIC=1: the owner's explicit opt-in to read-only network exposure of the
-    // viewer (federation.md 6d interim; writes stay loopback-gated per connection, F19).
-    let viz_public = std::env::var("SUPRAGNOSIS_VIZ_PUBLIC")
-        .map(|v| matches!(v.trim(), "1" | "true" | "yes"))
-        .unwrap_or(false);
-    let addr = match supragnosis_viz::parse_viz_addr(addr_str, viz_public) {
-        Ok(addr) => addr,
-        Err(e) => {
-            tracing::error!(error = %e, "ignoring SUPRAGNOSIS_VIZ_ADDR - proceeding without the viewer");
-            return;
+    // The TCP viewer is gone: the viewer serves HTTP over a unix socket only. Point out stale
+    // configuration loudly instead of silently ignoring it (Principle 5).
+    for gone in ["SUPRAGNOSIS_VIZ_ADDR", "SUPRAGNOSIS_VIZ_PUBLIC"] {
+        if std::env::var_os(gone).is_some() {
+            tracing::warn!(
+                "{gone} is no longer supported - the viewer serves HTTP over a unix socket \
+                 (SUPRAGNOSIS_VIZ_SOCK / --viz <path>); the authenticated network read tier is \
+                 federation Phase 3.5"
+            );
         }
-    };
-    if !addr.ip().is_loopback() {
-        tracing::warn!(
-            %addr,
-            "viewer exposed beyond loopback (owner opt-in, READ-ONLY: /api/review stays \
-             loopback-gated) - the authenticated read tier is federation Phase 3.5"
-        );
     }
-    let listener = match tokio::net::TcpListener::bind(addr).await {
+    let path = std::path::PathBuf::from(sock_path);
+    let listener = match supragnosis_viz::bind_uds(&path).await {
         Ok(listener) => listener,
         Err(e) => {
-            tracing::error!(error = %e, %addr, "viz bind failed - proceeding without the viewer");
+            tracing::error!(error = %e, path = %path.display(), "viz bind failed - proceeding without the viewer");
             return;
         }
     };
-    let bound = listener.local_addr().unwrap_or(addr);
-    tracing::info!("ontology viewer started: http://{bound}");
+    tracing::info!(
+        "ontology viewer socket: {} (e.g. curl --unix-socket {} http://viz/api/graph)",
+        path.display(),
+        path.display()
+    );
     let engine = Arc::clone(engine);
     tokio::spawn(async move {
         if let Err(e) = supragnosis_viz::serve(engine, listener, events, fed).await {
@@ -691,7 +694,7 @@ async fn serve_http_daemon(
     workspace: &str,
     session: &str,
 ) -> Result<()> {
-    let addr = supragnosis_viz::parse_local_addr(http_addr)?; // reject non-local binds (Principle 17)
+    let addr = parse_loopback_addr(http_addr)?; // reject non-local binds (Principle 17)
     let service = StreamableHttpService::new(
         move || {
             let mut server = SupragnosisServer::new(engine.clone());
@@ -743,6 +746,28 @@ async fn guard_local_origin(
     }
 }
 
+/// Parses the MCP streamable-http bind address and **verifies it is loopback** (Principle 17).
+///
+/// Accepts only a `host:port` IP literal (e.g. `127.0.0.1:7373`). Non-loopback addresses are
+/// rejected - the MCP surface is the local trust surface; remote MCP access is not a supported
+/// topology (federation is the sync surface). A hostname (localhost) is not accepted because it
+/// would require DNS resolution (removing ambiguity). This TCP port is the last one standing: the
+/// viewer already serves over a unix socket, and this bind follows once MCP clients can reach the
+/// daemon through the stdio proxy shim.
+fn parse_loopback_addr(s: &str) -> Result<std::net::SocketAddr> {
+    let addr: std::net::SocketAddr = s.trim().parse().with_context(|| {
+        format!("invalid MCP bind address: {s:?} - must be in IP:port form (e.g. 127.0.0.1:7373)")
+    })?;
+    if !addr.ip().is_loopback() {
+        anyhow::bail!(
+            "MCP bind address {addr} is not loopback - refusing (Principle 17: knowledge \
+             sovereignty). Use 127.0.0.1:<port>; network sharing goes through the sync surface \
+             (TLS + allowlist), never the MCP port"
+        );
+    }
+    Ok(addr)
+}
+
 /// True if a `host[:port]` (Host header value) names a loopback address.
 fn host_hdr_is_loopback(h: &str) -> bool {
     let hostname = if let Some(rest) = h.strip_prefix('[') {
@@ -761,7 +786,20 @@ fn origin_is_loopback(o: &str) -> bool {
 
 #[cfg(test)]
 mod daemon_guard_tests {
-    use super::{host_hdr_is_loopback, origin_is_loopback};
+    use super::{host_hdr_is_loopback, origin_is_loopback, parse_loopback_addr};
+
+    #[test]
+    fn parse_loopback_addr_accepts_loopback_rejects_public() {
+        assert!(parse_loopback_addr("127.0.0.1:7373").is_ok());
+        assert!(parse_loopback_addr("127.0.0.1:0").is_ok());
+        assert!(parse_loopback_addr("[::1]:7373").is_ok());
+        // Non-loopback binds are rejected (Principle 17).
+        assert!(parse_loopback_addr("0.0.0.0:7373").is_err());
+        assert!(parse_loopback_addr("192.168.1.10:7373").is_err());
+        // Format error.
+        assert!(parse_loopback_addr("localhost:7373").is_err());
+        assert!(parse_loopback_addr("nonsense").is_err());
+    }
 
     #[test]
     fn loopback_hosts_and_origins_pass_foreign_ones_refused() {
@@ -859,7 +897,7 @@ fn launchd_loaded() -> bool {
 }
 
 /// Restart the launchd daemon in place (`kickstart -k`). The plist environment
-/// (including SUPRAGNOSIS_VIZ_ADDR) is re-applied, so the viewer comes back too.
+/// (including SUPRAGNOSIS_VIZ_SOCK) is re-applied, so the viewer comes back too.
 #[cfg(target_os = "macos")]
 fn launchd_kickstart() -> Result<()> {
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
@@ -926,7 +964,7 @@ fn start(cfg: Config) -> Result<()> {
     let viz_msg = cfg
         .viz
         .as_deref()
-        .map(|v| format!("http://{v}"))
+        .map(|v| format!("unix:{v}"))
         .unwrap_or_else(|| "(off)".to_string());
     println!("supragnosis daemon started - MCP http://{http}/mcp  viewer {viz_msg}");
     println!("  pidfile {}  logs {}", pid_path().display(), log_dir().display());

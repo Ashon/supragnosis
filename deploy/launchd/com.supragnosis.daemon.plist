@@ -5,7 +5,7 @@
   Label is the canonical com.supragnosis.daemon so the CLI can drive it
   (supragnosis restart/stop -> launchctl kickstart -k / bootout).
   Install: see deploy/README.md. Paths are absolute for user ashon.lee - other users should adjust.
-  loopback only (Principle 17) - MCP http://127.0.0.1:7373/mcp, viewer http://127.0.0.1:7374.
+  loopback only (Principle 17) - MCP http://127.0.0.1:7373/mcp, viewer unix:~/.supragnosis/viz.sock.
 -->
 <plist version="1.0">
 <dict>
@@ -21,8 +21,8 @@
     <dict>
         <key>SUPRAGNOSIS_HTTP_ADDR</key>
         <string>127.0.0.1:7373</string>
-        <key>SUPRAGNOSIS_VIZ_ADDR</key>
-        <string>127.0.0.1:7374</string>
+        <key>SUPRAGNOSIS_VIZ_SOCK</key>
+        <string>/Users/ashon.lee/.supragnosis/viz.sock</string>
         <key>SUPRAGNOSIS_STORE</key>
         <string>cozo</string>
         <key>SUPRAGNOSIS_DATA_DIR</key>

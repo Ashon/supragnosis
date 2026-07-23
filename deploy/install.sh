@@ -49,7 +49,7 @@ claude mcp remove supragnosis -s user 2>/dev/null || true
 claude mcp add --transport http supragnosis "$MCP_URL" --scope user
 
 echo ""
-echo "Done. Viewer: http://127.0.0.1:7374 | Logs: ~/.supragnosis/log/"
+echo "Done. Viewer socket: ~/.supragnosis/viz.sock (HTTP over UDS) | Logs: ~/.supragnosis/log/"
 echo "Control (label $LABEL):"
 echo "  supragnosis status    # server + viewer state"
 echo "  supragnosis restart   # restart both (launchctl kickstart -k)"

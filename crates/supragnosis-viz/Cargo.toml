@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-viz"
-description = "supragnosis ontology live visualization - localhost HTTP viewer (read-only adapter)."
+description = "supragnosis ontology live visualization - local unix-socket HTTP viewer."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,16 +14,15 @@ supragnosis-engine.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-# TcpListener + AsyncRead/Write + broadcast(sync). Not in the workspace-wide set, so enabled locally
+# UnixListener + AsyncRead/Write + broadcast(sync). Not in the workspace-wide set, so enabled locally
 # (cargo features are a union, so it is harmless to other crate builds). sync = MCP event broadcast.
 tokio = { workspace = true, features = ["net", "io-util", "sync"] }
 
 [dev-dependencies]
-# Verifies the HTTP surface in-process with a deterministic Engine assembly (InMemory + lexical hashing).
+# Verifies the HTTP-over-UDS surface in-process with a deterministic Engine assembly (InMemory +
+# lexical hashing), speaking raw HTTP/1.1 over UnixStream - no HTTP client dependency needed.
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
-# Integration test that fires real GETs at a local port. localhost http, so no TLS needed.
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
 tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros"] }
 
 [build-dependencies]
