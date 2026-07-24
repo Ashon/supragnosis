@@ -1,8 +1,9 @@
-# supragnosis daemon/CLI formula (prebuilt release binaries; keyword + hashing search -
+# supragnosis server/CLI formula (prebuilt release binaries; keyword + hashing search -
 # build from source with --features fastembed for local semantic search).
-# Lives in the tap repo as Formula/supragnosis.rb; update-tap.sh rewrites version/sha256
-# per release from this template.
-class Supragnosis < Formula
+# Lives in the tap repo as Formula/supragnosis-server.rb; update-tap.sh rewrites version/sha256
+# per release from this template. Installs the plain `supragnosis` binary - only the brew token
+# carries the -server suffix (the desktop-app cask owns the plain `supragnosis` token).
+class SupragnosisServer < Formula
   desc "Embedded MCP server that grows an ontology from working knowledge"
   homepage "https://supragnosis.dev/"
   version "0.1.9"
@@ -27,9 +28,9 @@ class Supragnosis < Formula
     bin.install "supragnosis"
   end
 
-  # brew services start supragnosis
+  # brew services start supragnosis-server
   # `serve --http` also brings up the viewer unix socket at ~/.supragnosis/viz.sock by
-  # default, which is what the desktop app (cask supragnosis-app) attaches to.
+  # default, which is what the desktop app (cask supragnosis) attaches to.
   service do
     run [opt_bin/"supragnosis", "serve", "--http", "127.0.0.1:7373"]
     keep_alive true

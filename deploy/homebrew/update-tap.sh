@@ -13,8 +13,8 @@ sha_of() { # asset name -> sha256 (the release publishes <asset>.sha256 sidecars
   curl -fsSL "${BASE}/$1.sha256" | awk '{print $1}'
 }
 
-FORMULA="${TAP_DIR}/Formula/supragnosis.rb"
-CASK="${TAP_DIR}/Casks/supragnosis-app.rb"
+FORMULA="${TAP_DIR}/Formula/supragnosis-server.rb"
+CASK="${TAP_DIR}/Casks/supragnosis.rb"
 
 arm=$(sha_of "supragnosis-${TAG}-aarch64-apple-darwin.tar.gz")
 x86=$(sha_of "supragnosis-${TAG}-x86_64-apple-darwin.tar.gz")
