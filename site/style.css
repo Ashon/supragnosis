@@ -454,6 +454,35 @@ code {
 }
 .terminal .c { color: var(--faint); }
 
+/* ---------------- install tabs ---------------- */
+
+.tabbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 0;
+}
+.tab {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.tab:hover { color: var(--gold-bright); }
+.tab[aria-selected="true"] {
+  color: var(--gold);
+  background: var(--panel);
+  border-color: var(--line-soft);
+  position: relative;
+  top: 1px;
+}
+
 /* ---------------- mcp ---------------- */
 
 .mcp-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
