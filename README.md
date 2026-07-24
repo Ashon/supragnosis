@@ -20,6 +20,19 @@ and lets you query and explore it over **MCP**.
   [`docs/federation.md`](docs/federation.md)
 
 ## Install (prebuilt binary)
+
+### Homebrew (macOS / Linux)
+```bash
+brew tap ashon/tap
+brew install supragnosis             # daemon/CLI
+brew services start supragnosis      # always-on daemon (MCP :7373 + viewer socket)
+brew install --cask supragnosis-app  # desktop app (macOS, signed/notarized - see below)
+```
+- The cask depends on the formula - the app attaches to the brew daemon binary on PATH (no bundled
+  sidecar), so a single `brew upgrade` moves the daemon and the app together.
+- Tap templates and the per-release update procedure: [`deploy/homebrew/`](deploy/homebrew/).
+
+### Install script
 ```bash
 # Detect platform -> install the latest release binary to ~/.local/bin (with checksum verification)
 curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
@@ -72,7 +85,9 @@ spawned daemon but never an attached external one.
 cargo run -p supragnosis-app    # dev run (finds the server binary via SUPRAGNOSIS_BIN,
                                 # ~/.local/bin, the debug build, or PATH)
 ```
-Bundling (.app/.dmg with the server as a sidecar) and code signing are not wired up yet.
+Packaged install: `brew install --cask supragnosis-app` - the release workflow attaches a
+signed/notarized universal `.app.zip` to each release and the cask installs it, depending on the
+`supragnosis` formula for the daemon (the app bundles no sidecar).
 
 ## Usage (CLI)
 The single binary is controlled through subcommands. Run it **with no arguments** and it
