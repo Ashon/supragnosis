@@ -111,7 +111,10 @@ jobs:
   # 서명 시크릿이 없으면(workflow_dispatch, 포크) 서명 없이 빌드만 검증한다.
   app:
     name: build desktop app (macos universal)
-    runs-on: macos-14
+    # macos-26 러너 고정: macOS 26 은 링크된 SDK 로 컨트롤 메트릭을 게이트한다 - 구 SDK 로
+    # 빌드된 앱은 호환(구형) 신호등 메트릭을 받아 오버레이 타이틀바의 신호등 y 캘리브레이션
+    # (app/src/main.rs show_viewer)이 어긋난다. 앱 잡만 해당(서버 바이너리는 UI 없음).
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
