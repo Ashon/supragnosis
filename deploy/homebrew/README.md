@@ -24,8 +24,8 @@
 
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
-../supragnosis/deploy/homebrew/update-tap.sh v0.1.10 .
-git commit -am "supragnosis v0.1.10" && git push
+../supragnosis/deploy/homebrew/update-tap.sh v0.1.11 .
+git commit -am "supragnosis v0.1.11" && git push
 ```
 
 ## 사용자 설치

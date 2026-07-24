@@ -22,7 +22,9 @@ lin=$(sha_of "supragnosis-${TAG}-x86_64-unknown-linux-gnu.tar.gz")
 app=$(sha_of "Supragnosis-${TAG}-macos-universal.app.zip")
 
 # version line, then each sha256 by position: formula has 3 (arm, x86, linux), cask has 1.
-sed -i '' -E "s/^(  version \")[^\"]+(\")/\\1${VERSION}\\2/" "$FORMULA" "$CASK"
+# -i.bak (attached suffix) works under both BSD and GNU sed - the CI tap job runs on Linux.
+sed -i.bak -E "s/^(  version \")[^\"]+(\")/\\1${VERSION}\\2/" "$FORMULA" "$CASK"
+rm -f "${FORMULA}.bak" "${CASK}.bak"
 python3 - "$FORMULA" "$arm" "$x86" "$lin" <<'EOF'
 import re, sys
 path, *shas = sys.argv[1:]
