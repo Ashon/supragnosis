@@ -24,12 +24,14 @@ and lets you query and explore it over **MCP**.
 ### Homebrew (macOS / Linux)
 ```bash
 brew tap ashon/tap
-brew install supragnosis             # daemon/CLI
-brew services start supragnosis      # always-on daemon (MCP :7373 + viewer socket)
-brew install --cask supragnosis-app  # desktop app (macOS, signed/notarized - see below)
+brew install supragnosis                # desktop app (macOS, signed/notarized) - pulls the server with it
+brew install supragnosis-server         # server/CLI only (macOS / Linux)
+brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer socket)
 ```
-- The cask depends on the formula - the app attaches to the brew daemon binary on PATH (no bundled
-  sidecar), so a single `brew upgrade` moves the daemon and the app together.
+- `supragnosis` is the desktop-app cask and depends on the `supragnosis-server` formula - the app
+  attaches to the server binary on PATH (no bundled sidecar), so a single `brew upgrade` moves the
+  server and the app together. The installed binary is named `supragnosis` either way; only the brew
+  tokens differ.
 - Tap templates and the per-release update procedure: [`deploy/homebrew/`](deploy/homebrew/).
 
 ### Install script
@@ -85,9 +87,9 @@ spawned daemon but never an attached external one.
 cargo run -p supragnosis-app    # dev run (finds the server binary via SUPRAGNOSIS_BIN,
                                 # ~/.local/bin, the debug build, or PATH)
 ```
-Packaged install: `brew install --cask supragnosis-app` - the release workflow attaches a
-signed/notarized universal `.app.zip` to each release and the cask installs it, depending on the
-`supragnosis` formula for the daemon (the app bundles no sidecar).
+Packaged install: `brew install supragnosis` - the release workflow attaches a signed/notarized
+universal `.app.zip` to each release and the cask installs it, depending on the
+`supragnosis-server` formula for the daemon (the app bundles no sidecar).
 
 ## Usage (CLI)
 The single binary is controlled through subcommands. Run it **with no arguments** and it
