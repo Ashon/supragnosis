@@ -28,14 +28,22 @@
    - `APPLE_ID` - Apple ID 이메일
    - `APPLE_PASSWORD` - app-specific password (appleid.apple.com 에서 발급)
    - `APPLE_TEAM_ID` - 팀 ID
-3. 다음 `v*` 태그부터 릴리스에 `Supragnosis-v<ver>-macos-universal.app.zip` 이 첨부된다.
+3. tap 자동 갱신용 시크릿 등록: fine-grained PAT 를 만들어(Developer settings > Personal
+   access tokens > Fine-grained, 대상 리포를 `Ashon/homebrew-tap` 하나로 제한, 권한은
+   Contents: Read and write 만) `TAP_PUSH_TOKEN` 이름으로 리포 시크릿에 넣는다.
+   없으면 release.yml 의 tap 잡이 건너뛰고 아래 수동 절차로 폴백한다.
+4. 다음 `v*` 태그부터 릴리스에 `Supragnosis-v<ver>-macos-universal.app.zip` 이 첨부된다.
 
 ## 릴리스마다
 
+자동이다: `v*` 태그를 push 하면 release.yml 의 tap 잡이 자산 첨부 완료 후 update-tap.sh 로
+tap 의 version/sha256 을 갱신해 push 한다. 잡이 실패하거나 `TAP_PUSH_TOKEN` 이 없으면
+수동으로 돌린다:
+
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
-../supragnosis/deploy/homebrew/update-tap.sh v0.1.10 .
-git commit -am "supragnosis v0.1.10" && git push
+../supragnosis/deploy/homebrew/update-tap.sh v0.1.11 .
+git commit -am "supragnosis v0.1.11" && git push
 ```
 
 ## 사용자 설치
