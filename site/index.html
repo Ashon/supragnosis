@@ -226,9 +226,34 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
       </div>
     </section>
 
+    <!-- ================= viewer ================= -->
+    <section class="section reveal" id="viewer">
+      <p class="eyebrow">04 / the viewer</p>
+      <h2>Watch your agents learn.</h2>
+      <figure class="shot">
+        <div class="terminal-bar"><span class="terminal-title">supragnosis viewer - http over ~/.supragnosis/viz.sock</span></div>
+        <!-- Refreshing this capture: seed a workspace, run
+             `supragnosis serve --viz <sock>`, proxy the socket to TCP, then
+             screenshot 1600x900 @2x (headless Chromium works) and encode webp
+             into assets/viewer.webp. -->
+        <img src="assets/viewer.webp" width="1600" height="900" loading="lazy"
+             alt="The live ontology viewer: a force graph of entities and relations
+                  with labeled co-occurrence hulls, a legend of node and edge types
+                  on the left, and the curation console on the right showing an open
+                  entity_merge proposal with accept and reject buttons.">
+        <figcaption>
+          A seeded workspace in the live viewer: entities land as agents
+          observe, hulls shade co-occurrence contexts, and an entity_merge
+          proposal - two spelling variants of the same store - waits in the
+          curation console for a human verdict. All served on an owner-only
+          unix socket.
+        </figcaption>
+      </figure>
+    </section>
+
     <!-- ================= capabilities ================= -->
     <section class="section reveal" id="features">
-      <p class="eyebrow">04 / capabilities</p>
+      <p class="eyebrow">05 / capabilities</p>
       <h2>Small binary, serious semantics.</h2>
       <div class="grid grid-3">
         <article class="card">
@@ -308,7 +333,7 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
 
     <!-- ================= mcp surface ================= -->
     <section class="section reveal" id="mcp">
-      <p class="eyebrow">05 / mcp surface</p>
+      <p class="eyebrow">06 / mcp surface</p>
       <h2>Speak MCP, remember everything.</h2>
       <div class="mcp-wrap">
         <div class="terminal">
@@ -340,7 +365,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= federation ================= -->
     <section class="section reveal" id="federation">
-      <p class="eyebrow">06 / federation</p>
+      <p class="eyebrow">07 / federation</p>
       <h2>Any topology. Same graph.</h2>
       <p class="section-note wide">
         Hosts replicate observation logs, not merged state. Because projection is
@@ -405,7 +430,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= crates ================= -->
     <section class="section reveal" id="crates">
-      <p class="eyebrow">07 / inside</p>
+      <p class="eyebrow">08 / inside</p>
       <h2>A workspace of eight crates.</h2>
       <div class="grid grid-4 crates">
         <div class="crate"><strong>core</strong><span>domain models + ports, zero IO</span></div>
@@ -426,7 +451,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= status ================= -->
     <section class="section reveal" id="status">
-      <p class="eyebrow">08 / status</p>
+      <p class="eyebrow">09 / status</p>
       <h2>Where it honestly stands.</h2>
       <ul class="checklist">
         <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
@@ -445,7 +470,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= get started ================= -->
     <section class="section reveal" id="get-started">
-      <p class="eyebrow">09 / get started</p>
+      <p class="eyebrow">10 / get started</p>
       <h2>Up and running in a minute.</h2>
       <div class="terminal install-tabs">
         <div class="terminal-bar tabbar" role="tablist" aria-label="Install method">
