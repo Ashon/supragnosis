@@ -454,6 +454,28 @@ code {
 }
 .terminal .c { color: var(--faint); }
 
+/* ---------------- viewer shot ---------------- */
+
+.shot {
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shot figcaption {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--faint);
+}
 /* ---------------- install tabs ---------------- */
 
 .tabbar {
