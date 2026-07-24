@@ -68,9 +68,11 @@
         <p class="etymology">supra <span>(above)</span> &nbsp;+&nbsp; gnosis <span>(knowing)</span></p>
         <h1>Knowledge<br><em>above</em> knowledge.</h1>
         <p class="lede">
-          supragnosis is an embedded, file-based knowledge server written in Rust.
-          It structures what your agents learn across hosts and workspaces into an
-          ontology - a living concept/relation graph - and serves it to any MCP client.
+          Your agents learn constantly and remember nothing. supragnosis is an
+          embedded, file-based knowledge server written in Rust that keeps what
+          they learn - across hosts and workspaces - not as bare facts but as
+          provenance-carrying observations, projected deterministically into a
+          living ontology and served to any MCP client.
         </p>
         <div class="hero-actions">
           <a class="btn btn-gold" href="https://github.com/Ashon/supragnosis">View on GitHub</a>
@@ -82,11 +84,12 @@
           <button class="copy" data-copy="#install-cmd" aria-label="Copy install command">copy</button>
         </div>
         <ul class="badges" aria-label="Project facts">
-          <li>v0.1.9</li>
+          <li>v0.1.10</li>
           <li>Rust</li>
           <li>MIT OR Apache-2.0</li>
           <li>macOS arm64 / x86_64</li>
           <li>Linux x86_64</li>
+          <li>macOS desktop app</li>
         </ul>
       </div>
     </section>
@@ -97,31 +100,39 @@
       <h2>Three commitments, held everywhere.</h2>
       <div class="grid grid-3">
         <article class="card">
-          <h3>Observations are the truth</h3>
+          <h3>Assertions, not facts</h3>
           <p>
-            Knowledge arrives as immutable observation events: append-only,
-            provenance-preserving. The entity/relation graph is a deterministic
-            projection of the log. Replay the log anywhere and the same graph
-            materializes.
+            Nothing in the log says "X is true". It says "this host, acting for
+            this principal, observed X at this time, with this confidence". Belief
+            is a derived view - computed by a replaceable resolution policy, and
+            recomputable from the same log when the policy changes.
           </p>
         </article>
         <article class="card">
-          <h3>Local-first, topology-free</h3>
+          <h3>Supersede, don't delete</h3>
           <p>
-            Local-only, central hub, direct peer, or hybrid: every connection
-            topology converges without conflict under the same merge semantics.
-            Events are ed25519-signed and replicated over TLS.
+            Knowledge accumulates append-only: stale beliefs are superseded, never
+            erased, and contradictions are surfaced as signal rather than silently
+            resolved away. Forgetting is a demotion of recall, not of storage - the
+            log is eternal; only attention is finite.
           </p>
         </article>
         <article class="card">
-          <h3>Swappable by construction</h3>
+          <h3>Deterministic core, probabilistic edge</h3>
           <p>
-            A hexagonal core with zero IO. Stores, embedders, and extractors are
-            ports with adapters: CozoDB today, Oxigraph tomorrow, in-memory for
-            tests. The domain never notices.
+            LLMs and embeddings are adapters behind ports: they extract knowledge
+            and widen recall, but they never judge. Projection, merge, and ranking
+            are deterministic, so the core is correct with no model attached at
+            all - and the store is swappable for the same reason.
           </p>
         </article>
       </div>
+      <p class="section-note wide">
+        The name is the design: observations that mention the same things leave a
+        second-order structure behind - hyperedges, observations about observations.
+        That meta-knowledge (<em>supra</em> + <em>gnosis</em>) is the substrate schema
+        induction, consolidation, and curation all read from.
+      </p>
     </section>
 
     <!-- ================= how it works ================= -->
@@ -154,8 +165,9 @@
           <h3>Hybrid recall</h3>
           <p>
             HNSW vector search over local ONNX embeddings (fastembed), fused with
-            keyword search. Ranking is deterministic; without embeddings it
-            degrades gracefully to keyword.
+            keyword search and deterministically ranked. Semantic recall widens
+            the net; commits stay deterministic. Without embeddings it degrades
+            gracefully to keyword - no cloud calls either way.
           </p>
         </article>
         <article class="card">
@@ -169,23 +181,28 @@
         <article class="card">
           <h3>Proposal gate</h3>
           <p>
-            Changes to canon - tier promotions, merges, T-Box edits, recalls -
-            flow through PR-like proposals with a curation console.
+            Ingest is free; promotion is gated. Changes to canon - tier
+            promotions, entity merges, T-Box edits, recalls - flow through
+            PR-like proposals, and a proposal is itself an observation:
+            signed, replayable, reviewed in the curation console.
           </p>
         </article>
         <article class="card">
           <h3>Provenance and trust</h3>
           <p>
-            Every fact carries host, workspace, delegation chain, and trust tier.
-            Contaminated sources can be quarantined and recalled in bulk, even
-            across the federation.
+            Every fact carries its delegation chain (who, acting for whom),
+            workspace, and trust tier - and trust is the receiver's evaluation,
+            never self-declared. A contaminated source's derived tree can be
+            traced by lineage and recalled in bulk, across the federation.
           </p>
         </article>
         <article class="card">
           <h3>Live ontology viewer</h3>
           <p>
-            A loopback-only web viewer streams entities, relations, and sync
-            chatter as they land. Watch your agents learn.
+            A force-graph viewer streams entities, relations, proposals, and
+            sync chatter live over SSE - served on an owner-only unix socket,
+            never a TCP port. The macOS desktop app is a thin tray-resident
+            shell over the same socket. Watch your agents learn.
           </p>
         </article>
         <article class="card">
@@ -193,8 +210,9 @@
           <p>
             <code>start</code> / <code>stop</code> / <code>status</code> /
             <code>restart</code> with pidfile and logs under
-            <code>~/.supragnosis</code>. stdio for MCP-client children,
-            streamable HTTP for everything else.
+            <code>~/.supragnosis</code> - or let Homebrew keep it running with
+            <code>brew services</code>. stdio for MCP-client children,
+            loopback streamable HTTP for everything else.
           </p>
         </article>
       </div>
@@ -219,8 +237,8 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
           <div><dt>search_knowledge</dt><dd>semantic + keyword hybrid recall, deterministically ranked</dd></div>
           <div><dt>get_entity</dt><dd>one entity with its relations and full provenance</dd></div>
           <div><dt>traverse</dt><dd>n-hop walks over the relation graph</dd></div>
-          <div><dt>workspace_map</dt><dd>co-occurrence contexts (hyperedges) across a workspace</dd></div>
-          <div class="tools-more"><dt>and more</dt><dd>federation (sync_*), proposal, and curation tools - 13+ in total</dd></div>
+          <div><dt>workspace_map</dt><dd>what was said together: co-occurrence hyperedges across a workspace</dd></div>
+          <div class="tools-more"><dt>and more</dt><dd>define_type, the proposal gate, federation (sync_*) - 13 tools today, deliberately few</dd></div>
         </dl>
       </div>
     </section>
@@ -304,6 +322,11 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
         <div class="crate"><strong>viz</strong><span>live ontology viewer</span></div>
         <div class="crate"><strong>cli</strong><span>the supragnosis binary</span></div>
       </div>
+      <p class="section-note">
+        Alongside the workspace: <code>app/</code>, a tray-resident macOS shell
+        (Tauri) over the viewer socket, and <code>e2e/</code>, a real-model
+        scorecard suite that measures rather than gates.
+      </p>
     </section>
 
     <!-- ================= status ================= -->
@@ -329,24 +352,25 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
       <h2>Up and running in a minute.</h2>
       <div class="grid grid-2 starts">
         <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">prebuilt binary</span></div>
-          <pre><code><span class="c"># macOS (arm64 / x86_64), Linux (x86_64)</span>
-<span class="c"># installs to ~/.local/bin with checksum verification</span>
-curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+          <div class="terminal-bar"><span class="terminal-title">homebrew (macOS / Linux)</span></div>
+          <pre><code>brew tap ashon/tap
 
-supragnosis start     <span class="c"># daemon: MCP :7373 + viewer :7374</span>
-supragnosis status
-supragnosis stop</code></pre>
+<span class="c"># desktop app (macOS, signed + notarized) - pulls the server with it</span>
+brew install supragnosis
+
+<span class="c"># server / CLI only, kept running as a service</span>
+brew install supragnosis-server
+brew services start supragnosis-server</code></pre>
         </div>
         <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">from source (with semantic search)</span></div>
-          <pre><code>git clone https://github.com/Ashon/supragnosis
-cd supragnosis
+          <div class="terminal-bar"><span class="terminal-title">install script, or from source</span></div>
+          <pre><code><span class="c"># macOS (arm64 / x86_64), Linux (x86_64) -> ~/.local/bin, checksum-verified</span>
+curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
 
-<span class="c"># includes local ONNX semantic search</span>
-cargo build -p supragnosis-cli --features fastembed
+supragnosis start     <span class="c"># daemon: MCP on 127.0.0.1:7373 + viewer unix socket</span>
 
-cargo test</code></pre>
+<span class="c"># prebuilt ships keyword search; build for local ONNX semantic search:</span>
+cargo build -p supragnosis-cli --features fastembed</code></pre>
         </div>
       </div>
     </section>
