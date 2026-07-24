@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>supragnosis - knowledge above knowledge</title>
-  <meta name="description" content="An embedded, file-based Rust knowledge graph server. Immutable observation logs, deterministic projection, local-first federation, and hybrid recall over MCP.">
+  <title>supragnosis - the agent-first ontology</title>
+  <meta name="description" content="The agent-first ontology: an embedded, file-based Rust knowledge graph server where agents observe, relate, and type what they learn, and humans govern what becomes canon. MCP interface, local-first federation, deterministic projection.">
   <meta property="og:title" content="supragnosis">
-  <meta property="og:description" content="Knowledge above knowledge. An embedded Rust knowledge graph server with MCP interface and multi-host federation.">
+  <meta property="og:description" content="The agent-first ontology. Agents build the knowledge graph as a by-product of work; humans supervise canon. An embedded Rust server with MCP interface and multi-host federation.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://supragnosis.dev/">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -66,13 +66,13 @@
 
       <div class="hero-inner">
         <p class="etymology">supra <span>(above)</span> &nbsp;+&nbsp; gnosis <span>(knowing)</span></p>
-        <h1>Knowledge<br><em>above</em> knowledge.</h1>
+        <h1>The <em>agent-first</em><br>ontology.</h1>
         <p class="lede">
           Your agents learn constantly and remember nothing. supragnosis is an
-          embedded, file-based knowledge server written in Rust that keeps what
-          they learn - across hosts and workspaces - not as bare facts but as
-          provenance-carrying observations, projected deterministically into a
-          living ontology and served to any MCP client.
+          embedded, file-based knowledge server written in Rust where the agents
+          themselves build the ontology - observing, relating, and typing what
+          they learn as a by-product of work - and humans supervise what becomes
+          canon. Served to any MCP client, across hosts and workspaces.
         </p>
         <div class="hero-actions">
           <a class="btn btn-gold" href="https://github.com/Ashon/supragnosis">View on GitHub</a>
@@ -94,9 +94,46 @@
       </div>
     </section>
 
+    <!-- ================= agent-first ================= -->
+    <section class="section reveal" id="agent-first">
+      <p class="eyebrow">01 / agent-first</p>
+      <h2>Agents build it. Humans govern it.</h2>
+      <div class="grid grid-3">
+        <article class="card">
+          <h3>Agents write</h3>
+          <p>
+            Knowledge management dies the moment it becomes separate labor - so
+            here it is a by-product of work. While your agents code, debug, and
+            decide, they shed observations through one low-friction tool: free
+            text plus whatever structure they can already offer. No forms, no
+            curation shift.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Agents induce the schema</h3>
+          <p>
+            No ontologist draws the taxonomy up front. Unknown knowledge lands as
+            loose concepts, patterns harden with use, and agents promote them
+            through <code>define_type</code> - every type with a mandatory
+            plain-language definition. Co-occurrence hyperedges surface what
+            deserves a name next.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Humans supervise</h3>
+          <p>
+            Ingest is free; canon is governed. Entity merges, trust promotions,
+            and T-Box changes travel through PR-like proposals that a human
+            reviews in the curation console - and the most destructive verdict,
+            bulk recall, can never be delegated to an agent at all.
+          </p>
+        </article>
+      </div>
+    </section>
+
     <!-- ================= core ideas ================= -->
     <section class="section reveal" id="ideas">
-      <p class="eyebrow">01 / core ideas</p>
+      <p class="eyebrow">02 / core ideas</p>
       <h2>Three commitments, held everywhere.</h2>
       <div class="grid grid-3">
         <article class="card">
@@ -137,7 +174,7 @@
 
     <!-- ================= how it works ================= -->
     <section class="section reveal" id="flow">
-      <p class="eyebrow">02 / how it works</p>
+      <p class="eyebrow">03 / how it works</p>
       <h2>From observation to ontology.</h2>
       <div class="flow" role="img" aria-label="Pipeline: observe, then observation log, then projector, then ontology, then recall">
         <div class="flow-step"><strong>observe</strong><span>MCP tool call</span></div>
@@ -158,7 +195,7 @@
 
     <!-- ================= capabilities ================= -->
     <section class="section reveal" id="features">
-      <p class="eyebrow">03 / capabilities</p>
+      <p class="eyebrow">04 / capabilities</p>
       <h2>Small binary, serious semantics.</h2>
       <div class="grid grid-3">
         <article class="card">
@@ -220,7 +257,7 @@
 
     <!-- ================= mcp surface ================= -->
     <section class="section reveal" id="mcp">
-      <p class="eyebrow">04 / mcp surface</p>
+      <p class="eyebrow">05 / mcp surface</p>
       <h2>Speak MCP, remember everything.</h2>
       <div class="mcp-wrap">
         <div class="terminal">
@@ -245,7 +282,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= federation ================= -->
     <section class="section reveal" id="federation">
-      <p class="eyebrow">05 / federation</p>
+      <p class="eyebrow">06 / federation</p>
       <h2>Any topology. Same graph.</h2>
       <p class="section-note wide">
         Hosts replicate observation logs, not merged state. Because projection is
@@ -310,7 +347,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= crates ================= -->
     <section class="section reveal" id="crates">
-      <p class="eyebrow">06 / inside</p>
+      <p class="eyebrow">07 / inside</p>
       <h2>A workspace of eight crates.</h2>
       <div class="grid grid-4 crates">
         <div class="crate"><strong>core</strong><span>domain models + ports, zero IO</span></div>
@@ -331,7 +368,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= status ================= -->
     <section class="section reveal" id="status">
-      <p class="eyebrow">07 / status</p>
+      <p class="eyebrow">08 / status</p>
       <h2>Where it honestly stands.</h2>
       <ul class="checklist">
         <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
@@ -348,7 +385,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= get started ================= -->
     <section class="section reveal" id="get-started">
-      <p class="eyebrow">08 / get started</p>
+      <p class="eyebrow">09 / get started</p>
       <h2>Up and running in a minute.</h2>
       <div class="grid grid-2 starts">
         <div class="terminal">
