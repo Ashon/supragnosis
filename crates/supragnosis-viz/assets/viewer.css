@@ -31,8 +31,11 @@
            display:flex; gap:9px; align-items:center; flex-wrap:wrap;
            background:rgba(8,9,13,0.88); border-bottom:1px solid var(--line-soft);
            backdrop-filter:blur(7px); }
-  h1 { font:600 13px/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink); }
-  h1::before { content:"* "; color:var(--accent); }
+  h1 { font:600 13px/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink);
+       display:flex; align-items:center; gap:7px; }
+  /* The inline asterisk mark. pointer-events:none keeps the shell's drag-region hit on the h1
+     itself (the drag handler only fires when the mousedown target carries the attribute). */
+  h1 svg { color:var(--accent); flex:none; pointer-events:none; }
   input,button { background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
                  padding:5px 9px; border-radius:5px; font:inherit; font-size:12px; }
   input::placeholder { color:var(--faint); }
