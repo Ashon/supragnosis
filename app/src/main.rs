@@ -482,6 +482,20 @@ fn main() {
                     let _ = child.wait();
                 }
             }
+            // Relaunching the running instance (Finder/Spotlight/dock) does not start a new
+            // process - macOS delivers reopen instead. With the window closed the shell is
+            // tray-only (Accessory), so without this arm "opening the app again" does nothing;
+            // convention says it brings the main window back.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                tracing::info!(has_visible_windows, "reopen - showing the viewer");
+                if let Err(e) = show_viewer(app) {
+                    tracing::error!(error = %e, "failed to reopen the viewer window");
+                }
+            }
             _ => {}
         });
 }
