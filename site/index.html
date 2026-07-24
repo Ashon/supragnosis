@@ -191,6 +191,39 @@
         The log is the source of truth. Delete the graph, replay the log, and you
         get the same graph back - on any node, in any topology.
       </p>
+      <div class="grid grid-2 starts">
+        <div class="terminal">
+          <div class="terminal-bar"><span class="terminal-title">host A - an agent sheds an observation mid-task</span></div>
+          <pre><code><span class="c"># one observe call, free text plus whatever structure it has</span>
+observe {
+  "content": "Chose CozoDB over Oxigraph for the store:
+              one embedded file covers relational, graph, HNSW.",
+  "source_ref": "docs/architecture.md",
+  "on_behalf_of": "ashon",
+  "confidence": 0.9,
+  "entities": [
+    { "name": "CozoDB", "type": "Tool" }
+  ],
+  "relations": [
+    { "from": "supragnosis-store", "type": "depends_on", "to": "CozoDB" }
+  ]
+}</code></pre>
+        </div>
+        <div class="terminal">
+          <div class="terminal-bar"><span class="terminal-title">host B - weeks later, a different agent recalls it</span></div>
+          <pre><code>search_knowledge { "query": "why cozo and not a triple store?" }
+
+<span class="c"># the hit comes back with its receipts:</span>
+<span class="c">#   the original text, plus who observed it, acting</span>
+<span class="c">#   for whom, from which source, when, at what trust</span>
+<span class="c">#   tier - and the mode label (hybrid vs keyword)</span>
+<span class="c">#   that says which recall surface answered.</span>
+
+<span class="c"># hits carry stable entity ids - pull the thread:</span>
+get_entity { "id": "9f41..." }              <span class="c"># CozoDB, id from the hit</span>
+traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
+        </div>
+      </div>
     </section>
 
     <!-- ================= capabilities ================= -->
@@ -252,6 +285,24 @@
             loopback streamable HTTP for everything else.
           </p>
         </article>
+        <article class="card">
+          <h3>Two time axes</h3>
+          <p>
+            Every relation carries a valid interval - when it was true in the
+            world - separate from when the system learned it. Retroactive facts
+            ("true until last month") are first-class at ingest, and a disproof
+            closes the interval instead of deleting the edge.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Absence is not falsehood</h3>
+          <p>
+            An open-world substrate: a miss comes back as
+            <code>{found: false}</code>, never conflated with "false", so an LLM
+            client cannot misread missing knowledge as negation. When a negation
+            is actually known, it is an explicit assertion like any other.
+          </p>
+        </article>
       </div>
     </section>
 
@@ -278,6 +329,13 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
           <div class="tools-more"><dt>and more</dt><dd>define_type, the proposal gate, federation (sync_*) - 13 tools today, deliberately few</dd></div>
         </dl>
       </div>
+      <p class="section-note wide">
+        Alongside the tools, addressable resources: every search hit points back
+        at <code>supragnosis://observation/{id}</code> - raw text, provenance,
+        lineage - and each workspace exposes its <code>graph</code>,
+        <code>hypergraph</code>, and <code>types</code> as read-only resources.
+        Whoever holds an id can dereference it: no answer without a "where from".
+      </p>
     </section>
 
     <!-- ================= federation ================= -->
@@ -374,7 +432,9 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
         <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
         <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like curation console for promotions, merges, T-Box changes, recalls.</div></li>
         <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
+        <li class="done"><span class="mark">[o]</span><div><strong>v0.1.10 - distribution.</strong> Signed/notarized macOS desktop app (tray-resident), Homebrew tap, viewer moved to an owner-only unix socket.</div></li>
         <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3 - resolution layer.</strong> Not started: entity identity is still exact canonical-name match.</div></li>
+        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> Authenticated remote reads (phase 3.5), multi-principal governance (phase 5); prompts and elicitation on the MCP surface.</div></li>
         <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
       </ul>
       <p class="section-note">
