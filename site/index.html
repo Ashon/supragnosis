@@ -460,16 +460,23 @@ brew install supragnosis-server
 brew services start supragnosis-server</code></pre>
         </div>
         <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">install script, or from source</span></div>
-          <pre><code><span class="c"># macOS (arm64 / x86_64), Linux (x86_64) -> ~/.local/bin, checksum-verified</span>
-curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+          <div class="terminal-bar"><span class="terminal-title">from source (local semantic search)</span></div>
+          <pre><code>git clone https://github.com/Ashon/supragnosis
+cd supragnosis
 
-supragnosis start     <span class="c"># daemon: MCP on 127.0.0.1:7373 + viewer unix socket</span>
+<span class="c"># fastembed = local ONNX semantic recall; prebuilt binaries ship keyword search</span>
+cargo build -p supragnosis-cli --features fastembed
 
-<span class="c"># prebuilt ships keyword search; build for local ONNX semantic search:</span>
-cargo build -p supragnosis-cli --features fastembed</code></pre>
+cargo test</code></pre>
         </div>
       </div>
+      <p class="section-note">
+        Prefer a one-liner? The install script at the top of the page drops a
+        checksum-verified prebuilt into <code>~/.local/bin</code> (macOS arm64 /
+        x86_64, Linux x86_64). Whichever route you take, <code>supragnosis
+        start</code> brings up the daemon: MCP on <code>127.0.0.1:7373</code>
+        plus the viewer unix socket.
+      </p>
     </section>
 
   </main>
