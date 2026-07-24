@@ -9,7 +9,8 @@
 - `Casks/supragnosis.rb` - 데스크탑 셸. 대표 토큰이라 `brew install supragnosis` 가 이 cask 로
   해석된다(동명 formula 없음). 릴리스의 서명/노터라이즈된 universal `.app.zip` 을 설치한다.
   cask 가 `supragnosis-server` formula 에 의존하므로 앱은 PATH 의 brew 데몬 바이너리를
-  찾아 쓴다(sidecar 내장 없음). 업데이트는 `brew upgrade` 하나로 데몬+앱이 함께 올라간다.
+  찾아 쓴다(sidecar 내장 없음). 앱이 트레이 상주형이라 cask 의 `uninstall quit:` 이
+  업그레이드 시 구 인스턴스를 종료하고 다시 열어 준다.
 - `update-tap.sh` - 릴리스 후 tap 의 version/sha256 을 릴리스 자산의 .sha256 사이드카에서
   받아 갱신한다.
 
@@ -46,9 +47,21 @@ brew install supragnosis-server         # 서버/CLI 만 (macOS / Linux)
 brew services start supragnosis-server  # 상시 데몬 (MCP :7373 + viewer socket)
 ```
 
-구 토큰(formula `supragnosis`, cask `supragnosis-app`)으로 설치했다면 재설치한다:
+업그레이드는 `brew upgrade` 후 데몬 재시작까지 해야 완료된다 - brew upgrade 는 실행 중인
+서비스를 재시작하지 않으므로(formula caveats 가 같은 안내를 출력), 재시작 없이는 구 데몬이
+삭제된 keg 경로에서 계속 돈다:
 
 ```sh
+brew upgrade
+brew services restart supragnosis-server
+```
+
+구 토큰(formula `supragnosis`, cask `supragnosis-app`)으로 설치했다면 재설치한다.
+서비스 중지가 uninstall 보다 먼저다 - brew uninstall 은 실행 중인 서비스/launchd plist 를
+정리하지 않는다:
+
+```sh
+brew services stop supragnosis 2>/dev/null
 brew uninstall --cask supragnosis-app 2>/dev/null; brew uninstall --formula supragnosis 2>/dev/null
 brew install supragnosis
 ```

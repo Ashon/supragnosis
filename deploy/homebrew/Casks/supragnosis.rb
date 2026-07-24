@@ -17,6 +17,11 @@ cask "supragnosis" do
 
   app "Supragnosis.app"
 
+  # Tray-resident app: brew never quits a running instance on uninstall/upgrade, which
+  # leaves the old process serving from a deleted bundle. quit is upgrade-aware (brew
+  # reopens the app after the swap).
+  uninstall quit: "dev.supragnosis.desktop"
+
   zap trash: [
     "~/Library/Caches/dev.supragnosis.desktop",
     "~/Library/WebKit/dev.supragnosis.desktop",
