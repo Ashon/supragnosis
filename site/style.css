@@ -463,7 +463,6 @@ code {
   border-radius: 8px;
   overflow: hidden;
 }
-.shot .shot-mock,
 .shot img {
   display: block;
   width: 100%;
@@ -477,13 +476,6 @@ code {
   line-height: 1.6;
   color: var(--faint);
 }
-.m-hull { fill: var(--gold); fill-opacity: 0.05; stroke: var(--gold-dim); stroke-dasharray: 4 5; }
-.m-edge { stroke: var(--gold-dim); stroke-width: 1; opacity: 0.5; }
-.m-node { fill: var(--gold); fill-opacity: 0.85; }
-.m-panel { fill: var(--panel-2); stroke: var(--line-soft); }
-.m-row { fill: var(--line-soft); opacity: 0.6; }
-.m-row-hot { fill: none; stroke: var(--gold); opacity: 0.8; }
-
 /* ---------------- install tabs ---------------- */
 
 .tabbar {

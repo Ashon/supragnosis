@@ -232,63 +232,21 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
       <h2>Watch your agents learn.</h2>
       <figure class="shot">
         <div class="terminal-bar"><span class="terminal-title">supragnosis viewer - http over ~/.supragnosis/viz.sock</span></div>
-        <!-- SCREENSHOT SLOT ==================================================
-             Replace the decorative svg below with a real capture:
-
-               <img src="assets/viewer.png" width="1600" height="900"
-                    alt="The live ontology viewer: a force graph of entities and
-                         relations, co-occurrence hulls, and the curation console
-                         listing proposals.">
-
-             How to capture: `supragnosis start`, open the desktop app (or the
-             viz socket in a browser via a UDS proxy), let a busy workspace
-             load, ideally with the curation drawer open. ~1600x900, png or
-             webp, saved under site/assets/. Then delete the svg and trim the
-             "illustrative render" sentence from the figcaption.
-             ================================================================ -->
-        <svg class="shot-mock" viewBox="0 0 1200 560" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-          <path class="m-hull" d="M120,210 C90,120 250,70 350,110 C450,90 520,170 470,250 C500,330 380,380 290,350 C180,380 130,300 120,210 Z"/>
-          <path class="m-hull" d="M520,320 C540,240 680,220 750,270 C830,260 870,340 820,400 C840,470 700,500 630,460 C550,470 500,390 520,320 Z"/>
-          <g class="m-edges">
-            <line class="m-edge" x1="200" y1="180" x2="330" y2="140"/>
-            <line class="m-edge" x1="330" y1="140" x2="420" y2="210"/>
-            <line class="m-edge" x1="200" y1="180" x2="280" y2="300"/>
-            <line class="m-edge" x1="280" y1="300" x2="420" y2="210"/>
-            <line class="m-edge" x1="420" y1="210" x2="600" y2="300"/>
-            <line class="m-edge" x1="600" y1="300" x2="720" y2="310"/>
-            <line class="m-edge" x1="720" y1="310" x2="780" y2="400"/>
-            <line class="m-edge" x1="600" y1="300" x2="660" y2="430"/>
-            <line class="m-edge" x1="660" y1="430" x2="780" y2="400"/>
-            <line class="m-edge" x1="330" y1="140" x2="600" y2="300"/>
-          </g>
-          <g class="m-nodes">
-            <circle class="m-node" cx="200" cy="180" r="7"/>
-            <circle class="m-node" cx="330" cy="140" r="9"/>
-            <circle class="m-node" cx="420" cy="210" r="6"/>
-            <circle class="m-node" cx="280" cy="300" r="5"/>
-            <circle class="m-node" cx="600" cy="300" r="10"/>
-            <circle class="m-node" cx="720" cy="310" r="5"/>
-            <circle class="m-node" cx="780" cy="400" r="7"/>
-            <circle class="m-node" cx="660" cy="430" r="5"/>
-          </g>
-          <g class="m-console">
-            <rect class="m-panel" x="880" y="0" width="320" height="560"/>
-            <rect class="m-row" x="904" y="36" width="200" height="10" rx="5"/>
-            <rect class="m-row" x="904" y="76" width="256" height="34" rx="6"/>
-            <rect class="m-row-hot" x="904" y="126" width="256" height="34" rx="6"/>
-            <rect class="m-row" x="904" y="176" width="256" height="34" rx="6"/>
-            <rect class="m-row" x="904" y="226" width="256" height="34" rx="6"/>
-            <rect class="m-row" x="904" y="300" width="140" height="10" rx="5"/>
-            <rect class="m-row" x="904" y="330" width="256" height="22" rx="6"/>
-            <rect class="m-row" x="904" y="362" width="256" height="22" rx="6"/>
-          </g>
-        </svg>
+        <!-- Refreshing this capture: seed a workspace, run
+             `supragnosis serve --viz <sock>`, proxy the socket to TCP, then
+             screenshot 1600x900 @2x (headless Chromium works) and encode webp
+             into assets/viewer.webp. -->
+        <img src="assets/viewer.webp" width="1600" height="900" loading="lazy"
+             alt="The live ontology viewer: a force graph of entities and relations
+                  with labeled co-occurrence hulls, a legend of node and edge types
+                  on the left, and the curation console on the right showing an open
+                  entity_merge proposal with accept and reject buttons.">
         <figcaption>
-          The live viewer: entities land as agents observe, hulls shade
-          co-occurrence contexts, proposals queue in the curation console, and
-          sync chatter streams in over SSE - all served on an owner-only unix
-          socket. (Illustrative render; a real capture drops into
-          <code>site/assets/</code>.)
+          A seeded workspace in the live viewer: entities land as agents
+          observe, hulls shade co-occurrence contexts, and an entity_merge
+          proposal - two spelling variants of the same store - waits in the
+          curation console for a human verdict. All served on an owner-only
+          unix socket.
         </figcaption>
       </figure>
     </section>
