@@ -447,29 +447,43 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
     <section class="section reveal" id="get-started">
       <p class="eyebrow">09 / get started</p>
       <h2>Up and running in a minute.</h2>
-      <div class="grid grid-2 starts">
-        <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">homebrew (macOS / Linux)</span></div>
-          <pre><code>brew tap ashon/tap
-
-<span class="c"># desktop app (macOS, signed + notarized) - pulls the server with it</span>
+      <div class="terminal install-tabs">
+        <div class="terminal-bar tabbar" role="tablist" aria-label="Install method">
+          <button class="tab" id="tab-macos" role="tab" aria-selected="true" aria-controls="pane-macos">macOS</button>
+          <button class="tab" id="tab-linux" role="tab" aria-selected="false" aria-controls="pane-linux">Linux</button>
+          <button class="tab" id="tab-source" role="tab" aria-selected="false" aria-controls="pane-source">from source</button>
+        </div>
+        <pre id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># desktop app (signed + notarized) - pulls the server with it</span>
+brew tap ashon/tap
 brew install supragnosis
 
 <span class="c"># server / CLI only, kept running as a service</span>
 brew install supragnosis-server
-brew services start supragnosis-server</code></pre>
-        </div>
-        <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">install script, or from source</span></div>
-          <pre><code><span class="c"># macOS (arm64 / x86_64), Linux (x86_64) -> ~/.local/bin, checksum-verified</span>
+brew services start supragnosis-server
+
+<span class="c"># no homebrew? the one-line script installs to ~/.local/bin (arm64 / x86_64)</span>
+curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh</code></pre>
+        <pre id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># one-line script -> ~/.local/bin (x86_64, checksum-verified)</span>
 curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
 
-supragnosis start     <span class="c"># daemon: MCP on 127.0.0.1:7373 + viewer unix socket</span>
+<span class="c"># or homebrew (server formula)</span>
+brew tap ashon/tap
+brew install supragnosis-server
+brew services start supragnosis-server</code></pre>
+        <pre id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
+cd supragnosis
 
-<span class="c"># prebuilt ships keyword search; build for local ONNX semantic search:</span>
-cargo build -p supragnosis-cli --features fastembed</code></pre>
-        </div>
+<span class="c"># fastembed = local ONNX semantic recall</span>
+cargo build -p supragnosis-cli --features fastembed
+
+cargo test</code></pre>
       </div>
+      <p class="section-note">
+        Whichever route you take, <code>supragnosis start</code> brings up the
+        daemon: MCP on <code>127.0.0.1:7373</code> plus the viewer unix socket.
+        Prebuilt binaries ship keyword recall; the fastembed build adds local
+        semantic search.
+      </p>
     </section>
 
   </main>
@@ -503,6 +517,30 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
         });
       });
     });
+
+    // install tabs: click/arrow-key switching, default pane follows the visitor's OS
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.install-tabs .tab'));
+    function selectTab(tab) {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        var pane = document.getElementById(t.getAttribute('aria-controls'));
+        if (pane) pane.hidden = !on;
+      });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () { selectTab(t); });
+      t.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        var i = tabs.indexOf(t) + (e.key === 'ArrowRight' ? 1 : -1);
+        var next = tabs[(i + tabs.length) % tabs.length];
+        next.focus();
+        selectTab(next);
+      });
+    });
+    if (tabs.length && !/Mac/i.test(navigator.platform || navigator.userAgent)) {
+      selectTab(document.getElementById('tab-linux'));
+    }
 
     // reveal sections as they enter the viewport
     var io = new IntersectionObserver(function (entries) {
