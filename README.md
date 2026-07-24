@@ -29,9 +29,11 @@ brew install supragnosis-server         # server/CLI only (macOS / Linux)
 brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer socket)
 ```
 - `supragnosis` is the desktop-app cask and depends on the `supragnosis-server` formula - the app
-  attaches to the server binary on PATH (no bundled sidecar), so a single `brew upgrade` moves the
-  server and the app together. The installed binary is named `supragnosis` either way; only the brew
-  tokens differ.
+  attaches to the server binary on PATH (no bundled sidecar). The installed binary is named
+  `supragnosis` either way; only the brew tokens differ.
+- Upgrading: `brew upgrade` swaps the binaries and relaunches the app, but does not restart a
+  running daemon - follow it with `brew services restart supragnosis-server` (brew prints the same
+  reminder in the formula caveats).
 - Tap templates and the per-release update procedure: [`deploy/homebrew/`](deploy/homebrew/).
 
 ### Install script
