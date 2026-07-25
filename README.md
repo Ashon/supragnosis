@@ -9,14 +9,17 @@ and lets you query and explore it over **MCP**.
 - Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
 - Store: **embedded, file-based** `cozo`/RocksDB - unifies relational + graph + vector (HNSW).
 - Status: **M4 Phase 4 federation + M3a/M3b resolution**. Semantic + keyword hybrid recall (M2),
-  the proposal gate and curation console (M3.5), hub-and-spoke log replication with ed25519-signed
+  the **proposal gate (M3.5, both slices)** - review carries a computed belief diff of what a verdict
+  would overturn and which references would rewire, and the fold enforces blocking checks so a merge
+  that cannot commit does not - hub-and-spoke log replication with ed25519-signed
   events over TLS (M4 Phases 0-4), **belief resolution (M3a)** - a replaceable tier-weighted policy
   computes the current belief, contested beliefs surface for mediation, claim_promotion/demotion
   verdicts commit - and **identity resolution (M3b)** - aliases accumulate and forward, the
   conservative merge band proposes entity-merge candidates from name-embedding similarity (the gate
   commits), the resolution write path makes an incremental write equal a fresh replay, and T-Box
-  definition conflicts surface contested. **Deferred**: induced type candidates (naming a type is
-  probabilistic -> M5) and bitemporal time-travel queries (M3c). Per-milestone detail and the honest
+  definition conflicts surface contested. **Deferred**: canon effects for `tbox_change`/`recall` and
+  multi-principal governance (federation remainder), induced type candidates (naming a type is
+  probabilistic -> M5), and bitemporal time-travel queries (M3c, blocked on explicit negation). Per-milestone detail and the honest
   record of what is deferred: [`docs/architecture.md`](docs/architecture.md) Sections 12/14.
 - Docs: architecture -> [`docs/architecture.md`](docs/architecture.md), design principles ->
   [`docs/principles.md`](docs/principles.md), proposal workflow ->

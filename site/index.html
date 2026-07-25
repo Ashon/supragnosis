@@ -84,7 +84,7 @@
           <button class="copy" data-copy="#install-cmd" aria-label="Copy install command">copy</button>
         </div>
         <ul class="badges" aria-label="Project facts">
-          <li>v0.1.10</li>
+          <li>v0.1.16</li>
           <li>Rust</li>
           <li>MIT OR Apache-2.0</li>
           <li>macOS arm64 / x86_64</li>
@@ -124,8 +124,9 @@
           <p>
             Ingest is free; canon is governed. Entity merges, trust promotions,
             and T-Box changes travel through PR-like proposals that a human
-            reviews in the curation console - and the most destructive verdict,
-            bulk recall, can never be delegated to an agent at all.
+            reviews in the curation console - and the tier a verdict may grant
+            depends on the surface it arrives on, so an agent-cast verdict cannot
+            reach human-confirmed.
           </p>
         </article>
       </div>
@@ -287,8 +288,9 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
           <p>
             Every fact carries its delegation chain (who, acting for whom),
             workspace, and trust tier - and trust is the receiver's evaluation,
-            never self-declared. A contaminated source's derived tree can be
-            traced by lineage and recalled in bulk, across the federation.
+            never self-declared. Every derivation records the observations it
+            came from, so a contaminated source's tree is traceable - bulk recall
+            over that lineage is specified and lands with M5.
           </p>
         </article>
         <article class="card">
@@ -315,8 +317,9 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
           <p>
             Every relation carries a valid interval - when it was true in the
             world - separate from when the system learned it. Retroactive facts
-            ("true until last month") are first-class at ingest, and a disproof
-            closes the interval instead of deleting the edge.
+            ("true until last month") are first-class at ingest. Closing an
+            interval on disproof needs negation semantics the model does not have
+            yet, so today the two axes are captured, not yet queried.
           </p>
         </article>
         <article class="card">
@@ -324,8 +327,9 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
           <p>
             An open-world substrate: a miss comes back as
             <code>{found: false}</code>, never conflated with "false", so an LLM
-            client cannot misread missing knowledge as negation. When a negation
-            is actually known, it is an explicit assertion like any other.
+            client cannot misread missing knowledge as negation. Asserting a
+            negation explicitly is the open half: it is what M3c's time-travel
+            queries wait on.
           </p>
         </article>
       </div>
@@ -438,7 +442,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
         <div class="crate"><strong>engine</strong><span>ingest, projection, query, sync</span></div>
         <div class="crate"><strong>embed</strong><span>fastembed / hashing / none</span></div>
         <div class="crate"><strong>sync</strong><span>identity, signing, replication</span></div>
-        <div class="crate"><strong>mcp</strong><span>rmcp tools, resources, prompts</span></div>
+        <div class="crate"><strong>mcp</strong><span>rmcp tools + resources</span></div>
         <div class="crate"><strong>viz</strong><span>live ontology viewer</span></div>
         <div class="crate"><strong>cli</strong><span>the supragnosis binary</span></div>
       </div>
@@ -455,10 +459,12 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
       <h2>Where it honestly stands.</h2>
       <ul class="checklist">
         <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
-        <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like curation console for promotions, merges, T-Box changes, recalls.</div></li>
+        <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
+        <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
         <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
-        <li class="done"><span class="mark">[o]</span><div><strong>v0.1.10 - distribution.</strong> Signed/notarized macOS desktop app (tray-resident), Homebrew tap, viewer moved to an owner-only unix socket.</div></li>
-        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3 - resolution layer.</strong> Not started: entity identity is still exact canonical-name match.</div></li>
+        <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app (tray-resident), Homebrew tap, viewer on an owner-only unix socket.</div></li>
+        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3c - bitemporal queries.</strong> Both time axes are captured; querying across them waits on explicit negation, which the model does not have yet.</div></li>
+        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>Canon effects for tbox_change and recall.</strong> Both fold correctly and change nothing yet - assigned, with multi-principal governance, to the federation remainder.</div></li>
         <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> Authenticated remote reads (phase 3.5), multi-principal governance (phase 5); prompts and elicitation on the MCP surface.</div></li>
         <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
       </ul>
