@@ -24,8 +24,20 @@ class SupragnosisServer < Formula
     sha256 "REPLACE_SHA256_X86_64_UNKNOWN_LINUX_GNU"
   end
 
+  # Dev channel: `brew install --HEAD supragnosis-server` builds current main from source
+  # (rust toolchain pulled as a build dep; default features = keyword search, same as the
+  # release binaries). Refresh an installed HEAD with `brew upgrade --fetch-HEAD`.
+  head do
+    url "https://github.com/Ashon/supragnosis.git", branch: "main"
+    depends_on "rust" => :build
+  end
+
   def install
-    bin.install "supragnosis"
+    if build.head?
+      system "cargo", "install", *std_cargo_args(path: "crates/supragnosis-cli")
+    else
+      bin.install "supragnosis"
+    end
   end
 
   # brew services start supragnosis-server

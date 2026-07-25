@@ -55,6 +55,27 @@ brew install supragnosis-server         # 서버/CLI 만 (macOS / Linux)
 brew services start supragnosis-server  # 상시 데몬 (MCP :7373 + viewer socket)
 ```
 
+## 개발 버전 설치 (--HEAD)
+
+formula 의 `head` 스펙이 main 브랜치를 소스 빌드한다 (rust 툴체인은 build dep 으로 자동,
+기본 피처 = 키워드 검색으로 릴리스 바이너리와 동일). 뷰어 UI 는 서버 바이너리에 내장이므로
+stable 데스크탑 앱 셸 + HEAD 서버 조합이 그대로 동작한다.
+
+```sh
+# stable 이 설치돼 있으면 formula 만 교체 (cask 의존성 경고는 --ignore-dependencies 로 통과)
+brew services stop supragnosis-server
+brew uninstall --ignore-dependencies supragnosis-server
+brew install --HEAD supragnosis-server
+brew services start supragnosis-server
+
+brew upgrade --fetch-HEAD supragnosis-server   # 이후 main 이 갱신될 때마다
+```
+
+stable 로 복귀는 같은 절차에서 `brew install supragnosis-server` (--HEAD 없이).
+버전 문자열이 `HEAD-<sha>` 로 찍히므로 어느 커밋을 쓰는 중인지 `brew info` 로 확인된다.
+데이터 호환 주의: 개발 버전이 스키마/id 공식을 바꾼 경우 stable 복귀 전에 릴리스 노트의
+migrate 안내를 확인한다 (`~/.supragnosis/db` 는 공유된다).
+
 업그레이드는 `brew upgrade` 후 데몬 재시작까지 해야 완료된다 - brew upgrade 는 실행 중인
 서비스를 재시작하지 않으므로(formula caveats 가 같은 안내를 출력), 재시작 없이는 구 데몬이
 삭제된 keg 경로에서 계속 돈다:
