@@ -273,6 +273,8 @@
   .contested .crow.cur .cv { color:var(--ink); font-weight:600; }
   .contested .crow .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .contested .crow .ctier { color:var(--faint); font-size:9.5px; margin-left:auto; }
+  /* "current" tag on the winning row - marks which value is shown now, so "keep" vs "use this" read clearly. */
+  .contested .crow .curtag { color:var(--accent); font-size:9px; letter-spacing:.06em; text-transform:uppercase; margin-left:auto; }
   .contested .confirm { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; }
   .contested .crow.cur .confirm { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
   .contested .crow.cur .confirm:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
