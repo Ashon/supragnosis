@@ -1000,7 +1000,7 @@ addEventListener("resize", resize);
 // the VISIBLE node bounds (typeOff respected, same set fitView uses), so the overview always
 // matches what the main canvas can show. Click/drag pans the camera (scale unchanged).
 const miniEl = document.getElementById("minimap"), mctx = miniEl.getContext("2d");
-const MINI_W = 168, MINI_H = 112, MINI_PAD = 10;
+const MINI_W = 168, MINI_H = 154, MINI_PAD = 10;   // height matches the HUD column (see viewer.css)
 let miniT = { k: 1, ox: 0, oy: 0 };   // world -> minimap: m = w * k + o (kept for the pan handler)
 function drawMinimap() {
   const src = nodes.filter(n => !typeOff.has(n.type));

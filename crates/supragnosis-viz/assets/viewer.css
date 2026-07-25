@@ -67,16 +67,20 @@
   /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
      above the statusbar. The right island grows downward from the top and the detail panel stops
      at right:324, so this corner is the stable empty spot. */
-  /* Minimap: docked to the zoom-control (HUD) column - 6px to its left, bottom edges aligned.
+  /* Minimap: the bottom-right corner anchor of one aligned control block - [HUD column][minimap],
+     bottom edges flush, minimap height = the HUD column (4 x 34px buttons + 3 x 6px gaps = 154px;
+     recalibrate if the button count changes). While the minimap is visible (.on), sibling rules
+     below shift the HUD and the view popover left of it; hidden, they return to the edge.
      The backing store is DPR-scaled in JS (CSS size fixed here). inset:auto FIRST: the global
      `canvas` rule above sets inset:0, and inheriting its top:0/left:0 over-constrains the box
-     (top/left win over right/bottom in LTR), flinging the minimap to the top-left corner.
-     The view popover shares the corner (z-index above) and simply overlays it while open. */
-  #minimap { position:fixed; inset:auto; right:52px; bottom:36px; z-index:7;
-             width:168px; height:112px;
+     (top/left win over right/bottom in LTR), flinging the minimap to the top-left corner. */
+  #minimap { position:fixed; inset:auto; right:12px; bottom:36px; z-index:7;
+             width:168px; height:154px;
              background:var(--glass); border:1px solid var(--line); border-radius:10px;
              box-shadow:0 8px 24px #0008; cursor:crosshair; display:none; }
   #minimap.on { display:block; }
+  #minimap.on ~ #hud { right:186px; }        /* 12 + 168 + 6 gap */
+  #minimap.on ~ #viewpop { right:226px; }    /* 186 + 34 button + 6 gap */
   #hud { position:fixed; right:12px; bottom:36px; z-index:8; display:flex; flex-direction:column; gap:6px; }
   #hud button { width:34px; height:34px; padding:0;
                 display:flex; align-items:center; justify-content:center; background:var(--glass);
