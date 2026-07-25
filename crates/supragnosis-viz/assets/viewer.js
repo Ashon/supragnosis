@@ -507,6 +507,20 @@ async function refreshGlossary() {
   renderGlossary();
 }
 
+// Why the merge band came back empty. An empty list alone conflates three different states, and
+// only one of them is "there are no near-name pairs" - the other two are "this signal cannot run
+// here" and "it ran over part of the workspace" (Principle 5: absence is not a negation). The
+// server reports which via curation.merge_band; older payloads without the field read as computed.
+function bandEmptyReason(band) {
+  if (band && band.available === false) {
+    return "unavailable - no embedder is configured, so this signal was not computed (which is not a claim that no pairs exist)";
+  }
+  if (band && band.embedded < band.examined) {
+    return `none among the ${band.embedded} of ${band.examined} entities carrying a name vector - the rest were projected before an embedder existed, so reproject to cover them`;
+  }
+  return "none - no embedding-near pairs";
+}
+
 // Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.
 // Clicking a node chip only focuses it - the panel commits nothing (no gate).
 function renderCuration() {
@@ -547,7 +561,7 @@ function renderCuration() {
         + `<span class="mssim" title="embedding similarity (recall aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`
         + `<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`
         + `</div>`).join("")
-    : `<div class="empty">none - no embedding-near pairs (needs the semantic embedder)</div>`;
+    : `<div class="empty">${bandEmptyReason(curation.merge_band)}</div>`;
   // Name variants: the deterministic sibling of the merge band (Principle 15/16). Entity ids already
   // fold case/whitespace, so these are the orthographic collisions nothing else catches - and unlike
   // the band above they need no embedder, so this section is populated on every node. A pair reuses

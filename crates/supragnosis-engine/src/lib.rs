@@ -221,6 +221,9 @@ pub struct CurationReport {
     /// a suggestion commits nothing (IR2) - acting on it opens an entity_merge proposal through the
     /// gate. Excludes same-id, already-merged, and already-open-proposal pairs.
     pub merge_suggestions: Vec<MergeSuggestion>,
+    /// Whether `merge_suggestions` above was actually computable, and over how much of the
+    /// workspace - so an empty list can be read as "none found" or "not computed", never both.
+    pub merge_band: MergeBandCoverage,
     /// Entity sets colliding under a normalization STRONGER than the id key (Principle 15/16). The id
     /// key is `trim`+`lowercase`, so `duplicates` above cannot fire within one workspace - these are
     /// the orthographic variants (`TrustTier` vs `Trust Tier`, `Port` vs `Ports`) that no other signal
@@ -292,6 +295,25 @@ pub struct NameVariantGroup {
 
 /// A detected cycle before name resolution: (sorted member entity ids, forming proposal ids).
 type CycleSet = (Vec<String>, Vec<String>);
+
+/// Whether the embedding-dependent merge band could run, and over how much of the workspace
+/// (resolution-identity.md Section 3). Without this, an empty `merge_suggestions` is
+/// indistinguishable from "no embedder is configured" - exactly the absence-vs-unavailable
+/// conflation `search_knowledge` already refuses to make by labelling the `mode` it actually used
+/// (Principle 5; Principle 16 4th revision, the convergence surface vs the node-local recall aid).
+/// The other curation signals are deterministic and need no such caveat.
+#[derive(Serialize)]
+pub struct MergeBandCoverage {
+    /// False when no embedder is configured: `merge_suggestions` is empty because the signal could
+    /// not be computed at all, NOT because no near-name pairs exist.
+    pub available: bool,
+    /// Live entities carrying a name vector, out of `examined`. Short of it means the band ran but
+    /// under-covered - rows projected before an embedder was configured keep no vector until they
+    /// are re-projected - so an empty result is still not a negation over the whole set.
+    pub embedded: usize,
+    /// Live entities the band considered (merged-away rows excluded).
+    pub examined: usize,
+}
 
 /// A set of entities sharing one normalized name but distinct ids (a merge candidate).
 #[derive(Serialize)]
@@ -1170,9 +1192,18 @@ impl Engine {
         all_entities: &[Entity],
         fwd: &HashMap<String, String>,
         relations: &[Relation],
-    ) -> Result<Vec<MergeSuggestion>, StoreError> {
+    ) -> Result<(Vec<MergeSuggestion>, MergeBandCoverage), StoreError> {
         if self.embedder.is_none() {
-            return Ok(Vec::new());
+            // Report the unavailability instead of returning a bare empty list: the caller cannot
+            // otherwise tell "no near-name pairs" from "this signal does not run here" (Principle 5).
+            return Ok((
+                Vec::new(),
+                MergeBandCoverage {
+                    available: false,
+                    embedded: 0,
+                    examined: 0,
+                },
+            ));
         }
         // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
         let open_pairs = self.open_merge_pairs(workspace)?;
@@ -1192,13 +1223,19 @@ impl Engine {
 
         let mut seen: HashSet<(String, String)> = HashSet::new();
         let mut out: Vec<MergeSuggestion> = Vec::new();
+        // Coverage, counted on the same pass: an entity projected before an embedder was configured
+        // carries no vector and is silently skipped, which would otherwise make an under-covered run
+        // look identical to an exhaustive one that found nothing.
+        let (mut embedded, mut examined) = (0usize, 0usize);
         for e in all_entities {
             if fwd.contains_key(&e.id) {
                 continue; // e was merged away - not a live candidate
             }
+            examined += 1;
             let Some(vec) = &e.embedding else {
                 continue;
             };
+            embedded += 1;
             for h in self.store.search_semantic_entities(vec, workspace, MERGE_BAND_K)? {
                 if h.id == e.id || h.score < SIM_CANDIDATE || fwd.contains_key(&h.id) {
                     continue;
@@ -1228,7 +1265,14 @@ impl Engine {
                 .then_with(|| x.a.cmp(&y.a))
                 .then_with(|| x.b.cmp(&y.b))
         });
-        Ok(out)
+        Ok((
+            out,
+            MergeBandCoverage {
+                available: true,
+                embedded,
+                examined,
+            },
+        ))
     }
 
     /// Read-only curation signals over the workspace (Principle 7 "generate, do not commit"): merge
@@ -1344,7 +1388,8 @@ impl Engine {
             })
             .collect();
         // The conservative merge band (Principle 15): embedding-near distinct-name candidates.
-        let merge_suggestions = self.merge_band(workspace, &all_entities, &fwd, &relations)?;
+        let (merge_suggestions, merge_band) =
+            self.merge_band(workspace, &all_entities, &fwd, &relations)?;
         // The deterministic name-variant ladder: the same intent as the band, on the axis that needs
         // no embedder - so a keyword-only node (the prebuilt binary) still has a dedup signal.
         let name_variants =
@@ -1371,7 +1416,7 @@ impl Engine {
             name_variants: name_variants.len(),
             type_axis_collisions: type_axis_collisions.len(),
         };
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, name_variants, type_axis_collisions, stats })
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, merge_band, name_variants, type_axis_collisions, stats })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
@@ -4201,6 +4246,81 @@ mod tests {
         let once = serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
         let twice = serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
         assert_eq!(once, twice);
+    }
+
+    /// An empty `merge_suggestions` conflates three states, and only one of them is a negation
+    /// (Principle 5): the band did not run at all, it ran over part of the workspace, or it ran
+    /// exhaustively and found nothing. `search_knowledge` already refuses this conflation by
+    /// labelling its `mode`; the curation report must too, or a reviewer reads "no duplicates"
+    /// off a signal that never looked.
+    #[test]
+    fn merge_band_reports_whether_it_could_run_and_over_how_much() {
+        use supragnosis_core::{EmbedError, EmbeddingProvider};
+        struct Fixed;
+        impl EmbeddingProvider for Fixed {
+            fn dimensions(&self) -> usize {
+                3
+            }
+            fn id(&self) -> String {
+                "fixed-3".into()
+            }
+            fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+                Ok(texts.iter().map(|_| vec![1.0, 0.0, 0.0]).collect())
+            }
+        }
+        let observe = |engine: &Engine, name: &str| {
+            engine
+                .observe(ObserveInput {
+                    content: format!("about {name}"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: name.into(),
+                        kind: None,
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+                .expect("observe");
+        };
+
+        // (1) No embedder: the signal cannot be computed, and says so rather than returning a bare [].
+        let store = Arc::new(InMemoryStore::new());
+        let plain = Engine::new(store.clone(), "h", "ws1");
+        observe(&plain, "Alpha");
+        observe(&plain, "Beta");
+        let rep = plain.curation(Some("ws1")).unwrap();
+        assert!(rep.merge_suggestions.is_empty());
+        assert!(!rep.merge_band.available, "no embedder - not computed");
+        assert_eq!((rep.merge_band.embedded, rep.merge_band.examined), (0, 0));
+
+        // (2) Same store, now with an embedder: the rows written above still carry no vector, so the
+        // band runs but under-covers. This is the state that used to be indistinguishable from an
+        // exhaustive empty result - reachable in practice by configuring an embedder after the fact.
+        let embedded_engine = Engine::new(store.clone(), "h", "ws1").with_embedder(Arc::new(Fixed));
+        observe(&embedded_engine, "Gamma");
+        let rep = embedded_engine.curation(Some("ws1")).unwrap();
+        assert!(rep.merge_band.available, "an embedder is configured");
+        assert!(
+            rep.merge_band.embedded < rep.merge_band.examined,
+            "the pre-embedder rows are uncovered: {:?}/{:?}",
+            rep.merge_band.embedded,
+            rep.merge_band.examined
+        );
+
+        // (3) After a reproject every live entity carries a vector, so coverage is exhaustive and an
+        // empty result finally IS a negation over the whole set.
+        embedded_engine.reproject(Some("ws1")).unwrap();
+        let rep = embedded_engine.curation(Some("ws1")).unwrap();
+        assert!(rep.merge_band.available);
+        assert_eq!(
+            rep.merge_band.embedded, rep.merge_band.examined,
+            "reproject covers the rows written before the embedder existed"
+        );
+        assert!(rep.merge_band.examined > 0, "there are live entities to cover");
     }
 
     /// A candidate already awaiting a verdict is not a candidate (I18): once an entity_merge is open

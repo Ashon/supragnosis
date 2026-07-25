@@ -67,6 +67,13 @@ Embedding similarity **generates candidates; only the gate commits.**
   is labeled as coming from the recall aid, and the committed merge is the verdict, which is
   log-derived and converges. Two nodes may see different *suggestions*; they commit the same
   *merges*.
+- **Availability is reported, not implied** (Principle 5): the band needs an embedder, and an entity
+  projected before one existed carries no vector, so an empty `merge_suggestions` could mean "no near
+  pairs", "this node cannot run the band", or "it ran over part of the workspace" - three different
+  epistemic states behind one empty list. The report therefore carries `merge_band`
+  (`available` / `embedded` / `examined`) alongside it, the same refusal-to-conflate that makes
+  `search_knowledge` label the `mode` it actually used. `reproject` is what closes a coverage gap,
+  since it re-embeds every live entity whose name text changed or was never embedded.
 - **IR2**: no code path turns a similarity score into a merge without a verdict observation.
 
 ## 4. The resolution write path (absorbing `write_guard`)
