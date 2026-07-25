@@ -1,0 +1,190 @@
+# Task runner for supragnosis - https://taskfile.dev  (install: brew install go-task)
+# Run `task` with no arguments to list everything.
+#
+# Two things this file exists to encode:
+#
+# 1. CI runs ONLY the viewer's ESLint job (.github/workflows/frontend-lint.yml). There is no Rust
+#    job at all - clippy and the test suite are never run by CI. `task check` is therefore the real
+#    gate before pushing, not `cargo build`.
+#
+# 2. There is deliberately NO "dev web server" task. The viewer serves HTTP over a unix socket and
+#    never over TCP: v0.1.10 removed the TCP bind as a breaking change and DELETED the DNS-rebinding
+#    and CSRF gates rather than defending them, so proxying the socket to a port re-exposes that
+#    whole attack class undefended. It would also launder the verdict surface ceiling - /api/review
+#    grants HumanConfirmed only because the request arrived over the 0600 socket. `task dev` runs
+#    the Tauri shell instead, which proxies its own webview onto the socket via viz://. To poke the
+#    HTTP API by hand, `task viz -- /api/curation` speaks the socket directly with curl.
+#
+# No fmt task on purpose: the tree is not rustfmt-managed (cargo fmt --check currently reports ~410
+# hunks), so a `task fmt` would tempt an enormous unrelated diff. Format by hand if you need to.
+
+version: '3'
+
+vars:
+  # Built by `task build`; also what the desktop shell spawns via SUPRAGNOSIS_BIN.
+  SERVER_BIN: ./target/debug/supragnosis
+  # Throwaway instance for dev:isolated / server. Kept off ~/.supragnosis so it never contends with
+  # a real daemon for the cozo/RocksDB single-process lock. The socket lives in /tmp because macOS
+  # caps sun_path near 104 bytes - a long path fails with a bare "viz bind failed" and no viewer.
+  DEV_SOCK: /tmp/supragnosis-dev.sock
+  DEV_DATA: /tmp/supragnosis-dev-db
+  DEV_HTTP: 127.0.0.1:7399
+  # The socket a normally-installed daemon uses. Override by exporting SUPRAGNOSIS_VIZ_SOCK.
+  VIZ_SOCK: '${SUPRAGNOSIS_VIZ_SOCK:-$HOME/.supragnosis/viz.sock}'
+
+tasks:
+  default:
+    desc: List the available tasks
+    cmds: [task --list]
+    silent: true
+
+  # --- development ------------------------------------------------------------------------------
+
+  # Every env var below is load-bearing. The shell does attach-or-spawn: if the socket it resolves
+  # is already answering, it attaches and NEVER consults SUPRAGNOSIS_BIN (app/src/main.rs
+  # ensure_daemon). Leaving SUPRAGNOSIS_VIZ_SOCK at its default therefore silently attaches to a
+  # normally-installed daemon on ~/.supragnosis/viz.sock and shows you ITS build - you edit code,
+  # run this, and stare at stale UI. So dev pins its own socket, db and port and owns the instance.
+  # SUPRAGNOSIS_HTTP_ADDR is pinned too: unset, the shell probes :7373 and silently falls back to an
+  # ephemeral port when a real daemon holds it. To drive an already-running daemon instead, use
+  # `task app` (which is explicit about not building anything).
+  dev:
+    desc: Run the viewer UI on YOUR build - own db/socket/port, never touches ~/.supragnosis
+    deps: [build]
+    cmds:
+      - >-
+        SUPRAGNOSIS_BIN={{.SERVER_BIN}}
+        SUPRAGNOSIS_VIZ_SOCK={{.DEV_SOCK}}
+        SUPRAGNOSIS_DATA_DIR={{.DEV_DATA}}
+        SUPRAGNOSIS_HTTP_ADDR={{.DEV_HTTP}}
+        cargo run -p supragnosis-app
+
+  server:
+    desc: Run the server alone in the foreground (MCP http + viewer socket), no desktop shell
+    deps: [build]
+    cmds:
+      - '{{.SERVER_BIN}} serve --http {{.DEV_HTTP}} --viz {{.DEV_SOCK}} --data-dir {{.DEV_DATA}}'
+
+  server:mem:
+    desc: Foreground server on a non-persistent store - fastest way to try something destructive
+    deps: [build]
+    cmds:
+      - '{{.SERVER_BIN}} serve --http {{.DEV_HTTP}} --viz {{.DEV_SOCK}} --store mem'
+
+  app:
+    desc: Shell against the ALREADY-RUNNING daemon - builds nothing, shows that daemon's build
+    cmds: [cargo run -p supragnosis-app]
+
+  # --- quality gate -----------------------------------------------------------------------------
+
+  check:
+    desc: The full local gate - clippy, viewer ESLint, tests (CI covers only the ESLint part)
+    cmds:
+      - task: lint
+      - task: lint:web
+      - task: test
+
+  lint:
+    desc: cargo clippy over all targets (workspace lints set clippy::all to deny)
+    cmds: [cargo clippy --all-targets]
+
+  lint:web:
+    desc: ESLint no-unsanitized on the viewer assets - mirrors the frontend-lint workflow
+    deps: [_web-deps]
+    dir: crates/supragnosis-viz/assets
+    cmds: [npm run lint]
+
+  _web-deps:
+    internal: true
+    dir: crates/supragnosis-viz/assets
+    cmds: [npm ci]
+    status:
+      - test -d node_modules
+
+  test:
+    desc: 'cargo test (the real-model suite is #[ignore]d - see test:e2e)'
+    cmds: [cargo test]
+
+  test:e2e:
+    desc: 'Real-model scorecard - needs a local Ollama or an API key. Measures, does not guard.'
+    cmds: [cargo test -p supragnosis-e2e -- --ignored --nocapture]
+
+  # --- build ------------------------------------------------------------------------------------
+
+  build:
+    desc: cargo build of the workspace default members (the desktop app is excluded)
+    cmds: [cargo build]
+
+  build:semantic:
+    desc: Build the CLI with local ONNX semantic search (downloads the fastembed model on first run)
+    cmds: [cargo build -p supragnosis-cli --features fastembed]
+
+  build:release:
+    desc: Release binary - the same invocation release.yml uses
+    cmds: [cargo build --release --locked --bin supragnosis]
+
+  build:app:
+    desc: Bundle the macOS universal .app - the same tauri step release.yml uses
+    cmds: [npx --yes '@tauri-apps/cli@^2' build --target universal-apple-darwin]
+
+  # --- inspecting a running node ----------------------------------------------------------------
+
+  viz:
+    desc: 'GET the viewer API over its unix socket, e.g. task viz -- /api/curation'
+    cmds:
+      - 'curl -sS --unix-socket {{.VIZ_SOCK}} "http://viz{{.CLI_ARGS | default "/api/graph"}}" | python3 -m json.tool'
+
+  status:
+    desc: Daemon status (pid + port health)
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} status']
+
+  # reproject/migrate/sync below all refuse to share the store with a live daemon, so these exist to
+  # make "stop the daemon first" an actual step rather than an instruction with no button.
+  stop:
+    desc: Stop the background daemon
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} stop']
+
+  restart:
+    desc: Restart the background daemon
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} restart']
+
+  # --- maintenance (these need the daemon STOPPED - cozo is single-process) ----------------------
+
+  reproject:
+    desc: Re-materialize the projection from the log. Stop the daemon first.
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} reproject {{.CLI_ARGS}}']
+
+  migrate:
+    desc: Re-create pre-0.1.x observations under the current content-address formula. Daemon stopped.
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} migrate {{.CLI_ARGS}}']
+
+  sync:
+    desc: One-shot federation sync round (needs supragnosis.toml). Daemon stopped.
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} sync {{.CLI_ARGS}}']
+
+  identity:
+    desc: Print this node's federation id and public key
+    deps: [build]
+    cmds: ['{{.SERVER_BIN}} identity {{.CLI_ARGS}}']
+
+  # --- landing site -----------------------------------------------------------------------------
+
+  site:
+    desc: Preview the public landing page at http://127.0.0.1:8000 (static; NOT the viewer)
+    dir: site
+    # --bind is not optional: python's default is 0.0.0.0, which would publish the preview to the
+    # whole LAN. Everything else in this project binds loopback or a unix socket; so does this.
+    cmds: [python3 -m http.server 8000 --bind 127.0.0.1]
+
+  # --- cleanup ----------------------------------------------------------------------------------
+
+  clean:dev:
+    desc: Remove the throwaway dev instance (db + socket) - quit `task dev`/`task server` first
+    cmds:
+      - rm -rf {{.DEV_DATA}} {{.DEV_SOCK}}
