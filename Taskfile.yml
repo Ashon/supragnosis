@@ -23,7 +23,7 @@ version: '3'
 vars:
   # Built by `task build`; also what the desktop shell spawns via SUPRAGNOSIS_BIN.
   SERVER_BIN: ./target/debug/supragnosis
-  # Throwaway instance for dev:isolated / server. Kept off ~/.supragnosis so it never contends with
+  # Throwaway instance for dev / dev:snapshot / server. Kept off ~/.supragnosis so it never contends with
   # a real daemon for the cozo/RocksDB single-process lock. The socket lives in /tmp because macOS
   # caps sun_path near 104 bytes - a long path fails with a bare "viz bind failed" and no viewer.
   DEV_SOCK: /tmp/supragnosis-dev.sock
@@ -31,6 +31,8 @@ vars:
   DEV_HTTP: 127.0.0.1:7399
   # The socket a normally-installed daemon uses. Override by exporting SUPRAGNOSIS_VIZ_SOCK.
   VIZ_SOCK: '${SUPRAGNOSIS_VIZ_SOCK:-$HOME/.supragnosis/viz.sock}'
+  # The store a normally-installed daemon uses - the source for dev:snapshot.
+  LIVE_DATA: '${SUPRAGNOSIS_DATA_DIR:-$HOME/.supragnosis/db}'
 
 tasks:
   default:
@@ -70,6 +72,40 @@ tasks:
     deps: [build]
     cmds:
       - '{{.SERVER_BIN}} serve --http {{.DEV_HTTP}} --viz {{.DEV_SOCK}} --store mem'
+
+  dev:snapshot:
+    desc: Run dev on a COPY of the live daemon's knowledge - real data, real build, no risk to either
+    deps: [build]
+    cmds:
+      - task: _snapshot
+      - task: dev
+
+  # cozo/RocksDB is single-process, so a dev instance cannot open the store a running daemon holds.
+  # A copy sidesteps that without stopping anything: RocksDB is crash-consistent, so a directory
+  # copied from under a live writer opens the same way it would after a power cut (WAL recovery).
+  # The copy is a SNAPSHOT in both directions - what you do in dev never reaches the real store, and
+  # writes the daemon makes afterwards never reach dev. Re-run to refresh.
+  _snapshot:
+    internal: true
+    cmds:
+      - rm -rf {{.DEV_DATA}}
+      - cp -R {{.LIVE_DATA}} {{.DEV_DATA}}
+      - 'echo "snapshot: {{.LIVE_DATA}} -> {{.DEV_DATA}} (a copy - changes here do not flow back)"'
+
+  dev:live:
+    desc: Run YOUR build against the REAL store - requires `task stop` first, `task restart` after
+    deps: [build]
+    # No DATA_DIR override, so this opens the real store. The precondition exists because the raw
+    # failure is a cozo lock error that does not say what to do about it.
+    preconditions:
+      - sh: '! pgrep -f "supragnosis serve" >/dev/null'
+        msg: "a daemon is holding the store (cozo is single-process). `task stop` first, `task restart` when done - or use `task dev:snapshot` to work on a copy without stopping anything."
+    cmds:
+      - >-
+        SUPRAGNOSIS_BIN={{.SERVER_BIN}}
+        SUPRAGNOSIS_VIZ_SOCK={{.DEV_SOCK}}
+        SUPRAGNOSIS_HTTP_ADDR={{.DEV_HTTP}}
+        cargo run -p supragnosis-app
 
   app:
     desc: Shell against the ALREADY-RUNNING daemon - builds nothing, shows that daemon's build
