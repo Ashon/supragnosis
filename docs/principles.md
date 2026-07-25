@@ -701,6 +701,36 @@ Questions to apply quickly during design/PR review:
 - Do we measure recall quality? - search/recall changes are verified with a regression eval set in the
   style of a memory benchmark (LongMemEval-like).
 
+### B.1 - A checklist is not an enforcement
+
+The list above holds exactly as long as a reviewer remembers it. That is the same weakness as a
+principle whose only guard is a test nobody runs, and this project has already been bitten by it: a
+Principle 16 determinism guard sat failing about one run in eight, unnoticed, because CI ran no
+Rust tests. **A guarantee that nothing checks is a guarantee only on paper.**
+
+So each principle carries a declared **evidence state**, and the declaration is itself tested
+(`crates/supragnosis-engine/tests/principle_coverage.rs`). There are three states and deliberately
+no fourth:
+
+| State | Meaning | Obligation |
+|---|---|---|
+| `Scenario` | Named tests demonstrate the principle holds | The tests must exist; renaming or deleting one reports the principle as unguarded |
+| `Structural` | Violation is unrepresentable by construction (a crate graph, an exhaustive `match`) | Must state the mechanism - "structural" without one is an untested principle wearing a label |
+| `Deferred` | No enforcement exists yet | Must name the repayment milestone, so the registry and [architecture.md](architecture.md) Section 14 cannot drift apart on what is owed |
+
+Rules this imposes:
+
+- **A new principle cannot be added without declaring how it is checked.** The completeness test
+  fails until it is - the same compile-forced enumeration Principle 14 applies to model fields,
+  turned on the principles themselves.
+- **A checklist item migrates to a scenario test once it becomes mechanizable.** Appendix B is where
+  a question lives while it is still a judgment; the registry is where it goes when it stops being
+  one. Items that stay judgments (is this tool really a recurring intent?) legitimately stay here.
+- **`Deferred` is a debt, not a category.** It names a milestone and is expected to move.
+
+The registry deliberately does not assert a coverage ratio. Pinning a number invites editing the
+number; what it enforces is that no principle is silently unaccounted for.
+
 ## Appendix C - References
 
 - T. R. Gruber, *Toward Principles for the Design of Ontologies Used for
