@@ -463,15 +463,11 @@ function renderGlossary() {
   const item = x => {
     let h = `<div class="item"><span class="nm">${esc(x.name)}</span><span class="src">${x.sources} src</span>`
       + `<div class="def">${esc(x.description)}</div>`;
+    // Contested definitions reuse the shared contested UI (keep / use this), so a type conflict and
+    // an entity-kind conflict read identically - one mediation pattern (IR5).
     if (x.competitors && x.competitors.length) {
       h += `<div class="contested${x.contested ? " hot" : ""}">`
-        + `<div class="chead">${x.contested ? "contested definition - trust ties, your call decides" : "other definitions (current resolved by trust)"}</div>`
-        + `<div class="crow cur"><span class="cv">${esc(x.description)}</span>`
-        + (x.def_source ? `<button class="confirm" data-obs="${esc(x.def_source)}" title="confirm this definition (human_confirmed)">confirm</button>` : "")
-        + `</div>`
-        + x.competitors.map(c =>
-            `<div class="crow"><span class="cv">${esc(c.value)}</span><span class="ctier">${esc(String(c.trust_tier))}</span>`
-            + `<button class="confirm" data-obs="${esc(c.observation)}" title="confirm this definition instead">confirm</button></div>`).join("")
+        + contestedRows(x.description, "", x.def_source, x.competitors, x.contested)
         + `</div>`;
     }
     return h + `</div>`;
@@ -981,12 +977,20 @@ async function resolveBelief(obs) {
 // The contested-belief block of the inspector / curation panel: the current value and each surviving
 // competitor, with a confirm button per value (the mediation act). `cur` marks the policy winner.
 function contestedRows(current, tier, curObs, competitors, contested) {
+  // Two distinct actions, so two distinct labels: "keep" locks in the value shown now (the recency
+  // pick), "use this" switches to a competing value. Both promote that value's observation to
+  // human_confirmed (a gated console verdict) so it wins by trust - the label says which outcome.
   const row = (v, t, obs, cur) =>
     `<div class="crow${cur ? " cur" : ""}"><span class="cv">${esc(v)}</span>`
-    + `<span class="ctier">${esc(String(t))}</span>`
-    + (obs ? `<button class="confirm" data-obs="${esc(obs)}" title="confirm '${esc(v)}' (human_confirmed - opens a claim_promotion and casts the console verdict)">confirm</button>` : "")
+    + (cur ? `<span class="curtag">current</span>` : `<span class="ctier">${esc(String(t))}</span>`)
+    + (obs
+      ? `<button class="confirm" data-obs="${esc(obs)}" title="${cur ? "lock in the current value (mark it human-confirmed so recency cannot flip it)" : "make this the confirmed value instead (mark it human-confirmed)"}">${cur ? "keep" : "use this"}</button>`
+      : "")
     + `</div>`;
-  return `<div class="chead">${contested ? "contested - trust ties, your call decides" : "competitors (current resolved by trust)"}</div>`
+  const head = contested
+    ? "these values tie on trust - confirm which is correct"
+    : "resolved by trust - other asserted values shown for reference";
+  return `<div class="chead">${head}</div>`
     + row(current, tier, curObs, true)
     + competitors.map(c => row(c.value, c.trust_tier, c.observation, false)).join("");
 }
