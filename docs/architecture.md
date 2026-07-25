@@ -466,12 +466,15 @@ HTTP-over-UDS client (`curl --unix-socket`).
      read path (graph/curation/entity views - continuous fold) and materialized at `reproject`;
      the incremental observe upsert keeps its arrival-order interim within the same transient
      window that already exists (F5).
-   - **M3b - identity resolution (spec -> [resolution-identity.md](resolution-identity.md), not
-     implemented)**: alias accumulation, the conservative merge band with embedding candidates
-     (generation only - commitment stays gated, Principle 15), the resolution write path absorbing
-     `write_guard`, keyword-search alias parity + entity-embedding staleness (the Section 14 latent
-     conditions), T-Box conflict surfacing (Principle 9 minimal), and induced type candidates from
-     hyperedges (Principle 11).
+   - **M3b - identity resolution [o] ([resolution-identity.md](resolution-identity.md)), except IR6**:
+     alias accumulation (IR1), the conservative merge band with embedding candidates (generation
+     only - commitment stays gated, Principle 15), the unified resolution write path (project_entities
+     shared by observe and reproject, so incremental == replay - IR3, and write_guard is no longer a
+     divergence source), keyword-search alias parity + entity-embedding staleness (the Section 14
+     latent conditions, repaid), and T-Box conflict surfacing (Principle 9 minimal + IR5).
+     **Deferred to M5**: induced type candidates (IR6) - the recurring-set substrate is already
+     surfaced (hyperedges/grab-bags/reify), but naming the induced type is probabilistic and belongs
+     with the extractor (resolution-identity.md Section 7 [impl]).
    - **M3c - bitemporal query logic (split from M3b, after it)**: `as_of_valid`/`as_of_recorded`
      time-travel queries and automatic `valid_to` closing - needs negation semantics (Principle 5's
      explicit negative assertion is not yet modeled). Capture is complete, so the deferral stays
@@ -632,13 +635,14 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   that routes propose + Console verdict through the gate (never a direct write).
 
 **Intentional deferrals (milestone-assigned)**
-- Principles 1/6 (assertion<->belief separation, conflict preservation): **partially repaid by M3a** -
-  the swappable resolution policy exists and computes kind/representative-spelling beliefs on the read
-  path (continuous fold) and at `reproject`; conflicts are preserved AND surfaced. Still open for
-  **M3b**: `observe`'s inline upsert keeps its arrival-order interim between re-materializations
-  (within the F5 transient window), spelling variants still do not accumulate into **aliases**, and
-  relation provenance is still singular replacement (multi-attestation accumulation for **relations**
-  is M3b).
+- Principles 1/6 (assertion<->belief separation, conflict preservation): **repaid by M3a + M3b** for
+  entities - the swappable resolution policy computes kind/representative-spelling/aliases, conflicts
+  are preserved AND surfaced, and `observe` and `reproject` now share one fold so the incremental
+  write equals a fresh replay (IR3 - the arrival-order interim is gone on the local side). Spelling
+  variants accumulate into **aliases** (IR1). Still open: **relation** provenance is a single
+  attestation (relations do not yet accumulate multi-attestation like entities/observations do) and
+  relations have no belief resolution beyond last-write - deferred with negation semantics to M3c/M5
+  (a relation "conflict" needs an explicit negative assertion to be more than coexistence).
   Note: because structured assertions (`assertions` - including entity kind) are enclosed in the observation log exactly as spelled,
   any resolution policy can be applied retroactively by reprojecting the log - the grounds that this deferral is
   non-destructive. **This defense is now discharged rather than promised**: `reproject` is implemented (it was
@@ -685,9 +689,11 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 13 (rigidity - essence vs role): no enforcement exists; `define_type` treats it as a written guideline only.
   There is no subtype hierarchy in the T-Box today, so the principle has nothing to bite on yet -> revisit when
   subtyping is introduced.
-- Principle 15 (resolution is the substrate's responsibility): still exact match on the canonical name - no embedding
-  candidate generation, no conservative merge band. The only entity merge that exists is the human-adjudicated
-  `entity_merge` proposal effect. -> **M3**. (Assigned "M2-M3"; M2 shipped without it.)
+- Principle 15 (resolution is the substrate's responsibility): **repaid by M3b**. Entity identity is
+  still exact canonical-name match, but the **conservative merge band** now generates entity-merge
+  candidates from name-embedding similarity (a curation signal, `merge_suggestions`) - the substrate
+  proposes, the gate commits (IR2). Aliases accumulate and forward (IR1/P14). What is intentionally
+  NOT done: automatic merge (the top-band auto-merge executor stays M4+, I15 re-validation).
 - Principle 18 (contamination defense) *logic*: **partially repaid by M3a** - the tier now decides
   resolution weighting and display through the receiver-evaluated **effective tier** (the
   max-over-claimed-tiers representative computation is retired; a wire claim caps at HostSigned),
@@ -759,14 +765,20 @@ re-scheduled.
    authenticated network read tier, workspace enumeration and `workspace=*` MUST be filtered by that user's grants
    (already stated as a Phase 3.5 requirement in federation.md 6d).
 
-**Still latent - M3 entry conditions, unreachable today**
-- Restore alias-matching parity for Cozo keyword search the moment alias accumulation begins (only InMemory matches
-  aliases; latent because aliases are always empty).
-- Introduce an entity-embedding recomputation rule once aliases accumulate - the vector is computed only when absent,
-  so the embedding text changing would leave it silently stale.
-- Make `canonical_name` representative-spelling selection deterministic and independent of arrival
-  order - REPAID (M3a): `reproject` selects the spelling by the resolution policy (tier -> HLC -> id),
-  guarded by `p16_canonical_name_selection_is_arrival_order_free`. The incremental path's interim
-  still lives inside the F5 transient window (as for kind), absorbed by M3b's write path.
-- Make the entity projection write (read-merge-write) atomic, absorbing `write_guard` into the resolution layer's
-  write path.
+**Repaid by M3b (formerly M3 latent conditions)**
+- Cozo keyword-search alias parity - REPAID: the Cozo search matches aliases as InMemory does (an
+  alias pass over the workspace's entity rows), guarded by `cozo_keyword_matches_aliases`. Now that
+  aliases actually accumulate (IR1), the condition became reachable and was met in the same slice.
+- Entity-embedding recomputation on text change - REPAID (IR4): `project_entities` recomputes the
+  name-meaning vector only when `canonical_name + aliases` changed since the stored row, so it is
+  never silently stale. Guarded by `embedding_recomputed_on_alias_change`.
+- `canonical_name` representative-spelling determinism - REPAID (M3a for `reproject`, M3b for the
+  incremental path): both paths now run the same `project_entities` fold, so the incremental write
+  equals a fresh replay (IR3, `incremental_write_equals_replay`). The F5 transient window that
+  affected the incremental path is closed on the local side; the cross-node window (stamps arriving)
+  still converges at re-materialization as specified (8th revision).
+- Entity projection write atomicity - the read-merge-write field-wise upsert is GONE: `observe`
+  re-projects the touched entities from the log through the same fold `reproject` uses, so there is
+  no field-wise interim to lose under concurrency, and the section stays serialized by the engine
+  `write_guard`. A store-level atomic upsert would still be a refinement, but the divergence this
+  condition guarded against no longer exists.
