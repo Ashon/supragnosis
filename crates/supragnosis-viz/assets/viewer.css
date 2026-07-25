@@ -253,6 +253,12 @@
   #curationBody .gb { padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; color:var(--ink2); }
   #curationBody .gb .sz { color:var(--gold-bright); font-weight:600; margin-right:5px; }
   #curationBody .gb .reify { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; margin-left:6px; }
+  /* Merge band suggestions: a ~ b pair with the similarity/shared-neighbor score and a propose action. */
+  #curationBody .ms { display:flex; align-items:center; gap:5px; padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; flex-wrap:wrap; }
+  #curationBody .ms:first-of-type { border-top:none; }
+  #curationBody .ms .msx { color:var(--faint); }
+  #curationBody .ms .mssim { color:var(--muted); font-size:9.5px; margin-left:auto; }
+  #curationBody .ms .propmerge { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; }
   #curationBody .reifyform { display:inline-flex; gap:4px; margin-left:6px; }
   #curationBody .reifyform input { width:140px; padding:0 6px; font-size:10.5px; border-radius:5px; }
   #curationBody .reifyform button { padding:0 8px; font-size:9.5px; border-radius:5px; }

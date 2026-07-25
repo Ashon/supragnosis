@@ -961,3 +961,73 @@ fn get_entity_forwards_a_merged_id() {
         view.entity.aliases
     );
 }
+
+// --- M3b / Principle 15/19: the conservative merge band generates, never commits (IR2) ---------
+
+/// guard (resolution-identity.md Section 3, IR2): embedding-near distinct-name entities surface as
+/// merge SUGGESTIONS (a node-local recall aid) - but a suggestion commits nothing: no proposal, no
+/// verdict, the rows are untouched. An open entity_merge for the pair suppresses it (in flight).
+#[test]
+fn merge_suggestions_never_commit() {
+    use supragnosis_embed::HashingEmbedder;
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS)
+        .with_embedder(Arc::new(HashingEmbedder::default()));
+    let prov = || Provenance {
+        host: "host-a".into(),
+        on_behalf_of: None,
+        workspace: WS.into(),
+        source_ref: None,
+        observed_at: 1,
+        confidence: None,
+        trust_tier: TrustTier::default(),
+        sync: None,
+    };
+    let ent = |name: &str, emb: Vec<f32>| supragnosis_core::Entity {
+        id: Entity::make_id(WS, name),
+        kind: "Concept".into(),
+        canonical_name: name.into(),
+        aliases: vec![],
+        description: None,
+        properties: serde_json::Value::Null,
+        provenance: vec![prov()],
+        embedding: Some(emb),
+    };
+    // Two distinct entities with identical embeddings -> cosine 1.0 -> a candidate; a third,
+    // orthogonal -> below the band.
+    store.put_entity(ent("cozo", vec![1.0, 0.0, 0.0])).unwrap();
+    store.put_entity(ent("cozodb", vec![1.0, 0.0, 0.0])).unwrap();
+    store.put_entity(ent("kernel", vec![0.0, 1.0, 0.0])).unwrap();
+
+    let rep = engine.curation(Some(WS)).unwrap();
+    assert_eq!(rep.stats.merge_suggestions, 1, "the near pair is suggested, the orthogonal one is not");
+    let s = &rep.merge_suggestions[0];
+    assert!((s.similarity - 1.0).abs() < 1e-6, "similarity carried for ranking");
+    let mut names = vec![s.a_name.clone(), s.b_name.clone()];
+    names.sort();
+    assert_eq!(names, vec!["cozo".to_string(), "cozodb".to_string()]);
+
+    // IR2: a suggestion is not a commit - no proposal exists and the entities are untouched.
+    assert!(engine.list_proposals(Some(WS)).unwrap().is_empty(), "a suggestion is not a proposal");
+    assert!(store.get_entity(&Entity::make_id(WS, "cozo")).unwrap().is_some());
+    assert!(store.get_entity(&Entity::make_id(WS, "cozodb")).unwrap().is_some());
+
+    // Opening an entity_merge for the pair takes it out of the band (it is now under review).
+    let a = Entity::make_id(WS, "cozo");
+    let b = Entity::make_id(WS, "cozodb");
+    engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![a, b.clone()],
+            into: Some(b),
+            tier: None,
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("alice".into()),
+        })
+        .unwrap();
+    let rep2 = engine.curation(Some(WS)).unwrap();
+    assert_eq!(rep2.stats.merge_suggestions, 0, "an open entity_merge suppresses the suggestion");
+}

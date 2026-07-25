@@ -175,6 +175,24 @@ struct TypeDefAcc {
 /// context (a split/refine candidate, Principle 11). Tunable.
 const CURATION_GRAB_BAG_MIN: usize = 10;
 
+/// The conservative merge band floor (resolution-identity.md Section 3): embedding cosine at or
+/// above this makes a distinct-name entity pair a merge candidate. Deliberately high - a candidate
+/// is a hypothesis for review, and the gate (not the score) commits (Principle 15/19).
+const SIM_CANDIDATE: f32 = 0.85;
+/// Nearest entities considered per node when scanning the merge band (cost bound - the recall aid
+/// returns a ranked list; only the closest few are plausible merge candidates).
+const MERGE_BAND_K: usize = 8;
+
+/// An unordered id pair as a canonical (min, max) tuple - so a suggestion for (a, b) and (b, a) is
+/// one entry, and an open-proposal exclusion matches regardless of the order the targets were given.
+fn unordered_pair(a: &str, b: &str) -> (String, String) {
+    if a <= b {
+        (a.to_string(), b.to_string())
+    } else {
+        (b.to_string(), a.to_string())
+    }
+}
+
 /// Read-only curation signals (Principle 7 consolidation, "generate, do not commit"): candidates a
 /// human/agent might act on to tidy the knowledge, computed as a pure deterministic projection
 /// (Principle 16). Surfacing them commits nothing and needs no gate - they are NOT proposals or edits,
@@ -198,7 +216,29 @@ pub struct CurationReport {
     /// hop-capped forwarding), but the resolution is parity, not principle - the cycle itself is
     /// the signal, and the remedy is a new proposal, never an edit (P3/P23).
     pub merge_cycles: Vec<MergeCycle>,
+    /// The conservative merge band (resolution-identity.md Section 3, Principle 15): distinct-name
+    /// entity pairs whose embeddings are near (a node-local recall aid, P16-exempt) - entity-merge
+    /// candidates the substrate proposes so resolution is not the operator's manual job. Read-only:
+    /// a suggestion commits nothing (IR2) - acting on it opens an entity_merge proposal through the
+    /// gate. Excludes same-id, already-merged, and already-open-proposal pairs.
+    pub merge_suggestions: Vec<MergeSuggestion>,
     pub stats: CurationStats,
+}
+
+/// One conservative-merge-band candidate (resolution-identity.md Section 3): a pair of distinct
+/// entities whose name embeddings are near, with the similarity (node-local recall score) and how
+/// many graph neighbors they share (a corroborating structural signal). Not a proposal - the
+/// viewer/agent opens an entity_merge through the gate to act on it (IR2).
+#[derive(Serialize)]
+pub struct MergeSuggestion {
+    pub a: String,
+    pub a_name: String,
+    pub b: String,
+    pub b_name: String,
+    /// Embedding cosine similarity (recall aid, P16-exempt, node-local) - for ranking only.
+    pub similarity: f32,
+    /// Graph neighbors the two entities share - structural corroboration of the name similarity.
+    pub shared_neighbors: usize,
 }
 
 /// One contradictory merge cycle: the member entities (id + name) and the merged proposals whose
@@ -262,6 +302,7 @@ pub struct CurationStats {
     pub orphans: usize,
     pub contradictions: usize,
     pub merge_cycles: usize,
+    pub merge_suggestions: usize,
 }
 
 /// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
@@ -952,6 +993,90 @@ impl Engine {
             .collect())
     }
 
+    /// The conservative merge band (resolution-identity.md Section 3, Principle 15): distinct-name
+    /// entity pairs whose name embeddings are near (>= [`SIM_CANDIDATE`]) - candidates the substrate
+    /// proposes so identity resolution is not the operator's manual job. A node-local recall aid
+    /// (P16-exempt, P19): the similarity is not part of the converging graph, and a candidate commits
+    /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
+    /// already-merged (either side forwarded away), and pairs already under an open entity_merge.
+    /// Without an embedder there are no candidates (degrade, P19). Within-node reproducible order
+    /// (similarity desc, then ids); it need not converge across nodes (Section 3).
+    fn merge_band(
+        &self,
+        workspace: Option<&str>,
+        all_entities: &[Entity],
+        fwd: &HashMap<String, String>,
+        relations: &[Relation],
+    ) -> Result<Vec<MergeSuggestion>, StoreError> {
+        if self.embedder.is_none() {
+            return Ok(Vec::new());
+        }
+        // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
+        let mut open_pairs: HashSet<(String, String)> = HashSet::new();
+        for p in self.fold_proposals(workspace)?.values() {
+            if p.kind == "entity_merge" && p.state == "open" {
+                for i in 0..p.targets.len() {
+                    for j in (i + 1)..p.targets.len() {
+                        open_pairs.insert(unordered_pair(&p.targets[i], &p.targets[j]));
+                    }
+                }
+            }
+        }
+        // Canonicalized undirected adjacency for the shared-neighbor count (structural corroboration).
+        let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
+        for r in relations {
+            let (f, t) = (canon(&r.from), canon(&r.to));
+            if f == t {
+                continue;
+            }
+            adj.entry(f.clone()).or_default().insert(t.clone());
+            adj.entry(t).or_default().insert(f);
+        }
+        let name_by_id: HashMap<&str, &str> =
+            all_entities.iter().map(|e| (e.id.as_str(), e.canonical_name.as_str())).collect();
+
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let mut out: Vec<MergeSuggestion> = Vec::new();
+        for e in all_entities {
+            if fwd.contains_key(&e.id) {
+                continue; // e was merged away - not a live candidate
+            }
+            let Some(vec) = &e.embedding else {
+                continue;
+            };
+            for h in self.store.search_semantic_entities(vec, workspace, MERGE_BAND_K)? {
+                if h.id == e.id || h.score < SIM_CANDIDATE || fwd.contains_key(&h.id) {
+                    continue;
+                }
+                let pair = unordered_pair(&e.id, &h.id);
+                if !seen.insert(pair.clone()) || open_pairs.contains(&pair) {
+                    continue;
+                }
+                let shared = match (adj.get(&pair.0), adj.get(&pair.1)) {
+                    (Some(x), Some(y)) => x.intersection(y).count(),
+                    _ => 0,
+                };
+                out.push(MergeSuggestion {
+                    a_name: name_by_id.get(pair.0.as_str()).copied().unwrap_or("").to_string(),
+                    b_name: name_by_id.get(pair.1.as_str()).copied().unwrap_or("").to_string(),
+                    a: pair.0,
+                    b: pair.1,
+                    similarity: h.score,
+                    shared_neighbors: shared,
+                });
+            }
+        }
+        out.sort_by(|x, y| {
+            y.similarity
+                .partial_cmp(&x.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| x.a.cmp(&y.a))
+                .then_with(|| x.b.cmp(&y.b))
+        });
+        Ok(out)
+    }
+
     /// Read-only curation signals over the workspace (Principle 7 "generate, do not commit"): merge
     /// candidates (name-collision), grab-bag hyperedges, and orphan entities. A pure deterministic read
     /// (Principle 1/16) - it computes nothing into the canon, so no gate is involved. The commit side
@@ -1064,14 +1189,17 @@ impl Engine {
                 proposals,
             })
             .collect();
+        // The conservative merge band (Principle 15): embedding-near distinct-name candidates.
+        let merge_suggestions = self.merge_band(workspace, &all_entities, &fwd, &relations)?;
         let stats = CurationStats {
             duplicate_groups: duplicates.len(),
             grab_bags: grab_bags.len(),
             orphans: orphans.len(),
             contradictions: contradictions.len(),
             merge_cycles: merge_cycles.len(),
+            merge_suggestions: merge_suggestions.len(),
         };
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, stats })
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, stats })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
