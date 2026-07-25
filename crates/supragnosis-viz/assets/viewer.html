@@ -47,6 +47,12 @@
 </aside>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
 <div id="tip"></div>
+<!-- Minimap (map-tool convention): whole-graph overview + viewport rectangle, docked at the
+     bottom-right corner with the HUD column to its LEFT (one aligned control block). Drawn by
+     the rAF loop; click/drag pans the camera. Hidden while empty or toggled off - it precedes
+     #viewpop/#hud in the DOM so `#minimap.on ~` sibling rules can shift them left only while
+     the minimap is actually visible. -->
+<canvas id="minimap" title="minimap - click or drag to pan"></canvas>
 <!-- View options live OFF the primary panels (they are preferences, not data): a compact
      checkbox popover behind the HUD's view button, map-tool style. Same button ids and .tog/.on
      mechanics as before - only the presentation moved. -->
@@ -68,9 +74,6 @@
   </div></div>
   <button id="reload" title="re-fetch the graph now (it also refreshes on its own)">reload</button>
 </div>
-<!-- Minimap (map-tool convention): whole-graph overview + viewport rectangle, left of the HUD.
-     Drawn by the rAF loop; click/drag pans the camera. Hidden while empty or toggled off. -->
-<canvas id="minimap" title="minimap - click or drag to pan"></canvas>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">
