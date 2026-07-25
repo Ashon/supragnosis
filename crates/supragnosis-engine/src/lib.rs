@@ -143,11 +143,23 @@ pub struct GraphView {
 pub struct TypeDefView {
     pub target: TypeTarget,
     pub name: String,
+    /// The policy-selected definition (M3a policy over description candidates - resolution-identity.md
+    /// Section 6). The full history stays in the log.
     pub description: String,
     /// Number of observations that defined this type - a corroboration signal.
     pub sources: usize,
-    /// Highest trust tier among the defining observations (Principle 18).
+    /// Highest effective trust tier among the defining observations (Principle 18).
     pub trust_tier: TrustTier,
+    /// True when distinct definitions survive at a tied top effective tier - the winner stood on
+    /// recency alone, so this type invites mediation (IR5, same criterion as an entity kind - R6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contested: bool,
+    /// The non-winning definitions still asserted for this type (IR5, conflicts stay queryable - R7).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub competitors: Vec<Competitor>,
+    /// The observation asserting the winning definition - the mediation handle (confirm = promote it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub def_source: Option<String>,
 }
 
 /// Result of a workspace re-materialization ([`Engine::reproject`]).
@@ -156,19 +168,6 @@ pub struct ReprojectReport {
     pub observations: usize,
     pub entities: usize,
     pub relations: usize,
-}
-
-/// Fold accumulator for [`Engine::types`] (internal).
-struct TypeDefAcc {
-    target: TypeTarget,
-    name: String,
-    description: String,
-    /// Fold-ordering key of the currently winning observation (HLC, federation.md Section 4).
-    at: Hlc,
-    oid: String,
-    sources: usize,
-    trust: TrustTier,
-    seeded: bool,
 }
 
 /// Grab-bag detection threshold: a hyperedge with this many members is flagged as a loose co-occurrence
@@ -222,6 +221,10 @@ pub struct CurationReport {
     /// a suggestion commits nothing (IR2) - acting on it opens an entity_merge proposal through the
     /// gate. Excludes same-id, already-merged, and already-open-proposal pairs.
     pub merge_suggestions: Vec<MergeSuggestion>,
+    /// Type names defined on BOTH the entity and relation axes (resolution-identity.md Section 6,
+    /// Principle 9). Informative, not blocking: an axis collision is legal but usually a mistake -
+    /// the one structural T-Box check available before a subtype hierarchy exists (Principle 13).
+    pub type_axis_collisions: Vec<String>,
     pub stats: CurationStats,
 }
 
@@ -303,6 +306,7 @@ pub struct CurationStats {
     pub contradictions: usize,
     pub merge_cycles: usize,
     pub merge_suggestions: usize,
+    pub type_axis_collisions: usize,
 }
 
 /// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
@@ -942,53 +946,53 @@ impl Engine {
     /// winner is arrival-order independent (Principle 16) and converges across nodes once stamps exist.
     /// Accumulates a corroboration count (sources) and the representative (highest) trust tier.
     pub fn types(&self, workspace: Option<&str>) -> Result<Vec<TypeDefView>, StoreError> {
-        // key -> (best_hlc, best_obs_id, description, sources, max_trust)
-        let mut acc: BTreeMap<(u8, String), TypeDefAcc> = BTreeMap::new();
         let gates = self.gate_grants(workspace)?;
+        // (disc, name) -> (target, description candidates, sources, max effective trust). The
+        // description is resolved by the SAME policy as an entity kind (resolution-identity.md
+        // Section 6): distinct definitions at a tied top tier are contested, not silently
+        // last-write-won (M3a's contested treatment applied to the T-Box - IR5).
+        type Acc = (TypeTarget, Vec<BeliefCandidate>, usize, TrustTier);
+        let mut descs: BTreeMap<(u8, String), Acc> = BTreeMap::new();
         for obs in self.store.all_observations(workspace)? {
-            // Fold-ordering key (authoring HLC) + representative trust for this observation - the
-            // EFFECTIVE tier (receiver-evaluated + gate grants), never the claimed max (F13).
-            let okey = ordering_hlc(&obs);
-            let trust = effective_tier(&obs, &gates);
-            let oid = obs.id.clone();
+            let hlc = ordering_hlc(&obs);
+            let eff = effective_tier(&obs, &gates); // receiver-evaluated + gate grants (F13)
             for t in &obs.assertions.type_defs {
                 let disc: u8 = match t.target {
                     TypeTarget::Entity => 0,
                     TypeTarget::Relation => 1,
                 };
-                let key = (disc, t.name.clone());
-                let e = acc.entry(key).or_insert_with(|| TypeDefAcc {
-                    target: t.target,
-                    name: t.name.clone(),
-                    description: String::new(),
-                    at: Hlc::default(),
-                    oid: String::new(),
-                    sources: 0,
-                    trust: TrustTier::default(),
-                    seeded: false,
+                let e = descs
+                    .entry((disc, t.name.clone()))
+                    .or_insert_with(|| (t.target, Vec::new(), 0, TrustTier::Unverified));
+                e.1.push(BeliefCandidate {
+                    value: t.description.clone(),
+                    tier: eff,
+                    hlc: hlc.clone(),
+                    observation: obs.id.clone(),
                 });
-                e.sources += 1;
-                if trust > e.trust {
-                    e.trust = trust;
-                }
-                // Latest wins (HLC order); deterministic tie-break by observation id.
-                if !e.seeded || (&okey, oid.as_str()) > (&e.at, e.oid.as_str()) {
-                    e.description = t.description.clone();
-                    e.at = okey.clone();
-                    e.oid = oid.clone();
-                    e.seeded = true;
-                }
+                e.2 += 1;
+                e.3 = e.3.max(eff);
             }
         }
-        // Deterministic order: by (target, name) - BTreeMap key already gives it.
-        Ok(acc
-            .into_values()
-            .map(|a| TypeDefView {
-                target: a.target,
-                name: a.name,
-                description: a.description,
-                sources: a.sources,
-                trust_tier: a.trust,
+        // Deterministic order by (target, name) - BTreeMap key already gives it.
+        Ok(descs
+            .into_iter()
+            .map(|((_, name), (target, cands, sources, trust))| {
+                let (winner, contested, competitors) = self.resolve_kind(Some(&cands));
+                let (description, def_source) = match winner {
+                    Some((d, obs)) => (d, Some(obs)),
+                    None => (String::new(), None),
+                };
+                TypeDefView {
+                    target,
+                    name,
+                    description,
+                    sources,
+                    trust_tier: trust,
+                    contested,
+                    competitors,
+                    def_source,
+                }
             })
             .collect())
     }
@@ -1191,6 +1195,18 @@ impl Engine {
             .collect();
         // The conservative merge band (Principle 15): embedding-near distinct-name candidates.
         let merge_suggestions = self.merge_band(workspace, &all_entities, &fwd, &relations)?;
+        // T-Box axis collisions (Principle 9 minimal): a name defined on both the entity and the
+        // relation axis. A pure fold over the type glossary (deterministic, P16).
+        let mut axis: BTreeMap<String, (bool, bool)> = BTreeMap::new();
+        for t in self.types(workspace)? {
+            let e = axis.entry(t.name).or_insert((false, false));
+            match t.target {
+                TypeTarget::Entity => e.0 = true,
+                TypeTarget::Relation => e.1 = true,
+            }
+        }
+        let type_axis_collisions: Vec<String> =
+            axis.into_iter().filter(|(_, (ent, rel))| *ent && *rel).map(|(n, _)| n).collect();
         let stats = CurationStats {
             duplicate_groups: duplicates.len(),
             grab_bags: grab_bags.len(),
@@ -1198,8 +1214,9 @@ impl Engine {
             contradictions: contradictions.len(),
             merge_cycles: merge_cycles.len(),
             merge_suggestions: merge_suggestions.len(),
+            type_axis_collisions: type_axis_collisions.len(),
         };
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, stats })
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, type_axis_collisions, stats })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------

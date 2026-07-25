@@ -455,20 +455,36 @@ function nodeById(id) { return nodes.find(n => n.id === id); }
 // escaping a name like `x" onmouseover=alert(1) z="` breaks out of the attribute into an event handler.
 function esc(s) { return String(s).replace(/[<&>"']/g, c => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
-// Type glossary (T-Box) section body: entity types and relation types with their define_type definitions.
+// Type glossary (T-Box) section body: entity types and relation types with their define_type
+// definitions. A type whose definition is contested (distinct definitions tie at the top tier -
+// IR5) shows the competing definitions with a confirm action, the same mediation as an entity kind.
 function renderGlossary() {
   const group = t => glossaryTypes.filter(x => x.target === t);
+  const item = x => {
+    let h = `<div class="item"><span class="nm">${esc(x.name)}</span><span class="src">${x.sources} src</span>`
+      + `<div class="def">${esc(x.description)}</div>`;
+    if (x.competitors && x.competitors.length) {
+      h += `<div class="contested${x.contested ? " hot" : ""}">`
+        + `<div class="chead">${x.contested ? "contested definition - trust ties, your call decides" : "other definitions (current resolved by trust)"}</div>`
+        + `<div class="crow cur"><span class="cv">${esc(x.description)}</span>`
+        + (x.def_source ? `<button class="confirm" data-obs="${esc(x.def_source)}" title="confirm this definition (human_confirmed)">confirm</button>` : "")
+        + `</div>`
+        + x.competitors.map(c =>
+            `<div class="crow"><span class="cv">${esc(c.value)}</span><span class="ctier">${esc(String(c.trust_tier))}</span>`
+            + `<button class="confirm" data-obs="${esc(c.observation)}" title="confirm this definition instead">confirm</button></div>`).join("")
+        + `</div>`;
+    }
+    return h + `</div>`;
+  };
   const section = (title, items) => `<div class="gsec">${title} (${items.length})</div>`
-    + (items.length
-      ? items.map(x =>
-          `<div class="item"><span class="nm">${esc(x.name)}</span>`
-          + `<span class="src">${x.sources} src</span>`
-          + `<div class="def">${esc(x.description)}</div></div>`).join("")
-      : `<div class="empty">none defined - use define_type</div>`);
+    + (items.length ? items.map(item).join("") : `<div class="empty">none defined - use define_type</div>`);
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
   glossaryBodyEl.innerHTML =
     section("entity types", group("entity")) + section("relation types", group("relation"));
   glossCtEl.textContent = glossaryTypes.length || "";
+  glossaryBodyEl.querySelectorAll(".confirm").forEach(b => {
+    b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
+  });
 }
 
 // Fetch the glossary for the current workspace, then render (only meaningful while the section is open).
@@ -534,12 +550,20 @@ function renderCuration() {
     : `<div class="empty">none - no oversized clusters</div>`;
   html += `<div class="csec">orphans (${orph.length})</div>`;
   html += orph.length ? `<div class="chips">${orph.map(nchip).join("")}</div>` : `<div class="empty">none - all nodes linked</div>`;
+  // T-Box axis collisions (Principle 9): a name defined on both the entity and relation axes -
+  // informative, usually a mistake. Mediation lives in the Types tab (per-definition confirm).
+  const ax = curation.type_axis_collisions || [];
+  if (ax.length) {
+    html += `<div class="csec">type axis collisions (${ax.length})</div>`;
+    html += `<div class="gb">${ax.map(n => `<span class="gk">${esc(n)}</span>`).join(", ")}<div class="hint">defined as both an entity type and a relation type - see the Types tab</div></div>`;
+  }
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
   curationBodyEl.innerHTML = html;
   const s = curation.stats || {};
   reviewCtEl.textContent =
     (s.contradictions || 0) + (s.merge_cycles || 0) + (s.merge_suggestions || 0)
-    + (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0) || "";
+    + (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0)
+    + (s.type_axis_collisions || 0) || "";
   curationBodyEl.querySelectorAll(".nchip").forEach(c => {
     c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
   });
