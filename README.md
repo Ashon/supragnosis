@@ -51,7 +51,7 @@ brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer s
 ### Install script
 ```bash
 # Detect platform -> install the latest release binary to ~/.local/bin (with checksum verification)
-curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+curl -fsSL https://supragnosis.dev/install.sh | sh
 ```
 - Or download the platform tar.gz directly from [Releases](https://github.com/Ashon/supragnosis/releases), extract it, and put `supragnosis` on your PATH.
 - Supported platforms: macOS (arm64/x86_64), Linux (x86_64). For other platforms, build from source below.
