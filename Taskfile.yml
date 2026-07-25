@@ -3,9 +3,9 @@
 #
 # Two things this file exists to encode:
 #
-# 1. CI runs ONLY the viewer's ESLint job (.github/workflows/frontend-lint.yml). There is no Rust
-#    job at all - clippy and the test suite are never run by CI. `task check` is therefore the real
-#    gate before pushing, not `cargo build`.
+# 1. `task check` is the same gate CI runs, so a green run here means a green run there. It pairs
+#    .github/workflows/rust.yml (clippy + tests) with frontend-lint.yml (the viewer's ESLint).
+#    Keep them in step: a check added to one belongs in the other.
 #
 # 2. There is deliberately NO "dev web server" task. The viewer serves HTTP over a unix socket and
 #    never over TCP: v0.1.10 removed the TCP bind as a breaking change and DELETED the DNS-rebinding
@@ -78,7 +78,7 @@ tasks:
   # --- quality gate -----------------------------------------------------------------------------
 
   check:
-    desc: The full local gate - clippy, viewer ESLint, tests (CI covers only the ESLint part)
+    desc: The full gate - clippy, viewer ESLint, tests. Same checks CI runs, so run it before pushing.
     cmds:
       - task: lint
       - task: lint:web

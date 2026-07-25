@@ -741,6 +741,11 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
   the M3 first task, pulled forward because M4's re-materialization needed it.
 - The random-order convergence property test exists (seed-fixed LCG shuffling in `core`, plus sync convergence tests),
   discharging the Principle 16 test obligation. *Partition injection is still not exercised.*
+- Every "guarded by <test>" claim in this ledger is now **actually enforced**: `.github/workflows/rust.yml`
+  runs clippy and the test suite on push and PR. Until it existed, CI built release binaries and linted the
+  viewer's JS but ran no Rust test, so each guard held only while someone remembered to run it - which is
+  how the Principle 16 determinism guard `aliases_accumulate_and_converge` sat failing roughly 1 run in 8
+  unnoticed. A guarantee that nothing checks is a guarantee only on paper.
 - Blocking store/embedding calls are behind `spawn_blocking` on every MCP tool handler - the remote-transport
   precondition.
 - The sharing opt-in whitelist and sync-boundary filter exist, and federated recall is governed by the same

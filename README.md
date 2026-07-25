@@ -73,9 +73,10 @@ task viz -- /api/curation   # GET the viewer API over its unix socket
   attach-or-spawn: if the socket it resolves already answers it attaches and never consults
   `SUPRAGNOSIS_BIN`, so an unpinned socket would silently show you an installed daemon's build
   instead of the one you just compiled. Use `task app` when attaching is what you actually want.
-- **`task check` is the real pre-push gate.** CI runs *only* the viewer ESLint job
-  ([`frontend-lint.yml`](.github/workflows/frontend-lint.yml)); there is no Rust job, so clippy and
-  the test suite are never run for you.
+- **`task check` runs the same checks CI does**, so a green run locally means a green run there:
+  clippy + tests ([`rust.yml`](.github/workflows/rust.yml)) and the viewer's ESLint
+  ([`frontend-lint.yml`](.github/workflows/frontend-lint.yml)). Keep the two in step - a check added
+  to one belongs in the other.
 - There is deliberately **no dev web server task**. The viewer is unix-socket-only (see the bind
   policy in [`docs/architecture.md`](docs/architecture.md) Section 10), so `task dev` runs the
   desktop shell, which proxies its webview onto the socket via `viz://`. Proxying the socket to a
