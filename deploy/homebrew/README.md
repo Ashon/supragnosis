@@ -1,44 +1,44 @@
-# Homebrew 배포 (formula + cask, DMG 없음)
+# Homebrew distribution (formula + cask, no DMG)
 
-이 디렉터리는 tap 리포로 복사해 쓰는 템플릿이다. 구성:
+This directory is the template set copied into the tap repo. Contents:
 
-- `Formula/supragnosis-server.rb` - 서버/CLI (설치되는 바이너리 이름은 `supragnosis` 그대로,
-  brew 토큰만 `-server`). 릴리스의 플랫폼별 tar.gz 를 그대로 설치하고,
-  `brew services start supragnosis-server` 로 상시 데몬(launchd)을 등록한다. `serve --http` 는
-  뷰어 소켓(`~/.supragnosis/viz.sock`)도 기본으로 연다.
-- `Casks/supragnosis.rb` - 데스크탑 셸. 대표 토큰이라 `brew install supragnosis` 가 이 cask 로
-  해석된다(동명 formula 없음). 릴리스의 서명/노터라이즈된 universal `.app.zip` 을 설치한다.
-  cask 가 `supragnosis-server` formula 에 의존하므로 앱은 PATH 의 brew 데몬 바이너리를
-  찾아 쓴다(sidecar 내장 없음). 앱이 트레이 상주형이라 cask 의 `uninstall quit:` 이
-  업그레이드 시 구 인스턴스를 종료하고 다시 열어 준다.
-- `update-tap.sh` - 릴리스 후 tap 의 version/sha256 을 릴리스 자산의 .sha256 사이드카에서
-  받아 갱신한다.
+- `Formula/supragnosis-server.rb` - the server/CLI (the installed binary is still named
+  `supragnosis`; only the brew token carries `-server`). Installs the release's per-platform
+  tar.gz as-is, and `brew services start supragnosis-server` registers the always-on daemon
+  (launchd). `serve --http` also opens the viewer socket (`~/.supragnosis/viz.sock`) by default.
+- `Casks/supragnosis.rb` - the desktop shell. It owns the plain token, so
+  `brew install supragnosis` resolves to this cask (no formula shares the name). Installs the
+  release's signed/notarized universal `.app.zip`. The cask depends on the `supragnosis-server`
+  formula, so the app finds the brew daemon binary on PATH (no bundled sidecar). The app is
+  tray-resident, so the cask's `uninstall quit:` quits the old instance on upgrade and reopens it.
+- `update-tap.sh` - after a release, updates the tap's version/sha256 from the release assets'
+  .sha256 sidecar files.
 
-## 최초 설정 (1회)
+## One-time setup
 
-1. tap 리포 생성: GitHub 에 `Ashon/homebrew-tap` (public) 을 만들고 이 디렉터리의
-   `Formula/`, `Casks/`, `update-tap.sh` 를 복사해 커밋한다.
-2. 리포 시크릿 등록 (Settings > Secrets and variables > Actions) - release.yml 의 app 잡이
-   서명/노터라이즈에 사용한다. 하나라도 없으면(정확히는 APPLE_SIGNING_IDENTITY 부재)
-   서명 없이 빌드만 검증한다.
-   - `APPLE_CERTIFICATE` - Developer ID Application 인증서 .p12 의 base64
+1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub and commit this directory's
+   `Formula/`, `Casks/`, and `update-tap.sh` into it.
+2. Register repo secrets (Settings > Secrets and variables > Actions) - the release.yml app job
+   uses them for signing/notarization. If any is missing (precisely: no APPLE_SIGNING_IDENTITY),
+   the job only verifies the build without signing.
+   - `APPLE_CERTIFICATE` - base64 of the Developer ID Application certificate .p12
      (`base64 -i cert.p12 | pbcopy`)
-   - `APPLE_CERTIFICATE_PASSWORD` - .p12 암호
-   - `APPLE_SIGNING_IDENTITY` - 예: `Developer ID Application: <Name> (<TEAMID>)`
-   - `APPLE_ID` - Apple ID 이메일
-   - `APPLE_PASSWORD` - app-specific password (appleid.apple.com 에서 발급)
-   - `APPLE_TEAM_ID` - 팀 ID
-3. tap 자동 갱신용 시크릿 등록: fine-grained PAT 를 만들어(Developer settings > Personal
-   access tokens > Fine-grained, 대상 리포를 `Ashon/homebrew-tap` 하나로 제한, 권한은
-   Contents: Read and write 만) `TAP_PUSH_TOKEN` 이름으로 리포 시크릿에 넣는다.
-   없으면 release.yml 의 tap 잡이 건너뛰고 아래 수동 절차로 폴백한다.
-4. 다음 `v*` 태그부터 릴리스에 `Supragnosis-v<ver>-macos-universal.app.zip` 이 첨부된다.
+   - `APPLE_CERTIFICATE_PASSWORD` - the .p12 password
+   - `APPLE_SIGNING_IDENTITY` - e.g. `Developer ID Application: <Name> (<TEAMID>)`
+   - `APPLE_ID` - the Apple ID email
+   - `APPLE_PASSWORD` - an app-specific password (issued at appleid.apple.com)
+   - `APPLE_TEAM_ID` - the team id
+3. Register the tap auto-update secret: create a fine-grained PAT (Developer settings > Personal
+   access tokens > Fine-grained; restrict the target repo to `Ashon/homebrew-tap` only, with just
+   Contents: Read and write) and add it as the `TAP_PUSH_TOKEN` repo secret. Without it the
+   release.yml tap job skips and you fall back to the manual procedure below.
+4. From the next `v*` tag on, the release carries `Supragnosis-v<ver>-macos-universal.app.zip`.
 
-## 릴리스마다
+## Per release
 
-자동이다: `v*` 태그를 push 하면 release.yml 의 tap 잡이 자산 첨부 완료 후 update-tap.sh 로
-tap 의 version/sha256 을 갱신해 push 한다. 잡이 실패하거나 `TAP_PUSH_TOKEN` 이 없으면
-수동으로 돌린다:
+Automatic: pushing a `v*` tag makes the release.yml tap job run update-tap.sh after the assets
+are attached, updating the tap's version/sha256 and pushing. If the job fails or
+`TAP_PUSH_TOKEN` is missing, run it by hand:
 
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
@@ -46,48 +46,52 @@ git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
 git commit -am "supragnosis v0.1.11" && git push
 ```
 
-## 사용자 설치
+## User install
 
 ```sh
 brew tap ashon/tap
-brew install supragnosis                # 데스크탑 앱 (macOS, server formula 포함)
-brew install supragnosis-server         # 서버/CLI 만 (macOS / Linux)
-brew services start supragnosis-server  # 상시 데몬 (MCP :7373 + viewer socket)
+brew install supragnosis                # desktop app (macOS, pulls the server formula)
+brew install supragnosis-server         # server/CLI only (macOS / Linux)
+brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer socket)
 ```
 
-## 개발 버전 설치 (--HEAD)
+## Dev-channel install (--HEAD)
 
-formula 의 `head` 스펙이 main 브랜치를 소스 빌드한다 (rust 툴체인은 build dep 으로 자동,
-기본 피처 = 키워드 검색으로 릴리스 바이너리와 동일). 뷰어 UI 는 서버 바이너리에 내장이므로
-stable 데스크탑 앱 셸 + HEAD 서버 조합이 그대로 동작한다.
+The formula's `head` spec builds the main branch from source (the rust toolchain arrives as a
+build dep; default features = keyword search, identical to the release binaries). The viewer UI
+is embedded in the server binary, so the stable desktop app shell renders a HEAD server's viewer
+unchanged.
 
 ```sh
-# stable 이 설치돼 있으면 formula 만 교체 (cask 의존성 경고는 --ignore-dependencies 로 통과)
+# With stable installed, swap only the formula (pass the cask dependency warning
+# with --ignore-dependencies)
 brew services stop supragnosis-server
 brew uninstall --ignore-dependencies supragnosis-server
 brew install --HEAD supragnosis-server
 brew services start supragnosis-server
 
-brew upgrade --fetch-HEAD supragnosis-server   # 이후 main 이 갱신될 때마다
+brew upgrade --fetch-HEAD supragnosis-server   # whenever main moves
 ```
 
-stable 로 복귀는 같은 절차에서 `brew install supragnosis-server` (--HEAD 없이).
-버전 문자열이 `HEAD-<sha>` 로 찍히므로 어느 커밋을 쓰는 중인지 `brew info` 로 확인된다.
-데이터 호환 주의: 개발 버전이 스키마/id 공식을 바꾼 경우 stable 복귀 전에 릴리스 노트의
-migrate 안내를 확인한다 (`~/.supragnosis/db` 는 공유된다).
+Returning to stable is the same procedure with `brew install supragnosis-server` (no --HEAD).
+The version string reads `HEAD-<sha>`, so `brew info` shows which commit you are running.
+Data-compatibility caution: if a dev build changed the schema/id formula, check the release
+notes' migrate guidance before returning to stable (`~/.supragnosis/db` is shared).
 
-업그레이드는 `brew upgrade` 후 데몬 재시작까지 해야 완료된다 - brew upgrade 는 실행 중인
-서비스를 재시작하지 않으므로(formula caveats 가 같은 안내를 출력), 재시작 없이는 구 데몬이
-삭제된 keg 경로에서 계속 돈다:
+## Upgrades
+
+An upgrade is complete only after `brew upgrade` plus a daemon restart - brew upgrade does not
+restart a running service (the formula caveats print the same reminder), and without the restart
+the old daemon keeps running from the deleted keg path:
 
 ```sh
 brew upgrade
 brew services restart supragnosis-server
 ```
 
-구 토큰(formula `supragnosis`, cask `supragnosis-app`)으로 설치했다면 재설치한다.
-서비스 중지가 uninstall 보다 먼저다 - brew uninstall 은 실행 중인 서비스/launchd plist 를
-정리하지 않는다:
+If you installed under the old tokens (formula `supragnosis`, cask `supragnosis-app`),
+reinstall. Stopping the service comes before uninstall - brew uninstall does not clean up a
+running service/launchd plist:
 
 ```sh
 brew services stop supragnosis 2>/dev/null
@@ -95,5 +99,6 @@ brew uninstall --cask supragnosis-app 2>/dev/null; brew uninstall --formula supr
 brew install supragnosis
 ```
 
-주의: `formula_renames.json` 으로 구 formula 토큰을 넘기지 않는다 - plain 토큰이 formula 이름으로
-다시 해석되어 `brew install supragnosis` 가 cask 대신 formula 로 풀리는 것을 막기 위함이다.
+Note: the old formula token is NOT forwarded via `formula_renames.json` - that would let the
+plain token resolve as a formula name again, and `brew install supragnosis` must resolve to the
+cask, not a formula.
