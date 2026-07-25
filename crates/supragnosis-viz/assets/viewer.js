@@ -987,15 +987,19 @@ function resize() {
 addEventListener("resize", resize);
 
 // Set the target camera so the given node set fits on screen (smoothly, via easing). In CSS pixels.
+// Fit is against the FULL window width, regardless of which side panels float open - the panels
+// are overlays, and on a narrow window fitting into the strip between them shrank the graph past
+// readability (the map-app convention: fit the viewport, let overlays cover the edges). Only the
+// top/bottom insets stay (header/status are opaque bars, not floating cards). Focusing a single
+// node (centerOn) still avoids the panels - a focused node under a panel would be truly hidden.
 function fitView(list, pad = 90) {
   const src = (list || nodes).filter(n => !typeOff.has(n.type));
   if (!src.length) return;
   let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
   for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
   const w = innerWidth, h = innerHeight, gw = Math.max(1, c-a), gh = Math.max(1, d-b);
-  const il = insetL(), ir = insetR();   // fit into the strip between the side rails
-  camT.s = Math.max(0.15, Math.min(2.5, Math.min((w - il - ir - pad*2) / gw, (h - pad*2 - TOP_INSET - BOTTOM_INSET) / gh)));
-  camT.x = (il + w - ir)/2 - (a+c)/2*camT.s;
+  camT.s = Math.max(0.15, Math.min(2.5, Math.min((w - pad*2) / gw, (h - pad*2 - TOP_INSET - BOTTOM_INSET) / gh)));
+  camT.x = w/2 - (a+c)/2*camT.s;
   camT.y = (h + TOP_INSET - BOTTOM_INSET)/2 - (b+d)/2*camT.s;
 }
 
