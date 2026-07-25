@@ -583,7 +583,11 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 16 (4th revision, two layers of determinism): `search_knowledge` labels the `mode` it actually
   used (hybrid vs keyword), so a client can tell the convergence surface from the node-local recall aid,
   and the tool description states that score scale differs per mode. Embeddings deliberately do not
-  replicate - they are a node-local recall aid, exempt from the convergence norm.
+  replicate - they are a node-local recall aid, exempt from the convergence norm. The curation report
+  applies the same rule to its one embedding-dependent signal: `merge_band`
+  (`available`/`embedded`/`examined`) accompanies `merge_suggestions`, so an empty list separates "no
+  near pairs" from "no embedder here" from "ran over part of the workspace" instead of collapsing the
+  three (the other curation signals are deterministic and need no such caveat).
 - Principle 17 (knowledge sovereignty, sync boundary): sharing is a workspace whitelist defaulting to
   none; `export_delta` returns nothing for a non-shared workspace; the hub authenticates per node
   (bearer) and authorizes per workspace on every route. **Federated recall goes through the same
