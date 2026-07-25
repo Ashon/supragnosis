@@ -76,17 +76,34 @@ fn viz_sock() -> PathBuf {
         .unwrap_or_else(|| home().join(".supragnosis/viz.sock"))
 }
 
-/// Locates the `supragnosis` server binary: explicit override -> installed location -> dev build
-/// -> PATH. Shipping it inside the bundle (Tauri externalBin sidecar) is the packaging milestone's
-/// job; this runtime search keeps dev and installed layouts working without it.
+/// Locates the `supragnosis` server binary: explicit override -> the Homebrew install locations
+/// -> PATH -> the legacy install.sh location -> dev build. Two lessons are baked into this order:
+/// a Finder-launched .app does NOT inherit the shell's PATH (no /opt/homebrew/bin), so the brew
+/// prefixes are probed as literal paths; and ~/.local/bin may hold a STALE pre-brew binary from
+/// scripts/install.sh - preferring it over brew once shipped an ancient binary that did not know
+/// the `serve` subcommand, fell back to stdio, and died instantly - so it is the LAST real
+/// candidate. Shipping a bundled sidecar remains out (deploy/homebrew/README.md: no sidecar).
 fn find_server_bin() -> Option<PathBuf> {
     if let Some(p) = env_nonempty("SUPRAGNOSIS_BIN") {
         let p = PathBuf::from(p);
         return p.exists().then_some(p);
     }
-    let installed = home().join(".local/bin/supragnosis");
-    if installed.exists() {
-        return Some(installed);
+    for brew in ["/opt/homebrew/bin/supragnosis", "/usr/local/bin/supragnosis"] {
+        let p = PathBuf::from(brew);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Some(p) = std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|d| d.join("supragnosis"))
+            .find(|c| c.exists())
+    }) {
+        return Some(p);
+    }
+    let legacy = home().join(".local/bin/supragnosis");
+    if legacy.exists() {
+        return Some(legacy);
     }
     if cfg!(debug_assertions) {
         let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/debug/supragnosis");
@@ -94,11 +111,7 @@ fn find_server_bin() -> Option<PathBuf> {
             return Some(dev);
         }
     }
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|d| d.join("supragnosis"))
-            .find(|c| c.exists())
-    })
+    None
 }
 
 /// MCP bind address for a daemon the shell spawns: explicit env wins; otherwise the canonical
@@ -136,7 +149,7 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
     let err = std::fs::File::create(logs.join("app-daemon.err.log"))?;
     let http_addr = mcp_addr();
     tracing::info!(bin = %bin.display(), http = %http_addr, sock = %sock.display(), "spawning the daemon");
-    let child = Command::new(&bin)
+    let mut child = Command::new(&bin)
         .args(["serve", "--http", &http_addr, "--viz"])
         .arg(sock)
         .stdin(Stdio::null())
@@ -144,12 +157,36 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
         .stderr(err)
         .spawn()
         .with_context(|| format!("failed to spawn {}", bin.display()))?;
+    let mut socket_up = false;
     for _ in 0..40 {
+        // A dead child will never bind the socket - detect it NOW and surface the reason,
+        // instead of reporting "running (spawned)" against a corpse and letting the splash
+        // refresh forever (the exact failure mode of spawning a stale pre-`serve` binary).
+        if let Ok(Some(status)) = child.try_wait() {
+            let tail = std::fs::read_to_string(logs.join("app-daemon.err.log"))
+                .ok()
+                .map(|s| {
+                    s.lines().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ")
+                })
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| "no stderr output".to_string());
+            anyhow::bail!(
+                "the spawned daemon exited immediately ({status}, binary {}): {tail} - full log: \
+                 ~/.supragnosis/log/app-daemon.err.log",
+                bin.display()
+            );
+        }
         if UnixStream::connect(sock).await.is_ok() {
             tracing::info!("daemon is up");
+            socket_up = true;
             break;
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    if !socket_up {
+        // Still starting (a cold fastembed init can outlast the wait) - the splash keeps
+        // retrying, but leave a trace so a hang has a log line to find.
+        tracing::warn!(sock = %sock.display(), "daemon spawned but the viewer socket is not answering yet");
     }
     Ok(Some(child))
 }
@@ -201,10 +238,17 @@ fn resp(status: u16, ctype: &str, body: Vec<u8>) -> http::Response<Vec<u8>> {
 }
 
 /// Served at `/` while the daemon's socket is not answering yet; refreshes itself into the real
-/// viewer once it is. Palette mirrors the viewer's candlelight theme.
+/// viewer once it is. Carries the LIVE daemon state so a failure is readable on the splash
+/// instead of an eternal "starting..." (the tray shows the same line, but the splash is what
+/// the user is looking at). Palette mirrors the viewer's candlelight theme.
 // data-tauri-drag-region: with the overlay title bar there is no other chrome to drag the
 // window by while the splash is up.
-const STARTING_HTML: &str = r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">starting the supragnosis daemon...</body>"#;
+fn starting_html(status: &str) -> String {
+    let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    format!(
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#5c6472;margin-top:6px;font-size:11px">log: ~/.supragnosis/log/app-daemon.err.log / tray: Restart Daemon</div></div></body>"#
+    )
+}
 
 /// Runs attach-or-spawn and publishes the outcome (state + tray status line).
 async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
@@ -347,8 +391,9 @@ fn main() {
     let proxy_sock = sock.clone();
     tauri::Builder::default()
         .manage(DaemonGuard(Mutex::new(Daemon::Starting)))
-        .register_asynchronous_uri_scheme_protocol("viz", move |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("viz", move |ctx, request, responder| {
             let sock = proxy_sock.clone();
+            let app = ctx.app_handle().clone();
             let target = request
                 .uri()
                 .path_and_query()
@@ -365,10 +410,12 @@ fn main() {
                 } else {
                     match tokio::time::timeout(Duration::from_secs(15), uds_fetch(&sock, &target)).await {
                         Ok(Ok((status, ctype, body))) => resp(status, &ctype, body),
-                        // Socket not answering: the index gets a self-refreshing splash (the daemon
-                        // is still starting); API calls get an honest 502 (Principle 5).
+                        // Socket not answering: the index gets a self-refreshing splash carrying
+                        // the live daemon state (a Failed reason must be readable, not an eternal
+                        // "starting..."); API calls get an honest 502 (Principle 5).
                         _ if target == "/" => {
-                            resp(200, "text/html; charset=utf-8", STARTING_HTML.as_bytes().to_vec())
+                            let status = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
+                            resp(200, "text/html; charset=utf-8", starting_html(&status).into_bytes())
                         }
                         Ok(Err(e)) => resp(
                             502,
