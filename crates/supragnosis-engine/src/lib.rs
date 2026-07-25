@@ -221,6 +221,12 @@ pub struct CurationReport {
     /// a suggestion commits nothing (IR2) - acting on it opens an entity_merge proposal through the
     /// gate. Excludes same-id, already-merged, and already-open-proposal pairs.
     pub merge_suggestions: Vec<MergeSuggestion>,
+    /// Entity sets colliding under a normalization STRONGER than the id key (Principle 15/16). The id
+    /// key is `trim`+`lowercase`, so `duplicates` above cannot fire within one workspace - these are
+    /// the orthographic variants (`TrustTier` vs `Trust Tier`, `Port` vs `Ports`) that no other signal
+    /// catches, and unlike `merge_suggestions` this needs NO embedder, so it works on every node.
+    /// Read-only candidates: acting on one opens an entity_merge through the gate (I18/IR2).
+    pub name_variants: Vec<NameVariantGroup>,
     /// Type names defined on BOTH the entity and relation axes (resolution-identity.md Section 6,
     /// Principle 9). Informative, not blocking: an axis collision is legal but usually a mistake -
     /// the one structural T-Box check available before a subtype hierarchy exists (Principle 13).
@@ -250,6 +256,38 @@ pub struct MergeSuggestion {
 pub struct MergeCycle {
     pub members: Vec<CurationNode>,
     pub proposals: Vec<String>,
+}
+
+/// Which rung of the name-variant ladder grouped a candidate set. Declaration order is the ladder
+/// order (most conservative first) and a group is reported at the FIRST rung that forms it, so a
+/// pure separator variance never re-appears as a weaker plural/alias signal.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum VariantRung {
+    /// Equal once separators/punctuation/case are dropped: `TrustTier` vs `Trust Tier` vs `trust-tier`.
+    Separator,
+    /// Equal after additionally folding a naive English plural: `Port` vs `Ports`.
+    Plural,
+    /// One entity's name matches ANOTHER entity's recorded alias - the rung that repays aliases as a
+    /// dedup signal rather than only as a recall one.
+    Alias,
+}
+
+/// A set of entities whose names collide under a stronger normalization than the id key - distinct
+/// entities today, plausibly one concept. The counterpart of [`MergeSuggestion`] on the deterministic
+/// axis: same read-only contract (a group commits nothing), same structural corroboration field, but
+/// computed without an embedder so it is available on every node (Principle 19 - this signal belongs
+/// to the deterministic core, not the probabilistic edge).
+#[derive(Serialize)]
+pub struct NameVariantGroup {
+    /// The normalized key that grouped the members (shown so a reviewer can see WHY they collided).
+    pub key: String,
+    pub rung: VariantRung,
+    pub members: Vec<CurationNode>,
+    /// The largest number of graph neighbors shared by any member pair - structural corroboration,
+    /// mirroring [`MergeSuggestion::shared_neighbors`]. 0 means the names look alike with nothing
+    /// structural backing it, which is exactly the case a reviewer should look at hardest.
+    pub shared_neighbors: usize,
 }
 
 /// A detected cycle before name resolution: (sorted member entity ids, forming proposal ids).
@@ -306,6 +344,7 @@ pub struct CurationStats {
     pub contradictions: usize,
     pub merge_cycles: usize,
     pub merge_suggestions: usize,
+    pub name_variants: usize,
     pub type_axis_collisions: usize,
 }
 
@@ -1103,6 +1142,27 @@ impl Engine {
     /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
     /// already-merged (either side forwarded away), and pairs already under an open entity_merge.
     /// Without an embedder there are no candidates (degrade, P19). Within-node reproducible order
+    /// Entity pairs already carried by an OPEN entity_merge proposal. Every candidate generator
+    /// suppresses these: a pair in flight is not a fresh candidate, and re-offering it invites a
+    /// second proposal for a merge already awaiting a verdict. Shared by the merge band and the
+    /// name-variant ladder so the two cannot drift apart on what "already proposed" means.
+    fn open_merge_pairs(
+        &self,
+        workspace: Option<&str>,
+    ) -> Result<HashSet<(String, String)>, StoreError> {
+        let mut open_pairs: HashSet<(String, String)> = HashSet::new();
+        for p in self.fold_proposals(workspace)?.values() {
+            if p.kind == "entity_merge" && p.state == "open" {
+                for i in 0..p.targets.len() {
+                    for j in (i + 1)..p.targets.len() {
+                        open_pairs.insert(unordered_pair(&p.targets[i], &p.targets[j]));
+                    }
+                }
+            }
+        }
+        Ok(open_pairs)
+    }
+
     /// (similarity desc, then ids); it need not converge across nodes (Section 3).
     fn merge_band(
         &self,
@@ -1115,16 +1175,7 @@ impl Engine {
             return Ok(Vec::new());
         }
         // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
-        let mut open_pairs: HashSet<(String, String)> = HashSet::new();
-        for p in self.fold_proposals(workspace)?.values() {
-            if p.kind == "entity_merge" && p.state == "open" {
-                for i in 0..p.targets.len() {
-                    for j in (i + 1)..p.targets.len() {
-                        open_pairs.insert(unordered_pair(&p.targets[i], &p.targets[j]));
-                    }
-                }
-            }
-        }
+        let open_pairs = self.open_merge_pairs(workspace)?;
         // Canonicalized undirected adjacency for the shared-neighbor count (structural corroboration).
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
         let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
@@ -1294,6 +1345,10 @@ impl Engine {
             .collect();
         // The conservative merge band (Principle 15): embedding-near distinct-name candidates.
         let merge_suggestions = self.merge_band(workspace, &all_entities, &fwd, &relations)?;
+        // The deterministic name-variant ladder: the same intent as the band, on the axis that needs
+        // no embedder - so a keyword-only node (the prebuilt binary) still has a dedup signal.
+        let name_variants =
+            name_variant_groups(&entities, &fwd, &relations, &self.open_merge_pairs(workspace)?, &node);
         // T-Box axis collisions (Principle 9 minimal): a name defined on both the entity and the
         // relation axis. A pure fold over the type glossary (deterministic, P16).
         let mut axis: BTreeMap<String, (bool, bool)> = BTreeMap::new();
@@ -1313,9 +1368,10 @@ impl Engine {
             contradictions: contradictions.len(),
             merge_cycles: merge_cycles.len(),
             merge_suggestions: merge_suggestions.len(),
+            name_variants: name_variants.len(),
             type_axis_collisions: type_axis_collisions.len(),
         };
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, type_axis_collisions, stats })
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, name_variants, type_axis_collisions, stats })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
@@ -2858,6 +2914,147 @@ fn entity_text(entity: &Entity) -> String {
     }
 }
 
+/// Separator/case-insensitive name key: keep alphanumerics and lowercase. Unicode-aware via
+/// `is_alphanumeric`, so a Korean or otherwise non-Latin name survives intact instead of collapsing to
+/// the empty string. `TrustTier`, `Trust Tier` and `trust-tier` all fold to `trusttier` - a collision
+/// the entity id key (`trim`+`lowercase` only) deliberately keeps apart.
+fn variant_key(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Naive English plural fold applied ON TOP of [`variant_key`]: `ports` -> `port`, `entities` ->
+/// `entity`. Deliberately crude, because this is a candidate-generation key and the two error
+/// directions are not symmetric: a miss (`classes` vs `class`) is a false negative nobody ever sees,
+/// while a false positive costs one reviewer glance at the gate. `ss` endings are left alone so
+/// `class` does not fold into `clas`.
+fn plural_fold(key: &str) -> String {
+    if let Some(stem) = key.strip_suffix("ies") {
+        if stem.len() >= 2 {
+            return format!("{stem}y");
+        }
+    }
+    if let Some(stem) = key.strip_suffix('s') {
+        if !key.ends_with("ss") && stem.len() >= 2 {
+            return stem.to_string();
+        }
+    }
+    key.to_string()
+}
+
+/// The deterministic name-variant ladder (Principle 15/16) - the dedup signal that needs no embedder.
+///
+/// Why it exists: an entity id is `blake3(workspace + trim+lowercase(name))`, so case/whitespace
+/// variants already collapse at WRITE time, which in turn means [`CurationReport::duplicates`] (keyed
+/// on that same normalization) can never fire within a single workspace. Anything orthographically
+/// close but not identical under that key therefore had no detector at all whenever no embedder is
+/// configured, because [`Engine::merge_band`] returns empty without one. That is the gap this closes,
+/// and it is the common case for agent-written knowledge (`TrustTier` vs `Trust Tier`).
+///
+/// Detection only, never identity (I18/P23): this must NOT feed `Entity::make_id`. Folding variants
+/// into the id would change every existing id - breaking content addressing and federation
+/// convergence - and would silently merge pairs that must stay distinct, since `TrustTier` (a Rust
+/// enum) and `Trust Tier` (the design concept) differ by exactly one separator yet are two concepts.
+/// Naming the variance is the substrate's job; deciding identity is the gate's (Principle 15).
+///
+/// Deterministic (P16): BTreeMap/BTreeSet grouping, members sorted by id, and rungs walked in
+/// declaration order, so the output ordering is fixed without an explicit final sort.
+fn name_variant_groups(
+    entities: &[&Entity],
+    fwd: &HashMap<String, String>,
+    relations: &[Relation],
+    open_pairs: &HashSet<(String, String)>,
+    node: &dyn Fn(&Entity) -> CurationNode,
+) -> Vec<NameVariantGroup> {
+    // Canonicalized undirected adjacency - the same structural corroboration the merge band uses.
+    let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+    let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
+    for r in relations {
+        let (f, t) = (canon(&r.from), canon(&r.to));
+        if f == t {
+            continue;
+        }
+        adj.entry(f.clone()).or_default().insert(t.clone());
+        adj.entry(t).or_default().insert(f);
+    }
+    let by_id: HashMap<&str, &Entity> = entities.iter().map(|e| (e.id.as_str(), *e)).collect();
+
+    let mut out: Vec<NameVariantGroup> = Vec::new();
+    // Pairs already named at a stronger rung. A group is emitted only when it contributes a pair no
+    // earlier rung produced, so widening a group (a third member joining at `plural`) still reports
+    // while a plain restatement of the same pair does not. Seeded with the pairs already under an
+    // open proposal, which gets in-flight suppression for free through the same rule: a group whose
+    // every pair is already proposed contributes nothing new and drops out.
+    let mut seen_pairs: HashSet<(String, String)> = open_pairs.clone();
+
+    for rung in [
+        VariantRung::Separator,
+        VariantRung::Plural,
+        VariantRung::Alias,
+    ] {
+        let mut by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for e in entities {
+            let name_key = variant_key(&e.canonical_name);
+            match rung {
+                VariantRung::Separator => {
+                    by_key.entry(name_key).or_default().insert(e.id.clone());
+                }
+                VariantRung::Plural => {
+                    by_key
+                        .entry(plural_fold(&name_key))
+                        .or_default()
+                        .insert(e.id.clone());
+                }
+                VariantRung::Alias => {
+                    // Both the canonical name and every alias are entry points, so an entity is
+                    // reachable by any spelling it has ever carried (the dedup counterpart of the
+                    // alias parity the keyword search already has).
+                    by_key.entry(name_key).or_default().insert(e.id.clone());
+                    for a in &e.aliases {
+                        by_key
+                            .entry(variant_key(a))
+                            .or_default()
+                            .insert(e.id.clone());
+                    }
+                }
+            }
+        }
+
+        for (key, ids) in by_key {
+            if ids.len() < 2 || key.is_empty() {
+                continue;
+            }
+            let members: Vec<String> = ids.into_iter().collect();
+            let mut pairs: Vec<(String, String)> = Vec::new();
+            let mut shared = 0usize;
+            for i in 0..members.len() {
+                for j in (i + 1)..members.len() {
+                    pairs.push(unordered_pair(&members[i], &members[j]));
+                    if let (Some(x), Some(y)) = (adj.get(&members[i]), adj.get(&members[j])) {
+                        shared = shared.max(x.intersection(y).count());
+                    }
+                }
+            }
+            if pairs.iter().all(|p| seen_pairs.contains(p)) {
+                continue;
+            }
+            seen_pairs.extend(pairs);
+            out.push(NameVariantGroup {
+                key,
+                rung,
+                members: members
+                    .iter()
+                    .filter_map(|id| by_id.get(id.as_str()).map(|e| node(e)))
+                    .collect(),
+                shared_neighbors: shared,
+            });
+        }
+    }
+    out
+}
+
 /// Reciprocal Rank Fusion. Fuses rankings on different scales (keyword score vs cosine similarity) by rank alone,
 /// combining them without scale normalization. The same (kind, id) has its contributions summed.
 /// A deterministic function (Principle 16) - the same input ranks give the same result on any node.
@@ -3911,5 +4108,147 @@ mod tests {
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         assert_eq!(ids, sorted);
+    }
+
+    /// The name-variant ladder's normalization keys, tested directly because they define what counts
+    /// as "the same spelling" - the one place a change silently widens or narrows every candidate set.
+    #[test]
+    fn variant_keys_fold_orthography_but_not_meaning() {
+        // Separator/case variance collapses - the collision the id key (trim+lowercase) keeps apart.
+        for name in ["TrustTier", "Trust Tier", "trust-tier", "trust_tier", " Trust  Tier "] {
+            assert_eq!(variant_key(name), "trusttier", "{name}");
+        }
+        // Non-Latin names survive instead of folding to the empty string (is_alphanumeric, not ASCII).
+        assert_eq!(variant_key("신뢰 등급"), "신뢰등급");
+        // Distinct concepts stay distinct: the ladder must not reach across a real name difference.
+        assert_ne!(variant_key("Observation"), variant_key("Observation Log"));
+        assert_ne!(variant_key("Hlc"), variant_key("HLC Ordering"));
+        // Plural folding, and the `ss` guard that keeps `class` out of `clas`.
+        assert_eq!(plural_fold("ports"), plural_fold("port"));
+        assert_eq!(plural_fold("types"), plural_fold("type"));
+        assert_eq!(plural_fold("entities"), plural_fold("entity"));
+        assert_eq!(plural_fold("class"), "class");
+    }
+
+    /// The ladder is the dedup signal that survives WITHOUT an embedder (Principle 19): on a
+    /// keyword-only node the conservative merge band returns empty and `duplicates` cannot fire
+    /// (it is keyed on the same normalization as the entity id), so this is the only thing standing
+    /// between an agent's orthographic slip and two permanent entities for one concept.
+    #[test]
+    fn name_variant_ladder_catches_orthographic_duplicates_without_an_embedder() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
+        let observe = |content: &str, names: &[&str]| {
+            engine
+                .observe(ObserveInput {
+                    content: content.into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: names
+                        .iter()
+                        .map(|n| EntityInput {
+                            name: (*n).into(),
+                            kind: None,
+                            description: None,
+                        })
+                        .collect(),
+                    relations: vec![],
+                })
+                .expect("observe");
+        };
+        // A separator variant, a plural variant, and a control pair that must NOT group.
+        observe("enum", &["TrustTier"]);
+        observe("concept", &["Trust Tier"]);
+        observe("one", &["Port"]);
+        observe("many", &["Ports"]);
+        observe("distinct", &["Observation", "Observation Log"]);
+
+        let rep = engine.curation(Some("ws1")).unwrap();
+        // Baseline: the two signals this ladder exists to replace are both silent here.
+        assert!(
+            rep.merge_suggestions.is_empty(),
+            "no embedder is configured, so the merge band contributes nothing"
+        );
+        assert!(
+            rep.duplicates.is_empty(),
+            "the id key already folded case/whitespace, so duplicates cannot fire in one workspace"
+        );
+
+        let group_of = |name: &str| {
+            rep.name_variants
+                .iter()
+                .find(|g| g.members.iter().any(|m| m.name == name))
+                .unwrap_or_else(|| panic!("{name} should be flagged as a variant"))
+        };
+        let tt = group_of("TrustTier");
+        assert_eq!(tt.rung, VariantRung::Separator);
+        assert_eq!(tt.members.len(), 2);
+        let port = group_of("Ports");
+        assert_eq!(port.rung, VariantRung::Plural, "differs by more than separators");
+
+        // The control pair is untouched - a ladder that grouped these would be folding meaning.
+        assert!(
+            !rep.name_variants
+                .iter()
+                .any(|g| g.members.iter().any(|m| m.name == "Observation Log")),
+            "'Observation' and 'Observation Log' are two concepts, not two spellings"
+        );
+        assert_eq!(rep.stats.name_variants, rep.name_variants.len());
+
+        // Deterministic (P16): the same store serializes identically on a recomputation.
+        let once = serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
+        let twice = serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
+        assert_eq!(once, twice);
+    }
+
+    /// A candidate already awaiting a verdict is not a candidate (I18): once an entity_merge is open
+    /// for the pair, the ladder must stop offering it, exactly as the merge band does. Without this
+    /// the console re-offers a pair that is already in flight and a reviewer files duplicate
+    /// proposals for one merge.
+    #[test]
+    fn name_variants_stop_being_offered_once_a_merge_is_open() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
+        for (content, name) in [("enum", "TrustTier"), ("concept", "Trust Tier")] {
+            engine
+                .observe(ObserveInput {
+                    content: content.into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: name.into(),
+                        kind: None,
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+                .expect("observe");
+        }
+        let before = engine.curation(Some("ws1")).unwrap().name_variants;
+        assert_eq!(before.len(), 1, "the separator variant is offered first");
+        let members: Vec<String> = before[0].members.iter().map(|m| m.id.clone()).collect();
+
+        engine
+            .propose(ProposeInput {
+                workspace: Some("ws1".into()),
+                kind: "entity_merge".into(),
+                targets: members.clone(),
+                into: Some(members[1].clone()),
+                tier: None,
+                rationale: Some("name-variant ladder (separator/case normalization)".into()),
+                affected_types: Vec::new(),
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("propose");
+
+        assert!(
+            engine.curation(Some("ws1")).unwrap().name_variants.is_empty(),
+            "the pair is in flight - re-offering it would invite a duplicate proposal"
+        );
     }
 }

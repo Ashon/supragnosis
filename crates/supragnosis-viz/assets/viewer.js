@@ -548,6 +548,31 @@ function renderCuration() {
         + `<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`
         + `</div>`).join("")
     : `<div class="empty">none - no embedding-near pairs (needs the semantic embedder)</div>`;
+  // Name variants: the deterministic sibling of the merge band (Principle 15/16). Entity ids already
+  // fold case/whitespace, so these are the orthographic collisions nothing else catches - and unlike
+  // the band above they need no embedder, so this section is populated on every node. A pair reuses
+  // the .ms row so the existing propose wiring applies unchanged; 3+ members show as chips only
+  // (propose_merge takes a pair). Commits nothing either way - propose routes through the gate.
+  const nv = curation.name_variants || [];
+  html += `<div class="csec">name variants (${nv.length})</div>`;
+  html += nv.length
+    ? nv.map(v => {
+        const meta = `<span class="mssim" title="which normalization rung grouped them / shared neighbors (structural corroboration)">${esc(v.rung)}${v.shared_neighbors ? " / " + v.shared_neighbors + "nb" : ""}</span>`;
+        const m = v.members || [];
+        if (m.length === 2) {
+          // data-src tells the server which surface produced this, so the proposal records the real
+          // evidence instead of inheriting the merge band's "embedding-near" rationale.
+          return `<div class="ms" data-a="${esc(m[0].id)}" data-b="${esc(m[1].id)}" data-src="variant:${esc(v.rung)}">`
+            + `<span class="nchip" data-id="${esc(m[0].id)}" title="focus ${esc(m[0].name)}">${esc(m[0].name)}</span>`
+            + `<span class="msx">~</span>`
+            + `<span class="nchip" data-id="${esc(m[1].id)}" title="focus ${esc(m[1].name)}">${esc(m[1].name)}</span>`
+            + meta
+            + `<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`
+            + `</div>`;
+        }
+        return `<div class="grp"><span class="gk">${esc(v.key)}</span>${meta}<div class="chips">${m.map(nchip).join("")}</div></div>`;
+      }).join("")
+    : `<div class="empty">none - no orthographic variants</div>`;
   html += `<div class="csec">merge candidates (${dup.length})</div>`;
   html += dup.length
     ? dup.map(g => `<div class="grp"><span class="gk">${esc(g.key)}</span><div class="chips">${g.members.map(nchip).join("")}</div></div>`).join("")
@@ -570,6 +595,7 @@ function renderCuration() {
   const s = curation.stats || {};
   reviewCtEl.textContent =
     (s.contradictions || 0) + (s.merge_cycles || 0) + (s.merge_suggestions || 0)
+    + (s.name_variants || 0)
     + (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0)
     + (s.type_axis_collisions || 0) || "";
   curationBodyEl.querySelectorAll(".nchip").forEach(c => {
@@ -616,7 +642,11 @@ function renderCuration() {
       if (!row) return;
       const ws = wsInput.value.trim();
       let q = "?a=" + encodeURIComponent(row.dataset.a) + "&b=" + encodeURIComponent(row.dataset.b);
-      if (ws) q += "&workspace=" + encodeURIComponent(ws);
+      if (row.dataset.src) q += "&src=" + encodeURIComponent(row.dataset.src);
+      // "*"/"all" is the all-workspaces VIEW sentinel, not a workspace name - forwarding it would
+      // file the proposal into a workspace literally called "*" (the read endpoints normalize it,
+      // the write endpoints do not).
+      if (ws && ws !== "*" && ws !== "all") q += "&workspace=" + encodeURIComponent(ws);
       try { await fetch("/api/propose_merge" + q, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
       await poll();   // the suggestion drops (now open); the proposal shows in the Proposals tab
     };
