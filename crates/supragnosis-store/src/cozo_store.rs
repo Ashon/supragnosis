@@ -1125,6 +1125,71 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Cross-adapter parity for a DANGLING relation endpoint - architecture.md Section 14, overdue
+    /// entry condition 3 ("sync is exactly what first creates partial-ingest state"). A relation can
+    /// point at an id that has no projected entity row, and the adapters used to disagree: Cozo's
+    /// final rule inner-joins `*entity` and dropped it, while InMemory emitted a hit whose name was
+    /// the empty string - an invented node. Both now drop it, matching what `graph()`/`curation()`
+    /// already do with an edge whose endpoint is outside the node set, and both still traverse
+    /// THROUGH the gap so a node behind it stays reachable.
+    #[test]
+    fn traverse_dangling_endpoint_parity_across_adapters() {
+        let rel = |from: &str, to: &str| {
+            let (f, t) = (Entity::make_id("ws1", from), Entity::make_id("ws1", to));
+            Relation {
+                description: None,
+                id: Relation::make_id(&f, "rel", &t),
+                from: f,
+                to: t,
+                kind: "rel".into(),
+                provenance: prov(),
+                valid_from: None,
+                valid_to: None,
+            }
+        };
+        // `ghost` deliberately never gets a put_entity - only edges that reference it.
+        let fill = |store: &dyn KnowledgeStore| {
+            for n in ["root", "known", "beyond"] {
+                store.put_entity(ent(n)).unwrap();
+            }
+            store.add_relation(rel("root", "known")).unwrap();
+            store.add_relation(rel("root", "ghost")).unwrap();
+            store.add_relation(rel("ghost", "beyond")).unwrap();
+        };
+        let check = |store: &dyn KnowledgeStore, label: &str| -> Vec<(usize, String)> {
+            let hits = store
+                .traverse(&Entity::make_id("ws1", "root"), 5, 100)
+                .unwrap();
+            assert!(
+                hits.iter().all(|h| h.id != Entity::make_id("ws1", "ghost")),
+                "{label}: an unprojected endpoint must not be emitted"
+            );
+            assert!(
+                hits.iter().all(|h| !h.name.is_empty()),
+                "{label}: no hit may claim an entity whose name is empty: {hits:?}"
+            );
+            assert!(
+                hits.iter()
+                    .any(|h| h.id == Entity::make_id("ws1", "beyond") && h.depth == 2),
+                "{label}: reachability must still run THROUGH the gap: {hits:?}"
+            );
+            hits.iter().map(|h| (h.depth, h.id.clone())).collect()
+        };
+
+        let mem = InMemoryStore::new();
+        fill(&mem);
+        let km = check(&mem, "mem");
+
+        let dir = tmp_dir();
+        {
+            let store = CozoStore::open(&dir).unwrap();
+            fill(&store);
+            let kc = check(&store, "cozo");
+            assert_eq!(km, kc, "InMemory <-> Cozo parity on a dangling endpoint");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Principle 3: the Cozo adapter also absorbs re-arrivals as a union, and the merge result persists.
     #[test]
     fn cozo_reobservation_accumulates_attestations() {

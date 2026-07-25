@@ -729,8 +729,8 @@ Deferrals are not indefinite. Among the items above, those whose defense rests o
 currently unreachable" are repaid as the **entry conditions** of the milestone that makes that state reachable.
 
 The point of this ledger is that an entry condition comes due **when the state becomes reachable, not when it becomes
-convenient**. Two conditions below are now overdue: M4 shipped without them. They are recorded as debt, not silently
-re-scheduled.
+convenient**. One condition below is now overdue: M4 shipped without it. It is recorded as debt, not silently
+re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid - entry 3 below.)
 
 **Repaid [o]**
 - Reprojection (`reproject`) is implemented, and `all_observations` was added to `KnowledgeStore` as its prerequisite -
@@ -754,8 +754,15 @@ re-scheduled.
    which is now **by design** (log data, audit - F13), not a deferral. What remains for **Phase 5**:
    canon-policy-based evaluation (principal-to-key bindings deciding what a remote verdict/marker may
    grant - today a replicated console marker is honored under the single-principal premise).
-3. **Cross-adapter `traverse` parity for dangling relation endpoints** was not addressed, and sync is exactly what
-   first creates partial-ingest state.
+3. **Cross-adapter `traverse` parity for dangling relation endpoints** - REPAID. A relation endpoint with
+   no projected entity row is now **dropped by both adapters and traversed through**, so a node behind the
+   gap stays reachable while nothing is invented about the gap itself. Cozo's final rule already
+   inner-joined `*entity`; the InMemory adapter was the outlier, emitting a hit whose `name` was the empty
+   string - a node claimed to exist under a blank name. Dropping is also what `graph()` and `curation()`
+   already do with an edge whose endpoint falls outside the node set, so the three projections now agree.
+   Guarded by `traverse_dangling_endpoint_parity_across_adapters`, which fails on the pre-fix InMemory
+   behavior. Sync's partial-ingest state, the condition that made this reachable, no longer splits the
+   answer by adapter (Principle 16).
 
 **Overdue [x] - from "on introducing remote transport"**
 4. **No transport-aware guard confines workspace-scope-less global queries to the local trust surface** - RETIRED by

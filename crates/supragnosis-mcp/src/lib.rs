@@ -503,7 +503,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Traverse the graph from an entity, following relation direction (from->to). Returns the entities reachable within the maximum hops (max_depth), along with their shortest distance."
+        description = "Traverse the graph from an entity, following relation direction (from->to). Returns the entities reachable within the maximum hops (max_depth), along with their shortest distance. Reachability runs THROUGH a relation endpoint that no entity row describes yet (partial ingest), but such an endpoint is not listed - so a hit can sit deeper than any listed neighbor. That gap is unknown, not a missing edge."
     )]
     async fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
         let id = req.id.clone();
