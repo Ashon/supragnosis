@@ -39,6 +39,7 @@ enum Evidence {
 /// IO and cannot go stale against a moved file without failing to build.
 const SOURCES: &[&str] = &[
     include_str!("principle_scenarios.rs"),
+    include_str!("policy_cases.rs"),
     include_str!("recall_eval.rs"),
     include_str!("../src/lib.rs"),
     include_str!("../../supragnosis-core/src/lib.rs"),
@@ -58,6 +59,7 @@ const SOURCES: &[&str] = &[
 const REGISTRY: &[(u8, &str, Evidence)] = &[
     (1, "Assertion-Belief Separation", Evidence::Scenario(&[
         "observations_carry_assertions_in_log",
+        "p1_reprojection_rederives_without_touching_the_log",
         "incremental_write_equals_replay",
         "merge_suggestions_never_commit",
     ])),
@@ -68,6 +70,7 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
     ])),
     (3, "Supersede, Don't Delete", Evidence::Scenario(&[
         "absorb_union_is_order_independent_and_idempotent",
+        "p3_a_new_spelling_accumulates_and_never_displaces",
         "log_retains_all_attestations_on_reobservation",
         "cozo_reobservation_accumulates_attestations",
     ])),
@@ -90,6 +93,7 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
         // The generate-not-commit half only. Recall demotion itself does not exist -> M6.
         "merge_suggestions_never_commit",
         "name_variants_stop_being_offered_once_a_merge_is_open",
+        "p7_curation_generates_candidates_and_commits_nothing",
     ])),
     (8, "Clarity", Evidence::Scenario(&[
         "p8_description_survives_reobservation_without_one",
@@ -140,11 +144,13 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
     ])),
     (17, "Knowledge Sovereignty", Evidence::Scenario(&[
         "export_respects_share_list_and_vv",
+        "p17_socket_directory_denies_foreign_users_before_the_socket_mode",
         "bind_guard_enforces_f10",
         "loopback_hosts_and_origins_pass_foreign_ones_refused",
     ])),
     (18, "Writes Are an Attack Surface", Evidence::Scenario(&[
         "p18_agent_surface_promotion_caps_at_host_signed",
+        "p18_an_agent_surface_verdict_cannot_grant_human_confirmed",
         "evaluated_tier_caps_remote_claimed",
         "signature_roundtrip_verifies_and_tamper_fails",
         "apply_rejects_signed_but_malformed_event",
@@ -171,6 +177,7 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
     )),
     (23, "Gate to Canon", Evidence::Scenario(&[
         "p23_demotion_overrides_below_base",
+        "p23_a_proposal_alone_changes_nothing_only_the_verdict_commits",
         "i16_merge_absorbs_over_conflicting_reject_in_any_order",
         "i9_self_attested_is_blanket_true_until_principal_check_lands",
         "name_variants_stop_being_offered_once_a_merge_is_open",

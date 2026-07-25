@@ -512,3 +512,37 @@ async fn viz_serves_observation_log_and_explain() {
 
     let _ = std::fs::remove_file(&sock);
 }
+
+/// Principle 17, the OUTER of the two layers `bind_uds` establishes. Its sibling
+/// `viz_socket_is_owner_only_and_review_needs_no_browser_headers` covers the socket's own 0600 mode;
+/// this covers the directory, which the code creates 0700 as defense in depth so a foreign local
+/// user is denied before the socket mode is ever consulted. That second layer was documented in
+/// architecture.md Section 10 and in the bind comment, and asserted nowhere - and it is load-bearing
+/// precisely because the viewer deleted its Host/CSRF gates when it left TCP, leaving file
+/// permissions as the entire access control.
+#[tokio::test]
+async fn p17_socket_directory_denies_foreign_users_before_the_socket_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // A nested directory, so the parent this creates is one bind_uds made rather than the shared
+    // temp dir (whose mode is the OS's business, not ours).
+    let dir = std::env::temp_dir().join(format!("supra-viz-p17-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("viz.sock");
+
+    let engine = Arc::new(Engine::new(
+        Arc::new(InMemoryStore::new()),
+        "h",
+        "ws",
+    ));
+    let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
+    tokio::spawn(supragnosis_viz::serve(engine, listener, ev_channel(), None));
+
+    let dir_mode = std::fs::metadata(&dir).expect("dir exists").permissions().mode() & 0o777;
+    assert_eq!(
+        dir_mode, 0o700,
+        "the parent directory must deny a foreign user before the socket mode is consulted"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
