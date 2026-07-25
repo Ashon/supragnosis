@@ -1446,12 +1446,19 @@ function drawMinimap() {
     mctx.globalAlpha = 1;
   }
   // Nodes - filled circles whose radius grows with degree (a hub reads bigger), clamped for the minimap.
+  // Each carries the same background-color halo the main graph gives its nodes (NODE_STROKE_RATIO):
+  // without it, dots that overlap in a dense cluster merge into one blob and the minimap stops
+  // reporting density, which is most of what it is for. Same ratio, minimap-scale bounds - the floor
+  // keeps a 1.2px dot separated at all, the cap keeps a hub from closing into a donut.
   for (const n of src) {
     const mr = Math.max(1.2, Math.min(5, 1.2 + Math.sqrt(n.degree || 0) * 0.75));
     mctx.beginPath();
     mctx.arc(mx(n), my(n), mr, 0, 6.2832);
     mctx.fillStyle = typeColor[n.type] || OTHER;
     mctx.fill();
+    mctx.lineWidth = Math.min(1.4, Math.max(mr * NODE_STROKE_RATIO, 0.6));
+    mctx.strokeStyle = SURFACE;
+    mctx.stroke();
   }
   // Viewport rectangle: the screen corners in world coords, mapped in and clamped to the frame.
   // A corner that is clamped onto the frame corner takes the PANEL's radius (the rect then traces
