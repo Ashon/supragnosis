@@ -782,16 +782,23 @@ impl Engine {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.store.add_observation(obs)?;
 
-        let mut entities = Vec::new();
-        for e in input.entities {
-            entities.push(self.upsert_named(&workspace, &e.name, e.kind, e.description, &prov)?);
+        // Resolution write path (resolution-identity.md Section 4): the observation is in the log,
+        // so (re)project exactly the entities it touched - the same fold reproject runs, so the
+        // incremental row equals a fresh replay's (IR3). Relations then project directly (their id
+        // is deterministic and description/valid-interval are last-write, matching reproject).
+        let entity_ids: Vec<String> =
+            input.entities.iter().map(|e| Entity::make_id(&workspace, &e.name)).collect();
+        let mut touched: HashSet<String> = entity_ids.iter().cloned().collect();
+        for r in &input.relations {
+            touched.insert(Entity::make_id(&workspace, &r.from));
+            touched.insert(Entity::make_id(&workspace, &r.to));
         }
+        self.project_entities(&workspace, Some(&touched))?;
 
         let mut relations = Vec::new();
         for r in input.relations {
-            // Endpoints are named-only references here (no type/description of their own on a relation input).
-            let from = self.upsert_named(&workspace, &r.from, None, None, &prov)?;
-            let to = self.upsert_named(&workspace, &r.to, None, None, &prov)?;
+            let from = Entity::make_id(&workspace, &r.from);
+            let to = Entity::make_id(&workspace, &r.to);
             // kind is projected into its canonical form - so the id and the stored notation always match
             // (if only the id is normalized, different notations for the same id are left last-write-wins).
             let kind = normalize_relation_kind(&r.kind);
@@ -804,7 +811,7 @@ impl Engine {
                 description: r.description,
                 provenance: prov.clone(),
                 // Project the valid interval the client specified as-is (Principle 4 capture).
-                // Derivation logic such as auto-closing valid_to on refutation is M3.
+                // Derivation logic such as auto-closing valid_to on refutation is M3c.
                 valid_from: r.valid_from,
                 valid_to: r.valid_to,
             };
@@ -815,7 +822,7 @@ impl Engine {
 
         Ok(ObserveOutput {
             observation_id,
-            entities,
+            entities: entity_ids,
             relations,
         })
     }
@@ -1605,56 +1612,126 @@ impl Engine {
         )
     }
 
-    /// M0 resolution: exact match on the canonical name. If it exists, only append the source; otherwise create it.
-    fn upsert_named(
-        &self,
-        workspace: &str,
-        name: &str,
-        kind: Option<String>,
-        description: Option<String>,
-        prov: &Provenance,
-    ) -> Result<String, StoreError> {
-        let id = Entity::make_id(workspace, name);
-        let mut entity = self.store.get_entity(&id)?.unwrap_or_else(|| Entity {
-            id: id.clone(),
-            kind: kind.clone().unwrap_or_else(|| "Concept".to_string()),
-            canonical_name: name.trim().to_string(),
-            aliases: Vec::new(),
-            description: None,
-            properties: serde_json::Value::Null,
-            provenance: Vec::new(),
-            embedding: None,
-        });
-        if let Some(k) = kind {
-            entity.kind = k;
-        }
-        // Update the explanation only when this observation actually supplies one (do not erase a prior
-        // description with an omission) - last-write-wins among observations that specify it (M0).
-        if let Some(d) = description {
-            entity.description = Some(d);
-        }
-        entity.provenance.push(prov.clone());
-        // Embed the entity name/aliases so semantic search reaches the node by the **meaning of its name**
-        // (Principle 19: recall expansion). This fills the recall gap for nodes that observations do not mention lexically.
-        // Embedding attachment is best-effort: a failure does not block storing the entity (Principle 19: degrade).
-        // The name is stable, so compute it only once when absent (to minimize probabilistic adapter calls).
-        // A failure is not silent - it is retried when the next observation touches this entity (since it is still
-        // None), but until then it is not recalled by the meaning of its name.
-        if entity.embedding.is_none() {
-            if let Some(embedder) = &self.embedder {
-                match embedder.embed_one(&entity_text(&entity)) {
-                    Ok(vec) => entity.embedding = Some(vec),
-                    Err(e) => tracing::warn!(
-                        entity_id = %entity.id,
-                        name = %entity.canonical_name,
-                        error = %e,
-                        "entity embedding failed - stored without name-meaning recall (degrade)"
-                    ),
+    /// The resolution write path (resolution-identity.md Section 4): (re)projects entity rows purely
+    /// from the observation log. `only = None` projects every entity in the workspace (reproject);
+    /// `only = Some(ids)` projects just those (the incremental observe path). Both run the SAME fold,
+    /// so the incremental projection of a write equals a fresh replay's row for the same log (IR3) -
+    /// there is no field-wise last-write interim to diverge.
+    ///
+    /// For each in-scope entity, purely from the log:
+    /// - **kind**: the policy winner over kind candidates at their effective tiers (M3a).
+    /// - **canonical_name**: the policy winner over the asserted spellings (M3a, arrival-order-free).
+    /// - **aliases**: the distinct asserted spellings minus the representative, ordered by
+    ///   (first-asserting ordering-HLC, spelling) - a deterministic set union that never drops a
+    ///   spelling (Principle 3, IR1).
+    /// - **description**: HLC-latest non-empty (never erased by a later omission - Principle 8).
+    /// - **embedding**: the name-meaning recall aid (Principle 19), recomputed only when the
+    ///   embedding text (canonical_name + aliases) changed since the stored row (IR4) - so it is
+    ///   never silently stale, and unchanged rows do not re-hit the probabilistic adapter.
+    ///
+    /// Same log -> same rows on every node/call (P16). Entity `properties` (not modeled by any
+    /// assertion yet) are carried forward from the stored row rather than reset.
+    fn project_entities(&self, ws: &str, only: Option<&HashSet<String>>) -> Result<usize, StoreError> {
+        let gates = self.gate_grants(Some(ws))?;
+        let mut obss = self.store.all_observations(Some(ws))?;
+        obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
+
+        let mut name_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
+        let mut kind_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
+        let mut prov: HashMap<String, Vec<Provenance>> = HashMap::new();
+        let mut descr: HashMap<String, String> = HashMap::new(); // HLC-latest (ascending replay -> last wins)
+        let want = |id: &str| only.is_none_or(|s| s.contains(id));
+
+        for obs in &obss {
+            let eff = effective_tier(obs, &gates);
+            let hlc = ordering_hlc(obs);
+            // Entity ids this observation touches (deduped), so each observation's attestation set is
+            // credited to an entity's provenance exactly once - an entity named as both an assertion
+            // and a relation endpoint in the same observation is one supporting observation, not two.
+            let mut touched_here: BTreeSet<String> = BTreeSet::new();
+            let mut touch = |id: String, spelling: &str, kind: Option<&str>, description: Option<&str>| {
+                if !want(&id) {
+                    return;
                 }
+                name_cands.entry(id.clone()).or_default().push(BeliefCandidate {
+                    value: spelling.trim().to_string(),
+                    tier: eff,
+                    hlc: hlc.clone(),
+                    observation: obs.id.clone(),
+                });
+                if let Some(k) = kind {
+                    kind_cands.entry(id.clone()).or_default().push(BeliefCandidate {
+                        value: k.to_string(),
+                        tier: eff,
+                        hlc: hlc.clone(),
+                        observation: obs.id.clone(),
+                    });
+                }
+                if let Some(d) = description {
+                    descr.insert(id.clone(), d.to_string()); // ascending replay: highest HLC wins
+                }
+                touched_here.insert(id);
+            };
+            for ea in &obs.assertions.entities {
+                touch(Entity::make_id(ws, &ea.name), &ea.name, ea.kind.as_deref(), ea.description.as_deref());
+            }
+            for ra in &obs.assertions.relations {
+                touch(Entity::make_id(ws, &ra.from), &ra.from, None, None);
+                touch(Entity::make_id(ws, &ra.to), &ra.to, None, None);
+            }
+            // Credit ALL of this observation's attestations to each entity it supports (Principle 3:
+            // the entity provenance reflects every attestation in the log, not just a representative -
+            // so re-projecting recovers the same count the incremental write produced, IR3).
+            for id in touched_here {
+                prov.entry(id).or_default().extend(obs.provenance.iter().cloned());
             }
         }
-        self.store.put_entity(entity)?;
-        Ok(id)
+
+        let mut count = 0;
+        for (id, ncs) in &name_cands {
+            let canonical = self
+                .policy
+                .choose(ncs)
+                .map(|c| ncs[c.index].value.clone())
+                .unwrap_or_default();
+            let aliases = alias_set(ncs, &canonical);
+            let kind = kind_cands
+                .get(id)
+                .and_then(|ks| self.policy.choose(ks).map(|c| ks[c.index].value.clone()))
+                .unwrap_or_else(|| "Concept".to_string());
+            let mut entity = Entity {
+                id: id.clone(),
+                kind,
+                canonical_name: canonical,
+                aliases,
+                description: descr.get(id).cloned(),
+                properties: serde_json::Value::Null,
+                provenance: prov.get(id).cloned().unwrap_or_default(),
+                embedding: None,
+            };
+            let text = entity_text(&entity);
+            if let Some(existing) = self.store.get_entity(id)? {
+                // Keep the stored embedding ONLY if its source text is unchanged (IR4: never stale).
+                if existing.embedding.is_some() && entity_text(&existing) == text {
+                    entity.embedding = existing.embedding;
+                }
+                entity.properties = existing.properties;
+            }
+            if entity.embedding.is_none() {
+                if let Some(embedder) = &self.embedder {
+                    match embedder.embed_one(&text) {
+                        Ok(vec) => entity.embedding = Some(vec),
+                        Err(e) => tracing::warn!(
+                            entity_id = %entity.id, name = %entity.canonical_name, error = %e,
+                            "entity embedding failed - stored without name-meaning recall (degrade)"
+                        ),
+                    }
+                }
+            }
+            self.store.put_entity(entity)?;
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// Rebuilds the materialized entity/relation projection of a workspace from the observation log,
@@ -1666,48 +1743,16 @@ impl Engine {
     /// place - removal is a curation concern, not reprojection's (Principle 3).
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
+        // Entities: the same resolution write path the incremental observe uses, over ALL entities
+        // (only = None) - so a reproject and an incremental write agree row-for-row (IR3).
+        let entities = self.project_entities(&ws, None)?;
+
+        // Relations: replay in (ordering HLC, id) order and upsert by id - description/valid-interval
+        // are last-write, matching the store's upsert-by-id semantics with a deterministic order.
         let mut obss = self.store.all_observations(Some(&ws))?;
         obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
-        // Belief inputs (resolution.md): gate grants for effective tiers, and per-entity candidate
-        // sets for the policy-selected kind and representative spelling, collected during replay.
-        let gates = self.gate_grants(Some(&ws))?;
-        let mut kind_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
-        let mut name_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
-
-        let mut ents: BTreeMap<String, Entity> = BTreeMap::new();
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
-        // Fresh upsert against the replay state (NOT the store) - mirrors upsert_named's semantics
-        // (create with Concept default, kind/description last-write-wins only when supplied).
-        let touch = |ents: &mut BTreeMap<String, Entity>,
-                         name: &str,
-                         kind: Option<&str>,
-                         description: Option<&str>,
-                         prov: &Provenance|
-         -> String {
-            let id = Entity::make_id(&ws, name);
-            let e = ents.entry(id.clone()).or_insert_with(|| Entity {
-                id: id.clone(),
-                kind: "Concept".to_string(),
-                canonical_name: name.trim().to_string(),
-                aliases: Vec::new(),
-                description: None,
-                properties: serde_json::Value::Null,
-                provenance: Vec::new(),
-                embedding: None,
-            });
-            if let Some(k) = kind {
-                e.kind = k.to_string();
-            }
-            if let Some(d) = description {
-                e.description = Some(d.to_string());
-            }
-            e.provenance.push(prov.clone());
-            id
-        };
-
         for obs in &obss {
-            // Representative attestation: the authoring one (earliest effective HLC; index breaks
-            // ties deterministically - the provenance list is kept sorted by absorb).
             let Some(prov) = obs
                 .provenance
                 .iter()
@@ -1719,32 +1764,11 @@ impl Engine {
             else {
                 continue;
             };
-            let eff = effective_tier(obs, &gates);
-            let hlc = ordering_hlc(obs);
-            let cand = |map: &mut HashMap<String, Vec<BeliefCandidate>>, id: &str, value: &str| {
-                map.entry(id.to_string()).or_default().push(BeliefCandidate {
-                    value: value.to_string(),
-                    tier: eff,
-                    hlc: hlc.clone(),
-                    observation: obs.id.clone(),
-                });
-            };
-            for ea in &obs.assertions.entities {
-                let id = touch(&mut ents, &ea.name, ea.kind.as_deref(), ea.description.as_deref(), &prov);
-                cand(&mut name_cands, &id, ea.name.trim());
-                if let Some(k) = &ea.kind {
-                    cand(&mut kind_cands, &id, k);
-                }
-            }
             for ra in &obs.assertions.relations {
-                let from = touch(&mut ents, &ra.from, None, None, &prov);
-                let to = touch(&mut ents, &ra.to, None, None, &prov);
-                cand(&mut name_cands, &from, ra.from.trim());
-                cand(&mut name_cands, &to, ra.to.trim());
+                let from = Entity::make_id(&ws, &ra.from);
+                let to = Entity::make_id(&ws, &ra.to);
                 let kind = normalize_relation_kind(&ra.kind);
                 let id = Relation::make_id(&from, &kind, &to);
-                // Last-write-wins per relation id by replay (HLC) order - matches the store's
-                // upsert-by-id semantics, now with a deterministic order.
                 rels.insert(
                     id.clone(),
                     Relation {
@@ -1760,43 +1784,11 @@ impl Engine {
                 );
             }
         }
-
-        // Apply the belief policy (resolution.md Section 2.2): kind = the policy winner over the
-        // log's candidates, and canonical_name = the policy-selected representative spelling -
-        // retiring the arrival-order (first-write-wins) selection recorded as a latent condition in
-        // architecture.md Section 14. Fields the log never asserted keep their replay defaults.
-        for (id, e) in ents.iter_mut() {
-            if let Some(cs) = kind_cands.get(id) {
-                if let Some(choice) = self.policy.choose(cs) {
-                    e.kind = cs[choice.index].value.clone();
-                }
-            }
-            if let Some(cs) = name_cands.get(id) {
-                if let Some(choice) = self.policy.choose(cs) {
-                    e.canonical_name = cs[choice.index].value.clone();
-                }
-            }
-        }
         let report = ReprojectReport {
             observations: obss.len(),
-            entities: ents.len(),
+            entities,
             relations: rels.len(),
         };
-        for (id, mut e) in ents {
-            // Preserve the recall aid (P19): an embedding is node-local and expensive - carry the
-            // stored one; compute best-effort only when absent and an embedder exists (like observe).
-            if let Some(existing) = self.store.get_entity(&id)? {
-                e.embedding = existing.embedding;
-            }
-            if e.embedding.is_none() {
-                if let Some(embedder) = &self.embedder {
-                    if let Ok(vec) = embedder.embed_one(&entity_text(&e)) {
-                        e.embedding = Some(vec);
-                    }
-                }
-            }
-            self.store.put_entity(e)?;
-        }
         for (_, r) in rels {
             self.store.add_relation(r)?;
         }
@@ -1818,28 +1810,49 @@ impl Engine {
     /// Entity + relation lookup. `Ok(None)` is absence (unknown, Principle 5), `Err` is a store failure -
     /// failures are not swallowed, so the caller (the MCP surface) can distinguish and relay the two.
     pub fn get_entity(&self, id: &str) -> Result<Option<EntityView>, StoreError> {
-        match self.store.get_entity(id)? {
-            Some(mut entity) => {
-                let relations = self.store.relations_of(id)?;
-                // Belief overlay (resolution.md Section 4.2), scoped to this entity's workspace so
-                // the agent surface sees the same policy-current kind/contested state as the viewer.
-                let ws = entity.provenance.first().map(|p| p.workspace.clone());
-                let fwd = self.merge_forwarding(ws.as_deref())?;
-                let gates = self.gate_grants(ws.as_deref())?;
-                let belief = self.belief_fold(ws.as_deref(), &fwd, &gates)?;
-                let (winner, contested, competitors) = self.resolve_kind(belief.kinds.get(id));
-                let mut kind_source = None;
-                if let Some((k, obs)) = winner {
-                    entity.kind = k;
-                    kind_source = Some(obs);
-                }
-                let effective_tier = belief.tiers.get(id).copied().unwrap_or_else(|| {
-                    entity.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
-                });
-                Ok(Some(EntityView { entity, relations, effective_tier, contested, competitors, kind_source }))
-            }
-            None => Ok(None),
+        let Some(row) = self.store.get_entity(id)? else {
+            return Ok(None);
+        };
+        let ws = row.provenance.first().map(|p| p.workspace.clone());
+        let fwd = self.merge_forwarding(ws.as_deref())?;
+        // Principle 14: a merged-away id keeps forwarding to its canonical entity - a lookup by any
+        // pre-merge id dereferences to the surviving row (the log keeps both; un-merge is a proposal).
+        let canon_id = fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let mut entity = if canon_id == *id {
+            row
+        } else {
+            self.store.get_entity(&canon_id)?.unwrap_or(row)
+        };
+        let relations = self.store.relations_of(&canon_id)?;
+        // Union merged-away names into aliases so get_entity sees the same alias set as the graph
+        // fold (the write path already materialized same-id spelling aliases on the row - IR1).
+        if !fwd.is_empty() {
+            let mut merged: Vec<String> = self
+                .store
+                .all_entities(ws.as_deref())?
+                .into_iter()
+                .filter(|e| fwd.get(&e.id).is_some_and(|c| *c == canon_id))
+                .map(|e| e.canonical_name)
+                .filter(|n| *n != entity.canonical_name && !entity.aliases.contains(n))
+                .collect();
+            merged.sort();
+            merged.dedup();
+            entity.aliases.extend(merged);
         }
+        // Belief overlay (resolution.md Section 4.2), scoped to this entity's workspace so the agent
+        // surface sees the same policy-current kind/contested state as the viewer.
+        let gates = self.gate_grants(ws.as_deref())?;
+        let belief = self.belief_fold(ws.as_deref(), &fwd, &gates)?;
+        let (winner, contested, competitors) = self.resolve_kind(belief.kinds.get(&canon_id));
+        let mut kind_source = None;
+        if let Some((k, obs)) = winner {
+            entity.kind = k;
+            kind_source = Some(obs);
+        }
+        let effective_tier = belief.tiers.get(&canon_id).copied().unwrap_or_else(|| {
+            entity.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
+        });
+        Ok(Some(EntityView { entity, relations, effective_tier, contested, competitors, kind_source }))
     }
 
     /// Hybrid search: fuses keyword (substring match) + vector (semantic) results with RRF, then enriches with the
@@ -2077,9 +2090,12 @@ impl Engine {
                     .collect();
                 origins.sort();
                 origins.dedup();
+                // Aliases = every member's canonical spelling + its accumulated same-id spelling
+                // aliases (the write path materializes those - Section 2/IR1), minus the canonical
+                // name. So a merged-away name and a case-variant spelling both surface here.
                 let mut aliases: Vec<String> = members
                     .iter()
-                    .map(|m| m.canonical_name.clone())
+                    .flat_map(|m| std::iter::once(m.canonical_name.clone()).chain(m.aliases.iter().cloned()))
                     .filter(|n| n != &ce.canonical_name)
                     .collect();
                 aliases.sort();
@@ -2356,6 +2372,31 @@ const GRAPH_ENRICH_SEEDS: usize = 5;
 /// hyperedge does not hold (Principle 11 second-order structure caveat). 2 converges on a binary co-mention but is still
 /// a "said together" context, so it is included.
 const HYPEREDGE_MIN_SIZE: usize = 2;
+
+/// The alias set for an entity (resolution-identity.md Section 2, IR1): the distinct asserted
+/// spellings minus the representative (`canonical`), ordered by (first-asserting ordering-HLC,
+/// spelling). A deterministic set union - the same candidate set yields the same aliases on any
+/// node (P16), and a spelling that lost the representative choice is never dropped (Principle 3).
+fn alias_set(cands: &[BeliefCandidate], canonical: &str) -> Vec<String> {
+    // value -> the earliest ordering-HLC that asserted it (first-asserting).
+    let mut first: BTreeMap<&str, &Hlc> = BTreeMap::new();
+    for c in cands {
+        if c.value == canonical {
+            continue;
+        }
+        first
+            .entry(c.value.as_str())
+            .and_modify(|h| {
+                if &c.hlc < *h {
+                    *h = &c.hlc;
+                }
+            })
+            .or_insert(&c.hlc);
+    }
+    let mut ordered: Vec<(&str, &Hlc)> = first.into_iter().collect();
+    ordered.sort_by(|a, b| a.1.cmp(b.1).then_with(|| a.0.cmp(b.0)));
+    ordered.into_iter().map(|(v, _)| v.to_string()).collect()
+}
 
 /// The text to embed for an entity: canonical name + aliases (if any). Opens semantic recall by the meaning of the name.
 /// Since aliases hold notation variants, embedding them together widens the reach to other notations of the same target.
