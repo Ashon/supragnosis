@@ -19,8 +19,9 @@ and lets you query and explore it over **MCP**.
 - Docs: architecture -> [`docs/architecture.md`](docs/architecture.md), design principles ->
   [`docs/principles.md`](docs/principles.md), proposal workflow ->
   [`docs/proposal-workflow.md`](docs/proposal-workflow.md), federation ->
-  [`docs/federation.md`](docs/federation.md), belief resolution (M3a spec) ->
-  [`docs/resolution.md`](docs/resolution.md)
+  [`docs/federation.md`](docs/federation.md), belief resolution (M3a) ->
+  [`docs/resolution.md`](docs/resolution.md), identity resolution (M3b spec) ->
+  [`docs/resolution-identity.md`](docs/resolution-identity.md)
 
 ## Install (prebuilt binary)
 

@@ -12,7 +12,8 @@
   no longer a forward-looking baseline: it describes what exists, and marks what does not.
 - Normative document: the design principles follow [`principles.md`](principles.md) (design principles).
 - Companion specs: [`federation.md`](federation.md) (M4), [`proposal-workflow.md`](proposal-workflow.md) (M3.5),
-  [`resolution.md`](resolution.md) (M3a, implemented).
+  [`resolution.md`](resolution.md) (M3a, implemented),
+  [`resolution-identity.md`](resolution-identity.md) (M3b, spec only).
 
 ---
 
@@ -463,10 +464,16 @@ HTTP-over-UDS client (`curl --unix-socket`).
      read path (graph/curation/entity views - continuous fold) and materialized at `reproject`;
      the incremental observe upsert keeps its arrival-order interim within the same transient
      window that already exists (F5).
-   - **M3b - identity resolution**: conservative resolution + induced schema proposal -> explicit
-     promotion (Principle 11), `define_type` consistency validation (Principle 9), alias accumulation
-     + the conservative merge band with embedding candidates (Principle 15), valid
-     interval/time-travel queries (Principle 4), and the atomic write path (absorbing `write_guard`).
+   - **M3b - identity resolution (spec -> [resolution-identity.md](resolution-identity.md), not
+     implemented)**: alias accumulation, the conservative merge band with embedding candidates
+     (generation only - commitment stays gated, Principle 15), the resolution write path absorbing
+     `write_guard`, keyword-search alias parity + entity-embedding staleness (the Section 14 latent
+     conditions), T-Box conflict surfacing (Principle 9 minimal), and induced type candidates from
+     hyperedges (Principle 11).
+   - **M3c - bitemporal query logic (split from M3b, after it)**: `as_of_valid`/`as_of_recorded`
+     time-travel queries and automatic `valid_to` closing - needs negation semantics (Principle 5's
+     explicit negative assertion is not yet modeled). Capture is complete, so the deferral stays
+     non-destructive (Principle 4).
    - Landed ahead of the milestone: the **hyperedge (co-occurrence second-order structure) projection**
      (`workspace_map` / `hypergraph`) and **reprojection** (`reproject`, the declared first task and
      entry condition) - both were pulled forward because M3.5/M4 needed them.
