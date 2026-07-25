@@ -58,6 +58,30 @@ curl -fsSL https://supragnosis.dev/install.sh | sh
 - The prebuilt binary is **keyword + hashing search**. For local ONNX **semantic search**, build from source with `--features fastembed`.
 - On a `v*` tag push, GitHub Actions (`.github/workflows/release.yml`) builds and publishes the release.
 
+## Development (Taskfile)
+[`Taskfile.yml`](Taskfile.yml) wraps the common loops (`brew install go-task`, then `task` to list
+everything). The raw `cargo` equivalents are all in the sections below - the task runner is a
+convenience, not a requirement.
+```bash
+task dev            # the viewer UI on YOUR build - own db/socket/port, isolated from ~/.supragnosis
+task app            # shell against the already-running daemon (builds nothing)
+task server         # server only (MCP http + viewer socket), no desktop shell
+task check          # clippy + viewer ESLint + tests
+task viz -- /api/curation   # GET the viewer API over its unix socket
+```
+- `task dev` pins `SUPRAGNOSIS_VIZ_SOCK`/`DATA_DIR`/`HTTP_ADDR` on purpose. The shell does
+  attach-or-spawn: if the socket it resolves already answers it attaches and never consults
+  `SUPRAGNOSIS_BIN`, so an unpinned socket would silently show you an installed daemon's build
+  instead of the one you just compiled. Use `task app` when attaching is what you actually want.
+- **`task check` is the real pre-push gate.** CI runs *only* the viewer ESLint job
+  ([`frontend-lint.yml`](.github/workflows/frontend-lint.yml)); there is no Rust job, so clippy and
+  the test suite are never run for you.
+- There is deliberately **no dev web server task**. The viewer is unix-socket-only (see the bind
+  policy in [`docs/architecture.md`](docs/architecture.md) Section 10), so `task dev` runs the
+  desktop shell, which proxies its webview onto the socket via `viz://`. Proxying the socket to a
+  TCP port would re-expose the browser attack class v0.1.10 deleted the defenses for, and would
+  launder the `/api/review` surface ceiling - don't.
+
 ## Build & run
 ```bash
 cargo build                                          # default (keyword search) - lightweight build
