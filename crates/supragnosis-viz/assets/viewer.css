@@ -238,6 +238,10 @@
   #curationBody .nchip .ty { color:var(--faint); font-size:9.5px; margin-left:3px; }
   #curationBody .gb { padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; color:var(--ink2); }
   #curationBody .gb .sz { color:var(--gold-bright); font-weight:600; margin-right:5px; }
+  #curationBody .gb .reify { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; margin-left:6px; }
+  #curationBody .reifyform { display:inline-flex; gap:4px; margin-left:6px; }
+  #curationBody .reifyform input { width:140px; padding:0 6px; font-size:10.5px; border-radius:5px; }
+  #curationBody .reifyform button { padding:0 8px; font-size:9.5px; border-radius:5px; }
   #curationBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
   /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
      .hot = tier-tied (the dashed amber ring on the canvas): mediation invited; otherwise the list is

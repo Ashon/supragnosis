@@ -506,7 +506,7 @@ function renderCuration() {
     : `<div class="empty">none - no name collisions</div>`;
   html += `<div class="csec">grab-bag contexts (${gb.length})</div>`;
   html += gb.length
-    ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return `<div class="gb"><span class="sz">${b.size}</span>${esc(nm)}</div>`; }).join("")
+    ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return `<div class="gb" data-hid="${esc(b.id)}"><span class="sz">${b.size}</span>${esc(nm)}<button class="reify" title="assert this context as a group entity + member_of relations (a lineage-bearing observation - the hyperedge itself stays a derived view)">reify</button></div>`; }).join("")
     : `<div class="empty">none - no oversized clusters</div>`;
   html += `<div class="csec">orphans (${orph.length})</div>`;
   html += orph.length ? `<div class="chips">${orph.map(nchip).join("")}</div>` : `<div class="empty">none - all nodes linked</div>`;
@@ -521,6 +521,35 @@ function renderCuration() {
   });
   curationBodyEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
+  });
+  // Reify (Principle 11 promotion path): name the context, assert it as a group entity through
+  // /api/reify (an ordinary lineage-bearing observation - free ingest, no gate on the assertion).
+  // DOM-built inline form (no innerHTML sink for the user-typed name).
+  curationBodyEl.querySelectorAll(".gb .reify").forEach(b => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const row = b.closest(".gb");
+      if (!row || row.querySelector(".reifyform")) return;
+      const form = document.createElement("span");
+      form.className = "reifyform";
+      const inp = document.createElement("input");
+      inp.placeholder = "group name (optional)";
+      inp.onclick = (e2) => e2.stopPropagation();
+      const ok = document.createElement("button");
+      ok.textContent = "ok";
+      ok.onclick = async (e2) => {
+        e2.stopPropagation();
+        const ws = wsInput.value.trim();
+        let q = "?hyperedge=" + encodeURIComponent(row.dataset.hid);
+        if (inp.value.trim()) q += "&name=" + encodeURIComponent(inp.value.trim());
+        if (ws) q += "&workspace=" + encodeURIComponent(ws);
+        try { await fetch("/api/reify" + q, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
+        await poll();   // the group node + member_of edges appear; the panel re-renders
+      };
+      form.append(inp, ok);
+      row.appendChild(form);
+      inp.focus();
+    };
   });
 }
 

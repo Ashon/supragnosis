@@ -379,3 +379,60 @@ async fn viz_resolve_settles_a_contested_belief() {
     assert_eq!(props[0]["tier"], "human_confirmed");
     let _ = std::fs::remove_file(&sock);
 }
+
+/// The reify promotion path over the socket (Principle 11): a recurring co-occurrence context is
+/// asserted as a group entity + member_of relations through /api/reify - an ordinary observation
+/// carrying derived_from lineage - and the graph gains the first-class structure while the
+/// hyperedge stays a derived view.
+#[tokio::test]
+async fn viz_reify_promotes_a_hyperedge_into_the_graph() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "ws"));
+    for content in ["kernel loads driver", "driver runs in kernel space"] {
+        engine
+            .observe(ObserveInput {
+                content: content.into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![
+                    EntityInput { description: None, name: "kernel".into(), kind: None },
+                    EntityInput { description: None, name: "driver".into(), kind: None },
+                ],
+                relations: vec![],
+            })
+            .unwrap();
+    }
+    let sock = serve_uds("reify", engine, ev_channel()).await;
+
+    let hg = json_get(&uds_get(&sock, "/api/hypergraph?workspace=ws").await);
+    let hid = hg["hyperedges"][0]["id"].as_str().expect("hyperedge id").to_string();
+    assert_eq!(hg["hyperedges"][0]["sources"], 2);
+
+    let r = json_get(
+        &uds_get(&sock, &format!("/api/reify?hyperedge={hid}&name=boot%20stack&workspace=ws")).await,
+    );
+    assert!(r["observation_id"].is_string(), "reify: {r}");
+
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    let group = g["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["name"] == "boot stack")
+        .expect("group node");
+    assert_eq!(group["type"], "Context");
+    let member_edges = g["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["type"] == "member_of")
+        .count();
+    assert_eq!(member_edges, 2, "graph: {g}");
+    // An unknown id is a 400 with a self-correcting message, not a silent no-op (P21/P5).
+    let resp = uds_get(&sock, "/api/reify?hyperedge=nope&workspace=ws").await;
+    assert!(resp.lines().next().unwrap_or("").contains("400"), "got: {resp}");
+    let _ = std::fs::remove_file(&sock);
+}

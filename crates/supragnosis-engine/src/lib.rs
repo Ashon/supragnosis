@@ -333,6 +333,19 @@ pub struct AffectedType {
     pub name: String,
 }
 
+/// Input for [`Engine::reify_hyperedge`] (Principle 11's promotion path into the graph).
+pub struct ReifyInput {
+    pub workspace: Option<String>,
+    /// The hyperedge to reify (from `workspace_map` / the hypergraph resource).
+    pub hyperedge: String,
+    /// Group entity name; defaults to "context: <first member names>".
+    pub name: Option<String>,
+    /// Group entity type; defaults to "Context".
+    pub kind: Option<String>,
+    pub source_ref: Option<String>,
+    pub on_behalf_of: Option<String>,
+}
+
 /// Input to open a proposal.
 pub struct ProposeInput {
     pub workspace: Option<String>,
@@ -471,6 +484,36 @@ fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> Trus
     gates.get(&obs.id).copied().unwrap_or_else(|| {
         obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
     })
+}
+
+/// The canonical member set an observation co-asserts (the hyperedge membership rule): entity
+/// assertions + both relation endpoints, resolved by name to entity ids, forwarded through
+/// accepted merges, and kept only when present in the graph node set (closed hull - the same
+/// discipline as graph()'s edge closure). BTreeSet gives dedup + sorted order at once
+/// (arrival-order independent - Principle 16). Shared by the hypergraph projection and reify.
+fn co_asserted_members(
+    obs: &Observation,
+    node_ids: &HashSet<&str>,
+    fwd: &HashMap<String, String>,
+) -> Vec<String> {
+    let ws = obs.workspace();
+    let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
+    let mut members: BTreeSet<String> = BTreeSet::new();
+    for e in &obs.assertions.entities {
+        let id = canon(Entity::make_id(ws, &e.name));
+        if node_ids.contains(id.as_str()) {
+            members.insert(id);
+        }
+    }
+    for r in &obs.assertions.relations {
+        for name in [&r.from, &r.to] {
+            let id = canon(Entity::make_id(ws, name));
+            if node_ids.contains(id.as_str()) {
+                members.insert(id);
+            }
+        }
+    }
+    members.into_iter().collect()
 }
 
 /// A stable string label for TrustTier (matching the serialized snake_case). Used as metric keys.
@@ -2096,9 +2139,16 @@ impl Engine {
     /// This view only **generates** candidates/signals - decisions such as merge/promotion/schema definition go through
     /// the existing gates (resolution/proposal/human confirmation). A derived view does not write the canonical record directly (Principle 1/19).
     pub fn hypergraph(&self, workspace: Option<&str>) -> Result<HyperGraphView, StoreError> {
-        let entities = self.store.all_entities(workspace)?;
+        let all_entities = self.store.all_entities(workspace)?;
         // Gate grants feed the per-observation effective tier (resolution.md Section 3).
         let gates = self.gate_grants(workspace)?;
+        // Apply accepted entity-merges (Principle 15), exactly like graph(): membership resolves
+        // through the forwarding, merged-away rows drop from the node set, and member sets that
+        // coincide after canonicalization union into one hyperedge (their sources accumulate -
+        // Principle 3, the member set is the identity, Principle 14).
+        let fwd = self.merge_forwarding(workspace)?;
+        let entities: Vec<&Entity> =
+            all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
         // id -> canonical name (readability: hyperedge members are carried as names too).
         let name_by_id: HashMap<&str, &str> = entities
@@ -2110,29 +2160,10 @@ impl Engine {
         // Value: (sorted members, sources count, highest trust among contributing observations).
         let mut acc: HashMap<String, (Vec<String>, usize, TrustTier)> = HashMap::new();
         for obs in self.store.all_observations(workspace)? {
-            let ws = obs.workspace();
-            // The entities co-asserted by an observation: entity assertions + both endpoints of relations. Resolved to
-            // canonical ids and keeping only those in the graph node set (closed hull - the same discipline as graph()'s edge closure).
-            // BTreeSet gives dedup + sort at once (independent of arrival order - Principle 16).
-            let mut members: BTreeSet<String> = BTreeSet::new();
-            for e in &obs.assertions.entities {
-                let id = Entity::make_id(ws, &e.name);
-                if node_ids.contains(id.as_str()) {
-                    members.insert(id);
-                }
-            }
-            for r in &obs.assertions.relations {
-                for name in [&r.from, &r.to] {
-                    let id = Entity::make_id(ws, name);
-                    if node_ids.contains(id.as_str()) {
-                        members.insert(id);
-                    }
-                }
-            }
+            let members = co_asserted_members(&obs, &node_ids, &fwd);
             if members.len() < HYPEREDGE_MIN_SIZE {
                 continue; // A degenerate set (single/0 members) is not a hyperedge.
             }
-            let members: Vec<String> = members.into_iter().collect();
             let id = hyperedge_id(&members);
             // This observation's representative trust = its EFFECTIVE tier (receiver-evaluated +
             // gate grants, resolution.md Section 3) - never the raw claimed max (F13).
@@ -2192,7 +2223,9 @@ impl Engine {
                     name: e.canonical_name.clone(),
                     kind: e.kind.clone(),
                     description: e.description.clone(),
-                    aliases: Vec::new(), // hypergraph does not yet apply merge forwarding (follow-up)
+                    // Merged-away rows are dropped and membership forwards to the canonical id;
+                    // the merged-name alias display stays graph()'s concern (the overlay joins by id).
+                    aliases: Vec::new(),
                     degree: hyper_degree.get(&e.id).copied().unwrap_or(0),
                     sources: e.provenance.len(),
                     origins: {
@@ -2220,6 +2253,93 @@ impl Engine {
             nodes,
             hyperedges,
             stats,
+        })
+    }
+
+    /// Reifies a co-occurrence context into first-class ontology structure - the promotion path a
+    /// hyperedge takes INTO the graph (Principle 11: the substrate generates, it never becomes an
+    /// edge itself). Asserts a group entity + a `member_of` relation from each member, as an
+    /// ordinary observation whose `derived_from` names every co-asserting observation (P18:
+    /// induction output is lineage-bearing; it enters at the default tier and rises only through
+    /// the gate). The hyperedge is untouched - a derived view has no state to edit - but the
+    /// grouping is now ASSERTED, so it inherits provenance, tier, supersede, and merge management
+    /// exactly like any other edge, with no parallel mechanism. Ingest stays free (P22).
+    pub fn reify_hyperedge(&self, input: ReifyInput) -> Result<ObserveOutput, ObserveError> {
+        let workspace = input.workspace.clone();
+        let ws = workspace.as_deref();
+        let hg = self.hypergraph(ws).map_err(ObserveError::Store)?;
+        let Some(h) = hg.hyperedges.iter().find(|h| h.id == input.hyperedge) else {
+            return Err(ObserveError::Invalid(format!(
+                "unknown hyperedge '{}' - ids come from workspace_map / the hypergraph resource, \
+                 and a hyperedge's id changes when its membership changes (the member set is the \
+                 identity), so re-list before retrying",
+                input.hyperedge
+            )));
+        };
+        // The lineage of the reified assertion = every observation whose canonical co-asserted
+        // member set is exactly this hyperedge (the same membership rule the projection uses).
+        let all_entities = self.store.all_entities(ws)?;
+        let fwd = self.merge_forwarding(ws)?;
+        let live: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
+        let node_ids: HashSet<&str> = live.iter().map(|e| e.id.as_str()).collect();
+        let mut derived_from: Vec<String> = Vec::new();
+        for obs in self.store.all_observations(ws)? {
+            if co_asserted_members(&obs, &node_ids, &fwd) == h.members {
+                derived_from.push(obs.id.clone());
+            }
+        }
+        derived_from.sort();
+        let name = match input.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) {
+            Some(n) => n,
+            None => {
+                let head: Vec<&str> = h.member_names.iter().take(3).map(|s| s.as_str()).collect();
+                format!(
+                    "context: {}{}",
+                    head.join(", "),
+                    if h.member_names.len() > 3 { ", ..." } else { "" }
+                )
+            }
+        };
+        let kind = input
+            .kind
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty())
+            .unwrap_or_else(|| "Context".to_string());
+        let content = format!(
+            "Reified co-occurrence context '{name}': {} (corroborated by {} observation{})",
+            h.member_names.join(", "),
+            h.sources,
+            if h.sources == 1 { "" } else { "s" }
+        );
+        let description = format!(
+            "reified from co-occurrence hyperedge {} ({} members, {} co-asserting observations)",
+            h.id, h.size, h.sources
+        );
+        self.observe(ObserveInput {
+            content,
+            workspace,
+            source_ref: input.source_ref,
+            confidence: None,
+            on_behalf_of: input.on_behalf_of,
+            derived_from,
+            entities: vec![EntityInput {
+                name: name.clone(),
+                kind: Some(kind),
+                description: Some(description),
+            }],
+            relations: h
+                .member_names
+                .iter()
+                .filter(|m| !m.trim().is_empty())
+                .map(|m| RelationInput {
+                    from: m.clone(),
+                    kind: "member_of".into(),
+                    to: name.clone(),
+                    description: None,
+                    valid_from: None,
+                    valid_to: None,
+                })
+                .collect(),
         })
     }
 }
