@@ -2086,11 +2086,23 @@ addEventListener("mouseup", ev => {
   downPos = null;
 });
 
-searchEl.addEventListener("input", () => { searchTerm = searchEl.value.trim().toLowerCase(); });
+const searchWrap = searchEl.closest(".searchwrap");
+searchEl.addEventListener("input", () => {
+  searchTerm = searchEl.value.trim().toLowerCase();
+  // Keep the "/" badge clear of the text once the field carries a term (CSS .searchwrap.filled).
+  // Optional: the badge is decoration, so losing its wrapper must never break search itself.
+  searchWrap?.classList.toggle("filled", searchEl.value !== "");
+});
 searchEl.addEventListener("keydown", ev => {
   if (ev.key === "Enter" && searchTerm) {
     const hits = nodes.filter(n => n.name.toLowerCase().includes(searchTerm));
     if (hits.length) { fitView(hits, 140); userMoved = true; }
+  } else if (ev.key === "Escape") {
+    // Hand the keyboard back to the canvas, so "/" -> type -> Escape is a closed loop.
+    // stopPropagation: the window handler reads Escape as "dismiss the obs card / view popover",
+    // which is not what leaving the search field should do.
+    ev.stopPropagation();
+    searchEl.blur();
   }
 });
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
@@ -2128,11 +2140,19 @@ const viewBtn = document.getElementById("viewBtn"), viewPop = document.getElemen
 function setViewPop(on) { viewPop.classList.toggle("on", on); viewBtn.classList.toggle("on", on); }
 viewBtn.onclick = ev => { ev.stopPropagation(); setViewPop(!viewPop.classList.contains("on")); };
 document.addEventListener("click", ev => { if (viewPop.classList.contains("on") && !viewPop.contains(ev.target)) setViewPop(false); });
-// [ / ] toggle the docks - but never while typing in a field.
+// [ / ] toggle the docks, "/" jumps to search - but never while typing in a field.
 window.addEventListener("keydown", e => {
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.key === "[") toggleDock(true);
   else if (e.key === "]") toggleDock(false);
+  else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    // preventDefault or the "/" itself lands in the field as the first character (and Firefox
+    // opens its quick-find). The INPUT/TEXTAREA guard above already keeps this from hijacking
+    // a "/" typed into any other field. select() so the shortcut replaces a stale term.
+    e.preventDefault();
+    searchEl.focus();
+    searchEl.select();
+  }
   else if (e.key === "Escape") { if (obscardEl.classList.contains("on")) hideObsCard(); else setViewPop(false); }
 });
 // Restore the persisted state (default: both open).
