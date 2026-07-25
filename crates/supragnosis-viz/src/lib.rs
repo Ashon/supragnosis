@@ -270,6 +270,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // Merge-band action (resolution-identity.md Section 3): open an entity_merge proposal for a
         // suggested pair - the suggestion is a recall aid; committing goes through the gate (P23).
         // The opened proposal then rides the normal accept flow in the proposals panel (IR2).
+        "/api/proposal" => proposal_response(engine, query),
         "/api/propose_merge" => propose_merge_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         // The observation log (source of truth, Principle 1), newest-first; `entity=<id>` narrows to
@@ -282,7 +283,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/workspaces, /api/observations, /api/explain, or /api/events",
+                "unknown path - try /, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/workspaces, /api/observations, /api/explain, or /api/events",
             ),
         },
     }
@@ -543,6 +544,50 @@ fn explain_response(engine: &Engine, query: &str) -> Response {
 }
 
 /// `/api/proposals` - the workspace's proposals with folded state (Principle 23). Read-only projection.
+/// `/api/proposal?id=<id>` - ONE proposal with its computed belief diff (proposal-workflow.md
+/// Section 5). Separate from `/api/proposals` on purpose: a diff is two full belief folds, which is
+/// the right cost for the proposal being reviewed and the wrong cost per row of a list. This is what
+/// lets the console show what a verdict would change BEFORE casting it, rather than the canvas
+/// overlay's guess from target ids alone.
+fn proposal_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+            .filter(|s| !s.is_empty())
+    };
+    let Some(id) = param("id") else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("proposal needs ?id=<proposal id>"),
+        };
+    };
+    let ws = param("workspace").filter(|s| s != "*" && s != "all");
+    match engine.get_proposal(ws.as_deref(), &id) {
+        Ok(Some(view)) => match serde_json::to_string(&view) {
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("serialize error: {e}")),
+            },
+        },
+        // Principle 5: an unknown id is not-found, not an error, and says which it is.
+        Ok(None) => Response {
+            status: "404 Not Found",
+            content_type: "application/json",
+            body: err_body("no proposal with that id in this workspace"),
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: err_body(&format!("store error: {e}")),
+        },
+    }
+}
+
 fn proposals_response(engine: &Engine, query: &str) -> Response {
     let ws_param = query
         .split('&')

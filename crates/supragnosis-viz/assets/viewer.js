@@ -697,6 +697,8 @@ function renderProposals() {
       const aty = a => `<span class="atype" title="${esc(a.target)} type"><span>${esc(a.name)}</span><span class="ax">${a.target === "relation" ? "edge" : "node"}</span></span>`;
       html += `<div class="atypes">${p.affected_types.map(aty).join("")}</div>`;
     }
+    // The selected proposal shows its computed diff: what accepting would change, before accepting.
+    if (sel) html += diffHtml(proposalDiff);
     if (p.state === "open") {
       html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}">accept</button>`
         + `<button data-act="reject" data-id="${esc(p.id)}">reject</button></div>`;
@@ -747,11 +749,57 @@ function affectedNodes(p) {
   return [...out];
 }
 
+// The computed belief diff for the selected proposal (proposal-workflow.md Section 5). Null while
+// unfetched or when nothing is selected; the canvas overlay is a hint, this is the artifact.
+let proposalDiff = null;
+
+async function fetchProposalDiff(id) {
+  const ws = wsInput.value.trim();
+  let q = "?id=" + encodeURIComponent(id);
+  if (ws && ws !== "*" && ws !== "all") q += "&workspace=" + encodeURIComponent(ws);
+  try {
+    const r = await fetch("/api/proposal" + q, { cache: "no-store" });
+    if (!r.ok) return;
+    const view = await r.json();
+    // Ignore a response that lost the race against another selection.
+    if (proposalSel && view && view.id === proposalSel.id) {
+      proposalDiff = view.belief_diff || null;
+      renderProposals();
+    }
+  } catch (e) { /* the overlay still works - the diff is additive */ }
+}
+
+// Render the diff as a before -> after comparison. An uncomputable diff says so: for the three
+// proposal kinds that still enforce nothing, an empty diff would read as "changes nothing".
+function diffHtml(d) {
+  if (!d) return `<div class="dnote">computing the diff...</div>`;
+  if (!d.computable) return `<div class="dnote">no diff - ${esc(d.note || "not computable for this kind")}</div>`;
+  const tiers = (d.tier_changes || []).map(t =>
+    `<div class="drow"><span class="dk">tier</span><code>${esc(t.observation.slice(0, 10))}</code>`
+    + `<span class="dfrom">${esc(t.from)}</span><span class="darr">-&gt;</span><span class="dto">${esc(t.to)}</span></div>`).join("");
+  const beliefs = (d.overturned || []).map(b => {
+    const settled = b.contested_before && !b.contested_after;
+    const created = !b.contested_before && b.contested_after;
+    const flag = settled ? `<span class="dsettled">settles a contradiction</span>`
+               : created ? `<span class="dcreated">creates a contradiction</span>` : "";
+    return `<div class="drow"><span class="dk">${esc(b.field)}</span>`
+      + `<span class="nchip" data-id="${esc(b.entity)}" title="focus ${esc(b.name)}">${esc(b.name)}</span>`
+      + `<span class="dfrom">${esc(b.from || "(none)")}</span><span class="darr">-&gt;</span>`
+      + `<span class="dto">${esc(b.to || "(none)")}</span>${flag}</div>`;
+  }).join("");
+  if (!tiers && !beliefs) return `<div class="dnote">computed: this proposal overturns no current belief</div>`;
+  return `<div class="ddiff">${tiers}${beliefs}</div>`;
+}
+
 // Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node when
 // present (entity_merge); otherwise frames the affected T-Box elements (tbox_change).
 function selectProposal(p) {
   proposalSel = (proposalSel && p && proposalSel.id === p.id) ? null : p;
+  // The diff is per-proposal (two belief folds), so it is fetched on selection rather than carried
+  // on every list row. Cleared first so a stale diff never sits under a newly selected proposal.
+  proposalDiff = null;
   if (proposalSel) {
+    fetchProposalDiff(proposalSel.id);
     const into = nodeById(proposalSel.into);
     if (into) { focus = into; renderDetail(into); centerOn(into); }
     // No single canonical node (tbox_change): frame the affected members and mark the view user-driven

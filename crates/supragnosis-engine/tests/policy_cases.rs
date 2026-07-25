@@ -409,3 +409,118 @@ fn p17_candidates_never_span_workspaces_in_the_all_view() {
         );
     }
 }
+
+/// GIVEN a belief contested between two equally-trusted assertions, WHEN a claim_promotion is OPENED
+/// over one of them, THEN the projection is untouched and the proposal carries a computed diff naming
+/// the belief the verdict would overturn.
+///
+/// This is the pair that makes review possible at all (proposal-workflow.md Section 5): the canon has
+/// not moved, and yet the reviewer can see what moving it would do. Before this, the diff existed only
+/// as a viewer canvas overlay, so "no merge without a diff" held by UI convention - an agent opening
+/// proposals through MCP got no diff at all.
+#[test]
+fn p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon() {
+    let (store, engine) = engine();
+    let kinded = |content: &str, kind: &str| {
+        engine
+            .observe(ObserveInput {
+                content: content.into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    name: "Cozo".into(),
+                    kind: Some(kind.into()),
+                    description: None,
+                }],
+                relations: vec![],
+            })
+            .expect("observe")
+            .observation_id
+    };
+    let as_db = kinded("cozo is a database", "Database");
+    kinded("cozo is a library", "Library");
+
+    let entity = Entity::make_id(WS, "cozo");
+    let contested_before = engine.get_entity(&entity).expect("get").expect("entity").contested;
+    assert!(contested_before, "fixture must actually contest, or the diff proves nothing");
+    let before = snapshot(store.as_ref());
+
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![as_db.clone()],
+            into: None,
+            tier: Some("host_signed".into()),
+            rationale: Some("settle the kind".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+    let after = snapshot(store.as_ref());
+
+    let case = Case::new("Principle 23", "a diff is available before the verdict, and the verdict is what commits");
+    case.log_appended(&before, &after, 1); // the proposal event, nothing else
+    assert_eq!(
+        before.entities, after.entities,
+        "opening a gate proposal must not move the projection"
+    );
+
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    let diff = view.belief_diff.expect("get_proposal must attach a diff");
+    assert!(diff.computable, "claim_promotion has a commit effect, so its diff is computable");
+    assert!(
+        diff.tier_changes.iter().any(|t| t.observation == as_db),
+        "the promoted observation's effective tier must appear as changing: {:?}",
+        diff.tier_changes
+    );
+    let overturn = diff
+        .overturned
+        .iter()
+        .find(|b| b.entity == entity)
+        .expect("the contested belief must appear as overturned");
+    assert!(
+        overturn.contested_before && !overturn.contested_after,
+        "the diff must show the contradiction being settled: {overturn:?}"
+    );
+    assert_eq!(overturn.to.as_deref(), Some("Database"), "promoting the Database claim must win it");
+}
+
+/// A kind with no commit effect must say so rather than return an empty diff. An empty list would
+/// read as "this proposal changes nothing", when the truth is "this cannot be computed yet" - the
+/// same absence-vs-unavailable distinction the merge band's coverage report exists to preserve (P5).
+#[test]
+fn p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty() {
+    let (_store, engine) = engine();
+    observe(&engine, "a subject", &["Thing"]);
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "tbox_change".into(),
+            targets: vec!["Thing".into()],
+            into: None,
+            tier: None,
+            rationale: Some("rename a type".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+
+    let diff = engine
+        .get_proposal(None, &proposal)
+        .expect("get")
+        .expect("proposal")
+        .belief_diff
+        .expect("a diff must be attached even when it cannot be computed");
+    assert!(!diff.computable, "tbox_change enforces nothing yet");
+    assert!(
+        diff.note.is_some_and(|n| n.contains("no commit effect")),
+        "the reason must be stated, not left to the reader to infer from emptiness"
+    );
+    assert!(diff.overturned.is_empty() && diff.tier_changes.is_empty());
+}
