@@ -1,8 +1,9 @@
 # Resolution, Part B - Identity Resolution (M3b)
 
-> Status: design spec (M3b Phase 0), agreed before the code - the same discipline as
-> [resolution.md](resolution.md) (M3a) and [federation.md](federation.md). Implementation feedback
-> will be folded back as [impl] notes.
+> Status: **implemented** except IR6 (spec agreed before the code, feedback folded back as [impl]
+> notes) - the same discipline as [resolution.md](resolution.md) (M3a) and
+> [federation.md](federation.md). IR1-IR5 and the alias latent conditions shipped; IR6 (induced type
+> candidates) is deferred to M5 (Section 7 [impl]).
 >
 > - Normative basis: [principles.md](principles.md) Principles 3, 9, 11, 14, 15, 16, 18, 19, 23.
 > - Scope: the **identity** half of M3 - alias accumulation, the conservative merge band with
@@ -84,6 +85,15 @@ as `reproject`, incrementally:
 - **IR3**: for any log state, the incremental projection of the last write equals the row
   `reproject` would produce - pinned by a property test that interleaves observes and compares
   against a fresh replay.
+- [impl] Realized by UNIFYING the two paths, not by narrowing the lock: `project_entities(ws, only)`
+  folds the log to (re)build entity rows - `reproject` runs it over all entities (`only = None`),
+  `observe` over just the touched ids (`only = Some`). Both run the identical fold, so IR3 holds by
+  construction (there is no separate incremental rule to diverge) rather than by a per-entity guard.
+  `upsert_named` is gone. The write section stays serialized by the existing engine `write_guard`;
+  the cost moved from a field-wise upsert to one log scan per observe (acceptable for a local-first
+  working set; a single full-workspace scan, cheaper than per-touched-entity folds). Entity
+  provenance now credits every attestation of a supporting observation once, which also retired an
+  older reproject-vs-incremental divergence (a representative-only count).
 
 ## 5. Latent conditions repaid with aliases (architecture.md Section 14)
 
@@ -123,8 +133,18 @@ as `reproject`, incrementally:
 - [impl, landed early] The **reify** half of the promotion story shipped ahead of this milestone:
   `Engine::reify_hyperedge` / the viewer's `/api/reify` assert a recurring context as a group
   entity + `member_of` relations through the normal observe ingest, `derived_from` naming every
-  co-asserting observation. Induced *type* candidates (this section) remain M3b: reify makes a
-  context an A-Box entity; induction proposes T-Box vocabulary.
+  co-asserting observation.
+- **[impl] IR6 is deferred to M5 (extraction).** The deterministic-substrate half this section
+  relies on - recurring cohesive co-occurrence sets - is already generated and surfaced (the
+  hyperedge projection, the grab-bag curation signal, and reify turn a recurring context into
+  first-class structure). What remains is **naming** the induced *type*: a `tbox_change` proposal
+  must carry a type name + definition, and neither is a deterministic function of a member set
+  (unlike reify, which names an A-Box entity the user labels). Auto-naming a T-Box type is exactly
+  the probabilistic extraction M5's `Extractor` port owns (Principle 19: the intelligence at the
+  edge, the gate at the core). So IR6 moves to M5, where the extractor proposes the name/definition
+  and the candidate enters lineage-bearing + lowest-trust through the existing `define_type`/gate
+  path. M3b delivers everything IR6 needs except the name; the M5 test
+  `induced_candidates_are_gated_lineage_bearing` lands there.
 
 ## 8. M3c - bitemporal query logic (split out, not dropped)
 
@@ -136,16 +156,18 @@ deferral is non-destructive. M3c is scheduled after M3b, before M5.
 
 ## 9. Test plan
 
-| Test | Kind | Pins |
-|---|---|---|
-| `aliases_accumulate_and_converge` | guard | IR1 - set union, order-free, representative excluded |
-| `merge_suggestions_never_commit` | guard | IR2 - no verdict, no projection change from suggestions |
-| `incremental_write_equals_replay` | property | IR3 - interleaved observes vs fresh reproject |
-| `cozo_keyword_matches_aliases` | guard (parity) | Section 5 - latent condition retired |
-| `embedding_recomputed_on_alias_change` | guard | IR4 |
-| `type_def_conflict_surfaces_contested` | guard | IR5 - glossary contested + mediation settles |
-| `induced_candidates_are_gated_lineage_bearing` | guard | IR6 - proposal + derived_from + lowest trust |
-| Convergence property tests (extended) | property | alias sets + glossary contested included in equality |
+| Test | Kind | Pins | Status |
+|---|---|---|---|
+| `aliases_accumulate_and_converge` | guard | IR1 - set union, order-free, representative excluded | landed |
+| `merge_suggestions_never_commit` | guard | IR2 - no verdict, no projection change from suggestions | landed |
+| `incremental_write_equals_replay` | property | IR3 - interleaved observes vs fresh reproject | landed |
+| `cozo_keyword_matches_aliases` | guard (parity) | Section 5 - latent condition retired | landed |
+| `embedding_recomputed_on_alias_change` | guard | IR4 - stored embedding matches current text | landed |
+| `type_def_conflict_surfaces_contested` | guard | IR5 - glossary contested + mediation settles | landed |
+| `type_axis_collision_is_a_signal` | guard | Section 6 - P9 minimal axis-collision signal | landed |
+| `get_entity_forwards_a_merged_id` | guard | P14 - merged id dereferences to canonical + alias | landed |
+| `induced_candidates_are_gated_lineage_bearing` | guard | IR6 - proposal + derived_from + lowest trust | M5 (Section 7 [impl]) |
+| Convergence property tests (extended) | property | the serialized graph fold (aliases/kind/contested/tier) already compared in `cross_node_reprojection_converges` | landed |
 
 ## 10. Closure map
 
@@ -154,7 +176,8 @@ deferral is non-destructive. M3c is scheduled after M3b, before M5.
 | Policy port, effective tier, gate effects, contested machinery, surface ceiling | existing (M3a, resolution.md) |
 | Hyperedge projection, curation report/console, proposal gate, `entity_merge` effect | existing (M3.5/M4) |
 | `EmbeddingProvider` port, `entity_text`, HNSW search | existing (M2) |
-| Alias accumulation, merge band, resolution write path, alias parity, embedding staleness, T-Box contested, induced candidates | **this spec (M3b)** |
+| Alias accumulation, merge band, resolution write path, alias parity, embedding staleness, T-Box contested | **this spec (M3b) - landed** |
+| Induced type candidates (IR6 - naming the type) | M5 (Section 7 [impl]) |
 | Bitemporal query logic + negation semantics | M3c (Section 8) |
 | Auto-merge executor (top band, I15 re-validation) | M4+ policy layer (proposal-workflow.md Section 9) |
 | Quarantine, lineage cleanup, recall effect, trust-weighted recall ranking | M5 |
