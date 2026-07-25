@@ -1031,3 +1031,97 @@ fn merge_suggestions_never_commit() {
     let rep2 = engine.curation(Some(WS)).unwrap();
     assert_eq!(rep2.stats.merge_suggestions, 0, "an open entity_merge suppresses the suggestion");
 }
+
+// --- M3b / Principle 9 vs 6: T-Box conflict surfacing (IR5) + axis collision --------------------
+
+/// A type-definition observation (target/name = definition) at a fixed transaction time.
+fn typedef_obs(
+    target: supragnosis_core::TypeTarget,
+    name: &str,
+    desc: &str,
+    observed_at: u64,
+) -> Observation {
+    Observation::with_assertions(
+        format!("type {name} = {desc} @ {observed_at}"),
+        Provenance {
+            host: "host-a".into(),
+            on_behalf_of: None,
+            workspace: WS.into(),
+            source_ref: None,
+            observed_at,
+            confidence: None,
+            trust_tier: TrustTier::default(),
+            sync: None,
+        },
+        Assertions {
+            type_defs: vec![supragnosis_core::TypeDefAssertion {
+                target,
+                name: name.into(),
+                description: desc.into(),
+            }],
+            ..Default::default()
+        },
+    )
+}
+
+/// guard (resolution-identity.md Section 6, IR5): distinct definitions of one type at a tied top
+/// effective tier surface as contested on the glossary - the SAME contested/competitor shape as an
+/// entity kind - and a console promotion of the chosen definition settles it by trust.
+#[test]
+fn type_def_conflict_surfaces_contested() {
+    use supragnosis_core::TypeTarget;
+    let (store, engine) = engine();
+    store.add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a kernel module", 100)).unwrap();
+    store.add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a person who drives", 200)).unwrap();
+
+    let types = engine.types(Some(WS)).unwrap();
+    let d = types.iter().find(|t| t.name == "Driver").expect("type present");
+    assert!(d.contested, "distinct definitions at a tied tier must be contested (IR5)");
+    assert_eq!(d.description, "a person who drives", "recency wins within the tied tier (R2)");
+    assert_eq!(d.competitors.len(), 1);
+    assert_eq!(d.competitors[0].value, "a kernel module");
+    assert!(d.def_source.is_some(), "the winning definition's observation is the mediation handle");
+
+    // Mediation: confirm the kernel-module definition (promote its observation, console surface).
+    let target = d.competitors[0].observation.clone();
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![target],
+            into: None,
+            tier: Some("human_confirmed".into()),
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .unwrap();
+    engine
+        .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
+        .unwrap();
+
+    let d2 = engine.types(Some(WS)).unwrap().into_iter().find(|t| t.name == "Driver").unwrap();
+    assert_eq!(d2.description, "a kernel module", "the confirmed definition wins by tier (R5)");
+    assert!(!d2.contested, "trust decided - no longer contested");
+    assert_eq!(d2.trust_tier, TrustTier::HumanConfirmed, "the glossary tier is the effective tier");
+}
+
+/// guard (resolution-identity.md Section 6, Principle 9 minimal): a name defined on both the entity
+/// and the relation axis surfaces as a curation signal (informative, not blocking).
+#[test]
+fn type_axis_collision_is_a_signal() {
+    use supragnosis_core::TypeTarget;
+    let (store, engine) = engine();
+    store.add_observation(typedef_obs(TypeTarget::Entity, "member_of", "a membership entity", 100)).unwrap();
+    store.add_observation(typedef_obs(TypeTarget::Relation, "member_of", "belongs to a group", 100)).unwrap();
+    store.add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a kernel module", 100)).unwrap();
+
+    let rep = engine.curation(Some(WS)).unwrap();
+    assert_eq!(
+        rep.type_axis_collisions,
+        vec!["member_of".to_string()],
+        "a name on both axes is flagged; a single-axis name is not"
+    );
+    assert_eq!(rep.stats.type_axis_collisions, 1);
+}
