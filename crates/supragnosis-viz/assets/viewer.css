@@ -67,9 +67,13 @@
   /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
      above the statusbar. The right island grows downward from the top and the detail panel stops
      at right:324, so this corner is the stable empty spot. */
-  /* Minimap: fixed beside the HUD; the backing store is DPR-scaled in JS (CSS size fixed here).
+  /* Minimap: docked to the zoom-control (HUD) column - 6px to its left, bottom edges aligned.
+     The backing store is DPR-scaled in JS (CSS size fixed here). inset:auto FIRST: the global
+     `canvas` rule above sets inset:0, and inheriting its top:0/left:0 over-constrains the box
+     (top/left win over right/bottom in LTR), flinging the minimap to the top-left corner.
      The view popover shares the corner (z-index above) and simply overlays it while open. */
-  #minimap { position:fixed; right:54px; bottom:36px; z-index:7; width:168px; height:112px;
+  #minimap { position:fixed; inset:auto; right:52px; bottom:36px; z-index:7;
+             width:168px; height:112px;
              background:var(--glass); border:1px solid var(--line); border-radius:10px;
              box-shadow:0 8px 24px #0008; cursor:crosshair; display:none; }
   #minimap.on { display:block; }
