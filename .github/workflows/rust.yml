@@ -1,0 +1,64 @@
+# The Rust gate. Until this existed, CI built release binaries and linted the viewer's JS but never
+# ran clippy or a single test - so every "guarded by <test>" claim in docs/architecture.md Section 14
+# held only as long as a human remembered to run them locally. That is how a P16 determinism guard
+# (aliases_accumulate_and_converge) sat failing ~1 in 8 runs without anyone noticing.
+#
+# This mirrors `task check` (Taskfile.yml), minus the viewer ESLint half, which frontend-lint.yml
+# already owns. Keep the two in step: a check added here should be added there, and vice versa.
+name: rust
+
+on:
+  push:
+    paths:
+      - "crates/**"
+      - "e2e/**"
+      - "app/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "e2e/**"
+      - "app/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust.yml"
+
+# A newer push supersedes an in-flight run on the same ref - the gate should report on the tip, not
+# burn minutes finishing an answer about a commit nobody is waiting on any more.
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: clippy + tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # cozo/RocksDB's librocksdb-sys needs bindgen (libclang) - same as release.yml.
+      - name: install build deps
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-check
+
+      # Workspace lints already set clippy::all to deny, so a warning fails the build on its own -
+      # no -D flag here, which keeps the local `task lint` and this job identical.
+      - name: clippy
+        run: cargo clippy --all-targets --locked
+
+      # Default members only (the desktop app needs platform webview toolchains and is covered by
+      # dev-app.yml / release.yml). The e2e suite compiles here but its real-model tests are
+      # #[ignore]d, so this runs the deliverables' tests, not a scorecard against a live model.
+      - name: tests
+        run: cargo test --locked
