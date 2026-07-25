@@ -52,6 +52,17 @@
               padding:2px 5px; transition:opacity 0.12s ease; }
   /* Out of the way as soon as the field is in use - focused, or already carrying a term. */
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
+  /* Computed belief diff on the selected proposal - a before -> after row per change, so accepting
+     is a decision about a visible delta rather than about a proposal's title. */
+  .ddiff { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
+  .drow { display:flex; align-items:center; gap:5px; flex-wrap:wrap; font-size:11px; }
+  .dk { color:var(--faint); text-transform:uppercase; letter-spacing:0.04em; font-size:9.5px; }
+  .dfrom { color:var(--muted); text-decoration:line-through; }
+  .darr { color:var(--faint); }
+  .dto { color:var(--gold-bright); }
+  .dsettled { color:var(--teal); font-size:10px; }
+  .dcreated { color:var(--accent); font-size:10px; }
+  .dnote { color:var(--faint); font-size:10.5px; font-style:italic; margin:4px 0 2px; }
   .hint { color:var(--muted); font-size:11.5px; }
   #status { color:var(--muted); font-size:11.5px; margin-left:auto; white-space:nowrap; }
   #wschips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }

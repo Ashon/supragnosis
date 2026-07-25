@@ -475,6 +475,49 @@ pub struct ProposeInput {
     pub on_behalf_of: Option<String>,
 }
 
+/// One observation's effective-tier change under a proposal's effects.
+#[derive(Serialize, Debug)]
+pub struct TierChange {
+    pub observation: String,
+    pub from: TrustTier,
+    pub to: TrustTier,
+}
+
+/// A current belief this proposal would overturn - the component of the diff a reviewer is actually
+/// deciding on (proposal-workflow.md Section 5, item 2). `contested_*` carries item 3: a contradiction
+/// does not block a merge, but settling or creating one must be visible before the verdict.
+#[derive(Serialize, Debug)]
+pub struct BeliefChange {
+    pub entity: String,
+    pub name: String,
+    pub field: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    pub contested_before: bool,
+    pub contested_after: bool,
+}
+
+/// The computed belief diff (proposal-workflow.md Section 5): what materializing the canon WITH this
+/// proposal's effects differs from materializing it without them. Both sides run the same
+/// `belief_fold` with only the gate grants changed, so the diff cannot drift from what a merge would
+/// actually do - the alternative, re-deriving the outcome separately, is the incremental-vs-replay
+/// divergence M3b spent a milestone removing.
+///
+/// `computable` is load-bearing. Three of the five proposal kinds still enforce nothing, and an empty
+/// diff for those would read as "this changes nothing" when the truth is "this cannot be computed
+/// yet" - the same absence-vs-unavailable conflation the merge band's coverage report exists to
+/// prevent (Principle 5).
+#[derive(Serialize)]
+pub struct BeliefDiff {
+    pub computable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub tier_changes: Vec<TierChange>,
+    pub overturned: Vec<BeliefChange>,
+}
+
 /// Folded proposal state (a deterministic read view over the proposal's events, I2).
 #[derive(Serialize)]
 pub struct ProposalView {
@@ -498,6 +541,11 @@ pub struct ProposalView {
     pub proposer: String,
     /// Solo single-user marker (Principle 23 self-approval exception): proposer == reviewer.
     pub self_attested: bool,
+    /// The computed diff, attached by `get_proposal` only. `list_proposals` leaves it None: a diff is
+    /// two full belief folds, which is the right cost for the one proposal being reviewed and the
+    /// wrong cost per row of a list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub belief_diff: Option<BeliefDiff>,
 }
 
 /// Transient verdict accumulator for the proposal fold.
@@ -1650,6 +1698,7 @@ impl Engine {
                     opened_at: observed_at,
                     proposer: proposer.clone(),
                     self_attested: true,
+                    belief_diff: None,
                 });
             }
         }
@@ -1702,7 +1751,95 @@ impl Engine {
 
     /// One proposal's folded state by id (None if there is no such proposal).
     pub fn get_proposal(&self, workspace: Option<&str>, id: &str) -> Result<Option<ProposalView>, StoreError> {
-        Ok(self.fold_proposals(workspace)?.remove(id))
+        let Some(mut view) = self.fold_proposals(workspace)?.remove(id) else {
+            return Ok(None);
+        };
+        view.belief_diff = Some(self.belief_diff(workspace, &view)?);
+        Ok(Some(view))
+    }
+
+    /// Materialize the canon with and without this proposal's effects and report the difference
+    /// (proposal-workflow.md Section 5). Only the gate grants differ between the two folds, so the
+    /// "after" side is computed by the same code path a merged verdict would take - the diff cannot
+    /// promise an outcome the merge would not deliver.
+    fn belief_diff(
+        &self,
+        workspace: Option<&str>,
+        view: &ProposalView,
+    ) -> Result<BeliefDiff, StoreError> {
+        if !GATE_KINDS.contains(&view.kind.as_str()) {
+            return Ok(BeliefDiff {
+                computable: false,
+                note: Some(format!(
+                    "{} has no commit effect yet, so there is no difference to compute - an empty diff here would mean 'not computable', never 'changes nothing' (architecture.md Section 14)",
+                    view.kind
+                )),
+                tier_changes: Vec::new(),
+                overturned: Vec::new(),
+            });
+        }
+        let Some(tier) = view.tier else {
+            return Ok(BeliefDiff {
+                computable: false,
+                note: Some("a gate proposal without a requested tier grants nothing".into()),
+                tier_changes: Vec::new(),
+                overturned: Vec::new(),
+            });
+        };
+
+        let fwd = self.merge_forwarding(workspace)?;
+        let before_gates = self.gate_grants(workspace)?;
+        // The one difference between the two materializations: this proposal's grant applied.
+        let mut after_gates = before_gates.clone();
+        for t in &view.targets {
+            after_gates.insert(t.clone(), tier);
+        }
+
+        let mut tier_changes = Vec::new();
+        for t in &view.targets {
+            if let Some(obs) = self.store.get_observation(t)? {
+                let (from, to) = (
+                    effective_tier(&obs, &before_gates),
+                    effective_tier(&obs, &after_gates),
+                );
+                if from != to {
+                    tier_changes.push(TierChange { observation: t.clone(), from, to });
+                }
+            }
+        }
+
+        let before = self.belief_fold(workspace, &fwd, &before_gates)?;
+        let after = self.belief_fold(workspace, &fwd, &after_gates)?;
+        let mut ids: BTreeSet<&String> = before.kinds.keys().collect();
+        ids.extend(after.kinds.keys());
+
+        let mut overturned = Vec::new();
+        for id in ids {
+            let (wb, cb, _) = self.resolve_kind(before.kinds.get(id));
+            let (wa, ca, _) = self.resolve_kind(after.kinds.get(id));
+            let (vb, va) = (wb.map(|(k, _)| k), wa.map(|(k, _)| k));
+            if vb == va && cb == ca {
+                continue;
+            }
+            let name = self
+                .store
+                .get_entity(id)?
+                .map(|e| e.canonical_name)
+                .unwrap_or_else(|| id.clone());
+            overturned.push(BeliefChange {
+                entity: id.clone(),
+                name,
+                field: "kind".into(),
+                from: vb,
+                to: va,
+                contested_before: cb,
+                contested_after: ca,
+            });
+        }
+        // Deterministic order (Principle 16): the diff is a read surface like any other.
+        overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
+        tier_changes.sort_by(|a, b| a.observation.cmp(&b.observation));
+        Ok(BeliefDiff { computable: true, note: None, tier_changes, overturned })
     }
 
     /// Resolved id-forwarding from ACCEPTED entity-merge proposals (Principle 14/15): each merged-away
