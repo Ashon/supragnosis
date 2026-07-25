@@ -101,6 +101,9 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
     (9, "Coherence", Evidence::Scenario(&[
         "type_def_conflict_surfaces_contested",
         "type_axis_collision_is_a_signal",
+        // Section 6 blocks a tbox_change that defines a name on both axes: a structural
+        // contradiction is a bug (P9), so it stops rather than merely surfacing.
+        "p23_a_blocked_merge_verdict_does_not_reach_canon",
     ])),
     (10, "Open-Closed Schema", Evidence::Scenario(&[
         // The clause with teeth is "a core change demands a migration path". Three 0.x eras changed
@@ -181,6 +184,10 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
         "i16_merge_absorbs_over_conflicting_reject_in_any_order",
         "i9_self_attested_is_blanket_true_until_principal_check_lands",
         "name_variants_stop_being_offered_once_a_merge_is_open",
+        "p23_a_blocked_merge_verdict_does_not_reach_canon",
+        "p23_a_well_formed_merge_passes_its_checks_and_commits",
+        "p23_a_merge_proposal_names_the_references_it_would_rewire",
+        "p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon",
     ])),
 ];
 

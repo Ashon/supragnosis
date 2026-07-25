@@ -62,6 +62,14 @@ fn propose_merge(engine: &Engine, targets: &[&str], into: &str, principal: &str)
         .expect("propose")
 }
 
+/// Two real entities to merge. The referential-integrity check (proposal-workflow.md Section 6)
+/// blocks a merge whose targets are not in the local log, so a fixture built on invented ids would
+/// exercise that check instead of whatever the test is actually about.
+fn mergeable_pair(engine: &Engine) -> (String, String) {
+    observe(engine, "x and y", &["Ent X", "Ent Y"], vec![]);
+    (Entity::make_id(WS, "Ent X"), Entity::make_id(WS, "Ent Y"))
+}
+
 fn review(engine: &Engine, proposal: &str, decision: &str, principal: &str) {
     engine
         .review_proposal(
@@ -99,7 +107,8 @@ fn graph_shape(engine: &Engine) -> (Vec<String>, Vec<(String, String, String)>) 
 fn i16_merge_absorbs_over_conflicting_reject_in_any_order() {
     for reviews in [["reject", "merge"], ["merge", "reject"]] {
         let (_store, engine) = engine();
-        let p = propose_merge(&engine, &["ent-x", "ent-y"], "ent-y", "alice");
+        let (x, y) = mergeable_pair(&engine);
+        let p = propose_merge(&engine, &[&x, &y], &y, "alice");
         for decision in reviews {
             review(&engine, &p, decision, "bob");
         }
@@ -403,7 +412,8 @@ fn p16_canonical_name_selection_is_arrival_order_free() {
 #[test]
 fn i9_self_attested_is_blanket_true_until_principal_check_lands() {
     let (_store, engine) = engine();
-    let p = propose_merge(&engine, &["ent-x", "ent-y"], "ent-y", "alice");
+    let (x, y) = mergeable_pair(&engine);
+    let p = propose_merge(&engine, &[&x, &y], &y, "alice");
     review(&engine, &p, "merge", "bob"); // distinct principal reviews...
     let props = engine.list_proposals(Some(WS)).expect("list");
     assert_eq!(props[0].state, "merged");

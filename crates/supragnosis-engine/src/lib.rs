@@ -537,6 +537,18 @@ pub struct RelationRewire {
     pub becomes_self_loop: bool,
 }
 
+/// One check result (proposal-workflow.md Section 6). A blocking failure prevents a merge verdict
+/// from reaching canon; an informative one is shown and blocks nothing (the Principle 6/9 split - a
+/// structural contradiction is a bug and is stopped, a contradiction between assertions is a fact
+/// about the world and is only surfaced).
+#[derive(Serialize, Debug)]
+pub struct CheckResult {
+    pub name: String,
+    pub blocking: bool,
+    pub passed: bool,
+    pub detail: String,
+}
+
 /// Folded proposal state (a deterministic read view over the proposal's events, I2).
 #[derive(Serialize)]
 pub struct ProposalView {
@@ -565,6 +577,10 @@ pub struct ProposalView {
     /// wrong cost per row of a list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub belief_diff: Option<BeliefDiff>,
+    /// Check results, attached by `get_proposal` only (like the diff - the fold recomputes what it
+    /// needs on its own). Section 6.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<CheckResult>,
 }
 
 /// Transient verdict accumulator for the proposal fold.
@@ -1644,6 +1660,20 @@ impl Engine {
             return Err(ObserveError::Invalid("proposal id is required".into()));
         }
         let workspace = workspace.unwrap_or_else(|| self.default_workspace.clone());
+        // Fail fast on a local merge attempt that the fold would refuse anyway. This is a courtesy,
+        // not the gate: the fold is what enforces (a replicated verdict never reaches this path), so
+        // this exists to say WHY rather than to let the caller discover a "blocked" state later.
+        if decision == "merge" {
+            if let Some(view) = self.get_proposal(Some(&workspace), &proposal)? {
+                let failures = self.blocking_failures(Some(&workspace), &view)?;
+                if !failures.is_empty() {
+                    return Err(ObserveError::Invalid(format!(
+                        "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
+                        failures.join("; ")
+                    )));
+                }
+            }
+        }
         // The surface marker rides source_ref, engine-stamped - the review surfaces accept no
         // source_ref of their own, so a client cannot mint the console marker (resolution.md R8).
         let prov = self.provenance(&workspace, Some(surface.marker().to_string()), None, on_behalf_of);
@@ -1718,6 +1748,7 @@ impl Engine {
                     proposer: proposer.clone(),
                     self_attested: true,
                     belief_diff: None,
+                    checks: Vec::new(),
                 });
             }
         }
@@ -1743,11 +1774,27 @@ impl Engine {
                 }
             }
         }
+        // A merge verdict only reaches canon if the blocking checks pass, and the check is recomputed
+        // HERE rather than read from a check_reported event (I13). This is also why enforcement cannot
+        // live in review_proposal: a verdict can arrive from another node as a replicated observation
+        // and never pass through it. Computed only for proposals that actually carry a merge verdict,
+        // so the common path pays nothing. Separate pass to keep the view borrow immutable.
+        let mut blocked: HashSet<String> = HashSet::new();
+        for (id, view) in views.iter() {
+            if tally.get(id).is_some_and(|t| t.merge)
+                && !self.blocking_failures(workspace, view)?.is_empty()
+            {
+                blocked.insert(id.clone());
+            }
+        }
         for (id, view) in views.iter_mut() {
             if let Some(t) = tally.get(id) {
                 view.verdicts = t.verdicts;
-                view.state = if t.merge {
+                view.state = if t.merge && !blocked.contains(id) {
                     "merged"
+                } else if t.merge {
+                    // The verdict is recorded and stays in the log; what it does not do is commit.
+                    "blocked"
                 } else if t.withdraw {
                     "withdrawn"
                 } else if t.reject {
@@ -1774,6 +1821,7 @@ impl Engine {
             return Ok(None);
         };
         view.belief_diff = Some(self.belief_diff(workspace, &view)?);
+        view.checks = self.blocking_checks(workspace, &view)?;
         Ok(Some(view))
     }
 
@@ -1781,6 +1829,138 @@ impl Engine {
     /// (proposal-workflow.md Section 5). Only the gate grants differ between the two folds, so the
     /// "after" side is computed by the same code path a merged verdict would take - the diff cannot
     /// promise an outcome the merge would not deliver.
+    /// The blocking checks of proposal-workflow.md Section 6, recomputed from the proposal and what
+    /// the local log holds.
+    ///
+    /// Deliberately NOT read from a `check_reported` event (I13): a check result is a cache for UX,
+    /// and trusting it would mean a forged "pass" could promote contamination into canon. It also has
+    /// to be the fold that enforces rather than the review entry point, because under federation a
+    /// verdict arrives as an observation from another node and never passes through `review_proposal`
+    /// here at all.
+    ///
+    /// Pure in (proposal, base) (I8), and it reads the store directly rather than through any surface
+    /// that folds proposals - both to stay a pure function of the log and to avoid re-entering the
+    /// fold that calls this.
+    fn blocking_checks(
+        &self,
+        workspace: Option<&str>,
+        view: &ProposalView,
+    ) -> Result<Vec<CheckResult>, StoreError> {
+        let mut out = Vec::new();
+        let mut check = |name: &str, passed: bool, detail: String| {
+            out.push(CheckResult { name: name.into(), blocking: true, passed, detail })
+        };
+
+        match view.kind.as_str() {
+            k if GATE_KINDS.contains(&k) => {
+                // Referential integrity: you cannot promote what is not here. Under incomplete sync
+                // the targets may simply not have arrived, and merging then would grant a tier to
+                // nothing.
+                let mut missing = Vec::new();
+                for t in &view.targets {
+                    if self.store.get_observation(t)?.is_none() {
+                        missing.push(t.clone());
+                    }
+                }
+                check(
+                    "referential integrity",
+                    missing.is_empty() && !view.targets.is_empty(),
+                    if view.targets.is_empty() {
+                        "a gate proposal names no target observation".into()
+                    } else if missing.is_empty() {
+                        format!("all {} target observations are in the local log", view.targets.len())
+                    } else {
+                        format!("{} target observation(s) are not in the local log: {}", missing.len(), missing.join(", "))
+                    },
+                );
+                check(
+                    "tier stated",
+                    view.tier.is_some(),
+                    match view.tier {
+                        Some(t) => format!("grants {t:?}"),
+                        None => "a gate proposal with no requested tier grants nothing".into(),
+                    },
+                );
+            }
+            "entity_merge" => {
+                let into = view.into.clone().unwrap_or_default();
+                check(
+                    "canonical target named",
+                    !into.is_empty() && view.targets.contains(&into),
+                    if into.is_empty() {
+                        "entity_merge names no `into`, so there is nothing to fold onto".into()
+                    } else if view.targets.contains(&into) {
+                        "the canonical id is among the targets".into()
+                    } else {
+                        "`into` is not among the targets - the fold would drop every named entity".into()
+                    },
+                );
+                let distinct: BTreeSet<&String> = view.targets.iter().collect();
+                check(
+                    "distinct targets",
+                    distinct.len() >= 2,
+                    format!("{} distinct entities named; a merge needs at least 2", distinct.len()),
+                );
+                let mut missing = Vec::new();
+                for t in &view.targets {
+                    if self.store.get_entity(t)?.is_none() {
+                        missing.push(t.clone());
+                    }
+                }
+                check(
+                    "referential integrity",
+                    missing.is_empty(),
+                    if missing.is_empty() {
+                        format!("all {} target entities exist locally", view.targets.len())
+                    } else {
+                        format!("{} target entit(ies) do not exist locally: {}", missing.len(), missing.join(", "))
+                    },
+                );
+            }
+            "tbox_change" => {
+                // The one structural T-Box check available before a subtype hierarchy exists: a name
+                // defined on both vocabularies. Principle 9 - a structural contradiction is a bug, so
+                // it blocks rather than merely surfacing.
+                let mut axis: BTreeMap<&str, (bool, bool)> = BTreeMap::new();
+                for a in &view.affected_types {
+                    let e = axis.entry(a.name.as_str()).or_insert((false, false));
+                    match a.target {
+                        TypeTarget::Entity => e.0 = true,
+                        TypeTarget::Relation => e.1 = true,
+                    }
+                }
+                let collisions: Vec<&str> =
+                    axis.into_iter().filter(|(_, (e, r))| *e && *r).map(|(n, _)| n).collect();
+                check(
+                    "t-box axis consistency",
+                    collisions.is_empty(),
+                    if collisions.is_empty() {
+                        "no name is defined on both the entity and relation axes".into()
+                    } else {
+                        format!("defined on both axes: {}", collisions.join(", "))
+                    },
+                );
+            }
+            _ => {}
+        }
+        let _ = workspace;
+        Ok(out)
+    }
+
+    /// The blocking checks that FAIL - empty means a merge verdict may take effect.
+    fn blocking_failures(
+        &self,
+        workspace: Option<&str>,
+        view: &ProposalView,
+    ) -> Result<Vec<String>, StoreError> {
+        Ok(self
+            .blocking_checks(workspace, view)?
+            .into_iter()
+            .filter(|c| c.blocking && !c.passed)
+            .map(|c| format!("{}: {}", c.name, c.detail))
+            .collect())
+    }
+
     /// The diff for an entity_merge: the same two materializations as a gate proposal, except the
     /// thing that differs is the FORWARDING map rather than the gate grants. Merge forwarding is a
     /// read-time overlay applied by `belief_fold`, so adding this proposal's target -> into edges and
@@ -3598,12 +3778,30 @@ mod tests {
     #[test]
     fn proposal_open_verdict_fold() {
         let engine = Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws1");
+        // Real entities: the referential-integrity check (Section 6) blocks a merge whose targets are
+        // not in the local log, and this test is about the state machine, not about that check.
+        engine
+            .observe(ObserveInput {
+                content: "a and b".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![
+                    EntityInput { name: "A".into(), kind: None, description: None },
+                    EntityInput { name: "B".into(), kind: None, description: None },
+                ],
+                relations: vec![],
+            })
+            .expect("observe");
+        let (id_a, id_b) = (Entity::make_id("ws1", "A"), Entity::make_id("ws1", "B"));
         let pid = engine
             .propose(ProposeInput {
                 workspace: None,
                 kind: "entity_merge".into(),
-                targets: vec!["idA".into(), "idB".into()],
-                into: Some("idB".into()),
+                targets: vec![id_a.clone(), id_b.clone()],
+                into: Some(id_b.clone()),
                 tier: None,
                 rationale: Some("A and B are the same entity".into()),
                 affected_types: vec![],
@@ -3615,7 +3813,7 @@ mod tests {
         let p = engine.get_proposal(Some("ws1"), &pid).unwrap().expect("proposal exists");
         assert_eq!(p.state, "open");
         assert_eq!(p.kind, "entity_merge");
-        assert_eq!(p.into.as_deref(), Some("idB"));
+        assert_eq!(p.into.as_deref(), Some(id_b.as_str()));
         assert_eq!(p.verdicts, 0);
 
         // A merge verdict is the absorbing outcome.

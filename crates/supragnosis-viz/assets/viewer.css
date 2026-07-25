@@ -63,6 +63,14 @@
   .dsettled { color:var(--teal); font-size:10px; }
   .dcreated { color:var(--accent); font-size:10px; }
   .dother { color:var(--muted); }
+  /* Blocking check failures. Red-adjacent on purpose: this is the one thing in the panel that
+     means "accepting will not work", as opposed to "here is what accepting would do". */
+  .cblock { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
+  .crow { display:flex; align-items:baseline; gap:5px; flex-wrap:wrap; font-size:11px; }
+  .cbad { color:var(--accent); font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; }
+  .ck { color:var(--ink); }
+  .cd { color:var(--muted); }
+  .pacts button[disabled] { opacity:0.45; cursor:not-allowed; }
   .dnote { color:var(--faint); font-size:10.5px; font-style:italic; margin:4px 0 2px; }
   .hint { color:var(--muted); font-size:11.5px; }
   #status { color:var(--muted); font-size:11.5px; margin-left:auto; white-space:nowrap; }
