@@ -731,6 +731,31 @@ Rules this imposes:
 The registry deliberately does not assert a coverage ratio. Pinning a number invites editing the
 number; what it enforces is that no principle is silently unaccounted for.
 
+### B.2 - Policy is a constraint on change, so test the change
+
+Scenario tests (`principle_scenarios.rs`) answer *does the feature work*: do X, expect Y. Necessary,
+but it cannot tell "the rule held" apart from "the rule was never exercised" - a final state looks
+the same either way.
+
+Most principles here are not statements about a state, they are statements about a **difference**:
+nothing may be forgotten (P3), the log may only grow (P1/P3), a generator may not commit (P7/I18), a
+proposal may not move the canon before its verdict (P23), a writer may not raise its own tier (P18).
+Those are only checkable across an act. So policy cases (`policy_cases.rs`) are written as:
+
+> **given** the knowledge that already existed, **when** this act is applied, **then** the difference
+> satisfies this clause.
+
+Each case snapshots the store before and after, asserts a named clause about the delta, and on
+failure prints both states - because a policy violation is legible only as a before/after, never as
+a bare `assertion failed`. The recurring predicates (`changed_nothing`, `log_unchanged`,
+`log_appended`, `forgot_nothing`) are reusable on purpose: a principle that cannot be phrased as a
+constraint on change usually wants a scenario test instead, and noticing which one it is clarifies
+what the principle actually claims.
+
+Two-step cases are the sharpest form. "A proposal alone changes nothing; only the verdict commits"
+is one act that must produce no delta followed by one that must - and the interesting assertion is
+the first, which a state-only test would never think to make.
+
 ## Appendix C - References
 
 - T. R. Gruber, *Toward Principles for the Design of Ontologies Used for
