@@ -2,7 +2,7 @@
 # supragnosis install bootstrap: detects the platform and installs the latest
 # GitHub Release binary to ~/.local/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+#   curl -fsSL https://supragnosis.dev/install.sh | sh
 #
 # Environment variables:
 #   SUPRAGNOSIS_VERSION  tag to install (default: latest)
@@ -24,7 +24,7 @@ Detects the platform (macOS arm64/x86_64, Linux x86_64) and installs the GitHub 
 (with sha256 checksum verification). The default install path is ~/.local/bin.
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/Ashon/supragnosis/main/scripts/install.sh | sh
+  curl -fsSL https://supragnosis.dev/install.sh | sh
   curl -fsSL .../install.sh | sh -s -- [options]   # pass options via pipe
   sh scripts/install.sh [options]                  # from a local file
 
