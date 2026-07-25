@@ -178,10 +178,11 @@
   #dockL:not(.on) { transform:translateX(-110%); }
   #dockR:not(.on) { transform:translateX(110%); }
   #dockL { left:12px; width:250px; }
-  /* The right island shares its screen edge with the camera HUD (bottom-right stack, ~114px tall
-     at bottom:36): its height cap additionally reserves that corner (56 top + 36 bottom + 114 HUD
-     + 12 gap = 218) so a full proposals list can never slide under the zoom buttons. */
-  #dockR { right:12px; width:300px; max-height:calc(100vh - 218px); }
+  /* The right island shares its screen edge with the bottom-right corner stack. The minimap (168x154
+     at bottom:36) is the tallest element there - taller than the HUD - so the height cap reserves for
+     IT (56 top + 36 bottom + 154 minimap + 12 gap = 258), keeping a full list from sliding under the
+     minimap / zoom buttons. The minimap is on by default; when off, this just leaves a little slack. */
+  #dockR { right:12px; width:300px; max-height:calc(100vh - 258px); }
   .dock.on { visibility:visible; opacity:1; transition:transform .18s ease, opacity .18s ease; }
   .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
   /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
@@ -275,9 +276,52 @@
   .contested .crow .ctier { color:var(--faint); font-size:9.5px; margin-left:auto; }
   /* "current" tag on the winning row - marks which value is shown now, so "keep" vs "use this" read clearly. */
   .contested .crow .curtag { color:var(--accent); font-size:9px; letter-spacing:.06em; text-transform:uppercase; margin-left:auto; }
+  /* Committed (human-confirmed) belief: a filled chip, not the plain "current" text - reads as settled. */
+  .contested .crow .curtag.confirmed { color:#171204; background:var(--accent); border-radius:4px; padding:0 6px; }
   .contested .confirm { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; }
   .contested .crow.cur .confirm { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
   .contested .crow.cur .confirm:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
+  /* Observation log (source of truth, Principle 1) - the left-dock Log panel and the inspector
+     "why" section's supporting list share one row style. */
+  #logBody .obs, .logcol .obs { border:1px solid var(--line-soft); border-radius:6px; background:var(--panel-2); margin-bottom:5px; }
+  .obs .ohead { display:flex; align-items:center; gap:6px; padding:5px 7px; cursor:pointer; }
+  .obs .ohead:hover { background:var(--gold-glass); }
+  .obs .ohost { color:var(--ink2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .obs .owhen { color:var(--faint); font-size:9.5px; margin-left:auto; white-space:nowrap; flex:0 0 auto; }
+  .obs .otext { color:var(--ink); font:12px/1.4 var(--prose); padding:0 8px 6px; opacity:.9;
+                overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; }
+  .obs.open .otext { -webkit-line-clamp:unset; line-clamp:unset; }
+  .obs .odetail { display:none; padding:0 8px 7px; }
+  .obs.open .odetail { display:block; }
+  .tchip { font:9px var(--mono); color:var(--faint); border:1px solid var(--line-soft); border-radius:4px; padding:0 4px; flex:0 0 auto; }
+  .osec { color:var(--accent); font-size:9px; letter-spacing:.12em; text-transform:uppercase; margin:6px 0 3px; }
+  .prow { display:flex; gap:6px; align-items:center; font-size:10.5px; color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
+  .prow .phost { color:var(--ink); }
+  .prow .pobo { color:var(--muted); }
+  .prow .ptier { color:var(--gold-bright); font-size:9.5px; }
+  .prow .pconf { color:var(--faint); font-size:9.5px; }
+  .oids, .echips { display:flex; gap:4px; flex-wrap:wrap; }
+  .oid { font:9.5px var(--mono); color:var(--muted); background:var(--panel); border:1px solid var(--line-soft); border-radius:4px; padding:1px 4px; }
+  .echip { font-size:10.5px; color:var(--ink2); background:var(--panel); border:1px solid var(--line-soft); border-radius:4px; padding:1px 6px; cursor:pointer; }
+  .echip:hover { color:var(--gold-bright); border-color:var(--gold-dim); }
+  /* Inspector "why (evidence & decision)" disclosure: per-field decision + supporting log. */
+  #detail .why { margin:4px 0 2px; }
+  #detail .whytoggle { width:100%; text-align:left; padding:4px 8px; font-size:10.5px; letter-spacing:.04em;
+                       color:var(--muted); background:var(--panel-2); border:1px solid var(--line-soft); border-radius:6px; cursor:pointer; }
+  #detail .whytoggle:hover { color:var(--gold-bright); border-color:var(--gold-dim); }
+  #detail .why .whybody { display:none; margin-top:5px; max-height:230px; overflow-y:auto; }
+  #detail .why.open .whybody { display:block; }
+  .wfield { border:1px solid var(--line-soft); border-radius:6px; padding:4px 7px; margin-bottom:5px; }
+  .wfield.hot { border-color:var(--gold-dim); background:var(--gold-glass); }
+  .wfhead { color:var(--accent); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:2px; }
+  .wfhead .wtag { color:var(--gold-bright); margin-left:4px; }
+  .cand { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink2); padding:1.5px 0; }
+  .cand .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cand.winner .cv { color:var(--ink); font-weight:600; }
+  .cand .crole { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--faint); }
+  .cand.winner .crole { color:var(--accent); }
+  .cand .ctier { color:var(--faint); font-size:9.5px; margin-left:auto; }
+  .cand .cobs { font:9px var(--mono); color:var(--muted); flex:0 0 auto; }
   /* Proposals (the gated curation console). */
   #proposalsBody .hint { color:var(--muted); font:italic 11.5px/1.4 var(--prose); margin-bottom:5px; }
   #proposalsBody .prop { border-top:1px solid var(--line-soft); padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }

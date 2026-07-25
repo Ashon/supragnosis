@@ -272,11 +272,17 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // The opened proposal then rides the normal accept flow in the proposals panel (IR2).
         "/api/propose_merge" => propose_merge_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
+        // The observation log (source of truth, Principle 1), newest-first; `entity=<id>` narrows to
+        // the evidence set behind one node. A read-only projection (Principle 5: failure != empty).
+        "/api/observations" => observations_response(engine, query),
+        // "Why is this node projected this way" (resolution.md): per-field belief resolution
+        // (evidence + decision) + the supporting log for one entity. Read-only, consistent with graph.
+        "/api/explain" => explain_response(engine, query),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/workspaces, or /api/events",
+                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/workspaces, /api/observations, /api/explain, or /api/events",
             ),
         },
     }
@@ -429,6 +435,98 @@ fn curation_response(engine: &Engine, query: &str) -> Response {
             body: serde_json::json!({
                 "error": e.to_string(),
                 "note": "storage backend failure - NOT an empty curation report (Principle 5)"
+            })
+            .to_string(),
+        },
+    }
+}
+
+/// `/api/observations[?workspace=&entity=&limit=]` - the observation log (the source of truth,
+/// Principle 1), newest-first. Workspace resolution is identical to `/api/graph`. `entity=<id>`
+/// narrows to the evidence set behind one node (forwarded through accepted merges); `limit` keeps
+/// the newest N. A storage failure is 500 + error body (Principle 5: a failure is not an empty log).
+fn observations_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let ws_owned: Option<String> = match param("workspace").as_deref() {
+        None => Some(engine.default_workspace().to_string()),
+        Some("") | Some("*") | Some("all") => None,
+        Some(s) => Some(s.to_string()),
+    };
+    let entity = param("entity").filter(|s| !s.is_empty());
+    let limit = param("limit").and_then(|s| s.parse::<usize>().ok());
+    match engine.observation_log(ws_owned.as_deref(), entity.as_deref(), limit) {
+        Ok(log) => match serde_json::to_string(&log) {
+            Ok(json) => Response {
+                status: "200 OK",
+                content_type: "application/json",
+                body: json,
+            },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("serialize error: {e}")),
+            },
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: serde_json::json!({
+                "error": e.to_string(),
+                "note": "storage backend failure - NOT an empty log (Principle 5)"
+            })
+            .to_string(),
+        },
+    }
+}
+
+/// `/api/explain?entity=<id>` - "why is this node projected this way" (resolution.md Section 4): the
+/// per-field belief resolution (evidence + decision) and the supporting observation log for one
+/// entity. The workspace is derived from the entity itself, so only the id is needed.
+/// Consistent-by-construction with `/api/graph` (built on `get_entity`). A missing `entity` is 400;
+/// an id that resolves to no entity is 404 (absence, Principle 5); a storage failure is 500.
+fn explain_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let Some(entity) = param("entity").filter(|s| !s.is_empty()) else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("explain needs ?entity=<id> (ids come from /api/graph nodes)"),
+        };
+    };
+    match engine.explain_entity(&entity) {
+        Ok(Some(ex)) => match serde_json::to_string(&ex) {
+            Ok(json) => Response {
+                status: "200 OK",
+                content_type: "application/json",
+                body: json,
+            },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("serialize error: {e}")),
+            },
+        },
+        Ok(None) => Response {
+            status: "404 Not Found",
+            content_type: "application/json",
+            body: err_body("no entity for that id (it may have been merged away, or never existed)"),
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: serde_json::json!({
+                "error": e.to_string(),
+                "note": "storage backend failure - NOT an absent entity (Principle 5)"
             })
             .to_string(),
         },

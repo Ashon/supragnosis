@@ -19,7 +19,7 @@
 <!-- Per-dock drawer handles: each tab rides its dock's outer edge (a door handle on the door)
      and slides with it to the screen edge when collapsed. Keyboard: [ left, ] right. -->
 <button id="dockLTab" class="docktab left open" title="show/hide the left panel (layers, legend) - shortcut [">&lt;</button>
-<button id="dockRTab" class="docktab right open" title="show/hide the right panel (proposals, glossary, peers) - shortcut ]">&gt;</button>
+<button id="dockRTab" class="docktab right open" title="show/hide the right panel (proposals, review, types, peers, log) - shortcut ]">&gt;</button>
 <div id="log"></div>
 <div id="detail"></div>
 <aside id="dockL" class="dock on">
@@ -37,12 +37,16 @@
     <button class="tab" data-tab="review">Review<span class="ct" id="reviewCt"></span></button>
     <button class="tab" data-tab="glossary">Types<span class="ct" id="glossCt"></span></button>
     <button class="tab" data-tab="peers">Peers<span class="ct" id="peersCt"></span></button>
+    <button class="tab" data-tab="log">Log<span class="ct" id="logCt"></span></button>
   </div>
   <div class="panels">
     <div class="tabpanel on" data-panel="proposals"><div id="proposalsBody"></div></div>
     <div class="tabpanel" data-panel="review"><div id="curationBody"></div></div>
     <div class="tabpanel" data-panel="glossary"><div id="glossaryBody"></div></div>
     <div class="tabpanel" data-panel="peers"><div id="peersBody"></div></div>
+    <!-- The observation log: the source of truth (Principle 1). The graph is a projection OF this
+         log; this tab reads the raw events workspace-wide, newest-first, with their provenance. -->
+    <div class="tabpanel" data-panel="log"><div id="logBody"></div></div>
   </div>
 </aside>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>

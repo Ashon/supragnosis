@@ -436,3 +436,79 @@ async fn viz_reify_promotes_a_hyperedge_into_the_graph() {
     assert!(resp.lines().next().unwrap_or("").contains("400"), "got: {resp}");
     let _ = std::fs::remove_file(&sock);
 }
+
+/// The observation-log surface (source of truth, Principle 1) and the "why" explain surface: the log
+/// is newest-first with provenance, `entity=` narrows to a node's evidence set, and explain reports
+/// the per-field decision (winner/competitor) consistent with the graph. 400/404 on bad input (P5).
+#[tokio::test]
+async fn viz_serves_observation_log_and_explain() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(
+        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
+    );
+    // observe_depends: supragnosis(Project) --depends_on--> rmcp(Tool). Then a conflicting kind for
+    // supragnosis (System) - two distinct kinds tie at the top tier -> contested.
+    observe_depends(&engine);
+    engine
+        .observe(ObserveInput {
+            content: "supragnosis is a system".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput { description: None, name: "supragnosis".into(), kind: Some("System".into()) }],
+            relations: vec![],
+        })
+        .expect("observe 2");
+    let sock = serve_uds("obslog", engine, ev_channel()).await;
+
+    // The full log, newest-first, with provenance attached.
+    let log = json_get(&uds_get(&sock, "/api/observations?workspace=ws").await);
+    let arr = log.as_array().expect("log is an array");
+    assert_eq!(arr.len(), 2, "two observations: {log}");
+    assert!(arr[0]["attestations"][0]["host"].is_string(), "attestation host present: {log}");
+    let (w0, w1) = (arr[0]["hlc"]["wall"].as_u64().unwrap(), arr[1]["hlc"]["wall"].as_u64().unwrap());
+    assert!(w0 >= w1, "newest-first by hlc wall");
+
+    // Resolve node ids from the graph, then the entity filter narrows the log.
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    let node_id = |name: &str| {
+        g["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["name"] == name)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let sid = node_id("supragnosis");
+    let rid = node_id("rmcp");
+    let sfilt = json_get(&uds_get(&sock, &format!("/api/observations?workspace=ws&entity={sid}")).await);
+    assert_eq!(sfilt.as_array().unwrap().len(), 2, "both observations touch supragnosis");
+    let rfilt = json_get(&uds_get(&sock, &format!("/api/observations?workspace=ws&entity={rid}")).await);
+    assert_eq!(rfilt.as_array().unwrap().len(), 1, "only the depends_on obs touches rmcp");
+
+    // Explain: the per-field decision; supragnosis kind is contested (Project vs System).
+    let ex = json_get(&uds_get(&sock, &format!("/api/explain?entity={sid}")).await);
+    assert_eq!(ex["id"], sid);
+    let kind_field =
+        ex["fields"].as_array().unwrap().iter().find(|f| f["field"] == "kind").expect("kind field");
+    assert_eq!(kind_field["contested"], true, "two kinds tie -> contested: {ex}");
+    let roles: Vec<&str> = kind_field["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["role"].as_str().unwrap())
+        .collect();
+    assert!(roles.contains(&"winner") && roles.contains(&"competitor"), "winner + competitor: {ex}");
+    assert_eq!(ex["supporting"].as_array().unwrap().len(), 2, "both obs support supragnosis");
+
+    // Bad input: missing entity -> 400; an id that resolves to nothing -> 404 (P5).
+    body_of(&uds_get(&sock, "/api/explain").await, "400");
+    body_of(&uds_get(&sock, "/api/explain?entity=deadbeef").await, "404");
+
+    let _ = std::fs::remove_file(&sock);
+}
