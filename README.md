@@ -64,11 +64,18 @@ everything). The raw `cargo` equivalents are all in the sections below - the tas
 convenience, not a requirement.
 ```bash
 task dev            # the viewer UI on YOUR build - own db/socket/port, isolated from ~/.supragnosis
+task dev:snapshot   # same, but on a COPY of the live daemon's knowledge (real data, nothing at risk)
 task app            # shell against the already-running daemon (builds nothing)
 task server         # server only (MCP http + viewer socket), no desktop shell
 task check          # clippy + viewer ESLint + tests
 task viz -- /api/curation   # GET the viewer API over its unix socket
 ```
+- `task dev` starts empty, because cozo/RocksDB is single-process and a running daemon holds the
+  real store. `task dev:snapshot` copies it first, so you develop against real knowledge without
+  stopping anything - RocksDB is crash-consistent, so a copy taken from under a live writer opens
+  the way it would after a power cut. It is a snapshot both ways: dev edits never reach the real
+  store, and later daemon writes never reach dev. `task dev:live` opens the real store directly and
+  refuses to start while a daemon holds it.
 - `task dev` pins `SUPRAGNOSIS_VIZ_SOCK`/`DATA_DIR`/`HTTP_ADDR` on purpose. The shell does
   attach-or-spawn: if the socket it resolves already answers it attaches and never consults
   `SUPRAGNOSIS_BIN`, so an unpinned socket would silently show you an installed daemon's build
