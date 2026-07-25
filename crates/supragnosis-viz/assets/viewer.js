@@ -698,9 +698,10 @@ function renderProposals() {
       html += `<div class="atypes">${p.affected_types.map(aty).join("")}</div>`;
     }
     // The selected proposal shows its computed diff: what accepting would change, before accepting.
-    if (sel) html += diffHtml(proposalDiff);
+    if (sel) html += diffHtml(proposalDiff) + checksHtml(proposalChecks);
     if (p.state === "open") {
-      html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}">accept</button>`
+      const blocked = sel && proposalChecks && proposalChecks.some(c => c.blocking && !c.passed);
+      html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}"${blocked ? " disabled title=\"a blocking check fails - the fold would refuse this merge\"" : ""}>accept</button>`
         + `<button data-act="reject" data-id="${esc(p.id)}">reject</button></div>`;
     }
     html += `</div>`;
@@ -752,6 +753,8 @@ function affectedNodes(p) {
 // The computed belief diff for the selected proposal (proposal-workflow.md Section 5). Null while
 // unfetched or when nothing is selected; the canvas overlay is a hint, this is the artifact.
 let proposalDiff = null;
+// Blocking check results for the selected proposal (proposal-workflow.md Section 6).
+let proposalChecks = null;
 
 async function fetchProposalDiff(id) {
   const ws = wsInput.value.trim();
@@ -764,6 +767,7 @@ async function fetchProposalDiff(id) {
     // Ignore a response that lost the race against another selection.
     if (proposalSel && view && view.id === proposalSel.id) {
       proposalDiff = view.belief_diff || null;
+      proposalChecks = view.checks || null;
       renderProposals();
     }
   } catch (e) { /* the overlay still works - the diff is additive */ }
@@ -801,6 +805,17 @@ function diffHtml(d) {
   return `<div class="ddiff">${tiers}${beliefs}${rewires}</div>`;
 }
 
+// Failing blocking checks, shown above the accept button. A blocking failure means the fold would
+// refuse the merge anyway, so surfacing it here turns a silent "nothing happened" into a reason.
+function checksHtml(cs) {
+  if (!cs || !cs.length) return "";
+  const bad = cs.filter(c => c.blocking && !c.passed);
+  if (!bad.length) return `<div class="dnote">checks pass</div>`;
+  return `<div class="cblock">${bad.map(c =>
+    `<div class="crow"><span class="cbad">blocked</span><span class="ck">${esc(c.name)}</span>`
+    + `<span class="cd">${esc(c.detail)}</span></div>`).join("")}</div>`;
+}
+
 // Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node when
 // present (entity_merge); otherwise frames the affected T-Box elements (tbox_change).
 function selectProposal(p) {
@@ -808,6 +823,7 @@ function selectProposal(p) {
   // The diff is per-proposal (two belief folds), so it is fetched on selection rather than carried
   // on every list row. Cleared first so a stale diff never sits under a newly selected proposal.
   proposalDiff = null;
+  proposalChecks = null;
   if (proposalSel) {
     fetchProposalDiff(proposalSel.id);
     const into = nodeById(proposalSel.into);

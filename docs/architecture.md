@@ -500,8 +500,9 @@ HTTP-over-UDS client (`curl --unix-socket`).
      **belief diff** exists as a canvas preview in the viewer, not as a computed artifact on
      `get_proposal`: `entity_merge` previews the fold (targets -> canonical), and `tbox_change` previews
      its scope by highlighting the affected edges/nodes carried on the proposal's `affected_types`
-     (relation names normalized to the graph's edge kinds). So "no merge without a diff" is honored by UI
-     convention, not by the gate. Blocking/informative checks are not implemented.
+     (relation names normalized to the graph's edge kinds). **Repaid**: `get_proposal` now returns a
+     COMPUTED diff for the two kinds with a commit effect, and the blocking checks of Section 6 are
+     enforced by the fold - see the M3.5 entry in the compliance record below.
 6. **M4 - Federation [o] Phases 0-4; Phase 3.5 and 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
    (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated recall, legacy-id
@@ -729,8 +730,18 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   have effects** - `entity_merge` (id forwarding), and since M3a `claim_promotion`/`claim_demotion`
   (the gate tier, surface-capped); `tbox_change`/`recall` fold correctly and change nothing
   (-> Phase 5 / M5). The **belief diff** is a
-  viewer-side canvas preview rather than a computed artifact on `get_proposal`, so "no merge without a diff" is honored
-  by UI convention, not by the gate; blocking/informative checks are unimplemented; self-approval is not prohibited.
+  now a **computed artifact** on `get_proposal`, so "no merge without a diff" is a property of the gate rather than a UI
+  convention: gate proposals report the tier moves and the beliefs they overturn (carrying contested before/after, so
+  Section 5 item 3 falls out of the same comparison), and `entity_merge` reports the references that rewire and which
+  edges become self-loops and therefore vanish from the graph. Both sides run the same `belief_fold` with a single
+  input varied - the grants for a gate proposal, the forwarding map for a merge - so the "after" side IS the code path
+  a merged verdict takes and cannot promise an outcome the merge would not deliver. The **blocking checks** of
+  Section 6 are enforced as well (referential integrity, canonical-target well-formedness, T-Box axis collision):
+  recomputed by the fold rather than read from a `check_reported` event (I13), so a merge verdict on a failing
+  proposal folds to `blocked` instead of `merged`. The fold is the enforcement point on purpose - a replicated
+  verdict arrives as an observation and never passes through `review_proposal`, so a gate living there would not be
+  a gate. Still open: the informative checks (impact analysis, trust profile) and the authority check;
+  self-approval is not prohibited.
   Moreover the fold **hardcodes `self_attested: true` on every proposal view** regardless of whether the reviewing
   principal differs from the proposer - as a solo-mode blanket label it is honest, but it is a view-level flag, not
   the log-borne marker the exception calls for, and it cannot distinguish a genuinely reviewed merge from a

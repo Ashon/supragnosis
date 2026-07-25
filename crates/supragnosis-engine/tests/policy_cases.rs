@@ -603,3 +603,104 @@ fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
     assert_eq!(moved.other_name, "App", "the endpoint that stays is what the edge still connects to");
     assert_eq!(moved.to_name, "PostgreSQL", "everything rewires onto the canonical id");
 }
+
+/// GIVEN a merge proposal whose targets are not in the local log, WHEN a merge verdict is recorded
+/// anyway, THEN the canon does not move and the proposal reads `blocked` rather than `merged`.
+///
+/// The verdict is recorded on purpose - the log keeps it (P3) - and the enforcement is that the FOLD
+/// refuses to let it commit (I13). That distinction is the whole point: under federation a verdict
+/// arrives as a replicated observation and never passes through `review_proposal`, so a gate that
+/// lived only at the entry point would be no gate at all. Here the verdict is injected directly to
+/// simulate exactly that arrival.
+#[test]
+fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
+    let (store, engine) = engine();
+    observe(&engine, "a real one", &["Real"]);
+    let ghost = Entity::make_id(WS, "never observed");
+    let real = Entity::make_id(WS, "Real");
+
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![ghost.clone(), real.clone()],
+            into: Some(real.clone()),
+            tier: None,
+            rationale: Some("merge into something that is not here".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+
+    // The local path refuses and says why, rather than letting the caller find out later.
+    let refused = engine
+        .review_proposal(None, proposal.clone(), "merge".into(), None, Some("ashon".into()), VerdictSurface::Console)
+        .expect_err("a merge that cannot commit must not be accepted silently");
+    assert!(
+        refused.to_string().contains("referential integrity"),
+        "the refusal must name the failing check: {refused}"
+    );
+
+    let before = snapshot(store.as_ref());
+    // Now bypass that path entirely - this is the shape a verdict has when it arrives over sync.
+    engine
+        .observe(ObserveInput {
+            content: format!("proposal(merge) {proposal}"),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: Some("elsewhere".into()),
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .expect("observe");
+    let after = snapshot(store.as_ref());
+
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_ne!(view.state, "merged", "a blocked proposal must never read as merged");
+    Case::new("Principle 23", "a merge reaches canon only when the blocking checks pass")
+        .forgot_nothing(&before, &after);
+    assert!(
+        view.checks.iter().any(|c| c.blocking && !c.passed && c.name == "referential integrity"),
+        "the failing check must be visible on the proposal: {:?}",
+        view.checks
+    );
+}
+
+/// A well-formed proposal passes its checks, so the gate blocks nothing it should not - a gate that
+/// only ever says no is indistinguishable from a broken one.
+#[test]
+fn p23_a_well_formed_merge_passes_its_checks_and_commits() {
+    let (_store, engine) = engine();
+    observe(&engine, "duplicates", &["Postgres", "PostgreSQL"]);
+    let (a, b) = (Entity::make_id(WS, "postgres"), Entity::make_id(WS, "postgresql"));
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![a.clone(), b.clone()],
+            into: Some(b.clone()),
+            tier: None,
+            rationale: Some("same database".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert!(
+        view.checks.iter().all(|c| c.passed),
+        "a well-formed merge must pass every check: {:?}",
+        view.checks
+    );
+    engine
+        .review_proposal(None, proposal.clone(), "merge".into(), None, Some("ashon".into()), VerdictSurface::Console)
+        .expect("a passing proposal must be reviewable");
+    assert_eq!(
+        engine.get_proposal(None, &proposal).expect("get").expect("p").state,
+        "merged"
+    );
+}
