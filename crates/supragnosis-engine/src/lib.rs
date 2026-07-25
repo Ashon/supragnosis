@@ -1665,7 +1665,8 @@ impl Engine {
         // this exists to say WHY rather than to let the caller discover a "blocked" state later.
         if decision == "merge" {
             if let Some(view) = self.get_proposal(Some(&workspace), &proposal)? {
-                let failures = self.blocking_failures(Some(&workspace), &view)?;
+                let asserted = self.asserted_entity_ids(Some(&workspace))?;
+                let failures = self.blocking_failures(Some(&workspace), &view, &asserted)?;
                 if !failures.is_empty() {
                     return Err(ObserveError::Invalid(format!(
                         "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
@@ -1780,11 +1781,15 @@ impl Engine {
         // and never pass through it. Computed only for proposals that actually carry a merge verdict,
         // so the common path pays nothing. Separate pass to keep the view borrow immutable.
         let mut blocked: HashSet<String> = HashSet::new();
-        for (id, view) in views.iter() {
-            if tally.get(id).is_some_and(|t| t.merge)
-                && !self.blocking_failures(workspace, view)?.is_empty()
-            {
-                blocked.insert(id.clone());
+        if views.iter().any(|(id, _)| tally.get(id).is_some_and(|t| t.merge)) {
+            // One log pass, shared by every proposal being checked.
+            let asserted = self.asserted_entity_ids(workspace)?;
+            for (id, view) in views.iter() {
+                if tally.get(id).is_some_and(|t| t.merge)
+                    && !self.blocking_failures(workspace, view, &asserted)?.is_empty()
+                {
+                    blocked.insert(id.clone());
+                }
             }
         }
         for (id, view) in views.iter_mut() {
@@ -1821,7 +1826,8 @@ impl Engine {
             return Ok(None);
         };
         view.belief_diff = Some(self.belief_diff(workspace, &view)?);
-        view.checks = self.blocking_checks(workspace, &view)?;
+        view.checks =
+            self.blocking_checks(workspace, &view, &self.asserted_entity_ids(workspace)?)?;
         Ok(Some(view))
     }
 
@@ -1829,6 +1835,33 @@ impl Engine {
     /// (proposal-workflow.md Section 5). Only the gate grants differ between the two folds, so the
     /// "after" side is computed by the same code path a merged verdict would take - the diff cannot
     /// promise an outcome the merge would not deliver.
+    /// The entity ids the LOG asserts, derived from observations rather than read off the projection.
+    ///
+    /// Referential integrity has to be a function of the event set (I8). Reading the projection made
+    /// it a function of whether re-materialization had happened yet, and a freshly synced node holds
+    /// every observation while its projection is still empty - so the same merge counted as valid on
+    /// the authoring node and blocked on the receiving one, which is canon becoming node-dependent.
+    /// A property test on arrival order is what surfaced that (`i8_blocking_check_conclusion_is_...`).
+    fn asserted_entity_ids(
+        &self,
+        workspace: Option<&str>,
+    ) -> Result<HashSet<String>, StoreError> {
+        let mut ids = HashSet::new();
+        for obs in self.store.all_observations(workspace)? {
+            let ws = obs.workspace().to_string();
+            for e in &obs.assertions.entities {
+                ids.insert(Entity::make_id(&ws, &e.name));
+            }
+            // Both endpoints of a relation assert their entities too - the projection creates rows
+            // for them, so the check must see them as existing for the same reason.
+            for r in &obs.assertions.relations {
+                ids.insert(Entity::make_id(&ws, &r.from));
+                ids.insert(Entity::make_id(&ws, &r.to));
+            }
+        }
+        Ok(ids)
+    }
+
     /// The blocking checks of proposal-workflow.md Section 6, recomputed from the proposal and what
     /// the local log holds.
     ///
@@ -1845,6 +1878,7 @@ impl Engine {
         &self,
         workspace: Option<&str>,
         view: &ProposalView,
+        asserted: &HashSet<String>,
     ) -> Result<Vec<CheckResult>, StoreError> {
         let mut out = Vec::new();
         let mut check = |name: &str, passed: bool, detail: String| {
@@ -1901,19 +1935,15 @@ impl Engine {
                     distinct.len() >= 2,
                     format!("{} distinct entities named; a merge needs at least 2", distinct.len()),
                 );
-                let mut missing = Vec::new();
-                for t in &view.targets {
-                    if self.store.get_entity(t)?.is_none() {
-                        missing.push(t.clone());
-                    }
-                }
+                let missing: Vec<String> =
+                    view.targets.iter().filter(|t| !asserted.contains(*t)).cloned().collect();
                 check(
                     "referential integrity",
                     missing.is_empty(),
                     if missing.is_empty() {
-                        format!("all {} target entities exist locally", view.targets.len())
+                        format!("all {} target entities are asserted in the local log", view.targets.len())
                     } else {
-                        format!("{} target entit(ies) do not exist locally: {}", missing.len(), missing.join(", "))
+                        format!("{} target entit(ies) are not asserted in the local log: {}", missing.len(), missing.join(", "))
                     },
                 );
             }
@@ -1952,9 +1982,10 @@ impl Engine {
         &self,
         workspace: Option<&str>,
         view: &ProposalView,
+        asserted: &HashSet<String>,
     ) -> Result<Vec<String>, StoreError> {
         Ok(self
-            .blocking_checks(workspace, view)?
+            .blocking_checks(workspace, view, asserted)?
             .into_iter()
             .filter(|c| c.blocking && !c.passed)
             .map(|c| format!("{}: {}", c.name, c.detail))

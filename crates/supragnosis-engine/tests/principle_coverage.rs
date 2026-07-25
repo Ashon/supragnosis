@@ -144,6 +144,7 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
         "cross_node_reprojection_converges",
         "traverse_dangling_endpoint_parity_across_adapters",
         "traverse_order_and_truncation_parity_across_adapters",
+        "i8_blocking_check_conclusion_is_arrival_order_independent",
     ])),
     (17, "Knowledge Sovereignty", Evidence::Scenario(&[
         "export_respects_share_list_and_vv",
@@ -186,6 +187,7 @@ const REGISTRY: &[(u8, &str, Evidence)] = &[
         "name_variants_stop_being_offered_once_a_merge_is_open",
         "p23_a_blocked_merge_verdict_does_not_reach_canon",
         "p23_a_well_formed_merge_passes_its_checks_and_commits",
+        "i8_blocking_check_conclusion_is_arrival_order_independent",
         "p23_a_merge_proposal_names_the_references_it_would_rewire",
         "p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon",
     ])),

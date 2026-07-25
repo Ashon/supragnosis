@@ -1217,3 +1217,79 @@ fn explain_matches_projection_and_surfaces_competitors() {
     assert_eq!(engine.observation_log(Some(WS), Some(&id), None).expect("log filtered").len(), 2);
     assert_eq!(engine.observation_log(Some(WS), None, None).expect("log all").len(), 2);
 }
+
+// --- M3.5b: blocking-check monotonicity -------------------------------------------------------
+
+/// guard (proposal-workflow.md Section 6 monotonicity note, Section 13 open decisions; P16/I8):
+/// the blocking gate's conclusion must be a function of the event SET, not of the order or
+/// partitioning in which the events arrived. The spec asks for this to be verified continuously by
+/// a property test rather than argued, because the failure it guards against is silent: a merge
+/// that counted as valid on one node and not on another would make canon node-dependent.
+///
+/// It also pins the direction of change. A proposal whose targets have not arrived yet is `blocked`,
+/// and becomes `merged` once they do - fail to pass. The reverse, a merge that later stops counting,
+/// is what would break I16, and nothing here can produce it: entities are never removed.
+#[test]
+fn i8_blocking_check_conclusion_is_arrival_order_independent() {
+    // Node A authors the whole story through the real ingest path: the entities, the proposal, the
+    // verdict.
+    let store_a = Arc::new(InMemoryStore::new());
+    let engine_a = Engine::new(store_a.clone(), "host-a", WS);
+    let (x, y) = mergeable_pair(&engine_a);
+    let p = propose_merge(&engine_a, &[&x, &y], &y, "alice");
+    review(&engine_a, &p, "merge", "bob");
+    assert_eq!(
+        engine_a.get_proposal(Some(WS), &p).unwrap().unwrap().state,
+        "merged",
+        "the authoring node must see a valid merge"
+    );
+
+    let node_a = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([1u8; 32]));
+    node_a.backfill(&*store_a, WS).expect("backfill");
+    let all =
+        export_delta(&*store_a, WS, &VersionVector::default(), &[WS.to_string()]).expect("export");
+    let keys: BTreeMap<String, String> =
+        [(node_a.node_id().to_string(), node_a.public_key_hex())].into();
+
+    // Deliver the same set to fresh nodes under different orders and partitions.
+    let deliver = |batches: Vec<Vec<_>>, label: &str| -> String {
+        let store = Arc::new(InMemoryStore::new());
+        let node = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([9u8; 32]));
+        let mut vv = VersionVector::default();
+        for b in batches {
+            node.apply(&*store, WS, b, &keys, &mut vv).unwrap_or_else(|e| panic!("{label}: {e}"));
+        }
+        Engine::new(store, "host-x", WS)
+            .get_proposal(Some(WS), &p)
+            .expect("get")
+            .expect("proposal replicated")
+            .state
+    };
+
+    let mut reversed = all.clone();
+    reversed.reverse();
+    let one_at_a_time: Vec<Vec<_>> = reversed.iter().map(|e| vec![e.clone()]).collect();
+
+    let whole = deliver(vec![all.clone()], "one batch");
+    let backwards = deliver(vec![reversed.clone()], "reversed batch");
+    let dribbled = deliver(one_at_a_time, "reversed, one event per batch");
+
+    assert_eq!(whole, "merged", "the full event set is a valid merge");
+    assert_eq!(
+        (whole.as_str(), backwards.as_str(), dribbled.as_str()),
+        ("merged", "merged", "merged"),
+        "the conclusion must not depend on arrival order or partitioning"
+    );
+
+    // Direction: with the entity observation withheld the targets do not exist, so the same verdict
+    // does NOT commit - and the fold says blocked rather than merged. This is the state a partially
+    // synced node is in, and it is the safe direction (it can only later become merged).
+    let without_entities: Vec<_> =
+        all.iter().filter(|e| e.assertions.entities.is_empty()).cloned().collect();
+    assert_eq!(without_entities.len(), all.len() - 1, "exactly the entity observation is withheld");
+    assert_eq!(
+        deliver(vec![without_entities], "targets withheld"),
+        "blocked",
+        "a merge whose targets are not in the local log must not count as merged"
+    );
+}
