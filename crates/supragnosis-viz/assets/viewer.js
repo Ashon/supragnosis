@@ -43,6 +43,10 @@ const nodeCtEl = document.getElementById("nodeCt"), edgeCtEl = document.getEleme
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
 const loaderEl = document.getElementById("loader");
 const detailEl = document.getElementById("detail");
+const obscardEl = document.getElementById("obscard");
+// Close the observation detail card on a backdrop (scrim) click - a click on the card itself does not
+// bubble to here as `target === obscardEl` only when the scrim is hit directly.
+obscardEl.addEventListener("click", ev => { if (ev.target === obscardEl) hideObsCard(); });
 const dockLEl = document.getElementById("dockL"), dockREl = document.getElementById("dockR");
 const glossaryBodyEl = document.getElementById("glossaryBody"), glossCtEl = document.getElementById("glossCt");
 const curationBodyEl = document.getElementById("curationBody"), reviewCtEl = document.getElementById("reviewCt");
@@ -731,66 +735,93 @@ async function refreshProposals() {
 let obsLog = [];   // /api/observations for the current workspace (newest-first)
 let obsLogSig = "";   // set signature of the rendered rows - re-render only when it changes (below)
 
-// A compact absolute clock: the log is a record, so show when it happened, not "3s ago".
-function obsWhen(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
-function tierChip(t) { return `<span class="tchip">${esc(String(t))}</span>`; }
+// Compact clock for the row (full timestamp on hover + in the expanded provenance). The log is a
+// record, so it shows the wall time, not "3s ago": HH:MM for today, else MM/DD HH:MM.
+function obsWhen(ms) {
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return "";
+  const now = new Date();
+  const hm = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
+// Trust tier as a colored dot (the edge columns' dot idiom) - a quiet ramp from dim (unverified) to
+// gold (human-confirmed). The full tier text lives in the expanded provenance.
+function tierDot(t) { return `<span class="tdot t-${esc(String(t))}" title="${esc(String(t))}"></span>`; }
 
+// Content-first row: a quiet meta line (tier dot + compact time) over the observation content (the
+// primary element, clamped to 2 lines). Host and the rest move to the expanded provenance.
 function obsRowHtml(o) {
   const a0 = (o.attestations || [])[0] || {};
   return `<div class="obs" data-id="${esc(o.id)}">`
-    + `<div class="ohead">${tierChip(o.effective_tier)}<span class="ohost">${esc(a0.host || "")}</span>`
-    + `<span class="owhen">${esc(obsWhen(a0.observed_at))}</span></div>`
-    + `<div class="otext">${esc(o.content)}</div>`
-    + `<div class="odetail"></div></div>`;
+    + `<div class="ohead" title="open observation detail">`
+    +   `<div class="ometa">${tierDot(o.effective_tier)}`
+    +     `<span class="owhen">${esc(obsWhen(a0.observed_at))}</span></div>`
+    +   `<div class="otext">${esc(o.content)}</div>`
+    + `</div></div>`;
 }
 
-// The expanded body of one observation: provenance attestations (who / on-behalf-of / claimed ->
-// evaluated tier / confidence), lineage, and the entities it asserted (click to focus).
-function obsDetailHtml(o) {
-  let h = `<div class="osec">provenance</div>`;
+// The observation detail CARD: a focused, dismissable view of one observation - full content plus
+// its provenance (every attestation), lineage (derived_from), and the entities/relations it asserted.
+// The single detail surface for both the node log column and the workspace Log tab (a log row opens
+// it, so the list stays a scannable list - the earlier cramped in-column expansion is gone).
+function obsCardHtml(o) {
+  const a0 = (o.attestations || [])[0] || {};
+  let h = `<div class="card">`
+    + `<button class="close" title="close" aria-label="close">`
+    +   `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
+    +   `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`
+    + `<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${esc(String(o.effective_tier))}</span>`
+    +   `<span class="ocwhen">${esc(obsWhenFull(a0.observed_at))}</span></div>`
+    + `<div class="oc-content">${esc(o.content)}</div>`
+    + `<div class="osec">provenance (${(o.attestations || []).length})</div>`;
   for (const a of o.attestations || []) {
     h += `<div class="prow"><span class="phost">${esc(a.host)}</span>`
       + (a.on_behalf_of ? `<span class="pobo">for ${esc(a.on_behalf_of)}</span>` : "")
       + `<span class="ptier">${esc(String(a.trust_tier))}${a.evaluated_tier !== a.trust_tier ? " -> " + esc(String(a.evaluated_tier)) : ""}</span>`
       + (a.confidence != null ? `<span class="pconf">conf ${esc(String(a.confidence))}</span>` : "")
-      + `</div>`;
+      + (a.origin_node ? `<span class="poid">node ${esc(String(a.origin_node).slice(0, 8))}</span>` : "")
+      + `<span class="pwhen">${esc(obsWhenFull(a.observed_at))}</span></div>`;
   }
   if (o.derived_from && o.derived_from.length)
     h += `<div class="osec">derived from</div><div class="oids">`
-      + o.derived_from.map(id => `<span class="oid">${esc(String(id).slice(0, 8))}</span>`).join("") + `</div>`;
+      + o.derived_from.map(id => `<span class="oid">${esc(String(id).slice(0, 10))}</span>`).join("") + `</div>`;
   if (o.entities && o.entities.length)
     h += `<div class="osec">entities</div><div class="echips">`
-      + o.entities.map(e => `<span class="echip" data-id="${esc(e.id)}" title="focus ${esc(e.name)}">${esc(e.name)}</span>`).join("")
-      + `</div>`;
+      + o.entities.map(e => `<span class="echip" data-id="${esc(e.id)}" title="focus ${esc(e.name)}">${esc(e.name)}</span>`).join("") + `</div>`;
+  if (o.relations && o.relations.length)
+    h += `<div class="osec">relations</div>`
+      + o.relations.map(r => `<div class="ocrel">${esc(r.from)} <span class="rk">${esc(r.type)}</span> ${esc(r.to)}</div>`).join("");
+  h += `<div class="ocid">obs ${esc(String(o.id).slice(0, 16))}</div></div>`;
   return h;
 }
+function hideObsCard() { obscardEl.className = ""; obscardEl.innerHTML = ""; }
+function showObsCard(o) {
+  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
+  obscardEl.innerHTML = obsCardHtml(o);
+  obscardEl.className = "on";
+  obscardEl.querySelector(".close").onclick = hideObsCard;
+  // An asserted entity: close the card and focus its node.
+  obscardEl.querySelectorAll(".echip").forEach(c => {
+    c.onclick = ev => {
+      ev.stopPropagation();
+      const n = nodeById(c.dataset.id);
+      hideObsCard();
+      if (n) { focus = n; renderDetail(n); centerOn(n); }
+    };
+  });
+}
 
-// Renders a list of observation summaries into a container and wires the expand toggle + entity
-// focus. Used by the Log panel and the inspector "why" supporting list.
-function wireObsList(container, list, openIds) {
+// Renders a list of observation summaries into a container (a scannable list) and wires each row to
+// open the observation detail card. Used by the workspace Log tab and the node inspector's log column.
+function wireObsList(container, list) {
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
   container.innerHTML = list.length ? list.map(obsRowHtml).join("") : '<div class="empty">no observations</div>';
   container.querySelectorAll(".obs").forEach(row => {
     const o = list.find(x => x.id === row.dataset.id);
     if (!o) return;
-    const det = row.querySelector(".odetail");
-    const fill = () => {
-      if (det.dataset.filled) return;
-      // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-      det.innerHTML = obsDetailHtml(o);
-      det.dataset.filled = "1";
-      det.querySelectorAll(".echip").forEach(c => {
-        c.onclick = ev => { ev.stopPropagation(); const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
-      });
-    };
-    // `openIds` (optional) persists which rows are expanded across a caller's re-render (the inspector
-    // rebuilds on every poll); pre-open those and keep the set in sync on toggle.
-    if (openIds && openIds.has(o.id)) { row.classList.add("open"); fill(); }
-    row.querySelector(".ohead").onclick = () => {
-      const open = row.classList.toggle("open");
-      if (openIds) { if (open) openIds.add(o.id); else openIds.delete(o.id); }
-      if (open) fill();
-    };
+    row.querySelector(".ohead").onclick = () => showObsCard(o);
   });
 }
 
@@ -816,15 +847,14 @@ async function refreshLog() {
 }
 
 // The node inspector's "log" column: this node's supporting observations (the evidence behind its
-// belief), always visible beside the edge columns. Cached per node + expanded-row set so it survives
-// the inspector's poll-driven re-render, and it stays live (re-fetched, re-rendered only on change).
+// belief), always visible beside the edge columns. Cached per node so it survives the inspector's
+// poll-driven re-render, and it stays live (re-fetched, re-rendered only when the set changes).
 let nodeLogCache = { id: null, list: [] };
-const openObs = new Set();   // obs ids expanded in the log column (cleared when the focus node changes)
 async function fillNodeLog(node, colEl, secEl) {
   const sameNode = nodeLogCache.id === node.id;
-  if (!sameNode) { nodeLogCache = { id: node.id, list: [] }; openObs.clear(); }
+  if (!sameNode) nodeLogCache = { id: node.id, list: [] };
   const setCount = n => { if (secEl) secEl.textContent = "log (" + n + ")"; };
-  if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list, openObs); setCount(nodeLogCache.list.length); }
+  if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list); setCount(nodeLogCache.list.length); }
   else colEl.textContent = "loading...";
   const ws = wsInput.value.trim();
   try {
@@ -836,7 +866,7 @@ async function fillNodeLog(node, colEl, secEl) {
     if (!Array.isArray(list) || nodeLogCache.id !== node.id) return;
     const changed = list.map(o => o.id).join(",") !== nodeLogCache.list.map(o => o.id).join(",");
     nodeLogCache.list = list;
-    if (changed || !colEl.querySelector(".obs")) wireObsList(colEl, list, openObs);
+    if (changed || !colEl.querySelector(".obs")) wireObsList(colEl, list);
     setCount(list.length);
   } catch (e) { /* keep the last render */ }
 }
@@ -1287,12 +1317,50 @@ function drawMinimap() {
     mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
     mctx.clip();
   }
-  mctx.globalAlpha = 0.9;
-  for (const n of src) {
-    mctx.fillStyle = typeColor[n.type] || OTHER;
-    mctx.fillRect(n.x*k + ox - 1, n.y*k + oy - 1, 2, 2);
+  // A faithful miniature: hyperedge hulls (under), edge connections, then nodes sized by degree.
+  const mx = n => n.x * k + ox, my = n => n.y * k + oy;
+  // Hulls (hyperedge overlay) - reuse the graph's exact rounded-hull geometry (hullGeom +
+  // roundedHullPath, which balloons past the node glyphs and wraps corners with arcs), just scaled
+  // into the minimap via a world->minimap transform, so the smooth corner-wrapping matches the main
+  // canvas instead of a coarse polygon. Only while the overlay is on.
+  if (hyperMode && hyperedges.length) {
+    const nodeMap = new Map(src.map(n => [n.id, n]));
+    mctx.save();
+    mctx.transform(k, 0, 0, k, ox, oy);   // compose world->minimap on top of the DPR transform
+    mctx.globalAlpha = 0.14;
+    for (const he of hyperedges) {
+      if ((he.size || 0) < 3) continue;
+      const ms = (he.members || []).map(id => nodeMap.get(id)).filter(Boolean);
+      if (ms.length < 3) continue;
+      const g = hullGeom(ms);
+      if (!g) continue;
+      roundedHullPath(mctx, g);
+      mctx.fillStyle = hyperColor(he.id);
+      mctx.fill();
+    }
+    mctx.globalAlpha = 1;
+    mctx.restore();
   }
-  mctx.globalAlpha = 1;
+  // Edge connections - one batched path, thin and neutral (structure, not type).
+  if (showEdges) {
+    mctx.beginPath();
+    for (const e of edges) {
+      if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
+      mctx.moveTo(mx(e.a), my(e.a));
+      mctx.lineTo(mx(e.b), my(e.b));
+    }
+    mctx.strokeStyle = EDGE_OTHER; mctx.globalAlpha = 0.5; mctx.lineWidth = 0.6;
+    mctx.stroke();
+    mctx.globalAlpha = 1;
+  }
+  // Nodes - filled circles whose radius grows with degree (a hub reads bigger), clamped for the minimap.
+  for (const n of src) {
+    const mr = Math.max(1.2, Math.min(5, 1.2 + Math.sqrt(n.degree || 0) * 0.75));
+    mctx.beginPath();
+    mctx.arc(mx(n), my(n), mr, 0, 6.2832);
+    mctx.fillStyle = typeColor[n.type] || OTHER;
+    mctx.fill();
+  }
   // Viewport rectangle: the screen corners in world coords, mapped in and clamped to the frame.
   // A corner that is clamped onto the frame corner takes the PANEL's radius (the rect then traces
   // the rounded outline instead of slicing through it); free corners keep a small radius.
@@ -2065,7 +2133,7 @@ window.addEventListener("keydown", e => {
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.key === "[") toggleDock(true);
   else if (e.key === "]") toggleDock(false);
-  else if (e.key === "Escape") setViewPop(false);
+  else if (e.key === "Escape") { if (obscardEl.classList.contains("on")) hideObsCard(); else setViewPop(false); }
 });
 // Restore the persisted state (default: both open).
 try {
