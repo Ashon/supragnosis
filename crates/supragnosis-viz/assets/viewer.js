@@ -1017,6 +1017,17 @@ function drawMinimap() {
   const k = Math.min((MINI_W - MINI_PAD*2) / gw, (MINI_H - MINI_PAD*2) / gh);
   const ox = (MINI_W - gw*k)/2 - a*k, oy = (MINI_H - gh*k)/2 - b*k;
   miniT = { k, ox, oy };
+  // Everything renders inside the panel's rounded outline (radius matches the 10px
+  // border-radius in viewer.css, minus the half-pixel stroke inset) - without the clip, dots
+  // and the viewport stroke land in the corner cut zones and get sliced by the CSS rounding.
+  const R = 9.5;
+  const round = mctx.roundRect !== undefined;
+  mctx.save();
+  if (round) {
+    mctx.beginPath();
+    mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
+    mctx.clip();
+  }
   mctx.globalAlpha = 0.9;
   for (const n of src) {
     mctx.fillStyle = typeColor[n.type] || OTHER;
@@ -1024,12 +1035,29 @@ function drawMinimap() {
   }
   mctx.globalAlpha = 1;
   // Viewport rectangle: the screen corners in world coords, mapped in and clamped to the frame.
+  // A corner that is clamped onto the frame corner takes the PANEL's radius (the rect then traces
+  // the rounded outline instead of slicing through it); free corners keep a small radius.
   const x1 = Math.max(0.5, Math.min(MINI_W - 0.5, (-cam.x / cam.s) * k + ox));
   const y1 = Math.max(0.5, Math.min(MINI_H - 0.5, (-cam.y / cam.s) * k + oy));
   const x2 = Math.max(0.5, Math.min(MINI_W - 0.5, ((innerWidth - cam.x) / cam.s) * k + ox));
   const y2 = Math.max(0.5, Math.min(MINI_H - 0.5, ((innerHeight - cam.y) / cam.s) * k + oy));
+  const w = Math.max(2, x2 - x1), h = Math.max(2, y2 - y1);
   mctx.strokeStyle = GOLD; mctx.lineWidth = 1;
-  mctx.strokeRect(x1, y1, Math.max(2, x2 - x1), Math.max(2, y2 - y1));
+  if (round) {
+    const lc = x1 <= 1, tc = y1 <= 1, rc = x2 >= MINI_W - 1, bc = y2 >= MINI_H - 1;
+    const radii = [
+      lc && tc ? R : 3,   // top-left
+      rc && tc ? R : 3,   // top-right
+      rc && bc ? R : 3,   // bottom-right
+      lc && bc ? R : 3,   // bottom-left
+    ];
+    mctx.beginPath();
+    mctx.roundRect(x1, y1, w, h, radii);
+    mctx.stroke();
+  } else {
+    mctx.strokeRect(x1, y1, w, h);
+  }
+  mctx.restore();
 }
 // Click/drag pans: center the camera on the pointed world position, at the current zoom.
 function miniPan(ev) {
