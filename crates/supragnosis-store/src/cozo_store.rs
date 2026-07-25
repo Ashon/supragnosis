@@ -655,11 +655,48 @@ impl KnowledgeStore for CozoStore {
         // A partial failure is an Err, not a partial result - returning observation hits while only the
         // entity query failed would make the caller misread it as "zero entities" (Principle 5: absence != backend failure).
         let rows = self.run(ent_script, ent_params, false)?;
+        let mut ent_matched: std::collections::HashSet<String> = std::collections::HashSet::new();
         for r in &rows.rows {
             if let (Some(id), Some(name)) = (
                 r.first().and_then(|v| v.get_str()),
                 r.get(1).and_then(|v| v.get_str()),
             ) {
+                ent_matched.insert(id.to_string());
+                hits.push(SearchHit {
+                    kind: SearchHitKind::Entity,
+                    id: id.to_string(),
+                    snippet: name.to_string(),
+                    score: 1.0,
+                });
+            }
+        }
+
+        // Alias match (parity with InMemory - resolution-identity.md Section 5): an alias containing
+        // the query also hits. Aliases live in the `data` JSON, not a schema column str_includes can
+        // reach, so this pulls the workspace's entity rows and filters in Rust - the same all-entity
+        // scan InMemory does; entities already matched by name are skipped (dedup by id).
+        let mut alias_params = params(&[]);
+        let alias_script = match workspace {
+            Some(ws) => {
+                alias_params.insert("ws".to_string(), DataValue::from(ws));
+                "?[id, name, data] := *entity{id, name, workspace, data}, workspace == $ws"
+            }
+            None => "?[id, name, data] := *entity{id, name, data}",
+        };
+        let rows = self.run(alias_script, alias_params, false)?;
+        for r in &rows.rows {
+            let (Some(id), Some(name), Some(data)) = (
+                r.first().and_then(|v| v.get_str()),
+                r.get(1).and_then(|v| v.get_str()),
+                r.get(2).and_then(|v| v.get_str()),
+            ) else {
+                continue;
+            };
+            if ent_matched.contains(id) {
+                continue;
+            }
+            let e = entity_from_parts(id.to_string(), String::new(), name.to_string(), data);
+            if e.aliases.iter().any(|a| a.to_lowercase().contains(&q)) {
                 hits.push(SearchHit {
                     kind: SearchHitKind::Entity,
                     id: id.to_string(),
@@ -899,6 +936,35 @@ mod tests {
             provenance: vec![prov()],
             embedding: None,
         }
+    }
+
+    /// guard (resolution-identity.md Section 5): the Cozo keyword search matches aliases as InMemory
+    /// does - a query hitting only an alias returns the entity. Retires the latent condition that was
+    /// masked while alias sets were always empty (before M3b).
+    #[test]
+    fn cozo_keyword_matches_aliases() {
+        let dir = tmp_dir();
+        {
+            let store = CozoStore::open(&dir).unwrap();
+            let mut e = ent("CozoDB");
+            e.aliases = vec!["cozo".into(), "the cozo engine".into()];
+            store.put_entity(e.clone()).unwrap();
+
+            // Match by canonical name.
+            let by_name = store.search("cozodb", Some("ws1"), 10).unwrap();
+            assert!(by_name.iter().any(|h| h.id == e.id), "canonical-name match");
+            // Match by an alias that the canonical name does not contain.
+            let by_alias = store.search("engine", Some("ws1"), 10).unwrap();
+            assert!(by_alias.iter().any(|h| h.id == e.id), "alias-only match must hit (parity)");
+            // No double-count when both name and alias would match the same query.
+            let by_both = store.search("cozo", Some("ws1"), 10).unwrap();
+            assert_eq!(
+                by_both.iter().filter(|h| h.id == e.id).count(),
+                1,
+                "an entity matched by name is not re-added by the alias pass"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
