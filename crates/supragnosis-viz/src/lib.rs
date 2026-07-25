@@ -288,6 +288,15 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
     }
 }
 
+/// A workspace to WRITE into. The read endpoints resolve `*`/`all`/empty to "every workspace" - a
+/// VIEW, not a name, and a view is not somewhere an observation can be filed. Forwarding the
+/// sentinel would create a workspace literally called `*` and quietly strand everything written
+/// there. None means the node default, which is what an unspecified workspace has always meant on
+/// the write path. Read and write must not disagree about what `*` is (Principle 17).
+fn write_workspace(raw: Option<String>) -> Option<String> {
+    raw.filter(|s| s != "*" && s != "all")
+}
+
 /// `/api/graph` - resolves the workspace from the query and produces the graph projection.
 /// - unspecified -> the node's default workspace (scoped view)
 /// - `*` / `all` / empty value -> everything (None)
@@ -578,7 +587,7 @@ fn review_response(engine: &Engine, query: &str) -> Response {
             body: err_body("review needs ?proposal=<id>&decision=merge|reject|withdraw"),
         };
     };
-    let workspace = param("workspace");
+    let workspace = write_workspace(param("workspace"));
     // The Console surface (resolution.md Section 6): this server is reachable only through the 0600
     // unix socket, i.e. by the local OS principal - the engine stamps the console marker, which is
     // what permits a merged promotion to grant human_confirmed (a human's direct act, Principle 18).
@@ -636,7 +645,7 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
             body: err_body("resolve needs at least one ?observation=<id> (the asserting observation of the value you confirm)"),
         };
     }
-    let workspace = param("workspace");
+    let workspace = write_workspace(param("workspace"));
     let rationale = param("rationale");
     let proposal = match engine.propose(supragnosis_engine::ProposeInput {
         workspace: workspace.clone(),
@@ -702,7 +711,7 @@ fn reify_response(engine: &Engine, query: &str) -> Response {
         };
     };
     match engine.reify_hyperedge(supragnosis_engine::ReifyInput {
-        workspace: param("workspace"),
+        workspace: write_workspace(param("workspace")),
         hyperedge,
         name: param("name"),
         kind: param("kind"),
@@ -758,7 +767,7 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
         _ => "merge-band suggestion (embedding-near names)",
     };
     match engine.propose(supragnosis_engine::ProposeInput {
-        workspace: param("workspace"),
+        workspace: write_workspace(param("workspace")),
         kind: "entity_merge".into(),
         targets: vec![a, b.clone()],
         into: Some(b),

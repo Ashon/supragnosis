@@ -200,7 +200,10 @@ fn unordered_pair(a: &str, b: &str) -> (String, String) {
 pub struct CurationReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
-    /// Entities whose names collide under normalization but have distinct ids - entity-merge candidates (Principle 15).
+    /// Entities colliding under the SAME normalization the entity id uses (`trim`+`lowercase`).
+    /// Within one workspace this is necessarily empty - two such entities would share an id and be
+    /// one row - so it reports only **cross-workspace** name collisions, and only when the report is
+    /// built unscoped. Orthographic duplicates inside a workspace are `name_variants` below.
     pub duplicates: Vec<DuplicateGroup>,
     /// Oversized co-occurrence contexts - loose grab-bags, split/refine candidates (Principle 11).
     pub grab_bags: Vec<GrabBag>,
@@ -1238,6 +1241,11 @@ impl Engine {
             embedded += 1;
             for h in self.store.search_semantic_entities(vec, workspace, MERGE_BAND_K)? {
                 if h.id == e.id || h.score < SIM_CANDIDATE || fwd.contains_key(&h.id) {
+                    continue;
+                }
+                // Same reason as the ladder: with workspace: None the index spans workspaces, and a
+                // pair straddling two of them has nowhere coherent to file its proposal.
+                if all_entities.iter().any(|o| o.id == h.id && entity_workspace(o) != entity_workspace(e)) {
                     continue;
                 }
                 let pair = unordered_pair(&e.id, &h.id);
@@ -2959,6 +2967,15 @@ fn entity_text(entity: &Entity) -> String {
     }
 }
 
+/// The workspace an entity belongs to. The id is blake3(workspace + normalized name), so an entity
+/// lives in exactly one workspace and every attestation agrees; the first is representative.
+/// Candidate generators need this because a report built with `workspace: None` (the viewer's
+/// all-workspaces view) otherwise groups across workspaces, and an entity_merge spanning two of them
+/// is not a merge anyone can act on - the proposal has to be filed somewhere, and neither is right.
+fn entity_workspace(e: &Entity) -> &str {
+    e.provenance.first().map(|p| p.workspace.as_str()).unwrap_or("")
+}
+
 /// Separator/case-insensitive name key: keep alphanumerics and lowercase. Unicode-aware via
 /// `is_alphanumeric`, so a Korean or otherwise non-Latin name survives intact instead of collapsing to
 /// the empty string. `TrustTier`, `Trust Tier` and `trust-tier` all fold to `trusttier` - a collision
@@ -3039,16 +3056,18 @@ fn name_variant_groups(
         VariantRung::Plural,
         VariantRung::Alias,
     ] {
-        let mut by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        // Keyed by (workspace, normalization) so a group never spans workspaces.
+        let mut by_key: BTreeMap<(&str, String), BTreeSet<String>> = BTreeMap::new();
         for e in entities {
+            let ws = entity_workspace(e);
             let name_key = variant_key(&e.canonical_name);
             match rung {
                 VariantRung::Separator => {
-                    by_key.entry(name_key).or_default().insert(e.id.clone());
+                    by_key.entry((ws, name_key)).or_default().insert(e.id.clone());
                 }
                 VariantRung::Plural => {
                     by_key
-                        .entry(plural_fold(&name_key))
+                        .entry((ws, plural_fold(&name_key)))
                         .or_default()
                         .insert(e.id.clone());
                 }
@@ -3056,10 +3075,10 @@ fn name_variant_groups(
                     // Both the canonical name and every alias are entry points, so an entity is
                     // reachable by any spelling it has ever carried (the dedup counterpart of the
                     // alias parity the keyword search already has).
-                    by_key.entry(name_key).or_default().insert(e.id.clone());
+                    by_key.entry((ws, name_key)).or_default().insert(e.id.clone());
                     for a in &e.aliases {
                         by_key
-                            .entry(variant_key(a))
+                            .entry((ws, variant_key(a)))
                             .or_default()
                             .insert(e.id.clone());
                     }
@@ -3067,7 +3086,7 @@ fn name_variant_groups(
             }
         }
 
-        for (key, ids) in by_key {
+        for ((_ws, key), ids) in by_key {
             if ids.len() < 2 || key.is_empty() {
                 continue;
             }
