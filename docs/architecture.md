@@ -490,13 +490,18 @@ HTTP-over-UDS client (`curl --unix-socket`).
      as the induction input specified here.
    - **This is now the project's critical path**: M3.5 and M4 shipped on top of an M0-era resolution
      layer, so several of their guarantees rest on "one entity name, one spelling" holding by luck.
-5. **M3.5 - Proposal workflow [o] (partial)**: the gateway to canon promotion (Principle 23). Proposal =
+5. **M3.5 - Proposal workflow [o]**: the gateway to canon promotion (Principle 23). Proposal =
    observation event, state = deterministic fold with merge as the absorbing outcome,
    `propose`/`list_proposals`/`get_proposal`/`review`, entity-merge effect with transitive id
    forwarding, read-only curation signals (duplicates/grab-bags/orphans), curation console in the viewer.
    Design -> [proposal-workflow.md](proposal-workflow.md).
-   - Open: **only `entity_merge` has a commit effect** (transitive id forwarding). `claim_promotion` /
-     `claim_demotion` / `tbox_change` / `recall` are accepted and folded but enforce nothing. The
+   - **M3.5a and M3.5b are both complete** (proposal-workflow.md Section 13 defines the scope):
+     M3.5a is the proposal entity, events, fold state machine and claim promotion/demotion; M3.5b is
+     the belief diff, the blocking checks, and `propose`/`get_proposal`/`review`. Commit effects
+     exist for `entity_merge` (transitive id forwarding) and, since M3a, for
+     `claim_promotion`/`claim_demotion`. `tbox_change` and `recall` fold correctly and change
+     nothing - and that is not an M3.5 gap: Section 13 assigns those two kinds, the quorum policy
+     and the auto-merge executor to **M4+**. The
      **belief diff** exists as a canvas preview in the viewer, not as a computed artifact on
      `get_proposal`: `entity_merge` previews the fold (targets -> canonical), and `tbox_change` previews
      its scope by highlighting the affected edges/nodes carried on the proposal's `affected_types`
