@@ -787,8 +787,18 @@ function diffHtml(d) {
       + `<span class="dfrom">${esc(b.from || "(none)")}</span><span class="darr">-&gt;</span>`
       + `<span class="dto">${esc(b.to || "(none)")}</span>${flag}</div>`;
   }).join("");
-  if (!tiers && !beliefs) return `<div class="dnote">computed: this proposal overturns no current belief</div>`;
-  return `<div class="ddiff">${tiers}${beliefs}</div>`;
+  // entity_merge: which references move onto the canonical id, and which edges stop existing.
+  // A self-loop is dropped by graph(), so that edge vanishes on accept - not readable from the
+  // canvas overlay, which can only accent edges incident to a target.
+  const rewires = (d.rewired || []).map(r =>
+    `<div class="drow"><span class="dk">edge</span><code>${esc(r.kind)}</code>`
+    + `<span class="dfrom">${esc(r.from_name)}</span><span class="darr">-&gt;</span>`
+    + `<span class="dto">${esc(r.to_name)}</span>`
+    + `<span class="dother">(${esc(r.other_name)})</span>`
+    + (r.becomes_self_loop ? `<span class="dcreated">becomes a self-loop, edge disappears</span>` : "")
+    + `</div>`).join("");
+  if (!tiers && !beliefs && !rewires) return `<div class="dnote">computed: this proposal overturns no current belief</div>`;
+  return `<div class="ddiff">${tiers}${beliefs}${rewires}</div>`;
 }
 
 // Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node when
