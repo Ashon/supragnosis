@@ -161,15 +161,23 @@ impl KnowledgeStore for InMemoryStore {
 
             for to in &next {
                 visited.insert(to.clone());
-                let (name, kind) = entities
-                    .get(to)
-                    .map(|e| (e.canonical_name.clone(), e.kind.clone()))
-                    .unwrap_or_default();
+                // A relation endpoint with no projected entity row is traversed THROUGH but never
+                // emitted. It used to be emitted with `unwrap_or_default()`, i.e. as a hit claiming
+                // an entity whose name is the empty string - an invented node. Two reasons it is
+                // dropped instead:
+                //   - Parity (Principle 16): the Cozo adapter joins `*entity` in its final rule, so
+                //     an unprojected endpoint never appears there. The same log must answer the same
+                //     traverse on either adapter, and sync's partial-ingest state is what makes this
+                //     reachable (architecture.md Section 14, overdue entry condition 3).
+                //   - Precedent: `graph()` and `curation()` already skip an edge whose endpoint is
+                //     outside the node set. Reachability still runs through the node - only the
+                //     description of it is withheld, because there is nothing to describe yet.
+                let Some(e) = entities.get(to) else { continue };
                 out.push(TraverseHit {
                     id: to.clone(),
                     depth,
-                    name,
-                    kind,
+                    name: e.canonical_name.clone(),
+                    kind: e.kind.clone(),
                 });
                 if out.len() >= limit {
                     return Ok(out);
