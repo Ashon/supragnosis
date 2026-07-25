@@ -55,12 +55,12 @@ brew install supragnosis-server         # server/CLI only (macOS / Linux)
 brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer socket)
 ```
 
-## Dev-channel install (--HEAD)
+## Dev-channel install (--HEAD server + supragnosis-dev cask)
 
-The formula's `head` spec builds the main branch from source (the rust toolchain arrives as a
-build dep; default features = keyword search, identical to the release binaries). The viewer UI
-is embedded in the server binary, so the stable desktop app shell renders a HEAD server's viewer
-unchanged.
+**Server/CLI**: the formula's `head` spec builds the main branch from source (the rust toolchain
+arrives as a build dep; default features = keyword search, identical to the release binaries).
+The viewer UI is embedded in the server binary, so even the stable desktop app shell renders a
+HEAD server's viewer unchanged - the server swap alone is usually the whole dev experience.
 
 ```sh
 # With stable installed, swap only the formula (pass the cask dependency warning
@@ -73,8 +73,22 @@ brew services start supragnosis-server
 brew upgrade --fetch-HEAD supragnosis-server   # whenever main moves
 ```
 
-Returning to stable is the same procedure with `brew install supragnosis-server` (no --HEAD).
-The version string reads `HEAD-<sha>`, so `brew info` shows which commit you are running.
+**Desktop app**: casks cannot build from source (no `--HEAD`), so the dev channel is the
+`supragnosis-dev` cask - it installs the rolling `dev` pre-release that
+`.github/workflows/dev-app.yml` rebuilds (signed/notarized like a release) whenever `app/`
+changes on main, or on manual dispatch. `version :latest` means `brew upgrade` does not track
+it: refresh with reinstall.
+
+```sh
+brew uninstall --cask supragnosis        # the two casks install the same app bundle
+brew install --cask supragnosis-dev
+brew reinstall supragnosis-dev           # whenever the dev release rolls
+```
+
+Returning to stable is the mirror procedure (`brew uninstall --cask supragnosis-dev`, then
+`brew install supragnosis` / `brew install supragnosis-server` without --HEAD).
+The server's version string reads `HEAD-<sha>`, so `brew info` shows which commit you run; the
+dev release page names the app's built commit.
 Data-compatibility caution: if a dev build changed the schema/id formula, check the release
 notes' migrate guidance before returning to stable (`~/.supragnosis/db` is shared).
 

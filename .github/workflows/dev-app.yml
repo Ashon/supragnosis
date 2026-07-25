@@ -1,0 +1,96 @@
+name: dev-app
+
+# Rolling dev channel for the desktop shell (deploy/homebrew/README.md): builds the
+# signed/notarized universal .app from main and republishes it onto the rolling `dev`
+# pre-release, which the `supragnosis-dev` cask (version :latest, sha256 :no_check)
+# installs. Refresh on the user side is `brew reinstall supragnosis-dev`.
+#
+# Triggers: manual, or a main push that touches the shell. The viewer UI is embedded in
+# the SERVER binary, so server-side changes reach dev users through the --HEAD formula -
+# this workflow only needs to run when app/ itself changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/dev-app.yml"
+
+permissions:
+  contents: write   # move the dev tag + upload release assets
+
+jobs:
+  app:
+    name: build + publish dev app (macos universal)
+    # macos-26 runner pinned for the same reason as release.yml's app job: macOS 26 gates
+    # window-control metrics on the linked SDK, and an older SDK misplaces the overlay
+    # title bar's traffic lights.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: app-universal   # shares the release app job's cache
+
+      # Same gate as release.yml: enable the tauri bundler's signing/notarization env only
+      # when the secrets exist - passing empty strings would make the bundler try to sign
+      # and fail, so existence is checked first and exported via GITHUB_ENV only.
+      - name: enable signing + notarization (when secrets exist)
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_S: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD_S: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_S: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_S: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_S: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_S: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APPLE_SIGNING_IDENTITY_S" ]; then
+            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              s="${v}_S"
+              printf '%s<<__EOV__\n%s\n__EOV__\n' "$v" "${!s}" >> "$GITHUB_ENV"
+            done
+            echo "signing + notarization enabled"
+          else
+            echo "no APPLE_SIGNING_IDENTITY secret - building unsigned"
+          fi
+
+      - name: build the desktop app (universal, signed when enabled)
+        working-directory: app
+        run: npx --yes @tauri-apps/cli@^2 build --target universal-apple-darwin
+
+      - name: package app zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="target/universal-apple-darwin/release/bundle/macos/Supragnosis.app"
+          name="Supragnosis-dev-macos-universal.app.zip"
+          mkdir -p dist
+          # ditto preserves resource forks/signatures (required over zip) - keeps the
+          # notarization staple intact.
+          ditto -c -k --keepParent "$app" "dist/${name}"
+          cd dist && shasum -a 256 "${name}" > "${name}.sha256"
+
+      - name: publish to the rolling dev pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Move the dev tag to the built commit so the release page points at what was
+          # actually built; the release itself persists and only its assets roll.
+          git push origin "+${GITHUB_SHA}:refs/tags/dev"
+          if ! gh release view dev >/dev/null 2>&1; then
+            gh release create dev --prerelease --title "dev channel (rolling)" --notes "bootstrap"
+          fi
+          gh release upload dev dist/*.app.zip dist/*.app.zip.sha256 --clobber
+          gh release edit dev --prerelease --title "dev channel (rolling)" --notes \
+            "Rolling desktop-app build from main (commit ${GITHUB_SHA}). Installed by the \`supragnosis-dev\` cask (\`version :latest\`), refreshed with \`brew reinstall supragnosis-dev\`. The server/CLI dev channel is \`brew install --HEAD supragnosis-server\`. Not a versioned release - see the v* releases for those."
