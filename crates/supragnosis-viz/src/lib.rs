@@ -263,12 +263,16 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // verdict - both are gated, appended events (propose + review), never a direct write. Solo
         // self-approval is the P23 exception; the Console surface is what permits human_confirmed.
         "/api/resolve" => resolve_response(engine, query),
+        // Hyperedge promotion path (Principle 11): reify a co-occurrence context into a group
+        // entity + member_of relations, as an ordinary lineage-bearing observation (free ingest,
+        // P22 - trust promotion of the reified claim goes through the gate afterwards).
+        "/api/reify" => reify_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/workspaces, or /api/events",
+                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/workspaces, or /api/events",
             ),
         },
     }
@@ -571,6 +575,52 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
             // The proposal was opened but the verdict failed - report both so the user can review it
             // by hand from the proposals panel (the proposal itself commits nothing, P23).
             body: serde_json::json!({ "error": e.to_string(), "proposal_id": proposal }).to_string(),
+        },
+    }
+}
+
+/// `/api/reify?hyperedge=<id>[&name=<text>][&kind=<type>][&workspace=<ws>]` - reify a co-occurrence
+/// context into first-class structure (Principle 11's promotion path): asserts a group entity +
+/// member_of relations through the normal observe ingest, with `derived_from` naming every
+/// co-asserting observation (P18 lineage). The hyperedge itself is untouched (a derived view);
+/// the reified claim enters at the default tier and rises only through the gate.
+fn reify_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+            .filter(|s| !s.is_empty())
+    };
+    let Some(hyperedge) = param("hyperedge") else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("reify needs ?hyperedge=<id> (ids come from /api/hypergraph)"),
+        };
+    };
+    match engine.reify_hyperedge(supragnosis_engine::ReifyInput {
+        workspace: param("workspace"),
+        hyperedge,
+        name: param("name"),
+        kind: param("kind"),
+        source_ref: None,
+        on_behalf_of: None,
+    }) {
+        Ok(out) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::json!({
+                "observation_id": out.observation_id,
+                "entities": out.entities,
+                "relations": out.relations,
+            })
+            .to_string(),
+        },
+        Err(e) => Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(&e.to_string()),
         },
     }
 }

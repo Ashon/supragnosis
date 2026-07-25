@@ -547,7 +547,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Survey a workspace's main co-occurrence contexts (hyperedges - the set of entities asserted together in a single observation). For cold-start orientation: before searching, grasp by name 'what is here and in what clusters'. Clusters are sorted by size (number of co-occurring entities) and sources is the number of supporting observations. This is a directional signal, not an asserted relation - confirm actual relations/details with search_knowledge/get_entity."
+        description = "Survey a workspace's main co-occurrence contexts (hyperedges - the set of entities asserted together in a single observation). For cold-start orientation: before searching, grasp by name 'what is here and in what clusters'. Clusters are sorted by size (number of co-occurring entities) and sources is the number of supporting observations. This is a directional signal, not an asserted relation - confirm actual relations/details with search_knowledge/get_entity. To solidify a recurring context into first-class structure, observe a group entity (e.g. type Context) with member_of relations from each member and derived_from listing the co-asserting observation ids - the assertion then carries provenance and trust like any other edge."
     )]
     async fn workspace_map(&self, Parameters(req): Parameters<WorkspaceMapRequest>) -> String {
         // Workspace resolution: omitted -> node default, '*'/'all'/'' -> all (None) (same as the graph resource).

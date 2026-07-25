@@ -691,3 +691,121 @@ fn p5_absent_entity_is_none_not_error() {
     assert!(got.is_none(), "absence is None (unknown), never fabricated");
 }
 
+
+// --- P15 / P11: hyperedge management - forwarding hygiene and the reify promotion path ---------
+
+/// guard (Principle 15/14; the engine:hypergraph forwarding follow-up, now landed): hyperedge
+/// membership resolves through accepted entity-merges - two co-occurrence sets that differ only
+/// by a merged-away spelling collapse into ONE hyperedge (member set = identity), their sources
+/// accumulate (P3), and the merged-away row leaves the node set.
+#[test]
+fn p15_hypergraph_membership_forwards_accepted_merges() {
+    let (_store, engine) = engine();
+    observe(&engine, "cozo with rust", &["cozo", "rust"], vec![]);
+    observe(&engine, "cozodb with rust", &["cozodb", "rust"], vec![]);
+    let a = Entity::make_id(WS, "cozodb");
+    let b = Entity::make_id(WS, "cozo");
+    let before = engine.hypergraph(Some(WS)).expect("hypergraph");
+    assert_eq!(before.hyperedges.len(), 2, "distinct spellings start as distinct contexts");
+
+    let p = propose_merge(&engine, &[a.as_str(), b.as_str()], &b, "alice");
+    review(&engine, &p, "merge", "alice");
+
+    let after = engine.hypergraph(Some(WS)).expect("hypergraph after merge");
+    assert_eq!(after.hyperedges.len(), 1, "canonicalized member sets must union into one hyperedge");
+    assert_eq!(after.hyperedges[0].sources, 2, "both co-assertions accumulate (P3)");
+    assert!(after.hyperedges[0].members.contains(&b), "membership forwards to the canonical id");
+    assert!(!after.nodes.iter().any(|n| n.id == a), "the merged-away row leaves the node set");
+    // The curation grab-bag path shares the projection, so it sees the same canon (no re-check
+    // needed here) - and the graph and hypergraph node sets now agree.
+    let g = engine.graph(Some(WS)).expect("graph");
+    let mut gn: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+    let mut hn: Vec<&str> = after.nodes.iter().map(|n| n.id.as_str()).collect();
+    gn.sort();
+    hn.sort();
+    assert_eq!(gn, hn, "graph and hypergraph node sets must agree after forwarding");
+}
+
+/// guard (Principle 11 promotion path, P18 lineage): reifying a hyperedge asserts a group entity
+/// plus member_of relations as an ordinary observation whose derived_from names every
+/// co-asserting observation - the grouping becomes first-class (managed like any edge) while the
+/// hyperedge stays a derived view. The reified claim enters at the default tier (promotion is a
+/// separate, gated act).
+#[test]
+fn p11_reify_asserts_group_with_lineage() {
+    let (_store, engine) = engine();
+    let o1 = engine
+        .observe(ObserveInput {
+            content: "kernel loads driver".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "kernel".into(), kind: None, description: None },
+                EntityInput { name: "driver".into(), kind: None, description: None },
+            ],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let o2 = engine
+        .observe(ObserveInput {
+            content: "driver runs in kernel space".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "kernel".into(), kind: None, description: None },
+                EntityInput { name: "driver".into(), kind: None, description: None },
+            ],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let hg = engine.hypergraph(Some(WS)).expect("hypergraph");
+    assert_eq!(hg.hyperedges.len(), 1);
+    assert_eq!(hg.hyperedges[0].sources, 2);
+    let hid = hg.hyperedges[0].id.clone();
+
+    let out = engine
+        .reify_hyperedge(supragnosis_engine::ReifyInput {
+            workspace: None,
+            hyperedge: hid,
+            name: Some("boot stack".into()),
+            kind: None,
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("reify");
+    // Lineage: the reified assertion derives from BOTH co-asserting observations (P18).
+    let reified = engine.get_observation(&out.observation_id).expect("get").expect("present");
+    let mut lineage = reified.derived_from.clone();
+    lineage.sort();
+    let mut expect = vec![o1, o2];
+    expect.sort();
+    assert_eq!(lineage, expect, "derived_from must name every co-asserting observation");
+    // The grouping is now first-class: a Context node + member_of edges in the graph.
+    let g = engine.graph(Some(WS)).expect("graph");
+    let group = g.nodes.iter().find(|n| n.name == "boot stack").expect("group node");
+    assert_eq!(group.kind, "Context");
+    let member_edges: Vec<_> =
+        g.edges.iter().filter(|e| e.kind == "member_of" && e.to == group.id).collect();
+    assert_eq!(member_edges.len(), 2, "each member gains a member_of edge into the group");
+    // Default tier: reified knowledge starts unprivileged; promotion is a separate gated act.
+    assert_eq!(group.trust_tier, TrustTier::AgentExtracted);
+    // An unknown hyperedge id is a self-correctable error, not a silent no-op (P21).
+    assert!(engine
+        .reify_hyperedge(supragnosis_engine::ReifyInput {
+            workspace: None,
+            hyperedge: "nope".into(),
+            name: None,
+            kind: None,
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .is_err());
+}

@@ -419,6 +419,8 @@ HTTP-over-UDS client (`curl --unix-socket`).
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
   `/api/proposals`, `/api/review` (the gated verdict), `/api/resolve` (contested-belief mediation:
   propose claim_promotion + Console merge verdict in one act - both gated appended events),
+  `/api/reify` (hyperedge promotion: assert a group entity + member_of relations as a
+  lineage-bearing observation - free ingest, Principle 11/22),
   `/api/workspaces`, `/api/federation`, and `/api/events` (SSE live activity stream).
 - **Implemented views**: the hyperedge overlay (co-occurrence hulls with density-based opacity),
   the **curation console** (contested-belief and merge-cycle signals with per-value confirm actions
@@ -597,7 +599,14 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   long-running work and elicitation (Section 7).
 - Principle 11 (second-order structure as induction substrate): the hyperedge projection is implemented as
   a derived view identified by its member set, coexisting with (not replacing) binary Relations, generated
-  deterministically, and exposed via `workspace_map` and the hypergraph resource.
+  deterministically, and exposed via `workspace_map` and the hypergraph resource. Membership resolves
+  through accepted entity-merges (canonicalized sets union, merged-away rows drop - the former
+  follow-up, repaid), and the **reify promotion path** exists: a recurring context can be asserted as
+  a group entity + `member_of` relations through the normal observe ingest, `derived_from` naming
+  every co-asserting observation (P18 lineage) - the hyperedge stays a derived view; only the
+  asserted grouping becomes first-class and is managed like any other edge. Hyperedges themselves are
+  deliberately NOT edge-managed (no direct edit/refute surface): a derived view has no state, and the
+  management policy is projection hygiene + gated promotion (P1/P19), plus recall demotion at M6.
 - Principle 23 (gate to canon, *structure*): a proposal is itself an observation; its state is a
   deterministic fold with merge as the **absorbing** outcome (convergent and monotonic); no verdict
   deletes an assertion; the viewer's accept casts a verdict observation rather than writing the

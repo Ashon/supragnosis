@@ -120,6 +120,11 @@ as `reproject`, incrementally:
   curation UX (heuristics permitted).
 - **IR6**: an induced candidate is always lineage-bearing + lowest-trust + gated; hyperedges
   remain a reference, never a judge.
+- [impl, landed early] The **reify** half of the promotion story shipped ahead of this milestone:
+  `Engine::reify_hyperedge` / the viewer's `/api/reify` assert a recurring context as a group
+  entity + `member_of` relations through the normal observe ingest, `derived_from` naming every
+  co-asserting observation. Induced *type* candidates (this section) remain M3b: reify makes a
+  context an A-Box entity; induction proposes T-Box vocabulary.
 
 ## 8. M3c - bitemporal query logic (split out, not dropped)
 
