@@ -809,3 +809,155 @@ fn p11_reify_asserts_group_with_lineage() {
         })
         .is_err());
 }
+
+// --- M3b / Principle 3/16: alias accumulation, IR3 (incremental == replay), IR4 -----------------
+
+/// An observe of a single named entity with a given spelling, kind, and no relations.
+fn observe_named(engine: &Engine, content: &str, name: &str) {
+    engine
+        .observe(ObserveInput {
+            content: content.into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput { name: name.into(), kind: None, description: None }],
+            relations: vec![],
+        })
+        .expect("observe");
+}
+
+/// guard (resolution-identity.md Section 2, IR1): distinct asserted spellings of one entity (they
+/// share an id under case/trim normalization) accumulate as aliases minus the representative, the
+/// set never drops a spelling, and it is arrival-order independent.
+#[test]
+fn aliases_accumulate_and_converge() {
+    let build = |order: [&str; 3]| {
+        let (store, engine) = engine();
+        for (i, sp) in order.iter().enumerate() {
+            observe_named(&engine, &format!("mention {i}"), sp);
+        }
+        let e = store.get_entity(&Entity::make_id(WS, "driver")).unwrap().expect("entity");
+        let mut al = e.aliases.clone();
+        al.sort();
+        (e.canonical_name, al)
+    };
+    let a = build(["Driver", "driver", "DRIVER"]);
+    let b = build(["DRIVER", "Driver", "driver"]);
+    assert_eq!(a, b, "alias set + representative must be arrival-order independent (P16)");
+    // Representative is the policy winner; the other two spellings survive as aliases (nothing dropped).
+    let (canonical, aliases) = a;
+    let mut all: Vec<String> = aliases;
+    all.push(canonical);
+    all.sort();
+    assert_eq!(all, vec!["DRIVER", "Driver", "driver"], "every spelling is kept (canonical + aliases)");
+}
+
+/// guard (resolution-identity.md Section 4, IR3): the incremental projection of the last write
+/// equals what a fresh reproject would produce - the two paths run the same fold, so interleaved
+/// observes and a full replay agree on kind, canonical_name, aliases, and provenance count.
+#[test]
+fn incremental_write_equals_replay() {
+    let (store, engine) = engine();
+    // A mix: kind conflict, spelling variants, a relation endpoint, a re-observation.
+    observe(&engine, "a", &["Kernel"], vec![]);
+    engine
+        .observe(ObserveInput {
+            content: "kernel is a component".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput { name: "kernel".into(), kind: Some("Component".into()), description: None }],
+            relations: vec![],
+        })
+        .unwrap();
+    observe(
+        &engine,
+        "driver runs on kernel",
+        &["Driver"],
+        vec![RelationInput {
+            from: "Driver".into(),
+            kind: "runs_on".into(),
+            to: "Kernel".into(),
+            description: None,
+            valid_from: None,
+            valid_to: None,
+        }],
+    );
+    let snapshot = |store: &InMemoryStore| {
+        let mut rows: Vec<(String, String, String, Vec<String>, usize)> = store
+            .all_entities(Some(WS))
+            .unwrap()
+            .into_iter()
+            .map(|e| {
+                let mut al = e.aliases.clone();
+                al.sort();
+                (e.id, e.canonical_name, e.kind, al, e.provenance.len())
+            })
+            .collect();
+        rows.sort();
+        rows
+    };
+    let incremental = snapshot(&store);
+    engine.reproject(Some(WS)).expect("reproject");
+    let replayed = snapshot(&store);
+    assert_eq!(incremental, replayed, "incremental write must equal a fresh replay (IR3)");
+}
+
+/// guard (resolution-identity.md Section 5, IR4): the stored entity embedding always corresponds to
+/// the current embedding text (canonical_name + aliases) - never silently stale. Checked directly:
+/// the stored vector equals a fresh embed of the row's current name+aliases text, after each write.
+#[test]
+fn embedding_recomputed_on_alias_change() {
+    use supragnosis_core::EmbeddingProvider;
+    use supragnosis_embed::HashingEmbedder;
+    let embedder = HashingEmbedder::default();
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS)
+        .with_embedder(Arc::new(HashingEmbedder::default()));
+    // The embedding text is canonical_name + aliases (the engine's entity_text), joined by spaces.
+    let text_of = |e: &supragnosis_core::Entity| {
+        if e.aliases.is_empty() {
+            e.canonical_name.clone()
+        } else {
+            format!("{} {}", e.canonical_name, e.aliases.join(" "))
+        }
+    };
+    let corresponds = |store: &InMemoryStore| {
+        let e = store.get_entity(&Entity::make_id(WS, "driver")).unwrap().unwrap();
+        let stored = e.embedding.clone().expect("embedded");
+        let fresh = embedder.embed_one(&text_of(&e)).unwrap();
+        assert_eq!(stored, fresh, "the stored embedding must match the current name+aliases text (IR4)");
+    };
+    observe_named(&engine, "one", "driver");
+    corresponds(&store);
+    // A new spelling accumulates as an alias, changing the row's text; the embedding must still
+    // correspond (recomputed, not stale).
+    observe_named(&engine, "two", "DRIVER-X"); // distinct id, keep "driver" separate
+    observe_named(&engine, "three", "Driver");
+    corresponds(&store);
+}
+
+/// guard (Principle 14): a merged-away entity id keeps forwarding - get_entity by the old id
+/// dereferences to the surviving canonical entity, whose alias set now includes the merged name.
+#[test]
+fn get_entity_forwards_a_merged_id() {
+    let (_store, engine) = engine();
+    observe_named(&engine, "one", "cozo");
+    observe_named(&engine, "two", "cozodb");
+    let a = Entity::make_id(WS, "cozodb");
+    let b = Entity::make_id(WS, "cozo");
+    let p = propose_merge(&engine, &[a.as_str(), b.as_str()], &b, "alice");
+    review(&engine, &p, "merge", "alice");
+    // Look up the merged-away id -> the canonical entity, with the merged name among its aliases.
+    let view = engine.get_entity(&a).unwrap().expect("forwards to canonical");
+    assert_eq!(view.entity.id, b, "the merged-away id dereferences to the canonical id (P14)");
+    assert!(
+        view.entity.aliases.iter().any(|al| al == "cozodb"),
+        "the merged-away name surfaces as an alias: {:?}",
+        view.entity.aliases
+    );
+}
