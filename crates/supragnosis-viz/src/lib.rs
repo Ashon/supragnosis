@@ -746,13 +746,24 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
             body: err_body("propose_merge needs ?a=<id>&b=<id> (ids from a merge suggestion)"),
         };
     };
+    // Which surface produced the suggestion decides the recorded rationale. A proposal is an
+    // immutable observation, so the reason it carries has to be TRUE: the deterministic name-variant
+    // ladder needs no embedder, and filing its candidates as "embedding-near" would put a false
+    // account of the evidence into the permanent log (Principle 2). Whitelisted rather than
+    // free-text, so a client cannot shape what the log says about its own provenance (Principle 18).
+    let rationale = match param("src").as_deref() {
+        Some("variant:separator") => "name-variant ladder (separator/case normalization)",
+        Some("variant:plural") => "name-variant ladder (plural fold)",
+        Some("variant:alias") => "name-variant ladder (alias match)",
+        _ => "merge-band suggestion (embedding-near names)",
+    };
     match engine.propose(supragnosis_engine::ProposeInput {
         workspace: param("workspace"),
         kind: "entity_merge".into(),
         targets: vec![a, b.clone()],
         into: Some(b),
         tier: None,
-        rationale: Some("merge-band suggestion (embedding-near names)".into()),
+        rationale: Some(rationale.into()),
         affected_types: Vec::new(),
         source_ref: None,
         on_behalf_of: None,
