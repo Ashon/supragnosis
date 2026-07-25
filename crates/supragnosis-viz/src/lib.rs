@@ -267,12 +267,16 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // entity + member_of relations, as an ordinary lineage-bearing observation (free ingest,
         // P22 - trust promotion of the reified claim goes through the gate afterwards).
         "/api/reify" => reify_response(engine, query),
+        // Merge-band action (resolution-identity.md Section 3): open an entity_merge proposal for a
+        // suggested pair - the suggestion is a recall aid; committing goes through the gate (P23).
+        // The opened proposal then rides the normal accept flow in the proposals panel (IR2).
+        "/api/propose_merge" => propose_merge_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/workspaces, or /api/events",
+                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/workspaces, or /api/events",
             ),
         },
     }
@@ -616,6 +620,49 @@ fn reify_response(engine: &Engine, query: &str) -> Response {
                 "relations": out.relations,
             })
             .to_string(),
+        },
+        Err(e) => Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(&e.to_string()),
+        },
+    }
+}
+
+/// `/api/propose_merge?a=<id>&b=<id>[&workspace=<ws>]` - open an entity_merge proposal for a merge-
+/// band suggestion (resolution-identity.md Section 3). `b` is the canonical (`into`) target the pair
+/// folds into. This only OPENS the proposal (a gated appended event); the human accepts it in the
+/// proposals panel, so the suggestion -> proposal -> verdict path stays gated (IR2/P23).
+fn propose_merge_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+            .filter(|s| !s.is_empty())
+    };
+    let (Some(a), Some(b)) = (param("a"), param("b")) else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("propose_merge needs ?a=<id>&b=<id> (ids from a merge suggestion)"),
+        };
+    };
+    match engine.propose(supragnosis_engine::ProposeInput {
+        workspace: param("workspace"),
+        kind: "entity_merge".into(),
+        targets: vec![a, b.clone()],
+        into: Some(b),
+        tier: None,
+        rationale: Some("merge-band suggestion (embedding-near names)".into()),
+        affected_types: Vec::new(),
+        source_ref: None,
+        on_behalf_of: None,
+    }) {
+        Ok(id) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::json!({ "proposal_id": id }).to_string(),
         },
         Err(e) => Response {
             status: "400 Bad Request",

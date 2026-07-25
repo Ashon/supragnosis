@@ -509,6 +509,21 @@ function renderCuration() {
         `<div class="grp"><div class="chips">${(c.members || []).map(nchip).join("")}</div>`
         + `<div class="hint">these accepted merges fold into each other - settle with a new entity_merge</div></div>`).join("")
     : `<div class="empty">none - no contradictory merges</div>`;
+  // Merge band (resolution-identity.md Section 3, Principle 15): embedding-near distinct-name pairs
+  // the substrate proposes as merge candidates. A suggestion commits nothing (IR2); "propose"
+  // opens an entity_merge through the gate, which then rides the accept flow in the Proposals tab.
+  const ms = curation.merge_suggestions || [];
+  html += `<div class="csec">merge suggestions (${ms.length})</div>`;
+  html += ms.length
+    ? ms.map(m =>
+        `<div class="ms" data-a="${esc(m.a)}" data-b="${esc(m.b)}">`
+        + `<span class="nchip" data-id="${esc(m.a)}" title="focus ${esc(m.a_name)}">${esc(m.a_name)}</span>`
+        + `<span class="msx">~</span>`
+        + `<span class="nchip" data-id="${esc(m.b)}" title="focus ${esc(m.b_name)}">${esc(m.b_name)}</span>`
+        + `<span class="mssim" title="embedding similarity (recall aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`
+        + `<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`
+        + `</div>`).join("")
+    : `<div class="empty">none - no embedding-near pairs (needs the semantic embedder)</div>`;
   html += `<div class="csec">merge candidates (${dup.length})</div>`;
   html += dup.length
     ? dup.map(g => `<div class="grp"><span class="gk">${esc(g.key)}</span><div class="chips">${g.members.map(nchip).join("")}</div></div>`).join("")
@@ -523,8 +538,8 @@ function renderCuration() {
   curationBodyEl.innerHTML = html;
   const s = curation.stats || {};
   reviewCtEl.textContent =
-    (s.contradictions || 0) + (s.merge_cycles || 0) + (s.duplicate_groups || 0)
-    + (s.grab_bags || 0) + (s.orphans || 0) || "";
+    (s.contradictions || 0) + (s.merge_cycles || 0) + (s.merge_suggestions || 0)
+    + (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0) || "";
   curationBodyEl.querySelectorAll(".nchip").forEach(c => {
     c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
   });
@@ -558,6 +573,20 @@ function renderCuration() {
       form.append(inp, ok);
       row.appendChild(form);
       inp.focus();
+    };
+  });
+  // Merge band (Principle 15): "propose" opens an entity_merge through the gate (/api/propose_merge).
+  // The pair leaves the band (now in flight) and appears in the Proposals tab for accept/reject.
+  curationBodyEl.querySelectorAll(".ms .propmerge").forEach(b => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      const row = b.closest(".ms");
+      if (!row) return;
+      const ws = wsInput.value.trim();
+      let q = "?a=" + encodeURIComponent(row.dataset.a) + "&b=" + encodeURIComponent(row.dataset.b);
+      if (ws) q += "&workspace=" + encodeURIComponent(ws);
+      try { await fetch("/api/propose_merge" + q, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
+      await poll();   // the suggestion drops (now open); the proposal shows in the Proposals tab
     };
   });
 }
