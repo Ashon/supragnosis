@@ -38,6 +38,10 @@ brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer s
 - Upgrading: `brew upgrade` swaps the binaries and relaunches the app, but does not restart a
   running daemon - follow it with `brew services restart supragnosis-server` (brew prints the same
   reminder in the formula caveats).
+- **Dev channel**: `brew install --HEAD supragnosis-server` builds current `main` from source
+  (rust pulled as a build dep; refresh with `brew upgrade --fetch-HEAD supragnosis-server`). The
+  viewer UI is embedded in the server binary, so the stable desktop app renders the dev viewer.
+  Swap procedure and cautions: [`deploy/homebrew/`](deploy/homebrew/).
 - Tap templates and the per-release update procedure: [`deploy/homebrew/`](deploy/homebrew/).
 
 ### Install script
