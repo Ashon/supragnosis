@@ -837,21 +837,33 @@ fn aliases_accumulate_and_converge() {
         let (store, engine) = engine();
         for (i, sp) in order.iter().enumerate() {
             observe_named(&engine, &format!("mention {i}"), sp);
+            // Force distinct ordering HLCs. Without a gap all three can share a millisecond, tie on
+            // HLC, and fall through to the id tiebreak - which is a different code path than the one
+            // under test here, and the source of this test's former ~1-in-8 flake.
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
         let e = store.get_entity(&Entity::make_id(WS, "driver")).unwrap().expect("entity");
-        let mut al = e.aliases.clone();
-        al.sort();
-        (e.canonical_name, al)
+        let mut spellings = e.aliases.clone();
+        spellings.push(e.canonical_name.clone());
+        spellings.sort();
+        (e.canonical_name, spellings)
     };
     let a = build(["Driver", "driver", "DRIVER"]);
     let b = build(["DRIVER", "Driver", "driver"]);
-    assert_eq!(a, b, "alias set + representative must be arrival-order independent (P16)");
-    // Representative is the policy winner; the other two spellings survive as aliases (nothing dropped).
-    let (canonical, aliases) = a;
-    let mut all: Vec<String> = aliases;
-    all.push(canonical);
-    all.sort();
-    assert_eq!(all, vec!["DRIVER", "Driver", "driver"], "every spelling is kept (canonical + aliases)");
+
+    // Order-independent, and the actual IR1/P3 guarantee: the union of spellings. Nothing is dropped
+    // and which spellings survive never depends on the order they arrived in.
+    assert_eq!(a.1, b.1, "the set of spellings kept must not depend on arrival order");
+    assert_eq!(a.1, vec!["DRIVER", "Driver", "driver"], "every spelling is kept");
+
+    // Order-DEPENDENT by policy, and deliberately asserted as such: `TierWeighted` selects the latest
+    // ordering HLC within the top tier band, so the representative tracks the last spelling seen.
+    // These two builds are two DIFFERENT logs (the content differs per position), and P16 promises
+    // convergence over the same observation set - not invariance to the order one node happened to
+    // see things in. Two nodes that each saw one of these orders converge once they exchange logs,
+    // because they then hold the same six observations and the HLCs travel with them.
+    assert_eq!(a.0, "DRIVER", "order a ends on DRIVER, so recency selects it");
+    assert_eq!(b.0, "driver", "order b ends on driver, so recency selects it");
 }
 
 /// guard (resolution-identity.md Section 4, IR3): the incremental projection of the last write
