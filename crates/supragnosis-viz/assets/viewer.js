@@ -66,7 +66,7 @@ let showLabels = true, showEdges = true, showArrows = true;
 let flowPhase = 0;   // per-frame counter driving the marching-dash flow animation on active edges
 let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
-let showFootprint = true, showPulses = true, showSuperseded = true;
+let showFootprint = true, showPulses = true, showSuperseded = true, showMini = true;
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
 const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
@@ -986,6 +986,61 @@ function resize() {
 }
 addEventListener("resize", resize);
 
+// --- Minimap (map-tool convention): whole-graph overview + viewport rectangle -------------------
+// Redrawn by the rAF loop each frame (dots + one rect - cheap). The world->minimap transform fits
+// the VISIBLE node bounds (typeOff respected, same set fitView uses), so the overview always
+// matches what the main canvas can show. Click/drag pans the camera (scale unchanged).
+const miniEl = document.getElementById("minimap"), mctx = miniEl.getContext("2d");
+const MINI_W = 168, MINI_H = 112, MINI_PAD = 10;
+let miniT = { k: 1, ox: 0, oy: 0 };   // world -> minimap: m = w * k + o (kept for the pan handler)
+function drawMinimap() {
+  const src = nodes.filter(n => !typeOff.has(n.type));
+  const on = showMini && src.length > 0;
+  miniEl.classList.toggle("on", on);
+  if (!on) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (miniEl.width !== MINI_W * dpr) { miniEl.width = MINI_W * dpr; miniEl.height = MINI_H * dpr; }
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.clearRect(0, 0, MINI_W, MINI_H);
+  let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
+  for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
+  const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
+  const k = Math.min((MINI_W - MINI_PAD*2) / gw, (MINI_H - MINI_PAD*2) / gh);
+  const ox = (MINI_W - gw*k)/2 - a*k, oy = (MINI_H - gh*k)/2 - b*k;
+  miniT = { k, ox, oy };
+  mctx.globalAlpha = 0.9;
+  for (const n of src) {
+    mctx.fillStyle = typeColor[n.type] || OTHER;
+    mctx.fillRect(n.x*k + ox - 1, n.y*k + oy - 1, 2, 2);
+  }
+  mctx.globalAlpha = 1;
+  // Viewport rectangle: the screen corners in world coords, mapped in and clamped to the frame.
+  const x1 = Math.max(0.5, Math.min(MINI_W - 0.5, (-cam.x / cam.s) * k + ox));
+  const y1 = Math.max(0.5, Math.min(MINI_H - 0.5, (-cam.y / cam.s) * k + oy));
+  const x2 = Math.max(0.5, Math.min(MINI_W - 0.5, ((innerWidth - cam.x) / cam.s) * k + ox));
+  const y2 = Math.max(0.5, Math.min(MINI_H - 0.5, ((innerHeight - cam.y) / cam.s) * k + oy));
+  mctx.strokeStyle = GOLD; mctx.lineWidth = 1;
+  mctx.strokeRect(x1, y1, Math.max(2, x2 - x1), Math.max(2, y2 - y1));
+}
+// Click/drag pans: center the camera on the pointed world position, at the current zoom.
+function miniPan(ev) {
+  const r = miniEl.getBoundingClientRect();
+  const wx = (ev.clientX - r.left - miniT.ox) / miniT.k;
+  const wy = (ev.clientY - r.top - miniT.oy) / miniT.k;
+  camT.x = innerWidth/2 - wx * camT.s;
+  camT.y = innerHeight/2 - wy * camT.s;
+  userMoved = true;
+}
+miniEl.addEventListener("mousedown", ev => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  miniPan(ev);
+  const move = e2 => miniPan(e2);
+  const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); };
+  addEventListener("mousemove", move);
+  addEventListener("mouseup", up);
+});
+
 // Set the target camera so the given node set fits on screen (smoothly, via easing). In CSS pixels.
 // Fit is against the FULL window width, regardless of which side panels float open - the panels
 // are overlays, and on a narrow window fitting into the strip between them shrank the graph past
@@ -1588,6 +1643,7 @@ function draw() {
   }
   // Peer cursor-dots (server mode) - drawn last so they float above the graph and labels.
   stepPeers(); drawPeers();
+  drawMinimap();
   requestAnimationFrame(draw);
 }
 
@@ -1744,6 +1800,7 @@ document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; 
 document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; e.currentTarget.classList.toggle("on", showFootprint); };
 document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e.currentTarget.classList.toggle("on", showPulses); };
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
+document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
 
 // Restore the workspace selection from the URL (deep link / reload) before the first poll.
 {

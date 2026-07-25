@@ -67,6 +67,12 @@
   /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
      above the statusbar. The right island grows downward from the top and the detail panel stops
      at right:324, so this corner is the stable empty spot. */
+  /* Minimap: fixed beside the HUD; the backing store is DPR-scaled in JS (CSS size fixed here).
+     The view popover shares the corner (z-index above) and simply overlays it while open. */
+  #minimap { position:fixed; right:54px; bottom:36px; z-index:7; width:168px; height:112px;
+             background:var(--glass); border:1px solid var(--line); border-radius:10px;
+             box-shadow:0 8px 24px #0008; cursor:crosshair; display:none; }
+  #minimap.on { display:block; }
   #hud { position:fixed; right:12px; bottom:36px; z-index:8; display:flex; flex-direction:column; gap:6px; }
   #hud button { width:34px; height:34px; padding:0;
                 display:flex; align-items:center; justify-content:center; background:var(--glass);

@@ -64,9 +64,13 @@
     <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
     <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
     <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
+    <button id="miniBtn" class="tog on" title="toggle the minimap (whole-graph overview + viewport; click/drag to pan)">minimap</button>
   </div></div>
   <button id="reload" title="re-fetch the graph now (it also refreshes on its own)">reload</button>
 </div>
+<!-- Minimap (map-tool convention): whole-graph overview + viewport rectangle, left of the HUD.
+     Drawn by the rAF loop; click/drag pans the camera. Hidden while empty or toggled off. -->
+<canvas id="minimap" title="minimap - click or drag to pan"></canvas>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">
