@@ -6,14 +6,16 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through M4 Phase 4** (v0.1.5). M0-M2 and M3.5 are complete, M4 Phases 0-4 are
-  complete (Phase 3.5 and 5+ pending), and **M3 (the resolution layer) has not started** - see Section
-  12 for the per-milestone state and Section 14 for the compliance/deferral record. This document is
-  no longer a forward-looking baseline: it describes what exists, and marks what does not.
+- Status: **implemented through M4 Phase 4** (v0.1.15). M0-M2, **M3a (belief resolution) and M3b
+  (identity resolution, except IR6)**, and M3.5 (partial) are complete; M4 Phases 0-4 are complete
+  (Phase 3.5 and 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
+  M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
+  record. This document is no longer a forward-looking baseline: it describes what exists, and marks
+  what does not.
 - Normative document: the design principles follow [`principles.md`](principles.md) (design principles).
 - Companion specs: [`federation.md`](federation.md) (M4), [`proposal-workflow.md`](proposal-workflow.md) (M3.5),
   [`resolution.md`](resolution.md) (M3a, implemented),
-  [`resolution-identity.md`](resolution-identity.md) (M3b, spec only).
+  [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6).
 
 ---
 
@@ -533,8 +535,6 @@ HTTP-over-UDS client (`curl --unix-socket`).
   ([resolution.md](resolution.md) Section 2).
 
 **Open**
-- Entity-embedding **staleness policy**: the entity vector is computed once when absent, so it will not
-  track alias accumulation once resolution begins. Recompute on change, or version the vector? (M3)
 - Whether the **`query` Datalog passthrough** is ever opened, and under what authorization guard
   (Principles 12/21). Deliberately closed so far.
 
@@ -567,6 +567,14 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principles 12/20 (minimal encoding bias/hexagonal): `core` has zero IO dependencies, Cozo concepts live only in the `store` adapter.
   The store sits behind the `KnowledgeStore` port - swapping mem/cozo leaves the domain unchanged. The
   Datalog passthrough has deliberately never been opened.
+- Principle 10 (schema open to extension, closed to modification): the core ontology (Observation,
+  Entity, Relation, Provenance, Workspace) is fixed in `core`, while the domain vocabulary extends
+  through `define_type` without touching it - a new domain type invalidates no existing observation,
+  since the T-Box is a fold over the log like any other assertion. The clause with teeth is "a core
+  change demands a migration path": the assertion encoding changed three times across 0.x (the
+  description field, type_defs, proposal_events), and `migrate` is that path honored rather than
+  promised - it re-creates pre-formula rows under the current content address so they can sync again.
+  Guarded by `legacy_id_rows_stay_local_and_migrate`.
 - Principle 14 (stable identifiers + mechanical enforcement of structural evolution): observation id =
   blake3 content address over (workspace, content, assertions); entity id = canonical-name resolution;
   relation id = normalized kind (independent of spelling jitter). The hash uses length-prefix encoding, so
@@ -710,6 +718,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   principles.md. No milestone owns it. This is the one deferral in this ledger with no assigned repayment point;
   it must be scheduled no later than the first multi-principal federation deployment, because that is when a
   destruction demand can first arrive from a principal who is not the node's operator.
+  **Now owned: M4 Phase 5.** That phase IS the first multi-principal deployment, so the condition
+  above already named its own due date without anyone writing it down - which is exactly how an
+  unscheduled item stays unscheduled. Recorded here so the ledger has no entry without a repayment
+  point.
 - Principle 21 (long-running tasks/human mediation): MCP Tasks exposure of sync/consolidate, merge/contradiction/promotion elicitation -> **M4 remainder** (see Section 7).
 - Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, but
   the MCP **prompts** that would induce voluntary observe/search during work do not exist (Section 7) -> incremental.
