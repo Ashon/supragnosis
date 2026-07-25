@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use supragnosis_core::{Entity, KnowledgeStore, TrustTier};
-use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, VerdictSurface};
+use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
 use supragnosis_store::InMemoryStore;
 
 const WS: &str = "ws";
@@ -523,4 +523,83 @@ fn p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty() {
         "the reason must be stated, not left to the reader to infer from emptiness"
     );
     assert!(diff.overturned.is_empty() && diff.tier_changes.is_empty());
+}
+
+/// GIVEN two entities that are duplicates AND connected to each other, WHEN an entity_merge is
+/// OPENED, THEN the canon has not moved and the proposal names every reference that would rewire -
+/// including the edge between them, which becomes a self-loop and therefore disappears from the graph.
+///
+/// That last part is the reason the diff has to be computed rather than drawn: the viewer's overlay
+/// accents edges incident to a target, but "this edge stops existing" is not something you can read
+/// off target ids (proposal-workflow.md Section 5, item 5).
+#[test]
+fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
+    let (store, engine) = engine();
+    engine
+        .observe(ObserveInput {
+            content: "postgres notes".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![
+                // The duplicate pair, connected to each other AND each to a third party.
+                RelationInput { from: "Postgres".into(), kind: "relates_to".into(), to: "PostgreSQL".into(), description: None, valid_from: None, valid_to: None },
+                RelationInput { from: "Postgres".into(), kind: "used_by".into(), to: "App".into(), description: None, valid_from: None, valid_to: None },
+                RelationInput { from: "PostgreSQL".into(), kind: "runs_on".into(), to: "Linux".into(), description: None, valid_from: None, valid_to: None },
+            ],
+        })
+        .expect("observe");
+
+    let (a, b) = (Entity::make_id(WS, "postgres"), Entity::make_id(WS, "postgresql"));
+    let before = snapshot(store.as_ref());
+
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![a.clone(), b.clone()],
+            into: Some(b.clone()),
+            tier: None,
+            rationale: Some("same database".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+    let after = snapshot(store.as_ref());
+
+    let case = Case::new("Principle 23", "a merge is reviewable before it commits, and only the verdict commits");
+    case.log_appended(&before, &after, 1);
+    assert_eq!(before.entities, after.entities, "opening the proposal must not fold anything");
+
+    let diff = engine
+        .get_proposal(None, &proposal)
+        .expect("get")
+        .expect("proposal")
+        .belief_diff
+        .expect("entity_merge must carry a computed diff");
+    assert!(diff.computable, "entity_merge has a commit effect (id forwarding)");
+
+    // Every edge touching the folded-away side is named, and none touching only the survivor.
+    let kinds: Vec<&str> = diff.rewired.iter().map(|r| r.kind.as_str()).collect();
+    assert!(kinds.contains(&"used_by"), "the folded entity's own edge must rewire: {kinds:?}");
+    assert!(kinds.contains(&"relates_to"), "the edge between the pair must be named: {kinds:?}");
+    assert!(
+        !kinds.contains(&"runs_on"),
+        "an edge that only touches the survivor does not move: {kinds:?}"
+    );
+
+    let between = diff.rewired.iter().find(|r| r.kind == "relates_to").expect("the pair's own edge");
+    assert!(
+        between.becomes_self_loop,
+        "merging two connected entities makes their edge a self-loop, which graph() drops - the \
+         reviewer must see the edge disappearing: {between:?}"
+    );
+    let moved = diff.rewired.iter().find(|r| r.kind == "used_by").expect("used_by");
+    assert!(!moved.becomes_self_loop);
+    assert_eq!(moved.other_name, "App", "the endpoint that stays is what the edge still connects to");
+    assert_eq!(moved.to_name, "PostgreSQL", "everything rewires onto the canonical id");
 }

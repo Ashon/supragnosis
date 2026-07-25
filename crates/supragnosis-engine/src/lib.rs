@@ -516,6 +516,25 @@ pub struct BeliefDiff {
     pub note: Option<String>,
     pub tier_changes: Vec<TierChange>,
     pub overturned: Vec<BeliefChange>,
+    /// For entity_merge: the references that get rewired onto the canonical id
+    /// (proposal-workflow.md Section 5, item 5). Empty for every other kind.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rewired: Vec<RelationRewire>,
+}
+
+/// One relation whose endpoint moves when a merge commits. `becomes_self_loop` is the consequence a
+/// reviewer would otherwise not see: merging two entities that are connected to each other turns
+/// their edge into a self-loop, and `graph()` drops self-loops - so accepting silently removes an
+/// edge that is on screen right now.
+#[derive(Serialize, Debug)]
+pub struct RelationRewire {
+    pub relation: String,
+    pub kind: String,
+    pub from_name: String,
+    pub to_name: String,
+    /// The endpoint that does not move - what the edge still connects to afterwards.
+    pub other_name: String,
+    pub becomes_self_loop: bool,
 }
 
 /// Folded proposal state (a deterministic read view over the proposal's events, I2).
@@ -1762,11 +1781,115 @@ impl Engine {
     /// (proposal-workflow.md Section 5). Only the gate grants differ between the two folds, so the
     /// "after" side is computed by the same code path a merged verdict would take - the diff cannot
     /// promise an outcome the merge would not deliver.
+    /// The diff for an entity_merge: the same two materializations as a gate proposal, except the
+    /// thing that differs is the FORWARDING map rather than the gate grants. Merge forwarding is a
+    /// read-time overlay applied by `belief_fold`, so adding this proposal's target -> into edges and
+    /// folding again is exactly `materialize(canon, base + merge effects)` - no separate prediction of
+    /// the outcome, and therefore nothing that can disagree with what the verdict actually does.
+    fn merge_diff(
+        &self,
+        workspace: Option<&str>,
+        view: &ProposalView,
+    ) -> Result<BeliefDiff, StoreError> {
+        let Some(into) = view.into.clone() else {
+            return Ok(BeliefDiff {
+                computable: false,
+                note: Some("an entity_merge without `into` names no canonical id to fold onto".into()),
+                tier_changes: Vec::new(),
+                overturned: Vec::new(),
+                rewired: Vec::new(),
+            });
+        };
+        let base_fwd = self.merge_forwarding(workspace)?;
+        let folded: HashSet<String> =
+            view.targets.iter().filter(|t| **t != into).cloned().collect();
+        let mut after_fwd = base_fwd.clone();
+        for t in &folded {
+            after_fwd.insert(t.clone(), into.clone());
+        }
+
+        let gates = self.gate_grants(workspace)?;
+        let before = self.belief_fold(workspace, &base_fwd, &gates)?;
+        let after = self.belief_fold(workspace, &after_fwd, &gates)?;
+
+        let name_of = |id: &str| -> Result<String, StoreError> {
+            Ok(self
+                .store
+                .get_entity(id)?
+                .map(|e| e.canonical_name)
+                .unwrap_or_else(|| id.to_string()))
+        };
+
+        let mut ids: BTreeSet<&String> = before.kinds.keys().collect();
+        ids.extend(after.kinds.keys());
+        let mut overturned = Vec::new();
+        for id in ids {
+            // A folded-away target losing its own belief IS the proposal, not a surprise the reviewer
+            // needs flagged. What matters is what happens to the survivor.
+            if folded.contains(id) {
+                continue;
+            }
+            let (wb, cb, _) = self.resolve_kind(before.kinds.get(id));
+            let (wa, ca, _) = self.resolve_kind(after.kinds.get(id));
+            let (vb, va) = (wb.map(|(k, _)| k), wa.map(|(k, _)| k));
+            if vb == va && cb == ca {
+                continue;
+            }
+            overturned.push(BeliefChange {
+                entity: id.clone(),
+                name: name_of(id)?,
+                field: "kind".into(),
+                from: vb,
+                to: va,
+                contested_before: cb,
+                contested_after: ca,
+            });
+        }
+
+        // Reference rewiring (Section 5, item 5): every edge with an endpoint being folded away.
+        let canon = |id: &str| after_fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let into_name = name_of(&into)?;
+        let mut rewired = Vec::new();
+        for r in self.store.all_relations(workspace)? {
+            let (mf, mt) = (folded.contains(&r.from), folded.contains(&r.to));
+            if !mf && !mt {
+                continue;
+            }
+            let moving = if mf { &r.from } else { &r.to };
+            let other = if mf { &r.to } else { &r.from };
+            rewired.push(RelationRewire {
+                relation: r.id.clone(),
+                kind: r.kind.clone(),
+                from_name: name_of(moving)?,
+                to_name: into_name.clone(),
+                other_name: name_of(other)?,
+                becomes_self_loop: canon(&r.from) == canon(&r.to),
+            });
+        }
+        rewired.sort_by(|a, b| {
+            a.kind
+                .cmp(&b.kind)
+                .then_with(|| a.other_name.cmp(&b.other_name))
+                .then_with(|| a.relation.cmp(&b.relation))
+        });
+        overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
+        Ok(BeliefDiff {
+            computable: true,
+            note: None,
+            tier_changes: Vec::new(),
+            overturned,
+            rewired,
+        })
+    }
+
     fn belief_diff(
         &self,
         workspace: Option<&str>,
         view: &ProposalView,
     ) -> Result<BeliefDiff, StoreError> {
+        if view.kind == "entity_merge" {
+            return self.merge_diff(workspace, view);
+        }
         if !GATE_KINDS.contains(&view.kind.as_str()) {
             return Ok(BeliefDiff {
                 computable: false,
@@ -1776,6 +1899,7 @@ impl Engine {
                 )),
                 tier_changes: Vec::new(),
                 overturned: Vec::new(),
+                rewired: Vec::new(),
             });
         }
         let Some(tier) = view.tier else {
@@ -1784,6 +1908,7 @@ impl Engine {
                 note: Some("a gate proposal without a requested tier grants nothing".into()),
                 tier_changes: Vec::new(),
                 overturned: Vec::new(),
+                rewired: Vec::new(),
             });
         };
 
@@ -1839,7 +1964,7 @@ impl Engine {
         // Deterministic order (Principle 16): the diff is a read surface like any other.
         overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
         tier_changes.sort_by(|a, b| a.observation.cmp(&b.observation));
-        Ok(BeliefDiff { computable: true, note: None, tier_changes, overturned })
+        Ok(BeliefDiff { computable: true, note: None, tier_changes, overturned, rewired: Vec::new() })
     }
 
     /// Resolved id-forwarding from ACCEPTED entity-merge proposals (Principle 14/15): each merged-away
