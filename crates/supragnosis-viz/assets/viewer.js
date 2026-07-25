@@ -587,10 +587,10 @@ function renderCuration() {
         return `<div class="grp"><span class="gk">${esc(v.key)}</span>${meta}<div class="chips">${m.map(nchip).join("")}</div></div>`;
       }).join("")
     : `<div class="empty">none - no orthographic variants</div>`;
-  html += `<div class="csec">merge candidates (${dup.length})</div>`;
+  html += `<div class="csec">cross-workspace name collisions (${dup.length})</div>`;
   html += dup.length
     ? dup.map(g => `<div class="grp"><span class="gk">${esc(g.key)}</span><div class="chips">${g.members.map(nchip).join("")}</div></div>`).join("")
-    : `<div class="empty">none - no name collisions</div>`;
+    : `<div class="empty">none - this signal only fires across workspaces (same-workspace variants are above)</div>`;
   html += `<div class="csec">grab-bag contexts (${gb.length})</div>`;
   html += gb.length
     ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return `<div class="gb" data-hid="${esc(b.id)}"><span class="sz">${b.size}</span>${esc(nm)}<button class="reify" title="assert this context as a group entity + member_of relations (a lineage-bearing observation - the hyperedge itself stays a derived view)">reify</button></div>`; }).join("")

@@ -381,3 +381,31 @@ fn p18_an_agent_surface_verdict_cannot_grant_human_confirmed() {
         view.effective_tier
     );
 }
+
+/// GIVEN the same orthographic variant present in two different workspaces, WHEN the all-workspaces
+/// curation view is built, THEN no candidate group spans them. `*` is a view, not a place: a merge
+/// across workspaces has nowhere coherent to be filed, since the proposal itself must belong to one
+/// (P17 - a workspace is the sovereignty boundary, and a candidate that crosses it is not actionable).
+#[test]
+fn p17_candidates_never_span_workspaces_in_the_all_view() {
+    let store = Arc::new(InMemoryStore::new());
+    let a = Engine::new(store.clone(), "h", "alpha");
+    let b = Engine::new(store.clone(), "h", "beta");
+    observe(&a, "in alpha", &["TrustTier"]);
+    observe(&b, "in beta", &["Trust Tier"]);
+
+    let scoped = a.curation(Some("alpha")).expect("curation");
+    assert!(
+        scoped.name_variants.is_empty(),
+        "each workspace holds one spelling, so neither alone has a variant pair"
+    );
+
+    let all = a.curation(None).expect("curation across workspaces");
+    for g in &all.name_variants {
+        assert!(
+            g.members.len() < 2 || g.members.iter().all(|m| m.id == g.members[0].id),
+            "a candidate group spanned workspaces: {:?}",
+            g.members.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
+    }
+}
