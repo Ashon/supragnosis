@@ -493,14 +493,20 @@ solo/single-canon, while deterministic convergence of multi-node/federation verd
 guaranteed only after HLC is introduced (M4). The proposal workflow goes in as **M3.5**,
 between M3 and M4 (pre-value in solo/hub environments).
 
-- M3.5a: Proposal entity + events + fold state machine + claim-promotion **and
+- M3.5a **[o]**: Proposal entity + events + fold state machine + claim-promotion **and
   claim-demotion**. (Demotion is symmetric with promotion so it is cheap to implement, and
   it is needed early as the safety device of the Section 9 fast-path - a period with only
   promotion and no correction is itself a contamination exposure window.) The fold state
   machine reflects the monotonic decision rule of I16 - it computes the conclusion not as a
   sequential final-state fold but as the set function "a valid merge exists" (quorum as the
   reset-free prefix-existential, 7.3), and treats Merged as an absorbing state.
-- M3.5b: belief diff + blocking checks + `propose`/`get_proposal`/`review`.
+- M3.5b **[o]**: belief diff + blocking checks + `propose`/`get_proposal`/`review`. The diff is
+  computed for the kinds with a commit effect (gate kinds report tier moves and the beliefs they
+  overturn with contested before/after; `entity_merge` reports the references that rewire and which
+  edges become self-loops). The blocking checks implemented are referential integrity,
+  canonical-target well-formedness and the T-Box axis collision; they are recomputed by the fold, so
+  a merge verdict on a failing proposal folds to `blocked` (I13 - and a replicated verdict never
+  passes through `review`, so the fold is the only place a gate can live).
 - M3a (belief resolution, [resolution.md](resolution.md)): claim-promotion and claim-demotion gain
   their **commit effects** - a merged verdict sets the target observations' gate tier, which the
   resolution policy consumes - and the **human-direct surface ceiling** caps what an agent-cast
@@ -529,10 +535,15 @@ Open decisions:
 - Canonicalization of the representative verdict among multiple valid merges: choosing the
   minimum HLC (since effects are idempotent there is no semantic issue; it is only for the
   fold's determinism - I14).
-- Monotonicity of blocking checks: pinning the recomputation input to the fixed base
-  frontier (I7, I8) so validity does not flip after the fact (the Section 6 monotonicity
-  note), continuously verified by a property test that checks the conclusion is identical
-  even when the same event set is injected in random order/partitioning (Principle 16).
+- ~~Monotonicity of blocking checks~~ **[o] settled**: the property test exists
+  (`i8_blocking_check_conclusion_is_arrival_order_independent`) and injects one event set under
+  several orders and partitions. Writing it immediately found a real violation: referential
+  integrity had been asking the PROJECTION whether a target entity existed, which made the answer
+  depend on whether re-materialization had run - so a freshly synced node, holding every observation
+  but not yet re-projected, called the same merge blocked while the authoring node called it merged.
+  The check now derives asserted entity ids from the log, as I8 requires. The direction is pinned
+  too: a proposal whose targets have not arrived is `blocked` and becomes `merged` once they do,
+  never the reverse, because entities are never removed.
 
 ---
 

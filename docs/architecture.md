@@ -6,8 +6,8 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through M4 Phase 4** (v0.1.15). M0-M2, **M3a (belief resolution) and M3b
-  (identity resolution, except IR6)**, and M3.5 (partial) are complete; M4 Phases 0-4 are complete
+- Status: **implemented through M4 Phase 4** (v0.1.16). M0-M2, **M3a (belief resolution) and M3b
+  (identity resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases 0-4 are complete
   (Phase 3.5 and 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
   record. This document is no longer a forward-looking baseline: it describes what exists, and marks
@@ -419,7 +419,8 @@ HTTP-over-UDS client (`curl --unix-socket`).
   (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
 - Endpoints (all GET): `/` (viewer HTML), `/api/graph[?workspace=<ws>]` (unspecified = default
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
-  `/api/proposals`, `/api/review` (the gated verdict), `/api/resolve` (contested-belief mediation:
+  `/api/proposals`, `/api/proposal?id=` (one proposal with its computed belief diff and check
+  results - per-proposal because a diff is two belief folds), `/api/review` (the gated verdict), `/api/resolve` (contested-belief mediation:
   propose claim_promotion + Console merge verdict in one act - both gated appended events),
   `/api/reify` (hyperedge promotion: assert a group entity + member_of relations as a
   lineage-bearing observation - free ingest, Principle 11/22),
@@ -427,7 +428,8 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - **Implemented views**: the hyperedge overlay (co-occurrence hulls with density-based opacity),
   the **curation console** (contested-belief and merge-cycle signals with per-value confirm actions
   (M3a), duplicate/grab-bag/orphan signals, proposal list, accept/reject casting a
-  verdict, and a belief-diff preview drawn on the canvas - entity_merge fold arrows, tbox_change type
+  verdict, the **computed belief diff and blocking-check results** on the selected proposal (before -> after
+  rows; a failing check disables accept), plus the canvas preview - entity_merge fold arrows, tbox_change type
   scope), the contested amber ring on graph nodes with competitor rows in the inspector (M3a),
   the **type glossary** panel, and the
   **federation panel** (this node's id/role, per-hub health and per-workspace version-vector diff,
@@ -484,12 +486,16 @@ HTTP-over-UDS client (`curl --unix-socket`).
    - Landed ahead of the milestone: the **hyperedge (co-occurrence second-order structure) projection**
      (`workspace_map` / `hypergraph`) and **reprojection** (`reproject`, the declared first task and
      entry condition) - both were pulled forward because M3.5/M4 needed them.
-   - Still open: the resolution layer itself. Entity identity is exact canonical-name match, aliases
-     never accumulate, kind is last-write-wins, and `canonical_name` is first-write-wins (arrival-order
-     dependent). A **type-usage statistics aggregate view** exists only as per-graph `type_counts`, not
-     as the induction input specified here.
-   - **This is now the project's critical path**: M3.5 and M4 shipped on top of an M0-era resolution
-     layer, so several of their guarantees rest on "one entity name, one spelling" holding by luck.
+   - Still open from this milestone: a **type-usage statistics aggregate view** exists only as
+     per-graph `type_counts`, not as the induction input specified here (it feeds IR6 -> M5).
+   - **Historical note, resolved.** This entry used to read "the resolution layer itself is still
+     open - aliases never accumulate, kind is last-write-wins, `canonical_name` is first-write-wins"
+     and called M3 the project's critical path, because M3.5 and M4 had shipped on top of an M0-era
+     resolution layer and several of their guarantees rested on "one entity name, one spelling"
+     holding by luck. M3a and M3b repaid exactly that: aliases accumulate and forward (IR1), kind and
+     representative spelling are `TierWeighted` selections rather than write-order artifacts, and one
+     shared write path makes an incremental write equal a fresh replay (IR3). The debt is recorded in
+     Section 14 rather than deleted, since it is why those two slices exist.
 5. **M3.5 - Proposal workflow [o]**: the gateway to canon promotion (Principle 23). Proposal =
    observation event, state = deterministic fold with merge as the absorbing outcome,
    `propose`/`list_proposals`/`get_proposal`/`review`, entity-merge effect with transitive id
@@ -631,7 +637,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 23 (gate to canon, *structure*): a proposal is itself an observation; its state is a
   deterministic fold with merge as the **absorbing** outcome (convergent and monotonic); no verdict
   deletes an assertion; the viewer's accept casts a verdict observation rather than writing the
-  projection. *Not satisfied*: enforcement beyond `entity_merge`, the belief diff as a computed artifact,
+  projection. The belief diff is now a computed artifact and the blocking checks are enforced by the fold.
+  *Not satisfied*: commit effects beyond `entity_merge`/`claim_promotion`/`claim_demotion`,
   and the self-attested marker for the single-person exception (see deferrals).
 - Principle 7 (7th revision, consolidation generates but does not commit): curation signals
   (duplicates/grab-bags/orphans/contradictions/merge-cycles) are a **read-only projection** that
@@ -699,8 +706,12 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   **automatic candidate proposal** from repeated co-occurrence patterns (hyperedge -> type candidates) -> **M3**.
 - Principles 9/23 (T-Box coherence check / gate to canon) re `define_type`: `define_type` still validates only
   **well-formedness** (non-empty name/description, Principle 8) and writes to the canon **directly - the `tbox_change`
-  proposal kind exists but enforces nothing**. T-Box consistency (cyclic subtype / domain-range, Principle 9) is
-  unimplemented, and the **self-attested marker** that the single-person exception calls for is **still not attached**.
+  proposal kind has no commit effect** (Section 13 of proposal-workflow.md assigns it, with `recall`, to M4+).
+  Since M3.5b a `tbox_change` proposal IS gated by one structural check - a name defined on both the entity and
+  relation axes blocks the merge (Principle 9: a structural contradiction is a bug, unlike a contradiction between
+  assertions). The rest of T-Box consistency (cyclic subtype / domain-range) stays unimplemented because no subtype
+  hierarchy exists to check, and the **self-attested marker** that the single-person exception calls for is
+  **still not attached**.
   This was acceptable while the deployment was a single-user workspace; **federation raises the stakes** - in a shared
   workspace any spoke could silently rewrite the vocabulary for everyone, HLC-latest-write winning on every node.
   Enforcing the gate is therefore a federation prerequisite (federation.md Section 1a, F18). -> **M4 Phase 5**.
