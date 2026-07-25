@@ -615,6 +615,105 @@ pub struct HyperGraphStats {
     pub max_size: usize,
 }
 
+/// One provenance attestation flattened for the log/explain surface (observability). Provenance is
+/// a first-class citizen (Principle 2): the log view exposes who attested a fact, when, at what
+/// CLAIMED tier (log data, verbatim - F13), and how the receiver EVALUATES that claim
+/// ([`evaluated_tier`] - a synced claim never evaluates above host_signed; the evaluation, not the
+/// claim, is what resolution consumes).
+#[derive(Serialize)]
+pub struct AttestationSummary {
+    pub host: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_behalf_of: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<String>,
+    pub observed_at: Timestamp,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+    pub trust_tier: TrustTier,
+    pub evaluated_tier: TrustTier,
+    /// The origin node_id when the attestation is sync-stamped (federation provenance); absent for local.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_node: Option<String>,
+}
+
+/// A named entity an observation asserts (spelling + resolved canonical id), so a log row links back
+/// to the graph node it touched (click-to-focus in the viewer).
+#[derive(Serialize)]
+pub struct EntityRef {
+    pub name: String,
+    pub id: String,
+}
+
+/// A relation an observation asserts, by endpoint spellings + normalized kind (log-row context).
+#[derive(Serialize)]
+pub struct RelationRef {
+    pub from: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub to: String,
+}
+
+/// One observation flattened for the log-browser surface (observability). The observation log is
+/// the source of truth (Principle 1); this is a read-only projection of one log row with its
+/// provenance (Principle 2) and effective tier (resolution.md Section 3). Embeddings never appear
+/// (Principle 21 - they are an internal recall aid, not part of the legible surface).
+#[derive(Serialize)]
+pub struct ObsSummary {
+    pub id: String,
+    pub content: String,
+    /// The deterministic fold-ordering key ([`ordering_hlc`]) - also the log-feed order.
+    pub hlc: Hlc,
+    /// The observation's effective tier (gate grants applied - resolution.md Section 3).
+    pub effective_tier: TrustTier,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub derived_from: Vec<String>,
+    pub attestations: Vec<AttestationSummary>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub entities: Vec<EntityRef>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<RelationRef>,
+}
+
+/// One competing value for a single-valued belief field, with its role in the RESOLVED projection -
+/// the unit of the "why this belief" explanation (resolution.md Sections 2-4). Role is the projected
+/// winner, an `alias` (a non-winning name spelling kept as an alias, Principle 3 / IR1), or a
+/// `competitor` (a non-winning kind still asserted in the log, R7). One row per distinct value at
+/// that value's highest effective tier, with one asserting observation as the dereference path.
+#[derive(Serialize)]
+pub struct CandidateRow {
+    pub value: String,
+    /// "winner" | "alias" | "competitor".
+    pub role: &'static str,
+    pub trust_tier: TrustTier,
+    pub hlc: Hlc,
+    pub observation: String,
+}
+
+/// The resolution of one single-valued belief field (canonical_name or kind): the winning value,
+/// whether it is contested (distinct values tie on trust - R6), and the ranked candidates behind it.
+#[derive(Serialize)]
+pub struct FieldExplain {
+    /// "canonical_name" | "kind".
+    pub field: &'static str,
+    pub winner: String,
+    pub contested: bool,
+    pub candidates: Vec<CandidateRow>,
+}
+
+/// "Why is this node projected this way": the per-field belief resolution (evidence + decision) plus
+/// the supporting observation log for one entity. A pure read projection (Principle 1) built ON TOP
+/// of [`Engine::get_entity`], so the winners ARE the projected entity's values - an explanation OF
+/// the projection, never a second computation that could drift from it.
+#[derive(Serialize)]
+pub struct EntityExplain {
+    pub id: String,
+    pub name: String,
+    pub effective_tier: TrustTier,
+    pub fields: Vec<FieldExplain>,
+    pub supporting: Vec<ObsSummary>,
+}
+
 pub struct Engine {
     store: Arc<dyn KnowledgeStore>,
     /// The embedding provider port (Principle 19: the probabilistic boundary). If absent, search degrades to keyword.
@@ -2000,6 +2099,177 @@ impl Engine {
         Ok(Some(EntityView { entity, relations, effective_tier, contested, competitors, kind_source }))
     }
 
+    /// The observation log for a workspace, flattened for the log-browser surface (observability).
+    /// The log is the source of truth (Principle 1); this is a read-only projection of it, ordered
+    /// newest-first by the deterministic fold key (ordering HLC desc, then id asc - P16), each row
+    /// carrying its provenance (Principle 2) and effective tier (resolution.md Section 3). A storage
+    /// failure is `Err`, never an empty log (Principle 5). When `entity` is given, only observations
+    /// that touch that entity (an assertion or a relation endpoint, forwarded through accepted
+    /// merges) are returned - the evidence set behind one node. `limit` keeps the newest N (None = all).
+    pub fn observation_log(
+        &self,
+        workspace: Option<&str>,
+        entity: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ObsSummary>, StoreError> {
+        let fwd = self.merge_forwarding(workspace)?;
+        let gates = self.gate_grants(workspace)?;
+        let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
+        let want = entity.map(|e| canon(e.to_string()));
+        let mut out: Vec<ObsSummary> = Vec::new();
+        for obs in self.store.all_observations(workspace)? {
+            let ws = obs.workspace().to_string();
+            // Canonical entity refs this observation asserts (assertions + relation endpoints),
+            // keyed by canonical id (deterministic BTreeMap order), first spelling kept for display.
+            let mut ent_ids: BTreeMap<String, String> = BTreeMap::new();
+            for ea in &obs.assertions.entities {
+                ent_ids
+                    .entry(canon(Entity::make_id(&ws, &ea.name)))
+                    .or_insert_with(|| ea.name.clone());
+            }
+            for ra in &obs.assertions.relations {
+                for name in [&ra.from, &ra.to] {
+                    ent_ids
+                        .entry(canon(Entity::make_id(&ws, name)))
+                        .or_insert_with(|| name.clone());
+                }
+            }
+            if let Some(w) = &want {
+                if !ent_ids.contains_key(w) {
+                    continue;
+                }
+            }
+            let attestations = obs
+                .provenance
+                .iter()
+                .map(|p| AttestationSummary {
+                    host: p.host.clone(),
+                    on_behalf_of: p.on_behalf_of.clone(),
+                    source_ref: p.source_ref.clone(),
+                    observed_at: p.observed_at,
+                    confidence: p.confidence,
+                    trust_tier: p.trust_tier,
+                    evaluated_tier: evaluated_tier(p),
+                    origin_node: p.sync.as_ref().map(|s| s.origin_node.clone()),
+                })
+                .collect();
+            let entities = ent_ids.into_iter().map(|(id, name)| EntityRef { name, id }).collect();
+            let relations = obs
+                .assertions
+                .relations
+                .iter()
+                .map(|ra| RelationRef {
+                    from: ra.from.clone(),
+                    kind: normalize_relation_kind(&ra.kind),
+                    to: ra.to.clone(),
+                })
+                .collect();
+            out.push(ObsSummary {
+                hlc: ordering_hlc(&obs),
+                effective_tier: effective_tier(&obs, &gates),
+                id: obs.id,
+                content: obs.content,
+                derived_from: obs.derived_from,
+                attestations,
+                entities,
+                relations,
+            });
+        }
+        // Newest first: descending ordering HLC, ascending id as the stable tiebreak (P16).
+        out.sort_by(|a, b| b.hlc.cmp(&a.hlc).then_with(|| a.id.cmp(&b.id)));
+        if let Some(n) = limit {
+            out.truncate(n);
+        }
+        Ok(out)
+    }
+
+    /// "Why is this node projected this way" (observability): the per-field belief resolution
+    /// (evidence + decision) and the supporting observation log for one entity. Built ON TOP of
+    /// [`Engine::get_entity`] - the winner values ARE the projected entity's values, so the
+    /// explanation cannot disagree with what the graph shows (never a second computation that could
+    /// drift). The candidate rows and supporting log are folded from the same log the projection
+    /// uses. `None` iff the id resolves to no entity (absence, Principle 5). A merged-away id
+    /// forwards to its canonical entity (Principle 15), like [`Engine::get_entity`].
+    pub fn explain_entity(&self, entity_id: &str) -> Result<Option<EntityExplain>, StoreError> {
+        let Some(view) = self.get_entity(entity_id)? else {
+            return Ok(None);
+        };
+        let canon_id = view.entity.id.clone();
+        let ws = view.entity.provenance.first().map(|p| p.workspace.clone());
+        let fwd = self.merge_forwarding(ws.as_deref())?;
+        let gates = self.gate_grants(ws.as_deref())?;
+        let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
+
+        // Rebuild this entity's name/kind belief candidates from the log, at the same effective tier
+        // and fold order as project_entities/belief_fold - so the ranking matches the projection.
+        let mut name_cands: Vec<BeliefCandidate> = Vec::new();
+        let mut kind_cands: Vec<BeliefCandidate> = Vec::new();
+        for obs in self.store.all_observations(ws.as_deref())? {
+            let obs_ws = obs.workspace().to_string();
+            let eff = effective_tier(&obs, &gates);
+            let hlc = ordering_hlc(&obs);
+            for ea in &obs.assertions.entities {
+                if canon(Entity::make_id(&obs_ws, &ea.name)) != canon_id {
+                    continue;
+                }
+                name_cands.push(BeliefCandidate {
+                    value: ea.name.trim().to_string(),
+                    tier: eff,
+                    hlc: hlc.clone(),
+                    observation: obs.id.clone(),
+                });
+                if let Some(k) = &ea.kind {
+                    kind_cands.push(BeliefCandidate {
+                        value: k.clone(),
+                        tier: eff,
+                        hlc: hlc.clone(),
+                        observation: obs.id.clone(),
+                    });
+                }
+            }
+            for ra in &obs.assertions.relations {
+                for name in [&ra.from, &ra.to] {
+                    if canon(Entity::make_id(&obs_ws, name)) == canon_id {
+                        name_cands.push(BeliefCandidate {
+                            value: name.trim().to_string(),
+                            tier: eff,
+                            hlc: hlc.clone(),
+                            observation: obs.id.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // canonical_name: the projected name is the winner; every other spelling is an alias (IR1).
+        let name_contested = self.policy.choose(&name_cands).map(|c| c.contested).unwrap_or(false);
+        let fields = vec![
+            FieldExplain {
+                field: "canonical_name",
+                winner: view.entity.canonical_name.clone(),
+                contested: name_contested,
+                candidates: candidate_rows(&name_cands, &view.entity.canonical_name, "alias"),
+            },
+            // kind: the projected kind is the winner; non-winning kinds are competitors (R7).
+            // contested is get_entity's own flag (the identical resolve_kind result).
+            FieldExplain {
+                field: "kind",
+                winner: view.entity.kind.clone(),
+                contested: view.contested,
+                candidates: candidate_rows(&kind_cands, &view.entity.kind, "competitor"),
+            },
+        ];
+
+        let supporting = self.observation_log(ws.as_deref(), Some(&canon_id), None)?;
+        Ok(Some(EntityExplain {
+            id: canon_id,
+            name: view.entity.canonical_name,
+            effective_tier: view.effective_tier,
+            fields,
+            supporting,
+        }))
+    }
+
     /// Hybrid search: fuses keyword (substring match) + vector (semantic) results with RRF, then enriches with the
     /// graph neighbors of the top entity hits. The vector path semantically recalls **both** observation bodies and
     /// entity names (so even entity nodes not mentioned lexically by an observation are reached by the meaning of their name),
@@ -2522,6 +2792,41 @@ const HYPEREDGE_MIN_SIZE: usize = 2;
 /// spellings minus the representative (`canonical`), ordered by (first-asserting ordering-HLC,
 /// spelling). A deterministic set union - the same candidate set yields the same aliases on any
 /// node (P16), and a spelling that lost the representative choice is never dropped (Principle 3).
+/// Collapses belief candidates to one row per distinct value for the explain surface: each value at
+/// its highest effective tier, tie-broken to the smallest observation id (the same representative
+/// choice as [`Engine::resolve_kind`]'s competitors - P16). The row equal to `winner` is tagged
+/// "winner"; every other value gets `loser_role` ("alias" for names, "competitor" for kinds).
+/// Ordered winner-first, then (tier desc, value asc) - a stable, arrival-order-free ranking.
+fn candidate_rows(cands: &[BeliefCandidate], winner: &str, loser_role: &'static str) -> Vec<CandidateRow> {
+    // value -> (highest tier, representative observation id, that candidate's hlc).
+    let mut best: BTreeMap<&str, (TrustTier, &str, &Hlc)> = BTreeMap::new();
+    for c in cands {
+        let e = best.entry(c.value.as_str()).or_insert((c.tier, c.observation.as_str(), &c.hlc));
+        // Highest tier per value; tie-break by smallest observation id (stable, P16).
+        if (c.tier, std::cmp::Reverse(c.observation.as_str())) > (e.0, std::cmp::Reverse(e.1)) {
+            *e = (c.tier, c.observation.as_str(), &c.hlc);
+        }
+    }
+    let mut rows: Vec<CandidateRow> = best
+        .into_iter()
+        .map(|(value, (tier, obs, hlc))| CandidateRow {
+            value: value.to_string(),
+            role: if value == winner { "winner" } else { loser_role },
+            trust_tier: tier,
+            hlc: hlc.clone(),
+            observation: obs.to_string(),
+        })
+        .collect();
+    // Winner first, then highest tier, then value - deterministic.
+    rows.sort_by(|a, b| {
+        (a.role != "winner")
+            .cmp(&(b.role != "winner"))
+            .then_with(|| b.trust_tier.cmp(&a.trust_tier))
+            .then_with(|| a.value.cmp(&b.value))
+    });
+    rows
+}
+
 fn alias_set(cands: &[BeliefCandidate], canonical: &str) -> Vec<String> {
     // value -> the earliest ordering-HLC that asserted it (first-asserting).
     let mut first: BTreeMap<&str, &Hlc> = BTreeMap::new();

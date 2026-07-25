@@ -47,6 +47,7 @@ const dockLEl = document.getElementById("dockL"), dockREl = document.getElementB
 const glossaryBodyEl = document.getElementById("glossaryBody"), glossCtEl = document.getElementById("glossCt");
 const curationBodyEl = document.getElementById("curationBody"), reviewCtEl = document.getElementById("reviewCt");
 const proposalsBodyEl = document.getElementById("proposalsBody"), propCtEl = document.getElementById("propCt");
+const logBodyEl = document.getElementById("logBody"), logCtEl = document.getElementById("logCt");
 // A dock tab-panel is "live" when its tab is active and its dock is shown (replaces the old details.open).
 function panelOn(name) {
   const p = document.querySelector('.tabpanel[data-panel="' + name + '"]');
@@ -202,7 +203,12 @@ function applyGraph(g) {
       posById.set(n.id, p);
     }
     seen.add(n.id);
-    return Object.assign(p, n);
+    // Reset the fields serde OMITS when false/empty (contested, competitors, aliases, origins,
+    // description, kind_source) before layering the fresh node on. `p` is reused across polls to keep
+    // object identity (focus / edge endpoints), so a value set in a PRIOR poll would otherwise persist
+    // even after the belief changed - e.g. a confirmed belief keeping its contested ring/wording.
+    // Position/velocity live on `p` (not in these defaults, not in `n`) and are preserved.
+    return Object.assign(p, { description: null, aliases: [], origins: [], contested: false, competitors: [], kind_source: null }, n);
   });
   let removed = 0;
   for (const id of [...posById.keys()]) if (!seen.has(id)) { posById.delete(id); removed++; }
@@ -390,10 +396,12 @@ async function poll() {
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
     } else { hyperedges = []; }
-    // Keep the type glossary + curation + proposals panels current (no-op while their sections are closed).
+    // Keep the type glossary + curation + proposals + log panels current (no-op while closed). The
+    // log refreshes here too, so an observe event (which routes through poll) also refreshes it.
     refreshGlossary();
     refreshCuration();
     refreshProposals();
+    refreshLog();
   } catch (e) { statusEl.textContent = "connection failed - check the server is running"; }
 }
 
@@ -714,6 +722,125 @@ async function refreshProposals() {
   } catch (e) { /* auxiliary - keep the last render */ }
   renderProposals();
 }
+
+// --- Observation log panel (the source of truth, Principle 1) ------------------------
+// The graph is a projection OF this log; this panel reads the raw events newest-first, with their
+// provenance (Principle 2) and effective tier. A row expands to show who attested it / lineage /
+// which entities it touched (click an entity to focus its node). Shared row rendering feeds both
+// this panel and the inspector "why" section's supporting-observations list.
+let obsLog = [];   // /api/observations for the current workspace (newest-first)
+let obsLogSig = "";   // set signature of the rendered rows - re-render only when it changes (below)
+
+// A compact absolute clock: the log is a record, so show when it happened, not "3s ago".
+function obsWhen(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
+function tierChip(t) { return `<span class="tchip">${esc(String(t))}</span>`; }
+
+function obsRowHtml(o) {
+  const a0 = (o.attestations || [])[0] || {};
+  return `<div class="obs" data-id="${esc(o.id)}">`
+    + `<div class="ohead">${tierChip(o.effective_tier)}<span class="ohost">${esc(a0.host || "")}</span>`
+    + `<span class="owhen">${esc(obsWhen(a0.observed_at))}</span></div>`
+    + `<div class="otext">${esc(o.content)}</div>`
+    + `<div class="odetail"></div></div>`;
+}
+
+// The expanded body of one observation: provenance attestations (who / on-behalf-of / claimed ->
+// evaluated tier / confidence), lineage, and the entities it asserted (click to focus).
+function obsDetailHtml(o) {
+  let h = `<div class="osec">provenance</div>`;
+  for (const a of o.attestations || []) {
+    h += `<div class="prow"><span class="phost">${esc(a.host)}</span>`
+      + (a.on_behalf_of ? `<span class="pobo">for ${esc(a.on_behalf_of)}</span>` : "")
+      + `<span class="ptier">${esc(String(a.trust_tier))}${a.evaluated_tier !== a.trust_tier ? " -> " + esc(String(a.evaluated_tier)) : ""}</span>`
+      + (a.confidence != null ? `<span class="pconf">conf ${esc(String(a.confidence))}</span>` : "")
+      + `</div>`;
+  }
+  if (o.derived_from && o.derived_from.length)
+    h += `<div class="osec">derived from</div><div class="oids">`
+      + o.derived_from.map(id => `<span class="oid">${esc(String(id).slice(0, 8))}</span>`).join("") + `</div>`;
+  if (o.entities && o.entities.length)
+    h += `<div class="osec">entities</div><div class="echips">`
+      + o.entities.map(e => `<span class="echip" data-id="${esc(e.id)}" title="focus ${esc(e.name)}">${esc(e.name)}</span>`).join("")
+      + `</div>`;
+  return h;
+}
+
+// Renders a list of observation summaries into a container and wires the expand toggle + entity
+// focus. Used by the Log panel and the inspector "why" supporting list.
+function wireObsList(container, list, openIds) {
+  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
+  container.innerHTML = list.length ? list.map(obsRowHtml).join("") : '<div class="empty">no observations</div>';
+  container.querySelectorAll(".obs").forEach(row => {
+    const o = list.find(x => x.id === row.dataset.id);
+    if (!o) return;
+    const det = row.querySelector(".odetail");
+    const fill = () => {
+      if (det.dataset.filled) return;
+      // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
+      det.innerHTML = obsDetailHtml(o);
+      det.dataset.filled = "1";
+      det.querySelectorAll(".echip").forEach(c => {
+        c.onclick = ev => { ev.stopPropagation(); const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
+      });
+    };
+    // `openIds` (optional) persists which rows are expanded across a caller's re-render (the inspector
+    // rebuilds on every poll); pre-open those and keep the set in sync on toggle.
+    if (openIds && openIds.has(o.id)) { row.classList.add("open"); fill(); }
+    row.querySelector(".ohead").onclick = () => {
+      const open = row.classList.toggle("open");
+      if (openIds) { if (open) openIds.add(o.id); else openIds.delete(o.id); }
+      if (open) fill();
+    };
+  });
+}
+
+function renderLog() {
+  logCtEl.textContent = obsLog.length || "";
+  if (!obsLog.length) { obsLogSig = ""; logBodyEl.innerHTML = '<div class="empty">no observations in this workspace yet - observe knowledge to see the log</div>'; return; }
+  // Re-render only when the observation set actually changed, so a poll refresh does not collapse a
+  // row the user expanded (the log is append-mostly; an unchanged set keeps its DOM + open rows).
+  const sig = obsLog.map(o => o.id + ":" + o.effective_tier + ":" + (o.attestations || []).length).join(",");
+  if (sig === obsLogSig && logBodyEl.querySelector(".obs")) return;
+  obsLogSig = sig;
+  wireObsList(logBodyEl, obsLog);
+}
+
+async function refreshLog() {
+  if (!panelOn("log")) return;
+  const ws = wsInput.value.trim();
+  try {
+    const r = await fetch("/api/observations" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    if (r.ok) { const l = await r.json(); if (Array.isArray(l)) obsLog = l; }
+  } catch (e) { /* auxiliary - keep the last render */ }
+  renderLog();
+}
+
+// The node inspector's "log" column: this node's supporting observations (the evidence behind its
+// belief), always visible beside the edge columns. Cached per node + expanded-row set so it survives
+// the inspector's poll-driven re-render, and it stays live (re-fetched, re-rendered only on change).
+let nodeLogCache = { id: null, list: [] };
+const openObs = new Set();   // obs ids expanded in the log column (cleared when the focus node changes)
+async function fillNodeLog(node, colEl, secEl) {
+  const sameNode = nodeLogCache.id === node.id;
+  if (!sameNode) { nodeLogCache = { id: node.id, list: [] }; openObs.clear(); }
+  const setCount = n => { if (secEl) secEl.textContent = "log (" + n + ")"; };
+  if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list, openObs); setCount(nodeLogCache.list.length); }
+  else colEl.textContent = "loading...";
+  const ws = wsInput.value.trim();
+  try {
+    const q = "?entity=" + encodeURIComponent(node.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+    const r = await fetch("/api/observations" + q, { cache: "no-store" });
+    if (!r.ok) return;
+    const list = await r.json();
+    // Guard against a focus change mid-fetch (a later renderDetail owns the column now).
+    if (!Array.isArray(list) || nodeLogCache.id !== node.id) return;
+    const changed = list.map(o => o.id).join(",") !== nodeLogCache.list.map(o => o.id).join(",");
+    nodeLogCache.list = list;
+    if (changed || !colEl.querySelector(".obs")) wireObsList(colEl, list, openObs);
+    setCount(list.length);
+  } catch (e) { /* keep the last render */ }
+}
+
 function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); }
 function logRow(html) {
   const row = document.createElement("div");
@@ -977,22 +1104,63 @@ async function resolveBelief(obs) {
 // The contested-belief block of the inspector / curation panel: the current value and each surviving
 // competitor, with a confirm button per value (the mediation act). `cur` marks the policy winner.
 function contestedRows(current, tier, curObs, competitors, contested) {
-  // Two distinct actions, so two distinct labels: "keep" locks in the value shown now (the recency
-  // pick), "use this" switches to a competing value. Both promote that value's observation to
-  // human_confirmed (a gated console verdict) so it wins by trust - the label says which outcome.
+  // Once the belief is human_confirmed there is nothing higher to promote to, so the confirm buttons
+  // are hidden and the box reads as COMMITTED (not a lingering confirm dialog - the losing value
+  // stays listed for reference, Principle 3/6, but without an action). Below that tier the actions
+  // stay: "keep" locks in the value shown now (so recency cannot flip it), "use this" switches to a
+  // competing value - both promote that value's observation to human_confirmed (a gated console verdict).
+  const committed = String(tier) === "human_confirmed";
   const row = (v, t, obs, cur) =>
     `<div class="crow${cur ? " cur" : ""}"><span class="cv">${esc(v)}</span>`
-    + (cur ? `<span class="curtag">current</span>` : `<span class="ctier">${esc(String(t))}</span>`)
-    + (obs
+    + (cur
+        ? `<span class="curtag${committed ? " confirmed" : ""}">${committed ? "confirmed" : "current"}</span>`
+        : `<span class="ctier">${esc(String(t))}</span>`)
+    + (obs && !committed
       ? `<button class="confirm" data-obs="${esc(obs)}" title="${cur ? "lock in the current value (mark it human-confirmed so recency cannot flip it)" : "make this the confirmed value instead (mark it human-confirmed)"}">${cur ? "keep" : "use this"}</button>`
       : "")
     + `</div>`;
-  const head = contested
-    ? "these values tie on trust - confirm which is correct"
-    : "resolved by trust - other asserted values shown for reference";
+  const head = committed
+    ? (contested
+        ? "human-confirmed - competing values still tie (both confirmed)"
+        : "confirmed by a human - this belief is settled")
+    : (contested
+        ? "these values tie on trust - confirm which is correct"
+        : "resolved by trust - other asserted values shown for reference");
   return `<div class="chead">${head}</div>`
     + row(current, tier, curObs, true)
     + competitors.map(c => row(c.value, c.trust_tier, c.observation, false)).join("");
+}
+
+// The inspector "why (evidence & decision)" body from /api/explain: per-field belief resolution
+// (each single-valued field's ranked candidates - winner / alias / competitor) plus the supporting
+// observation log. An explanation OF the projection - the winner IS what the graph shows.
+function candRowHtml(c) {
+  return `<div class="cand ${esc(c.role)}"><span class="cv">${esc(c.value)}</span>`
+    + `<span class="crole">${esc(c.role)}</span>`
+    + `<span class="ctier">${esc(String(c.trust_tier))}</span>`
+    + `<span class="cobs" title="asserting observation ${esc(c.observation)}">${esc(String(c.observation).slice(0, 8))}</span></div>`;
+}
+function fieldHtml(f) {
+  return `<div class="wfield${f.contested ? " hot" : ""}">`
+    + `<div class="wfhead">${esc(f.field)}${f.contested ? ' <span class="wtag">contested</span>' : ""}</div>`
+    + (f.candidates || []).map(candRowHtml).join("")
+    + `</div>`;
+}
+function renderExplain(ex) {
+  // The supporting observations (the evidence) live in the inspector's "log" column now, so this
+  // disclosure is just the per-field decision: which value won each single-valued field, and why.
+  return (ex.fields || []).map(fieldHtml).join("");
+}
+// Cache the fetched explanation + open state per node, so the disclosure survives the inspector's
+// poll-driven re-render (renderDetail rebuilds innerHTML while a node stays focused).
+let whyCache = null;   // { id, open, ex }
+function fillWhy(whyBody, ex) {
+  if (ex && ex.fields) {
+    // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
+    whyBody.innerHTML = renderExplain(ex);
+  } else {
+    whyBody.textContent = "no explanation available";
+  }
 }
 
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
@@ -1025,9 +1193,15 @@ function renderDetail(node) {
           + contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors, node.contested)
           + `</div>`
         : "")
+    // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
+    // only when opened - the graph poll stays light). The evidence itself is the "log" column below.
+    + `<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>`
+    // Bottom columns: the node's edges (outgoing / incoming) and its observation log (the evidence
+    // behind its belief), side by side.
     + `<div class="rels">`
     +   `<div class="relcol"><div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}</div>`
     +   `<div class="relcol"><div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}</div>`
+    +   `<div class="relcol"><div class="sec">log</div><div class="logcol"></div></div>`
     + `</div>`;
   detailEl.className = "on";
   detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
@@ -1040,6 +1214,34 @@ function renderDetail(node) {
   detailEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
   });
+  // "Belief decision" disclosure: fetch /api/explain on first open, render the per-field decision.
+  // The result and open state are cached per node so it survives the inspector's poll-driven
+  // re-render (and reopening a fetched node is instant, no re-fetch).
+  const why = detailEl.querySelector(".why"), whyBody = why.querySelector(".whybody");
+  if (whyCache && whyCache.id === node.id && whyCache.open) {
+    why.classList.add("open");
+    if (whyCache.ex) fillWhy(whyBody, whyCache.ex);
+  }
+  why.querySelector(".whytoggle").onclick = async () => {
+    const open = why.classList.toggle("open");
+    if (!whyCache || whyCache.id !== node.id) whyCache = { id: node.id, open, ex: null };
+    else whyCache.open = open;
+    if (!open) return;
+    if (whyCache.ex) { fillWhy(whyBody, whyCache.ex); return; }
+    whyBody.textContent = "loading...";
+    try {
+      const r = await fetch("/api/explain?entity=" + encodeURIComponent(node.id), { cache: "no-store" });
+      const ex = await r.json();
+      whyCache = { id: node.id, open: true, ex };
+      fillWhy(whyBody, ex);
+    } catch (e) {
+      whyBody.textContent = "explain failed - is the server up?";
+    }
+  };
+  // The "log" column: this node's supporting observations (the evidence behind its belief), always
+  // visible beside the edge columns. Cached + an expanded-row set, so it survives the poll re-render.
+  const logcol = detailEl.querySelector(".logcol");
+  fillNodeLog(node, logcol, logcol.previousElementSibling);
 }
 
 // Supersampling (HiDPI): scale the backing store by DPR and fix the CSS size to the viewport -> sharp.
@@ -1881,9 +2083,10 @@ document.querySelectorAll(".dock .tabs").forEach(tabs => {
     tabs.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === btn));
     dock.querySelectorAll(".tabpanel").forEach(p => p.classList.toggle("on", p.dataset.panel === btn.dataset.tab));
     if (btn.dataset.tab === "glossary") refreshGlossary();
-    if (btn.dataset.tab === "peers") refreshPeers();
+    else if (btn.dataset.tab === "peers") refreshPeers();
     else if (btn.dataset.tab === "review") refreshCuration();
     else if (btn.dataset.tab === "proposals") refreshProposals();
+    else if (btn.dataset.tab === "log") refreshLog();
   });
 });
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).

@@ -1125,3 +1125,73 @@ fn type_axis_collision_is_a_signal() {
     );
     assert_eq!(rep.stats.type_axis_collisions, 1);
 }
+
+/// Guard (Principle 1 / resolution.md): explain_entity is an explanation OF the projection, not a
+/// second computation. Its winning name/kind equal get_entity's and the graph node's; the
+/// non-winning kind surfaces as a competitor; a contested kind (two distinct kinds tie at the top
+/// tier) is reported contested. observation_log's entity filter is the same evidence set.
+#[test]
+fn explain_matches_projection_and_surfaces_competitors() {
+    let (_store, engine) = engine();
+    let obs = |content: &str, name: &str, kind: &str| {
+        engine
+            .observe(ObserveInput {
+                content: content.into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput { name: name.into(), kind: Some(kind.into()), description: None }],
+                relations: vec![],
+            })
+            .expect("observe");
+    };
+    // Same entity id ("Firefox"/"firefox" normalize together): two conflicting kinds + a case-variant
+    // spelling - all AgentExtracted, so the kinds tie at the top tier (contested).
+    obs("firefox is a browser", "Firefox", "Browser");
+    obs("firefox the application", "firefox", "Application");
+
+    let id = Entity::make_id(WS, "Firefox");
+    let view = engine.get_entity(&id).expect("get_entity").expect("entity exists");
+    let ex = engine.explain_entity(&id).expect("explain_entity").expect("entity exists");
+
+    assert_eq!(ex.id, view.entity.id);
+    // The graph node agrees with get_entity (both are the projection).
+    let node_kind = engine
+        .graph(Some(WS))
+        .expect("graph")
+        .nodes
+        .into_iter()
+        .find(|n| n.id == id)
+        .expect("node present")
+        .kind;
+    assert_eq!(node_kind, view.entity.kind, "graph node kind == get_entity kind");
+
+    let kind_field = ex.fields.iter().find(|f| f.field == "kind").expect("kind field");
+    assert_eq!(kind_field.winner, view.entity.kind, "explain winner == projected kind");
+    assert!(kind_field.contested, "two distinct kinds tie at the top tier -> contested");
+    let winners: Vec<&str> =
+        kind_field.candidates.iter().filter(|c| c.role == "winner").map(|c| c.value.as_str()).collect();
+    let competitors: Vec<&str> =
+        kind_field.candidates.iter().filter(|c| c.role == "competitor").map(|c| c.value.as_str()).collect();
+    assert_eq!(winners, vec![view.entity.kind.as_str()], "exactly the projected kind is the winner row");
+    assert_eq!(competitors.len(), 1, "the other kind is a competitor");
+    assert_ne!(competitors[0], view.entity.kind, "the competitor is not the winner");
+
+    // canonical_name winner is the projected name; the case-variant spelling is an alias.
+    let name_field = ex.fields.iter().find(|f| f.field == "canonical_name").expect("name field");
+    assert_eq!(name_field.winner, view.entity.canonical_name);
+    assert!(
+        name_field.candidates.iter().any(|c| c.role == "alias"),
+        "the case-variant spelling is an alias"
+    );
+
+    // Supporting log = exactly the observations touching this entity (both), newest-first.
+    assert_eq!(ex.supporting.len(), 2, "both observations back this entity");
+    assert!(ex.supporting[0].hlc >= ex.supporting[1].hlc, "supporting log is newest-first");
+
+    // observation_log entity filter narrows to the same set; unfiltered returns everything.
+    assert_eq!(engine.observation_log(Some(WS), Some(&id), None).expect("log filtered").len(), 2);
+    assert_eq!(engine.observation_log(Some(WS), None, None).expect("log all").len(), 2);
+}
