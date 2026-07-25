@@ -12,9 +12,9 @@
        a "*" text glyph so the mark renders identically to the app icon on every platform. -->
   <h1><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg>supragnosis</h1>
   <input id="search" placeholder="search nodes" size="16" autocomplete="off">
-  <!-- The "* = all workspaces" affordance lives in the tooltip + placeholder, not a standalone
-       hint chip - the bar stays quiet and the workspace chips in the left rail do the teaching. -->
-  <label class="hint" title="workspace scope - * or all shows every workspace">ws <input id="ws" placeholder="(default), *=all" size="14" autocomplete="off"></label>
+  <!-- Workspace selection lives ONLY in the left rail's chips (one UI, one mechanism) - the old
+       header text input duplicated them, and typing a workspace that holds no knowledge could
+       only ever show an empty graph. The current selection stays visible in the status bar. -->
 </header>
 <!-- Per-dock drawer handles: each tab rides its dock's outer edge (a door handle on the door)
      and slides with it to the screen edge when collapsed. Keyboard: [ left, ] right. -->

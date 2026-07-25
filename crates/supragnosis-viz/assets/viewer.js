@@ -31,7 +31,12 @@ const GOLD = "#d9a544", TEAL = "#56b3a2";
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
-const wsInput = document.getElementById("ws"), searchEl = document.getElementById("search");
+// The single workspace-selection state ("" = the node default, "*" = all). Shaped like the old
+// header <input> ({value}) so every reader keeps working; the WRITERS are the left-rail chips,
+// the URL restore, and follow-mode - selection has exactly one UI (the chips) and the status bar
+// shows the current value (visible even with the left dock collapsed).
+const wsInput = { value: "" };
+const searchEl = document.getElementById("search");
 const chipBar = document.getElementById("wschips");
 const legendNodesEl = document.getElementById("legendNodes"), legendEdgesEl = document.getElementById("legendEdges");
 const nodeCtEl = document.getElementById("nodeCt"), edgeCtEl = document.getElementById("edgeCt");
@@ -220,8 +225,12 @@ function applyGraph(g) {
   if (peersPanel && peersPanel.classList.contains("on")) refreshPeers();
   const s = g.stats || {};
   statusEl.textContent = "updated " + new Date().toLocaleTimeString();
+  // Current workspace leads the stats line - the selection UI is the left rail's chips, and this
+  // keeps the selection readable even with that dock collapsed.
+  const cur = currentWs();
+  const wsLabel = cur === "*" || cur === "all" ? "(all)" : cur || "(default)";
   document.getElementById("stats").textContent =
-    `nodes ${s.node_count ?? nodes.length} / edges ${s.edge_count ?? edges.length}`
+    `ws ${wsLabel} / nodes ${s.node_count ?? nodes.length} / edges ${s.edge_count ?? edges.length}`
     + (clusterMode ? ` / groups ${Object.keys(typeColor).length}, bridges ${bridgeSet.size}` : "")
     + (s.type_counts ? " / " + Object.entries(s.type_counts).map(([t,c]) => `${t} ${c}`).join(", ") : "");
   emptyEl.style.display = nodes.length ? "none" : "flex";
@@ -1730,7 +1739,6 @@ searchEl.addEventListener("keydown", ev => {
   }
 });
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
-wsInput.addEventListener("keydown", e => { if (e.key === "Enter") { beginWorkspaceTransition(); renderChipsActive(); poll(); } });
 document.getElementById("zin").onclick = () => zoomAt(innerWidth/2, innerHeight/2, 1.2);
 document.getElementById("zout").onclick = () => zoomAt(innerWidth/2, innerHeight/2, 1/1.2);
 document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
