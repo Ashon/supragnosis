@@ -11,7 +11,8 @@
   12 for the per-milestone state and Section 14 for the compliance/deferral record. This document is
   no longer a forward-looking baseline: it describes what exists, and marks what does not.
 - Normative document: the design principles follow [`principles.md`](principles.md) (design principles).
-- Companion specs: [`federation.md`](federation.md) (M4), [`proposal-workflow.md`](proposal-workflow.md) (M3.5).
+- Companion specs: [`federation.md`](federation.md) (M4), [`proposal-workflow.md`](proposal-workflow.md) (M3.5),
+  [`resolution.md`](resolution.md) (M3a, implemented).
 
 ---
 
@@ -415,12 +416,15 @@ HTTP-over-UDS client (`curl --unix-socket`).
   (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
 - Endpoints (all GET): `/` (viewer HTML), `/api/graph[?workspace=<ws>]` (unspecified = default
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
-  `/api/proposals`, `/api/review` (the gated verdict), `/api/workspaces`, `/api/federation`, and
-  `/api/events` (SSE live activity stream).
+  `/api/proposals`, `/api/review` (the gated verdict), `/api/resolve` (contested-belief mediation:
+  propose claim_promotion + Console merge verdict in one act - both gated appended events),
+  `/api/workspaces`, `/api/federation`, and `/api/events` (SSE live activity stream).
 - **Implemented views**: the hyperedge overlay (co-occurrence hulls with density-based opacity),
-  the **curation console** (duplicate/grab-bag/orphan signals, proposal list, accept/reject casting a
+  the **curation console** (contested-belief and merge-cycle signals with per-value confirm actions
+  (M3a), duplicate/grab-bag/orphan signals, proposal list, accept/reject casting a
   verdict, and a belief-diff preview drawn on the canvas - entity_merge fold arrows, tbox_change type
-  scope), the **type glossary** panel, and the
+  scope), the contested amber ring on graph nodes with competitor rows in the inspector (M3a),
+  the **type glossary** panel, and the
   **federation panel** (this node's id/role, per-hub health and per-workspace version-vector diff,
   known peers with last action). A derived view with no change to the storage model (binary Relation)
   (Principles 1/12): membership is deterministic and the hull shape is a rendering discretion
@@ -447,11 +451,22 @@ HTTP-over-UDS client (`curl --unix-socket`).
 3. **M2 - Semantic search [o]**: `EmbeddingProvider` (fastembed BGE-small-en-v1.5, 384d) + Cozo native
    HNSW, RRF fusion of keyword/semantic-observation/semantic-entity lists, 1-hop graph enrichment.
    Recall regression set in place (`recall_eval.rs`: mean recall@5 >= 0.9, entity-gold subset >= 0.99).
-4. **M3 - Resolution/schema/bitemporal [ ] NOT STARTED** (partially pre-built): conservative resolution
-   + induced schema proposal -> explicit promotion (Principle 11), `define_type` consistency validation
-   (Principle 9), treating type assignment as an assertion so that resolution computes the kind
-   (Principle 1 - replacing the current last-write-wins projection), valid interval/time-travel queries
-   (Principle 4), trust-tier resolution weighting (Principle 18).
+4. **M3 - Resolution/schema/bitemporal: M3a [o] done, M3b [ ] open** (split into two slices):
+   - **M3a - belief resolution [o] ([resolution.md](resolution.md))**: a replaceable
+     `ResolutionPolicy` port with the `TierWeighted` default (effective tier -> ordering HLC -> id;
+     confidence carried verbatim, never selecting), receiver-evaluated **effective tier** (a remote
+     claimed tier can never evaluate above HostSigned - the read-path repayment of overdue entry
+     condition 2 below), contested-belief surfacing where trust ties + merge-cycle surfacing
+     (Principle 6), `claim_promotion`/`claim_demotion` commit effects, and the human-direct
+     **surface ceiling** so an agent-cast verdict cannot grant HumanConfirmed (Principle 18).
+     Closes the "current belief" open decision (Section 13). The belief is policy-current on the
+     read path (graph/curation/entity views - continuous fold) and materialized at `reproject`;
+     the incremental observe upsert keeps its arrival-order interim within the same transient
+     window that already exists (F5).
+   - **M3b - identity resolution**: conservative resolution + induced schema proposal -> explicit
+     promotion (Principle 11), `define_type` consistency validation (Principle 9), alias accumulation
+     + the conservative merge band with embedding candidates (Principle 15), valid
+     interval/time-travel queries (Principle 4), and the atomic write path (absorbing `write_guard`).
    - Landed ahead of the milestone: the **hyperedge (co-occurrence second-order structure) projection**
      (`workspace_map` / `hypergraph`) and **reprojection** (`reproject`, the declared first task and
      entry condition) - both were pulled forward because M3.5/M4 needed them.
@@ -500,11 +515,12 @@ HTTP-over-UDS client (`curl --unix-socket`).
   topology-independent, so peer/mesh reuses it unchanged (federation.md).
 - Store: **CozoDB** confirmed in practice. [o] Oxigraph remains the documented alternative (Section 6);
   no RDF/SPARQL requirement has materialized.
+- The "current belief" policy on conflict: **tier-weighted** (effective tier -> ordering HLC -> id),
+  as a swappable strategy per Principle 1; confidence is carried verbatim but never selects (the
+  Principle 2 combining rule, stated explicitly). [o] Decided and implemented in M3a
+  ([resolution.md](resolution.md) Section 2).
 
 **Open**
-- The "current belief" policy on conflict: **latest-wins** vs **confidence-weighted** (or both). As a
-  swappable strategy per Principle 1. (M3 - still open; the projection is effectively last-write-wins
-  by replay order, which is a default that was never chosen deliberately.)
 - Entity-embedding **staleness policy**: the entity vector is computed once when absent, so it will not
   track alias accumulation once resolution begins. Recompute on change, or version the vector? (M3)
 - Whether the **`query` Datalog passthrough** is ever opened, and under what authorization guard
@@ -581,16 +597,32 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   projection. *Not satisfied*: enforcement beyond `entity_merge`, the belief diff as a computed artifact,
   and the self-attested marker for the single-person exception (see deferrals).
 - Principle 7 (7th revision, consolidation generates but does not commit): curation signals
-  (duplicates/grab-bags/orphans) are a **read-only projection** that commits nothing, and the curation
-  console routes acceptance through the verdict path. This landed ahead of its milestone.
+  (duplicates/grab-bags/orphans/contradictions/merge-cycles) are a **read-only projection** that
+  commits nothing, and the curation console routes acceptance through the verdict path. This landed
+  ahead of its milestone.
+- Principles 1/6/15/18/23 (M3a - belief resolution, [resolution.md](resolution.md)): the current
+  belief is computed by a **replaceable pure policy** (`TierWeighted`: effective tier -> ordering
+  HLC -> id; confidence carried verbatim, never selecting - the Principle 2 combining rule). The
+  tier consumed by resolution and display is the **receiver's evaluation** (a wire claim caps at
+  HostSigned; the claimed tier stays verbatim in the log for audit). **Contested beliefs are
+  surfaced** where trust ties (graph nodes carry contested/competitors; the curation report lists
+  all live conflicts and contradictory merge cycles - the Principle 6 introspection query).
+  `claim_promotion`/`claim_demotion` have their **commit effects** (a merged verdict sets the gate
+  tier the policy consumes; a demotion overrides below base - the fast-path), capped by the
+  **human-direct surface ceiling**: HumanConfirmed is grantable only from the console (viz unix
+  socket, local principal); the agent MCP path caps at HostSigned. All of it is fold-derived from
+  the log (I2/P16 - guarded by the extended convergence tests). The mediation UX: contested nodes
+  ring amber in the viewer, the inspector/curation panel shows competitors with a confirm action
+  that routes propose + Console verdict through the gate (never a direct write).
 
 **Intentional deferrals (milestone-assigned)**
-- Principles 1/6 (assertion<->belief separation, conflict preservation): currently `observe` does an **inline simple projection**
-  after storing the observation (entity kind is last-write-wins, canonical_name is first-write-wins so spelling
-  variants do not accumulate into aliases, relation provenance is singular replacement). Multi-attestation accumulation for
-  observations is implemented at the log layer (the Principle 3 item above) - multi-attestation accumulation for **relations**,
-  the representative-spelling/alias-accumulation rules, and a swappable resolution policy are in
-  **M3** (the resolution layer).
+- Principles 1/6 (assertion<->belief separation, conflict preservation): **partially repaid by M3a** -
+  the swappable resolution policy exists and computes kind/representative-spelling beliefs on the read
+  path (continuous fold) and at `reproject`; conflicts are preserved AND surfaced. Still open for
+  **M3b**: `observe`'s inline upsert keeps its arrival-order interim between re-materializations
+  (within the F5 transient window), spelling variants still do not accumulate into **aliases**, and
+  relation provenance is still singular replacement (multi-attestation accumulation for **relations**
+  is M3b).
   Note: because structured assertions (`assertions` - including entity kind) are enclosed in the observation log exactly as spelled,
   any resolution policy can be applied retroactively by reprojecting the log - the grounds that this deferral is
   non-destructive. **This defense is now discharged rather than promised**: `reproject` is implemented (it was
@@ -640,12 +672,13 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 15 (resolution is the substrate's responsibility): still exact match on the canonical name - no embedding
   candidate generation, no conservative merge band. The only entity merge that exists is the human-adjudicated
   `entity_merge` proposal effect. -> **M3**. (Assigned "M2-M3"; M2 shipped without it.)
-- Principle 18 (contamination defense) *logic*: `trust_tier` and `derived_from` are stored but inert - no tier ranking
-  in resolution or query, no quarantine, no lineage back-tracing cleanup, no trust-weighted ranking. Tier promotion is
-  not implemented, which at least means it also cannot happen implicitly. One caveat: the graph projection's
-  **representative tier takes the max over claimed tiers**, so a self-declared high tier is not only stored verbatim
-  but becomes the node's displayed tier - harmless while all writers are local, compounding with the sync
-  re-evaluation debt (entry condition 2 below) once they are not. -> **M5** (with the extraction port).
+- Principle 18 (contamination defense) *logic*: **partially repaid by M3a** - the tier now decides
+  resolution weighting and display through the receiver-evaluated **effective tier** (the
+  max-over-claimed-tiers representative computation is retired; a wire claim caps at HostSigned),
+  and tier promotion exists as an explicit gated act with the human-direct surface ceiling. Still
+  open -> **M5** (with the extraction port): quarantine of lineage-less derived assertions, lineage
+  back-tracing cleanup (sanitize, the `recall` effect), and trust-weighted **search/recall ranking**
+  (the tier weights belief selection today, not the ranked recall surfaces).
 - Principle 3 (the destruction-demand exception) - **unscheduled**: the tombstone (the absorbing record left by a
   regulation/privacy destruction demand, including its sync propagation and re-ingest refusal) exists only in
   principles.md. No milestone owns it. This is the one deferral in this ledger with no assigned repayment point;
@@ -654,8 +687,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 21 (long-running tasks/human mediation): MCP Tasks exposure of sync/consolidate, merge/contradiction/promotion elicitation -> **M4 remainder** (see Section 7).
 - Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, but
   the MCP **prompts** that would induce voluntary observe/search during work do not exist (Section 7) -> incremental.
-- Principle 23 (the gateway to canon) *enforcement*: the structure is in place, but only `entity_merge` has an effect;
-  `claim_promotion`/`claim_demotion`/`tbox_change`/`recall` fold correctly and change nothing. The **belief diff** is a
+- Principle 23 (the gateway to canon) *enforcement*: the structure is in place, and **three kinds now
+  have effects** - `entity_merge` (id forwarding), and since M3a `claim_promotion`/`claim_demotion`
+  (the gate tier, surface-capped); `tbox_change`/`recall` fold correctly and change nothing
+  (-> Phase 5 / M5). The **belief diff** is a
   viewer-side canvas preview rather than a computed artifact on `get_proposal`, so "no merge without a diff" is honored
   by UI convention, not by the gate; blocking/informative checks are unimplemented; self-approval is not prohibited.
   Moreover the fold **hardcodes `self_attested: true` on every proposal view** regardless of whether the reviewing
@@ -690,12 +725,13 @@ re-scheduled.
    construction. M4 opened exactly the predicted bypass: `apply` builds an `Observation` from wire events. In practice
    `check_event` rejects an unstamped attestation, so a zero-provenance observation cannot currently land - but the
    type still permits one, which is the situation this condition was written to end (Principle 2).
-2. **The receiving node does not re-evaluate `trust_tier`.** `check_event` clones the sender's attestation verbatim,
-   so a peer's self-declared tier - including the highest - is stored as-is on the receiver. This directly contradicts
-   Principle 18's "the tier is the receiver's evaluation", which exists precisely so that a malicious peer's
-   self-declaration cannot contaminate the receiving graph's trust. It is bounded today by single-principal deployment
-   and the allowlist (you sync only with nodes you configured), which is a **deployment-fact defense** - the kind this
-   section exists to retire. **Repay before multi-principal federation (Phase 5).**
+2. **The receiving node does not re-evaluate `trust_tier`.** PARTIALLY REPAID (M3a, read path): every
+   read surface now consumes the receiver-evaluated **effective tier** - a synced claim caps at
+   HostSigned regardless of what it self-declares, and the representative-tier max-over-claims is
+   retired ([resolution.md](resolution.md) Section 3). The apply path still stores the claim verbatim,
+   which is now **by design** (log data, audit - F13), not a deferral. What remains for **Phase 5**:
+   canon-policy-based evaluation (principal-to-key bindings deciding what a remote verdict/marker may
+   grant - today a replicated console marker is honored under the single-principal premise).
 3. **Cross-adapter `traverse` parity for dangling relation endpoints** was not addressed, and sync is exactly what
    first creates partial-ingest state.
 
@@ -712,10 +748,9 @@ re-scheduled.
   aliases; latent because aliases are always empty).
 - Introduce an entity-embedding recomputation rule once aliases accumulate - the vector is computed only when absent,
   so the embedding text changing would leave it silently stale.
-- Make `canonical_name` representative-spelling selection deterministic and independent of arrival order. Today the
-  incremental path is first-write-wins by arrival, which is masked because HLC-ordered `reproject` runs after every
-  sync apply - so nodes agree **at re-materialization points** (the 8th-revision split of convergence points), not
-  continuously. That is a narrower guarantee than Principle 16 states, and it should be made unnecessary rather than
-  relied upon.
+- Make `canonical_name` representative-spelling selection deterministic and independent of arrival
+  order - REPAID (M3a): `reproject` selects the spelling by the resolution policy (tier -> HLC -> id),
+  guarded by `p16_canonical_name_selection_is_arrival_order_free`. The incremental path's interim
+  still lives inside the F5 transient window (as for kind), absorbed by M3b's write path.
 - Make the entity projection write (read-merge-write) atomic, absorbing `write_guard` into the resolution layer's
   write path.
