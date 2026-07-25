@@ -46,6 +46,14 @@
 > (16, in federation.md): fold-projections converge continuously with the log; materialized projections
 > converge at re-materialization (HLC-ordered replay). Concrete design in
 > [federation.md](federation.md) Sections 3/8a.
+> Revision: 2026-07 (9th) - Belief resolution (M3a). The resolution policy (1/15) is fixed as a
+> replaceable pure strategy whose specification must state its confidence-combining rule (2) - the
+> default consumes tiers, not confidence. The tier that resolution and display consume is the
+> receiver's **evaluation** (18), never a claimed value - a wire claim can never evaluate above the
+> transport-provable tier. Contested beliefs are surfaced where trust ties (6) - a conflict a higher
+> tier resolves stays queryable but does not demand mediation (review economics, Appendix A). Tier
+> promotion to human-confirmed requires a human-direct surface (18) - the same mechanism family as
+> the recall verdict's non-delegability (23/I17). Concrete design in [resolution.md](resolution.md).
 
 ---
 
@@ -681,6 +689,9 @@ Questions to apply quickly during design/PR review:
   (deterministic resolution/proposal/human confirmation)? Is the induction output missing
   lineage/low-trust? (Principle 11 second-order structure, 15, 18, 23)
 - Is there a path by which trust promotion happens implicitly? (Principle 18)
+- Does resolution or display consume a claimed tier instead of the receiver-evaluated effective
+  tier? Can an agent-surface verdict grant human-confirmed? Is a conflict resolved without staying
+  queryable? (Principles 6/18, resolution.md R4/R7/R8)
 - Did an IO dependency creep into `core`? (Principle 20)
 - Is the new MCP tool really a recurring intent? Does long-running work block? (Principle 21)
 - Does this feature demand extra labor from the host? (Principle 22)

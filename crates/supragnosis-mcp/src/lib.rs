@@ -128,6 +128,12 @@ pub struct ProposeRequest {
     /// For entity_merge: the canonical target id the other targets fold into (must be one of targets).
     #[serde(default)]
     pub into: Option<String>,
+    /// For claim_promotion/claim_demotion: the requested trust tier - unverified | agent_extracted |
+    /// host_signed | human_confirmed. Required for those kinds; targets are then OBSERVATION ids.
+    /// Note: a verdict cast through this MCP surface grants at most host_signed - human_confirmed
+    /// requires the human console (a human's direct act, Principle 18).
+    #[serde(default)]
+    pub tier: Option<String>,
     /// Why (natural language) - the proposal rationale.
     #[serde(default)]
     pub rationale: Option<String>,
@@ -650,7 +656,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), claim_promotion, claim_demotion, tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state (and, once available, its belief diff). For entity_merge, pass the entity ids in `targets` and the canonical one in `into`. For tbox_change, list the T-Box types you define/change in `affected_types` ({target: \"entity\"|\"relation\", name}) so the viewer can highlight the affected nodes/edges when the proposal is previewed."
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), claim_promotion / claim_demotion (raise/lower the trust tier of observations - pass OBSERVATION ids in `targets` and the requested tier in `tier`; a merged verdict is what the resolution policy consumes, e.g. to settle a contested entity kind), tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state. For entity_merge, pass the entity ids in `targets` and the canonical one in `into`. For tbox_change, list the T-Box types you define/change in `affected_types` ({target: \"entity\"|\"relation\", name}) so the viewer can highlight the affected nodes/edges when the proposal is previewed."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
         // Map each affected type's string axis to the typed vocabulary (mirror define_type).
@@ -674,6 +680,7 @@ impl SupragnosisServer {
             kind: req.kind,
             targets: req.targets,
             into: req.into,
+            tier: req.tier,
             rationale: req.rationale,
             affected_types,
             source_ref: req.source_ref,
@@ -688,13 +695,19 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. Returns the recorded observation id."
+        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). Returns the recorded observation id."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
         let (ws, prop, dec, note, obo) =
             (req.workspace, req.proposal, req.decision, req.note, req.on_behalf_of);
-        match tokio::task::spawn_blocking(move || engine.review_proposal(ws, prop, dec, note, obo)).await {
+        // This is the agent-facing surface (resolution.md Section 6): the engine stamps the Agent
+        // marker, capping what a merged promotion can grant. Never client-suppliable.
+        match tokio::task::spawn_blocking(move || {
+            engine.review_proposal(ws, prop, dec, note, obo, supragnosis_engine::VerdictSurface::Agent)
+        })
+        .await
+        {
             Ok(Ok(id)) => serde_json::json!({ "observation_id": id }).to_string(),
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),

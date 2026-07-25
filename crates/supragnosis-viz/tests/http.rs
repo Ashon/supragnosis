@@ -327,3 +327,55 @@ async fn viz_serves_hypergraph() {
     assert_eq!(hg["hyperedges"][0]["members"].as_array().unwrap().len(), 3);
     let _ = std::fs::remove_file(&sock);
 }
+
+/// The full contested-belief mediation loop over the socket (M3a, resolution.md Section 4.2):
+/// a tier-tied kind conflict surfaces in /api/curation and on the graph node; one GET to
+/// /api/resolve opens a claim_promotion and casts the Console merge verdict; the re-folded graph
+/// shows the confirmed kind at human_confirmed, no longer contested - and the proposal trail is
+/// visible in /api/proposals (everything is gated appended events, never a direct write).
+#[tokio::test]
+async fn viz_resolve_settles_a_contested_belief() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "ws"));
+    // Two observations disagree on cozo's kind (both local default tier -> tier-tied).
+    let observe_kind = |kind: &str| ObserveInput {
+        content: format!("cozo is a {kind}"),
+        workspace: None,
+        source_ref: None,
+        confidence: None,
+        on_behalf_of: None,
+        derived_from: vec![],
+        entities: vec![EntityInput { description: None, name: "cozo".into(), kind: Some(kind.into()) }],
+        relations: vec![],
+    };
+    let first = engine.observe(observe_kind("Tool")).unwrap().observation_id;
+    engine.observe(observe_kind("Library")).unwrap();
+    let sock = serve_uds("resolve", engine, ev_channel()).await;
+
+    // Surfaced: the curation report lists the conflict; the graph node is contested.
+    let cur = json_get(&uds_get(&sock, "/api/curation?workspace=ws").await);
+    assert_eq!(cur["stats"]["contradictions"], 1, "curation: {cur}");
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    assert_eq!(g["nodes"][0]["contested"], true, "graph: {g}");
+
+    // One console act settles it: promote the Tool-asserting observation to human_confirmed.
+    let r = json_get(
+        &uds_get(&sock, &format!("/api/resolve?observation={first}&tier=human_confirmed&workspace=ws")).await,
+    );
+    assert!(r["proposal_id"].is_string(), "resolve: {r}");
+    assert!(r["verdict_observation_id"].is_string());
+
+    // Re-folded: kind = Tool at human_confirmed, contested cleared, loser still queryable (R7).
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    let n = &g["nodes"][0];
+    assert_eq!(n["type"], "Tool", "graph after resolve: {g}");
+    assert_eq!(n["trust_tier"], "human_confirmed");
+    assert!(n.get("contested").is_none() || n["contested"] == false);
+    assert_eq!(n["competitors"][0]["value"], "Library");
+    // The trail: a merged claim_promotion proposal exists.
+    let props = json_get(&uds_get(&sock, "/api/proposals?workspace=ws").await);
+    assert_eq!(props[0]["kind"], "claim_promotion", "proposals: {props}");
+    assert_eq!(props[0]["state"], "merged");
+    assert_eq!(props[0]["tier"], "human_confirmed");
+    let _ = std::fs::remove_file(&sock);
+}

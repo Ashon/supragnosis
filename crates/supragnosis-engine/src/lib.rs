@@ -8,10 +8,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use supragnosis_core::{
-    hyperedge_id, normalize_relation_kind, now_millis, ordering_hlc, Assertions, EmbeddingProvider,
-    Entity, EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation,
-    RelationAssertion, ProposalEventAssertion, ProposalEventKind, SearchHit, SearchHitKind,
-    StoreError, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
+    evaluated_tier, hyperedge_id, normalize_relation_kind, now_millis, ordering_hlc,
+    verdict_grant_ceiling, Assertions, BeliefCandidate, EmbeddingProvider, Entity, EntityAssertion,
+    Hlc, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
+    ProposalEventAssertion, ProposalEventKind, ResolutionPolicy, SearchHit, SearchHitKind,
+    StoreError, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
+    VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
@@ -100,12 +102,25 @@ pub struct SearchOutput {
     pub hits: Vec<SearchHit>,
 }
 
-/// An entity + its relations (lookup response).
+/// An entity + its relations (lookup response). `entity.kind` carries the POLICY-selected belief
+/// (the view is a projection; the log keeps every assertion), and the belief overlay fields say
+/// whether that choice was contested and what else was asserted (resolution.md Section 4.2).
 #[derive(Serialize)]
 pub struct EntityView {
     #[serde(flatten)]
     pub entity: Entity,
     pub relations: Vec<Relation>,
+    /// The representative effective tier over supporting observations (resolution.md Section 3).
+    pub effective_tier: TrustTier,
+    /// True when the kind winner was decided by recency alone among tier-tied values (R6).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub contested: bool,
+    /// Surviving non-winning kind values with their effective tiers + one asserting observation (R7).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub competitors: Vec<Competitor>,
+    /// The observation that asserted the winning kind - the mediation handle for confirming it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind_source: Option<String>,
 }
 
 /// Ontology graph projection (the read view for observability/visualization).
@@ -174,8 +189,28 @@ pub struct CurationReport {
     pub grab_bags: Vec<GrabBag>,
     /// Entities with no relation in the graph - observed alone, weakly integrated.
     pub orphans: Vec<CurationNode>,
+    /// Live single-valued-field conflicts (resolution.md Section 4.2): every node whose kind has
+    /// surviving competitors, tier-tied (contested - mediation invited) first. This is the
+    /// Principle 6 introspection query - read-only, commits nothing (I18).
+    pub contradictions: Vec<CurationConflict>,
+    /// Contradictory accepted entity-merges (Principle 6): sets of entities whose merged proposals
+    /// fold into EACH OTHER (a cycle). The projection still resolves them deterministically (P16 -
+    /// hop-capped forwarding), but the resolution is parity, not principle - the cycle itself is
+    /// the signal, and the remedy is a new proposal, never an edit (P3/P23).
+    pub merge_cycles: Vec<MergeCycle>,
     pub stats: CurationStats,
 }
+
+/// One contradictory merge cycle: the member entities (id + name) and the merged proposals whose
+/// effects form the cycle (proposal ids are observation ids - dereferenceable, Principle 14).
+#[derive(Serialize)]
+pub struct MergeCycle {
+    pub members: Vec<CurationNode>,
+    pub proposals: Vec<String>,
+}
+
+/// A detected cycle before name resolution: (sorted member entity ids, forming proposal ids).
+type CycleSet = (Vec<String>, Vec<String>);
 
 /// A set of entities sharing one normalized name but distinct ids (a merge candidate).
 #[derive(Serialize)]
@@ -204,11 +239,29 @@ pub struct CurationNode {
     pub degree: usize,
 }
 
+/// One live conflict on a single-valued belief field (M3a scope: entity `kind`). `current` is the
+/// policy winner; `competitors` are the surviving other values with their effective tiers and one
+/// asserting observation each (the dereference path for "who said so"). `contested` follows R6.
+#[derive(Serialize)]
+pub struct CurationConflict {
+    pub id: String,
+    pub name: String,
+    pub field: String,
+    pub current: String,
+    pub contested: bool,
+    pub competitors: Vec<Competitor>,
+    /// The observation asserting `current` - the handle for confirming the current value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind_source: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct CurationStats {
     pub duplicate_groups: usize,
     pub grab_bags: usize,
     pub orphans: usize,
+    pub contradictions: usize,
+    pub merge_cycles: usize,
 }
 
 /// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
@@ -219,6 +272,54 @@ pub const PROPOSAL_KINDS: [&str; 5] = [
     "tbox_change",
     "recall",
 ];
+
+/// The two gate kinds with a tier commit effect (resolution.md Section 5).
+const GATE_KINDS: [&str; 2] = ["claim_promotion", "claim_demotion"];
+
+/// Which surface cast a verdict (resolution.md Section 6) - decided by the CALLER CRATE per
+/// call-site, never by the remote client (the review surfaces accept no source_ref of their own).
+/// The engine stamps the marker into the verdict observation's provenance; the gate fold derives the
+/// grant ceiling from the log-borne marker, so the cap is deterministic (I2, P16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerdictSurface {
+    /// The human console (viz unix socket - reachable only by the local OS principal). Grants up to
+    /// HumanConfirmed (Principle 18: a human's direct act).
+    Console,
+    /// The agent-facing MCP tool path. Grants cap at HostSigned.
+    Agent,
+}
+
+impl VerdictSurface {
+    fn marker(self) -> &'static str {
+        match self {
+            VerdictSurface::Console => VERDICT_SURFACE_CONSOLE,
+            VerdictSurface::Agent => VERDICT_SURFACE_AGENT,
+        }
+    }
+}
+
+/// Parses a snake_case tier label (the serialized form of [`TrustTier`]). Used by the propose surface
+/// and the gate fold - both read the same labels [`tier_label`] writes.
+fn parse_tier(s: &str) -> Option<TrustTier> {
+    match s {
+        "unverified" => Some(TrustTier::Unverified),
+        "agent_extracted" => Some(TrustTier::AgentExtracted),
+        "host_signed" => Some(TrustTier::HostSigned),
+        "human_confirmed" => Some(TrustTier::HumanConfirmed),
+        _ => None,
+    }
+}
+
+/// A competing value for a contested single-valued field (resolution.md Section 4) - carried on
+/// graph nodes / entity views so every surface can answer "what else was asserted, at what trust,
+/// and where" (Principle 2). One entry per distinct non-winning value, at that value's highest
+/// effective tier, with one asserting observation id as the dereference path.
+#[derive(Serialize, Clone)]
+pub struct Competitor {
+    pub value: String,
+    pub trust_tier: TrustTier,
+    pub observation: String,
+}
 
 /// A T-Box type (entity or relation) that a proposal defines or changes. Carried by `tbox_change`
 /// proposals so the viewer can highlight the affected graph elements when previewing the change - a
@@ -240,6 +341,10 @@ pub struct ProposeInput {
     pub targets: Vec<String>,
     /// For entity_merge: the canonical target the others fold into (must be one of `targets`).
     pub into: Option<String>,
+    /// For claim_promotion/claim_demotion: the requested tier (snake_case label, e.g.
+    /// "human_confirmed"). Required for the gate kinds, rejected on the others. What a merged
+    /// verdict actually grants is min(requested, surface ceiling) - resolution.md Sections 5/6.
+    pub tier: Option<String>,
     pub rationale: Option<String>,
     /// For tbox_change: the entity/relation types this proposal defines or changes (viewer highlight
     /// hint). Empty for other kinds and for tbox_change proposals that do not declare their scope.
@@ -256,6 +361,9 @@ pub struct ProposalView {
     pub targets: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub into: Option<String>,
+    /// For claim_promotion/claim_demotion: the requested tier (resolution.md Section 5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<TrustTier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// For tbox_change: the T-Box types this proposal defines/changes - the viewer's highlight hint.
@@ -300,8 +408,22 @@ pub struct GraphNode {
     /// from, e.g. ["ashon-mac", "knowledge-vm"] on a hub after a sync (federation observability).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origins: Vec<String>,
-    /// The **highest** trust tier among the sources (Principle 18) - the node's representative trust.
+    /// The node's representative trust: the highest EFFECTIVE tier over its supporting observations
+    /// (receiver-evaluated + gate grants - resolution.md Section 3; never a max over claimed tiers,
+    /// which would let a remote self-declaration raise the displayed tier - F13).
     pub trust_tier: TrustTier,
+    /// True when distinct kind values survive whose effective tiers tie at the top - the winner was
+    /// decided by recency alone, not trust, so this node invites mediation (resolution.md R6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contested: bool,
+    /// The non-winning kind values still asserted in the log (resolution.md R7 - conflicts stay
+    /// queryable whether or not they are contested). Empty when the kind was never disputed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub competitors: Vec<Competitor>,
+    /// The observation that asserted the winning kind (present when the kind came from the belief
+    /// fold) - the mediation handle: confirming the current value = promoting this observation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_source: Option<String>,
 }
 
 /// Graph edge = a typed relation. Carries the provenance summary and valid interval.
@@ -332,6 +454,23 @@ pub struct GraphStats {
     pub type_counts: BTreeMap<String, usize>,
     /// Node count by trust tier (by representative tier).
     pub trust_counts: BTreeMap<String, usize>,
+}
+
+/// The result of [`Engine::belief_fold`]: per canonical entity id, the kind candidates and the
+/// representative effective tier over supporting observations (resolution.md Sections 2-4).
+struct BeliefFold {
+    kinds: HashMap<String, Vec<BeliefCandidate>>,
+    tiers: HashMap<String, TrustTier>,
+}
+
+/// An observation's EFFECTIVE tier (resolution.md Section 3): the tier set by the HLC-latest merged
+/// gate event targeting it, if any (overrides in both directions - a demotion can push below base);
+/// otherwise the max receiver-evaluated tier over its attestations ([`evaluated_tier`] - a wire claim
+/// never evaluates above HostSigned). Never a max over claimed tiers (F13).
+fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> TrustTier {
+    gates.get(&obs.id).copied().unwrap_or_else(|| {
+        obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
+    })
 }
 
 /// A stable string label for TrustTier (matching the serialized snake_case). Used as metric keys.
@@ -402,6 +541,9 @@ pub struct Engine {
     /// daemon allows concurrent calls, so the write section is serialized with this lock to prevent loss.
     /// Reads (get/search/traverse/graph) stay outside the lock - kept concurrent. Full atomicity is the M3 resolution layer.
     write_guard: std::sync::Mutex<()>,
+    /// The belief-resolution strategy (Principle 1, resolution.md R1) - replaceable; defaults to
+    /// [`TierWeighted`]. Consumed by the read-path belief folds and by reprojection.
+    policy: Arc<dyn ResolutionPolicy>,
     host: String,
     default_workspace: String,
 }
@@ -418,9 +560,18 @@ impl Engine {
             events: None,
             session: "local".to_string(),
             write_guard: std::sync::Mutex::new(()),
+            policy: Arc::new(TierWeighted),
             host: host.into(),
             default_workspace: default_workspace.into(),
         }
+    }
+
+    /// Replaces the belief-resolution policy (builder; Principle 1, resolution.md R1). The default is
+    /// [`TierWeighted`]. Changing the policy and re-running [`Engine::reproject`] recomputes the
+    /// belief from the unchanged log.
+    pub fn with_policy(mut self, policy: Arc<dyn ResolutionPolicy>) -> Self {
+        self.policy = policy;
+        self
     }
 
     /// Attaches an embedding provider (builder). When attached, observe adds embeddings to observations and
@@ -702,10 +853,12 @@ impl Engine {
     pub fn types(&self, workspace: Option<&str>) -> Result<Vec<TypeDefView>, StoreError> {
         // key -> (best_hlc, best_obs_id, description, sources, max_trust)
         let mut acc: BTreeMap<(u8, String), TypeDefAcc> = BTreeMap::new();
+        let gates = self.gate_grants(workspace)?;
         for obs in self.store.all_observations(workspace)? {
-            // Fold-ordering key (authoring HLC) + representative trust for this observation.
+            // Fold-ordering key (authoring HLC) + representative trust for this observation - the
+            // EFFECTIVE tier (receiver-evaluated + gate grants), never the claimed max (F13).
             let okey = ordering_hlc(&obs);
-            let trust = obs.provenance.iter().map(|p| p.trust_tier).max().unwrap_or_default();
+            let trust = effective_tier(&obs, &gates);
             let oid = obs.id.clone();
             for t in &obs.assertions.type_defs {
                 let disc: u8 = match t.target {
@@ -814,12 +967,61 @@ impl Engine {
             .map(|h| GrabBag { id: h.id, size: h.size, sources: h.sources, member_names: h.member_names })
             .collect();
         grab_bags.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.id.cmp(&b.id)));
+        // (4) Contradictions (resolution.md Section 4.2): nodes whose kind has surviving competitors,
+        // reusing the graph projection's belief fold. Tier-tied (contested - mediation invited)
+        // first, then (name, id). ALL live conflicts stay listed, tier-resolved ones included (R7).
+        let mut contradictions: Vec<CurationConflict> = self
+            .graph(workspace)?
+            .nodes
+            .into_iter()
+            .filter(|n| !n.competitors.is_empty())
+            .map(|n| CurationConflict {
+                id: n.id,
+                name: n.name,
+                field: "kind".into(),
+                current: n.kind,
+                contested: n.contested,
+                competitors: n.competitors,
+                kind_source: n.kind_source,
+            })
+            .collect();
+        contradictions.sort_by(|a, b| {
+            b.contested
+                .cmp(&a.contested)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        // (5) Contradictory merge cycles (Principle 6): surfaced, not silent - the parity-resolved
+        // projection stands (P16), but the cycle invites a settling proposal.
+        let merge_cycles: Vec<MergeCycle> = self
+            .merge_cycle_sets(workspace)?
+            .into_iter()
+            .map(|(members, proposals)| MergeCycle {
+                members: members
+                    .iter()
+                    .map(|id| {
+                        all_entities.iter().find(|e| &e.id == id).map(&node).unwrap_or_else(|| {
+                            CurationNode {
+                                id: id.clone(),
+                                name: format!("({}...)", &id[..id.len().min(8)]),
+                                kind: String::new(),
+                                sources: 0,
+                                degree: 0,
+                            }
+                        })
+                    })
+                    .collect(),
+                proposals,
+            })
+            .collect();
         let stats = CurationStats {
             duplicate_groups: duplicates.len(),
             grab_bags: grab_bags.len(),
             orphans: orphans.len(),
+            contradictions: contradictions.len(),
+            merge_cycles: merge_cycles.len(),
         };
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, stats })
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, stats })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
@@ -863,6 +1065,43 @@ impl Engine {
                 _ => {}
             }
         }
+        // Gate kinds (resolution.md Section 5): a requested tier is mandatory, and the targets are
+        // OBSERVATION ids that must exist in the local log - the referential-integrity blocking check
+        // of proposal-workflow.md Section 6, applied at capture ("you cannot promote what is not
+        // there"). Other kinds reject a tier so the surface stays honest (Principle 21).
+        let gate_tier = if GATE_KINDS.contains(&input.kind.as_str()) {
+            let Some(t) = input.tier.as_deref() else {
+                return Err(ObserveError::Invalid(format!(
+                    "{} needs `tier` - the requested trust tier: unverified | agent_extracted | \
+                     host_signed | human_confirmed",
+                    input.kind
+                )));
+            };
+            let Some(tier) = parse_tier(t) else {
+                return Err(ObserveError::Invalid(format!(
+                    "unknown tier '{t}'. use unverified | agent_extracted | host_signed | human_confirmed"
+                )));
+            };
+            for target in &input.targets {
+                if self.store.get_observation(target)?.is_none() {
+                    return Err(ObserveError::Invalid(format!(
+                        "target observation '{target}' is not in the local log - {} targets are \
+                         observation ids (as returned by observe / carried on search hits), and an \
+                         observation that is not here cannot be promoted or demoted",
+                        input.kind
+                    )));
+                }
+            }
+            Some(tier)
+        } else {
+            if input.tier.is_some() {
+                return Err(ObserveError::Invalid(format!(
+                    "`tier` only applies to claim_promotion / claim_demotion (got kind '{}')",
+                    input.kind
+                )));
+            }
+            None
+        };
         let workspace = input
             .workspace
             .unwrap_or_else(|| self.default_workspace.clone());
@@ -884,6 +1123,7 @@ impl Engine {
             "kind": input.kind,
             "targets": input.targets,
             "into": input.into,
+            "tier": gate_tier.map(|t| tier_label(t).to_string()),
             "rationale": input.rationale,
             "affected_types": affected_types,
         })
@@ -909,6 +1149,8 @@ impl Engine {
 
     /// Cast a verdict / comment / withdrawal on a proposal (Principle 23). Records the event as an
     /// observation (I1); the fold derives the resulting state. `decision` is merge|reject|comment|withdraw.
+    /// `surface` is decided by the caller crate per call-site (resolution.md Section 6) - it is
+    /// stamped into the verdict's provenance and caps what a merged promotion can grant.
     pub fn review_proposal(
         &self,
         workspace: Option<String>,
@@ -916,6 +1158,7 @@ impl Engine {
         decision: String,
         note: Option<String>,
         on_behalf_of: Option<String>,
+        surface: VerdictSurface,
     ) -> Result<String, ObserveError> {
         let event = match decision.as_str() {
             "merge" | "reject" => ProposalEventKind::Verdict,
@@ -931,7 +1174,9 @@ impl Engine {
             return Err(ObserveError::Invalid("proposal id is required".into()));
         }
         let workspace = workspace.unwrap_or_else(|| self.default_workspace.clone());
-        let prov = self.provenance(&workspace, None, None, on_behalf_of);
+        // The surface marker rides source_ref, engine-stamped - the review surfaces accept no
+        // source_ref of their own, so a client cannot mint the console marker (resolution.md R8).
+        let prov = self.provenance(&workspace, Some(surface.marker().to_string()), None, on_behalf_of);
         let payload = serde_json::json!({ "decision": decision, "note": note }).to_string();
         let content = format!("proposal({decision}) {proposal}");
         let assertions = Assertions {
@@ -982,6 +1227,7 @@ impl Engine {
                     .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
                     .unwrap_or_default();
                 let into = v.get("into").and_then(|x| x.as_str()).map(String::from);
+                let tier = v.get("tier").and_then(|x| x.as_str()).and_then(parse_tier);
                 let rationale = v.get("rationale").and_then(|x| x.as_str()).map(String::from);
                 // affected_types is absent on pre-M3.5 proposals and on kinds that do not declare it.
                 let affected_types: Vec<AffectedType> = v
@@ -993,6 +1239,7 @@ impl Engine {
                     kind,
                     targets,
                     into,
+                    tier,
                     rationale,
                     affected_types,
                     state: "open".into(),
@@ -1090,6 +1337,231 @@ impl Engine {
         Ok(resolved)
     }
 
+    /// Detects contradictory accepted-merge cycles (Principle 6, resolution.md Section 4.2): raw
+    /// (pre-transitive) forwarding edges - target -> into per merged entity_merge - that lead back
+    /// into themselves. Returns deduped (member ids, proposal ids) pairs, deterministically ordered
+    /// (BTreeMap keying, P16). The projection still resolves such cycles by hop-capped parity; this
+    /// signal is what makes the contradiction visible instead of silent.
+    fn merge_cycle_sets(&self, workspace: Option<&str>) -> Result<Vec<CycleSet>, StoreError> {
+        let props = self.fold_proposals(workspace)?;
+        // target -> (into, proposal id): the raw merge edges before transitive resolution.
+        let mut edge: BTreeMap<String, (String, String)> = BTreeMap::new();
+        for p in props.values() {
+            if p.kind == "entity_merge" && p.state == "merged" {
+                if let Some(into) = &p.into {
+                    for t in &p.targets {
+                        if t != into {
+                            edge.insert(t.clone(), (into.clone(), p.id.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        let mut cycles: BTreeMap<Vec<String>, BTreeSet<String>> = BTreeMap::new();
+        for start in edge.keys() {
+            let mut path: Vec<&str> = vec![start.as_str()];
+            let mut cur = start.as_str();
+            while let Some((next, _)) = edge.get(cur) {
+                if let Some(pos) = path.iter().position(|x| *x == next.as_str()) {
+                    // The cycle is the path suffix from the first revisit point.
+                    let mut members: Vec<String> =
+                        path[pos..].iter().map(|s| s.to_string()).collect();
+                    let proposals: BTreeSet<String> = members
+                        .iter()
+                        .filter_map(|m| edge.get(m).map(|(_, pid)| pid.clone()))
+                        .collect();
+                    members.sort();
+                    cycles.entry(members).or_default().extend(proposals);
+                    break;
+                }
+                if path.len() > edge.len() {
+                    break;
+                }
+                path.push(next.as_str());
+                cur = next.as_str();
+            }
+        }
+        Ok(cycles.into_iter().map(|(m, p)| (m, p.into_iter().collect())).collect())
+    }
+
+    /// Gate-tier grants (resolution.md Section 5): target observation id -> the tier set by the
+    /// HLC-latest merged claim_promotion/claim_demotion verdict targeting it. Per proposal, the
+    /// representative verdict is the earliest merge by (ordering HLC, observation id) - the
+    /// proposal-workflow 7.1 canonicalization; what it grants is min(requested tier, the surface
+    /// ceiling of the log-borne marker on that verdict) (resolution.md Section 6). A pure
+    /// fold-projection of the log - converges continuously (F5), and a gate event overrides the base
+    /// evaluation in BOTH directions (a merged demotion can push below base - the fast-path).
+    fn gate_grants(&self, workspace: Option<&str>) -> Result<HashMap<String, TrustTier>, StoreError> {
+        // proposal id -> (targets, requested tier); collected from opened gate-kind events.
+        let mut opened: HashMap<String, (Vec<String>, TrustTier)> = HashMap::new();
+        // proposal id -> representative merge verdict (ordering hlc, verdict obs id, source_ref).
+        let mut rep_merge: HashMap<String, (Hlc, String, Option<String>)> = HashMap::new();
+        for obs in self.store.all_observations(workspace)? {
+            let okey = ordering_hlc(&obs);
+            for ev in &obs.assertions.proposal_events {
+                let v: serde_json::Value =
+                    serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
+                match ev.event {
+                    ProposalEventKind::Opened => {
+                        let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("");
+                        if !GATE_KINDS.contains(&kind) {
+                            continue;
+                        }
+                        let Some(tier) = v.get("tier").and_then(|x| x.as_str()).and_then(parse_tier)
+                        else {
+                            continue; // a gate proposal without a tier grants nothing
+                        };
+                        let targets: Vec<String> = v
+                            .get("targets")
+                            .and_then(|x| x.as_array())
+                            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                            .unwrap_or_default();
+                        opened.insert(obs.id.clone(), (targets, tier));
+                    }
+                    ProposalEventKind::Verdict => {
+                        if v.get("decision").and_then(|x| x.as_str()) != Some("merge") {
+                            continue;
+                        }
+                        // The verdict's surface marker rides the authoring attestation's source_ref
+                        // (engine-stamped, resolution.md R8). Authoring = earliest effective HLC.
+                        let source_ref = obs
+                            .provenance
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(i, p)| {
+                                (
+                                    p.sync
+                                        .as_ref()
+                                        .map(|s| s.hlc.clone())
+                                        .unwrap_or_else(|| Hlc::legacy(p.observed_at)),
+                                    *i,
+                                )
+                            })
+                            .and_then(|(_, p)| p.source_ref.clone());
+                        let cand = (okey.clone(), obs.id.clone(), source_ref);
+                        rep_merge
+                            .entry(ev.proposal.clone())
+                            .and_modify(|cur| {
+                                if (&cand.0, cand.1.as_str()) < (&cur.0, cur.1.as_str()) {
+                                    *cur = cand.clone();
+                                }
+                            })
+                            .or_insert(cand);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Per target, the HLC-latest gate event governs (tie: proposal id) - resolution.md R5.
+        let mut grants: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
+        for (proposal_id, (targets, requested)) in &opened {
+            let Some((verdict_hlc, _, source_ref)) = rep_merge.get(proposal_id) else {
+                continue; // not merged - grants nothing (the gate, Principle 23)
+            };
+            let granted = (*requested).min(verdict_grant_ceiling(source_ref.as_deref()));
+            for target in targets {
+                let cand = (verdict_hlc.clone(), proposal_id.clone(), granted);
+                grants
+                    .entry(target.clone())
+                    .and_modify(|cur| {
+                        if (&cand.0, cand.1.as_str()) > (&cur.0, cur.1.as_str()) {
+                            *cur = cand.clone();
+                        }
+                    })
+                    .or_insert(cand);
+            }
+        }
+        Ok(grants.into_iter().map(|(t, (_, _, tier))| (t, tier)).collect())
+    }
+
+    /// Per-canonical-entity belief fold over the observation log (resolution.md Sections 2-4):
+    /// kind candidates (each at its observation's EFFECTIVE tier) and the node's representative
+    /// effective tier. Shared by the graph projection, the curation report, and the entity view -
+    /// a pure fold, so it converges continuously (F5) and needs no re-materialization to be current.
+    fn belief_fold(
+        &self,
+        workspace: Option<&str>,
+        fwd: &HashMap<String, String>,
+        gates: &HashMap<String, TrustTier>,
+    ) -> Result<BeliefFold, StoreError> {
+        let mut kinds: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
+        let mut tiers: HashMap<String, TrustTier> = HashMap::new();
+        let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
+        for obs in self.store.all_observations(workspace)? {
+            let ws = obs.workspace().to_string();
+            let eff = effective_tier(&obs, gates);
+            let hlc = ordering_hlc(&obs);
+            let mut supports = |id: &String| {
+                let t = tiers.entry(id.clone()).or_insert(TrustTier::Unverified);
+                *t = (*t).max(eff);
+            };
+            for ea in &obs.assertions.entities {
+                let id = canon(Entity::make_id(&ws, &ea.name));
+                supports(&id);
+                if let Some(k) = &ea.kind {
+                    kinds.entry(id).or_default().push(BeliefCandidate {
+                        value: k.clone(),
+                        tier: eff,
+                        hlc: hlc.clone(),
+                        observation: obs.id.clone(),
+                    });
+                }
+            }
+            for ra in &obs.assertions.relations {
+                for name in [&ra.from, &ra.to] {
+                    let id = canon(Entity::make_id(&ws, name));
+                    supports(&id);
+                }
+            }
+        }
+        Ok(BeliefFold { kinds, tiers })
+    }
+
+    /// Applies the policy to one entity's kind candidates: (winning kind + its asserting observation
+    /// if any candidates exist, contested flag, non-winning competitor values). Competitors are one
+    /// entry per distinct value at that value's highest effective tier, ordered (tier desc, value
+    /// asc) - deterministic (P16). The winner's observation id is the mediation handle: confirming
+    /// the current value means promoting that observation (resolution.md Section 4.2).
+    fn resolve_kind(
+        &self,
+        candidates: Option<&Vec<BeliefCandidate>>,
+    ) -> (Option<(String, String)>, bool, Vec<Competitor>) {
+        let Some(cands) = candidates else {
+            return (None, false, Vec::new());
+        };
+        let Some(choice) = self.policy.choose(cands) else {
+            return (None, false, Vec::new());
+        };
+        let winner = &cands[choice.index];
+        let mut best: BTreeMap<&str, (TrustTier, &str)> = BTreeMap::new();
+        for c in cands {
+            if c.value == winner.value {
+                continue;
+            }
+            let e = best.entry(c.value.as_str()).or_insert((c.tier, c.observation.as_str()));
+            // Highest tier per value; tie-break by smallest observation id (stable, P16).
+            if (c.tier, std::cmp::Reverse(c.observation.as_str()))
+                > (e.0, std::cmp::Reverse(e.1))
+            {
+                *e = (c.tier, c.observation.as_str());
+            }
+        }
+        let mut competitors: Vec<Competitor> = best
+            .into_iter()
+            .map(|(value, (tier, observation))| Competitor {
+                value: value.to_string(),
+                trust_tier: tier,
+                observation: observation.to_string(),
+            })
+            .collect();
+        competitors.sort_by(|a, b| b.trust_tier.cmp(&a.trust_tier).then_with(|| a.value.cmp(&b.value)));
+        (
+            Some((winner.value.clone(), winner.observation.clone())),
+            choice.contested,
+            competitors,
+        )
+    }
+
     /// M0 resolution: exact match on the canonical name. If it exists, only append the source; otherwise create it.
     fn upsert_named(
         &self,
@@ -1153,6 +1625,11 @@ impl Engine {
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
         let mut obss = self.store.all_observations(Some(&ws))?;
         obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
+        // Belief inputs (resolution.md): gate grants for effective tiers, and per-entity candidate
+        // sets for the policy-selected kind and representative spelling, collected during replay.
+        let gates = self.gate_grants(Some(&ws))?;
+        let mut kind_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
+        let mut name_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
 
         let mut ents: BTreeMap<String, Entity> = BTreeMap::new();
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
@@ -1199,12 +1676,28 @@ impl Engine {
             else {
                 continue;
             };
+            let eff = effective_tier(obs, &gates);
+            let hlc = ordering_hlc(obs);
+            let cand = |map: &mut HashMap<String, Vec<BeliefCandidate>>, id: &str, value: &str| {
+                map.entry(id.to_string()).or_default().push(BeliefCandidate {
+                    value: value.to_string(),
+                    tier: eff,
+                    hlc: hlc.clone(),
+                    observation: obs.id.clone(),
+                });
+            };
             for ea in &obs.assertions.entities {
-                touch(&mut ents, &ea.name, ea.kind.as_deref(), ea.description.as_deref(), &prov);
+                let id = touch(&mut ents, &ea.name, ea.kind.as_deref(), ea.description.as_deref(), &prov);
+                cand(&mut name_cands, &id, ea.name.trim());
+                if let Some(k) = &ea.kind {
+                    cand(&mut kind_cands, &id, k);
+                }
             }
             for ra in &obs.assertions.relations {
                 let from = touch(&mut ents, &ra.from, None, None, &prov);
                 let to = touch(&mut ents, &ra.to, None, None, &prov);
+                cand(&mut name_cands, &from, ra.from.trim());
+                cand(&mut name_cands, &to, ra.to.trim());
                 let kind = normalize_relation_kind(&ra.kind);
                 let id = Relation::make_id(&from, &kind, &to);
                 // Last-write-wins per relation id by replay (HLC) order - matches the store's
@@ -1225,6 +1718,22 @@ impl Engine {
             }
         }
 
+        // Apply the belief policy (resolution.md Section 2.2): kind = the policy winner over the
+        // log's candidates, and canonical_name = the policy-selected representative spelling -
+        // retiring the arrival-order (first-write-wins) selection recorded as a latent condition in
+        // architecture.md Section 14. Fields the log never asserted keep their replay defaults.
+        for (id, e) in ents.iter_mut() {
+            if let Some(cs) = kind_cands.get(id) {
+                if let Some(choice) = self.policy.choose(cs) {
+                    e.kind = cs[choice.index].value.clone();
+                }
+            }
+            if let Some(cs) = name_cands.get(id) {
+                if let Some(choice) = self.policy.choose(cs) {
+                    e.canonical_name = cs[choice.index].value.clone();
+                }
+            }
+        }
         let report = ReprojectReport {
             observations: obss.len(),
             entities: ents.len(),
@@ -1267,9 +1776,24 @@ impl Engine {
     /// failures are not swallowed, so the caller (the MCP surface) can distinguish and relay the two.
     pub fn get_entity(&self, id: &str) -> Result<Option<EntityView>, StoreError> {
         match self.store.get_entity(id)? {
-            Some(entity) => {
+            Some(mut entity) => {
                 let relations = self.store.relations_of(id)?;
-                Ok(Some(EntityView { entity, relations }))
+                // Belief overlay (resolution.md Section 4.2), scoped to this entity's workspace so
+                // the agent surface sees the same policy-current kind/contested state as the viewer.
+                let ws = entity.provenance.first().map(|p| p.workspace.clone());
+                let fwd = self.merge_forwarding(ws.as_deref())?;
+                let gates = self.gate_grants(ws.as_deref())?;
+                let belief = self.belief_fold(ws.as_deref(), &fwd, &gates)?;
+                let (winner, contested, competitors) = self.resolve_kind(belief.kinds.get(id));
+                let mut kind_source = None;
+                if let Some((k, obs)) = winner {
+                    entity.kind = k;
+                    kind_source = Some(obs);
+                }
+                let effective_tier = belief.tiers.get(id).copied().unwrap_or_else(|| {
+                    entity.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
+                });
+                Ok(Some(EntityView { entity, relations, effective_tier, contested, competitors, kind_source }))
             }
             None => Ok(None),
         }
@@ -1439,6 +1963,11 @@ impl Engine {
         // Apply accepted entity-merges (Principle 15): fold merged-away ids into their canonical, at
         // projection time only - the log keeps both (Principle 3). Deterministic (Principle 16).
         let fwd = self.merge_forwarding(workspace)?;
+        // Belief fold (resolution.md): gate grants + per-node kind candidates / effective tiers,
+        // computed from the log so the view is policy-current without waiting for reprojection (F5
+        // continuous convergence; the materialized rows converge at the next replay).
+        let gates = self.gate_grants(workspace)?;
+        let belief = self.belief_fold(workspace, &fwd, &gates)?;
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
 
         let by_id: HashMap<&str, &Entity> = entities.iter().map(|e| (e.id.as_str(), e)).collect();
@@ -1468,7 +1997,8 @@ impl Engine {
                 to: t,
                 kind: r.kind.clone(),
                 description: r.description.clone(),
-                trust_tier: r.provenance.trust_tier,
+                // Receiver-evaluated, never the raw claim (resolution.md Section 3, F13).
+                trust_tier: evaluated_tier(&r.provenance),
                 confidence: r.provenance.confidence,
                 valid_to: r.valid_to,
             });
@@ -1481,12 +2011,21 @@ impl Engine {
             .map(|(cid, members)| {
                 // Canonical entity = the one whose id is the canonical id (fallback: first member).
                 let ce = by_id.get(cid.as_str()).copied().unwrap_or(members[0]);
-                let trust = members
-                    .iter()
-                    .flat_map(|m| m.provenance.iter())
-                    .map(|p| p.trust_tier)
-                    .max()
-                    .unwrap_or_default();
+                // Representative trust = the effective tier from the belief fold (receiver-evaluated
+                // + gate grants). Fallback for rows with no log support (legacy/pre-log entities):
+                // max EVALUATED tier over stored attestations - never the raw claimed max (F13).
+                let trust = belief.tiers.get(cid.as_str()).copied().unwrap_or_else(|| {
+                    members
+                        .iter()
+                        .flat_map(|m| m.provenance.iter())
+                        .map(evaluated_tier)
+                        .max()
+                        .unwrap_or_default()
+                });
+                // Kind belief: the policy winner over the log's kind candidates; the stored row's
+                // kind is the fallback when the log never asserted one (resolution.md Section 2.2).
+                let (kind_winner, contested, competitors) =
+                    self.resolve_kind(belief.kinds.get(cid.as_str()));
                 let sources: usize = members.iter().map(|m| m.provenance.len()).sum();
                 let mut origins: Vec<String> = members
                     .iter()
@@ -1502,18 +2041,25 @@ impl Engine {
                     .collect();
                 aliases.sort();
                 aliases.dedup();
-                *type_counts.entry(ce.kind.clone()).or_default() += 1;
+                let (kind, kind_source) = match kind_winner {
+                    Some((value, obs)) => (value, Some(obs)),
+                    None => (ce.kind.clone(), None),
+                };
+                *type_counts.entry(kind.clone()).or_default() += 1;
                 *trust_counts.entry(tier_label(trust).to_string()).or_default() += 1;
                 GraphNode {
                     id: cid.clone(),
                     name: ce.canonical_name.clone(),
-                    kind: ce.kind.clone(),
+                    kind,
                     description: ce.description.clone(),
                     aliases,
                     degree: degree.get(cid).copied().unwrap_or(0),
                     sources,
                     origins,
                     trust_tier: trust,
+                    contested,
+                    competitors,
+                    kind_source,
                 }
             })
             .collect();
@@ -1551,6 +2097,8 @@ impl Engine {
     /// the existing gates (resolution/proposal/human confirmation). A derived view does not write the canonical record directly (Principle 1/19).
     pub fn hypergraph(&self, workspace: Option<&str>) -> Result<HyperGraphView, StoreError> {
         let entities = self.store.all_entities(workspace)?;
+        // Gate grants feed the per-observation effective tier (resolution.md Section 3).
+        let gates = self.gate_grants(workspace)?;
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
         // id -> canonical name (readability: hyperedge members are carried as names too).
         let name_by_id: HashMap<&str, &str> = entities
@@ -1586,13 +2134,9 @@ impl Engine {
             }
             let members: Vec<String> = members.into_iter().collect();
             let id = hyperedge_id(&members);
-            // This observation's representative trust = the highest tier among its provenance (Principle 18).
-            let obs_trust = obs
-                .provenance
-                .iter()
-                .map(|p| p.trust_tier)
-                .max()
-                .unwrap_or_default();
+            // This observation's representative trust = its EFFECTIVE tier (receiver-evaluated +
+            // gate grants, resolution.md Section 3) - never the raw claimed max (F13).
+            let obs_trust = effective_tier(&obs, &gates);
             acc.entry(id)
                 .and_modify(|(_, sources, trust)| {
                     *sources += 1;
@@ -1634,10 +2178,13 @@ impl Engine {
         let mut nodes: Vec<GraphNode> = entities
             .iter()
             .map(|e| {
+                // Receiver-evaluated per attestation (resolution.md Section 3) - never the raw
+                // claimed max (F13). Kind belief/contested live on the graph projection; this
+                // overlay keeps the stored kind (the two share node ids, so the viewer joins them).
                 let trust = e
                     .provenance
                     .iter()
-                    .map(|p| p.trust_tier)
+                    .map(evaluated_tier)
                     .max()
                     .unwrap_or_default();
                 GraphNode {
@@ -1655,6 +2202,9 @@ impl Engine {
                         o
                     },
                     trust_tier: trust,
+                    contested: false,
+                    competitors: Vec::new(),
+                    kind_source: None,
                 }
             })
             .collect();
@@ -1853,6 +2403,12 @@ mod tests {
         let ta: Vec<_> = engine_a.types(Some("ws")).unwrap().into_iter().map(|t| (t.name, t.description)).collect();
         let tb: Vec<_> = engine_b.types(Some("ws")).unwrap().into_iter().map(|t| (t.name, t.description)).collect();
         assert_eq!(ta, tb, "type glossary must converge (F5)");
+        // The belief projection converges wholesale (resolution.md Section 7): kind winners,
+        // contested flags, competitors, and effective tiers are part of the serialized view, so
+        // graph equality pins the extended P16 obligation, not just the table shapes.
+        let ga = serde_json::to_string(&engine_a.graph(Some("ws")).unwrap()).unwrap();
+        let gb = serde_json::to_string(&engine_b.graph(Some("ws")).unwrap()).unwrap();
+        assert_eq!(ga, gb, "belief projection (kind/contested/effective tier) must converge");
     }
 
     /// M4 Phase 1: the type-glossary fold orders by HLC, not observed_at (docs/federation.md Section 4).
@@ -1914,6 +2470,7 @@ mod tests {
                 kind: "entity_merge".into(),
                 targets: vec!["idA".into(), "idB".into()],
                 into: Some("idB".into()),
+                tier: None,
                 rationale: Some("A and B are the same entity".into()),
                 affected_types: vec![],
                 source_ref: None,
@@ -1929,7 +2486,7 @@ mod tests {
 
         // A merge verdict is the absorbing outcome.
         engine
-            .review_proposal(None, pid.clone(), "merge".into(), None, None)
+            .review_proposal(None, pid.clone(), "merge".into(), None, None, VerdictSurface::Console)
             .expect("cast merge verdict");
         let p = engine.get_proposal(Some("ws1"), &pid).unwrap().unwrap();
         assert_eq!(p.state, "merged");
@@ -1939,16 +2496,17 @@ mod tests {
         let pid2 = engine
             .propose(ProposeInput {
                 workspace: None,
-                kind: "claim_demotion".into(),
+                kind: "recall".into(),
                 targets: vec!["idC".into()],
                 into: None,
+                tier: None,
                 rationale: None,
                 affected_types: vec![],
                 source_ref: None,
                 on_behalf_of: None,
             })
             .unwrap();
-        engine.review_proposal(None, pid2.clone(), "reject".into(), None, None).unwrap();
+        engine.review_proposal(None, pid2.clone(), "reject".into(), None, None, VerdictSurface::Console).unwrap();
         assert_eq!(engine.get_proposal(Some("ws1"), &pid2).unwrap().unwrap().state, "rejected");
 
         // list_proposals returns both.
@@ -1961,6 +2519,7 @@ mod tests {
                 kind: "entity_merge".into(),
                 targets: vec!["x".into(), "y".into()],
                 into: None,
+                tier: None,
                 rationale: None,
                 affected_types: vec![],
                 source_ref: None,
@@ -1981,6 +2540,7 @@ mod tests {
                 kind: "tbox_change".into(),
                 targets: vec!["obs-def".into()],
                 into: None,
+                tier: None,
                 rationale: Some("define relation types from the census".into()),
                 affected_types: vec![
                     AffectedType { target: TypeTarget::Relation, name: "dependsOn".into() },
@@ -2007,6 +2567,7 @@ mod tests {
                 kind: "entity_merge".into(),
                 targets: vec!["idA".into(), "idB".into()],
                 into: Some("idB".into()),
+                tier: None,
                 rationale: None,
                 affected_types: vec![],
                 source_ref: None,

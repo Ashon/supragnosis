@@ -8,16 +8,19 @@ and lets you query and explore it over **MCP**.
 
 - Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
 - Store: **embedded, file-based** `cozo`/RocksDB - unifies relational + graph + vector (HNSW).
-- Status: **M4 Phase 4 - federation is live** (v0.1.9). Semantic + keyword hybrid recall (M2), the
-  proposal gate and curation console (M3.5), and hub-and-spoke log replication with ed25519-signed
-  events over TLS (M4 Phases 0-4) are implemented. The **resolution layer (M3) has not started** -
-  entity identity is still exact canonical-name match, so `M3` items in the roadmap remain open even
-  though later milestones shipped. Per-milestone detail and the honest record of what is deferred:
-  [`docs/architecture.md`](docs/architecture.md) Sections 12/14.
+- Status: **M4 Phase 4 federation + M3a belief resolution**. Semantic + keyword hybrid recall (M2),
+  the proposal gate and curation console (M3.5), hub-and-spoke log replication with ed25519-signed
+  events over TLS (M4 Phases 0-4), and **belief resolution (M3a)** - a replaceable tier-weighted
+  policy computes the current belief, contested beliefs surface for human mediation, and
+  claim_promotion/claim_demotion verdicts commit (human_confirmed grantable only from the human
+  console). **Identity resolution (M3b) has not started** - entity identity is still exact
+  canonical-name match (no alias accumulation / merge band). Per-milestone detail and the honest
+  record of what is deferred: [`docs/architecture.md`](docs/architecture.md) Sections 12/14.
 - Docs: architecture -> [`docs/architecture.md`](docs/architecture.md), design principles ->
   [`docs/principles.md`](docs/principles.md), proposal workflow ->
   [`docs/proposal-workflow.md`](docs/proposal-workflow.md), federation ->
-  [`docs/federation.md`](docs/federation.md)
+  [`docs/federation.md`](docs/federation.md), belief resolution (M3a spec) ->
+  [`docs/resolution.md`](docs/resolution.md)
 
 ## Install (prebuilt binary)
 

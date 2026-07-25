@@ -501,6 +501,10 @@ between M3 and M4 (pre-value in solo/hub environments).
   sequential final-state fold but as the set function "a valid merge exists" (quorum as the
   reset-free prefix-existential, 7.3), and treats Merged as an absorbing state.
 - M3.5b: belief diff + blocking checks + `propose`/`get_proposal`/`review`.
+- M3a (belief resolution, [resolution.md](resolution.md)): claim-promotion and claim-demotion gain
+  their **commit effects** - a merged verdict sets the target observations' gate tier, which the
+  resolution policy consumes - and the **human-direct surface ceiling** caps what an agent-cast
+  verdict may grant (HumanConfirmed only from the human console; an I17-family mechanism).
 - M4+: quorum policy, the entity-merge/tbox-change/recall kinds, the auto-merge policy
   executor.
 - M6 (consolidation, Principle 7) feeds this workflow: the consolidation pass emits candidate

@@ -13,9 +13,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use supragnosis_core::{
-    Assertions, Entity, KnowledgeStore, Observation, Provenance, TrustTier, VersionVector,
+    Assertions, Entity, EntityAssertion, KnowledgeStore, Observation, Provenance, TrustTier,
+    VersionVector,
 };
-use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput};
+use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
 use supragnosis_store::InMemoryStore;
 use supragnosis_sync::{export_delta, version_vector, SyncNode};
 
@@ -52,6 +53,7 @@ fn propose_merge(engine: &Engine, targets: &[&str], into: &str, principal: &str)
             kind: "entity_merge".into(),
             targets: targets.iter().map(|s| s.to_string()).collect(),
             into: Some(into.into()),
+            tier: None,
             rationale: None,
             affected_types: vec![],
             source_ref: None,
@@ -62,7 +64,14 @@ fn propose_merge(engine: &Engine, targets: &[&str], into: &str, principal: &str)
 
 fn review(engine: &Engine, proposal: &str, decision: &str, principal: &str) {
     engine
-        .review_proposal(None, proposal.into(), decision.into(), None, Some(principal.into()))
+        .review_proposal(
+            None,
+            proposal.into(),
+            decision.into(),
+            None,
+            Some(principal.into()),
+            VerdictSurface::Console,
+        )
         .expect("review");
 }
 
@@ -106,14 +115,13 @@ fn i16_merge_absorbs_over_conflicting_reject_in_any_order() {
 
 // --- P16 / P6: a contradictory merge cycle -----------------------------------------------------
 
-/// characterization (P16 holds, P6 does not yet): two merged proposals folding a<->b into each
-/// other are contradictory data. Today the fold resolves the cycle silently and deterministically
-/// (hop-capped forwarding) instead of surfacing it as a contradiction signal (P6 "conflict is
-/// information"). This test pins that the outcome is at least convergent (same events, either
-/// ingest order -> the same graph shape) and that no entity is lost. When cycle detection lands
-/// as a curation signal, extend this test to assert the signal instead.
+/// guard (P16 + P6, M3a): two merged proposals folding a<->b into each other are contradictory
+/// data. The fold still resolves the cycle deterministically (hop-capped forwarding - P16), but
+/// since M3a the cycle is SURFACED as a curation signal (P6 "conflict is information",
+/// resolution.md Section 4.2) instead of passing silently - the remedy is a settling proposal.
+/// (Formerly a characterization test pinning the silent interim.)
 #[test]
-fn p6_contradictory_merge_cycle_is_convergent_but_silent() {
+fn p6_contradictory_merge_cycle_is_convergent_and_surfaced() {
     let build = |first_into: &str, second_into: &str| {
         let (_store, engine) = engine();
         observe(&engine, "alpha exists", &["alpha"], vec![]);
@@ -167,11 +175,221 @@ fn p6_contradictory_merge_cycle_is_convergent_but_silent() {
     });
     assert_eq!(
         edges,
-        vec![(g, b, "uses".to_string())],
-        "current interim: the cycle rewires the edge to the parity-chosen side; if this fails, \
-         cycle handling changed - if it now surfaces a contradiction signal, move this assert to \
-         the curation report; if it became order-dependent, that is a P16 regression"
+        vec![(g, b.clone(), "uses".to_string())],
+        "the cycle rewires the edge to the parity-chosen side (deterministic, P16); if this \
+         became order-dependent, that is a P16 regression"
     );
+
+    // P6 (M3a): the contradiction is surfaced - the cycle members and the proposals that formed it
+    // appear in the curation report on both engines, identically (a fold-projection, F5).
+    for e in [&e1, &e2] {
+        let cur = e.curation(Some(WS)).expect("curation");
+        assert_eq!(cur.stats.merge_cycles, 1, "the merge cycle must be surfaced (P6)");
+        let cycle = &cur.merge_cycles[0];
+        let mut ids: Vec<&str> = cycle.members.iter().map(|m| m.id.as_str()).collect();
+        ids.sort();
+        let mut expect = vec![a.as_str(), b.as_str()];
+        expect.sort();
+        assert_eq!(ids, expect);
+        assert_eq!(cycle.proposals.len(), 2, "both contradictory proposals are named");
+    }
+}
+
+// --- P6 / M3a: kind conflicts surface as contested and mediation settles them ------------------
+
+/// An observation asserting `name` is of `kind`, at a fixed transaction time (deterministic HLC
+/// via the legacy fallback - no wall clock in the test).
+fn kind_obs(name: &str, kind: &str, observed_at: u64) -> Observation {
+    Observation::with_assertions(
+        format!("{name} kind assertion at {observed_at}"),
+        Provenance {
+            host: "host-a".into(),
+            on_behalf_of: None,
+            workspace: WS.into(),
+            source_ref: None,
+            observed_at,
+            confidence: None,
+            trust_tier: TrustTier::default(),
+            sync: None,
+        },
+        Assertions {
+            entities: vec![EntityAssertion { name: name.into(), kind: Some(kind.into()), description: None }],
+            ..Default::default()
+        },
+    )
+}
+
+/// guard (resolution.md Sections 4-6, R5-R8; principles.md P6/P18): a tier-tied kind conflict
+/// surfaces as contested (recency alone picked the winner), and a console confirmation - a gated
+/// claim_promotion verdict, never an edit - settles it by trust. The losing value stays queryable
+/// (R7), and the node's representative tier is the effective tier including the grant.
+#[test]
+fn p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it() {
+    let (store, engine) = engine();
+    let o1 = kind_obs("cozo", "Tool", 100);
+    let id1 = o1.id.clone();
+    let o2 = kind_obs("cozo", "Library", 200);
+    let id2 = o2.id.clone();
+    store.add_observation(o1).unwrap();
+    store.add_observation(o2).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+
+    let g = engine.graph(Some(WS)).expect("graph");
+    let n = g.nodes.iter().find(|n| n.name == "cozo").expect("node");
+    assert_eq!(n.kind, "Library", "within a tied tier band, the later HLC wins (R2)");
+    assert!(n.contested, "tier-tied distinct values must flag contested (R6)");
+    assert_eq!(n.competitors.len(), 1);
+    assert_eq!(n.competitors[0].value, "Tool");
+    assert_eq!(n.kind_source.as_deref(), Some(id2.as_str()), "the winner's asserting observation is the mediation handle");
+    let cur = engine.curation(Some(WS)).expect("curation");
+    assert_eq!(cur.stats.contradictions, 1, "the conflict must appear in the P6 introspection list");
+    assert!(cur.contradictions[0].contested);
+
+    // Mediation: confirm "Tool" from the console. Promotion is a gated verdict (P23), and the
+    // console surface is what permits human_confirmed (a human's direct act, P18).
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![id1.clone()],
+            into: None,
+            tier: Some("human_confirmed".into()),
+            rationale: Some("the human confirms Tool".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose");
+    engine
+        .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
+        .expect("console verdict");
+
+    let g = engine.graph(Some(WS)).expect("graph after mediation");
+    let n = g.nodes.iter().find(|n| n.name == "cozo").expect("node");
+    assert_eq!(n.kind, "Tool", "the confirmed side must win by tier (R5)");
+    assert!(!n.contested, "trust decided - no longer contested (R6)");
+    assert_eq!(n.trust_tier, TrustTier::HumanConfirmed, "the node tier is the effective tier incl. the grant");
+    assert_eq!(n.competitors.len(), 1, "the losing value stays queryable (R7)");
+    assert_eq!(n.competitors[0].value, "Library");
+    let cur = engine.curation(Some(WS)).expect("curation after mediation");
+    assert_eq!(cur.stats.contradictions, 1, "resolved-by-trust conflicts stay listed (R7)");
+    assert!(!cur.contradictions[0].contested, "but no longer invite mediation");
+}
+
+/// guard (resolution.md Section 6, R8): the same promotion merged through the AGENT surface grants
+/// at most host_signed - an agent cannot mint a human's direct act (P18). The grant still settles
+/// the tie (host_signed beats agent_extracted), but the tier stops below human_confirmed.
+#[test]
+fn p18_agent_surface_promotion_caps_at_host_signed() {
+    let (store, engine) = engine();
+    let o1 = kind_obs("cozo", "Tool", 100);
+    let id1 = o1.id.clone();
+    store.add_observation(o1).unwrap();
+    store.add_observation(kind_obs("cozo", "Library", 200)).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![id1],
+            into: None,
+            tier: Some("human_confirmed".into()),
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("some-agent".into()),
+        })
+        .expect("propose");
+    engine
+        .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Agent)
+        .expect("agent verdict");
+
+    let g = engine.graph(Some(WS)).expect("graph");
+    let n = g.nodes.iter().find(|n| n.name == "cozo").expect("node");
+    assert_eq!(n.kind, "Tool", "the promoted side still wins the tie");
+    assert!(!n.contested);
+    assert_eq!(
+        n.trust_tier,
+        TrustTier::HostSigned,
+        "an agent-surface grant must cap at host_signed - never human_confirmed (R8)"
+    );
+}
+
+/// guard (resolution.md R5, proposal-workflow.md Section 9 fast-path): a merged demotion pushes
+/// the target BELOW its base evaluation - the gate overrides in both directions, so demoting the
+/// recency winner flips the belief to the surviving side.
+#[test]
+fn p23_demotion_overrides_below_base() {
+    let (store, engine) = engine();
+    store.add_observation(kind_obs("cozo", "Tool", 100)).unwrap();
+    let o2 = kind_obs("cozo", "Library", 200);
+    let id2 = o2.id.clone();
+    store.add_observation(o2).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_demotion".into(),
+            targets: vec![id2],
+            into: None,
+            tier: Some("unverified".into()),
+            rationale: Some("wrong extraction".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose");
+    engine
+        .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
+        .expect("verdict");
+
+    let g = engine.graph(Some(WS)).expect("graph");
+    let n = g.nodes.iter().find(|n| n.name == "cozo").expect("node");
+    assert_eq!(n.kind, "Tool", "demoting the recency winner must flip the belief (R5)");
+    assert!(!n.contested, "tiers differ now - not contested");
+}
+
+/// guard (resolution.md Section 2.2; the architecture.md Section 14 latent condition): the
+/// representative spelling is the policy's choice over the log, not first-write-wins by arrival -
+/// two stores fed the same observations in opposite orders re-materialize the same canonical_name.
+#[test]
+fn p16_canonical_name_selection_is_arrival_order_free() {
+    let name_obs = |spelling: &str, observed_at: u64| {
+        Observation::with_assertions(
+            format!("mentions {spelling} at {observed_at}"),
+            Provenance {
+                host: "host-a".into(),
+                on_behalf_of: None,
+                workspace: WS.into(),
+                source_ref: None,
+                observed_at,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: None,
+            },
+            Assertions {
+                entities: vec![EntityAssertion { name: spelling.into(), kind: None, description: None }],
+                ..Default::default()
+            },
+        )
+    };
+    let build = |order: [&Observation; 2]| {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "host-a", WS);
+        for o in order {
+            store.add_observation(o.clone()).unwrap();
+        }
+        engine.reproject(Some(WS)).expect("reproject");
+        store.get_entity(&Entity::make_id(WS, "driver")).unwrap().expect("entity").canonical_name
+    };
+    let a = name_obs("driver", 100);
+    let b = name_obs("Driver", 200);
+    let n1 = build([&a, &b]);
+    let n2 = build([&b, &a]);
+    assert_eq!(n1, n2, "spelling selection must be arrival-order independent (P16)");
+    assert_eq!(n1, "Driver", "the policy picks the tier/HLC winner, not the first arrival");
 }
 
 // --- P23 / I9: self-approval and the self-attested marker --------------------------------------
@@ -196,14 +414,13 @@ fn i9_self_attested_is_blanket_true_until_principal_check_lands() {
     );
 }
 
-// --- P18 / F13: the receiver does not yet re-evaluate a synced trust tier ----------------------
+// --- P18 / F13: claimed tier - verbatim in the log, evaluated on read --------------------------
 
-/// characterization (principles.md P18 "the tier is the receiver's evaluation", architecture.md
-/// Section 14 overdue entry condition 2): a peer's self-declared tier crosses the wire verbatim.
-/// A malicious peer could self-declare human_confirmed and the receiving store would hold it.
-/// Bounded today by single-principal deployment + the origin-key allowlist. When receiver-side
-/// re-evaluation lands (Phase 5), this test MUST flip: the stored tier must become the receiver's
-/// own evaluation, with the sender's claim kept only as the sending node's record.
+/// guard of the LOG layer (F13, resolution.md Section 3): a peer's self-declared tier crosses the
+/// wire and is stored VERBATIM - since M3a this is by design (the claim is log data, kept for
+/// audit; rewriting it would violate P3). What changed in M3a is the READ path: every surface
+/// consumes the receiver's EVALUATION, which caps a wire claim at host_signed - see the sibling
+/// guard below. Phase 5 adds canon-policy-based evaluation on top; the stored claim never changes.
 #[test]
 fn f13_sync_apply_stores_senders_self_declared_tier_verbatim() {
     let store_a = InMemoryStore::new();
@@ -243,9 +460,59 @@ fn f13_sync_apply_stores_senders_self_declared_tier_verbatim() {
     assert_eq!(
         got.provenance[0].trust_tier,
         TrustTier::HumanConfirmed,
-        "current interim: the sender's self-declared tier is stored verbatim; if this fails, \
-         receiver-side re-evaluation has landed - rewrite this test to assert the receiver's \
-         own evaluation and the demotion of the sender's claim to a record"
+        "the sender's claim is log data and stays verbatim (audit, F13) - evaluation is read-time"
+    );
+}
+
+/// guard (resolution.md Section 3, R4; the read-path repayment of architecture.md Section 14
+/// overdue entry condition 2): the same self-declared human_confirmed claim, read through the
+/// engine's projections, evaluates to at most host_signed - a signature proves origin, never a
+/// human act, so a wire claim cannot raise the displayed/believed tier on the receiver.
+#[test]
+fn f13_read_path_evaluates_remote_claim_at_host_signed() {
+    let store_a = InMemoryStore::new();
+    let node_a = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([7u8; 32]));
+    let obs = Observation::with_assertions(
+        "peer-asserted claim".into(),
+        Provenance {
+            host: "peer-host".into(),
+            on_behalf_of: Some("mallory".into()),
+            workspace: WS.into(),
+            source_ref: None,
+            observed_at: 100,
+            confidence: None,
+            trust_tier: TrustTier::HumanConfirmed, // self-declared
+            sync: None,
+        },
+        Assertions {
+            entities: vec![EntityAssertion {
+                name: "claimed-node".into(),
+                kind: None,
+                description: None,
+            }],
+            ..Default::default()
+        },
+    );
+    store_a.add_observation(obs).expect("add");
+    node_a.backfill(&store_a, WS).expect("backfill");
+    let events =
+        export_delta(&store_a, WS, &VersionVector::default(), &[WS.to_string()]).expect("export");
+
+    let store_b = Arc::new(InMemoryStore::new());
+    let node_b = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([8u8; 32]));
+    let keys: BTreeMap<String, String> =
+        [(node_a.node_id().to_string(), node_a.public_key_hex())].into();
+    let mut vv = VersionVector::default();
+    node_b.apply(store_b.as_ref(), WS, events, &keys, &mut vv).expect("apply");
+
+    let engine_b = Engine::new(store_b, "host-b", WS);
+    engine_b.reproject(Some(WS)).expect("reproject");
+    let g = engine_b.graph(Some(WS)).expect("graph");
+    let n = g.nodes.iter().find(|n| n.name == "claimed-node").expect("node");
+    assert_eq!(
+        n.trust_tier,
+        TrustTier::HostSigned,
+        "a remote human_confirmed claim must evaluate to host_signed on the receiver (R4)"
     );
 }
 

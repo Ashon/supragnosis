@@ -258,12 +258,17 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // F19: only the owning user can connect, and no web page can). It routes through the gate, never
         // a direct projection/log write (I18 / proposal-workflow.md 14.3).
         "/api/review" => review_response(engine, query),
+        // One-click mediation for a contested belief (resolution.md Section 4.2): opens a
+        // claim_promotion for the chosen observation(s) and immediately casts the Console merge
+        // verdict - both are gated, appended events (propose + review), never a direct write. Solo
+        // self-approval is the P23 exception; the Console surface is what permits human_confirmed.
+        "/api/resolve" => resolve_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/workspaces, or /api/events",
+                "unknown path - try /, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/workspaces, or /api/events",
             ),
         },
     }
@@ -468,7 +473,17 @@ fn review_response(engine: &Engine, query: &str) -> Response {
         };
     };
     let workspace = param("workspace");
-    match engine.review_proposal(workspace, proposal, decision, None, None) {
+    // The Console surface (resolution.md Section 6): this server is reachable only through the 0600
+    // unix socket, i.e. by the local OS principal - the engine stamps the console marker, which is
+    // what permits a merged promotion to grant human_confirmed (a human's direct act, Principle 18).
+    match engine.review_proposal(
+        workspace,
+        proposal,
+        decision,
+        None,
+        None,
+        supragnosis_engine::VerdictSurface::Console,
+    ) {
         Ok(id) => Response {
             status: "200 OK",
             content_type: "application/json",
@@ -478,6 +493,84 @@ fn review_response(engine: &Engine, query: &str) -> Response {
             status: "400 Bad Request",
             content_type: "application/json",
             body: err_body(&e.to_string()),
+        },
+    }
+}
+
+/// `/api/resolve?observation=<id>[&observation=<id>...]&tier=<tier>[&workspace=<ws>][&rationale=<text>]` -
+/// mediate a contested belief from the curation console (resolution.md Section 4.2): opens a
+/// claim_promotion for the chosen observation(s) at the requested tier and immediately casts the
+/// Console merge verdict. Both steps are gated appended events (I1/I18) - the projection changes only
+/// because the fold consumes the verdict, never by a direct write. Solo self-approval is the P23
+/// exception, and the verdict stays self-attested.
+fn resolve_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let observations: Vec<String> = query
+        .split('&')
+        .filter_map(|kv| kv.strip_prefix("observation="))
+        .map(percent_decode)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let Some(tier) = param("tier") else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("resolve needs ?observation=<id>&tier=<unverified|agent_extracted|host_signed|human_confirmed>"),
+        };
+    };
+    if observations.is_empty() {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("resolve needs at least one ?observation=<id> (the asserting observation of the value you confirm)"),
+        };
+    }
+    let workspace = param("workspace");
+    let rationale = param("rationale");
+    let proposal = match engine.propose(supragnosis_engine::ProposeInput {
+        workspace: workspace.clone(),
+        kind: "claim_promotion".into(),
+        targets: observations,
+        into: None,
+        tier: Some(tier),
+        rationale: rationale.or_else(|| Some("confirmed from the curation console (contested belief mediation)".into())),
+        affected_types: Vec::new(),
+        source_ref: None,
+        on_behalf_of: None,
+    }) {
+        Ok(id) => id,
+        Err(e) => {
+            return Response {
+                status: "400 Bad Request",
+                content_type: "application/json",
+                body: err_body(&e.to_string()),
+            }
+        }
+    };
+    match engine.review_proposal(
+        workspace,
+        proposal.clone(),
+        "merge".into(),
+        None,
+        None,
+        supragnosis_engine::VerdictSurface::Console,
+    ) {
+        Ok(verdict) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::json!({ "proposal_id": proposal, "verdict_observation_id": verdict }).to_string(),
+        },
+        Err(e) => Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            // The proposal was opened but the verdict failed - report both so the user can review it
+            // by hand from the proposals panel (the proposal itself commits nothing, P23).
+            body: serde_json::json!({ "error": e.to_string(), "proposal_id": proposal }).to_string(),
         },
     }
 }

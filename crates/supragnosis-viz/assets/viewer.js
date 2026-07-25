@@ -480,7 +480,27 @@ function renderCuration() {
   if (!curation) { curationBodyEl.innerHTML = '<div class="empty">no signals yet</div>'; reviewCtEl.textContent = ""; return; }
   const nchip = n => `<span class="nchip" data-id="${esc(n.id)}" title="focus ${esc(n.name)} (deg ${n.degree}, ${n.sources} src)">${esc(n.name)}<span class="ty">${esc(n.type)}</span></span>`;
   const dup = curation.duplicates || [], gb = curation.grab_bags || [], orph = curation.orphans || [];
-  let html = `<div class="csec">merge candidates (${dup.length})</div>`;
+  const con = curation.contradictions || [];
+  // Contested beliefs first (resolution.md 4.2): the signals where the system explicitly has no
+  // ground to choose, so a human call is the only thing that settles them. Confirm = /api/resolve.
+  let html = `<div class="csec">contested beliefs (${con.length})</div>`;
+  html += con.length
+    ? con.map(c =>
+        `<div class="grp"><span class="nchip" data-id="${esc(c.id)}" title="focus ${esc(c.name)}">${esc(c.name)}</span>`
+        + `<div class="contested${c.contested ? " hot" : ""}">`
+        + contestedRows(c.current, "", c.kind_source, c.competitors || [], c.contested)
+        + `</div></div>`).join("")
+    : `<div class="empty">none - no live kind conflicts</div>`;
+  // Contradictory accepted merges (Principle 6): the projection resolves the cycle by parity, but
+  // the cycle itself is surfaced - the remedy is a settling entity_merge proposal, never an edit.
+  const mc = curation.merge_cycles || [];
+  html += `<div class="csec">merge cycles (${mc.length})</div>`;
+  html += mc.length
+    ? mc.map(c =>
+        `<div class="grp"><div class="chips">${(c.members || []).map(nchip).join("")}</div>`
+        + `<div class="hint">these accepted merges fold into each other - settle with a new entity_merge</div></div>`).join("")
+    : `<div class="empty">none - no contradictory merges</div>`;
+  html += `<div class="csec">merge candidates (${dup.length})</div>`;
   html += dup.length
     ? dup.map(g => `<div class="grp"><span class="gk">${esc(g.key)}</span><div class="chips">${g.members.map(nchip).join("")}</div></div>`).join("")
     : `<div class="empty">none - no name collisions</div>`;
@@ -493,9 +513,14 @@ function renderCuration() {
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
   curationBodyEl.innerHTML = html;
   const s = curation.stats || {};
-  reviewCtEl.textContent = (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0) || "";
+  reviewCtEl.textContent =
+    (s.contradictions || 0) + (s.merge_cycles || 0) + (s.duplicate_groups || 0)
+    + (s.grab_bags || 0) + (s.orphans || 0) || "";
   curationBodyEl.querySelectorAll(".nchip").forEach(c => {
     c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
+  });
+  curationBodyEl.querySelectorAll(".confirm").forEach(b => {
+    b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
   });
 }
 
@@ -849,6 +874,32 @@ function connectEvents() {
   } catch (_) { /* EventSource unsupported - works with polling alone */ }
 }
 
+// Confirm one side of a contested belief (resolution.md Section 4.2): /api/resolve opens a
+// claim_promotion for the asserting observation and casts the Console merge verdict - the human
+// console is the only surface that can grant human_confirmed (Section 6). Both are gated appended
+// events; the belief changes because the fold consumes the verdict, never by a direct write.
+async function resolveBelief(obs) {
+  if (!obs) return;
+  const ws = wsInput.value.trim();
+  const q = "?observation=" + encodeURIComponent(obs) + "&tier=human_confirmed"
+    + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+  try { await fetch("/api/resolve" + q, { cache: "no-store" }); } catch (e) { /* transport hiccup - poll re-syncs */ }
+  await poll();   // re-fold: the ring drops, the panel updates, the proposal shows as merged
+}
+
+// The contested-belief block of the inspector / curation panel: the current value and each surviving
+// competitor, with a confirm button per value (the mediation act). `cur` marks the policy winner.
+function contestedRows(current, tier, curObs, competitors, contested) {
+  const row = (v, t, obs, cur) =>
+    `<div class="crow${cur ? " cur" : ""}"><span class="cv">${esc(v)}</span>`
+    + `<span class="ctier">${esc(String(t))}</span>`
+    + (obs ? `<button class="confirm" data-obs="${esc(obs)}" title="confirm '${esc(v)}' (human_confirmed - opens a claim_promotion and casts the console verdict)">confirm</button>` : "")
+    + `</div>`;
+  return `<div class="chead">${contested ? "contested - trust ties, your call decides" : "competitors (current resolved by trust)"}</div>`
+    + row(current, tier, curObs, true)
+    + competitors.map(c => row(c.value, c.trust_tier, c.observation, false)).join("");
+}
+
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
 function renderDetail(node) {
   if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
@@ -874,6 +925,11 @@ function renderDetail(node) {
     + (node.aliases && node.aliases.length ? `<div class="meta">merged: ${esc(node.aliases.join(", "))}</div>` : "")
     + (node.origins && node.origins.length ? `<div class="meta">from: ${esc(node.origins.join(", "))}</div>` : "")
     + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
+    + (node.competitors && node.competitors.length
+        ? `<div class="contested${node.contested ? " hot" : ""}">`
+          + contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors, node.contested)
+          + `</div>`
+        : "")
     + `<div class="rels">`
     +   `<div class="relcol"><div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}</div>`
     +   `<div class="relcol"><div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}</div>`
@@ -885,6 +941,9 @@ function renderDetail(node) {
       const n = nodeById(r.dataset.id);
       if (n) { focus = n; renderDetail(n); centerOn(n); }
     };
+  });
+  detailEl.querySelectorAll(".confirm").forEach(b => {
+    b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
   });
 }
 
@@ -1356,6 +1415,15 @@ function draw() {
     if (clusterMode && bridgeSet.has(n.id)) {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, 7);
       ctx.lineWidth = 2/cam.s; ctx.strokeStyle = INK; ctx.stroke();
+    }
+    // Contested belief (resolution.md R6): distinct kind values tie at the top trust tier, so the
+    // current winner stands on recency alone - a dashed amber ring invites mediation (click the node,
+    // the inspector shows the competing values with a confirm action).
+    if (n.contested) {
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, 7);
+      ctx.setLineDash([4/cam.s, 3/cam.s]);
+      ctx.lineWidth = 2/cam.s; ctx.strokeStyle = GOLD; ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
   // Event pulses (nodes the agent touched) - an expanding, fading ring. rAF always runs, so it keeps

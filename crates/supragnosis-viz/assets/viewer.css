@@ -239,6 +239,19 @@
   #curationBody .gb { padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; color:var(--ink2); }
   #curationBody .gb .sz { color:var(--gold-bright); font-weight:600; margin-right:5px; }
   #curationBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); padding:2px 0; }
+  /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
+     .hot = tier-tied (the dashed amber ring on the canvas): mediation invited; otherwise the list is
+     informational (the conflict was resolved by trust but stays queryable). */
+  .contested { border:1px dashed var(--gold-dim); border-radius:7px; padding:4px 7px; margin:4px 0; }
+  .contested.hot { background:var(--gold-glass); }
+  .contested .chead { color:var(--accent); font-size:10px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:2px; }
+  .contested .crow { display:flex; align-items:center; gap:6px; padding:1.5px 0; font-size:11.5px; color:var(--ink2); }
+  .contested .crow.cur .cv { color:var(--ink); font-weight:600; }
+  .contested .crow .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .contested .crow .ctier { color:var(--faint); font-size:9.5px; margin-left:auto; }
+  .contested .confirm { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; }
+  .contested .crow.cur .confirm { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
+  .contested .crow.cur .confirm:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
   /* Proposals (the gated curation console). */
   #proposalsBody .hint { color:var(--muted); font:italic 11.5px/1.4 var(--prose); margin-bottom:5px; }
   #proposalsBody .prop { border-top:1px solid var(--line-soft); padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }
