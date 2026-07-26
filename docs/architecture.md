@@ -403,10 +403,15 @@ over a hand-rolled tokio server with the UI as embedded HTML/CSS/JS assets (no C
 which a human visually inspects and curates the knowledge graph; clients are the desktop shell or any
 HTTP-over-UDS client (`curl --unix-socket`).
 
-- **Read-only with one gated exception** (Principle 1): it does not touch the observation log. The sole
-  write is `/api/review`, which casts a **verdict observation** through `engine.review_proposal` - it
-  routes through the Principle 23 gate, never a direct projection/log write. Ingest remains exclusively
-  via `observe`.
+- **Every write is gated or is observe ingest** (Principles 1/23): the viewer never writes the
+  projection or the log directly. Its four write endpoints all route through the same engine surfaces
+  every client uses - `/api/review` and `/api/resolve` cast **verdict observations** through
+  `engine.review_proposal` (the Principle 23 gate; resolve also opens the claim_promotion it
+  confirms), `/api/propose_merge` opens an entity_merge proposal (a gate OPEN, not a commit - the
+  verdict stays a separate act), and `/api/reify` asserts a group entity through the normal observe
+  ingest (free ingest, Principle 22). Everything else is read-only. This bullet used to say "the sole
+  write is /api/review"; the write surface grew with M3a/M3b and the sentence had not - what holds
+  invariantly is not "one write path" but "no path that bypasses the gate or the observe ingest".
 - **Bind policy** (Principle 17): a unix socket only - never TCP. The socket file (0600, in the 0700
   `~/.supragnosis` dir) is the whole access control: the OS admits only the owning user, so every
   request is attributable to the local principal (F19), and the browser-borne attack classes of a
@@ -417,11 +422,18 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - **Independent of the MCP tool surface** (Principle 21): being a separate human-facing channel, it does not add to the LLM's tools.
 - **Single-process constraint**: because cozo/RocksDB is single-process, the viewer must be in-process with the server
   (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
-- Endpoints (all GET): `/` (viewer HTML), `/api/graph[?workspace=<ws>]` (unspecified = default
+- Endpoints (all GET - acceptable only because a browser cannot reach the unix socket; the Phase 3.5
+  network read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
+  `/api/graph[?workspace=<ws>]` (unspecified = default
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
   `/api/proposals`, `/api/proposal?id=` (one proposal with its computed belief diff and check
-  results - per-proposal because a diff is two belief folds), `/api/review` (the gated verdict), `/api/resolve` (contested-belief mediation:
+  results - per-proposal because a diff is two belief folds),
+  `/api/observations` (the observation-log browser - per workspace, or the evidence set behind one
+  entity), `/api/explain` (one entity's belief explained: per-field candidates with their effective
+  tiers and asserting observations), `/api/review` (the gated verdict), `/api/resolve` (contested-belief mediation:
   propose claim_promotion + Console merge verdict in one act - both gated appended events),
+  `/api/propose_merge` (open an entity_merge proposal from a merge suggestion - a gate open, its
+  rationale whitelisted to the surface that actually generated the candidate),
   `/api/reify` (hyperedge promotion: assert a group entity + member_of relations as a
   lineage-bearing observation - free ingest, Principle 11/22),
   `/api/workspaces`, `/api/federation`, and `/api/events` (SSE live activity stream).
@@ -707,9 +719,12 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principles 9/23 (T-Box coherence check / gate to canon) re `define_type`: `define_type` still validates only
   **well-formedness** (non-empty name/description, Principle 8) and writes to the canon **directly - the `tbox_change`
   proposal kind has no commit effect** (Section 13 of proposal-workflow.md assigns it, with `recall`, to M4+).
-  Since M3.5b a `tbox_change` proposal IS gated by one structural check - a name defined on both the entity and
-  relation axes blocks the merge (Principle 9: a structural contradiction is a bug, unlike a contradiction between
-  assertions). The rest of T-Box consistency (cyclic subtype / domain-range) stays unimplemented because no subtype
+  Since M3.5b a `tbox_change` proposal IS gated by one structural check - a name its own affected_types declare on
+  both the entity and relation axes blocks the merge (Principle 9: a structural contradiction is a bug, unlike a
+  contradiction between assertions). The check is deliberately scoped to the proposal itself, not the live glossary:
+  a glossary-scoped check could flip an already-merged proposal to blocked when a later `define_type` lands (the
+  merged -> blocked direction I16 forbids), so the cross-glossary collision surfaces as an informative curation
+  signal instead (proposal-workflow.md Section 6 [impl]). The rest of T-Box consistency (cyclic subtype / domain-range) stays unimplemented because no subtype
   hierarchy exists to check, and the **self-attested marker** that the single-person exception calls for is
   **still not attached**.
   This was acceptable while the deployment was a single-user workspace; **federation raises the stakes** - in a shared
