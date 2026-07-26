@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use supragnosis_core::{
-    evaluated_tier, hyperedge_id, normalize_relation_kind, now_millis, ordering_hlc,
-    verdict_grant_ceiling, Assertions, BeliefCandidate, EmbeddingProvider, Entity, EntityAssertion,
-    Hlc, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
+    evaluated_tier, hyperedge_id, normalize_relation_kind, ordering_hlc,
+    verdict_grant_ceiling, Assertions, BeliefCandidate, Clock, EmbeddingProvider, Entity,
+    EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
     ProposalEventAssertion, ProposalEventKind, ResolutionPolicy, SearchHit, SearchHitKind,
-    StoreError, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
+    StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
     VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
@@ -878,6 +878,10 @@ pub struct Engine {
     /// The belief-resolution strategy (Principle 1, resolution.md R1) - replaceable; defaults to
     /// [`TierWeighted`]. Consumed by the read-path belief folds and by reprojection.
     policy: Arc<dyn ResolutionPolicy>,
+    /// The transaction-time source (Principle 20) - defaults to the node wall clock. What it returns
+    /// becomes `observed_at`, which is the ordering key for a local attestation, so this is the seam
+    /// that lets a test state the arrival order it is testing instead of sleeping to produce one.
+    clock: Arc<dyn Clock>,
     host: String,
     default_workspace: String,
 }
@@ -895,6 +899,7 @@ impl Engine {
             session: "local".to_string(),
             write_guard: std::sync::Mutex::new(()),
             policy: Arc::new(TierWeighted),
+            clock: Arc::new(SystemClock),
             host: host.into(),
             default_workspace: default_workspace.into(),
         }
@@ -905,6 +910,14 @@ impl Engine {
     /// belief from the unchanged log.
     pub fn with_policy(mut self, policy: Arc<dyn ResolutionPolicy>) -> Self {
         self.policy = policy;
+        self
+    }
+
+    /// Replaces the transaction-time source (builder, Principle 20). The default is the node wall
+    /// clock. A test injects one so that "this assertion arrived after that one" is something it
+    /// states rather than something it hopes the scheduler produced.
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
         self
     }
 
@@ -953,7 +966,7 @@ impl Engine {
             on_behalf_of,
             workspace: workspace.to_string(),
             source_ref,
-            observed_at: now_millis(),
+            observed_at: self.clock.now_millis(),
             // Preserve no-annotation as no-annotation (Principle 2, 4th) - substituting a default (1.0) is a
             // capture loss that erases the distinction between "no assertion" and "full-confidence assertion". Interpretation is the resolution policy's job (M3).
             confidence,

@@ -1260,6 +1260,30 @@ pub trait EventSink: Send + Sync {
     fn emit(&self, env: &EventEnvelope);
 }
 
+/// Transaction-time source port (Principle 20). The ingest path stamps `observed_at` from this, and
+/// for a local (unstamped) attestation that timestamp becomes the ordering key `ordering_hlc` falls
+/// back to - so the clock is not decoration, it decides which of two competing assertions the
+/// resolution policy calls the more recent one.
+///
+/// It is a port because a test cannot otherwise say what time it is. Ingesting twice inside one
+/// millisecond makes two observations tie on their ordering HLC and fall through to the id
+/// tiebreak, which is a different branch of [`ResolutionPolicy`] than the one a recency test means
+/// to exercise. The alternative is to sleep, and a test that sleeps is a test that asserts the
+/// machine was fast enough - the wall clock the convergence guards are supposed to be free of.
+pub trait Clock: Send + Sync {
+    fn now_millis(&self) -> Timestamp;
+}
+
+/// The node wall clock - the default [`Clock`], and what every non-test caller wants.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now_millis(&self) -> Timestamp {
+        now_millis()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

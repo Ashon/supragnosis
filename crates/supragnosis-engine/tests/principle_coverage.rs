@@ -341,6 +341,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "two_nodes_converge_under_any_exchange_order",
             "cross_node_reprojection_converges",
             "i8_blocking_check_conclusion_is_arrival_order_independent",
+            // architecture.md Section 14 already called this the P16 determinism guard; it was
+            // never declared here. It also covers the tied-HLC branch, where convergence rests on
+            // the id tiebreak rather than on recency.
+            "aliases_accumulate_and_converge",
         ])),
         c("a query response is reproducible, and ties and truncation break on a stable key",
           Evidence::Scenario(&[
