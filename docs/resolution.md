@@ -27,8 +27,9 @@ Three standing debts, all recorded in architecture.md Sections 12-14:
    Decision). Entity kind is last-write-wins, `canonical_name` is first-write-wins by arrival
    (masked by HLC-ordered `reproject` after sync).
 2. **Conflicts resolve silently.** Contradictory assertions converge to a winner with no signal
-   (Principle 6 violation, pinned by the characterization test
-   `p6_contradictory_merge_cycle_converges_but_silently`).
+   (Principle 6 violation, pinned at the time by a characterization test - since rewritten into the
+   guard `p6_contradictory_merge_cycle_is_convergent_and_surfaced`, which now asserts the surfacing
+   this section was asking for).
 3. **A human cannot commit the right direction.** `claim_promotion` / `claim_demotion` fold but
    enforce nothing, and `trust_tier` is inert - so there is no gated act by which a human review
    settles a contested belief.
@@ -266,16 +267,23 @@ defend against the local user's own processes.
 
 ## 9. Test plan
 
-| Test | Kind | Pins |
-|---|---|---|
-| `tier_weighted_selection_order` | guard | R2 - tier beats recency, recency beats id, id is final |
-| `contested_iff_top_tier_ties` | guard | R6 - higher tier resolves silently-in-projection, tie flags |
-| P6 cycle test (rewritten) | guard | converges AND reports contested (was characterization) |
-| `effective_tier_caps_remote_claimed` | guard | R4 - remote `HumanConfirmed` claim evaluates to `HostSigned` (sibling of the F13 characterization test, which keeps pinning verbatim log storage) |
-| `promotion_effect_sets_gate_tier` / `demotion_overrides_below_base` | guard | R5 |
-| `surface_ceiling_caps_agent_grant` | guard | R8 - Agent-surface merge of a `HumanConfirmed` request grants `HostSigned` |
-| Convergence property tests (extended) | property | R6/R7 + Section 7 - equality includes belief values, contested flags, effective tiers |
-| `canonical_name_selection_is_arrival_order_free` | guard | retires the latent condition (Section 2.2) |
+Every row names the test as it is actually spelled in the tree, and the Status column is what makes
+that claim checkable: `principle_coverage.rs` sweeps this table (and the rest of these documents)
+and fails if a `landed` row names something that is not a running test. A row may name a test that
+does not exist yet only by putting its milestone in Status. This table used to name five tests that
+had been renamed out from under it, which is the failure mode the sweep exists to end - a
+"guarded by \<test\>" claim with nothing behind it is what CI was added to stop.
+
+| Test | Kind | Pins | Status |
+|---|---|---|---|
+| `tier_weighted_selection_order` | guard | R2 - tier beats recency, recency beats id, id is final | landed |
+| `contested_iff_top_tier_ties` | guard | R6 - higher tier resolves silently-in-projection, tie flags | landed |
+| `p6_contradictory_merge_cycle_is_convergent_and_surfaced` | guard | converges AND reports contested (was a characterization test, rewritten in M3a) | landed |
+| `evaluated_tier_caps_remote_claimed` / `f13_read_path_evaluates_remote_claim_at_host_signed` | guard | R4 - a remote `HumanConfirmed` claim evaluates to `HostSigned`, at the policy and again at the read surface. Sibling of `f13_sync_apply_stores_senders_self_declared_tier_verbatim`, which keeps pinning that the log stores the claim verbatim | landed |
+| `p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it` / `p23_demotion_overrides_below_base` | guard | R5 - a merged promotion sets the gate tier the policy consumes; a merged demotion overrides below base | landed |
+| `verdict_ceiling_by_surface_marker` / `p18_agent_surface_promotion_caps_at_host_signed` | guard | R8 - Agent-surface merge of a `HumanConfirmed` request grants `HostSigned`, checked at the marker and end to end | landed |
+| `cross_node_reprojection_converges` | property | R6/R7 + Section 7 - the compared graph is serialized whole, so belief values, contested flags and effective tiers are inside the equality | landed |
+| `p16_canonical_name_selection_is_arrival_order_free` | guard | retires the latent condition (Section 2.2) | landed |
 
 ## 10. Ledger effects (what this slice repays)
 
