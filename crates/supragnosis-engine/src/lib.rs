@@ -3196,7 +3196,14 @@ impl Engine {
     /// log does not load it again (see [`ReadCtx`]).
     fn graph_in(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<GraphView, StoreError> {
         let entities = self.store.all_entities(workspace)?;
-        let relations = self.store.all_relations(workspace)?;
+        // Ordered by the stable key before anything picks among rows (Principle 16). A merge can
+        // fold two relations onto one (from, kind, to), and the survivor carries its own
+        // description/tier/confidence - so "which duplicate" is answered by the relation id, not by
+        // whichever order the adapter enumerated (InMemory a HashMap, Cozo a Datalog result).
+        // Choosing among duplicates on MERIT would be relation belief resolution, which is deferred
+        // with negation semantics (architecture.md Section 14); pinning the tie is not.
+        let mut relations = self.store.all_relations(workspace)?;
+        relations.sort_by(|a, b| a.id.cmp(&b.id));
         // Apply accepted entity-merges (Principle 15): fold merged-away ids into their canonical, at
         // projection time only - the log keeps both (Principle 3). Deterministic (Principle 16).
         let fwd = self.merge_forwarding(workspace, cx)?;
@@ -3213,6 +3220,12 @@ impl Engine {
         for e in &entities {
             groups.entry(canon(&e.id)).or_default().push(e);
         }
+        // Same reason as the relations above: the representative falls back to a member by position
+        // when the canonical id has no projected row (a partial-sync state), so the members are
+        // ordered by the stable key rather than by enumeration (Principle 16).
+        for members in groups.values_mut() {
+            members.sort_by(|a, b| a.id.cmp(&b.id));
+        }
         let node_ids: HashSet<&str> = groups.keys().map(|s| s.as_str()).collect();
 
         // Edges: rewire endpoints through canon, drop merge self-loops and duplicates, count degree.
@@ -3225,7 +3238,7 @@ impl Engine {
                 continue; // self-loop from a merge, or an endpoint outside the node set
             }
             if !seen.insert((f.clone(), r.kind.clone(), t.clone())) {
-                continue; // the merge can produce duplicate edges - keep the first
+                continue; // the merge can produce duplicate edges - keep the lowest relation id
             }
             *degree.entry(f.clone()).or_default() += 1;
             *degree.entry(t.clone()).or_default() += 1;
