@@ -1764,3 +1764,120 @@ fn p14_migration_rekeys_an_act_without_duplicating_it() {
         "the store holds both the predecessors and their re-keyed successors"
     );
 }
+
+// --- P2 / P4: a workspace re-key preserves provenance, a re-ingest would not -------------------
+
+/// guard (principles.md P2 provenance first-class, P4 transaction time, P3 nothing is deleted):
+/// `rekey_workspace` re-creates a workspace's knowledge under another name with every attestation
+/// copied verbatim - acting host, `on_behalf_of`, `observed_at`, confidence, claimed tier.
+///
+/// The distinction this pins is the whole reason the operation exists. Pushing the same text back
+/// through `observe` would look equivalent and is not: the engine stamps its own clock and host, so
+/// a "move" done that way rewrites who observed the knowledge and when, and flattens the HLC order
+/// that last-write-wins fields are decided by. The re-key is modelled on `migrate_legacy_ids`
+/// instead, which re-keys across a change of id formula rather than of workspace.
+#[test]
+fn p2_a_workspace_rekey_carries_provenance_that_a_reingest_would_restamp() {
+    let (store, engine) = engine();
+    // Ingest through the real door, then rewrite the stored attestation to an older, other-host act -
+    // the state a re-key has to carry rather than overwrite.
+    observe(&engine, "the driver depends on the kernel", &["Driver"], vec![]);
+    let original = store.all_observations(Some(WS)).unwrap().pop().expect("one row");
+    let mut aged = original.clone();
+    aged.provenance = vec![Provenance {
+        host: "host-b".into(),
+        on_behalf_of: Some("ashon".into()),
+        workspace: WS.into(),
+        source_ref: Some("docs/design.md".into()),
+        observed_at: 1_700_000_000_000,
+        confidence: Some(0.9),
+        trust_tier: TrustTier::default(),
+        sync: None,
+    }];
+    store.add_observation(aged.clone()).unwrap();
+
+    let dry = engine.rekey_workspace(WS, "archive", true).expect("dry run");
+    assert_eq!(dry.moved, 1, "the dry run counts the knowledge row");
+    assert!(
+        store.all_observations(Some("archive")).unwrap().is_empty(),
+        "a dry run must write nothing"
+    );
+
+    let rep = engine.rekey_workspace(WS, "archive", false).expect("rekey");
+    assert_eq!(rep.moved, 1);
+
+    let moved = store.all_observations(Some("archive")).unwrap().pop().expect("re-keyed row");
+    assert_eq!(moved.content, original.content, "content is unchanged - this is a re-key, not an edit");
+    assert_ne!(moved.id, original.id, "the workspace is inside the content address, so the id must differ");
+    // The whole attestation SET is carried, not a representative: re-observing the same content
+    // absorbed a second attestation onto the row, and a re-key that kept only one would be losing
+    // provenance just as surely as a re-ingest does (P3's union, P2's first-class provenance).
+    // Found by identity rather than by index - indexing passed only while the fixture host happened
+    // to sort first, which is a property of the alphabet, not of the code under test.
+    assert_eq!(moved.provenance.len(), 2, "both attestations of the source row are carried over");
+    assert!(
+        moved.provenance.iter().all(|p| p.workspace == "archive"),
+        "every carried attestation names the new workspace"
+    );
+    let p = moved
+        .provenance
+        .iter()
+        .find(|p| p.host == "host-b")
+        .expect("the aged attestation is among them");
+    assert_eq!(
+        (p.host.as_str(), p.on_behalf_of.as_deref(), p.observed_at, p.confidence),
+        ("host-b", Some("ashon"), 1_700_000_000_000, Some(0.9)),
+        "acting host, principal, transaction time and confidence survive verbatim (P2/P4) - \
+         a re-ingest through observe would have stamped this engine's host and clock instead"
+    );
+    assert!(moved.derived_from.contains(&aged.id), "lineage records where it came from");
+
+    // P3: the original is still there. A re-key adds, it never moves anything away.
+    assert!(
+        store.get_observation(&aged.id).unwrap().is_some(),
+        "the source row must survive - the log is append-only"
+    );
+    // Idempotent, and the same act is not counted twice in the live set.
+    assert_eq!(engine.rekey_workspace(WS, "archive", false).unwrap().moved, 0, "a second run moves nothing");
+    assert_eq!(
+        engine.rekey_workspace(WS, "archive", false).unwrap().already, 1,
+        "it recognises what it already re-keyed"
+    );
+}
+
+/// guard: a re-key leaves proposal events behind on purpose. Their payloads name SOURCE-workspace
+/// entity ids, which cannot exist in the target, so carrying them over would import proposals that
+/// are permanently blocked on referential integrity - importing the disease, not the cure.
+#[test]
+fn p23_a_rekey_does_not_carry_proposal_events_into_the_new_workspace() {
+    let (_store, engine) = engine();
+    observe(&engine, "one", &["Postgres"], vec![]);
+    observe(&engine, "two", &["PostgreSQL"], vec![]);
+    let (a, b) = (Entity::make_id(WS, "postgres"), Entity::make_id(WS, "postgresql"));
+    engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![a, b.clone()],
+            into: Some(b),
+            tier: None,
+            rationale: Some("duplicate".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+
+    let rep = engine.rekey_workspace(WS, "archive", false).expect("rekey");
+    assert_eq!(rep.moved, 2, "both knowledge rows move");
+    assert_eq!(rep.skipped_proposal_events, 1, "the proposal event stays behind");
+    assert!(
+        engine.list_proposals(Some("archive")).unwrap().is_empty(),
+        "no proposal may arrive in the target - one that did would be blocked forever"
+    );
+    assert_eq!(
+        engine.list_proposals(Some(WS)).unwrap().len(),
+        1,
+        "and the source keeps its gate history"
+    );
+}

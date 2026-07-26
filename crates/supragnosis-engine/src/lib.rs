@@ -170,6 +170,19 @@ pub struct ReprojectReport {
     pub relations: usize,
 }
 
+/// What a workspace re-key moved, skipped, and why.
+#[derive(Serialize, Debug, Default)]
+pub struct RekeyReport {
+    /// Knowledge observations re-created under the target workspace.
+    pub moved: usize,
+    /// Already present there from an earlier run (the lineage says so) - a re-key is idempotent.
+    pub already: usize,
+    /// Proposal events left behind. Their payloads name SOURCE-workspace entity ids, which do not
+    /// exist in the target, so carrying them over would import proposals that are permanently
+    /// blocked on referential integrity - the disease, not the cure.
+    pub skipped_proposal_events: usize,
+}
+
 /// Grab-bag detection threshold: a hyperedge with this many members is flagged as a loose co-occurrence
 /// context (a split/refine candidate, Principle 11). Tunable.
 const CURATION_GRAB_BAG_MIN: usize = 10;
@@ -2780,6 +2793,84 @@ impl Engine {
     /// last-write-wins fields depend on local arrival order. Builds fresh states and upserts them
     /// (idempotent: a second run writes identical rows); rows with no support in the log are left in
     /// place - removal is a curation concern, not reprojection's (Principle 3).
+    /// Re-create a workspace's knowledge under another workspace name, provenance intact.
+    ///
+    /// The workspace is part of the content address, so this is not a move and cannot be: a
+    /// re-keyed observation is a NEW observation, and the original stays where it is (Principle 3).
+    /// What makes it a re-key rather than a re-ingest is that **every attestation is copied
+    /// verbatim** - acting host, `on_behalf_of`, `observed_at`, confidence, claimed tier. Pushing
+    /// the same text back through `observe` would restamp all of it with this engine's clock and
+    /// host, which fabricates the two things the log exists to preserve (Principles 2 and 4) and
+    /// collapses the HLC order that last-write-wins fields are decided by. The one field dropped is
+    /// the sync stamp: it is bound to the old content id and signs it, so it cannot follow.
+    ///
+    /// Shaped exactly like `migrate_legacy_ids`, which re-keys across a change of id FORMULA; this
+    /// re-keys across a change of WORKSPACE. Lineage records the origin, so the two rows are one act
+    /// and the live-set door counts them once.
+    ///
+    /// Proposal events are left behind deliberately - see [`RekeyReport::skipped_proposal_events`].
+    /// `dry_run` reports what would move and writes nothing.
+    pub fn rekey_workspace(
+        &self,
+        from: &str,
+        to: &str,
+        dry_run: bool,
+    ) -> Result<RekeyReport, StoreError> {
+        let (from, to) = (from.trim(), to.trim());
+        if from.is_empty() || to.is_empty() {
+            return Err(StoreError::Backend("both workspaces must be named".into()));
+        }
+        if from == to {
+            return Err(StoreError::Backend(format!(
+                "source and target are the same workspace ('{from}') - nothing to re-key"
+            )));
+        }
+        let _guard = self.write_guard.lock().unwrap_or_else(|e| e.into_inner());
+        let mut report = RekeyReport::default();
+        for obs in self.observations(Some(from))? {
+            if !obs.assertions.proposal_events.is_empty() {
+                report.skipped_proposal_events += 1;
+                continue;
+            }
+            let mut provs = obs.provenance.clone();
+            for p in &mut provs {
+                p.workspace = to.to_string();
+                p.sync = None; // the stamp signs the OLD content id and cannot follow it
+            }
+            if provs.is_empty() {
+                continue; // unreachable by construction (P2), but never panic on a stored row
+            }
+            let first = provs.remove(0);
+            let mut fresh =
+                Observation::with_assertions(obs.content.clone(), first, obs.assertions.clone());
+            for p in provs {
+                let mut copy =
+                    Observation::with_assertions(obs.content.clone(), p, obs.assertions.clone());
+                copy.derived_from = Vec::new();
+                fresh.absorb(copy); // union semantics - the attestation set is preserved whole
+            }
+            fresh.derived_from = obs.derived_from.clone();
+            fresh.derived_from.push(obs.id.clone());
+            fresh.derived_from.sort();
+            fresh.derived_from.dedup();
+            // Idempotent: a second run finds the target already recording this origin and stops.
+            if let Some(existing) = self.store.get_observation(&fresh.id)? {
+                if existing.derived_from.contains(&obs.id) {
+                    report.already += 1;
+                    continue;
+                }
+            }
+            if !dry_run {
+                self.store.add_observation(fresh)?;
+            }
+            report.moved += 1;
+        }
+        if !dry_run && report.moved > 0 {
+            self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(report)
+    }
+
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
         let cx = &ReadCtx::default();
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
