@@ -839,19 +839,48 @@ fn observe_named(engine: &Engine, content: &str, name: &str) {
         .expect("observe");
 }
 
+/// A clock that hands out a stated sequence of transaction times, so a test says what order the
+/// assertions arrived in instead of sleeping until the machine agrees. `step` of 0 makes every
+/// ingest land in the same millisecond - the tie that sends resolution to its final tiebreak.
+struct ScriptedClock {
+    start: supragnosis_core::Timestamp,
+    step: supragnosis_core::Timestamp,
+    calls: std::sync::atomic::AtomicU64,
+}
+
+impl ScriptedClock {
+    fn new(start: u64, step: u64) -> Self {
+        Self { start, step, calls: std::sync::atomic::AtomicU64::new(0) }
+    }
+}
+
+impl supragnosis_core::Clock for ScriptedClock {
+    fn now_millis(&self) -> supragnosis_core::Timestamp {
+        let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.start + n * self.step
+    }
+}
+
 /// guard (resolution-identity.md Section 2, IR1): distinct asserted spellings of one entity (they
 /// share an id under case/trim normalization) accumulate as aliases minus the representative, the
 /// set never drops a spelling, and it is arrival-order independent.
+///
+/// The transaction time is injected rather than slept for. This test used to sleep 2ms between
+/// ingests so the three observations would not share a millisecond, which is the wall-clock
+/// dependence the P16 guards are otherwise free of - and before the sleep it failed roughly 1 run in
+/// 8. Worse, the sleep bought determinism by steering around the tied-HLC branch, so the id tiebreak
+/// this policy falls back to went untested. Both orderings are now stated outright, tie included.
 #[test]
 fn aliases_accumulate_and_converge() {
-    let build = |order: [&str; 3]| {
-        let (store, engine) = engine();
-        for (i, sp) in order.iter().enumerate() {
-            observe_named(&engine, &format!("mention {i}"), sp);
-            // Force distinct ordering HLCs. Without a gap all three can share a millisecond, tie on
-            // HLC, and fall through to the id tiebreak - which is a different code path than the one
-            // under test here, and the source of this test's former ~1-in-8 flake.
-            std::thread::sleep(std::time::Duration::from_millis(2));
+    // Content is derived from the SPELLING, not from the position, so the three observations are one
+    // set that two nodes can see in different orders. With `mention {i}` they were three different
+    // observations per order - two different logs - and P16 promises nothing about those.
+    let build = |order: [&str; 3], step: u64| {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "host-a", WS)
+            .with_clock(Arc::new(ScriptedClock::new(1_000, step)));
+        for sp in order {
+            observe_named(&engine, &format!("a mention of {sp}"), sp);
         }
         let e = store.get_entity(&Entity::make_id(WS, "driver")).unwrap().expect("entity");
         let mut spellings = e.aliases.clone();
@@ -859,8 +888,8 @@ fn aliases_accumulate_and_converge() {
         spellings.sort();
         (e.canonical_name, spellings)
     };
-    let a = build(["Driver", "driver", "DRIVER"]);
-    let b = build(["DRIVER", "Driver", "driver"]);
+    let a = build(["Driver", "driver", "DRIVER"], 2);
+    let b = build(["DRIVER", "Driver", "driver"], 2);
 
     // Order-independent, and the actual IR1/P3 guarantee: the union of spellings. Nothing is dropped
     // and which spellings survive never depends on the order they arrived in.
@@ -875,6 +904,53 @@ fn aliases_accumulate_and_converge() {
     // because they then hold the same six observations and the HLCs travel with them.
     assert_eq!(a.0, "DRIVER", "order a ends on DRIVER, so recency selects it");
     assert_eq!(b.0, "driver", "order b ends on driver, so recency selects it");
+
+    // The branch the sleep used to hide. With every ingest inside one millisecond the ordering HLCs
+    // tie, recency cannot choose, and selection falls to the stable id tiebreak (R2's final step).
+    // Here the two orders really are one log - same content, same assertions, same timestamps, so
+    // the same three content addresses - which makes this a P16 convergence claim rather than a
+    // comparison of two different histories.
+    let tied_a = build(["Driver", "driver", "DRIVER"], 0);
+    let tied_b = build(["DRIVER", "Driver", "driver"], 0);
+    assert_eq!(tied_a.1, tied_b.1, "the spelling union is the same under a tie");
+    assert_eq!(tied_a.1, vec!["DRIVER", "Driver", "driver"], "a tie drops no spelling either");
+    assert_eq!(
+        tied_a.0, tied_b.0,
+        "with the HLCs tied the representative cannot depend on arrival order (P16): {} vs {}",
+        tied_a.0, tied_b.0
+    );
+
+    // Which rule decided it, stated rather than assumed. Order-independence alone is satisfied by
+    // any stable iteration order, so comparing the two orders to each other cannot tell the declared
+    // tiebreak from an accident of how the fold happens to walk its candidates - removing
+    // `Reverse(observation)` from TierWeighted leaves both assertions above passing. R2's last step
+    // is the LOWEST observation id, so the test computes the three content addresses and names the
+    // spelling that must win.
+    let lowest_id_spelling = ["Driver", "driver", "DRIVER"]
+        .into_iter()
+        .min_by_key(|sp| {
+            supragnosis_core::observation_content_id(
+                WS,
+                &format!("a mention of {sp}"),
+                &Assertions {
+                    entities: vec![EntityAssertion {
+                        name: (*sp).into(),
+                        kind: None,
+                        description: None,
+                    }],
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("three spellings");
+    assert_eq!(
+        tied_a.0, lowest_id_spelling,
+        "a tie must resolve to the lowest observation id (resolution.md R2, final step)"
+    );
+
+    // And the tie is genuinely a different branch from recency: recency answered differently for
+    // these two orders above, so one shared answer here cannot be "the last spelling seen".
+    assert_ne!(a.0, b.0, "the recency cases must disagree, or the tie case proves nothing");
 }
 
 /// guard (resolution-identity.md Section 4, IR3): the incremental projection of the last write
