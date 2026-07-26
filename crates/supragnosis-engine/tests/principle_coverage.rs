@@ -133,6 +133,7 @@ const SOURCES: &[&str] = &[
     include_str!("principle_scenarios.rs"),
     include_str!("policy_cases.rs"),
     include_str!("recall_eval.rs"),
+    include_str!("read_path_cost.rs"),
     include_str!("../src/lib.rs"),
     include_str!("../../supragnosis-core/src/lib.rs"),
     include_str!("../../supragnosis-store/src/lib.rs"),
@@ -161,6 +162,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         ])),
         c("a generator proposes; nothing but a verdict commits",
           Evidence::Scenario(&["merge_suggestions_never_commit"])),
+        // A read may reuse the rows it already loaded, but only where reusing them is
+        // indistinguishable from reading again - otherwise the projection stops being a function
+        // of the log and starts being a function of when it was looked at.
+        c("a read is answered from the log as it stands, not from a stale view of it",
+          Evidence::Scenario(&[
+            "a_read_context_reuses_rows_only_while_that_changes_nothing",
+            "a_shared_context_answers_what_separate_reads_answer",
+            "a_read_walks_the_log_once",
+        ])),
         // Half a refusal and half a permission, so the guard asserts both: a non-assertion is
         // refused before the log, and notation variance is NOT (normalizing is the projection's job).
         c("ingest validates well-formedness and nothing beyond it",
