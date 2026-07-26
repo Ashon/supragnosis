@@ -68,11 +68,12 @@
         <p class="etymology">supra <span>(above)</span> &nbsp;+&nbsp; gnosis <span>(knowing)</span></p>
         <h1>The <em>agent-first</em><br>ontology.</h1>
         <p class="lede">
-          Your agents learn constantly and remember nothing. supragnosis is an
-          embedded, file-based knowledge server written in Rust where the agents
-          themselves build the ontology - observing, relating, and typing what
-          they learn as a by-product of work - and humans supervise what becomes
-          canon. Served to any MCP client, across hosts and workspaces.
+          Your agents learn constantly and remember nothing. supragnosis gives
+          them a memory that outlives the session: an embedded, file-based
+          knowledge server written in Rust where agents shed observations as a
+          by-product of work, recall them weeks later - receipts included - from
+          any machine, and humans govern what becomes canon. Any MCP client, any
+          host, any workspace.
         </p>
         <div class="hero-actions">
           <a class="btn btn-gold" href="https://github.com/Ashon/supragnosis">View on GitHub</a>
@@ -115,15 +116,15 @@
             No ontologist draws the taxonomy up front. Unknown knowledge lands as
             loose concepts, patterns harden with use, and agents promote them
             through <code>define_type</code> - every type with a mandatory
-            plain-language definition. Co-occurrence hyperedges surface what
-            deserves a name next.
+            plain-language definition. The workspace map keeps score of what is
+            said together, so the next type worth naming surfaces on its own.
           </p>
         </article>
         <article class="card">
           <h3>Humans supervise</h3>
           <p>
             Ingest is free; canon is governed. Entity merges, trust promotions,
-            and T-Box changes travel through PR-like proposals that a human
+            and vocabulary changes travel through PR-like proposals that a human
             reviews in the curation console - and the tier a verdict may grant
             depends on the surface it arrives on, so an agent-cast verdict cannot
             reach human-confirmed.
@@ -134,42 +135,42 @@
 
     <!-- ================= core ideas ================= -->
     <section class="section reveal" id="ideas">
-      <p class="eyebrow">02 / core ideas</p>
-      <h2>Three commitments, held everywhere.</h2>
+      <p class="eyebrow">02 / guarantees</p>
+      <h2>Three guarantees, held everywhere.</h2>
       <div class="grid grid-3">
         <article class="card">
           <h3>Assertions, not facts</h3>
           <p>
-            Nothing in the log says "X is true". It says "this host, acting for
-            this principal, observed X at this time, with this confidence". Belief
-            is a derived view - computed by a replaceable resolution policy, and
-            recomputable from the same log when the policy changes.
+            Every answer can say where it came from. The log never stores "X is
+            true" - it stores who observed X, acting for whom, when, with what
+            confidence. Belief is computed on top by a replaceable policy, so
+            changing whom you trust recomputes the belief from the same log.
           </p>
         </article>
         <article class="card">
           <h3>Supersede, don't delete</h3>
           <p>
-            Knowledge accumulates append-only: stale beliefs are superseded, never
-            erased, and contradictions are surfaced as signal rather than silently
-            resolved away. Forgetting is a demotion of recall, not of storage - the
-            log is eternal; only attention is finite.
+            Nothing your agents learn is ever lost. Corrections supersede rather
+            than erase, contradictions surface as signals instead of being
+            silently resolved away, and forgetting only demotes recall - the log
+            is eternal; only attention is finite.
           </p>
         </article>
         <article class="card">
           <h3>Deterministic core, probabilistic edge</h3>
           <p>
-            LLMs and embeddings are adapters behind ports: they extract knowledge
-            and widen recall, but they never judge. Projection, merge, and ranking
-            are deterministic, so the core is correct with no model attached at
-            all - and the store is swappable for the same reason.
+            No model ever judges your knowledge. LLMs and embeddings extract and
+            widen recall - they draft, they never decide. Everything that commits
+            is deterministic, so the graph is correct with no model attached at
+            all, and every node holding the same log holds the same graph.
           </p>
         </article>
       </div>
       <p class="section-note wide">
         The name is the design: observations that mention the same things leave a
-        second-order structure behind - hyperedges, observations about observations.
-        That meta-knowledge (<em>supra</em> + <em>gnosis</em>) is the substrate schema
-        induction, consolidation, and curation all read from.
+        second-order structure behind - knowledge about the knowledge. That meta
+        layer (<em>supra</em> + <em>gnosis</em>) is what the workspace map shows,
+        and what curation reads when it proposes the next merge or type.
       </p>
     </section>
 
@@ -260,10 +261,11 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
         <article class="card">
           <h3>Hybrid recall</h3>
           <p>
-            HNSW vector search over local ONNX embeddings (fastembed), fused with
-            keyword search and deterministically ranked. Semantic recall widens
-            the net; commits stay deterministic. Without embeddings it degrades
-            gracefully to keyword - no cloud calls either way.
+            Ask in your own words - "why cozo and not a triple store?" - and the
+            fragment comes back. Vector search over local ONNX embeddings
+            (fastembed) fuses with keyword search, deterministically ranked and
+            mode-labeled so you know which surface answered. Without an embedder
+            it degrades to keyword. No cloud calls either way.
           </p>
         </article>
         <article class="card">
@@ -315,11 +317,11 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
         <article class="card">
           <h3>Two time axes</h3>
           <p>
-            Every relation carries a valid interval - when it was true in the
-            world - separate from when the system learned it. Retroactive facts
-            ("true until last month") are first-class at ingest. Closing an
-            interval on disproof needs negation semantics the model does not have
-            yet, so today the two axes are captured, not yet queried.
+            "True until last month" is a first-class statement. Every relation
+            can carry the interval it held in the world, separate from when the
+            system learned it - so retroactive knowledge is captured the moment
+            it arrives, and nothing is lost while the time-travel query logic
+            (M3c) lands.
           </p>
         </article>
         <article class="card">
@@ -372,10 +374,14 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
       <p class="eyebrow">07 / federation</p>
       <h2>Any topology. Same graph.</h2>
       <p class="section-note wide">
-        Hosts replicate observation logs, not merged state. Because projection is
-        deterministic and merge semantics are shared, hub-and-spoke, peer-to-peer,
-        and hybrid meshes all converge to the same ontology. Node identity is an
-        ed25519 keypair; events are signed and shipped over TLS with per-node auth.
+        Laptop, desktop, a VM that never sleeps - every machine your agents work
+        on ends up holding the same graph. Hosts replicate the observation log,
+        never merged state, and projection is deterministic, so any delivery
+        order converges. Sharing is opt-in per workspace: nothing leaves a node
+        you did not whitelist. Node identity is an ed25519 keypair; events are
+        signed and shipped over TLS with per-node auth. Hub-and-spoke ships
+        today; the replication primitive is topology-independent, so peer and
+        hybrid meshes reuse it unchanged when they land.
       </p>
       <div class="grid grid-3 topologies">
         <figure class="topo">
@@ -432,30 +438,9 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
       </div>
     </section>
 
-    <!-- ================= crates ================= -->
-    <section class="section reveal" id="crates">
-      <p class="eyebrow">08 / inside</p>
-      <h2>A workspace of eight crates.</h2>
-      <div class="grid grid-4 crates">
-        <div class="crate"><strong>core</strong><span>domain models + ports, zero IO</span></div>
-        <div class="crate"><strong>store</strong><span>CozoDB and in-memory adapters</span></div>
-        <div class="crate"><strong>engine</strong><span>ingest, projection, query, sync</span></div>
-        <div class="crate"><strong>embed</strong><span>fastembed / hashing / none</span></div>
-        <div class="crate"><strong>sync</strong><span>identity, signing, replication</span></div>
-        <div class="crate"><strong>mcp</strong><span>rmcp tools + resources</span></div>
-        <div class="crate"><strong>viz</strong><span>live ontology viewer</span></div>
-        <div class="crate"><strong>cli</strong><span>the supragnosis binary</span></div>
-      </div>
-      <p class="section-note">
-        Alongside the workspace: <code>app/</code>, a tray-resident macOS shell
-        (Tauri) over the viewer socket, and <code>e2e/</code>, a real-model
-        scorecard suite that measures rather than gates.
-      </p>
-    </section>
-
     <!-- ================= status ================= -->
     <section class="section reveal" id="status">
-      <p class="eyebrow">09 / status</p>
+      <p class="eyebrow">08 / status</p>
       <h2>Where it honestly stands.</h2>
       <ul class="checklist">
         <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
@@ -476,7 +461,7 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
 
     <!-- ================= get started ================= -->
     <section class="section reveal" id="get-started">
-      <p class="eyebrow">10 / get started</p>
+      <p class="eyebrow">09 / get started</p>
       <h2>Up and running in a minute.</h2>
       <div class="terminal install-tabs">
         <div class="terminal-bar tabbar" role="tablist" aria-label="Install method">
@@ -513,7 +498,9 @@ cargo test</code></pre>
         Whichever route you take, <code>supragnosis start</code> brings up the
         daemon: MCP on <code>127.0.0.1:7373</code> plus the viewer unix socket.
         Prebuilt binaries ship keyword recall; the fastembed build adds local
-        semantic search.
+        semantic search. Curious how it is built? The design principles and the
+        hexagonal Rust workspace behind all of this live in
+        <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a>.
       </p>
     </section>
 
