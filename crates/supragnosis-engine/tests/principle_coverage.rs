@@ -359,6 +359,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("a query response is reproducible, and ties and truncation break on a stable key",
           Evidence::Scenario(&[
             "p16_search_ties_break_by_id_and_repeat_identically",
+            // P16 names a hash map's iteration order leaking into a response as a violation on its
+            // own, and the adapters do not agree on one order: InMemory enumerates a HashMap, Cozo
+            // a Datalog result. Guarded by reading one log two ways.
+            "read_surfaces_do_not_depend_on_enumeration_order",
             "traverse_order_and_truncation_parity_across_adapters",
             "traverse_dangling_endpoint_parity_across_adapters",
         ])),
