@@ -114,12 +114,21 @@ let panning = null, downPos = null, userMoved = false, firstData = true, needFit
 
 // --- force simulation (alpha cooling + collision separation) ------------------------------------
 let alpha = 1;
-const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.02;
+// alpha decays multiplicatively (x0.9772 a frame), so ALPHA_MIN buys time logarithmically: 0.02
+// applies force for ~170 frames from a cold load, 0.008 for ~209. Lowered because the tail of the
+// layout is where it is still worth nudging - the forces down there are tiny, and stopping while
+// they are still meaningful is what made the settle read as a cut rather than a stop. The coasting
+// afterwards is not governed by this at all; that is DAMPING, and it is measured (see simMotion).
+const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.008;
 // Layout-loader gating: while the sim is reheated at/above SETTLE_ENTER (initial load, data change,
 // group toggle - the big rearrangements), the graph is hidden behind a loader; it is revealed once
 // alpha cools to REVEAL_ALPHA. Small wakes (drag/focus at 0.3) stay below SETTLE_ENTER, so those never
 // trigger the loader. `settling` starts true so the first layout comes up settled, not mid-flight.
 const SETTLE_ENTER = 0.5, REVEAL_ALPHA = 0.08;
+// Largest distance any node moved on the last step, in world units - the settle test the cooling
+// schedule cannot give, since alpha says how hard the sim is pushing and not whether anything moved.
+let simMotion = 0;
+const MOTION_MIN_PX = 0.05;   // screen px per frame below which the picture is not changing
 // Reduced motion (same respect the landing pays to prefers-reduced-motion): instead of animating
 // the violent early rearrangement behind a loader, burst-step the sim to convergence within one
 // frame and reveal the layout already still.
@@ -175,6 +184,10 @@ for (const ev of ["mousedown", "mousemove", "mouseup", "wheel", "keydown", "inpu
 function animating(act) {
   return settling                                                 // loader phase, sim mid-flight
     || alpha >= ALPHA_MIN                                         // the sim still applies force
+    // ...and, after force stops, while anything is still visibly coasting. Measured on screen, so
+    // the threshold means the same thing at any zoom: below a twentieth of a pixel per frame there
+    // is nothing left to show.
+    || simMotion * cam.s > MOTION_MIN_PX
     || cam.s !== camT.s || cam.x !== camT.x || cam.y !== camT.y    // easeCam snaps exactly, so == is safe
     || drag !== null                                              // a node is being dragged
     || pulses.size > 0 || peerEdgeFlash.size > 0                  // ring/flash effects still decaying
@@ -1650,6 +1663,7 @@ function hullsShareMember(a, b) {
 }
 
 function stepSim() {
+  simMotion = 0;
   const N = nodes.length;
   if (N === 0) return;
   const cooling = alpha >= ALPHA_MIN;
@@ -1787,6 +1801,12 @@ function stepSim() {
     let mx = cdx[k], my = cdy[k]; const m = Math.hypot(mx, my);
     if (m > MAX_PUSH) { mx *= MAX_PUSH/m; my *= MAX_PUSH/m; }
     v.x += v.vx + mx; v.y += v.vy + my;
+    // What this node actually moved. Cooling says whether force is still being applied; it does not
+    // say whether anything is still moving, and those part company exactly where the stop was
+    // abrupt - damping and integration run whether or not the sim is active, so nodes coast for
+    // roughly half a second after the last force.
+    const stepped = Math.hypot(v.vx + mx, v.vy + my);
+    if (stepped > simMotion) simMotion = stepped;
   }
 
   // Central-axis anchor: the pairwise forces are action-reaction symmetric (zero net force on the
@@ -1801,6 +1821,9 @@ function stepSim() {
     for (const v of nodes) { sx += v.x; sy += v.y; }
     const offx = (wcx - sx / N) * ANCHOR_K, offy = (wcy - sy / N) * ANCHOR_K;
     if (offx || offy) for (const v of nodes) if (!pinned(v)) { v.x += offx; v.y += offy; }
+    // The recenter shifts every node, so it is motion too - and it runs while dormant.
+    const shifted = Math.hypot(offx, offy);
+    if (shifted > simMotion) simMotion = shifted;
   }
 }
 
