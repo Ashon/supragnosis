@@ -121,8 +121,10 @@ tasks:
       - task: test
 
   lint:
-    desc: cargo clippy over all targets (workspace lints set clippy::all to deny)
-    cmds: [cargo clippy --all-targets]
+    desc: cargo clippy over all targets, warnings denied (matches the rust.yml clippy step exactly)
+    # Workspace lints deny clippy::all, but rustc lints stay at warn - dead_code among them, which
+    # is what a guard that lost its #[test] becomes. Keep this identical to rust.yml.
+    cmds: [cargo clippy --all-targets -- -D warnings]
 
   lint:web:
     desc: ESLint no-unsanitized on the viewer assets - mirrors the frontend-lint workflow
