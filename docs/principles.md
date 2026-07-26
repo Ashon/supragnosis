@@ -54,6 +54,11 @@
 > tier resolves stays queryable but does not demand mediation (review economics, Appendix A). Tier
 > promotion to human-confirmed requires a human-direct surface (18) - the same mechanism family as
 > the recall verdict's non-delegability (23/I17). Concrete design in [resolution.md](resolution.md).
+> Revision: 2026-07 (10th) - Evidence states of the coverage registry (B.1): the unit of declaration
+> is the clause (a principle is a conjunction of demands, and one verdict per principle hides the
+> unmet demands behind the met ones), and a fourth state, Characterized, is added - a running test
+> that pins non-compliant behavior is a record, not an endorsement, and with only three states it
+> had nowhere to live but Scenario, where it counted as evidence the clause was met.
 
 ---
 
@@ -708,15 +713,18 @@ principle whose only guard is a test nobody runs, and this project has already b
 Principle 16 determinism guard sat failing about one run in eight, unnoticed, because CI ran no
 Rust tests. **A guarantee that nothing checks is a guarantee only on paper.**
 
-So each principle carries a declared **evidence state**, and the declaration is itself tested
-(`crates/supragnosis-engine/tests/principle_coverage.rs`). There are three states and deliberately
-no fourth:
+So each principle is broken into **clauses** (one line per demand - a principle is a conjunction,
+and a per-principle verdict hides the unmet demands behind the met ones), each clause carries a
+declared **evidence state**, and the declaration is itself tested
+(`crates/supragnosis-engine/tests/principle_coverage.rs`). There are four states and deliberately
+no fifth:
 
 | State | Meaning | Obligation |
 |---|---|---|
-| `Scenario` | Named tests demonstrate the principle holds | The tests must exist; renaming or deleting one reports the principle as unguarded |
-| `Structural` | Violation is unrepresentable by construction (a crate graph, an exhaustive `match`) | Must state the mechanism - "structural" without one is an untested principle wearing a label |
-| `Deferred` | No enforcement exists yet | Must name the repayment milestone, so the registry and [architecture.md](architecture.md) Section 14 cannot drift apart on what is owed |
+| `Scenario` | Named tests demonstrate the clause holds | The tests must exist and run; renaming, deleting, or ignoring one reports the clause as unguarded |
+| `Structural` | Violation is unrepresentable by construction (a crate graph, an exhaustive `match`) | Must state the mechanism - "structural" without one is an untested clause wearing a label |
+| `Characterized` | The clause does NOT hold; named running tests pin the current behavior so that repaying it must rewrite them | The tests must exist and run, and the repayment milestone must be named - a passing characterization test is a record, not an endorsement |
+| `Deferred` | The clause does not hold and nothing pins it | Must name the repayment milestone, so the registry and [architecture.md](architecture.md) Section 14 cannot drift apart on what is owed |
 
 Rules this imposes:
 

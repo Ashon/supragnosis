@@ -110,6 +110,11 @@ cargo test                                           # unit tests (network-depen
   - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml` (default `~/.supragnosis/supragnosis.toml`). No file = a standalone node.
   - `SUPRAGNOSIS_VIZ_SOCK` - viewer unix socket path (daemon default `~/.supragnosis/viz.sock`). The
     viewer serves HTTP over UDS only - no TCP port; the socket file's 0600 mode is the access control.
+  - `SUPRAGNOSIS_HTTP_ADDR` - MCP streamable-HTTP bind consulted by `serve`/`start`/`status`
+    (loopback only; `start`/`status` default `127.0.0.1:7373`). Running with no arguments stays a
+    stdio MCP server regardless.
+  - `SUPRAGNOSIS_SESSION` - session label grouping the viewer's activity stream (falls back to
+    `CLAUDE_CODE_SESSION_ID`, then `<host>-<timestamp>`).
 - Tools (13): `observe`, `search_knowledge` (hybrid recall, `scope` = local | remote | both),
   `get_entity`, `traverse`, `workspace_map` (co-occurrence hyperedges), `define_type` (T-Box glossary),
   `propose` / `review` / `list_proposals` / `get_proposal` (the canon gate, Principle 23),

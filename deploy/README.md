@@ -6,7 +6,9 @@ daemon is the sole holder of the db, the Cozo single-process lock problem also d
 
 - MCP: `http://127.0.0.1:7373/mcp` (loopback-only, no auth = local trust surface, Principle 17)
 - Viewer: `~/.supragnosis/viz.sock` (HTTP over a unix socket, 0600 owner-only - no TCP port)
-- All local. Non-local exposure / auth / TLS is not supported yet (later).
+- All local for MCP and the viewer - non-local exposure / auth for these two surfaces is not
+  supported yet (later). The federation sync API is the separate network surface, guarded by
+  TLS + a non-empty allowlist (docs/federation.md).
 
 ## Quick install (recommended)
 

@@ -75,9 +75,7 @@ Knowledge first arrives as an **immutable observation event**. The entity/relati
 | `assertions` | (optional) candidate entities/relations handed over by the client - kept in the log **exactly as spelled** (normalization is the projection's job) and **included in id computation** (assertions, unlike lineage/embedding, are content identity - the same text with different assertions is a different observation) |
 | `provenance` | a **list** of attestations (at least 1): each with `host` (acting), `on_behalf_of` (the delegating principal), `workspace`, `source_ref`, `observed_at` (transaction time), `confidence`, `trust_tier`. Re-arrival under the same content address accumulates as a monotonic union rather than overwriting (the merge norm of Principle 3) |
 | `derived_from` | (optional) the source observation ids this observation was derived from - the recall list for contamination cleanup (Principle 18) |
-| `origin` | `origin_host_id`, `origin_seq` (monotonically increasing per host) - the key for version-vector delta sync |
-| `hlc` | Hybrid Logical Clock - a **deterministic causal order** independent of host wall-clock skew |
-| `signature` | (optional) the origin node's signature - detects source forgery/tampering even after relaying through servers/peers |
+| `provenance[].sync` | (optional, **per attestation** - not an observation-level field) the federation stamp of federation.md Section 3: `origin_node` (key-derived node id), `origin_seq` (monotonic per origin+workspace - the version-vector key), `hlc` (Hybrid Logical Clock - a **deterministic causal order** independent of host wall-clock skew), `signature` (ed25519 by the origin - detects forgery/tampering even through relays), and the origin's signed lineage declaration. Excluded from the content address, and one observation can carry several origins' stamps |
 
 ### 2.4 Provenance - **first-class citizen, delegation chain, trust tier**
 Every fact is stored with a provenance tag. Nothing is destructively overwritten.
@@ -115,7 +113,7 @@ flowchart TB
     end
     subgraph Core["supragnosis-core (domain, no IO)"]
         M["Models: Observation, Entity, Relation, Schema, Provenance"]
-        P["Ports: ObservationStore, GraphStore, VectorIndex, Extractor, EmbeddingProvider"]
+        P["Ports: KnowledgeStore, EmbeddingProvider, ResolutionPolicy, Clock, EventSink (Extractor: M5)"]
     end
     subgraph Store["supragnosis-store (adapter)"]
         DB[("Cozo / RocksDB\nrelational+graph+vector")]
@@ -152,7 +150,7 @@ sequenceDiagram
     Eng->>Eng: (optional) Extractor -> candidate entities/relations
     Eng->>Log: append(Observation, provenance, blake3 id)
     Eng->>Prj: project(new events)
-    Prj->>Prj: entity resolution (canonical key + embedding similarity)
+    Prj->>Prj: entity resolution (canonical key - embeddings only generate merge candidates)
     Prj->>G: upsert entities/relations (+vectors)
     Eng-->>Cl: ack (entity ids, link results)
 ```
@@ -241,8 +239,9 @@ Reason - a knowledge system needs all of (1) **semantic recall of fragments (vec
 and (3) **relational queries over metadata/provenance**, and Cozo alone covers all three and is embedded.
 
 > **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability is a **hard requirement**, use Oxigraph.
-> Because of the port-adapter structure, it can be swapped by reimplementing only the `GraphStore`/`VectorIndex` traits -
-> the store choice is isolated so it does not leak into the domain code.
+> Because of the port-adapter structure, it can be swapped by reimplementing only the `KnowledgeStore`
+> port (one trait covers the log, graph, and vector reads) - the store choice is isolated so it does
+> not leak into the domain code.
 
 ---
 
@@ -310,19 +309,19 @@ Principle 22 (curation as a by-product of work) on the MCP surface.
 
 | Purpose | Crate |
 |------|----------|
-| MCP server SDK | `rmcp` (`server`, `transport-io`, `macros`) |
+| MCP server SDK | `rmcp` (`server`, `transport-io`, `macros`; `transport-streamable-http-server` in the CLI) |
 | Async runtime | `tokio` |
 | Embedded store | `cozo` (RocksDB backend) *(alternative: `oxigraph`)* |
-| Local embedding (optional) | `fastembed` (ONNX, local model) - if absent, degrade to keyword search / client-supplied |
+| Local embedding (optional) | `fastembed` (ONNX, local model) - if absent, degrade to keyword search |
 | Serialization | `serde`, `serde_json` |
 | Content-address ID | `blake3` |
 | Errors | `thiserror` (library) / `anyhow` (binary) |
 | Observability/logging | `tracing`, `tracing-subscriber` |
-| Sync transport | `axum` (server) + `reqwest` (client) HTTP sync API *(later: `tonic`/gRPC)* |
+| Sync transport | `axum` + `axum-server` (in-process `rustls` TLS) + `reqwest` (client) *(later: `tonic`/gRPC)* |
 | Node identity/signing | `ed25519-dalek` (event signing, node keypair) |
-| Time/identifiers | `time`, `uuid` |
-| Configuration | `figment` or `config` (TOML) |
-| Testing | `insta` (snapshot) + in-memory store adapter |
+| Time/identifiers | std `SystemTime` (epoch millis) + `blake3` content addresses / derived ids - no `time`/`uuid` crates |
+| Configuration | `toml` + `serde` (`deny_unknown_fields` - a typo cannot silently disable a role) |
+| Testing | plain `cargo test` + the in-memory store adapter; property-style convergence tests (no snapshot crate) |
 
 ---
 
@@ -525,7 +524,10 @@ HTTP-over-UDS client (`curl --unix-socket`).
      its scope by highlighting the affected edges/nodes carried on the proposal's `affected_types`
      (relation names normalized to the graph's edge kinds). **Repaid**: `get_proposal` now returns a
      COMPUTED diff for the two kinds with a commit effect, and the blocking checks of Section 6 are
-     enforced by the fold - see the M3.5 entry in the compliance record below.
+     enforced by the fold - see the M3.5 entry in the compliance record below. The shipped state
+     machine covers the solo decision rule; the base-frontier machinery (I7/I12, the Stale state)
+     did not ship with it and is recorded as debt (Section 14; proposal-workflow.md Section 4
+     [impl]).
 6. **M4 - Federation [o] Phases 0-4; Phase 3.5 and 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
    (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated recall, legacy-id
@@ -806,7 +808,11 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
 - Reprojection (`reproject`) is implemented, and `all_observations` was added to `KnowledgeStore` as its prerequisite -
   the M3 first task, pulled forward because M4's re-materialization needed it.
 - The random-order convergence property test exists (seed-fixed LCG shuffling in `core`, plus sync convergence tests),
-  discharging the Principle 16 test obligation. *Partition injection is still not exercised.*
+  discharging the Principle 16 test obligation. Partition injection is now exercised for the fold
+  surfaces - `i8_blocking_check_conclusion_is_arrival_order_independent` delivers one event set whole,
+  reversed, and one event per batch - while the graph-identity property
+  (`cross_node_reprojection_converges`) still applies each side's whole delta as a single batch;
+  batch-partitioned delivery for the full graph identity remains the open sliver.
 - Every "guarded by <test>" claim in this ledger is now **actually enforced**: `.github/workflows/rust.yml`
   runs clippy and the test suite on push and PR. Until it existed, CI built release binaries and linted the
   viewer's JS but ran no Rust test, so each guard held only while someone remembered to run it - which is
