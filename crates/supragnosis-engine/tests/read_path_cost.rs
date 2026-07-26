@@ -29,6 +29,9 @@ struct CountingStore {
     obs_rows: AtomicUsize,
     entity_scans: AtomicUsize,
     relation_scans: AtomicUsize,
+    /// Per-item store queries. An enumeration count cannot see these, which is how a read surface
+    /// that asks the store once per entity looked cheap.
+    semantic_queries: AtomicUsize,
 }
 
 /// One read surface's cost, in enumerations of each table.
@@ -38,6 +41,7 @@ struct Cost {
     observation_rows: usize,
     entities: usize,
     relations: usize,
+    semantic_queries: usize,
 }
 
 impl CountingStore {
@@ -52,11 +56,12 @@ impl CountingStore {
             obs_rows: AtomicUsize::new(0),
             entity_scans: AtomicUsize::new(0),
             relation_scans: AtomicUsize::new(0),
+            semantic_queries: AtomicUsize::new(0),
         }
     }
 
     fn reset(&self) {
-        for c in [&self.obs_scans, &self.obs_rows, &self.entity_scans, &self.relation_scans] {
+        for c in [&self.obs_scans, &self.obs_rows, &self.entity_scans, &self.relation_scans, &self.semantic_queries] {
             c.store(0, Ordering::SeqCst);
         }
     }
@@ -67,6 +72,7 @@ impl CountingStore {
             observation_rows: self.obs_rows.load(Ordering::SeqCst),
             entities: self.entity_scans.load(Ordering::SeqCst),
             relations: self.relation_scans.load(Ordering::SeqCst),
+            semantic_queries: self.semantic_queries.load(Ordering::SeqCst),
         }
     }
 
@@ -128,6 +134,24 @@ impl KnowledgeStore for CountingStore {
         limit: usize,
     ) -> Result<Vec<TraverseHit>, StoreError> {
         self.inner.traverse(start_id, max_depth, limit)
+    }
+    fn search_semantic(
+        &self,
+        q: &[f32],
+        ws: Option<&str>,
+        n: usize,
+    ) -> Result<Vec<SearchHit>, StoreError> {
+        self.semantic_queries.fetch_add(1, Ordering::SeqCst);
+        self.inner.search_semantic(q, ws, n)
+    }
+    fn search_semantic_entities(
+        &self,
+        q: &[f32],
+        ws: Option<&str>,
+        n: usize,
+    ) -> Result<Vec<SearchHit>, StoreError> {
+        self.semantic_queries.fetch_add(1, Ordering::SeqCst);
+        self.inner.search_semantic_entities(q, ws, n)
     }
 }
 
@@ -432,5 +456,116 @@ fn embedding_cost_on_the_read_path() {
         for _ in 0..20 { engine.graph(Some(WS)).expect("graph"); }
         let graph = t.elapsed() / 20;
         println!("embedding={embedded:<5} scan {scan:>10.2?}   graph {graph:>10.2?}");
+    }
+}
+
+#[test]
+#[ignore = "measurement: what one viewer poll costs the server"]
+fn viewer_poll_cost() {
+    let dir = std::env::temp_dir().join(format!("supragnosis-poll-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for n in [100usize, 300] {
+        let cozo = supragnosis_store::CozoStore::open(dir.join(format!("n{n}"))).expect("cozo");
+        let store = Arc::new(cozo);
+        let engine = Engine::new(store.clone(), "host-a", WS)
+            .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
+        for i in 0..n {
+            engine.observe(ObserveInput {
+                content: format!("fact number {i} with prose so the row is not trivial"),
+                workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![
+                    EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None },
+                    EntityInput { name: format!("E{}", i + 1), kind: None, description: None },
+                ],
+                relations: vec![RelationInput {
+                    from: format!("E{i}"), kind: "relates_to".into(), to: format!("E{}", i + 1),
+                    description: None, valid_from: None, valid_to: None }],
+            }).expect("observe");
+        }
+        let ws = Some(WS);
+        let each = |label: &str, f: &dyn Fn()| {
+            let t = std::time::Instant::now();
+            for _ in 0..5 { f(); }
+            (label.to_string(), t.elapsed() / 5)
+        };
+        let parts = vec![
+            each("graph", &|| { engine.graph(ws).unwrap(); }),
+            each("hypergraph", &|| { engine.hypergraph(ws).unwrap(); }),
+            each("types", &|| { engine.types(ws).unwrap(); }),
+            each("curation (review tab)", &|| { engine.curation(ws).unwrap(); }),
+            each("observations (log tab)", &|| { engine.observation_log(ws, None, None).unwrap(); }),
+        ];
+        println!("\n--- {n} observations, 384-dim embeddings ---");
+        let mut closed = std::time::Duration::ZERO;
+        for (label, d) in &parts {
+            println!("  {label:<26} {d:>10.2?}");
+            if matches!(label.as_str(), "graph" | "hypergraph" | "types") { closed += *d; }
+        }
+        let all: std::time::Duration = parts.iter().map(|(_, d)| *d).sum();
+        println!("  {:<26} {closed:>10.2?}  (every 2.5s)", "= poll, panels closed");
+        println!("  {:<26} {all:>10.2?}  (every 2.5s)", "= poll, panels open");
+    }
+}
+
+#[test]
+#[ignore = "measurement: what makes curation superlinear"]
+fn curation_cost_breakdown() {
+    use supragnosis_core::EmbeddingProvider;
+    let dir = std::env::temp_dir().join(format!("supragnosis-cur-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for embedded in [false, true] {
+        for n in [100usize, 200, 300] {
+            // Match how the CLI assembles these: an embedder means the store is opened WITH it, so
+            // the HNSW indexes exist and semantic lookup is ANN rather than brute force. Opening
+            // plain and attaching the embedder only to the engine measures a configuration the
+            // product never ships.
+            let path = dir.join(format!("e{embedded}n{n}"));
+            let emb = supragnosis_embed::HashingEmbedder::new(384);
+            let store: Arc<supragnosis_store::CozoStore> = Arc::new(if embedded {
+                supragnosis_store::CozoStore::open_with_embedder(&path, &emb.id(), emb.dimensions())
+                    .expect("cozo+hnsw")
+            } else {
+                supragnosis_store::CozoStore::open(&path).expect("cozo")
+            });
+            let mut engine = Engine::new(store.clone(), "host-a", WS);
+            if embedded {
+                engine = engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
+            }
+            for i in 0..n {
+                engine.observe(ObserveInput {
+                    content: format!("fact {i}"),
+                    workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None }],
+                    relations: vec![],
+                }).expect("observe");
+            }
+            let t = std::time::Instant::now();
+            for _ in 0..3 { engine.curation(Some(WS)).unwrap(); }
+            println!("embedder={embedded:<5} n={n:<4} curation {:>10.2?}", t.elapsed() / 3);
+        }
+    }
+}
+
+#[test]
+#[ignore = "measurement: per-item store queries inside one read"]
+fn per_item_queries_in_one_read() {
+    for n in [50usize, 100, 200] {
+        let inner = InMemoryStore::new();
+        let store = Arc::new(CountingStore::wrapping(Box::new(inner)));
+        let engine = Engine::new(store.clone(), "host-a", WS)
+            .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
+        for i in 0..n {
+            engine.observe(ObserveInput {
+                content: format!("fact {i}"),
+                workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None }],
+                relations: vec![],
+            }).expect("observe");
+        }
+        let (_, c) = store.measure(|| { engine.curation(Some(WS)).unwrap(); });
+        println!("n={n:<4} curation: log scans {} / semantic queries {}", c.observations, c.semantic_queries);
     }
 }
