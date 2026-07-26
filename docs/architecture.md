@@ -612,6 +612,22 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   description field, type_defs, proposal_events), and `migrate` is that path honored rather than
   promised - it re-creates pre-formula rows under the current content address so they can sync again.
   Guarded by `legacy_id_rows_stay_local_and_migrate`.
+  A **fourth** core change had no path and went unnoticed until a real store was inspected:
+  `Observation.provenance` became a LIST of attestations (the Principle 3 merge norm), and rows written
+  before it held a single bare object. Those rows failed reconstruction entirely - 23 of 141 in the
+  author's own store - so they fell out of `all_observations` and `get_observation` and were invisible to
+  every fold. `migrate` structurally could not repair them: migration walks `all_observations`, the very
+  enumeration an unreadable row drops out of, so the rows needing repair were the ones it could not see.
+  The repair is therefore a permanent **read shim** (`provenance_from_json`), not a migration: since the
+  log is append-only and a row can never be rewritten away, every encoding it has ever used has to stay
+  readable, or Principle 3's "nothing is destroyed" quietly stops holding at the storage layer.
+  Guarded by `legacy_object_provenance_reads_as_one_attestation`.
+  Note what this does NOT change, since the blast radius was easy to overstate: keyword and semantic
+  search read the observation table's columns directly and never reconstruct, so those rows were always
+  recallable. What was broken is everything downstream of reconstruction - the folds, the log browser,
+  `supragnosis://observation/{id}` dereference (so a search could return a hit whose provenance could not
+  be inspected, Principles 2/14), and `add_observation`'s merge baseline, which propagates a read failure
+  by design and so refused to absorb a re-observation of that content at all.
 - Principle 14 (stable identifiers + mechanical enforcement of structural evolution): observation id =
   blake3 content address over (workspace, content, assertions); entity id = canonical-name resolution;
   relation id = normalized kind (independent of spelling jitter). The hash uses length-prefix encoding, so
