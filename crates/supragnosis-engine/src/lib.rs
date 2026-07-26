@@ -2397,6 +2397,15 @@ impl Engine {
     /// ceiling of the log-borne marker on that verdict) (resolution.md Section 6). A pure
     /// fold-projection of the log - converges continuously (F5), and a gate event overrides the base
     /// evaluation in BOTH directions (a merged demotion can push below base - the fast-path).
+    ///
+    /// A grant is a merge's COMMIT EFFECT, so it exists only where [`Engine::fold_proposals`] says
+    /// the merge committed (state `merged`) - a verdict on a proposal whose blocking checks fail
+    /// folds to `blocked` and grants nothing (I13), exactly as `merge_forwarding` already refuses
+    /// to forward for one. Without this coupling the two folds can disagree: a claim_promotion
+    /// whose targets are only partly synced would read `blocked` on the proposal surface while its
+    /// present targets were already promoted. Skipping is the safe direction and stays monotone -
+    /// when the missing target arrives the state flips to `merged` and the grant applies (the same
+    /// blocked -> merged direction the blocking checks are pinned to).
     fn gate_grants(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HashMap<String, TrustTier>, StoreError> {
         // proposal id -> (targets, requested tier); collected from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier)> = HashMap::new();
@@ -2458,12 +2467,23 @@ impl Engine {
                 }
             }
         }
+        // The state fold is the single answer to "did this merge commit" (I13): consult it rather
+        // than re-deriving blocking here, so the two can never drift apart again. Shares the
+        // ReadCtx-cached log, so this adds no store enumeration.
+        let states = if rep_merge.is_empty() {
+            BTreeMap::new() // no merge verdicts anywhere - nothing to gate, skip the fold
+        } else {
+            self.fold_proposals(workspace, cx)?
+        };
         // Per target, the HLC-latest gate event governs (tie: proposal id) - resolution.md R5.
         let mut grants: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
         for (proposal_id, (targets, requested)) in &opened {
             let Some((verdict_hlc, _, source_ref)) = rep_merge.get(proposal_id) else {
                 continue; // not merged - grants nothing (the gate, Principle 23)
             };
+            if states.get(proposal_id).is_none_or(|p| p.state != "merged") {
+                continue; // the fold says this merge did not commit (blocked) - no effect (I13)
+            }
             let granted = (*requested).min(verdict_grant_ceiling(source_ref.as_deref()));
             for target in targets {
                 let cand = (verdict_hlc.clone(), proposal_id.clone(), granted);

@@ -461,6 +461,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p23_a_well_formed_merge_passes_its_checks_and_commits",
             "i8_blocking_check_conclusion_is_arrival_order_independent",
         ])),
+        // The state fold and the effect folds must give ONE answer to "did this merge commit":
+        // a blocked gate merge that still granted tiers to its present targets was exactly the
+        // two-fold disagreement this clause exists to forbid.
+        c("a merge the fold calls blocked has no commit effect - the grant fold and the state fold agree",
+          Evidence::Scenario(&["p23_a_blocked_gate_merge_grants_nothing"])),
         c("the write surface refuses a proposal the fold could never resolve",
           Evidence::Scenario(&["p23_the_gate_surface_refuses_a_malformed_proposal"])),
         c("a merged verdict has the commit effect its kind promises",

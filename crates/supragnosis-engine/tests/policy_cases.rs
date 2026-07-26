@@ -17,7 +17,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use supragnosis_core::{Entity, KnowledgeStore, TrustTier};
+use supragnosis_core::{
+    observation_content_id, Assertions, Entity, KnowledgeStore, Observation,
+    ProposalEventAssertion, ProposalEventKind, Provenance, TrustTier, VERDICT_SURFACE_CONSOLE,
+};
 use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
 use supragnosis_store::InMemoryStore;
 
@@ -666,6 +669,125 @@ fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
         view.checks.iter().any(|c| c.blocking && !c.passed && c.name == "referential integrity"),
         "the failing check must be visible on the proposal: {:?}",
         view.checks
+    );
+}
+
+/// GIVEN a gate proposal whose blocking checks fail (one target observation has not arrived), WHEN
+/// its replicated merge verdict lands, THEN the grant fold agrees with the state fold: `blocked`
+/// grants nothing, not even to the targets that ARE present. Without this the two folds diverge -
+/// the proposal surface reads blocked while the present target's belief is already promoted - and
+/// "blocked" stops meaning "did not commit" (I13). The events are planted store-side because that
+/// is the shape sync apply gives them; the local propose() refuses a missing target outright.
+#[test]
+fn p23_a_blocked_gate_merge_grants_nothing() {
+    let (store, engine) = engine();
+    let present = engine
+        .observe(ObserveInput {
+            content: "thing exists".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Thing".into(),
+                kind: Some("Tool".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe");
+    let entity_id = present.entities[0].clone();
+    let tier = |engine: &Engine| {
+        engine.get_entity(&entity_id).expect("get").expect("entity").effective_tier
+    };
+    assert_eq!(tier(&engine), TrustTier::AgentExtracted, "pre-gate baseline");
+
+    // The other target does not exist yet, but its content-addressed id is knowable in advance -
+    // the state a partially synced node is in while the second observation is still in flight.
+    let late_id = observation_content_id(WS, "late fact", &Assertions::default());
+    let plant = |content: String, observed_at, source_ref: Option<&str>, events| {
+        let obs = Observation::with_assertions(
+            content,
+            Provenance {
+                host: "host-b".into(),
+                on_behalf_of: None,
+                workspace: WS.into(),
+                source_ref: source_ref.map(String::from),
+                observed_at,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: None,
+            },
+            Assertions { proposal_events: events, ..Default::default() },
+        );
+        let id = obs.id.clone();
+        store.add_observation(obs).expect("plant");
+        id
+    };
+    let payload = serde_json::json!({
+        "kind": "claim_promotion",
+        "targets": [present.observation_id, late_id],
+        "into": null,
+        "tier": "human_confirmed",
+        "rationale": "partially synced promotion",
+        "affected_types": [],
+    })
+    .to_string();
+    let proposal = plant(
+        "proposal(open) claim_promotion".into(),
+        1_000,
+        None,
+        vec![ProposalEventAssertion {
+            proposal: String::new(),
+            event: ProposalEventKind::Opened,
+            payload,
+        }],
+    );
+    let before = snapshot(store.as_ref());
+    plant(
+        format!("proposal(merge) {proposal}"),
+        2_000,
+        Some(VERDICT_SURFACE_CONSOLE),
+        vec![ProposalEventAssertion {
+            proposal: proposal.clone(),
+            event: ProposalEventKind::Verdict,
+            payload: r#"{"decision":"merge"}"#.into(),
+        }],
+    );
+    let after = snapshot(store.as_ref());
+
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(view.state, "blocked", "a merge with an absent target must fold to blocked");
+    Case::new("Principle 23", "a blocked merge is a merge that did not commit - it grants nothing")
+        .log_appended(&before, &after, 1);
+    assert_eq!(
+        tier(&engine),
+        TrustTier::AgentExtracted,
+        "the state fold says blocked, so the grant fold must not have promoted the present target"
+    );
+
+    // The pinned direction (blocked -> merged, never the reverse): when the missing observation
+    // arrives, the SAME log commits and the grant applies - capped by the console ceiling.
+    let late = engine
+        .observe(ObserveInput {
+            content: "late fact".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .expect("late observe");
+    assert_eq!(late.observation_id, late_id, "the in-flight id resolves to the arrived observation");
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(view.state, "merged", "the arrival of the target unblocks the same verdict");
+    assert_eq!(
+        tier(&engine),
+        TrustTier::HumanConfirmed,
+        "once merged, the grant applies to the promoted targets"
     );
 }
 
