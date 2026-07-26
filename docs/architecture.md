@@ -820,9 +820,12 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
 - The random-order convergence property test exists (seed-fixed LCG shuffling in `core`, plus sync convergence tests),
   discharging the Principle 16 test obligation. Partition injection is now exercised for the fold
   surfaces - `i8_blocking_check_conclusion_is_arrival_order_independent` delivers one event set whole,
-  reversed, and one event per batch - while the graph-identity property
-  (`cross_node_reprojection_converges`) still applies each side's whole delta as a single batch;
-  batch-partitioned delivery for the full graph identity remains the open sliver.
+  reversed, and one event per batch. The batch-partitioned graph-identity sliver is now closed too:
+  `p16_partitioned_and_duplicated_delivery_converges` compares the two nodes' graphs **serialized
+  whole** rather than by shape, so belief values, contested flags, effective tiers, aliases and edge
+  metadata are inside the equality. Shape-only comparison is not a smaller version of this check but a
+  different one - it is what let an order-dependent duplicate-edge pick sit in `graph` while the P16
+  suite stayed green.
 - Every "guarded by <test>" claim in this ledger is now **actually enforced**: `.github/workflows/rust.yml`
   runs clippy and the test suite on push and PR. Until it existed, CI built release binaries and linted the
   viewer's JS but ran no Rust test, so each guard held only while someone remembered to run it - which is

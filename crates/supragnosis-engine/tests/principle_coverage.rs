@@ -207,6 +207,21 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "M4 Phase 5 - the first multi-principal deployment is the first time such a demand can \
              arrive from someone who is not the operator (architecture.md Section 14)",
         )),
+        c("a relation accumulates attestations the way an entity and an observation do",
+          Evidence::Deferred(
+            "M3c/M5 - relation provenance is still a single attestation, so a second assertion of \
+             the same edge replaces rather than accumulates. Recorded in architecture.md Section 14 \
+             under the Principle 1/6 deferral but never given a clause here; the conflict-surfacing \
+             half is Principle 6's own deferred row",
+        )),
+        c("a re-materialization concurrent with an observe cannot interleave",
+          Evidence::Deferred(
+            "Revisit with a store-level atomic upsert - `reproject` does not take `write_guard`, so \
+             a replay concurrent with an observe can interleave (architecture.md Section 14). What \
+             keeps it harmless today is a deployment fact (replay runs with the daemon stopped, or \
+             from the post-apply sync hook), which is the class of argument that ledger exists to \
+             retire. M3's write path was supposed to repay it and shipped without it",
+        )),
     ]),
     (4, "Bi-Temporality", &[
         // Capture is the half that cannot be added retroactively, so it is the half that must be
@@ -418,6 +433,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("derived assertions without lineage are quarantined, recall is trust-weighted, and \
            contamination can be traced back and cleaned",
           Evidence::Deferred("M5 with the extraction port - the tier weights belief today, not the ranked recall surfaces")),
+        c("a replicated verdict marker is evaluated against the canon policy, not honored as sent",
+          Evidence::Deferred(
+            "M4 Phase 5 - the surface ceiling reads the marker off the log, so a console marker that \
+             arrives over sync is honored on the receiver. That is deliberate (making it depend on \
+             how the verdict arrived would make the effective tier differ per node over one log, a \
+             P16 violation) and sound only under the single-principal premise; the principal-to-key \
+             binding in the canon policy is what replaces marker trust (resolution.md Section 6, \
+             federation.md F13/Phase 5)",
+        )),
     ]),
     (19, "Deterministic Core, Probabilistic Edge", &[
         c("a failing probabilistic edge degrades and never blocks a write, and says so rather than \
@@ -481,6 +505,14 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["p23_a_blocked_gate_merge_grants_nothing"])),
         c("the write surface refuses a proposal the fold could never resolve",
           Evidence::Scenario(&["p23_the_gate_surface_refuses_a_malformed_proposal"])),
+        c("a reviewer is shown the informative checks - blast radius and the payload's trust profile",
+          Evidence::Deferred(
+            "M4+ with the review-economics layer - only the blocking checks are computed, so the \
+             routing rules of proposal-workflow.md Section 9 (impact radius decides what needs a \
+             human) have no input to read. Recorded as still open in architecture.md Section 14 \
+             without a clause here. Impact radius is also the standing example of a check that is \
+             NOT monotone in the growing log, so it cannot ship before the fixed base of I7",
+        )),
         c("a merged verdict has the commit effect its kind promises",
           Evidence::Scenario(&["p23_demotion_overrides_below_base"])),
         c("every proposal kind the surface accepts has a commit effect",
