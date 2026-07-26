@@ -63,6 +63,21 @@ enum Cmd {
     Reproject(SyncArgs),
     /// Migrate legacy-id observations (pre-0.1.x content-address eras) to the current formula so they can sync (stop the daemon first)
     Migrate(SyncArgs),
+    /// Re-create a workspace's knowledge under another name, provenance intact (stop the daemon first)
+    RekeyWorkspace(RekeyArgs),
+}
+
+#[derive(Args, Clone)]
+struct RekeyArgs {
+    /// Workspace to read from.
+    #[arg(long)]
+    from: String,
+    /// Workspace to re-create the knowledge under.
+    #[arg(long)]
+    to: String,
+    /// Report what would move and write nothing.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Clone, Default)]
@@ -119,6 +134,7 @@ fn main() -> Result<()> {
         Cmd::Sync(a) => sync_cmd(a),
         Cmd::Reproject(a) => reproject_cmd(a),
         Cmd::Migrate(a) => migrate_cmd(a),
+        Cmd::RekeyWorkspace(a) => rekey_workspace_cmd(a),
     }
 }
 
@@ -558,6 +574,38 @@ fn migrate_cmd(a: SyncArgs) -> Result<()> {
             "migrated {} legacy-id observation(s); reprojected {}: {} observations -> {} entities, {} relations",
             migrated, ws, r.observations, r.entities, r.relations
         );
+        anyhow::Ok(())
+    })
+}
+
+/// `supragnosis rekey-workspace` - re-create a workspace's knowledge under another name.
+///
+/// The workspace is inside the content address, so this cannot be a move: the re-keyed rows are new
+/// observations and the originals stay (Principle 3). It is not a re-ingest either - every
+/// attestation is copied verbatim, so the original observation times and authors survive, which
+/// pushing the text back through `observe` would destroy. The store is single-process: stop the
+/// daemon first.
+fn rekey_workspace_cmd(a: RekeyArgs) -> Result<()> {
+    init_tracing();
+    let cfg = resolve(RunArgs::default(), false);
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(async {
+        let engine = build_engine(&cfg, None)?;
+        let rep = engine.rekey_workspace(&a.from, &a.to, a.dry_run)?;
+        let verb = if a.dry_run { "would re-key" } else { "re-keyed" };
+        println!(
+            "{verb} {} observation(s) from {} to {} ({} already there, {} proposal-event row(s) left behind)",
+            rep.moved, a.from, a.to, rep.already, rep.skipped_proposal_events
+        );
+        if a.dry_run {
+            println!("dry run - nothing was written");
+        } else if rep.moved > 0 {
+            let r = engine.reproject(Some(&a.to))?;
+            println!(
+                "reprojected {}: {} observations -> {} entities, {} relations",
+                a.to, r.observations, r.entities, r.relations
+            );
+        }
         anyhow::Ok(())
     })
 }

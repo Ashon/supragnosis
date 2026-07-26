@@ -1467,10 +1467,10 @@ mod tests {
             let store = CozoStore::open(&dir).expect("open");
             let legacy = serde_json::json!({
                 "provenance": {
-                    "host": "ashons-macbook",
+                    "host": "host-b",
                     "on_behalf_of": "ashon",
                     "workspace": "ws1",
-                    "source_ref": "docs/framework-spec-v3.md",
+                    "source_ref": "docs/design.md",
                     "observed_at": 1_784_299_669_902u64,
                     "confidence": 1.0,
                     "trust_tier": "agent_extracted"
@@ -1499,7 +1499,7 @@ mod tests {
                 .expect("a legacy encoding is not a backend failure")
                 .expect("the row exists");
             assert_eq!(got.provenance.len(), 1, "one bare object is one attestation, not zero and not two");
-            assert_eq!(got.provenance[0].host, "ashons-macbook");
+            assert_eq!(got.provenance[0].host, "host-b");
             assert_eq!(got.provenance[0].on_behalf_of.as_deref(), Some("ashon"));
             assert_eq!(got.provenance[0].workspace, "ws1");
             assert_eq!(got.content, "an early-era fact");
