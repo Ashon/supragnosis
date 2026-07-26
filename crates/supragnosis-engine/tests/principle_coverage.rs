@@ -480,6 +480,14 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "M4 Phase 5 / M5 - tbox_change and recall fold correctly and change nothing, which is \
              assigned rather than accidental (proposal-workflow.md Section 13)",
         )),
+        c("a verdict binds to the base it reviewed, and a stale or withdrawn proposal cannot merge",
+          Evidence::Deferred(
+            "M4 Phase 5 - the fold checks only the blocking gate of 7.1's validity conditions: a \
+             proposal never pins its base (I7), Stale is never computed, a verdict is not bound to \
+             a base (I12), and a merge verdict cast after a withdrawal still folds to merged (no \
+             Open-state check). Recorded in architecture.md Section 14 and the [impl] note in \
+             proposal-workflow.md Section 4",
+        )),
         c("self-attestation is computed from the proposer and reviewer, and a recall verdict is \
            not delegable",
           Evidence::Characterized(
