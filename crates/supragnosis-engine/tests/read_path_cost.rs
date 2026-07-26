@@ -331,7 +331,13 @@ fn read_path_wall_clock() {
     }
 }
 
-/// A read-only view of another store that hands the log back in the opposite order.
+/// A read-only view of another store that hands every enumeration back in the opposite order.
+///
+/// All three enumerations are reversed, not just the log: a fold that picks among rows by position
+/// is order-dependent whichever table it reads, and the adapters disagree about all three (InMemory
+/// enumerates HashMaps, Cozo returns Datalog results). Reversing only the log left the entity and
+/// relation folds unguarded, which is how the duplicate-edge pick in `graph` stayed order-dependent
+/// while this test passed.
 struct ReversedStore(Arc<InMemoryStore>);
 
 impl KnowledgeStore for ReversedStore {
@@ -340,8 +346,16 @@ impl KnowledgeStore for ReversedStore {
         v.reverse();
         Ok(v)
     }
-    fn all_entities(&self, ws: Option<&str>) -> Result<Vec<Entity>, StoreError> { self.0.all_entities(ws) }
-    fn all_relations(&self, ws: Option<&str>) -> Result<Vec<Relation>, StoreError> { self.0.all_relations(ws) }
+    fn all_entities(&self, ws: Option<&str>) -> Result<Vec<Entity>, StoreError> {
+        let mut v = self.0.all_entities(ws)?;
+        v.reverse();
+        Ok(v)
+    }
+    fn all_relations(&self, ws: Option<&str>) -> Result<Vec<Relation>, StoreError> {
+        let mut v = self.0.all_relations(ws)?;
+        v.reverse();
+        Ok(v)
+    }
     fn add_observation(&self, o: Observation) -> Result<(), StoreError> { self.0.add_observation(o) }
     fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> { self.0.get_observation(id) }
     fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> { self.0.get_entity(id) }
@@ -401,6 +415,53 @@ fn read_surfaces_do_not_depend_on_enumeration_order() {
             })
             .expect("observe");
     }
+
+    // Two spellings of one subject, each asserting the same edge with its own description, then an
+    // accepted merge folding them together. After the fold both edges canonicalize to one
+    // (from, kind, to), so the graph has to choose which row's metadata survives - the case that
+    // makes the choice observable at all. This is the workflow's headline scenario
+    // (proposal-workflow.md 14.4), not a contrived one.
+    for (name, note) in [("Cozo", "the store"), ("CozoDB", "the same store, spelled out")] {
+        writer
+            .observe(ObserveInput {
+                content: format!("{name} sits on rocksdb"),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput { name: name.into(), kind: None, description: None }],
+                relations: vec![RelationInput {
+                    from: name.into(),
+                    kind: "depends_on".into(),
+                    to: "RocksDB".into(),
+                    description: Some(note.into()),
+                    valid_from: None,
+                    valid_to: None,
+                }],
+            })
+            .expect("observe");
+    }
+    let (a, b) = (
+        supragnosis_core::Entity::make_id(WS, "cozo"),
+        supragnosis_core::Entity::make_id(WS, "cozodb"),
+    );
+    let merge = writer
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![a, b.clone()],
+            into: Some(b),
+            tier: None,
+            rationale: Some("one subject, two spellings".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+    writer
+        .review_proposal(None, merge, "merge".into(), None, Some("ashon".into()), VerdictSurface::Console)
+        .expect("review");
 
     let forward = Engine::new(inner.clone(), "host-a", WS);
     let backward = Engine::new(Arc::new(ReversedStore(inner.clone())), "host-a", WS);
