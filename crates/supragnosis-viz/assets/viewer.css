@@ -410,3 +410,7 @@
   #peersBody .fed .furl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #peersBody .fws { color:var(--muted); font-size:10.5px; margin:0 0 2px 15px; }
   #peersBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--prose); }
+
+/* A proposal event is bookkeeping about the canon, not knowledge someone observed - dimmed and
+   italic so a log scan separates the two at a glance without having to read either. */
+.otext.ev { opacity: .72; font-style: italic; }

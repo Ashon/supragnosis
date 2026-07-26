@@ -889,6 +889,34 @@ pub struct RelationRef {
     pub to: String,
 }
 
+/// A proposal event rendered for a reader, so the log panel does not have to show the raw text.
+///
+/// A proposal event's stored `content` is machine text (`proposal(merge) <64 hex>`) and it is inside
+/// the content address, so it can never be rewritten - the log would read as hashes forever. This is
+/// the read-time translation: the same event said in names. Resolution is best-effort by design, and
+/// an unresolvable target keeps its id rather than being dropped, because a row that silently omits
+/// what it could not name would misreport how many entities an act touched.
+#[derive(Serialize)]
+pub struct ProposalEventSummary {
+    /// The proposal this event belongs to (its opening observation's id).
+    pub proposal: String,
+    /// `opened` | `verdict` | `comment` | `withdrawn`.
+    pub event: String,
+    /// The verdict carried, on a verdict event: `merge` | `reject` | ...
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<String>,
+    /// The proposal's kind (`entity_merge`, `claim_promotion`, ...), empty if the opening event has
+    /// not arrived on this node yet.
+    pub kind: String,
+    /// The proposal's state as the fold sees it NOW - so a verdict row says what it settled into.
+    pub state: String,
+    /// What the proposal acts on, named where the projection still knows the name.
+    pub targets: Vec<EntityRef>,
+    /// The canonical target of an entity merge.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub into: Option<EntityRef>,
+}
+
 /// One observation flattened for the log-browser surface (observability). The observation log is
 /// the source of truth (Principle 1); this is a read-only projection of one log row with its
 /// provenance (Principle 2) and effective tier (resolution.md Section 3). Embeddings never appear
@@ -908,6 +936,9 @@ pub struct ObsSummary {
     pub entities: Vec<EntityRef>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<RelationRef>,
+    /// Present when this observation IS a proposal event - the readable form of `content`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<ProposalEventSummary>,
 }
 
 /// One competing value for a single-valued belief field, with its role in the RESOLVED projection -
@@ -3005,6 +3036,28 @@ impl Engine {
         let gates = self.gate_grants(workspace, cx)?;
         let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
         let want = entity.map(|e| canon(e.to_string()));
+        // Proposal-event rows are unreadable as stored (machine text, fixed inside the content
+        // address), so they are translated below. Both inputs are loaded ONLY if such a row exists:
+        // the fold is over rows already in the ReadCtx, and the name lookup is the one store scan,
+        // which a workspace with no proposals never pays. The log panel is opened on demand, not
+        // polled like the graph, so that scan is affordable where it would not be on the poll path.
+        let has_events = self.log(workspace, cx)?.iter().any(|o| !o.assertions.proposal_events.is_empty());
+        let proposals = if has_events { self.fold_proposals(workspace, cx)? } else { BTreeMap::new() };
+        let names: BTreeMap<String, String> = if has_events {
+            self.store
+                .all_entities(workspace)?
+                .into_iter()
+                .map(|e| (e.id, e.canonical_name))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
+        // A target keeps its id when nothing can name it - a merged-away row still resolves here
+        // because the entity table keeps it; only a target this node has never projected stays bare.
+        let eref = |id: &str| EntityRef {
+            name: names.get(id).cloned().unwrap_or_else(|| id.to_string()),
+            id: id.to_string(),
+        };
         let mut out: Vec<ObsSummary> = Vec::new();
         for obs in self.log(workspace, cx)?.iter() {
             let ws = obs.workspace().to_string();
@@ -3042,7 +3095,37 @@ impl Engine {
                     origin_node: p.sync.as_ref().map(|s| s.origin_node.clone()),
                 })
                 .collect();
-            let entities = ent_ids.into_iter().map(|(id, name)| EntityRef { name, id }).collect();
+            let entities: Vec<EntityRef> =
+                ent_ids.into_iter().map(|(id, name)| EntityRef { name, id }).collect();
+            // The readable form of a proposal event. `opened` names its own proposal (the id IS this
+            // observation); every other event points at one, and the view supplies kind/targets that
+            // the event itself does not carry.
+            let proposal = obs.assertions.proposal_events.first().map(|ev| {
+                let pid = if ev.proposal.is_empty() { obs.id.clone() } else { ev.proposal.clone() };
+                let payload: serde_json::Value =
+                    serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
+                let view = proposals.get(&pid);
+                ProposalEventSummary {
+                    event: match ev.event {
+                        ProposalEventKind::Opened => "opened",
+                        ProposalEventKind::Verdict => "verdict",
+                        ProposalEventKind::Withdrawn => "withdrawn",
+                        ProposalEventKind::Comment => "comment",
+                    }
+                    .to_string(),
+                    decision: payload
+                        .get("decision")
+                        .and_then(|d| d.as_str())
+                        .map(str::to_string),
+                    kind: view.map(|v| v.kind.clone()).unwrap_or_default(),
+                    state: view.map(|v| v.state.clone()).unwrap_or_default(),
+                    targets: view
+                        .map(|v| v.targets.iter().map(|t| eref(t)).collect())
+                        .unwrap_or_default(),
+                    into: view.and_then(|v| v.into.as_deref()).map(eref),
+                    proposal: pid,
+                }
+            });
             let relations = obs
                 .assertions
                 .relations
@@ -3058,6 +3141,7 @@ impl Engine {
                 effective_tier: effective_tier(obs, &gates),
                 id: obs.id.clone(),
                 content: obs.content.clone(),
+                proposal,
                 derived_from: obs.derived_from.clone(),
                 attestations,
                 entities,
