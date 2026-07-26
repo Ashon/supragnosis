@@ -255,8 +255,14 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // the minimal server does not parse request bodies, and the effect is a gated append-only verdict
         // (engine.review_proposal records a verdict observation; the fold decides), which is idempotent for
         // merge (absorbing state, I14/I16). The unix socket's 0600 mode is the write gate (Principle 17 /
-        // F19: only the owning user can connect, and no web page can). It routes through the gate, never
-        // a direct projection/log write (I18 / proposal-workflow.md 14.3).
+        // F19: only the owning user can connect). It routes through the gate, never a direct
+        // projection/log write (I18 / proposal-workflow.md 14.3).
+        //
+        // What makes a state-changing GET safe here is that no THIRD-PARTY origin can reach the socket,
+        // not that no browser can: the desktop shell proxies this surface into a webview (`viz://`), and
+        // the console needs these very endpoints. With no attacker origin there is nothing for CSRF or
+        // rebinding to ride, and the class that remains is stored XSS in the page we serve - which is
+        // what the escaping guard and the `no-unsanitized` lint exist for (architecture.md Section 10).
         "/api/review" => review_response(engine, query),
         // One-click mediation for a contested belief (resolution.md Section 4.2): opens a
         // claim_promotion for the chosen observation(s) and immediately casts the Console merge

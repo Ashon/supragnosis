@@ -418,11 +418,22 @@ HTTP-over-UDS client (`curl --unix-socket`).
   with the TCP listener. The authenticated network read tier is federation Phase 3.5 and rides the sync
   crate's TLS stack, not this server. See the standing caveat in Section 14 (a `workspace=*` read is
   not workspace-scoped).
+  - **Precisely: no THIRD-PARTY origin can reach it.** The desktop shell is a webview that does reach
+    the socket - `app/` proxies it through a `viz://` protocol handler, path and query verbatim - so
+    "no browser is involved" is not the property that holds. What holds is that the only page on that
+    surface is the one the daemon itself serves, so there is no attacker origin for rebinding, CSRF or
+    cross-site fetch to come from. The class that survives is **stored XSS in that page**: it renders
+    entity names, descriptions and proposal rationale, which under federation are synced,
+    attacker-influenceable input. That is why output escaping there is a guarded invariant
+    (`viz_source_escapes_untrusted_names`, plus `no-unsanitized` over the innerHTML sinks in CI) and
+    not a matter of style. A Content-Security-Policy header is still owed - federation.md 6d scopes
+    the web-hardening checklist to the Phase 3.5 hub surface, but the shell renders synced content
+    today, so the CSP half of that checklist is due earlier than the surface that named it.
 - **Independent of the MCP tool surface** (Principle 21): being a separate human-facing channel, it does not add to the LLM's tools.
 - **Single-process constraint**: because cozo/RocksDB is single-process, the viewer must be in-process with the server
   (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
-- Endpoints (all GET - acceptable only because a browser cannot reach the unix socket; the Phase 3.5
-  network read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
+- Endpoints (all GET - acceptable because the socket admits no third-party origin, per the bind policy
+  above; the Phase 3.5 network read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
   `/api/graph[?workspace=<ws>]` (unspecified = default
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
   `/api/proposals`, `/api/proposal?id=` (one proposal with its computed belief diff and check
