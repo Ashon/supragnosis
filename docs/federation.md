@@ -157,6 +157,18 @@ does not hold" - so it is a prerequisite of, not an addition to, the proposal wo
   minimum itself only settles last-write-wins display fields, which are allowed to converge late.
   Proposal/verdict events carry a unique payload per author, so in practice each has exactly one authoring
   attestation and the rule is unambiguous.
+- **No drift bound - a recorded exposure.** The merge rule accepts any remote `wall`: there is no
+  maximum-drift rejection, and the stamp is stored verbatim in the log forever. A skewed or compromised
+  allowlisted origin that stamps a far-future wall therefore (a) drags every receiver's clock forward on
+  apply (all subsequent local events stamp at or above it), and (b) permanently wins the within-tier
+  recency step of the resolution policy against every honestly-stamped assertion, until an equally
+  far-future stamp or a gate event overrides it. This sits inside the P18 threat model (an allowlisted
+  node can be compromised, 6b), and the defenses today are after the fact: a claim_demotion on the
+  poisoned observations (the gate override beats recency - resolution.md Section 5) and allowlist
+  removal. The standard HLC remedy is a receive-time max-drift acceptance bound, but that makes apply
+  acceptance depend on the receiver's wall clock - a P16-adjacent trade-off (a rejected event must stay
+  pullable once the drift window passes, or convergence acquires a clock dependence) that needs its own
+  spec. Deferred, Section 11.
 
 ## 5. Version vector and the sync protocol
 
@@ -642,6 +654,11 @@ input, not nondeterminism - F16).
   availability, not an integrity, concern - events are unforgeable (F6) and cannot be fabricated, but
   omission is undetectable under hole-tolerant apply (F7). A peer / multi-hub topology mitigates it
   (mesh is deferred above).
+- **HLC max-drift acceptance bound**: apply accepts any remote wall-clock stamp (Section 4) - a
+  far-future stamp from a compromised allowlisted origin permanently wins in-tier recency and drags
+  the receiver clock. Bounding it introduces a receive-time wall-clock dependence into apply that
+  needs its own convergence analysis (a rejected event must stay pullable once the drift window
+  passes); until then the remedy is the demotion fast-path plus allowlist removal.
 - **Cross-workspace lineage exposure**: a shared observation whose `derived_from` points into an unshared
   workspace carries that (opaque blake3) id across the boundary, revealing the referenced observation's
   existence. Redacting dangling cross-workspace lineage at export is a follow-up.
@@ -663,4 +680,4 @@ property of the spec: no dangling dependency.
 | Config (supragnosis.toml: `host_label`, origin keys, allowlist), node.key identity, CLI roles, `sync_*` tools | Phase 4 |
 | Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (principal-signed acts, F20) | Phase 5 |
 | Hub deployment (systemd, single-principal until Phase 5) | Phase 6 |
-| Mesh/NAT/discovery, gRPC, key rotation, quorum/auto-merge/conflict UI, fine-grained redaction, hub-withholding mitigation, cross-workspace lineage redaction | Deferred (Section 11) |
+| Mesh/NAT/discovery, gRPC, key rotation, quorum/auto-merge/conflict UI, fine-grained redaction, hub-withholding mitigation, cross-workspace lineage redaction, HLC drift bound | Deferred (Section 11) |
