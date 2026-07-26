@@ -661,6 +661,29 @@ pub struct GraphStats {
     pub trust_counts: BTreeMap<String, usize>,
 }
 
+/// One read's view of the observation log, loaded at most once.
+///
+/// Every fold on the read path - proposal state, merge forwarding, gate grants, the belief fold,
+/// the asserted-id set - is a pure function of the same rows, and each used to fetch those rows for
+/// itself. Measured on a workspace with a merged entity_merge and a merged claim_promotion,
+/// `graph` walked the log four times and `curation` sixteen, deserializing every row on each walk -
+/// including a 384-float embedding that no fold on this path reads. The count is constant in the
+/// size of the workspace, so it is a fixed multiplier on a cost that grows with the log forever.
+///
+/// Loading once also makes the answer a snapshot. The read path is deliberately not serialized
+/// against writes, so separate enumerations could straddle a concurrent `observe` and compose one
+/// view out of two log states - convergent per fold, but not a state the log was ever in.
+///
+/// Scoped to a single call and never stored on the engine: this is not a cache with an invalidation
+/// problem, it is one read declining to ask the same question twice.
+#[derive(Default)]
+struct ReadCtx {
+    /// The workspace scope the rows were loaded under, kept beside them. A cache that ignored it
+    /// would answer a `Some("a")` read with rows loaded for `None`, which is not slower - it is
+    /// wrong. No call path mixes scopes today; this is here so that adding one cannot be silent.
+    observations: std::cell::OnceCell<(Option<String>, Vec<Observation>)>,
+}
+
 /// The result of [`Engine::belief_fold`]: per canonical entity id, the kind candidates and the
 /// representative effective tier over supporting observations (resolution.md Sections 2-4).
 struct BeliefFold {
@@ -1097,7 +1120,11 @@ impl Engine {
             touched.insert(Entity::make_id(&workspace, &r.from));
             touched.insert(Entity::make_id(&workspace, &r.to));
         }
-        self.project_entities(&workspace, Some(&touched))?;
+        // Created here, after the append: a read context is a snapshot, so one taken before the
+        // write would hand the projection a log that does not contain the observation it is
+        // projecting. Scoping it to the read is what keeps that unrepresentable.
+        let cx = &ReadCtx::default();
+        self.project_entities(&workspace, Some(&touched), cx)?;
 
         let mut relations = Vec::new();
         for r in input.relations {
@@ -1205,16 +1232,22 @@ impl Engine {
     /// winner is arrival-order independent (Principle 16) and converges across nodes once stamps exist.
     /// Accumulates a corroboration count (sources) and the representative (highest) trust tier.
     pub fn types(&self, workspace: Option<&str>) -> Result<Vec<TypeDefView>, StoreError> {
-        let gates = self.gate_grants(workspace)?;
+        self.types_in(workspace, &ReadCtx::default())
+    }
+
+    /// [`Engine::types`] over an existing read context, so a caller that already loaded the
+    /// log does not load it again (see [`ReadCtx`]).
+    fn types_in(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<Vec<TypeDefView>, StoreError> {
+        let gates = self.gate_grants(workspace, cx)?;
         // (disc, name) -> (target, description candidates, sources, max effective trust). The
         // description is resolved by the SAME policy as an entity kind (resolution-identity.md
         // Section 6): distinct definitions at a tied top tier are contested, not silently
         // last-write-won (M3a's contested treatment applied to the T-Box - IR5).
         type Acc = (TypeTarget, Vec<BeliefCandidate>, usize, TrustTier);
         let mut descs: BTreeMap<(u8, String), Acc> = BTreeMap::new();
-        for obs in self.store.all_observations(workspace)? {
-            let hlc = ordering_hlc(&obs);
-            let eff = effective_tier(&obs, &gates); // receiver-evaluated + gate grants (F13)
+        for obs in self.log(workspace, cx)?.iter() {
+            let hlc = ordering_hlc(obs);
+            let eff = effective_tier(obs, &gates); // receiver-evaluated + gate grants (F13)
             for t in &obs.assertions.type_defs {
                 let disc: u8 = match t.target {
                     TypeTarget::Entity => 0,
@@ -1270,9 +1303,10 @@ impl Engine {
     fn open_merge_pairs(
         &self,
         workspace: Option<&str>,
+        cx: &ReadCtx,
     ) -> Result<HashSet<(String, String)>, StoreError> {
         let mut open_pairs: HashSet<(String, String)> = HashSet::new();
-        for p in self.fold_proposals(workspace)?.values() {
+        for p in self.fold_proposals(workspace, cx)?.values() {
             if p.kind == "entity_merge" && p.state == "open" {
                 for i in 0..p.targets.len() {
                     for j in (i + 1)..p.targets.len() {
@@ -1291,6 +1325,7 @@ impl Engine {
         all_entities: &[Entity],
         fwd: &HashMap<String, String>,
         relations: &[Relation],
+        cx: &ReadCtx,
     ) -> Result<(Vec<MergeSuggestion>, MergeBandCoverage), StoreError> {
         if self.embedder.is_none() {
             // Report the unavailability instead of returning a bare empty list: the caller cannot
@@ -1305,7 +1340,7 @@ impl Engine {
             ));
         }
         // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
-        let open_pairs = self.open_merge_pairs(workspace)?;
+        let open_pairs = self.open_merge_pairs(workspace, cx)?;
         // Canonicalized undirected adjacency for the shared-neighbor count (structural corroboration).
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
         let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
@@ -1384,11 +1419,12 @@ impl Engine {
     /// (Principle 1/16) - it computes nothing into the canon, so no gate is involved. The commit side
     /// (proposals/verdicts) is a separate, gated flow (docs/proposal-workflow.md).
     pub fn curation(&self, workspace: Option<&str>) -> Result<CurationReport, StoreError> {
+        let cx = &ReadCtx::default();
         let all_entities = self.store.all_entities(workspace)?;
         let relations = self.store.all_relations(workspace)?;
         // Apply accepted merges: a merged-away entity is resolved, so drop it from the candidate set and
         // rewire relations through its canonical id (so an accepted dedup stops showing as a candidate).
-        let fwd = self.merge_forwarding(workspace)?;
+        let fwd = self.merge_forwarding(workspace, cx)?;
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
         let entities: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
@@ -1437,7 +1473,7 @@ impl Engine {
         orphans.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         // (3) Grab-bags: oversized hyperedges (Principle 11). Reuse the hypergraph projection.
         let mut grab_bags: Vec<GrabBag> = self
-            .hypergraph(workspace)?
+            .hypergraph_in(workspace, cx)?
             .hyperedges
             .into_iter()
             .filter(|h| h.size >= CURATION_GRAB_BAG_MIN)
@@ -1448,7 +1484,7 @@ impl Engine {
         // reusing the graph projection's belief fold. Tier-tied (contested - mediation invited)
         // first, then (name, id). ALL live conflicts stay listed, tier-resolved ones included (R7).
         let mut contradictions: Vec<CurationConflict> = self
-            .graph(workspace)?
+            .graph_in(workspace, cx)?
             .nodes
             .into_iter()
             .filter(|n| !n.competitors.is_empty())
@@ -1471,7 +1507,7 @@ impl Engine {
         // (5) Contradictory merge cycles (Principle 6): surfaced, not silent - the parity-resolved
         // projection stands (P16), but the cycle invites a settling proposal.
         let merge_cycles: Vec<MergeCycle> = self
-            .merge_cycle_sets(workspace)?
+            .merge_cycle_sets(workspace, cx)?
             .into_iter()
             .map(|(members, proposals)| MergeCycle {
                 members: members
@@ -1493,15 +1529,15 @@ impl Engine {
             .collect();
         // The conservative merge band (Principle 15): embedding-near distinct-name candidates.
         let (merge_suggestions, merge_band) =
-            self.merge_band(workspace, &all_entities, &fwd, &relations)?;
+            self.merge_band(workspace, &all_entities, &fwd, &relations, cx)?;
         // The deterministic name-variant ladder: the same intent as the band, on the axis that needs
         // no embedder - so a keyword-only node (the prebuilt binary) still has a dedup signal.
         let name_variants =
-            name_variant_groups(&entities, &fwd, &relations, &self.open_merge_pairs(workspace)?, &node);
+            name_variant_groups(&entities, &fwd, &relations, &self.open_merge_pairs(workspace, cx)?, &node);
         // T-Box axis collisions (Principle 9 minimal): a name defined on both the entity and the
         // relation axis. A pure fold over the type glossary (deterministic, P16).
         let mut axis: BTreeMap<String, (bool, bool)> = BTreeMap::new();
-        for t in self.types(workspace)? {
+        for t in self.types_in(workspace, cx)? {
             let e = axis.entry(t.name).or_insert((false, false));
             match t.target {
                 TypeTarget::Entity => e.0 = true,
@@ -1659,6 +1695,7 @@ impl Engine {
         on_behalf_of: Option<String>,
         surface: VerdictSurface,
     ) -> Result<String, ObserveError> {
+        let cx = &ReadCtx::default();
         let event = match decision.as_str() {
             "merge" | "reject" => ProposalEventKind::Verdict,
             "comment" => ProposalEventKind::Comment,
@@ -1678,7 +1715,7 @@ impl Engine {
         // this exists to say WHY rather than to let the caller discover a "blocked" state later.
         if decision == "merge" {
             if let Some(view) = self.get_proposal(Some(&workspace), &proposal)? {
-                let asserted = self.asserted_entity_ids(Some(&workspace))?;
+                let asserted = self.asserted_entity_ids(Some(&workspace), cx)?;
                 let failures = self.blocking_failures(Some(&workspace), &view, &asserted)?;
                 if !failures.is_empty() {
                     return Err(ObserveError::Invalid(format!(
@@ -1711,14 +1748,35 @@ impl Engine {
         Ok(id)
     }
 
+    /// The workspace's observations for this read, fetched on first use and reused after.
+    /// Reusing the rows requires the scope to match. On a mismatch this reads through rather than
+    /// answering from the wrong scope - correctness first, and the caller merely loses the reuse.
+    fn log<'c>(
+        &self,
+        workspace: Option<&str>,
+        cx: &'c ReadCtx,
+    ) -> Result<std::borrow::Cow<'c, [Observation]>, StoreError> {
+        if let Some((scope, rows)) = cx.observations.get() {
+            if scope.as_deref() == workspace {
+                return Ok(std::borrow::Cow::Borrowed(rows));
+            }
+            debug_assert!(false, "a read context was reused across workspace scopes");
+            return Ok(std::borrow::Cow::Owned(self.store.all_observations(workspace)?));
+        }
+        let loaded = self.store.all_observations(workspace)?;
+        let (_, rows) = cx.observations.get_or_init(|| (workspace.map(str::to_string), loaded));
+        Ok(std::borrow::Cow::Borrowed(rows))
+    }
+
     /// Folds the proposal events in the workspace into their current states (I2). Solo decision rule:
     /// merge is the absorbing state (I16), then withdrawn, then rejected, else open.
-    fn fold_proposals(&self, workspace: Option<&str>) -> Result<BTreeMap<String, ProposalView>, StoreError> {
-        let obss = self.store.all_observations(workspace)?;
+    fn fold_proposals(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<BTreeMap<String, ProposalView>, StoreError> {
+        let obss = self.log(workspace, cx)?;
+        let obss = obss.as_ref();
         let mut views: BTreeMap<String, ProposalView> = BTreeMap::new();
         let mut tally: HashMap<String, ProposalTally> = HashMap::new();
         // Pass 1: opened events define the proposals (id = the opening observation id).
-        for obs in &obss {
+        for obs in obss {
             let observed_at = obs.provenance.iter().map(|p| p.observed_at).max().unwrap_or(0);
             let proposer = obs
                 .provenance
@@ -1767,7 +1825,7 @@ impl Engine {
             }
         }
         // Pass 2: verdicts/withdrawals accumulate (order-independent - set semantics, I3).
-        for obs in &obss {
+        for obs in obss {
             for ev in &obs.assertions.proposal_events {
                 match ev.event {
                     ProposalEventKind::Verdict => {
@@ -1796,7 +1854,7 @@ impl Engine {
         let mut blocked: HashSet<String> = HashSet::new();
         if views.iter().any(|(id, _)| tally.get(id).is_some_and(|t| t.merge)) {
             // One log pass, shared by every proposal being checked.
-            let asserted = self.asserted_entity_ids(workspace)?;
+            let asserted = self.asserted_entity_ids(workspace, cx)?;
             for (id, view) in views.iter() {
                 if tally.get(id).is_some_and(|t| t.merge)
                     && !self.blocking_failures(workspace, view, &asserted)?.is_empty()
@@ -1828,19 +1886,21 @@ impl Engine {
 
     /// All proposals in the workspace, newest first (opened_at desc, id asc for ties - deterministic).
     pub fn list_proposals(&self, workspace: Option<&str>) -> Result<Vec<ProposalView>, StoreError> {
-        let mut v: Vec<ProposalView> = self.fold_proposals(workspace)?.into_values().collect();
+        let cx = &ReadCtx::default();
+        let mut v: Vec<ProposalView> = self.fold_proposals(workspace, cx)?.into_values().collect();
         v.sort_by(|a, b| b.opened_at.cmp(&a.opened_at).then_with(|| a.id.cmp(&b.id)));
         Ok(v)
     }
 
     /// One proposal's folded state by id (None if there is no such proposal).
     pub fn get_proposal(&self, workspace: Option<&str>, id: &str) -> Result<Option<ProposalView>, StoreError> {
-        let Some(mut view) = self.fold_proposals(workspace)?.remove(id) else {
+        let cx = &ReadCtx::default();
+        let Some(mut view) = self.fold_proposals(workspace, cx)?.remove(id) else {
             return Ok(None);
         };
-        view.belief_diff = Some(self.belief_diff(workspace, &view)?);
+        view.belief_diff = Some(self.belief_diff(workspace, &view, cx)?);
         view.checks =
-            self.blocking_checks(workspace, &view, &self.asserted_entity_ids(workspace)?)?;
+            self.blocking_checks(workspace, &view, &self.asserted_entity_ids(workspace, cx)?)?;
         Ok(Some(view))
     }
 
@@ -1858,9 +1918,10 @@ impl Engine {
     fn asserted_entity_ids(
         &self,
         workspace: Option<&str>,
+        cx: &ReadCtx,
     ) -> Result<HashSet<String>, StoreError> {
         let mut ids = HashSet::new();
-        for obs in self.store.all_observations(workspace)? {
+        for obs in self.log(workspace, cx)?.iter() {
             let ws = obs.workspace().to_string();
             for e in &obs.assertions.entities {
                 ids.insert(Entity::make_id(&ws, &e.name));
@@ -2014,6 +2075,7 @@ impl Engine {
         &self,
         workspace: Option<&str>,
         view: &ProposalView,
+        cx: &ReadCtx,
     ) -> Result<BeliefDiff, StoreError> {
         let Some(into) = view.into.clone() else {
             return Ok(BeliefDiff {
@@ -2024,7 +2086,7 @@ impl Engine {
                 rewired: Vec::new(),
             });
         };
-        let base_fwd = self.merge_forwarding(workspace)?;
+        let base_fwd = self.merge_forwarding(workspace, cx)?;
         let folded: HashSet<String> =
             view.targets.iter().filter(|t| **t != into).cloned().collect();
         let mut after_fwd = base_fwd.clone();
@@ -2032,9 +2094,9 @@ impl Engine {
             after_fwd.insert(t.clone(), into.clone());
         }
 
-        let gates = self.gate_grants(workspace)?;
-        let before = self.belief_fold(workspace, &base_fwd, &gates)?;
-        let after = self.belief_fold(workspace, &after_fwd, &gates)?;
+        let gates = self.gate_grants(workspace, cx)?;
+        let before = self.belief_fold(workspace, &base_fwd, &gates, cx)?;
+        let after = self.belief_fold(workspace, &after_fwd, &gates, cx)?;
 
         let name_of = |id: &str| -> Result<String, StoreError> {
             Ok(self
@@ -2110,9 +2172,10 @@ impl Engine {
         &self,
         workspace: Option<&str>,
         view: &ProposalView,
+        cx: &ReadCtx,
     ) -> Result<BeliefDiff, StoreError> {
         if view.kind == "entity_merge" {
-            return self.merge_diff(workspace, view);
+            return self.merge_diff(workspace, view, cx);
         }
         if !GATE_KINDS.contains(&view.kind.as_str()) {
             return Ok(BeliefDiff {
@@ -2136,8 +2199,8 @@ impl Engine {
             });
         };
 
-        let fwd = self.merge_forwarding(workspace)?;
-        let before_gates = self.gate_grants(workspace)?;
+        let fwd = self.merge_forwarding(workspace, cx)?;
+        let before_gates = self.gate_grants(workspace, cx)?;
         // The one difference between the two materializations: this proposal's grant applied.
         let mut after_gates = before_gates.clone();
         for t in &view.targets {
@@ -2157,8 +2220,8 @@ impl Engine {
             }
         }
 
-        let before = self.belief_fold(workspace, &fwd, &before_gates)?;
-        let after = self.belief_fold(workspace, &fwd, &after_gates)?;
+        let before = self.belief_fold(workspace, &fwd, &before_gates, cx)?;
+        let after = self.belief_fold(workspace, &fwd, &after_gates, cx)?;
         let mut ids: BTreeSet<&String> = before.kinds.keys().collect();
         ids.extend(after.kinds.keys());
 
@@ -2195,8 +2258,8 @@ impl Engine {
     /// target id -> its canonical (`into`) id, transitively resolved to the root. Projections apply this to
     /// collapse merged duplicates while the log keeps both (Principle 3 - un-merge is a new proposal). Pure
     /// deterministic function of the log (Principle 16).
-    fn merge_forwarding(&self, workspace: Option<&str>) -> Result<HashMap<String, String>, StoreError> {
-        let props = self.fold_proposals(workspace)?;
+    fn merge_forwarding(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HashMap<String, String>, StoreError> {
+        let props = self.fold_proposals(workspace, cx)?;
         let mut fwd: HashMap<String, String> = HashMap::new();
         for p in props.values() {
             if p.kind == "entity_merge" && p.state == "merged" {
@@ -2231,8 +2294,8 @@ impl Engine {
     /// into themselves. Returns deduped (member ids, proposal ids) pairs, deterministically ordered
     /// (BTreeMap keying, P16). The projection still resolves such cycles by hop-capped parity; this
     /// signal is what makes the contradiction visible instead of silent.
-    fn merge_cycle_sets(&self, workspace: Option<&str>) -> Result<Vec<CycleSet>, StoreError> {
-        let props = self.fold_proposals(workspace)?;
+    fn merge_cycle_sets(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<Vec<CycleSet>, StoreError> {
+        let props = self.fold_proposals(workspace, cx)?;
         // target -> (into, proposal id): the raw merge edges before transitive resolution.
         let mut edge: BTreeMap<String, (String, String)> = BTreeMap::new();
         for p in props.values() {
@@ -2280,13 +2343,13 @@ impl Engine {
     /// ceiling of the log-borne marker on that verdict) (resolution.md Section 6). A pure
     /// fold-projection of the log - converges continuously (F5), and a gate event overrides the base
     /// evaluation in BOTH directions (a merged demotion can push below base - the fast-path).
-    fn gate_grants(&self, workspace: Option<&str>) -> Result<HashMap<String, TrustTier>, StoreError> {
+    fn gate_grants(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HashMap<String, TrustTier>, StoreError> {
         // proposal id -> (targets, requested tier); collected from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier)> = HashMap::new();
         // proposal id -> representative merge verdict (ordering hlc, verdict obs id, source_ref).
         let mut rep_merge: HashMap<String, (Hlc, String, Option<String>)> = HashMap::new();
-        for obs in self.store.all_observations(workspace)? {
-            let okey = ordering_hlc(&obs);
+        for obs in self.log(workspace, cx)?.iter() {
+            let okey = ordering_hlc(obs);
             for ev in &obs.assertions.proposal_events {
                 let v: serde_json::Value =
                     serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
@@ -2372,14 +2435,15 @@ impl Engine {
         workspace: Option<&str>,
         fwd: &HashMap<String, String>,
         gates: &HashMap<String, TrustTier>,
+        cx: &ReadCtx,
     ) -> Result<BeliefFold, StoreError> {
         let mut kinds: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
         let mut tiers: HashMap<String, TrustTier> = HashMap::new();
         let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
-        for obs in self.store.all_observations(workspace)? {
+        for obs in self.log(workspace, cx)?.iter() {
             let ws = obs.workspace().to_string();
-            let eff = effective_tier(&obs, gates);
-            let hlc = ordering_hlc(&obs);
+            let eff = effective_tier(obs, gates);
+            let hlc = ordering_hlc(obs);
             let mut supports = |id: &String| {
                 let t = tiers.entry(id.clone()).or_insert(TrustTier::Unverified);
                 *t = (*t).max(eff);
@@ -2470,8 +2534,8 @@ impl Engine {
     ///
     /// Same log -> same rows on every node/call (P16). Entity `properties` (not modeled by any
     /// assertion yet) are carried forward from the stored row rather than reset.
-    fn project_entities(&self, ws: &str, only: Option<&HashSet<String>>) -> Result<usize, StoreError> {
-        let gates = self.gate_grants(Some(ws))?;
+    fn project_entities(&self, ws: &str, only: Option<&HashSet<String>>, cx: &ReadCtx) -> Result<usize, StoreError> {
+        let gates = self.gate_grants(Some(ws), cx)?;
         let mut obss = self.store.all_observations(Some(ws))?;
         obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
 
@@ -2581,10 +2645,11 @@ impl Engine {
     /// (idempotent: a second run writes identical rows); rows with no support in the log are left in
     /// place - removal is a curation concern, not reprojection's (Principle 3).
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
+        let cx = &ReadCtx::default();
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
         // Entities: the same resolution write path the incremental observe uses, over ALL entities
         // (only = None) - so a reproject and an incremental write agree row-for-row (IR3).
-        let entities = self.project_entities(&ws, None)?;
+        let entities = self.project_entities(&ws, None, cx)?;
 
         // Relations: replay in (ordering HLC, id) order and upsert by id - description/valid-interval
         // are last-write, matching the store's upsert-by-id semantics with a deterministic order.
@@ -2649,11 +2714,12 @@ impl Engine {
     /// Entity + relation lookup. `Ok(None)` is absence (unknown, Principle 5), `Err` is a store failure -
     /// failures are not swallowed, so the caller (the MCP surface) can distinguish and relay the two.
     pub fn get_entity(&self, id: &str) -> Result<Option<EntityView>, StoreError> {
+        let cx = &ReadCtx::default();
         let Some(row) = self.store.get_entity(id)? else {
             return Ok(None);
         };
         let ws = row.provenance.first().map(|p| p.workspace.clone());
-        let fwd = self.merge_forwarding(ws.as_deref())?;
+        let fwd = self.merge_forwarding(ws.as_deref(), cx)?;
         // Principle 14: a merged-away id keeps forwarding to its canonical entity - a lookup by any
         // pre-merge id dereferences to the surviving row (the log keeps both; un-merge is a proposal).
         let canon_id = fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
@@ -2680,8 +2746,8 @@ impl Engine {
         }
         // Belief overlay (resolution.md Section 4.2), scoped to this entity's workspace so the agent
         // surface sees the same policy-current kind/contested state as the viewer.
-        let gates = self.gate_grants(ws.as_deref())?;
-        let belief = self.belief_fold(ws.as_deref(), &fwd, &gates)?;
+        let gates = self.gate_grants(ws.as_deref(), cx)?;
+        let belief = self.belief_fold(ws.as_deref(), &fwd, &gates, cx)?;
         let (winner, contested, competitors) = self.resolve_kind(belief.kinds.get(&canon_id));
         let mut kind_source = None;
         if let Some((k, obs)) = winner {
@@ -2707,12 +2773,13 @@ impl Engine {
         entity: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<ObsSummary>, StoreError> {
-        let fwd = self.merge_forwarding(workspace)?;
-        let gates = self.gate_grants(workspace)?;
+        let cx = &ReadCtx::default();
+        let fwd = self.merge_forwarding(workspace, cx)?;
+        let gates = self.gate_grants(workspace, cx)?;
         let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
         let want = entity.map(|e| canon(e.to_string()));
         let mut out: Vec<ObsSummary> = Vec::new();
-        for obs in self.store.all_observations(workspace)? {
+        for obs in self.log(workspace, cx)?.iter() {
             let ws = obs.workspace().to_string();
             // Canonical entity refs this observation asserts (assertions + relation endpoints),
             // keyed by canonical id (deterministic BTreeMap order), first spelling kept for display.
@@ -2760,11 +2827,11 @@ impl Engine {
                 })
                 .collect();
             out.push(ObsSummary {
-                hlc: ordering_hlc(&obs),
-                effective_tier: effective_tier(&obs, &gates),
-                id: obs.id,
-                content: obs.content,
-                derived_from: obs.derived_from,
+                hlc: ordering_hlc(obs),
+                effective_tier: effective_tier(obs, &gates),
+                id: obs.id.clone(),
+                content: obs.content.clone(),
+                derived_from: obs.derived_from.clone(),
                 attestations,
                 entities,
                 relations,
@@ -2786,23 +2853,24 @@ impl Engine {
     /// uses. `None` iff the id resolves to no entity (absence, Principle 5). A merged-away id
     /// forwards to its canonical entity (Principle 15), like [`Engine::get_entity`].
     pub fn explain_entity(&self, entity_id: &str) -> Result<Option<EntityExplain>, StoreError> {
+        let cx = &ReadCtx::default();
         let Some(view) = self.get_entity(entity_id)? else {
             return Ok(None);
         };
         let canon_id = view.entity.id.clone();
         let ws = view.entity.provenance.first().map(|p| p.workspace.clone());
-        let fwd = self.merge_forwarding(ws.as_deref())?;
-        let gates = self.gate_grants(ws.as_deref())?;
+        let fwd = self.merge_forwarding(ws.as_deref(), cx)?;
+        let gates = self.gate_grants(ws.as_deref(), cx)?;
         let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
 
         // Rebuild this entity's name/kind belief candidates from the log, at the same effective tier
         // and fold order as project_entities/belief_fold - so the ranking matches the projection.
         let mut name_cands: Vec<BeliefCandidate> = Vec::new();
         let mut kind_cands: Vec<BeliefCandidate> = Vec::new();
-        for obs in self.store.all_observations(ws.as_deref())? {
+        for obs in self.log(ws.as_deref(), cx)?.iter() {
             let obs_ws = obs.workspace().to_string();
-            let eff = effective_tier(&obs, &gates);
-            let hlc = ordering_hlc(&obs);
+            let eff = effective_tier(obs, &gates);
+            let hlc = ordering_hlc(obs);
             for ea in &obs.assertions.entities {
                 if canon(Entity::make_id(&obs_ws, &ea.name)) != canon_id {
                     continue;
@@ -3024,16 +3092,22 @@ impl Engine {
     /// A pure read - it does not touch the observation log (Principle 1). An edge is included only when both endpoints
     /// are in the node set, giving a closed (renderable) graph. Node/edge order is deterministic (Principle 16).
     pub fn graph(&self, workspace: Option<&str>) -> Result<GraphView, StoreError> {
+        self.graph_in(workspace, &ReadCtx::default())
+    }
+
+    /// [`Engine::graph`] over an existing read context, so a caller that already loaded the
+    /// log does not load it again (see [`ReadCtx`]).
+    fn graph_in(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<GraphView, StoreError> {
         let entities = self.store.all_entities(workspace)?;
         let relations = self.store.all_relations(workspace)?;
         // Apply accepted entity-merges (Principle 15): fold merged-away ids into their canonical, at
         // projection time only - the log keeps both (Principle 3). Deterministic (Principle 16).
-        let fwd = self.merge_forwarding(workspace)?;
+        let fwd = self.merge_forwarding(workspace, cx)?;
         // Belief fold (resolution.md): gate grants + per-node kind candidates / effective tiers,
         // computed from the log so the view is policy-current without waiting for reprojection (F5
         // continuous convergence; the materialized rows converge at the next replay).
-        let gates = self.gate_grants(workspace)?;
-        let belief = self.belief_fold(workspace, &fwd, &gates)?;
+        let gates = self.gate_grants(workspace, cx)?;
+        let belief = self.belief_fold(workspace, &fwd, &gates, cx)?;
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
 
         let by_id: HashMap<&str, &Entity> = entities.iter().map(|e| (e.id.as_str(), e)).collect();
@@ -3165,14 +3239,20 @@ impl Engine {
     /// This view only **generates** candidates/signals - decisions such as merge/promotion/schema definition go through
     /// the existing gates (resolution/proposal/human confirmation). A derived view does not write the canonical record directly (Principle 1/19).
     pub fn hypergraph(&self, workspace: Option<&str>) -> Result<HyperGraphView, StoreError> {
+        self.hypergraph_in(workspace, &ReadCtx::default())
+    }
+
+    /// [`Engine::hypergraph`] over an existing read context, so a caller that already loaded the
+    /// log does not load it again (see [`ReadCtx`]).
+    fn hypergraph_in(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HyperGraphView, StoreError> {
         let all_entities = self.store.all_entities(workspace)?;
         // Gate grants feed the per-observation effective tier (resolution.md Section 3).
-        let gates = self.gate_grants(workspace)?;
+        let gates = self.gate_grants(workspace, cx)?;
         // Apply accepted entity-merges (Principle 15), exactly like graph(): membership resolves
         // through the forwarding, merged-away rows drop from the node set, and member sets that
         // coincide after canonicalization union into one hyperedge (their sources accumulate -
         // Principle 3, the member set is the identity, Principle 14).
-        let fwd = self.merge_forwarding(workspace)?;
+        let fwd = self.merge_forwarding(workspace, cx)?;
         let entities: Vec<&Entity> =
             all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
@@ -3185,15 +3265,15 @@ impl Engine {
         // Per-observation co-occurrence set -> accumulate hyperedges, deduping by member set.
         // Value: (sorted members, sources count, highest trust among contributing observations).
         let mut acc: HashMap<String, (Vec<String>, usize, TrustTier)> = HashMap::new();
-        for obs in self.store.all_observations(workspace)? {
-            let members = co_asserted_members(&obs, &node_ids, &fwd);
+        for obs in self.log(workspace, cx)?.iter() {
+            let members = co_asserted_members(obs, &node_ids, &fwd);
             if members.len() < HYPEREDGE_MIN_SIZE {
                 continue; // A degenerate set (single/0 members) is not a hyperedge.
             }
             let id = hyperedge_id(&members);
             // This observation's representative trust = its EFFECTIVE tier (receiver-evaluated +
             // gate grants, resolution.md Section 3) - never the raw claimed max (F13).
-            let obs_trust = effective_tier(&obs, &gates);
+            let obs_trust = effective_tier(obs, &gates);
             acc.entry(id)
                 .and_modify(|(_, sources, trust)| {
                     *sources += 1;
@@ -3291,6 +3371,7 @@ impl Engine {
     /// grouping is now ASSERTED, so it inherits provenance, tier, supersede, and merge management
     /// exactly like any other edge, with no parallel mechanism. Ingest stays free (P22).
     pub fn reify_hyperedge(&self, input: ReifyInput) -> Result<ObserveOutput, ObserveError> {
+        let cx = &ReadCtx::default();
         let workspace = input.workspace.clone();
         let ws = workspace.as_deref();
         let hg = self.hypergraph(ws).map_err(ObserveError::Store)?;
@@ -3305,7 +3386,7 @@ impl Engine {
         // The lineage of the reified assertion = every observation whose canonical co-asserted
         // member set is exactly this hyperedge (the same membership rule the projection uses).
         let all_entities = self.store.all_entities(ws)?;
-        let fwd = self.merge_forwarding(ws)?;
+        let fwd = self.merge_forwarding(ws, cx)?;
         let live: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = live.iter().map(|e| e.id.as_str()).collect();
         let mut derived_from: Vec<String> = Vec::new();
