@@ -149,7 +149,40 @@ function nodeRadius(n) { return Math.min(NODE_R_MAX, NODE_R_BASE + Math.sqrt(n.d
 function nodeStrokeW(n) { return Math.min(NODE_STROKE_MAX / cam.s, Math.max(nodeRadius(n) * NODE_STROKE_RATIO, NODE_STROKE_MIN / cam.s)); }
 // Wake the simulation (discrete wakeup). Called only from events: new node/deletion (applyGraph),
 // drag, focus. Never called from a continuous condition (overlap) - prevents endless reheating after settling.
-function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) settling = true; }
+function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) settling = true; requestFrame(); }
+
+// --- render scheduling: draw when something moves, not every frame ------------------------------
+// stepSim already goes dormant (no force is applied below ALPHA_MIN), but draw() re-scheduled itself
+// unconditionally, so a settled graph still re-rendered the whole canvas 60 times a second to
+// produce an identical image. A viewer left open on a settled graph is the normal case, not an edge
+// one - it is what the thing does while you work.
+//
+// Two halves, and the second is the one that can go wrong. draw() stops scheduling itself when
+// nothing is in motion, and anything that changes the picture has to ask for a frame; a request
+// that never comes leaves a stale canvas, which is worse than a wasted one. So the requests hang off
+// the input events themselves rather than off the individual handlers that read them: pointer,
+// wheel, key, input and resize are a superset of every handler that can move the camera or change
+// hover, focus or the type filters, and a superset cannot drift out of step with the handlers the
+// way an enumerated list would. Capture phase, so the frame is queued before the handler runs - rAF
+// fires after the whole event turn, so it sees the state the handler left.
+let rafId = null;
+function requestFrame() { if (rafId === null) rafId = requestAnimationFrame(draw); }
+for (const ev of ["mousedown", "mousemove", "mouseup", "wheel", "keydown", "input", "resize"]) {
+  addEventListener(ev, requestFrame, { capture: true, passive: true });
+}
+// Whether anything is still in motion. Every per-frame source is named here; one missing is an
+// animation that stops halfway and stays there until the next mouse move.
+function animating(act) {
+  return settling                                                 // loader phase, sim mid-flight
+    || alpha >= ALPHA_MIN                                         // the sim still applies force
+    || cam.s !== camT.s || cam.x !== camT.x || cam.y !== camT.y    // easeCam snaps exactly, so == is safe
+    || drag !== null                                              // a node is being dragged
+    || pulses.size > 0 || peerEdgeFlash.size > 0                  // ring/flash effects still decaying
+    || (peersOn && peerMarkers.size > 0)                          // markers ease asymptotically, never arrive
+    // The flow animation is the only per-frame part of a highlight, and it only runs on edges that
+    // are hot - so a search term matching nodes but no edges is a still picture, not motion.
+    || (act !== null && act.es.size > 0);
+}
 
 // --- Camera (canvas is fullscreen, mouse uses client coordinates) ----------------------------
 function toWorld(sx, sy) { return [(sx - cam.x) / cam.s, (sy - cam.y) / cam.s]; }
@@ -250,6 +283,9 @@ function applyGraph(g) {
 
   // Initial auto-fit: once after the layout settles (cooling done), and only before user interaction (in draw).
   if (firstData && nodes.length) { firstData = false; needFit = true; }
+  // wake() only fires when the node set changed; a tier, kind or contested flag that moved
+  // repaints without moving anything, so it has to ask for the frame itself.
+  requestFrame();
 }
 
 // Federation panel: hubs (health + per-workspace diff vs this node) and, on a hub, the known-peer
@@ -989,7 +1025,7 @@ async function fillNodeLog(node, colEl, secEl) {
   } catch (e) { /* keep the last render */ }
 }
 
-function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); }
+function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); requestFrame(); }
 function logRow(html) {
   const row = document.createElement("div");
   row.className = "row";
@@ -1126,6 +1162,7 @@ function notePeer(ev, addedNodes, addedEdges) {
     const [cx, cy] = viewCentroid(null);
     m.tx = cx + Math.cos(m.phase) * 64; m.ty = cy + Math.sin(m.phase) * 64;
   }
+  requestFrame();
 }
 function stepPeers() {
   if (!peersOn) return;
@@ -1209,6 +1246,7 @@ function seedPeers(f) {
     const ageMs = f.updated_ms && p.last_seen_ms ? Math.max(0, f.updated_ms - p.last_seen_ms) : 0;
     m.seen = Date.now() - ageMs;   // keep `seen` in client-clock terms (avoid hub/viewer clock skew)
   }
+  requestFrame();
 }
 // A hub gathers peers - auto-enter server mode: draw peer cursors and stop the camera from chasing
 // remote hits (the owner can still toggle either). On a client/loopback viewer this is a no-op.
@@ -1767,6 +1805,7 @@ function stepSim() {
 }
 
 function draw() {
+  rafId = null;
   stepSim();
   easeCam();
   // Reduced motion: settle synchronously (bounded - alpha decays multiplicatively, so convergence
@@ -1785,14 +1824,14 @@ function draw() {
   if (settling && nodes.length) {
     ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
     loaderEl.classList.add("on");
-    requestAnimationFrame(draw); return;
+    requestFrame(); return;
   }
   loaderEl.classList.remove("on");
   // Initial auto-fit: once after the layout settles (only before user interaction).
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
 
   const act = activeSet();
-  flowPhase++;   // advance the active-edge flow animation (rAF runs every frame)
+  flowPhase++;   // advance the active-edge flow animation (only while a frame is being drawn)
   // Legend-chip hover highlight: for an edge-kind chip, collect the endpoint nodes of matching visible
   // edges once per frame (nodes to keep lit). Node-type chips match on n.type directly.
   let lgEndpoints = null;
@@ -2133,7 +2172,7 @@ function draw() {
   // Peer cursor-dots (server mode) - drawn last so they float above the graph and labels.
   stepPeers(); drawPeers();
   drawMinimap();
-  requestAnimationFrame(draw);
+  if (animating(act)) requestFrame();
 }
 
 function nodeAt(sx, sy) {
