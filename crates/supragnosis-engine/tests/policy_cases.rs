@@ -619,15 +619,37 @@ fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
 fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
     let (store, engine) = engine();
     observe(&engine, "a real one", &["Real"]);
+    // A relation gives the merge effect something visible to (wrongly) rewire - the probe below.
+    engine
+        .observe(ObserveInput {
+            content: "real depends on other".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![RelationInput {
+                from: "Real".into(),
+                kind: "depends_on".into(),
+                to: "Other".into(),
+                description: None,
+                valid_from: None,
+                valid_to: None,
+            }],
+        })
+        .expect("observe relation");
     let ghost = Entity::make_id(WS, "never observed");
     let real = Entity::make_id(WS, "Real");
 
+    // Fold Real INTO the absent entity, so a wrongly applied effect would be visible: Real's row
+    // would drop from the projection views and its references would rewire onto nothing.
     let proposal = engine
         .propose(ProposeInput {
             workspace: None,
             kind: "entity_merge".into(),
-            targets: vec![ghost.clone(), real.clone()],
-            into: Some(real.clone()),
+            targets: vec![real.clone(), ghost.clone()],
+            into: Some(ghost.clone()),
             tier: None,
             rationale: Some("merge into something that is not here".into()),
             affected_types: vec![],
@@ -646,25 +668,48 @@ fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
     );
 
     let before = snapshot(store.as_ref());
-    // Now bypass that path entirely - this is the shape a verdict has when it arrives over sync.
-    engine
-        .observe(ObserveInput {
-            content: format!("proposal(merge) {proposal}"),
-            workspace: None,
-            source_ref: None,
-            confidence: None,
-            on_behalf_of: Some("elsewhere".into()),
-            derived_from: vec![],
-            entities: vec![],
-            relations: vec![],
-        })
-        .expect("observe");
+    // Now bypass that path entirely. A replicated verdict never passes through review_proposal: it
+    // arrives as an observation CARRYING the verdict event in its assertions (I1 - the assertions
+    // are what sync replicates). Plant exactly that shape store-side and let the fold meet it.
+    store
+        .add_observation(Observation::with_assertions(
+            format!("proposal(merge) {proposal}"),
+            Provenance {
+                host: "elsewhere".into(),
+                on_behalf_of: Some("elsewhere".into()),
+                workspace: WS.into(),
+                source_ref: None,
+                observed_at: 9_000,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: None,
+            },
+            Assertions {
+                proposal_events: vec![ProposalEventAssertion {
+                    proposal: proposal.clone(),
+                    event: ProposalEventKind::Verdict,
+                    payload: r#"{"decision":"merge"}"#.into(),
+                }],
+                ..Default::default()
+            },
+        ))
+        .expect("plant replicated verdict");
     let after = snapshot(store.as_ref());
 
     let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
-    assert_ne!(view.state, "merged", "a blocked proposal must never read as merged");
-    Case::new("Principle 23", "a merge reaches canon only when the blocking checks pass")
-        .forgot_nothing(&before, &after);
+    assert_eq!(view.state, "blocked", "the fold must call this merge blocked, not merged");
+    let case = Case::new("Principle 23", "a merge reaches canon only when the blocking checks pass");
+    case.log_appended(&before, &after, 1);
+    case.forgot_nothing(&before, &after);
+    // The commit effect must not have applied either: Real still answers with its own references
+    // rather than having been folded away into the absent entity.
+    let real_view = engine.get_entity(&real).expect("get").expect("Real");
+    assert_eq!(
+        real_view.relations.len(),
+        1,
+        "a blocked merge must not rewire Real's references: {:?}",
+        real_view.relations
+    );
     assert!(
         view.checks.iter().any(|c| c.blocking && !c.passed && c.name == "referential integrity"),
         "the failing check must be visible on the proposal: {:?}",
