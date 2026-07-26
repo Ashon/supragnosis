@@ -414,3 +414,13 @@
 /* A proposal event is bookkeeping about the canon, not knowledge someone observed - dimmed and
    italic so a log scan separates the two at a glance without having to read either. */
 .otext.ev { opacity: .72; font-style: italic; }
+
+/* Observation card, proposal event: the readable line leads, the stored text stays beneath it for
+   audit, and a target with no node left is listed but not offered as a jump. */
+.card .ocraw { font:11px/1.4 var(--mono); color:var(--faint); word-break:break-all; margin:2px 0 4px; }
+.card .ocprop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:12px/1.4 var(--prose); }
+.card .ocprop .pkind { color:var(--ink); }
+.card .ocprop .pstate { font:10px/1 var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.card .ocprop .pstate.merged { color:var(--teal); }
+.card .ocprop .pstate.blocked { color:var(--accent); }
+.card .echip.off { opacity:.5; cursor:default; text-decoration:line-through; }
