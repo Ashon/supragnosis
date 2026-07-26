@@ -754,10 +754,22 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   a merged verdict takes and cannot promise an outcome the merge would not deliver. The **blocking checks** of
   Section 6 are enforced as well (referential integrity, canonical-target well-formedness, T-Box axis collision):
   recomputed by the fold rather than read from a `check_reported` event (I13), so a merge verdict on a failing
-  proposal folds to `blocked` instead of `merged`. The fold is the enforcement point on purpose - a replicated
+  proposal folds to `blocked` instead of `merged` - and the commit-effect folds (gate grants, merge forwarding)
+  consult that same folded state, so a blocked merge also grants and rewires nothing (the state fold and the effect
+  folds give one answer to "did this merge commit"). The fold is the enforcement point on purpose - a replicated
   verdict arrives as an observation and never passes through `review_proposal`, so a gate living there would not be
   a gate. Still open: the informative checks (impact analysis, trust profile) and the authority check;
   self-approval is not prohibited.
+  Also still open, and previously unrecorded in this ledger: the **base-frontier machinery of the state machine**
+  does not exist. A proposal never pins its base at open (I7), the Stale state is never computed, and a verdict is
+  not bound to the base it reviewed (I12) - so an approval of a stale diff can still merge. Of the validity
+  conditions in proposal-workflow.md 7.1 the fold checks only (b), the blocking gate: (a) authority is the
+  self-approval gap above, (c) base match and (d) the Open-state check are unimplemented - one concrete consequence
+  of the missing (d) is that a merge verdict cast after a withdrawal still folds to merged, an edge the Section 4
+  state machine does not have - and (e) automatic-verdict routing re-validation (I15) rides the auto-merge executor
+  already recorded as M4+. Low-stakes while solo (proposer and reviewer are the same principal, so a stale-diff
+  approval is self-inflicted), and coming due with multi-principal operation.
+  -> **M4 Phase 5** (with the quorum/revise rules of proposal-workflow.md Section 13).
   Moreover the fold **hardcodes `self_attested: true` on every proposal view** regardless of whether the reviewing
   principal differs from the proposer - as a solo-mode blanket label it is honest, but it is a view-level flag, not
   the log-borne marker the exception calls for, and it cannot distinguish a genuinely reviewed merge from a

@@ -189,6 +189,16 @@ instead of widening the touched set to make it stale, **only the impact analysis
 recomputed at merge time** - this blocks auto-merge misrouting (Section 9) caused by
 underestimation while not inducing livelock.
 
+[impl] Status (M3.5 as shipped): the fold computes open / merged / blocked / withdrawn /
+rejected. The base-frontier machinery of this section is NOT in it: a proposal does not
+pin its base at open (I7), Stale is never computed, and a verdict is not bound to a base
+(I12). Of 7.1's validity conditions the fold checks only (b) - the blocking gate,
+recomputed per I13 - so a merge verdict cast after a withdrawal still folds to merged:
+the diagram above has no such edge, and while the absorbing rule of I16 decides the
+genuinely concurrent case in merge's favor, the sequential case should be invalid under
+(d) and is not yet. The debt is recorded in architecture.md Section 14 and the coverage
+registry, owed to M4 Phase 5 together with the quorum/revise rules of Section 13.
+
 ---
 
 ## 5. Belief Diff
@@ -499,7 +509,10 @@ between M3 and M4 (pre-value in solo/hub environments).
   promotion and no correction is itself a contamination exposure window.) The fold state
   machine reflects the monotonic decision rule of I16 - it computes the conclusion not as a
   sequential final-state fold but as the set function "a valid merge exists" (quorum as the
-  reset-free prefix-existential, 7.3), and treats Merged as an absorbing state.
+  reset-free prefix-existential, 7.3), and treats Merged as an absorbing state. The shipped
+  fold covers this solo decision rule; the base-frontier machinery (I7/I12, the Stale
+  state) and the (c)/(d) validity conditions of 7.1 are not in it - see the [impl] status
+  note in Section 4.
 - M3.5b **[o]**: belief diff + blocking checks + `propose`/`get_proposal`/`review`. The diff is
   computed for the kinds with a commit effect (gate kinds report tier moves and the beliefs they
   overturn with contested before/after; `entity_merge` reports the references that rewire and which
