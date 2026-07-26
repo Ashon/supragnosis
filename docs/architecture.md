@@ -6,7 +6,7 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through M4 Phase 4** (v0.1.16). M0-M2, **M3a (belief resolution) and M3b
+- Status: **implemented through M4 Phase 4** (v0.1.17). M0-M2, **M3a (belief resolution) and M3b
   (identity resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases 0-4 are complete
   (Phase 3.5 and 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
