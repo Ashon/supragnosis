@@ -13,7 +13,7 @@ use supragnosis_core::{
     EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
     ProposalEventAssertion, ProposalEventKind, ResolutionPolicy, SearchHit, SearchHitKind,
     StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
-    VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE,
+    VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
@@ -729,6 +729,24 @@ struct BeliefFold {
 /// gate event targeting it, if any (overrides in both directions - a demotion can push below base);
 /// otherwise the max receiver-evaluated tier over its attestations ([`evaluated_tier`] - a wire claim
 /// never evaluates above HostSigned). Never a max over claimed tiers (F13).
+/// Refuses a client-supplied source_ref inside the reserved verdict-marker namespace
+/// (resolution.md Section 6, R8). The ceiling fold trusts a log-borne marker to be engine-stamped,
+/// so every local ingest door except `review_proposal` (which stamps its own marker and accepts no
+/// source_ref) must refuse the prefix. Sync apply is deliberately unguarded: a replicated verdict
+/// legitimately carries its marker, and refusing it would break the ceiling's convergence.
+fn reject_reserved_source_ref(source_ref: Option<&str>) -> Result<(), ObserveError> {
+    if let Some(s) = source_ref {
+        if s.starts_with(VERDICT_SURFACE_PREFIX) {
+            return Err(ObserveError::Invalid(format!(
+                "source_ref '{s}' is inside the reserved '{VERDICT_SURFACE_PREFIX}' namespace - \
+                 verdict-surface markers are engine-stamped and cannot be supplied by a client. \
+                 Name the actual source instead (a file path, URL, or tool)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> TrustTier {
     gates.get(&obs.id).copied().unwrap_or_else(|| {
         obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
@@ -1041,6 +1059,9 @@ impl Engine {
 
     /// Ingests a piece of knowledge: stores an immutable observation + links the provided entities/relations into the ontology.
     pub fn observe(&self, input: ObserveInput) -> Result<ObserveOutput, ObserveError> {
+        // The verdict-marker namespace is engine-controlled provenance, like trust_tier and
+        // observed_at - a client-supplied "surface:*" is a forged provenance claim, not content.
+        reject_reserved_source_ref(input.source_ref.as_deref())?;
         // Enforce the confidence range (Principle 2: schema-level enforcement). A value once written to the
         // append-only log is permanent, so we block it before ingest. NaN is caught too, since contains is false for it.
         if let Some(c) = input.confidence {
@@ -1205,6 +1226,7 @@ impl Engine {
     /// future proposal gate (Principle 23) can wrap this without rework. Principle 8 is enforced here:
     /// a definition with no name or an empty description is rejected before it reaches the permanent log.
     pub fn define_type(&self, input: DefineTypeInput) -> Result<String, ObserveError> {
+        reject_reserved_source_ref(input.source_ref.as_deref())?;
         if input.defs.is_empty() {
             return Err(ObserveError::Invalid(
                 "no type definitions provided. give at least one {target, name, description}".into(),
@@ -1611,6 +1633,7 @@ impl Engine {
     /// becomes the proposal id. Validates only well-formedness (kind known, targets present, entity_merge
     /// has a valid `into`) - it does not yet commit or check the canon.
     pub fn propose(&self, input: ProposeInput) -> Result<String, ObserveError> {
+        reject_reserved_source_ref(input.source_ref.as_deref())?;
         if !PROPOSAL_KINDS.contains(&input.kind.as_str()) {
             return Err(ObserveError::Invalid(format!(
                 "unknown proposal kind '{}'. use one of {PROPOSAL_KINDS:?}",

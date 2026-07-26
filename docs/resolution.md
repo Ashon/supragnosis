@@ -201,6 +201,14 @@ enforces the distinction by **surface**:
   principal, 0600) or `Agent` (the MCP tool path). The engine stamps the verdict observation's
   provenance with the surface marker (an engine-controlled `source_ref`); neither MCP clients
   nor HTTP bodies can supply it.
+  [impl] The whole `surface:` source_ref namespace is additionally **reserved at every local
+  ingest door**: observe, define_type and propose (and reify, which routes through observe)
+  refuse a client-supplied source_ref under the prefix. The ceiling fold only reads the marker
+  off verdict events today, but the reservation means a log-borne marker on a locally-authored
+  observation is engine-stamped by construction - the fold's trust does not rest on no future
+  surface ever reading a marker off a non-verdict observation. Sync apply is deliberately not
+  guarded: a replicated verdict legitimately carries its marker (that is how the ceiling
+  converges), and honoring it stays the single-principal premise below.
 - **Ceiling rule (fold-side, deterministic)**: the tier a merged promotion may grant is capped
   by the ceiling of its verdict's surface marker - `Console` grants up to `HumanConfirmed`;
   `Agent`, an absent marker, and any unknown marker cap at `HostSigned`. The cap is applied by
