@@ -569,3 +569,79 @@ fn per_item_queries_in_one_read() {
         println!("n={n:<4} curation: log scans {} / semantic queries {}", c.observations, c.semantic_queries);
     }
 }
+
+#[test]
+#[ignore = "measurement: how the merge band's candidate set differs from an exact scan"]
+fn merge_band_candidates_vs_exact() {
+    use supragnosis_core::EmbeddingProvider;
+    let emb = supragnosis_embed::HashingEmbedder::new(384);
+    // A cluster of 12 near-identical names, so more than MERGE_BAND_K (8) neighbours sit above
+    // SIM_CANDIDATE for each member - plus unrelated entities that must NOT be suggested.
+    // HashingEmbedder is a bag of tokens, so names sharing n-1 of n tokens sit at exactly (n-1)/n.
+    // Eight tokens puts the cluster at 0.875, comfortably over SIM_CANDIDATE (0.85); four would sit
+    // at 0.75 and nothing would be a candidate at all.
+    let cluster: Vec<String> =
+        (0..12).map(|i| format!("Alpha Ingest Service Node Cluster Primary Region {i}")).collect();
+    let others: Vec<String> =
+        (0..8).map(|i| format!("Zeta Archive Vault Shard Cold Storage Zone {i}")).collect();
+
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS).with_embedder(Arc::new(
+        supragnosis_embed::HashingEmbedder::new(384),
+    ));
+    for name in cluster.iter().chain(others.iter()) {
+        engine.observe(ObserveInput {
+            content: format!("mentions {name}"),
+            workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput { name: name.clone(), kind: None, description: None }],
+            relations: vec![],
+        }).expect("observe");
+    }
+
+    // What the band reports today. Note this is InMemoryStore, whose semantic search is exhaustive -
+    // so the only thing separating it from the exact scan below is the top-K cut, with no
+    // approximation error mixed in. Over Cozo the HNSW index adds a second, separate source of
+    // misses that this fixture deliberately does not measure.
+    let rep = engine.curation(Some(WS)).expect("curation");
+    let mut band: Vec<(String, String)> = rep.merge_suggestions.iter()
+        .map(|s| { let (a, b) = (s.a_name.clone(), s.b_name.clone());
+                   if a <= b { (a, b) } else { (b, a) } })
+        .collect();
+    band.sort();
+
+    // What an exact all-pairs scan above the same threshold would report.
+    let ents = store.all_entities(Some(WS)).expect("entities");
+    let cos = |a: &[f32], b: &[f32]| {
+        let (mut d, mut na, mut nb) = (0f32, 0f32, 0f32);
+        for i in 0..a.len() { d += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+        if na == 0.0 || nb == 0.0 { 0.0 } else { d / (na.sqrt() * nb.sqrt()) }
+    };
+    let mut exact: Vec<(String, String)> = Vec::new();
+    for i in 0..ents.len() {
+        for j in (i + 1)..ents.len() {
+            let (Some(x), Some(y)) = (&ents[i].embedding, &ents[j].embedding) else { continue };
+            if cos(x, y) >= 0.85 {
+                let (a, b) = (ents[i].canonical_name.clone(), ents[j].canonical_name.clone());
+                exact.push(if a <= b { (a, b) } else { (b, a) });
+            }
+        }
+    }
+    exact.sort();
+
+    let band_set: std::collections::BTreeSet<_> = band.iter().cloned().collect();
+    let exact_set: std::collections::BTreeSet<_> = exact.iter().cloned().collect();
+    let missed: Vec<_> = exact_set.difference(&band_set).cloned().collect();
+    let extra: Vec<_> = band_set.difference(&exact_set).cloned().collect();
+
+    println!("\n{} entities ({} in one near-identical cluster), embedder dim {}",
+             ents.len(), cluster.len(), emb.dimensions());
+    println!("  band (top-{MERGE_BAND_K_ECHO} neighbours per entity): {} pairs", band_set.len());
+    println!("  exact (all pairs >= 0.85):            {} pairs", exact_set.len());
+    println!("  in exact but not reported by the band: {}", missed.len());
+    for p in missed.iter().take(6) { println!("      {} <-> {}", p.0, p.1); }
+    if missed.len() > 6 { println!("      ... and {} more", missed.len() - 6); }
+    println!("  reported by the band but not exact:    {}", extra.len());
+    for p in extra.iter().take(6) { println!("      {} <-> {}", p.0, p.1); }
+}
+const MERGE_BAND_K_ECHO: usize = 8;
