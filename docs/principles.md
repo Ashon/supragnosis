@@ -7,6 +7,16 @@
 >
 > Each clause is stated in the order **Principle -> Rationale -> Enforcement in supragnosis (what it mandates)**.
 >
+> **Enforcement says what is required, not what is built.** An Enforcement clause is in the
+> imperative even where the mechanism does not exist yet, so this document must never be read as a
+> status report: several clauses here (quarantine of lineage-less derived assertions, the
+> self-approval check, the non-delegable recall verdict, the extraction port) are mandates awaiting a
+> milestone. What is actually built is answered in exactly two places, and they are tested against
+> each other: the per-clause evidence states of the coverage registry (Appendix B.1) and the deferral
+> ledger in [architecture.md](architecture.md) Section 14. Where this document instead asserts a
+> FACT about the system, that assertion is subject to correction like any other - two such claims
+> (that a `query` passthrough tool exists) were wrong and have been fixed.
+>
 > Revision: 2026-07 - bitemporality made explicit (4), delegation chain (2), forgetting/consolidation (7),
 > contamination defense (18), schema induction (11), MCP long-running tasks/confirmation flow (21).
 > See Appendix C references for rationale.
@@ -369,8 +379,10 @@ at the knowledge level, and whether the encoding is Cozo Datalog or RDF is the a
 - **Enforcement**:
   - `supragnosis-core` does not depend on any store crate (dependency direction is enforced).
   - It is a violation if a Cozo-specific concept (e.g., a particular index structure) is exposed in
-    the domain model / MCP surface. The `query` passthrough tool is the only explicit exception, and it
-    is documented as an "escape hatch for advanced users".
+    the domain model / MCP surface. Should the `query` passthrough tool ever be opened it is the only
+    permitted exception, and then only documented as an "escape hatch for advanced users". (It has
+    never been opened - whether to open it, and under what authorization guard, is still an open
+    decision in architecture.md Section 13. This clause used to describe the tool as existing.)
 
 ### Principle 13. Distinguishing Essence from Role (Rigidity - OntoClean)
 
@@ -583,7 +595,8 @@ language.
     human confirmation (merge approval, contradiction mediation, trust promotion) are expressed via
     MCP's input-request flow (elicitation / multi round-trip), so that the "human mediation" of
     Principles 6/18 is possible at the protocol level.
-  - `query` (Datalog passthrough) exists only as an advanced escape hatch under a permission guard.
+  - `query` (Datalog passthrough) may exist only as an advanced escape hatch under a permission
+    guard - and today it does not exist at all, which is the stricter state, not a gap.
 
 ### Principle 22. Knowledge Management Is a By-Product of Work (Knowledge as a By-Product)
 
