@@ -548,9 +548,18 @@ fn curation_cost_breakdown() {
     }
 }
 
+/// guard: a read surface may not ask the store something once per item.
+///
+/// This began as a measurement and found the defect it now guards. The merge band held every entity
+/// of the workspace, vectors included, and asked the store for its nearest neighbours once per
+/// entity - so a read that enumerated the log a single time still issued N queries beside it, and
+/// the enumeration count reported it as settled. With an embedder configured that was 13.79s at 300
+/// observations, polled by the review tab every 2.5 seconds.
+///
+/// The fixture attaches an embedder on purpose: without one the band returns early and the
+/// assertion holds for the wrong reason.
 #[test]
-#[ignore = "measurement: per-item store queries inside one read"]
-fn per_item_queries_in_one_read() {
+fn a_read_does_not_query_the_store_per_item() {
     for n in [50usize, 100, 200] {
         let inner = InMemoryStore::new();
         let store = Arc::new(CountingStore::wrapping(Box::new(inner)));
@@ -567,6 +576,16 @@ fn per_item_queries_in_one_read() {
         }
         let (_, c) = store.measure(|| { engine.curation(Some(WS)).unwrap(); });
         println!("n={n:<4} curation: log scans {} / semantic queries {}", c.observations, c.semantic_queries);
+        assert_eq!(
+            c.semantic_queries, 0,
+            "curation asked the store {} times for {n} entities - a per-item query is an N+1 no \
+             enumeration count can see",
+            c.semantic_queries
+        );
+        assert!(
+            !engine.curation(Some(WS)).unwrap().merge_band.available.eq(&false),
+            "the band must actually be running, or this asserts nothing"
+        );
     }
 }
 
@@ -645,3 +664,39 @@ fn merge_band_candidates_vs_exact() {
     for p in extra.iter().take(6) { println!("      {} <-> {}", p.0, p.1); }
 }
 const MERGE_BAND_K_ECHO: usize = 8;
+
+#[test]
+#[ignore = "measurement: where the in-memory merge band stops being cheap"]
+fn merge_band_scale() {
+    use supragnosis_core::{EmbeddingProvider, Provenance, TrustTier};
+    let emb = supragnosis_embed::HashingEmbedder::new(384);
+    for n in [300usize, 1000, 2000, 4000] {
+        // Entities written directly: the band's cost is a function of how many carry a vector, and
+        // going through observe would spend all the time on ingest instead.
+        let store = Arc::new(InMemoryStore::new());
+        for i in 0..n {
+            let name = format!("Service Node Region Shard Zone Tier Group {i}");
+            store.put_entity(supragnosis_core::Entity {
+                id: Entity::make_id(WS, &name),
+                kind: "Concept".into(),
+                canonical_name: name.clone(),
+                aliases: vec![],
+                description: None,
+                properties: serde_json::Value::Null,
+                provenance: vec![Provenance {
+                    host: "host-a".into(), on_behalf_of: None, workspace: WS.into(),
+                    source_ref: None, observed_at: 1, confidence: None,
+                    trust_tier: TrustTier::default(), sync: None,
+                }],
+                embedding: Some(emb.embed_one(&name).unwrap()),
+            }).expect("put");
+        }
+        let engine = Engine::new(store.clone(), "host-a", WS)
+            .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
+        let t = std::time::Instant::now();
+        for _ in 0..3 { engine.curation(Some(WS)).unwrap(); }
+        let d = t.elapsed() / 3;
+        println!("entities={n:<5} curation {d:>10.2?}   ({:.1} pairs/ms)",
+                 (n as f64 * n as f64 / 2.0) / d.as_secs_f64() / 1000.0);
+    }
+}
