@@ -770,8 +770,9 @@ function renderProposals() {
       ev.stopPropagation();
       const ws = wsInput.value.trim();
       const q = "?proposal=" + encodeURIComponent(b.dataset.id) + "&decision=" + b.dataset.act + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-      // No CSRF header needed: the server sits behind a unix socket (0600) no web page can reach -
-      // the transport itself is the write gate.
+      // No CSRF header needed: the socket (0600) admits no third-party origin - this page, proxied
+      // into the desktop shell, is the only one on the surface - so there is no attacker origin for
+      // a forged request to come from. The transport itself is the write gate.
       try { await fetch("/api/review" + q, { cache: "no-store" }); } catch (e) { /* ignore */ }
       refreshProposals();
     };
