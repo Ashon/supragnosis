@@ -681,7 +681,7 @@ struct ReadCtx {
     /// The workspace scope the rows were loaded under, kept beside them. A cache that ignored it
     /// would answer a `Some("a")` read with rows loaded for `None`, which is not slower - it is
     /// wrong. No call path mixes scopes today; this is here so that adding one cannot be silent.
-    observations: std::cell::OnceCell<(Option<String>, Vec<Observation>)>,
+    observations: std::cell::OnceCell<(u64, Option<String>, Vec<Observation>)>,
 }
 
 /// The result of [`Engine::belief_fold`]: per canonical entity id, the kind candidates and the
@@ -901,6 +901,11 @@ pub struct Engine {
     /// The belief-resolution strategy (Principle 1, resolution.md R1) - replaceable; defaults to
     /// [`TierWeighted`]. Consumed by the read-path belief folds and by reprojection.
     policy: Arc<dyn ResolutionPolicy>,
+    /// Bumped whenever this engine appends an observation. A [`ReadCtx`] records the value it
+    /// loaded at and reloads when it moves, so a context that outlives a write cannot serve rows
+    /// from before it. Without this the rule "do not read through a context after writing" would be
+    /// a convention, and the only thing enforcing it would be whoever reads the code next.
+    log_epoch: std::sync::atomic::AtomicU64,
     /// The transaction-time source (Principle 20) - defaults to the node wall clock. What it returns
     /// becomes `observed_at`, which is the ordering key for a local attestation, so this is the seam
     /// that lets a test state the arrival order it is testing instead of sleeping to produce one.
@@ -922,6 +927,7 @@ impl Engine {
             session: "local".to_string(),
             write_guard: std::sync::Mutex::new(()),
             policy: Arc::new(TierWeighted),
+            log_epoch: std::sync::atomic::AtomicU64::new(0),
             clock: Arc::new(SystemClock),
             host: host.into(),
             default_workspace: default_workspace.into(),
@@ -1108,6 +1114,7 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.store.add_observation(obs)?;
+        self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Resolution write path (resolution-identity.md Section 4): the observation is in the log,
         // so (re)project exactly the entities it touched - the same fold reproject runs, so the
@@ -1222,6 +1229,7 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.store.add_observation(obs)?;
+        self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(observation_id)
     }
 
@@ -1679,6 +1687,7 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.store.add_observation(obs)?;
+        self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(id)
     }
 
@@ -1745,6 +1754,7 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.store.add_observation(obs)?;
+        self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(id)
     }
 
@@ -1756,15 +1766,25 @@ impl Engine {
         workspace: Option<&str>,
         cx: &'c ReadCtx,
     ) -> Result<std::borrow::Cow<'c, [Observation]>, StoreError> {
-        if let Some((scope, rows)) = cx.observations.get() {
-            if scope.as_deref() == workspace {
+        let epoch = self.log_epoch.load(std::sync::atomic::Ordering::SeqCst);
+        if let Some((at, scope, rows)) = cx.observations.get() {
+            if *at == epoch && scope.as_deref() == workspace {
                 return Ok(std::borrow::Cow::Borrowed(rows));
             }
-            debug_assert!(false, "a read context was reused across workspace scopes");
+            // Either the log grew under this context or the scope changed. Reuse is an optimization
+            // and this is the case where it does not apply, so read through: at worst that costs
+            // what every one of these folds used to cost unconditionally.
+            //
+            // Deliberately not a debug_assert. Asserting "this must not happen" beside code that
+            // handles it correctly would mean the handling is unreachable in the builds where it is
+            // tested, and the panic would be the only thing anyone learned about the case. The
+            // handling is the answer; the cost is one extra read, and the guard for it is
+            // `a_read_context_reuses_rows_only_while_that_changes_nothing`.
             return Ok(std::borrow::Cow::Owned(self.store.all_observations(workspace)?));
         }
         let loaded = self.store.all_observations(workspace)?;
-        let (_, rows) = cx.observations.get_or_init(|| (workspace.map(str::to_string), loaded));
+        let (_, _, rows) =
+            cx.observations.get_or_init(|| (epoch, workspace.map(str::to_string), loaded));
         Ok(std::borrow::Cow::Borrowed(rows))
     }
 
@@ -3727,6 +3747,104 @@ mod tests {
     use super::*;
     use supragnosis_core::{SyncMeta, TypeDefAssertion};
     use supragnosis_store::InMemoryStore;
+
+    /// guard: a [`ReadCtx`] reuses rows only while reusing them is indistinguishable from reading
+    /// again. Both ways it can stop being indistinguishable are checked here, because both were
+    /// introduced by the change that added it and neither was caught by a test - they were caught by
+    /// rereading the diff, which is the kind of guarantee this suite exists to replace.
+    #[test]
+    fn a_read_context_reuses_rows_only_while_that_changes_nothing() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "h", "ws1");
+        let observe = |ws: &str, name: &str| {
+            engine
+                .observe(ObserveInput {
+                    content: format!("{name} in {ws}"),
+                    workspace: Some(ws.to_string()),
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput { name: name.into(), kind: None, description: None }],
+                    relations: vec![],
+                })
+                .expect("observe");
+        };
+        observe("ws1", "Alpha");
+        observe("ws2", "Beta");
+
+        let cx = ReadCtx::default();
+        assert_eq!(engine.log(Some("ws1"), &cx).unwrap().len(), 1, "one observation in ws1");
+
+        // Scope: the context holds ws1's rows, and a ws2 read must not be answered from them. A
+        // cache that ignored the scope would not be slower here, it would be wrong.
+        assert_eq!(
+            engine.log(Some("ws2"), &cx).unwrap().len(),
+            1,
+            "a different scope must be read through, not answered from the loaded one"
+        );
+        assert_eq!(
+            engine.log(None, &cx).unwrap().len(),
+            2,
+            "the unscoped read sees both workspaces"
+        );
+
+        // Freshness: appending through the engine moves the log epoch, so the same context stops
+        // reusing. Without this the rule "never read through a context after writing" would hold
+        // only as long as nobody arranged the calls in the other order.
+        observe("ws1", "Gamma");
+        assert_eq!(
+            engine.log(Some("ws1"), &cx).unwrap().len(),
+            2,
+            "a context that outlived a write must not serve the rows from before it"
+        );
+    }
+
+    /// guard: sharing a context across the folds inside one call does not change what the call
+    /// answers. `curation` embeds the graph and hypergraph projections and now computes them over
+    /// its own context; if reuse ever altered a result, the report would silently disagree with the
+    /// surfaces it is supposed to be reporting on.
+    #[test]
+    fn a_shared_context_answers_what_separate_reads_answer() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "h", "ws1");
+        for i in 0..6 {
+            engine
+                .observe(ObserveInput {
+                    content: format!("fact {i}"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![
+                        EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None },
+                        EntityInput { name: format!("E{}", i + 1), kind: None, description: None },
+                    ],
+                    relations: vec![RelationInput {
+                        from: format!("E{i}"),
+                        kind: "relates_to".into(),
+                        to: format!("E{}", i + 1),
+                        description: None,
+                        valid_from: None,
+                        valid_to: None,
+                    }],
+                })
+                .expect("observe");
+        }
+        let ws = Some("ws1");
+        // Each surface, computed standalone (its own context) and again inside curation's shared one.
+        let standalone_graph = serde_json::to_string(&engine.graph(ws).unwrap()).unwrap();
+        let standalone_hyper = serde_json::to_string(&engine.hypergraph(ws).unwrap()).unwrap();
+        let cx = ReadCtx::default();
+        let shared_graph = serde_json::to_string(&engine.graph_in(ws, &cx).unwrap()).unwrap();
+        let shared_hyper = serde_json::to_string(&engine.hypergraph_in(ws, &cx).unwrap()).unwrap();
+        assert_eq!(standalone_graph, shared_graph, "graph must not depend on whose context it ran in");
+        assert_eq!(standalone_hyper, shared_hyper, "hypergraph must not depend on whose context it ran in");
+        // And the same context answering both in sequence is still right for the second one.
+        let again = serde_json::to_string(&engine.graph_in(ws, &cx).unwrap()).unwrap();
+        assert_eq!(standalone_graph, again, "a reused context must stay correct on later reads");
+    }
 
     /// M4 Phase 2 (F5, engine level): two nodes author overlapping knowledge, exchange their logs via
     /// the sync pipeline in BOTH directions, re-project, and must materialize the same entities,
