@@ -922,13 +922,51 @@ function tierDot(t) { return `<span class="tdot t-${esc(String(t))}" title="${es
 
 // Content-first row: a quiet meta line (tier dot + compact time) over the observation content (the
 // primary element, clamped to 2 lines). Host and the rest move to the expanded provenance.
+// A proposal event said in names. Its stored content is machine text with raw ids in it, and that
+// text is inside the content address so it can never be rewritten - the log read as rows of hashes.
+// The server resolves the ids (it can still name a merged-away entity, which this side cannot, since
+// the graph folds those away); this only phrases the result. Falls back to the raw content whenever
+// the server had nothing to add, so an untranslatable row still says something.
+function proposalLine(p) {
+  const kind = p.kind || "proposal";
+  const ts = p.targets || [];
+  // Two entities can share a display name - that is what a duplicate IS, and a merge of them is
+  // precisely the act most worth reading. "T2 -> T2" says nothing, so a name that is not unique
+  // within the line carries its short id. Only the ambiguous ones pay it.
+  const all = p.into ? ts.concat(ts.some(t => t.id === p.into.id) ? [] : [p.into]) : ts;
+  const seen = {};
+  for (const t of all) { const n = t.name || t.id; seen[n] = (seen[n] || 0) + 1; }
+  const named = t => {
+    const n = t.name && t.name !== t.id ? t.name : t.id.slice(0, 8);
+    return seen[t.name || t.id] > 1 ? `${n} (${t.id.slice(0, 6)})` : n;
+  };
+  let what = "";
+  if (p.into) {
+    // A merge reads as a direction: what disappears, and what it folds into.
+    const gone = ts.filter(t => t.id !== p.into.id).map(named);
+    what = gone.length ? `${gone.join(", ")} -> ${named(p.into)}` : named(p.into);
+  } else if (ts.length) {
+    what = ts.map(named).join(", ");
+  }
+  const head = p.event === "opened" ? `opened ${kind}`
+    : p.event === "verdict" ? `${p.decision === "merge" ? "accepted" : esc(p.decision || "verdict")} ${kind}`
+    : `${p.event} ${kind}`;
+  // State is worth showing on a verdict precisely when it disagrees with the decision - a merge that
+  // folded to blocked is the case a reader must not miss.
+  const state = p.event === "verdict" && p.state && !(p.decision === "merge" && p.state === "merged")
+    ? ` [${p.state}]` : "";
+  return `${head}${state}${what ? ": " + what : ""}`;
+}
+
 function obsRowHtml(o) {
   const a0 = (o.attestations || [])[0] || {};
+  const text = o.proposal ? proposalLine(o.proposal) : o.content;
+  const cls = o.proposal ? "otext ev" : "otext";
   return `<div class="obs" data-id="${esc(o.id)}">`
     + `<div class="ohead" title="open observation detail">`
     +   `<div class="ometa">${tierDot(o.effective_tier)}`
     +     `<span class="owhen">${esc(obsWhen(a0.observed_at))}</span></div>`
-    +   `<div class="otext">${esc(o.content)}</div>`
+    +   `<div class="${cls}">${esc(text)}</div>`
     + `</div></div>`;
 }
 
