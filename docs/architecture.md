@@ -469,7 +469,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
 3. **M2 - Semantic search [o]**: `EmbeddingProvider` (fastembed BGE-small-en-v1.5, 384d) + Cozo native
    HNSW, RRF fusion of keyword/semantic-observation/semantic-entity lists, 1-hop graph enrichment.
    Recall regression set in place (`recall_eval.rs`: mean recall@5 >= 0.9, entity-gold subset >= 0.99).
-4. **M3 - Resolution/schema/bitemporal: M3a [o] done, M3b [ ] open** (split into two slices):
+4. **M3 - Resolution/schema/bitemporal: M3a [o] and M3b [o] done (M3b except IR6), M3c open** (split into slices):
    - **M3a - belief resolution [o] ([resolution.md](resolution.md))**: a replaceable
      `ResolutionPolicy` port with the `TierWeighted` default (effective tier -> ordering HLC -> id;
      confidence carried verbatim, never selecting), receiver-evaluated **effective tier** (a remote
@@ -637,7 +637,12 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   store failure is an error - the two are not conflated.
 - Principle 21 (narrow surface): 13 tools, each at the granularity of one recurring intent. Tool
   descriptions and failures are written for LLM self-correction. *Not satisfied*: non-blocking
-  long-running work and elicitation (Section 7).
+  long-running work and elicitation (Section 7). *Caveat*: "one recurring intent per tool" is a
+  **judgment, not a checked property** - the coverage registry files it as unguarded for exactly that
+  reason, since a tool count is not a predicate and pretending it is would put a number where the
+  argument belongs (Appendix B.1: items that stay judgments legitimately stay judgments). This bullet
+  used to read as a satisfied clause, which is the one place the ledger and the registry answered the
+  same question differently.
 - Principle 11 (second-order structure as induction substrate): the hyperedge projection is implemented as
   a derived view identified by its member set, coexisting with (not replacing) binary Relations, generated
   deterministically, and exposed via `workspace_map` and the hypergraph resource. Membership resolves
@@ -709,7 +714,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   post-apply sync hook - but that is again a deployment fact, not a guard, and it is the same class of argument this
   section exists to retire. Repaid with M3's write path.
 - Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, automatic valid_to closing,
-  `as_of_valid`/`as_of_recorded` time-travel queries -> **M3**. (Fields were introduced in M1.
+  `as_of_valid`/`as_of_recorded` time-travel queries -> **M3c** (split out of M3b, since it needs negation
+  semantics rather than identity work - resolution-identity.md Section 8). (Fields were introduced in M1.
   Ingest-surface capture is implemented: `observe`'s relation accepts optional `valid_from`/`valid_to` and encloses them in
   the log's assertions and the projection - separation of capture and processing, a clue of Principle 4.)
   Note the schedule slipped: this was assigned "M3-M4", and M4 shipped without it.
@@ -717,7 +723,11 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   generate-side (read-only curation signals) landed early with M3.5; the demotion side does not exist.
 - Principle 11 (induced schema): the **explicit `define_type` promotion act** is implemented (records entity/relation type
   definitions, workspace-scoped), and the induction **substrate** (hyperedges) now exists. What remains deferred is the
-  **automatic candidate proposal** from repeated co-occurrence patterns (hyperedge -> type candidates) -> **M3**.
+  **automatic candidate proposal** from repeated co-occurrence patterns (hyperedge -> type candidates) -> **M5**.
+  M3b delivers everything that candidate needs except the type's NAME, and naming a T-Box type is not a
+  deterministic function of a member set - it is the probabilistic extraction the `Extractor` port owns
+  (resolution-identity.md Section 7 [impl], IR6). This entry read "-> M3" while Section 12 and the coverage
+  registry both said M5.
 - Principles 9/23 (T-Box coherence check / gate to canon) re `define_type`: `define_type` still validates only
   **well-formedness** (non-empty name/description, Principle 8) and writes to the canon **directly - the `tbox_change`
   proposal kind has no commit effect** (Section 13 of proposal-workflow.md assigns it, with `recall`, to M4+).
