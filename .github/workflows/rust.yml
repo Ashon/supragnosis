@@ -16,6 +16,10 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust.yml"
+      # principle_coverage.rs include_str!s the design documents (the principle registry reads
+      # principles.md, and the doc-claim sweep reads the rest), so editing one can fail the Rust
+      # gate - the gate has to run when they change, or the coupling is one-way again.
+      - "docs/*.md"
   pull_request:
     paths:
       - "crates/**"
@@ -24,6 +28,10 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust.yml"
+      # principle_coverage.rs include_str!s the design documents (the principle registry reads
+      # principles.md, and the doc-claim sweep reads the rest), so editing one can fail the Rust
+      # gate - the gate has to run when they change, or the coupling is one-way again.
+      - "docs/*.md"
 
 # A newer push supersedes an in-flight run on the same ref - the gate should report on the tip, not
 # burn minutes finishing an answer about a commit nobody is waiting on any more.
@@ -52,10 +60,13 @@ jobs:
         with:
           key: rust-check
 
-      # Workspace lints already set clippy::all to deny, so a warning fails the build on its own -
-      # no -D flag here, which keeps the local `task lint` and this job identical.
+      # Workspace lints deny clippy::all, but that leaves every rustc lint at warn - including
+      # dead_code, which is exactly what an un-#[test]ed guard becomes. principle_coverage.rs now
+      # rejects that case on its own; -D warnings is the general form, so the next lint that means
+      # "this code no longer runs" fails the gate instead of scrolling past in a log.
+      # -D goes after -- so it applies to the workspace crates, not to dependency builds.
       - name: clippy
-        run: cargo clippy --all-targets --locked
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       # Default members only (the desktop app needs platform webview toolchains and is covered by
       # dev-app.yml / release.yml). The e2e suite compiles here but its real-model tests are
