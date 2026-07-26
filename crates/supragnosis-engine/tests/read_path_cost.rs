@@ -306,3 +306,99 @@ fn read_path_wall_clock() {
         println!("{total:>5} observations: graph {graph:>10.2?}   curation {curation:>10.2?}");
     }
 }
+
+/// A read-only view of another store that hands the log back in the opposite order.
+struct ReversedStore(Arc<InMemoryStore>);
+
+impl KnowledgeStore for ReversedStore {
+    fn all_observations(&self, ws: Option<&str>) -> Result<Vec<Observation>, StoreError> {
+        let mut v = self.0.all_observations(ws)?;
+        v.reverse();
+        Ok(v)
+    }
+    fn all_entities(&self, ws: Option<&str>) -> Result<Vec<Entity>, StoreError> { self.0.all_entities(ws) }
+    fn all_relations(&self, ws: Option<&str>) -> Result<Vec<Relation>, StoreError> { self.0.all_relations(ws) }
+    fn add_observation(&self, o: Observation) -> Result<(), StoreError> { self.0.add_observation(o) }
+    fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> { self.0.get_observation(id) }
+    fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> { self.0.get_entity(id) }
+    fn put_entity(&self, e: Entity) -> Result<(), StoreError> { self.0.put_entity(e) }
+    fn add_relation(&self, r: Relation) -> Result<(), StoreError> { self.0.add_relation(r) }
+    fn relations_of(&self, id: &str) -> Result<Vec<Relation>, StoreError> { self.0.relations_of(id) }
+    fn search(&self, q: &str, ws: Option<&str>, n: usize) -> Result<Vec<SearchHit>, StoreError> { self.0.search(q, ws, n) }
+    fn traverse(&self, id: &str, d: usize, n: usize) -> Result<Vec<TraverseHit>, StoreError> { self.0.traverse(id, d, n) }
+}
+
+/// guard (P16): the read surfaces must not depend on the order the store enumerates the log in.
+///
+/// P16 names the iteration order of an internal structure leaking into a response as a violation by
+/// itself, and the stores do not agree on one order: `InMemoryStore` enumerates a HashMap, Cozo a
+/// Datalog result. Sharing one loaded copy across the folds pins whichever order the store gave for
+/// the whole call rather than per fold, which is only harmless if no answer depends on it.
+///
+/// ONE log, read two ways - the reversed store is a view over the same rows, so the enumeration
+/// order is the only thing that differs. Building two workspaces through two stores would not test
+/// this: it would test two different logs, since anything that picks a target by position picks a
+/// different one.
+#[test]
+fn read_surfaces_do_not_depend_on_enumeration_order() {
+    // Every observation lands in the same millisecond, so the ordering HLCs tie and resolution has
+    // to fall through to its stable-key tiebreak. Without the tie the tiebreak never runs and this
+    // test passes while asserting nothing: verified by removing `Reverse(observation)` from
+    // TierWeighted, which leaves a clock-stepped fixture green and this one failing.
+    struct Frozen;
+    impl supragnosis_core::Clock for Frozen {
+        fn now_millis(&self) -> supragnosis_core::Timestamp { 1_000 }
+    }
+    let inner = Arc::new(InMemoryStore::new());
+    let writer = Engine::new(inner.clone(), "host-a", WS).with_clock(Arc::new(Frozen));
+    // Conflicting kinds for one entity at a tied tier - the case resolution actually has to decide.
+    for kind in ["Concept", "Tool", "Library"] {
+        writer
+            .observe(ObserveInput {
+                content: format!("cozo is a {kind}"),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    name: "Cozo".into(),
+                    kind: Some(kind.into()),
+                    description: None,
+                }],
+                relations: vec![RelationInput {
+                    from: "Cozo".into(),
+                    kind: "relates_to".into(),
+                    to: format!("Peer {kind}"),
+                    description: None,
+                    valid_from: None,
+                    valid_to: None,
+                }],
+            })
+            .expect("observe");
+    }
+
+    let forward = Engine::new(inner.clone(), "host-a", WS);
+    let backward = Engine::new(Arc::new(ReversedStore(inner.clone())), "host-a", WS);
+    let ws = Some(WS);
+    let render = |e: &Engine| {
+        (
+            serde_json::to_string(&e.graph(ws).unwrap()).unwrap(),
+            serde_json::to_string(&e.curation(ws).unwrap()).unwrap(),
+            serde_json::to_string(&e.hypergraph(ws).unwrap()).unwrap(),
+            serde_json::to_string(&e.types(ws).unwrap()).unwrap(),
+            serde_json::to_string(&e.observation_log(ws, None, None).unwrap()).unwrap(),
+        )
+    };
+    let f = render(&forward);
+    let b = render(&backward);
+    for (name, x, y) in [
+        ("graph", &f.0, &b.0),
+        ("curation", &f.1, &b.1),
+        ("hypergraph", &f.2, &b.2),
+        ("types", &f.3, &b.3),
+        ("observation_log", &f.4, &b.4),
+    ] {
+        assert_eq!(x, y, "{name} changed when the store enumerated the log backwards (P16)");
+    }
+}
