@@ -173,8 +173,9 @@ fn p6_contradictory_merge_cycle_is_convergent_and_surfaced() {
     // Pin the current resolution shape exactly, so any change to cycle handling surfaces here.
     // Observed today: NO node collapses (all three ids survive - nothing is lost, P3), but the
     // gamma->alpha edge is rewired to beta: the hop-capped forwarding resolves the 2-cycle by
-    // iteration parity, not by any principled rule. The graph thus shows an edge into an entity
-    // no observation ever asserted an edge to, with no contradiction signal raised (the P6 gap).
+    // iteration parity, not by any principled rule. So the graph shows an edge into an entity no
+    // observation ever asserted an edge to - which is why the curation signal asserted at the end
+    // of this test is the thing that makes the shape reviewable rather than merely deterministic.
     let (nodes, edges) = graph_shape(&e1);
     let g = Entity::make_id(WS, "gamma");
     assert_eq!(nodes, {
@@ -1216,6 +1217,227 @@ fn explain_matches_projection_and_surfaces_competitors() {
     // observation_log entity filter narrows to the same set; unfiltered returns everything.
     assert_eq!(engine.observation_log(Some(WS), Some(&id), None).expect("log filtered").len(), 2);
     assert_eq!(engine.observation_log(Some(WS), None, None).expect("log all").len(), 2);
+}
+
+// --- P8 / P2: the refusals themselves, on both the local and the wire path ---------------------
+
+/// guard (principles.md P8, architecture.md Section 14 "define_type **rejects** a type with no
+/// description"): the clause that gives P8 teeth is a refusal, and a refusal is only guaranteed by
+/// a test that tries to get past it. Passing-path tests cannot see this one - delete the validation
+/// block and every other test in this suite still goes green.
+///
+/// Both entry points are checked, because `check_event` claims they agree: the local `define_type`
+/// refuses before the log, and `Observation::check_well_formed` refuses the same shape arriving
+/// signed over the wire. A signature proves origin, not well-formedness (P18), so a gap between the
+/// two would be a way to put a meaningless type into canon from a peer.
+#[test]
+fn p8_a_type_definition_without_a_description_is_refused_on_both_paths() {
+    use supragnosis_core::{TypeDefAssertion, TypeTarget};
+    use supragnosis_engine::{DefineTypeInput, TypeDefInput};
+
+    let (_store, engine) = engine();
+    let define = |defs: Vec<TypeDefInput>| {
+        engine.define_type(DefineTypeInput {
+            workspace: None,
+            defs,
+            source_ref: None,
+            on_behalf_of: None,
+        })
+    };
+    let def = |name: &str, description: &str| TypeDefInput {
+        target: TypeTarget::Entity,
+        name: name.into(),
+        description: description.into(),
+    };
+
+    // Local path. Each refusal must also say what to do instead (P21: written for self-correction).
+    for (label, defs, hint) in [
+        ("no definitions at all", vec![], "at least one"),
+        ("empty name", vec![def("", "a deployable part")], "name the type"),
+        ("empty description", vec![def("Component", "")], "Principle 8"),
+        ("whitespace description", vec![def("Component", "   ")], "Principle 8"),
+    ] {
+        let err = define(defs).err().unwrap_or_else(|| panic!("{label} must be refused"));
+        assert!(
+            err.to_string().contains(hint),
+            "{label}: the refusal must tell the caller how to correct it, got: {err}"
+        );
+    }
+
+    // Wire path: the same shape, signed and arriving as an observation, is refused by the core
+    // well-formedness check rather than landing in the log.
+    let typedef_event = |name: &str, description: &str| {
+        Observation::with_assertions(
+            "a type definition from a peer".into(),
+            Provenance {
+                host: "peer-host".into(),
+                on_behalf_of: None,
+                workspace: WS.into(),
+                source_ref: None,
+                observed_at: 100,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: None,
+            },
+            Assertions {
+                type_defs: vec![TypeDefAssertion {
+                    target: TypeTarget::Entity,
+                    name: name.into(),
+                    description: description.into(),
+                }],
+                ..Default::default()
+            },
+        )
+    };
+    assert!(
+        typedef_event("Component", "").check_well_formed().is_err(),
+        "an empty description must be refused on the wire path too, or a peer can put a \
+         meaningless type into canon that define_type would have rejected locally"
+    );
+    assert!(
+        typedef_event("", "a deployable part").check_well_formed().is_err(),
+        "an empty name must be refused on the wire path too"
+    );
+
+    // Positive control: a well-formed definition is accepted and reaches the glossary. A validator
+    // that refuses everything would satisfy the assertions above and be entirely broken.
+    define(vec![def("Component", "a deployable part")]).expect("a well-formed definition is fine");
+    assert!(
+        typedef_event("Component", "a deployable part").check_well_formed().is_ok(),
+        "the wire path must accept what the local path accepts"
+    );
+    let types = engine.types(Some(WS)).expect("glossary");
+    assert_eq!(types.len(), 1);
+    assert_eq!(types[0].name, "Component");
+    assert_eq!(types[0].description, "a deployable part");
+}
+
+/// characterization (principles.md P2, architecture.md Section 14 **overdue entry condition 1**):
+/// "every observation carries at least one attestation" is a doc comment on the field and a
+/// guarantee of the constructors - it is NOT checked anywhere. `check_well_formed` loops over
+/// `provenance` to range-check confidence, so an EMPTY list passes it vacuously.
+///
+/// This pins both halves of the ledger's claim: the type permits a zero-provenance observation, and
+/// the reason one cannot currently land is that nothing constructs it that way. That is a
+/// reachability argument, not a guard, which is exactly what the entry condition was written to
+/// end. When it is repaid, this test MUST be rewritten to assert that the empty case is REFUSED.
+#[test]
+fn p2_at_least_one_attestation_is_a_constructor_guarantee_not_a_checked_one() {
+    // The gap: a zero-provenance observation is representable and passes well-formedness.
+    let unattested = Observation {
+        id: "synthetic".into(),
+        content: "a claim nobody attested".into(),
+        provenance: vec![],
+        assertions: Assertions::default(),
+        derived_from: vec![],
+        embedding: None,
+    };
+    assert!(
+        unattested.check_well_formed().is_ok(),
+        "INTERIM: check_well_formed does not require an attestation. If this now fails, overdue \
+         entry condition 1 has been repaid - rewrite this test to assert the refusal (P2)"
+    );
+
+    // Why it is nonetheless unreachable today: every constructor takes one attestation by value, so
+    // the ingest and sync paths cannot produce the empty case. This is the reachability argument the
+    // deferral rests on - if it ever stops holding, the gap above becomes live.
+    let built = Observation::new(
+        "a claim someone attested".into(),
+        Provenance {
+            host: "host-a".into(),
+            on_behalf_of: None,
+            workspace: WS.into(),
+            source_ref: None,
+            observed_at: 100,
+            confidence: None,
+            trust_tier: TrustTier::default(),
+            sync: None,
+        },
+    );
+    assert_eq!(built.provenance.len(), 1, "the constructor is what supplies the guarantee");
+}
+
+// --- P23 / P21: the gate surface refuses what it cannot honestly record ------------------------
+
+/// guard (proposal-workflow.md Section 3, principles.md P23/P21): `propose` and `review_proposal`
+/// are the write surface of the canon gate, and every refusal below keeps a proposal that could
+/// never be folded coherently out of the permanent log. Only one of these branches had a test, so
+/// the rest could have been deleted without a single failure.
+///
+/// P21 is asserted alongside P23 on purpose: these errors are read by an LLM that must correct
+/// itself without a human, so each one has to name the fix, not merely say no.
+#[test]
+fn p23_the_gate_surface_refuses_a_malformed_proposal() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    // A real observation id, so gate-kind referential integrity passes and the cases below fail on
+    // the branch each one is aiming at. Asserted rather than assumed: if the fixture grows another
+    // observation, this must say so instead of silently pointing at a different one.
+    let log = engine.observation_log(Some(WS), None, None).expect("log");
+    assert_eq!(log.len(), 1, "the fixture asserts exactly one observation");
+    let obs_id = log[0].id.clone();
+
+    let propose = |kind: &str, targets: Vec<String>, into: Option<String>, tier: Option<String>| {
+        engine.propose(ProposeInput {
+            workspace: None,
+            kind: kind.into(),
+            targets,
+            into,
+            tier,
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("alice".into()),
+        })
+    };
+    let pair = || vec![x.clone(), y.clone()];
+
+    for (label, kind, targets, into, tier, hint) in [
+        ("unknown kind", "entity_split", pair(), None, None, "unknown proposal kind"),
+        ("no targets", "entity_merge", vec![], None, None, "at least one non-empty target"),
+        ("blank target", "entity_merge", vec![x.clone(), "  ".into()], None, None, "non-empty target"),
+        ("merge of one", "entity_merge", vec![x.clone()], Some(x.clone()), None, "at least 2 target"),
+        ("merge without into", "entity_merge", pair(), None, None, "needs `into`"),
+        ("into outside targets", "entity_merge", pair(), Some("other".into()), None, "must be one of the targets"),
+        ("gate kind without tier", "claim_promotion", vec![obs_id.clone()], None, None, "needs `tier`"),
+        ("unknown tier", "claim_promotion", vec![obs_id.clone()], None, Some("archangel".into()), "unknown tier"),
+        ("promote what is not here", "claim_promotion", vec!["no-such-observation".into()], None, Some("host_signed".into()), "not in the local log"),
+        ("tier on a non-gate kind", "entity_merge", pair(), Some(y.clone()), Some("host_signed".into()), "only applies to claim_promotion"),
+    ] {
+        let err = propose(kind, targets, into, tier)
+            .err()
+            .unwrap_or_else(|| panic!("{label} must be refused"));
+        assert!(
+            err.to_string().contains(hint),
+            "{label}: the refusal must name the fix (P21), got: {err}"
+        );
+    }
+    assert!(
+        engine.list_proposals(Some(WS)).expect("list").is_empty(),
+        "not one refused proposal may reach the log - the refusal is before the write (P3: what \
+         lands is permanent)"
+    );
+
+    // The verdict surface refuses on the same terms.
+    let good = propose("entity_merge", pair(), Some(y.clone()), None).expect("well-formed");
+    for (label, id, decision, hint) in [
+        ("unknown decision", good.clone(), "approve", "unknown decision"),
+        ("empty proposal id", "  ".to_string(), "merge", "proposal id is required"),
+    ] {
+        let err = engine
+            .review_proposal(None, id, decision.into(), None, Some("bob".into()), VerdictSurface::Console)
+            .err()
+            .unwrap_or_else(|| panic!("{label} must be refused"));
+        assert!(
+            err.to_string().contains(hint),
+            "{label}: the refusal must name the fix (P21), got: {err}"
+        );
+    }
+    assert_eq!(
+        engine.get_proposal(Some(WS), &good).expect("get").expect("proposal").state,
+        "open",
+        "a refused verdict must leave the proposal exactly where it was"
+    );
 }
 
 // --- M3.5b: blocking-check monotonicity -------------------------------------------------------
