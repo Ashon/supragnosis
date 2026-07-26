@@ -263,6 +263,14 @@ I13's "prefix recomputation" means the fold computes directly, distrusting
 (This property is continuously verified by a property test - see the open decisions in
 Section 13.)
 
+[impl] The shipped checks deliver this monotonicity without the base machinery (which does
+not exist yet - the Section 4 [impl] note): each implemented predicate is monotone in the
+growing log itself. Referential integrity can only flip blocked -> merged, because
+observations and asserted entities never leave the log, and the axis-collision check is a
+function of the proposal alone (Section 13, M3.5b [impl]). A future check that is NOT
+monotone in the growing log - impact radius is the standing example - cannot ship this way
+and must wait for the fixed base of I7.
+
 ---
 
 ## 7. Verdicts and Concurrency
@@ -519,7 +527,13 @@ between M3 and M4 (pre-value in solo/hub environments).
   edges become self-loops). The blocking checks implemented are referential integrity,
   canonical-target well-formedness and the T-Box axis collision; they are recomputed by the fold, so
   a merge verdict on a failing proposal folds to `blocked` (I13 - and a replicated verdict never
-  passes through `review`, so the fold is the only place a gate can live).
+  passes through `review`, so the fold is the only place a gate can live). [impl] The axis-collision
+  check is scoped to the proposal's own affected_types (self-collision), not to the live glossary: a
+  glossary-scoped blocking check would let a later define_type flip an already-merged proposal to
+  blocked - the merged -> blocked direction I16 forbids - so the cross-glossary collision stays an
+  informative curation signal (type_axis_collisions) instead. Every implemented blocking predicate is
+  monotone in the growing log for the same reason: blocked -> merged only, never the reverse (the
+  settled open decision below).
 - M3a (belief resolution, [resolution.md](resolution.md)): claim-promotion and claim-demotion gain
   their **commit effects** - a merged verdict sets the target observations' gate tier, which the
   resolution policy consumes - and the **human-direct surface ceiling** caps what an agent-cast
@@ -597,9 +611,11 @@ their diffs + check results (`list_proposals` / `get_proposal`, Section 11) and 
 `review`. The constraints that keep the console inside the gate:
 
 - **Accept is a verdict observation, not a write.** The console never mutates the projection or the
-  log; it appends a `verdict_cast` observation and the fold derives the effect (I1/I6/I18). The viewer,
-  otherwise a read-only projection, thus gains exactly one write path - the gated verdict - and no
-  other. A path that writes the graph directly from the UI is a violation (Principle 23: no bypass).
+  log; it appends a `verdict_cast` observation and the fold derives the effect (I1/I6/I18). The
+  viewer's write paths are the gated verdict (review, and the confirm act of resolve), the gate open
+  (propose_merge - an opened proposal, never a commit), and observe ingest (reify) - each an appended
+  observation through the same engine surfaces every client uses. A path that writes the graph or the
+  log directly from the UI is a violation (Principle 23: no bypass).
 - **Loopback / local trust only.** The console is a write surface only on the local trust surface
   (Principle 17); it is not exposed to a remote client.
 - **Solo, self-attested.** In a single-user workspace the user is both proposer and reviewer; the
