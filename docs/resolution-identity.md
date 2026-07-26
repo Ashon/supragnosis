@@ -74,6 +74,13 @@ Embedding similarity **generates candidates; only the gate commits.**
   (`available` / `embedded` / `examined`) alongside it, the same refusal-to-conflate that makes
   `search_knowledge` label the `mode` it actually used. `reproject` is what closes a coverage gap,
   since it re-embeds every live entity whose name text changed or was never embedded.
+- [impl] **The scan is bounded per entity**: candidates are the union, over the workspace's entities,
+  of each entity's MERGE_BAND_K (initial 8) nearest neighbours above the floor, ranked in memory
+  rather than queried from the store per entity (a read surface may not ask the store per item - the
+  read-path cost guard). The cut is one-directional: it never invents a pair, and it drops pairs only
+  inside a cluster denser than K, so a smaller candidate list under-reports density rather than
+  misreporting similarity. The band stays a generator either way (IR2) - a dropped candidate is a
+  missed suggestion, never a wrong commit.
 - **IR2**: no code path turns a similarity score into a merge without a verdict observation.
 
 ## 4. The resolution write path (absorbing `write_guard`)

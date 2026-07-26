@@ -585,13 +585,22 @@ input, not nondeterminism - F16).
 - New crate `supragnosis-sync` (transport-agnostic core): VV diff, delta encode/decode, apply pipeline,
   selective-sharing filter, signing/verify. Depends on `core`; no IO beyond the injected store port.
 - Transport: `axum` server + `reqwest` client, `rustls` for TLS, `ed25519-dalek` for signing.
-- Config `supragnosis.toml` (via `figment`): `host_label` (display only - `node_id` derives from the
-  keypair, Section 2, and is never configured), `[node] role`, `[sync] share_workspaces / servers / peers /
-  auth_token / anchor_key` (the workspace admin's anchor public key, 6a), `[server] listen / tls_cert /
-  tls_key / allowlist` (entries: `node_id -> public key, bearer hash, shared workspaces, admin marking`).
-- CLI: `supragnosis sync` (one-shot or daemon loop against configured servers/peers); the server role is
-  started alongside `serve`/`start`.
-- MCP tools (administrative, P21 pollable tasks): `sync_status`, `sync_pull`, `sync_push`.
+- Config `supragnosis.toml` (via `toml` + serde, unknown keys rejected loudly): `host_label` (display
+  only - `node_id` derives from the keypair, Section 2, and is never configured),
+  `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys`,
+  `[server] listen / tls_cert / tls_key / allowlist` (entries: `node_id -> public key, bearer hash,
+  shared workspaces`). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
+  deferred - Section 11) and `anchor_key` (the Phase 5 policy anchor, 6a) are rejected loudly today
+  (deny-unknown), while an admin marking inside an allowlist entry (7a) would be silently ignored -
+  `AllowEntry` does not deny unknown keys, a small standing gap against the "typo cannot silently
+  disable" rule. `[node] role` was superseded: roles are implied by which sections are present
+  (architecture.md Section 10).
+- CLI: `supragnosis sync` (a one-shot round against the configured servers; the daemon separately
+  pings its hubs on a slow interval for status - the Section 5 `ping`); the server role is started
+  alongside `serve`/`start`.
+- MCP tools (administrative): `sync_status`, `sync_pull`, `sync_push`. Specified as P21 pollable
+  tasks; shipped today as ordinary blocking calls - acceptable while a round is one small delta
+  exchange, and recorded as the P21 remainder (architecture.md Section 7).
 
 ## 10. Phasing
 

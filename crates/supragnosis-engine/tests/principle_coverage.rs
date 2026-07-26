@@ -30,8 +30,8 @@
 //! per-principle version comfortable to read: with only three states, a clause pinned by a
 //! characterization test had nowhere to go except `Scenario`, where it counted as evidence that the
 //! clause was met - the exact opposite of what such a test asserts. Splitting "a test exists" from
-//! "the clause holds" is the whole reason the summary now says 38 guarded of 57 clauses instead of
-//! 18 of 23 principles.
+//! "the clause holds" is the whole reason the summary reports guarded clauses out of all clauses
+//! instead of guarded principles.
 //!
 //! Adding Principle 24 to `docs/principles.md` breaks [`every_principle_declares_its_evidence`]
 //! until someone writes down what it demands and which of the four states each demand is in. That
