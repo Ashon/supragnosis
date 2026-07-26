@@ -1837,12 +1837,51 @@ impl Engine {
             // tested, and the panic would be the only thing anyone learned about the case. The
             // handling is the answer; the cost is one extra read, and the guard for it is
             // `a_read_context_reuses_rows_only_while_that_changes_nothing`.
-            return Ok(std::borrow::Cow::Owned(self.store.all_observations(workspace)?));
+            return Ok(std::borrow::Cow::Owned(self.observations(workspace)?));
         }
-        let loaded = self.store.all_observations(workspace)?;
+        let loaded = self.observations(workspace)?;
         let (_, _, rows) =
             cx.observations.get_or_init(|| (epoch, workspace.map(str::to_string), loaded));
         Ok(std::borrow::Cow::Borrowed(rows))
+    }
+
+    /// The workspace's log with **re-keyed predecessors folded out** - the enumeration every fold
+    /// and every projection reads.
+    ///
+    /// `migrate` re-creates a pre-formula row under the current content address, and because the log
+    /// is append-only (Principle 3) the original stays. The two rows then hold the same content and
+    /// the same assertions, so a raw enumeration reports one act as two: a proposal gains a twin no
+    /// verdict can ever reference (a proposal's id IS its opening observation's id, so the copy is
+    /// permanently open), and an entity's supporting-attestation count doubles - which the
+    /// corroboration rules read as extra independent support (Principles 2/18).
+    ///
+    /// Dedup by content address (Principle 14) is what normally prevents this; a re-keying is
+    /// precisely the case where one content wears two ids, so the same rule has to be applied by
+    /// hand. A predecessor is recognised structurally rather than by re-hashing every row: the
+    /// successor names it in `derived_from` AND carries byte-identical content and assertions.
+    /// Genuine derived knowledge cannot collide with that test - identical content and assertions
+    /// under the current formula IS the same content address, so it would be one row, not two.
+    ///
+    /// Nothing is deleted (Principle 3). The predecessor stays in the store and stays
+    /// dereferenceable by its id; the successor's `derived_from` is the record of the re-keying.
+    fn observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
+        let rows = self.store.all_observations(workspace)?;
+        let by_id: HashMap<&str, &Observation> = rows.iter().map(|o| (o.id.as_str(), o)).collect();
+        let superseded: HashSet<String> = rows
+            .iter()
+            .flat_map(|successor| {
+                successor.derived_from.iter().filter_map(|parent| {
+                    let predecessor = by_id.get(parent.as_str())?;
+                    (predecessor.content == successor.content
+                        && predecessor.assertions == successor.assertions)
+                        .then(|| parent.clone())
+                })
+            })
+            .collect();
+        if superseded.is_empty() {
+            return Ok(rows);
+        }
+        Ok(rows.into_iter().filter(|o| !superseded.contains(&o.id)).collect())
     }
 
     /// Folds the proposal events in the workspace into their current states (I2). Solo decision rule:
@@ -2633,7 +2672,7 @@ impl Engine {
     /// assertion yet) are carried forward from the stored row rather than reset.
     fn project_entities(&self, ws: &str, only: Option<&HashSet<String>>, cx: &ReadCtx) -> Result<usize, StoreError> {
         let gates = self.gate_grants(Some(ws), cx)?;
-        let mut obss = self.store.all_observations(Some(ws))?;
+        let mut obss = self.observations(Some(ws))?;
         obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
 
         let mut name_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
@@ -2750,7 +2789,7 @@ impl Engine {
 
         // Relations: replay in (ordering HLC, id) order and upsert by id - description/valid-interval
         // are last-write, matching the store's upsert-by-id semantics with a deterministic order.
-        let mut obss = self.store.all_observations(Some(&ws))?;
+        let mut obss = self.observations(Some(&ws))?;
         obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
         for obs in &obss {
@@ -3500,7 +3539,7 @@ impl Engine {
         let live: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = live.iter().map(|e| e.id.as_str()).collect();
         let mut derived_from: Vec<String> = Vec::new();
-        for obs in self.store.all_observations(ws)? {
+        for obs in self.observations(ws)? {
             if co_asserted_members(&obs, &node_ids, &fwd) == h.members {
                 derived_from.push(obs.id.clone());
             }

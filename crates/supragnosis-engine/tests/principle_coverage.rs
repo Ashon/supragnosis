@@ -325,6 +325,14 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         ])),
         c("an identifier stays resolvable after the thing it names is merged away",
           Evidence::Scenario(&["get_entity_forwards_a_merged_id"])),
+        c("one content counts once even when a re-keying leaves it under two ids",
+          Evidence::Scenario(&[
+            // Content-address dedup normally makes this automatic. `migrate` is the case where one
+            // content wears two ids on purpose (the old row stays, P3), so the same rule has to be
+            // applied by hand or the folds report one act as two.
+            "p14_migration_rekeys_an_act_without_duplicating_it",
+            "legacy_id_rows_stay_local_and_migrate",
+        ])),
         c("every identifier the system hands out is dereferenceable",
           Evidence::Deferred(
             "Revisit with the MCP resource surface - supragnosis://entity/{id} does not resolve \
