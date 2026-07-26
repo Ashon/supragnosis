@@ -402,3 +402,35 @@ fn read_surfaces_do_not_depend_on_enumeration_order() {
         assert_eq!(x, y, "{name} changed when the store enumerated the log backwards (P16)");
     }
 }
+
+#[test]
+#[ignore = "measurement: what an embedding costs a fold that never reads it"]
+fn embedding_cost_on_the_read_path() {
+    let dir = std::env::temp_dir().join(format!("supragnosis-embcost-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for embedded in [false, true] {
+        let path = dir.join(if embedded { "with" } else { "without" });
+        let cozo = supragnosis_store::CozoStore::open(&path).expect("cozo");
+        let store = Arc::new(cozo);
+        let mut engine = Engine::new(store.clone(), "host-a", WS);
+        if embedded {
+            engine = engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
+        }
+        for i in 0..400 {
+            engine.observe(ObserveInput {
+                content: format!("fact number {i} with some prose so the row is not trivial"),
+                workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None }],
+                relations: vec![],
+            }).expect("observe");
+        }
+        let t = std::time::Instant::now();
+        for _ in 0..20 { store.all_observations(Some(WS)).expect("scan"); }
+        let scan = t.elapsed() / 20;
+        let t = std::time::Instant::now();
+        for _ in 0..20 { engine.graph(Some(WS)).expect("graph"); }
+        let graph = t.elapsed() / 20;
+        println!("embedding={embedded:<5} scan {scan:>10.2?}   graph {graph:>10.2?}");
+    }
+}
