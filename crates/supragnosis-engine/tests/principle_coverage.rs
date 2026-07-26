@@ -394,6 +394,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p18_agent_surface_promotion_caps_at_host_signed",
             "p18_an_agent_surface_verdict_cannot_grant_human_confirmed",
         ])),
+        c("the reserved surface-marker namespace is refused at every local ingest door",
+          Evidence::Scenario(&[
+            "p18_reserved_surface_namespace_is_refused_at_every_ingest_door",
+            "surface_markers_live_under_the_reserved_prefix",
+        ])),
         c("origin is provable and tampering detectable, and a signature is not mistaken for \
            well-formedness",
           Evidence::Scenario(&[

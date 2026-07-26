@@ -16,7 +16,10 @@ use supragnosis_core::{
     Assertions, Entity, EntityAssertion, KnowledgeStore, Observation, Provenance, TrustTier,
     VersionVector,
 };
-use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
+use supragnosis_engine::{
+    DefineTypeInput, Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, TypeDefInput,
+    TypeTarget, VerdictSurface,
+};
 use supragnosis_store::InMemoryStore;
 use supragnosis_sync::{export_delta, version_vector, SyncNode};
 
@@ -324,6 +327,69 @@ fn p18_agent_surface_promotion_caps_at_host_signed() {
         TrustTier::HostSigned,
         "an agent-surface grant must cap at host_signed - never human_confirmed (R8)"
     );
+}
+
+/// guard (resolution.md Section 6, R8): the verdict-surface markers ride source_ref, and the
+/// ceiling fold trusts a log-borne marker to be engine-stamped. That trust holds only if every
+/// LOCAL ingest door refuses the namespace - review_proposal stamps its own marker and accepts no
+/// source_ref, so it is the only local author. Without this, an ordinary observation could park
+/// "surface:console" in the log and hand any future marker-reading fold a forged human act.
+#[test]
+fn p18_reserved_surface_namespace_is_refused_at_every_ingest_door() {
+    let (_store, engine) = engine();
+    let observe_with = |source_ref: Option<&str>, content: &str| {
+        engine.observe(ObserveInput {
+            content: content.into(),
+            workspace: None,
+            source_ref: source_ref.map(String::from),
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+    };
+
+    let err = match observe_with(Some("surface:console"), "innocent text") {
+        Ok(_) => panic!("observe must refuse the reserved namespace"),
+        Err(e) => e,
+    };
+    assert!(err.to_string().contains("reserved"), "the refusal must say why: {err}");
+
+    let err = engine
+        .define_type(DefineTypeInput {
+            workspace: None,
+            source_ref: Some("surface:agent".into()),
+            on_behalf_of: None,
+            defs: vec![TypeDefInput {
+                target: TypeTarget::Entity,
+                name: "Widget".into(),
+                description: "a thing".into(),
+            }],
+        })
+        .expect_err("define_type must refuse the reserved namespace");
+    assert!(err.to_string().contains("reserved"), "{err}");
+
+    // propose, with an otherwise fully valid gate proposal - the refusal must not depend on the
+    // rest of the input being broken.
+    let target = observe_with(None, "a fact worth promoting").expect("observe").observation_id;
+    let err = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![target],
+            into: None,
+            tier: Some("host_signed".into()),
+            rationale: None,
+            affected_types: vec![],
+            source_ref: Some("surface:web".into()),
+            on_behalf_of: None,
+        })
+        .expect_err("propose must refuse the reserved namespace");
+    assert!(err.to_string().contains("reserved"), "{err}");
+
+    // The namespace is reserved, not source_ref itself - an ordinary reference stays welcome.
+    observe_with(Some("file:///notes.md"), "sourced text").expect("a normal source_ref must pass");
 }
 
 /// guard (resolution.md R5, proposal-workflow.md Section 9 fast-path): a merged demotion pushes

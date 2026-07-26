@@ -782,10 +782,19 @@ pub fn evaluated_tier(p: &Provenance) -> TrustTier {
     }
 }
 
+/// The reserved source_ref namespace for engine-stamped surface markers. Local ingest surfaces
+/// (observe / define_type / propose - and reify, which routes through observe) refuse a
+/// client-supplied source_ref under this prefix, and `review_proposal` is the only local author of
+/// a marker - so a log-borne marker on a locally-authored observation is always engine-stamped, and
+/// the ceiling fold's trust in it does not rest on no other surface ever reading one. (A replicated
+/// marker is a different matter: honoring it is the single-principal federation premise,
+/// resolution.md Section 6.)
+pub const VERDICT_SURFACE_PREFIX: &str = "surface:";
 /// Verdict surface markers (resolution.md Section 6): stamped by the ENGINE into a verdict
 /// observation's `source_ref` per call-site - the human console (viz unix socket, local OS principal)
 /// vs the agent-facing MCP tool path. Never client-suppliable: the review surfaces accept no
-/// source_ref of their own.
+/// source_ref of their own, and the local ingest surfaces refuse the whole namespace
+/// ([`VERDICT_SURFACE_PREFIX`]).
 pub const VERDICT_SURFACE_CONSOLE: &str = "surface:console";
 /// The agent (MCP tool) verdict surface marker - see [`VERDICT_SURFACE_CONSOLE`].
 pub const VERDICT_SURFACE_AGENT: &str = "surface:agent";
@@ -1799,6 +1808,14 @@ mod tests {
             ..stamped(&identity, "cid", 2, Hlc { wall: 6, counter: 0, node: identity.node_id() })
         };
         assert_eq!(evaluated_tier(&remote_low), TrustTier::Unverified, "min() never raises a claim");
+    }
+
+    /// The two markers live inside the reserved namespace the ingest surfaces refuse - if one
+    /// moved out from under the prefix, the reservation would guard nothing.
+    #[test]
+    fn surface_markers_live_under_the_reserved_prefix() {
+        assert!(VERDICT_SURFACE_CONSOLE.starts_with(VERDICT_SURFACE_PREFIX));
+        assert!(VERDICT_SURFACE_AGENT.starts_with(VERDICT_SURFACE_PREFIX));
     }
 
     /// guard (resolution.md Section 6): only the console marker permits a HumanConfirmed grant;
