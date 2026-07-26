@@ -184,6 +184,40 @@ const MERGE_BAND_K: usize = 8;
 
 /// An unordered id pair as a canonical (min, max) tuple - so a suggestion for (a, b) and (b, a) is
 /// one entry, and an open-proposal exclusion matches regardless of the order the targets were given.
+/// The `limit` nearest entities to `subject` by name-embedding cosine, computed over the pool the
+/// caller already holds.
+///
+/// This is what `KnowledgeStore::search_semantic_entities` returns, in the same order (score
+/// descending, id ascending - Principle 16: a tie may not resolve by iteration order), for the same
+/// reason it is not called: the merge band is handed every entity of the workspace, vectors
+/// included, and was asking the store for them again once per entity. That is N queries to rank
+/// data already in hand.
+///
+/// Computing it here also makes the band say the same thing on every adapter. The InMemory store
+/// ranks exhaustively and Cozo runs an HNSW approximation, so the same log could produce different
+/// merge candidates depending on which store was underneath - the shape of divergence the traverse
+/// parity conditions exist to catch.
+fn nearest_by_embedding<'e>(
+    subject: &Entity,
+    pool: &'e [Entity],
+    limit: usize,
+) -> Vec<(&'e Entity, f32)> {
+    let Some(q) = subject.embedding.as_deref() else {
+        return Vec::new();
+    };
+    let mut hits: Vec<(&Entity, f32)> = pool
+        .iter()
+        .filter_map(|e| Some((e, supragnosis_core::cosine_similarity(q, e.embedding.as_deref()?))))
+        .collect();
+    hits.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.id.cmp(&b.0.id))
+    });
+    hits.truncate(limit);
+    hits
+}
+
 fn unordered_pair(a: &str, b: &str) -> (String, String) {
     if a <= b {
         (a.to_string(), b.to_string())
@@ -1374,20 +1408,20 @@ impl Engine {
                 continue; // e was merged away - not a live candidate
             }
             examined += 1;
-            let Some(vec) = &e.embedding else {
+            if e.embedding.is_none() {
                 continue;
-            };
+            }
             embedded += 1;
-            for h in self.store.search_semantic_entities(vec, workspace, MERGE_BAND_K)? {
-                if h.id == e.id || h.score < SIM_CANDIDATE || fwd.contains_key(&h.id) {
+            for (other, score) in nearest_by_embedding(e, all_entities, MERGE_BAND_K) {
+                if other.id == e.id || score < SIM_CANDIDATE || fwd.contains_key(&other.id) {
                     continue;
                 }
-                // Same reason as the ladder: with workspace: None the index spans workspaces, and a
+                // Same reason as the ladder: with workspace: None the pool spans workspaces, and a
                 // pair straddling two of them has nowhere coherent to file its proposal.
-                if all_entities.iter().any(|o| o.id == h.id && entity_workspace(o) != entity_workspace(e)) {
+                if entity_workspace(other) != entity_workspace(e) {
                     continue;
                 }
-                let pair = unordered_pair(&e.id, &h.id);
+                let pair = unordered_pair(&e.id, &other.id);
                 if !seen.insert(pair.clone()) || open_pairs.contains(&pair) {
                     continue;
                 }
@@ -1400,7 +1434,7 @@ impl Engine {
                     b_name: name_by_id.get(pair.1.as_str()).copied().unwrap_or("").to_string(),
                     a: pair.0,
                     b: pair.1,
-                    similarity: h.score,
+                    similarity: score,
                     shared_neighbors: shared,
                 });
             }

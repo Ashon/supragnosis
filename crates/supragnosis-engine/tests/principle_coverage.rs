@@ -170,6 +170,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "a_read_context_reuses_rows_only_while_that_changes_nothing",
             "a_shared_context_answers_what_separate_reads_answer",
             "a_read_walks_the_log_once",
+            "a_read_does_not_query_the_store_per_item",
         ])),
         // Half a refusal and half a permission, so the guard asserts both: a non-assertion is
         // refused before the log, and notation variance is NOT (normalizing is the projection's job).
