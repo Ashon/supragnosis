@@ -982,7 +982,11 @@ function obsCardHtml(o) {
     +   `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`
     + `<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${esc(String(o.effective_tier))}</span>`
     +   `<span class="ocwhen">${esc(obsWhenFull(a0.observed_at))}</span></div>`
-    + `<div class="oc-content">${esc(o.content)}</div>`
+    // A proposal event leads with the readable form, but keeps the stored text underneath: this
+    // card is the dereference surface an id resolves to (P2/P14), so what is literally in the log
+    // has to stay inspectable here even once it is no longer what the reader is shown.
+    + `<div class="oc-content">${esc(o.proposal ? proposalLine(o.proposal) : o.content)}</div>`
+    + (o.proposal ? `<div class="ocraw" title="the text stored in the log - fixed inside the content address">${esc(o.content)}</div>` : "")
     + `<div class="osec">provenance (${(o.attestations || []).length})</div>`;
   for (const a of o.attestations || []) {
     h += `<div class="prow"><span class="phost">${esc(a.host)}</span>`
@@ -995,6 +999,27 @@ function obsCardHtml(o) {
   if (o.derived_from && o.derived_from.length)
     h += `<div class="osec">derived from</div><div class="oids">`
       + o.derived_from.map(id => `<span class="oid">${esc(String(id).slice(0, 10))}</span>`).join("") + `</div>`;
+  if (o.proposal) {
+    const p = o.proposal;
+    h += `<div class="osec">proposal</div>`
+      + `<div class="ocprop"><span class="pkind">${esc(p.kind || "proposal")}</span>`
+      +   `<span class="pstate ${esc(p.state || "")}">${esc(p.state || "")}</span>`
+      +   `<span class="oid">${esc(String(p.proposal).slice(0, 10))}</span></div>`;
+    const ts = p.targets || [];
+    if (ts.length) {
+      // A target that no longer has a node is one this merge folded away - it stays listed (the act
+      // touched it) but is not offered as a jump, because there is nothing left to jump to.
+      const chip = t => {
+        const live = !!nodeById(t.id);
+        const into = p.into && t.id === p.into.id;
+        const label = esc(t.name || String(t.id).slice(0, 8)) + (into ? " <span class=\"rk\">kept</span>" : "");
+        return live
+          ? `<span class="echip" data-id="${esc(t.id)}" title="focus ${esc(t.name || t.id)}">${label}</span>`
+          : `<span class="echip off" title="folded away by this merge - no node to focus">${label}</span>`;
+      };
+      h += `<div class="osec">targets</div><div class="echips">${ts.map(chip).join("")}</div>`;
+    }
+  }
   if (o.entities && o.entities.length)
     h += `<div class="osec">entities</div><div class="echips">`
       + o.entities.map(e => `<span class="echip" data-id="${esc(e.id)}" title="focus ${esc(e.name)}">${esc(e.name)}</span>`).join("") + `</div>`;
