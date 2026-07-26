@@ -343,6 +343,32 @@ const ENT_TARGET: SemanticTarget = SemanticTarget {
     kind: SearchHitKind::Entity,
 };
 
+/// Reads the stored `provenance` field in **either encoding it has ever had**.
+///
+/// An observation's provenance is a LIST of attestations, because a re-arrival at the same content
+/// address unions them rather than overwriting (Principle 3's merge norm). Rows written before it
+/// became a list hold a single bare object, and `Vec<Provenance>` cannot parse one - which failed the
+/// whole row and dropped it from every enumeration.
+///
+/// Keeping every historical encoding readable is a Principle 3 obligation, not a courtesy: the log is
+/// permanent and append-only, so a row that can no longer be parsed is destroyed in effect, which is
+/// the outcome that principle exists to forbid. `migrate` cannot stand in for it either - migration
+/// walks `all_observations`, the very enumeration an unreadable row falls out of, so the rows needing
+/// repair are exactly the ones it cannot see. (architecture.md Section 14 lists three assertion-encoding
+/// changes that `migrate` covers; this is a fourth, on provenance, that it structurally cannot.)
+///
+/// A READ shim only. The write path always emits a list, and the sync wire decoder is untouched, so a
+/// legacy shape can never arrive from the network - only from this node's own history. The shape is
+/// dispatched explicitly rather than by try-list-then-fallback, so a genuinely corrupt list still
+/// fails instead of being retried as an object and blamed on the wrong thing.
+fn provenance_from_json(v: &serde_json::Value) -> Option<Vec<Provenance>> {
+    if v.is_array() {
+        serde_json::from_value(v.clone()).ok()
+    } else {
+        Some(vec![serde_json::from_value(v.clone()).ok()?])
+    }
+}
+
 /// Reconstructs an observation row (content, data JSON) into a domain Observation.
 /// Returns None if a log-critical field is broken (content, provenance, assertions, derived_from) so
 /// the caller promotes it to a backend failure. assertions/derived_from must NOT degrade to empty on a
@@ -354,8 +380,7 @@ const ENT_TARGET: SemanticTarget = SemanticTarget {
 fn observation_from_row(id: &str, row: &[DataValue]) -> Option<Observation> {
     let content = row.first()?.get_str()?.to_string();
     let data: serde_json::Value = serde_json::from_str(row.get(1)?.get_str()?).ok()?;
-    let provenance: Vec<Provenance> =
-        serde_json::from_value(data.get("provenance")?.clone()).ok()?;
+    let provenance: Vec<Provenance> = provenance_from_json(data.get("provenance")?)?;
     let assertions: Assertions = match data.get("assertions") {
         None => Assertions::default(),                       // absent -> legitimately empty
         Some(v) => serde_json::from_value(v.clone()).ok()?,  // present-but-corrupt -> None -> Err
@@ -1420,6 +1445,92 @@ mod tests {
             "a re-arrival on a corrupt baseline must not destructively overwrite the row"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// guard (Principle 3, Principle 10 migration path): an observation row written under the
+    /// **pre-list provenance encoding** - a single bare attestation object instead of an array - must
+    /// still read, as exactly that one attestation.
+    ///
+    /// The log is permanent and append-only, so an encoding it once used has to stay readable forever:
+    /// a row that no longer parses is destroyed in effect, which is the outcome P3 forbids. This is not
+    /// hypothetical - a real store had 23 of 141 observation rows silently dropped from every
+    /// enumeration this way, and `migrate` could not repair them because migration walks
+    /// `all_observations`, the very enumeration an unreadable row falls out of.
+    ///
+    /// The row is inserted through the raw script rather than `add_observation`, because the write path
+    /// (correctly) only ever emits the current encoding - the legacy shape can only be planted directly.
+    #[test]
+    fn legacy_object_provenance_reads_as_one_attestation() {
+        let dir = tmp_dir();
+        {
+            let store = CozoStore::open(&dir).expect("open");
+            let legacy = serde_json::json!({
+                "provenance": {
+                    "host": "ashons-macbook",
+                    "on_behalf_of": "ashon",
+                    "workspace": "ws1",
+                    "source_ref": "docs/framework-spec-v3.md",
+                    "observed_at": 1_784_299_669_902u64,
+                    "confidence": 1.0,
+                    "trust_tier": "agent_extracted"
+                },
+                "assertions": {},
+                "derived_from": [],
+                "embedding": null
+            })
+            .to_string();
+            store
+                .run(
+                    "?[id, content, workspace, data] <- [[$id, $content, $workspace, $data]]\n\
+                     :put observation {id => content, workspace, data}",
+                    params(&[
+                        ("id", "legacy-shape-row".to_string()),
+                        ("content", "an early-era fact".to_string()),
+                        ("workspace", "ws1".to_string()),
+                        ("data", legacy),
+                    ]),
+                    true,
+                )
+                .expect("plant the legacy row");
+
+            let got = store
+                .get_observation("legacy-shape-row")
+                .expect("a legacy encoding is not a backend failure")
+                .expect("the row exists");
+            assert_eq!(got.provenance.len(), 1, "one bare object is one attestation, not zero and not two");
+            assert_eq!(got.provenance[0].host, "ashons-macbook");
+            assert_eq!(got.provenance[0].on_behalf_of.as_deref(), Some("ashon"));
+            assert_eq!(got.provenance[0].workspace, "ws1");
+            assert_eq!(got.content, "an early-era fact");
+
+            // And it must not be the row that quietly vanishes from the enumeration every fold reads.
+            let all = store.all_observations(Some("ws1")).expect("enumerate");
+            assert!(
+                all.iter().any(|o| o.id == "legacy-shape-row"),
+                "the legacy row must appear in the enumeration, not be dropped as a degrade"
+            );
+
+            // The shim widens what parses, it must not widen what passes: a provenance that is neither
+            // a list nor a valid attestation is still a backend failure, not an empty one.
+            store
+                .run(
+                    "?[id, content, workspace, data] <- [[$id, $content, $workspace, $data]]\n\
+                     :put observation {id => content, workspace, data}",
+                    params(&[
+                        ("id", "corrupt-row".to_string()),
+                        ("content", "broken".to_string()),
+                        ("workspace", "ws1".to_string()),
+                        ("data", "{\"provenance\": 42}".to_string()),
+                    ]),
+                    true,
+                )
+                .expect("plant the corrupt row");
+            assert!(
+                store.get_observation("corrupt-row").is_err(),
+                "a corrupt provenance must stay a backend failure - the shim is a second ENCODING, not a fallback to empty"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -207,6 +207,13 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "M4 Phase 5 - the first multi-principal deployment is the first time such a demand can \
              arrive from someone who is not the operator (architecture.md Section 14)",
         )),
+        c("every encoding the log has ever used stays readable",
+          Evidence::Scenario(&[
+            // Append-only cuts both ways: a row can never be rewritten away, so a row that stops
+            // parsing is destroyed in effect. `migrate` cannot cover this - it walks the enumeration
+            // an unreadable row falls out of - which is why the repair is a permanent read shim.
+            "legacy_object_provenance_reads_as_one_attestation",
+        ])),
         c("a relation accumulates attestations the way an entity and an observation do",
           Evidence::Deferred(
             "M3c/M5 - relation provenance is still a single attestation, so a second assertion of \
