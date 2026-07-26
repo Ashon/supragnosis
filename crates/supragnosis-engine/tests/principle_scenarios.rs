@@ -1657,3 +1657,100 @@ fn i8_blocking_check_conclusion_is_arrival_order_independent() {
         "a merge whose targets are not in the local log must not count as merged"
     );
 }
+
+// --- P14 / P3: a re-keyed row is one act, not two ----------------------------------------------
+
+/// guard (principles.md P14 content-is-identity, P3 nothing is deleted): `migrate` re-creates a
+/// pre-formula row under the current content address and, the log being append-only, leaves the
+/// original in place. Both rows then carry the same content and the same assertions, so a raw
+/// enumeration would report one act as two.
+///
+/// What that costs is not cosmetic. A proposal's id IS its opening observation's id, so the copy
+/// becomes a second proposal that no verdict can ever reference - permanently open, un-closable. And
+/// an entity's supporting-attestation count doubles, which the corroboration rules read as extra
+/// independent support (P2/P18). Both are measured here before and after the migration, because a
+/// duplicate is only legible as a difference.
+///
+/// The other half of the claim is that this is dedup, not deletion (P3): the predecessor is still in
+/// the store and still dereferenceable by its id afterwards.
+#[test]
+fn p14_migration_rekeys_an_act_without_duplicating_it() {
+    let (store, engine) = engine();
+    let prov = || Provenance {
+        host: "host-a".into(),
+        on_behalf_of: Some("ashon".into()),
+        workspace: WS.into(),
+        source_ref: None,
+        observed_at: 10,
+        confidence: None,
+        trust_tier: TrustTier::default(),
+        sync: None,
+    };
+    // Two pre-formula rows: one opening a proposal, one asserting an entity. Simulating the id era
+    // is what `migrate` itself keys on - a stored id that no longer matches the current formula.
+    let mut legacy_proposal = Observation::with_assertions(
+        "propose: promote the store note".into(),
+        prov(),
+        Assertions {
+            proposal_events: vec![supragnosis_core::ProposalEventAssertion {
+                proposal: String::new(),
+                event: supragnosis_core::ProposalEventKind::Opened,
+                payload: r#"{"kind":"claim_promotion","targets":["obs-x"],"tier":"host_signed"}"#
+                    .into(),
+            }],
+            ..Default::default()
+        },
+    );
+    legacy_proposal.id = "legacy-era-proposal-id".into();
+    let mut legacy_entity = Observation::with_assertions(
+        "cozo is the store".into(),
+        prov(),
+        Assertions {
+            entities: vec![EntityAssertion {
+                name: "Cozo".into(),
+                kind: Some("Tool".into()),
+                description: None,
+            }],
+            ..Default::default()
+        },
+    );
+    legacy_entity.id = "legacy-era-entity-id".into();
+    store.add_observation(legacy_proposal).unwrap();
+    store.add_observation(legacy_entity).unwrap();
+    engine.reproject(Some(WS)).unwrap();
+
+    let sources = |e: &Engine| {
+        e.graph(Some(WS))
+            .unwrap()
+            .nodes
+            .iter()
+            .find(|n| n.name == "Cozo")
+            .expect("the entity projects")
+            .sources
+    };
+    let before = (engine.list_proposals(Some(WS)).unwrap().len(), sources(&engine));
+    assert_eq!(before, (1, 1), "one proposal and one supporting attestation to start with");
+
+    let migrated = supragnosis_sync::migrate_legacy_ids(store.as_ref(), WS).unwrap();
+    assert_eq!(migrated, 2, "both pre-formula rows are re-keyed");
+    engine.reproject(Some(WS)).unwrap();
+
+    assert_eq!(
+        (engine.list_proposals(Some(WS)).unwrap().len(), sources(&engine)),
+        before,
+        "re-keying an act must not turn it into two - a duplicate proposal cannot be closed, \
+         and a doubled attestation count reads as independent corroboration (P14, P2/P18)"
+    );
+    // Dedup, not deletion (P3): the predecessor is still there to be dereferenced.
+    for id in ["legacy-era-proposal-id", "legacy-era-entity-id"] {
+        assert!(
+            store.get_observation(id).unwrap().is_some(),
+            "{id} must stay in the store - the successor supersedes it, nothing erases it"
+        );
+    }
+    assert_eq!(
+        store.all_observations(Some(WS)).unwrap().len(),
+        4,
+        "the store holds both the predecessors and their re-keyed successors"
+    );
+}
