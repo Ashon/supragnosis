@@ -224,7 +224,9 @@ function insetB() {
   const h = detailEl.getBoundingClientRect().height;
   return h ? 36 + h + 8 : BOTTOM_INSET;   // 36 = the detail panel's bottom offset (match the CSS)
 }
-// Smoothly bring a node to the screen center (focus-to-zoom). If zoomed too far out, zoom in slightly.
+// Smoothly bring ONE node to the screen center (focus-to-zoom). If zoomed too far out, zoom in
+// slightly. Used where there is nothing but the node to frame: the activity feed following a single
+// hit, and focusView's fallback for a node with no visible neighbours.
 function centerOn(n) {
   camT.s = Math.min(2.5, Math.max(cam.s, 1.1));
   camT.x = (insetL() + innerWidth - insetR()) / 2 - n.x * camT.s;   // center in the strip between the rails
@@ -662,7 +664,7 @@ function renderCuration() {
     + (s.duplicate_groups || 0) + (s.grab_bags || 0) + (s.orphans || 0)
     + (s.type_axis_collisions || 0) || "";
   curationBodyEl.querySelectorAll(".nchip").forEach(c => {
-    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
+    c.onclick = () => { const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); focusView(n); } };
   });
   curationBodyEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
@@ -763,7 +765,7 @@ function renderProposals() {
     row.onclick = () => selectProposal(proposals.find(x => x.id === row.dataset.pid));
   });
   proposalsBodyEl.querySelectorAll(".nchip").forEach(c => {
-    c.onclick = (ev) => { ev.stopPropagation(); const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); centerOn(n); } };
+    c.onclick = (ev) => { ev.stopPropagation(); const n = nodeById(c.dataset.id); if (n) { focus = n; renderDetail(n); focusView(n); } };
   });
   proposalsBodyEl.querySelectorAll(".pacts button").forEach(b => {
     b.onclick = async (ev) => {
@@ -877,7 +879,7 @@ function selectProposal(p) {
   if (proposalSel) {
     fetchProposalDiff(proposalSel.id);
     const into = nodeById(proposalSel.into);
-    if (into) { focus = into; renderDetail(into); centerOn(into); }
+    if (into) { focus = into; renderDetail(into); focusView(into); }
     // No single canonical node (tbox_change): frame the affected members and mark the view user-driven
     // so a pending auto-fit does not stomp the preview (same as the search-result fit).
     else { const framed = affectedNodes(proposalSel); if (framed.length) { fitView(framed); userMoved = true; } }
@@ -976,7 +978,7 @@ function showObsCard(o) {
       ev.stopPropagation();
       const n = nodeById(c.dataset.id);
       hideObsCard();
-      if (n) { focus = n; renderDetail(n); centerOn(n); }
+      if (n) { focus = n; renderDetail(n); focusView(n); }
     };
   });
 }
@@ -1408,7 +1410,7 @@ function renderDetail(node) {
   detailEl.querySelectorAll(".row").forEach(r => {
     r.onclick = () => {
       const n = nodeById(r.dataset.id);
-      if (n) { focus = n; renderDetail(n); centerOn(n); }
+      if (n) { focus = n; renderDetail(n); focusView(n); }
     };
   });
   detailEl.querySelectorAll(".confirm").forEach(b => {
@@ -1586,17 +1588,65 @@ miniEl.addEventListener("mousedown", ev => {
 // Fit is against the FULL window width, regardless of which side panels float open - the panels
 // are overlays, and on a narrow window fitting into the strip between them shrank the graph past
 // readability (the map-app convention: fit the viewport, let overlays cover the edges). Only the
-// top/bottom insets stay (header/status are opaque bars, not floating cards). Focusing a single
-// node (centerOn) still avoids the panels - a focused node under a panel would be truly hidden.
+// top/bottom insets stay (header/status are opaque bars, not floating cards). The focus framings
+// (centerOn, focusView) do avoid the panels - what a focus puts on screen is exactly what the open
+// inspector is describing, so hiding it under that inspector would be self-defeating. The difference
+// is affordable there and not here: a neighbourhood is a handful of nodes, the whole graph is not.
 function fitView(list, pad = 90) {
-  const src = (list || nodes).filter(n => !typeOff.has(n.type));
-  if (!src.length) return;
+  const box = boundsOf(list || nodes);
+  if (!box) return;
+  frameBox(box, 0, innerWidth, TOP_INSET, innerHeight - BOTTOM_INSET, pad, 2.5);
+}
+
+// World-space bounding box of the visible members of a node list. Types the filter hides are dropped:
+// a node nobody can see must not drag the frame. Null when nothing is left to frame.
+function boundsOf(list) {
+  const src = list.filter(n => !typeOff.has(n.type));
+  if (!src.length) return null;
   let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
   for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
-  const w = innerWidth, h = innerHeight, gw = Math.max(1, c-a), gh = Math.max(1, d-b);
-  camT.s = Math.max(0.15, Math.min(2.5, Math.min((w - pad*2) / gw, (h - pad*2 - TOP_INSET - BOTTOM_INSET) / gh)));
-  camT.x = w/2 - (a+c)/2*camT.s;
-  camT.y = (h + TOP_INSET - BOTTOM_INSET)/2 - (b+d)/2*camT.s;
+  return { a, b, c, d };
+}
+
+// Aim the camera so a world box fits a screen rect, with `pad` breathing room and the zoom capped at
+// `hi`. Shared so the two framings differ only in their rect and ceiling, not in their arithmetic.
+function frameBox({ a, b, c, d }, L, R, T, B, pad, hi) {
+  const vw = Math.max(1, R - L - pad*2), vh = Math.max(1, B - T - pad*2);
+  const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
+  camT.s = Math.max(0.15, Math.min(hi, Math.min(vw / gw, vh / gh)));
+  camT.x = (L + R)/2 - (a+c)/2*camT.s;
+  camT.y = (T + B)/2 - (b+d)/2*camT.s;
+}
+
+// The nodes focusing `n` reveals: the anchor plus everything one edge away. Mirrors activeSet's
+// adjacency on purpose - the camera should frame exactly what the highlight lights up.
+function neighbourhoodOf(n) {
+  const ids = new Set([n.id]);
+  for (const e of edges) {
+    if (e.a.id === n.id) ids.add(e.b.id);
+    else if (e.b.id === n.id) ids.add(e.a.id);
+  }
+  return nodes.filter(m => ids.has(m.id));
+}
+
+// Frame a focused node together with the neighbours its focus reveals. Focusing lights up the
+// neighbours and the inspector lists them, so a camera that frames the anchor alone leaves the reader
+// hunting off-screen for the very things it just highlighted.
+//
+// The zoom only ever goes DOWN from what centerOn would have chosen: that ceiling is what keeps a
+// tight pair from jump-cutting to maximum zoom, so the felt behaviour is unchanged whenever the
+// neighbourhood already fits, and the one thing that changes is that a neighbourhood which does not
+// fit now pulls the camera out until it does. Unlike fitView this respects the side panels, because
+// focusing is exactly when the inspector opens - fitting past it would hide the neighbours under the
+// panel that is describing them.
+function focusView(n) {
+  const box = boundsOf(neighbourhoodOf(n));
+  // An isolated node (or one whose neighbours are all filtered out) has a degenerate box - there is
+  // no extent to fit, and zooming to a point is not framing. Centring is the honest answer.
+  if (!box || (box.c - box.a < 1 && box.d - box.b < 1)) { centerOn(n); return; }
+  const ceiling = Math.min(2.5, Math.max(cam.s, 1.1));   // what centerOn would have picked
+  frameBox(box, insetL(), innerWidth - insetR(), TOP_INSET, innerHeight - insetB(), 70, ceiling);
+  userMoved = true;
 }
 
 // hyperedge id -> palette color (deterministic hash). Overlapping hulls blend semi-transparently (C1: overlap = connective tissue).
@@ -2265,8 +2315,12 @@ addEventListener("mouseup", ev => {
   if (!moved && ev.target === canvas) {
     const n = nodeAt(ev.clientX, ev.clientY);
     focus = n ? (focus === n ? null : n) : null;   // node click = toggle focus (pin), empty space = clear
-    if (focus) centerOn(focus);    // node click just centers the camera - no reheat, the layout stays put
+    // Inspector first, camera second: insetB() MEASURES the open panel, so aiming before the panel
+    // exists frames against the previous layout and drops the bottom of the neighbourhood behind it.
+    // Every other focus path already ordered it this way; this one did not, and framing a box rather
+    // than centring a point is what made it visible.
     renderDetail(focus);                           // show/clear the detail inspector
+    if (focus) focusView(focus);   // frame the node with the neighbours the focus reveals - no reheat, the layout stays put
   }
   if (drag && moved) wake(0.3);   // settle neighbors only after a real drag, not a plain click
   drag = null;
