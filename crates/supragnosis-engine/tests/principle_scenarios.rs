@@ -661,12 +661,22 @@ fn p16_partitioned_and_duplicated_delivery_converges() {
     };
     assert_eq!(shape(&store_b), shape(&store_c), "same log regardless of partitioning");
 
-    // Identical re-materialized graphs (F5 / Prop C).
+    // Identical re-materialized graphs (F5 / Prop C). Compared WHOLE, not by shape: node ids and
+    // edge triples agreeing says nothing about the belief values, contested flags, effective tiers,
+    // aliases or edge metadata carried on them, and those are the parts a fold actually decides.
+    // Shape-level comparison is what let an order-dependent duplicate-edge pick sit in `graph` while
+    // the P16 suite was green. Serializing closes the "batch-partitioned delivery only checks graph
+    // shape" sliver that architecture.md Section 14 recorded.
     let engine_b = Engine::new(store_b.clone(), "host-b", WS);
     let engine_c = Engine::new(store_c.clone(), "host-c", WS);
     engine_b.reproject(Some(WS)).expect("reproject b");
     engine_c.reproject(Some(WS)).expect("reproject c");
     assert_eq!(graph_shape(&engine_b), graph_shape(&engine_c), "same graph regardless of path");
+    assert_eq!(
+        serde_json::to_string(&engine_b.graph(Some(WS)).unwrap()).unwrap(),
+        serde_json::to_string(&engine_c.graph(Some(WS)).unwrap()).unwrap(),
+        "partitioned delivery must converge on the whole graph, not merely its shape"
+    );
 }
 
 // --- P16 (4th revision): read-path reproducibility with ties -----------------------------------
