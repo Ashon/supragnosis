@@ -361,7 +361,6 @@ code {
 .grid { display: grid; gap: 16px; }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 .grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 
 .card {
   background: var(--panel);
@@ -560,29 +559,6 @@ code {
 @keyframes march { to { stroke-dashoffset: -8; } }
 .t-node { fill: var(--muted); fill-opacity: 0.7; }
 .t-hub { fill: var(--gold); }
-
-/* ---------------- crates ---------------- */
-
-.crates { gap: 12px; }
-.crate {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  transition: border-color 0.18s ease;
-}
-.crate:hover { border-color: var(--gold-dim); }
-.crate strong {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-.crate strong::before { content: "supragnosis-"; color: var(--faint); font-weight: 400; }
-.crate span { font-size: 13.5px; color: var(--muted); }
 
 /* ---------------- status checklist ---------------- */
 
