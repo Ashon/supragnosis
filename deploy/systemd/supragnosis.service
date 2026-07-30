@@ -1,0 +1,56 @@
+; supragnosis as a systemd **user** service (Linux). Counterpart to deploy/launchd on macOS.
+;
+; Deliberately a user unit, not a system one: the store, the node key, and the config all live
+; under ~/.supragnosis, and a user unit needs no root to install or restart. It does need lingering
+; so it survives logout - see deploy/README.md.
+;
+;   mkdir -p ~/.config/systemd/user
+;   cp deploy/systemd/supragnosis.service ~/.config/systemd/user/
+;   loginctl enable-linger "$USER"          # once, so it runs without a session
+;   systemctl --user daemon-reload
+;   systemctl --user enable --now supragnosis
+;
+; `serve` runs in the foreground, which is what Type=simple wants; `start` would daemonize behind
+; a pidfile and fight systemd for supervision. When supragnosis.toml carries a [server] section the
+; federation sync API starts alongside this process (docs/federation.md Section 9), and a bad
+; [server] section fails startup loudly rather than silently dropping the role (F10).
+
+[Unit]
+Description=supragnosis - the agent-first ontology server
+Documentation=https://supragnosis.dev/
+Documentation=https://github.com/Ashon/supragnosis/blob/main/docs/federation.md
+; The sync API binds a specific non-loopback address, which does not exist until the network is
+; configured. Without this the unit loses the race on boot and Restart= has to paper over it.
+After=network-online.target
+Wants=network-online.target
+; A crash loop against a misconfiguration should stop and stay stopped, not retry forever.
+; These live in [Unit], not [Service] - systemd ignores them with a warning if misplaced.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/supragnosis serve --http 127.0.0.1:7373 --viz %h/.supragnosis/viz.sock
+Restart=on-failure
+RestartSec=5s
+Environment=RUST_LOG=info
+; The store is single-process (one Cozo/RocksDB lock). Never let systemd run two.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+; Hardening, limited to what an unprivileged user manager can actually enforce. ProtectKernel*
+; and ProtectControlGroups= imply a CapabilityBoundingSet the user manager holds no privilege to
+; set, and the unit dies with 218/CAPABILITIES before it ever runs - they belong in a system unit,
+; not here. What is left is namespace- and seccomp-based, which needs no privilege.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.supragnosis
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=default.target
