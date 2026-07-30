@@ -717,6 +717,9 @@ async fn serve_http_daemon(
     // refuses any non-loopback Host/Origin so such a page cannot drive observe/search/review.
     let router = axum::Router::new()
         .nest_service("/mcp", service)
+        // Inner: rewrites the service's own stale-session answer. Outer: the origin guard, so a foreign
+        // origin is refused before it reaches either.
+        .layer(axum::middleware::from_fn(expired_session_is_not_found))
         .layer(axum::middleware::from_fn(guard_local_origin));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -750,6 +753,57 @@ async fn guard_local_origin(
     } else {
         Err(axum::http::StatusCode::FORBIDDEN)
     }
+}
+
+/// True when a response is rmcp's "this session id is unknown to me" answer.
+///
+/// Kept separate from the middleware so the classification is testable on its own: deciding to turn a
+/// 401 into a 404 on the strength of a body string is the whole risk here, and it must not be reachable
+/// for any other 401. rmcp emits two: "Session not found" (the session expired - the client should start
+/// a new one) and "Session ID is required" (the request carried no session id at all, which is a
+/// malformed request and stays 401).
+fn is_expired_session(status: axum::http::StatusCode, body: &[u8]) -> bool {
+    status == axum::http::StatusCode::UNAUTHORIZED
+        && String::from_utf8_lossy(body).contains("Session not found")
+}
+
+/// Answers an expired MCP session with 404 instead of rmcp's 401, so clients can recover on their own.
+///
+/// MCP Streamable HTTP says a 404 to a request carrying `Mcp-Session-Id` means "start a new session",
+/// and clients re-initialize on it. rmcp 0.16 answers an unknown session with `401 Unauthorized:
+/// Session not found` (`streamable_http_server/tower.rs`), which is not that signal: a client reads 401
+/// as an auth failure - Claude Code takes it for an OAuth challenge, requests OAuth discovery, and
+/// reports the resulting parse error instead of reconnecting. The practical cost is that every daemon
+/// restart strands connected clients until each is reconnected by hand, since nothing in the exchange
+/// tells them the session merely aged out.
+async fn expired_session_is_not_found(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let res = next.run(req).await;
+    // Every other response - including the SSE streams - passes through untouched and unbuffered.
+    if res.status() != axum::http::StatusCode::UNAUTHORIZED {
+        return res;
+    }
+    let (parts, body) = res.into_parts();
+    // These are short constant strings; the cap is what keeps this from buffering anything unbounded.
+    let Ok(bytes) = axum::body::to_bytes(body, 4096).await else {
+        // The body is consumed and cannot be replayed. Keep the original status rather than guess:
+        // answering 404 for a response we never managed to identify would invent a session expiry.
+        return (parts.status, "Unauthorized").into_response();
+    };
+    if is_expired_session(parts.status, &bytes) {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            "Not Found: the MCP session has expired - start a new session by sending initialize \
+             without a session id (MCP Streamable HTTP)",
+        )
+            .into_response();
+    }
+    // Not a stale session: replay the original response byte for byte (the reused parts keep
+    // content-length truthful, since the body is unchanged).
+    axum::response::Response::from_parts(parts, axum::body::Body::from(bytes))
 }
 
 /// Parses the MCP streamable-http bind address and **verifies it is loopback** (Principle 17).
@@ -819,6 +873,62 @@ mod daemon_guard_tests {
         assert!(origin_is_loopback("http://127.0.0.1:7373"));
         assert!(origin_is_loopback("http://localhost"));
         assert!(!origin_is_loopback("https://evil.example.com"));
+    }
+
+    /// An expired session must be 404 (the MCP signal to re-initialize), and nothing else may be.
+    ///
+    /// The translation keys off a body string, so the risk is over-reach: a 401 that is not an aged-out
+    /// session must keep its status, or a genuine auth failure would be reported to the client as a
+    /// recoverable session expiry and retried forever.
+    #[test]
+    fn only_an_unknown_session_is_translated_to_not_found() {
+        use super::is_expired_session;
+        use axum::http::StatusCode;
+
+        let unauthorized = StatusCode::UNAUTHORIZED;
+
+        // rmcp's exact wording for an unknown/aged-out session - the one case that must flip.
+        assert!(
+            is_expired_session(unauthorized, b"Unauthorized: Session not found"),
+            "an unknown session must become 404 so the client starts a new session"
+        );
+
+        // rmcp's other 401: the request carried no session id. That is malformed, not expired -
+        // re-initializing would not fix it, so it must stay 401.
+        assert!(
+            !is_expired_session(unauthorized, b"Unauthorized: Session ID is required"),
+            "a missing session id is a malformed request, not an expired session"
+        );
+
+        // Any other 401 is a real authorization failure and must not be masked as a session expiry.
+        for body in [
+            &b"missing bearer token"[..],
+            &b"unknown bearer token"[..],
+            &b""[..],
+        ] {
+            assert!(
+                !is_expired_session(unauthorized, body),
+                "an unrelated 401 must keep its status: {}",
+                String::from_utf8_lossy(body)
+            );
+        }
+
+        // The status is part of the predicate: the same wording under a success or a different
+        // failure must not be rewritten.
+        for status in [
+            StatusCode::OK,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_ACCEPTABLE,
+        ] {
+            assert!(
+                !is_expired_session(status, b"Unauthorized: Session not found"),
+                "{status} must not be translated - only a 401 carries this meaning"
+            );
+        }
+
+        // A non-UTF-8 body must be judged, not panic (from_utf8_lossy, not unwrap).
+        let invalid_utf8 = [0xff, 0xfe, 0x00];
+        assert!(!is_expired_session(unauthorized, &invalid_utf8));
     }
 }
 
