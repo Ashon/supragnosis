@@ -1,0 +1,136 @@
+<!doctype html>
+<!--
+  Source for assets/og.png - the link-preview card. Not served; it only exists so the image
+  can be regenerated instead of re-drawn. Render it at 2x and downsample, which antialiases
+  the type far better than rendering straight to 1200x630:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+      --window-size=1200,630 --virtual-time-budget=6000 \
+      --screenshot=og@2x.png "file://$PWD/site/assets/og-source.html"
+    sips -z 630 1200 og@2x.png --out site/assets/og.png
+
+  Keep the palette and type in step with style.css, and keep the output at 1200x630 - the
+  og:image:width / og:image:height in index.html declare exactly that.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink-0: #08090d;
+    --text: #e9e4d6;
+    --muted: #8e96a5;
+    --faint: #7b8494;
+    --gold: #d9a544;
+    --gold-bright: #f0c469;
+    --serif: "Fraunces", "Iowan Old Style", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; }
+  body {
+    background: var(--ink-0);
+    color: var(--text);
+    position: relative;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(760px 460px at 46% -12%, rgba(217, 165, 68, 0.13), transparent 66%),
+      radial-gradient(620px 440px at 90% 6%, rgba(86, 179, 162, 0.06), transparent 62%);
+  }
+  svg.constellation { position: absolute; inset: 0; width: 1200px; height: 630px; }
+  .e { stroke: #d9a544; stroke-opacity: 0.26; stroke-width: 1; }
+  .n circle { fill: #d9a544; fill-opacity: 0.85; }
+  .n text { font-family: var(--mono); font-size: 12px; fill: #8e96a5; fill-opacity: 0.75; }
+  /* the same scrim the page uses, so the copy sits clear of the labels */
+  .scrim {
+    position: absolute; inset: 0;
+    background: radial-gradient(58% 66% at 32% 54%,
+      rgba(8,9,13,0.96) 0%, rgba(8,9,13,0.92) 36%,
+      rgba(8,9,13,0.58) 64%, rgba(8,9,13,0.18) 85%, rgba(8,9,13,0) 100%);
+  }
+  .inner { position: relative; padding: 74px 80px; height: 100%; display: flex; flex-direction: column; }
+  .wordmark {
+    font-family: var(--mono); font-weight: 600; font-size: 21px;
+    letter-spacing: 0.05em; color: var(--text);
+  }
+  .wordmark b { color: var(--gold); font-weight: 600; }
+  .ety {
+    font-family: var(--mono); font-size: 15px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--gold); margin-top: 74px;
+  }
+  .ety span { color: var(--faint); text-transform: none; letter-spacing: 0.03em; }
+  h1 {
+    font-family: var(--serif); font-optical-sizing: auto; font-weight: 420;
+    font-size: 88px; line-height: 1.03; letter-spacing: -0.018em;
+    margin-top: 22px;
+  }
+  h1 em { font-style: italic; font-weight: 340; color: var(--gold-bright); }
+  .lede {
+    font-family: var(--mono); font-size: 18px; line-height: 1.6;
+    color: var(--muted); margin-top: 30px; max-width: 700px;
+  }
+  .foot {
+    margin-top: auto; display: flex; gap: 10px; font-family: var(--mono);
+    font-size: 14.5px; letter-spacing: 0.04em; color: var(--faint);
+  }
+  .foot span { border: 1px solid #222836; border-radius: 999px; padding: 6px 15px; }
+  .foot .url { border-color: rgba(217,165,68,0.35); color: var(--gold-bright); }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <svg class="constellation" viewBox="0 0 1200 630">
+    <g>
+      <line class="e" x1="90"  y1="150" x2="270"  y2="96"/>
+      <line class="e" x1="270" y1="96"  x2="470"  y2="150"/>
+      <line class="e" x1="470" y1="150" x2="700"  y2="86"/>
+      <line class="e" x1="700" y1="86"  x2="880"  y2="188"/>
+      <line class="e" x1="880" y1="188" x2="1075" y2="120"/>
+      <line class="e" x1="90"  y1="150" x2="200"  y2="330"/>
+      <line class="e" x1="200" y1="330" x2="430"  y2="404"/>
+      <line class="e" x1="430" y1="404" x2="660"  y2="330"/>
+      <line class="e" x1="660" y1="330" x2="885"  y2="430"/>
+      <line class="e" x1="885" y1="430" x2="1090" y2="360"/>
+      <line class="e" x1="885" y1="430" x2="980"  y2="545"/>
+      <line class="e" x1="470" y1="150" x2="880"  y2="188"/>
+      <line class="e" x1="660" y1="330" x2="700"  y2="86"/>
+    </g>
+    <g>
+      <g class="n"><circle cx="90"   cy="150" r="4"/><text x="103"  y="146">observation</text></g>
+      <g class="n"><circle cx="270"  cy="96"  r="5"/><text x="283"  y="92">event log</text></g>
+      <g class="n"><circle cx="470"  cy="150" r="4"/><text x="483"  y="146">projection</text></g>
+      <g class="n"><circle cx="700"  cy="86"  r="6"/><text x="715"  y="82">ontology</text></g>
+      <g class="n"><circle cx="880"  cy="188" r="4"/><text x="893"  y="184">entity</text></g>
+      <g class="n"><circle cx="1075" cy="120" r="4"/><text x="1088" y="116">relation</text></g>
+      <g class="n"><circle cx="200"  cy="330" r="4"/><text x="213"  y="326">provenance</text></g>
+      <g class="n"><circle cx="430"  cy="404" r="4"/><text x="443"  y="400">workspace</text></g>
+      <g class="n"><circle cx="660"  cy="330" r="4"/><text x="673"  y="326">host</text></g>
+      <g class="n"><circle cx="885"  cy="430" r="5"/><text x="899"  y="426">hub</text></g>
+      <g class="n"><circle cx="1090" cy="360" r="4"/><text x="1103" y="356">peer</text></g>
+      <g class="n"><circle cx="980"  cy="545" r="4"/><text x="993"  y="541">trust tier</text></g>
+    </g>
+  </svg>
+  <div class="scrim"></div>
+
+  <div class="inner">
+    <div class="wordmark"><b>*</b> supragnosis</div>
+    <p class="ety">supra <span>(above)</span> &nbsp;+&nbsp; gnosis <span>(knowing)</span></p>
+    <h1>The <em>agent-first</em><br>ontology.</h1>
+    <p class="lede">A memory that outlives the session. Agents observe,<br>humans govern what becomes canon.</p>
+    <div class="foot">
+      <span class="url">supragnosis.dev</span>
+      <span>Rust</span>
+      <span>MCP server</span>
+      <span>local-first federation</span>
+    </div>
+  </div>
+</body>
+</html>

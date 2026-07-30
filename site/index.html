@@ -5,25 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>supragnosis - the agent-first ontology</title>
   <meta name="description" content="The agent-first ontology: an embedded, file-based Rust knowledge graph server where agents observe, relate, and type what they learn, and humans govern what becomes canon. MCP interface, local-first federation, deterministic projection.">
+  <link rel="canonical" href="https://supragnosis.dev/">
+  <meta name="theme-color" content="#08090d">
   <meta property="og:title" content="supragnosis">
   <meta property="og:description" content="The agent-first ontology. Agents build the knowledge graph as a by-product of work; humans supervise canon. An embedded Rust server with MCP interface and multi-host federation.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://supragnosis.dev/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="supragnosis - the agent-first ontology. A constellation of observation, event log, projection, ontology and entity over dark ink.">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- The scroll reveal hides sections until an observer un-hides them, so it must only ever
+       arm itself when scripting is actually running: without this class the page renders whole. -->
+  <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
   <header class="site-head">
     <a class="wordmark" href="#top">supragnosis</a>
-    <nav aria-label="Site">
-      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md">principles</a>
-      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture</a>
-      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">federation</a>
+    <!-- in-page anchors: the docs links this nav used to hold all live in the footer, and a
+         landing page's own nav is more useful pointing at the page than away from it -->
+    <nav aria-label="Sections">
+      <a href="#flow">how it works</a>
+      <a href="#features">capabilities</a>
+      <a href="#status">status</a>
+      <a href="#get-started">install</a>
       <a class="nav-gh" href="https://github.com/Ashon/supragnosis">github</a>
     </nav>
   </header>
@@ -85,7 +99,8 @@
           <button class="copy" data-copy="#install-cmd" aria-label="Copy install command">copy</button>
         </div>
         <ul class="badges" aria-label="Project facts">
-          <li>v0.1.17</li>
+          <!-- stamped from the workspace version by .github/workflows/pages.yml on deploy -->
+          <li id="version-badge">v0.1.18</li>
           <li>Rust</li>
           <li>MIT OR Apache-2.0</li>
           <li>macOS arm64 / x86_64</li>
@@ -99,8 +114,9 @@
     <section class="section reveal" id="agent-first">
       <p class="eyebrow">01 / agent-first</p>
       <h2>Agents build it. Humans govern it.</h2>
-      <div class="grid grid-3">
-        <article class="card">
+      <div class="grid grid-3 triptych">
+        <article class="step">
+          <p class="step-actor">agents</p>
           <h3>Agents write</h3>
           <p>
             Knowledge management dies the moment it becomes separate labor - so
@@ -110,7 +126,8 @@
             curation shift.
           </p>
         </article>
-        <article class="card">
+        <article class="step">
+          <p class="step-actor">agents</p>
           <h3>Agents induce the schema</h3>
           <p>
             No ontologist draws the taxonomy up front. Unknown knowledge lands as
@@ -120,7 +137,8 @@
             said together, so the next type worth naming surfaces on its own.
           </p>
         </article>
-        <article class="card">
+        <article class="step human">
+          <p class="step-actor">humans</p>
           <h3>Humans supervise</h3>
           <p>
             Ingest is free; canon is governed. Entity merges, trust promotions,
@@ -196,10 +214,12 @@
       <div class="grid grid-2 starts">
         <div class="terminal">
           <div class="terminal-bar"><span class="terminal-title">host A - an agent sheds an observation mid-task</span></div>
-          <pre><code><span class="c"># one observe call, free text plus whatever structure it has</span>
+          <pre><code><span class="c"># one observe call, free text plus whatever</span>
+<span class="c"># structure the agent already has</span>
 observe {
-  "content": "Chose CozoDB over Oxigraph for the store:
-              one embedded file covers relational, graph, HNSW.",
+  "content": "Chose CozoDB over Oxigraph:
+              one embedded file covers
+              relational, graph, HNSW.",
   "source_ref": "docs/architecture.md",
   "on_behalf_of": "ashon",
   "confidence": 0.9,
@@ -207,29 +227,34 @@ observe {
     { "name": "CozoDB", "type": "Tool" }
   ],
   "relations": [
-    { "from": "supragnosis-store", "type": "depends_on", "to": "CozoDB" }
+    { "from": "supragnosis-store",
+      "type": "depends_on",
+      "to":   "CozoDB" }
   ]
 }</code></pre>
         </div>
         <div class="terminal">
           <div class="terminal-bar"><span class="terminal-title">host B - weeks later, a different agent recalls it</span></div>
-          <pre><code>search_knowledge { "query": "why cozo and not a triple store?" }
+          <pre><code>search_knowledge {
+  "query": "why cozo and not a triple store?"
+}
 
 <span class="c"># the hit comes back with its receipts:</span>
-<span class="c">#   the original text, plus who observed it, acting</span>
-<span class="c">#   for whom, from which source, when, at what trust</span>
-<span class="c">#   tier - and the mode label (hybrid vs keyword)</span>
-<span class="c">#   that says which recall surface answered.</span>
+<span class="c">#   the original text, plus who observed it,</span>
+<span class="c">#   acting for whom, from which source, when,</span>
+<span class="c">#   at what trust tier - and the mode label</span>
+<span class="c">#   (hybrid vs keyword) that says which recall</span>
+<span class="c">#   surface answered.</span>
 
 <span class="c"># hits carry stable entity ids - pull the thread:</span>
-get_entity { "id": "9f41..." }              <span class="c"># CozoDB, id from the hit</span>
+get_entity { "id": "9f41..." }   <span class="c"># id from the hit</span>
 traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
         </div>
       </div>
     </section>
 
     <!-- ================= viewer ================= -->
-    <section class="section reveal" id="viewer">
+    <section class="section spread reveal" id="viewer">
       <p class="eyebrow">04 / the viewer</p>
       <h2>Watch your agents learn.</h2>
       <figure class="shot">
@@ -254,10 +279,14 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
     </section>
 
     <!-- ================= capabilities ================= -->
-    <section class="section reveal" id="features">
+    <section class="section spread reveal" id="features">
       <p class="eyebrow">05 / capabilities</p>
       <h2>Small binary, serious semantics.</h2>
-      <div class="grid grid-3">
+      <!-- Ordered so each row of four is one kind of claim: the first row is what the knowledge
+           model guarantees, the second is what the running system is. It also keeps the long
+           cards together, so no row is padded out by one card three times the height of its
+           neighbours. -->
+      <div class="grid grid-4">
         <article class="card">
           <h3>Hybrid recall</h3>
           <p>
@@ -269,23 +298,6 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
           </p>
         </article>
         <article class="card">
-          <h3>Embedded, file-based</h3>
-          <p>
-            One process, one directory. CozoDB on RocksDB unifies relational,
-            graph, and vector under <code>~/.supragnosis/db</code>. No external
-            database to run.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Proposal gate</h3>
-          <p>
-            Ingest is free; promotion is gated. Changes to canon - tier
-            promotions, entity merges, T-Box edits, recalls - flow through
-            PR-like proposals, and a proposal is itself an observation:
-            signed, replayable, reviewed in the curation console.
-          </p>
-        </article>
-        <article class="card">
           <h3>Provenance and trust</h3>
           <p>
             Every fact carries its delegation chain (who, acting for whom),
@@ -293,25 +305,6 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
             never self-declared. Every derivation records the observations it
             came from, so a contaminated source's tree is traceable - bulk recall
             over that lineage is specified and lands with M5.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Live ontology viewer</h3>
-          <p>
-            A force-graph viewer streams entities, relations, proposals, and
-            sync chatter live over SSE - served on an owner-only unix socket,
-            never a TCP port. The macOS desktop app is a thin tray-resident
-            shell over the same socket. Watch your agents learn.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Self-managed daemon</h3>
-          <p>
-            <code>start</code> / <code>stop</code> / <code>status</code> /
-            <code>restart</code> with pidfile and logs under
-            <code>~/.supragnosis</code> - or let Homebrew keep it running with
-            <code>brew services</code>. stdio for MCP-client children,
-            loopback streamable HTTP for everything else.
           </p>
         </article>
         <article class="card">
@@ -334,6 +327,42 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
             queries wait on.
           </p>
         </article>
+        <article class="card">
+          <h3>Embedded, file-based</h3>
+          <p>
+            One process, one directory. CozoDB on RocksDB unifies relational,
+            graph, and vector under <code>~/.supragnosis/db</code>. No external
+            database to run.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Proposal gate</h3>
+          <p>
+            Ingest is free; promotion is gated. Changes to canon - tier
+            promotions, entity merges, T-Box edits, recalls - flow through
+            PR-like proposals, and a proposal is itself an observation:
+            signed, replayable, reviewed in the curation console.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Live ontology viewer</h3>
+          <p>
+            A force-graph viewer streams entities, relations, proposals, and
+            sync chatter live over SSE - served on an owner-only unix socket,
+            never a TCP port. The macOS desktop app is a thin tray-resident
+            shell over the same socket. Watch your agents learn.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Self-managed daemon</h3>
+          <p>
+            <code>start</code> / <code>stop</code> / <code>status</code> /
+            <code>restart</code> with pidfile and logs under
+            <code>~/.supragnosis</code> - or let Homebrew keep it running with
+            <code>brew services</code>. stdio for MCP-client children,
+            loopback streamable HTTP for everything else.
+          </p>
+        </article>
       </div>
     </section>
 
@@ -344,12 +373,15 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
       <div class="mcp-wrap">
         <div class="terminal">
           <div class="terminal-bar"><span class="terminal-title">register with your MCP client</span></div>
-          <pre><code><span class="c"># stdio (client launches supragnosis as a child process)</span>
-claude mcp add supragnosis -- $(command -v supragnosis)
+          <pre><code><span class="c"># stdio: the client launches supragnosis</span>
+<span class="c"># as a child process</span>
+claude mcp add supragnosis \
+  -- $(command -v supragnosis)
 
 <span class="c"># or point at the background daemon over HTTP</span>
 supragnosis start
-claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pre>
+claude mcp add supragnosis \
+  --transport http http://127.0.0.1:7373/mcp</code></pre>
         </div>
         <dl class="tools">
           <div><dt>observe</dt><dd>load knowledge: entities, relations, and text become observation events</dd></div>
@@ -442,17 +474,32 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
     <section class="section reveal" id="status">
       <p class="eyebrow">08 / status</p>
       <h2>Where it honestly stands.</h2>
-      <ul class="checklist">
-        <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
-        <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
-        <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
-        <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
-        <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app (tray-resident), Homebrew tap, viewer on an owner-only unix socket.</div></li>
-        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3c - bitemporal queries.</strong> Both time axes are captured; querying across them waits on explicit negation, which the model does not have yet.</div></li>
-        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>Canon effects for tbox_change and recall.</strong> Both fold correctly and change nothing yet - assigned, with multi-principal governance, to the federation remainder.</div></li>
-        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> Authenticated remote reads (phase 3.5), multi-principal governance (phase 5); prompts and elicitation on the MCP surface.</div></li>
-        <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
-      </ul>
+      <p class="section-note wide">
+        Nothing on this page is aspirational. Everything under <em>shipped</em> is in the
+        binary you can install today; everything under <em>in flight</em> is named and
+        specified, and not written yet.
+      </p>
+      <div class="ledger">
+        <div class="ledger-col">
+          <h3 class="ledger-head done">Shipped</h3>
+          <ul class="checklist">
+            <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, Cozo persistence, stdio MCP + HTTP daemon.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app (tray-resident), Homebrew tap, viewer on an owner-only unix socket.</div></li>
+          </ul>
+        </div>
+        <div class="ledger-col">
+          <h3 class="ledger-head open">In flight</h3>
+          <ul class="checklist">
+            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3c - bitemporal queries.</strong> Both time axes are captured; querying across them waits on explicit negation, which the model does not have yet.</div></li>
+            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>Canon effects for tbox_change and recall.</strong> Both fold correctly and change nothing yet - assigned, with multi-principal governance, to the federation remainder.</div></li>
+            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> Authenticated remote reads (phase 3.5), multi-principal governance (phase 5); prompts and elicitation on the MCP surface.</div></li>
+            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
+          </ul>
+        </div>
+      </div>
       <p class="section-note">
         The roadmap keeps an honest record of what shipped and what is deferred -
         see <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> sections 12 and 14.
@@ -469,7 +516,8 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp</code></pr
           <button class="tab" id="tab-linux" role="tab" aria-selected="false" aria-controls="pane-linux">Linux</button>
           <button class="tab" id="tab-source" role="tab" aria-selected="false" aria-controls="pane-source">from source</button>
         </div>
-        <pre id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># desktop app (signed + notarized) - pulls the server with it</span>
+        <pre id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># desktop app, signed + notarized:</span>
+<span class="c"># pulls the server with it</span>
 brew tap ashon/tap
 brew install supragnosis
 
@@ -477,9 +525,11 @@ brew install supragnosis
 brew install supragnosis-server
 brew services start supragnosis-server
 
-<span class="c"># no homebrew? the one-line script installs to ~/.local/bin (arm64 / x86_64)</span>
+<span class="c"># no homebrew? the one-line script installs</span>
+<span class="c"># to ~/.local/bin (arm64 / x86_64)</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh</code></pre>
-        <pre id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># one-line script -> ~/.local/bin (x86_64, checksum-verified)</span>
+        <pre id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># one-line script -> ~/.local/bin</span>
+<span class="c"># (x86_64, checksum-verified)</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh
 
 <span class="c"># or homebrew (server formula)</span>
@@ -560,16 +610,22 @@ cargo test</code></pre>
       selectTab(document.getElementById('tab-linux'));
     }
 
-    // reveal sections as they enter the viewport
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting) {
-          en.target.classList.add('in');
-          io.unobserve(en.target);
-        }
-      });
-    }, { rootMargin: '0px 0px -8% 0px' });
-    document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+    // reveal sections as they enter the viewport. The sections start hidden, so any failure
+    // here has to end with them shown - a broken animation must not eat the page.
+    var revealable = document.querySelectorAll('.reveal');
+    try {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) {
+            en.target.classList.add('in');
+            io.unobserve(en.target);
+          }
+        });
+      }, { rootMargin: '0px 0px -8% 0px' });
+      revealable.forEach(function (el) { io.observe(el); });
+    } catch (e) {
+      revealable.forEach(function (el) { el.classList.add('in'); });
+    }
   </script>
 </body>
 </html>

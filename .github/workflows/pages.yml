@@ -6,6 +6,8 @@ on:
     paths:
       - "site/**"
       - "scripts/install.sh"
+      # the hero badge is stamped from the workspace version, so a release has to redeploy
+      - "Cargo.toml"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -30,6 +32,17 @@ jobs:
       # (scripts/install.sh) - copied into the artifact so there is no duplicate file in the repo.
       - name: stage the install bootstrap into the site
         run: cp scripts/install.sh site/install.sh
+      # The badge in the checked-in HTML is only a placeholder; the deployed page always shows
+      # the workspace version, so a release cannot leave a stale number on the landing page.
+      - name: stamp the workspace version into the hero badge
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          test -n "$version" || { echo "could not read version from Cargo.toml" >&2; exit 1; }
+          before=$(grep -c 'id="version-badge"' site/index.html)
+          test "$before" -eq 1 || { echo "expected exactly one version-badge, found $before" >&2; exit 1; }
+          sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">v${version}</li>|" site/index.html
+          grep -o '<li id="version-badge">[^<]*</li>' site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
