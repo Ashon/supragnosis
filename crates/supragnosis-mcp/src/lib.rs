@@ -29,7 +29,9 @@ use supragnosis_engine::{
 pub struct ObserveRequest {
     /// Knowledge fragment to ingest (natural language or structured text).
     pub content: String,
-    /// Workspace (defaults to the node default when omitted).
+    /// Workspace (defaults to the node default when omitted). Knowledge is organized into named workspaces,
+    /// so name the one this fragment belongs to: silently taking the node default splits a body of knowledge
+    /// across two workspaces, and later reads scoped to either will see only half.
     #[serde(default)]
     pub workspace: Option<String>,
     /// Source reference (file path/URL/tool, etc.).
@@ -245,7 +247,9 @@ pub struct TraverseRequest {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct WorkspaceMapRequest {
-    /// Workspace (defaults to the node default when omitted; '*'/'all' means all workspaces).
+    /// Workspace (defaults to the node default when omitted; '*'/'all' means all workspaces). Knowledge is
+    /// organized into named workspaces, so the node default is routinely empty by design - prefer '*' for a
+    /// cold-start survey, and read an empty default as a wrong scope rather than an absent ontology.
     #[serde(default)]
     pub workspace: Option<String>,
     /// Maximum number of clusters (defaults to 20 when omitted). Truncated in descending order of size.
@@ -585,6 +589,8 @@ impl SupragnosisServer {
             })
             .collect();
         let shown = clusters.len();
+        // ws_arg moves into the response below; keep the scope for the empty-result diagnosis.
+        let scope = ws_arg.clone();
         let mut resp = serde_json::json!({
             "workspace": ws_arg,
             "clusters": clusters,
@@ -604,6 +610,40 @@ impl SupragnosisServer {
                  together), not asserted relations - drill in with search_knowledge/get_entity \
                  by concept name"
             ));
+        } else if shown == 0 && hg.stats.node_count == 0 {
+            // An empty scope is usually a wrong scope, not an absent ontology: the node default workspace is
+            // an addressing default, and knowledge is routinely organized into named workspaces instead. A
+            // reader who does not already know those names has no next move, so name them here - the dead end
+            // corrects itself within the same call rather than requiring a lucky retry with '*'.
+            let engine = self.engine.clone();
+            let listed = tokio::task::spawn_blocking(move || engine.workspaces()).await;
+            let elsewhere: Vec<String> = match listed {
+                Ok(Ok(all)) => all
+                    .into_iter()
+                    .filter(|w| Some(w.as_str()) != scope.as_deref())
+                    .collect(),
+                // Enumeration is a diagnostic nicety, never a reason to fail the survey.
+                _ => Vec::new(),
+            };
+            let where_ = match &scope {
+                Some(ws) => format!("workspace '{ws}'"),
+                None => "this node".to_string(),
+            };
+            resp["note"] = serde_json::Value::String(if elsewhere.is_empty() {
+                format!(
+                    "{where_} holds no entities - nothing has been observed into it yet. absence is \
+                     unknown, not a negation (open-world). observe to populate it"
+                )
+            } else {
+                format!(
+                    "{where_} holds no entities, but this node does hold knowledge - a scope miss, not \
+                     an absent ontology. The node default workspace is only an addressing default; \
+                     knowledge is organized into named workspaces. Knowledge exists in: {}. Re-run \
+                     scoped to one of those, or workspace '*' to survey all",
+                    elsewhere.join(", ")
+                )
+            });
+            resp["knowledge_in_workspaces"] = serde_json::json!(elsewhere);
         } else if shown == 0 {
             resp["note"] = serde_json::Value::String(
                 "no co-occurrence clusters at this min_size - absence is unknown, not a negation \
@@ -957,6 +997,13 @@ impl ServerHandler for SupragnosisServer {
                  into an ontology. Ingest knowledge with observe and explore it with \
                  search_knowledge/get_entity/traverse. Survey a workspace's main co-occurrence \
                  contexts (clusters) with workspace_map (orientation before searching). \
+                 Workspaces: knowledge is deliberately organized into named workspaces (e.g. one \
+                 per project), so the node default workspace is an addressing default and is \
+                 routinely empty by design - an empty default means 'wrong scope', never 'no \
+                 knowledge here'. Orient with workspace '*' (survey all) before concluding \
+                 anything is absent, and scope observe to the workspace the knowledge belongs to \
+                 so it is not split across two. search_knowledge already spans all workspaces \
+                 unless you narrow it. \
                  Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \

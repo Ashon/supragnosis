@@ -506,3 +506,105 @@ async fn mcp_resource_graph_surface() {
     client.cancel().await.expect("client shutdown");
     let _ = server.await;
 }
+
+/// An empty node default workspace must read as a wrong scope, not as an absent ontology.
+///
+/// Knowledge is deliberately organized into named workspaces, so the node default is routinely empty by
+/// design. A reader who surveys it and is told only "nothing here" concludes the node holds no knowledge -
+/// the exact misreading this asserts against. The response must instead name the workspaces that do hold
+/// knowledge, so the dead end corrects itself in the same call (Principle 5: absence is not negation).
+#[tokio::test]
+async fn empty_default_workspace_names_where_knowledge_lives() {
+    // Node default is "default"; all knowledge is observed into the named workspace "supragnosis".
+    let engine = Arc::new(Engine::new(
+        Arc::new(InMemoryStore::new()),
+        "test-host",
+        "default",
+    ));
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "observe".into(),
+            arguments: args(json!({
+                "content": "the proposal gate stands between free ingest and the shared canon",
+                "workspace": "supragnosis",
+                "entities": [
+                    {"name": "Proposal Gate", "type": "Mechanism"},
+                    {"name": "Canon", "type": "Concept"}
+                ],
+                "relations": [
+                    {"from": "Proposal Gate", "type": "guards", "to": "Canon"}
+                ]
+            })),
+            task: None,
+        })
+        .await
+        .expect("observe call");
+
+    // Survey with no workspace argument -> the node default, which is empty by design.
+    let res = client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "workspace_map".into(),
+            arguments: args(json!({})),
+            task: None,
+        })
+        .await
+        .expect("workspace_map call");
+    let map = tool_json(&res);
+    assert_eq!(
+        map["stats"]["node_count"].as_u64(),
+        Some(0),
+        "the node default workspace is empty in this fixture: {map}"
+    );
+
+    // The structured pointer: a machine reader must not have to parse prose to recover.
+    let listed: Vec<&str> = map["knowledge_in_workspaces"]
+        .as_array()
+        .expect("an empty scope must report where knowledge does live")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(
+        listed,
+        vec!["supragnosis"],
+        "the populated workspace must be named, and the queried empty scope excluded: {map}"
+    );
+
+    // The prose must not let "empty default" be read as "no knowledge on this node".
+    let note = map["note"].as_str().unwrap_or_default();
+    assert!(
+        note.contains("supragnosis") && note.contains("scope miss"),
+        "the note must name the populated workspace and frame the miss as scope, not absence: {map}"
+    );
+
+    // Scoping to the named workspace recovers the cluster that the default scope could not see.
+    let res = client
+        .call_tool(CallToolRequestParams {
+            meta: None,
+            name: "workspace_map".into(),
+            arguments: args(json!({"workspace": "supragnosis"})),
+            task: None,
+        })
+        .await
+        .expect("workspace_map scoped call");
+    let scoped = tool_json(&res);
+    let clusters = scoped["clusters"].as_array().expect("clusters array");
+    assert!(
+        !clusters.is_empty(),
+        "the named workspace must expose the co-occurrence cluster: {scoped}"
+    );
+
+    client.cancel().await.expect("client shutdown");
+    let _ = server.await;
+}
