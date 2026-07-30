@@ -1,5 +1,7 @@
 # Operating the supragnosis standalone daemon (macOS)
 
+> Linux: see [systemd/README.md](systemd/README.md) - a user unit plus the federation-hub setup.
+
 Instead of spawning over stdio for each chat, **a single always-on local daemon** holds the db
 and exposes MCP streamable-http. Agents (Claude Code, etc.) just connect over http. Because the
 daemon is the sole holder of the db, the single-process lock problem also disappears.
