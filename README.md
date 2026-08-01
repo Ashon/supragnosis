@@ -1,8 +1,11 @@
 # supragnosis
 
-An embedded, file-based Rust server that structures knowledge arising across
-multiple **hosts** and **workspaces** into an **ontology (a concept/relation graph)**
-and lets you query and explore it over **MCP**.
+**Portable memory for AI agents - with provenance.** An embedded, file-based Rust
+server: agents shed observations as a by-product of work, the knowledge moves between
+your machines, tools and team, and every claim arrives carrying who said it, on what
+basis, and how far to trust it. What accumulates across multiple **hosts** and
+**workspaces** is an **ontology (a concept/relation graph)** you query and explore
+over **MCP** - and humans govern what becomes canon.
 
 > `supragnosis` = *supra* (above/beyond) + *gnosis* (knowing) - knowledge above knowledge (meta-knowledge).
 
