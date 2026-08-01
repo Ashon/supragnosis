@@ -97,9 +97,12 @@ effective_tier(observation) =
       claim_promotion / claim_demotion verdict (Section 5), capped by the
       verdict's surface ceiling (Section 6)
   else: max over attestations of per-attestation evaluated tier, where
-      - a local attestation (no sync stamp, authored by this engine):
-        the stored tier (the engine forces the default at observe -
-        a local writer cannot self-declare above AgentExtracted)
+      - a stamp-less attestation: the stored tier. Every stamp-less
+        producer holds the line: observe forces the default (a local
+        writer cannot self-declare above AgentExtracted), and the
+        stamp-dropping re-key/migration paths clamp a carried claim
+        to its pre-strip evaluation - a stamp-less claim is never a
+        raw wire claim
       - a synced attestation (sync stamp present, signature verified):
         min(claimed tier, HostSigned) - a signature proves origin,
         never a human act, so a remote claim can never evaluate to

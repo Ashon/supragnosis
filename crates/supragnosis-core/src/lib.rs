@@ -767,8 +767,10 @@ pub fn ordering_hlc(obs: &Observation) -> Hlc {
 /// Receiver-evaluated trust tier of ONE attestation (resolution.md Section 3; Principle 18 "the tier
 /// is the receiver's evaluation"). The stored (claimed) tier is log data and stays verbatim (F13);
 /// this evaluation is what resolution weighting and display consume:
-/// - a local attestation (no sync stamp): the stored tier - the local observe path forces the default,
-///   so a local writer cannot self-declare above `AgentExtracted` in the first place;
+/// - a local attestation (no sync stamp): the stored tier. Trusting it rests on every stamp-less
+///   producer holding the line: the local observe path forces the default (a local writer cannot
+///   self-declare above `AgentExtracted`), and the stamp-dropping re-key/migration paths clamp a
+///   carried claim to its pre-strip evaluation - a stamp-less claim is never a raw wire claim;
 /// - a sync-stamped attestation: min(claimed, `HostSigned`) - a signature proves origin, never a human
 ///   act, so a wire claim can never evaluate to `HumanConfirmed` by itself (federation.md 6b).
 ///

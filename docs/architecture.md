@@ -381,7 +381,12 @@ sections are present, and `peers` awaits the P2P phase.
   MCP **streamable-HTTP** persistently instead of stdio (rmcp `StreamableHttpService` -> axum `/mcp`). Because the daemon is
   the sole holder of the db, the single-process lock problem disappears, and multiple agents connect via
   `claude mcp add --transport http http://127.0.0.1:7373/mcp` (without spawning per chat).
-  **Loopback only** (Principle 17: local trust surface = no-auth justified). The tool handlers offload
+  **Loopback only** - and note the honest scope of that guard (Principle 17): loopback confines the
+  surface to the local HOST, not to a single user. On a multi-user host any local OS account reaches
+  the full tool surface, writes and `sync_push` included, so P17's "stdio, single user" holds for the
+  stdio transport only; the daemon's single-user confinement is owed (Section 14, and the P17 row of
+  the coverage registry) - repay the way the viewer was repaid, with a unix-socket transport or an
+  auth layer. The tool handlers offload
   blocking store calls via `spawn_blocking` to prevent runtime starvation - the Section 14 precondition
   for remote transport, now **discharged**.
   For operations (launchd, etc.) see [`deploy/README.md`](../deploy/README.md).
@@ -694,7 +699,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   belief is computed by a **replaceable pure policy** (`TierWeighted`: effective tier -> ordering
   HLC -> id; confidence carried verbatim, never selecting - the Principle 2 combining rule). The
   tier consumed by resolution and display is the **receiver's evaluation** (a wire claim caps at
-  HostSigned; the claimed tier stays verbatim in the log for audit). **Contested beliefs are
+  HostSigned; the claimed tier stays verbatim in the log for audit). The stamp-dropping re-key and
+  migration paths clamp a carried claim to its pre-strip evaluation, so an operator act cannot
+  raise what a claim evaluates to (guarded by
+  `p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation`). **Contested beliefs are
   surfaced** where trust ties (graph nodes carry contested/competitors; the curation report lists
   all live conflicts and contradictory merge cycles - the Principle 6 introspection query).
   `claim_promotion`/`claim_demotion` have their **commit effects** (a merged verdict sets the gate
@@ -892,6 +900,14 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
    reachable only by the local principal. The guard itself is still owed: the moment federation Phase 3.5 opens the
    authenticated network read tier, workspace enumeration and `workspace=*` MUST be filtered by that user's grants
    (already stated as a Phase 3.5 requirement in federation.md 6d).
+   **Correction (2026-08): the retirement covered one of the two surfaces.** The MCP streamable-http
+   daemon still serves the same workspace-scope-less queries (`search_knowledge` with no workspace,
+   `workspace_map` over `*`, the workspaces resource) - and every write tool - on loopback TCP with no
+   auth, so on a multi-user host any local OS account reaches them. Loopback is host-local, not
+   single-user, and the P17 registry row that used to cite the viewer/sync guards as covering "the
+   local read surface" over-claimed exactly this; it now carries the daemon as its own deferred
+   clause (M4 remainder). Repay the way the viewer was repaid: a unix-socket transport, or an auth
+   layer (Section 10).
 
 **Repaid by M3b (formerly M3 latent conditions)**
 - Cozo keyword-search alias parity - REPAID: the Cozo search matches aliases as InMemory does (an

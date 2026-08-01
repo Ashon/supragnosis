@@ -183,6 +183,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
             "confidence_out_of_range_is_rejected",
             "unstated_confidence_is_distinct_from_full_confidence",
+            // A workspace re-key carries acting host / principal / observed_at / confidence
+            // verbatim, where a re-ingest through observe would restamp them all.
+            "p2_a_workspace_rekey_carries_provenance_that_a_reingest_would_restamp",
+            // Attribution follows the authoring attestation (earliest effective HLC), not the
+            // sort-first host or the latest observed_at of an absorbed union.
+            "p2_proposal_attribution_names_the_authoring_attestation",
         ])),
         c("a peer's claimed tier is stored verbatim, because the log is audit",
           Evidence::Scenario(&["f13_sync_apply_stores_senders_self_declared_tier_verbatim"])),
@@ -201,6 +207,9 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p3_a_new_spelling_accumulates_and_never_displaces",
             "log_retains_all_attestations_on_reobservation",
             "cozo_reobservation_accumulates_attestations",
+            // The live-set door supersedes only within one workspace: a cross-workspace re-key
+            // keeps both rows live, so the unscoped view drops nothing a scoped view still shows.
+            "p3_a_rekey_keeps_the_source_row_live_in_the_unscoped_view",
         ])),
         c("a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest",
           Evidence::Deferred(
@@ -401,12 +410,27 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
     (17, "Knowledge Sovereignty", &[
         c("sharing is opt-in per workspace and enforced at the sync boundary, federated recall included",
           Evidence::Scenario(&["export_respects_share_list_and_vv"])),
-        c("the local read surface is reachable only by the local principal",
+        // The clause used to read "the local read surface is reachable only by the local
+        // principal" and cite these same tests - an over-claim: none of them touches the MCP
+        // streamable-http daemon, which is a local surface these guards do not confine. What the
+        // tests actually evidence is the viewer socket and the sync bind; the daemon has its own
+        // row below, in the state it is actually in.
+        c("the viewer socket and the sync bind admit only the local principal or an \
+           authenticated peer",
           Evidence::Scenario(&[
             "p17_socket_directory_denies_foreign_users_before_the_socket_mode",
             "bind_guard_enforces_f10",
             "loopback_hosts_and_origins_pass_foreign_ones_refused",
         ])),
+        c("the MCP daemon admits only the local principal - loopback TCP is host-local, not \
+           single-user",
+          Evidence::Deferred(
+            "M4 remainder - the streamable-http daemon binds 127.0.0.1 with only a Host/Origin \
+             rebinding guard, so on a multi-user host any local OS account reaches the full tool \
+             surface (writes and sync_push included), while P17 scopes the workspace-scope-less \
+             surface to 'stdio, single user'. Repay the way the viewer was repaid: a unix-socket \
+             transport, or an auth layer (architecture.md Sections 10/14)",
+          )),
         c("a workspace boundary is not crossed by a derived suggestion either",
           Evidence::Scenario(&["p17_candidates_never_span_workspaces_in_the_all_view"])),
         c("an authenticated network read tier filters workspace enumeration by the reader's grants",
@@ -423,6 +447,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "verdict_ceiling_by_surface_marker",
             "p18_agent_surface_promotion_caps_at_host_signed",
             "p18_an_agent_surface_verdict_cannot_grant_human_confirmed",
+            // The stamp-dropping operator paths (re-key, migration) clamp a carried claim to its
+            // pre-strip evaluation - `evaluated_tier` trusts a stamp-less claim at face value, so
+            // without the clamp one CLI act promotes a synced claim past HostSigned.
+            "p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation",
         ])),
         c("the reserved surface-marker namespace is refused at every local ingest door",
           Evidence::Scenario(&[
@@ -511,7 +539,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("a merge the fold calls blocked has no commit effect - the grant fold and the state fold agree",
           Evidence::Scenario(&["p23_a_blocked_gate_merge_grants_nothing"])),
         c("the write surface refuses a proposal the fold could never resolve",
-          Evidence::Scenario(&["p23_the_gate_surface_refuses_a_malformed_proposal"])),
+          Evidence::Scenario(&[
+            "p23_the_gate_surface_refuses_a_malformed_proposal",
+            // Same demand on the re-key surface: a proposal event carried into a workspace whose
+            // targets cannot exist there would be permanently blocked - so it is not carried.
+            "p23_a_rekey_does_not_carry_proposal_events_into_the_new_workspace",
+        ])),
         c("a reviewer is shown the informative checks - blast radius and the payload's trust profile",
           Evidence::Deferred(
             "M4+ with the review-economics layer - only the blocking checks are computed, so the \
