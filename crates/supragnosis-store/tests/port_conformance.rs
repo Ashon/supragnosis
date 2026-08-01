@@ -31,7 +31,7 @@ use supragnosis_core::{
     Entity, Hlc, KnowledgeStore, Observation, Provenance, Relation, SearchHit, SearchHitKind,
     SyncMeta, TrustTier, VersionVector,
 };
-use supragnosis_store::{CozoStore, InMemoryStore};
+use supragnosis_store::{CozoStore, InMemoryStore, RedbStore};
 
 // ---------------------------------------------------------------------------
 // harness
@@ -77,8 +77,26 @@ fn tmp_dir(tag: &str) -> PathBuf {
     ))
 }
 
-/// One adapter's entry in the roster: its name, and how to stand a fresh one up for a case.
-type Adapter = (&'static str, fn(&str) -> Fixture);
+/// One adapter's entry in the roster: its name, how to stand a fresh one up, and whether it claims
+/// to persist embedding vectors.
+///
+/// That last flag is not a convenience. The port lets an adapter store no vectors at all - the
+/// default `search_semantic` returns nothing - so a semantic case has to know which it is talking to.
+/// The first version of this file inferred it, skipping the assertions when a result came back
+/// empty, and that inference immediately excused a real defect: the redb adapter serialized rows
+/// with serde and both embedding fields are `#[serde(skip)]`, so every vector it was handed went to
+/// nowhere. Empty was read as "does not store vectors" when it meant "loses them". An adapter now
+/// declares the answer and is held to it.
+type Adapter = (&'static str, fn(&str) -> Fixture, StoresVectors);
+
+/// Whether an adapter persists embeddings, declared rather than inferred.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StoresVectors {
+    Yes,
+    /// Legitimate: the port's default `search_semantic` returns nothing, and keyword recall still
+    /// works (Principle 19 degrade). It must be a declaration, never something a green run implies.
+    No,
+}
 
 /// Every adapter that claims to implement the port, by name. Adding one here is what subscribes it
 /// to the whole suite.
@@ -88,27 +106,47 @@ type Adapter = (&'static str, fn(&str) -> Fixture);
 /// (`principle_coverage.rs`), which is a deliberately blunt check so that renaming a test cannot
 /// silently un-guard a clause. A macro that generated these names would defeat it, and the few
 /// lines saved are not worth teaching that scan a special case.
+fn roster() -> Vec<Adapter> {
+    vec![
+        (
+            "in_memory",
+            |_tag| Fixture { store: Some(Box::new(InMemoryStore::new())), dir: None },
+            StoresVectors::Yes,
+        ),
+        (
+            "cozo",
+            |tag| {
+                let dir = tmp_dir(tag);
+                let store = CozoStore::open(&dir).expect("cozo open");
+                Fixture { store: Some(Box::new(store)), dir: Some(dir) }
+            },
+            StoresVectors::Yes,
+        ),
+        (
+            "redb",
+            |tag| {
+                let dir = tmp_dir(tag);
+                let store = RedbStore::open(dir.join("knowledge.redb")).expect("redb open");
+                Fixture { store: Some(Box::new(store)), dir: Some(dir) }
+            },
+            StoresVectors::Yes,
+        ),
+    ]
+}
+
 fn for_each_adapter(f: impl Fn(&dyn KnowledgeStore)) {
-    let adapters: Vec<Adapter> = vec![
-        ("in_memory", |_tag| Fixture {
-            store: Some(Box::new(InMemoryStore::new())),
-            dir: None,
-        }),
-        ("cozo", |tag| {
-            let dir = tmp_dir(tag);
-            let store = CozoStore::open(&dir).expect("cozo open");
-            Fixture {
-                store: Some(Box::new(store)),
-                dir: Some(dir),
-            }
-        }),
-    ];
-    for (name, build) in adapters {
+    for_each_adapter_declared(|store, _| f(store));
+}
+
+/// Like [`for_each_adapter`], for the cases whose expectation depends on what the adapter declared
+/// about vector support.
+fn for_each_adapter_declared(f: impl Fn(&dyn KnowledgeStore, StoresVectors)) {
+    for (name, build, vectors) in roster() {
         let fx = build(name);
         // Printed before the body runs, so a panic is attributable: a case that fails on one backend
         // and passes on the other is the single most useful thing this suite can report.
         println!("--- adapter `{name}`");
-        f(fx.store());
+        f(fx.store(), vectors);
     }
 }
 
@@ -638,7 +676,7 @@ fn attestations_since_filters_by_version_vector() {
 /// contract.
 #[test]
 fn semantic_recall_ranks_by_similarity_and_skips_unembedded() {
-    for_each_adapter(|store| {
+    for_each_adapter_declared(|store, vectors| {
         let mut near = obs("near the query");
         near.embedding = Some(vec![1.0, 0.0, 0.0]);
         let mut far = obs("far from the query");
@@ -650,10 +688,17 @@ fn semantic_recall_ranks_by_similarity_and_skips_unembedded() {
         store.add_observation(plain).expect("plain");
 
         let hits = store.search_semantic(&[1.0, 0.0, 0.0], Some(WS), 10).expect("semantic");
-        // An adapter that stores no vectors legitimately returns nothing (the port's default).
-        if hits.is_empty() {
+        if vectors == StoresVectors::No {
+            assert!(hits.is_empty(), "an adapter that declares no vector support must not invent hits");
             return;
         }
+        assert!(
+            !hits.is_empty(),
+            "this adapter declares it persists vectors, so a row written WITH an embedding has to \
+             come back - an empty result here means the vector was dropped on the way in, not that \
+             the backend has no vectors. Both embedding fields are `#[serde(skip)]`, so an adapter \
+             that persists a row by serializing the struct loses them silently"
+        );
         let ids: Vec<&str> = hits.iter().map(|h| h.id.as_str()).collect();
         assert_eq!(ids.first(), Some(&near_id.as_str()), "nearest first: {hits:?}");
         assert!(ids.contains(&far_id.as_str()));
@@ -669,7 +714,7 @@ fn semantic_recall_ranks_by_similarity_and_skips_unembedded() {
 /// lexically.
 #[test]
 fn semantic_entity_recall_ranks_by_similarity() {
-    for_each_adapter(|store| {
+    for_each_adapter_declared(|store, vectors| {
         let mut near = ent("near");
         near.embedding = Some(vec![1.0, 0.0, 0.0]);
         let mut far = ent("far");
@@ -679,14 +724,63 @@ fn semantic_entity_recall_ranks_by_similarity() {
         store.put_entity(ent("unembedded")).expect("plain");
 
         let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some(WS), 10).expect("semantic");
-        if hits.is_empty() {
+        if vectors == StoresVectors::No {
+            assert!(hits.is_empty(), "an adapter that declares no vector support must not invent hits");
             return;
         }
+        assert!(!hits.is_empty(), "a declared vector store must return the entity it was given a vector for");
         assert_eq!(hits.first().map(|h| h.id.as_str()), Some(eid("near").as_str()));
         assert!(
             hits.iter().all(|h| h.kind == SearchHitKind::Entity),
             "entity recall returns entity hits"
         );
         assert!(!hits.iter().any(|h| h.id == eid("unembedded")));
+    });
+}
+
+/// A vector handed to the store comes back from the store. Stated on its own rather than left
+/// implicit in the ranking cases, because the two failures look nothing alike from the outside: a
+/// ranking case failing means the order is wrong, this one failing means the data is gone.
+///
+/// It is the case that would have caught the redb adapter serializing rows through serde while both
+/// embedding fields carry `#[serde(skip)]` - the vectors were accepted, dropped, and every semantic
+/// read answered "nothing here" in a way that looked exactly like an adapter without vector support.
+#[test]
+fn a_stored_vector_survives_the_round_trip() {
+    for_each_adapter_declared(|store, vectors| {
+        if vectors == StoresVectors::No {
+            return;
+        }
+        let mut o = obs("carries a vector");
+        o.embedding = Some(vec![0.5, -0.25, 0.125]);
+        let obs_id = o.id.clone();
+        store.add_observation(o).expect("observe");
+
+        let mut e = ent("carries a vector too");
+        e.embedding = Some(vec![-1.0, 0.0, 1.0]);
+        let ent_id = e.id.clone();
+        store.put_entity(e).expect("put");
+
+        let got = store.get_observation(&obs_id).expect("get").expect("row");
+        assert_eq!(
+            got.embedding.as_deref(),
+            Some([0.5f32, -0.25, 0.125].as_slice()),
+            "the observation's vector did not survive the store"
+        );
+        let got = store.get_entity(&ent_id).expect("get").expect("row");
+        assert_eq!(
+            got.embedding.as_deref(),
+            Some([-1.0f32, 0.0, 1.0].as_slice()),
+            "the entity's vector did not survive the store"
+        );
+
+        // And through the enumerations, which is where the projection reads an entity's vector back
+        // to avoid re-embedding unchanged text, and where the merge band looks for near names.
+        let listed = store.all_entities(Some(WS)).expect("enumerate");
+        assert_eq!(
+            listed.iter().find(|x| x.id == ent_id).and_then(|x| x.embedding.as_deref()),
+            Some([-1.0f32, 0.0, 1.0].as_slice()),
+            "an enumerated entity lost its vector"
+        );
     });
 }
