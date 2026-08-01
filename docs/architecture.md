@@ -260,6 +260,24 @@ hand-rolled f32 encoding costs about 2ns per component against roughly 75ns to p
 `curation` with vectors stays expensive on both (281.77ms vs 236.66ms) - that cost is the O(E^2)
 merge band, not the store.
 
+The one capability Cozo has and redb does not is the **native HNSW index**, so the question of
+whether the older backend is still needed reduces to where that index starts to pay
+(`crates/supragnosis-store/tests/semantic_recall_cost.rs`, end-to-end semantic search, p50):
+
+| embedded rows | Cozo (HNSW) | redb (brute-force cosine) |
+|---|---|---|
+| 200 | 2.0ms | 0.3ms |
+| 1000 | 3.9ms | 2.1ms |
+| 5000 | 10.0ms | 9.5ms |
+| 20000 | 12.4ms | 39.4ms |
+
+The crossover sits near 5-6k embedded rows: below it the scan wins outright, because at that size
+both are dominated by fetching rows for snippets and the scan skips the index. Above it the ANN's
+sub-linear growth takes over. Two things bound how much this matters - the index engages only in a
+`--features fastembed` build (the prebuilt binary is `embed=none` and has no semantic surface at
+all), and an ANN index is a node-local recall aid exempt from the convergence norm (Principle 16,
+4th revision), so adding one to redb later changes no answer the graph is required to agree on.
+
 All three adapters (in-memory, Cozo, redb) are held to one contract by
 `crates/supragnosis-store/tests/port_conformance.rs`, which runs every case against every adapter, so
 a backend cannot bring its own reading of the port; `migrate-store` copies the log and replays it.
