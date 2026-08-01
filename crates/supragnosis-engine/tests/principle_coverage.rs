@@ -138,6 +138,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-core/src/lib.rs"),
     include_str!("../../supragnosis-store/src/lib.rs"),
     include_str!("../../supragnosis-store/src/cozo_store.rs"),
+    include_str!("../../supragnosis-store/tests/port_conformance.rs"),
     include_str!("../../supragnosis-sync/src/lib.rs"),
     include_str!("../../supragnosis-sync/src/http.rs"),
     include_str!("../../supragnosis-embed/src/lib.rs"),
@@ -207,6 +208,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p3_a_new_spelling_accumulates_and_never_displaces",
             "log_retains_all_attestations_on_reobservation",
             "cozo_reobservation_accumulates_attestations",
+            // The same demand asked of the port rather than of one backend: absorb is what
+            // `add_observation` promises, so an adapter that replaced the row would satisfy every
+            // engine-level test above and still destroy provenance.
+            "reobservation_absorbs_attestations_and_lineage",
+            "reobservation_converges_regardless_of_arrival_order",
             // The live-set door supersedes only within one workspace: a cross-workspace re-key
             // keeps both rows live, so the unscoped view drops nothing a scoped view still shows.
             "p3_a_rekey_keeps_the_source_row_live_in_the_unscoped_view",
@@ -252,7 +258,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
     ]),
     (5, "Open World Assumption", &[
         c("absence is a well-formed answer, never an error",
-          Evidence::Scenario(&["p5_absent_entity_is_none_not_error"])),
+          Evidence::Scenario(&[
+            "p5_absent_entity_is_none_not_error",
+            // Asked of every read on the port, on every adapter: the clause is about the storage
+            // layer's whole surface, and one entity lookup is one of eight places it could break.
+            "absence_reads_as_absence_never_as_error",
+        ])),
         c("absent is distinguished from unavailable, rather than collapsing into an empty result",
           Evidence::Scenario(&[
             "merge_band_reports_whether_it_could_run_and_over_how_much",
@@ -400,11 +411,19 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
             "p16_search_ties_break_by_id_and_repeat_identically",
             // P16 names a hash map's iteration order leaking into a response as a violation on its
-            // own, and the adapters do not agree on one order: InMemory enumerates a HashMap, Cozo
-            // a Datalog result. Guarded by reading one log two ways.
+            // own. The adapters did not agree on one order - InMemory enumerated a HashMap, Cozo a
+            // Datalog result - and the defence was to prove no fold depended on the order. The port
+            // now promises the order instead (ascending id, stated on the trait), so the divergence
+            // is closed where it arose and every adapter is held to it by one suite.
+            "enumerations_are_ordered_by_id",
+            // Kept, and not made redundant by that promise: "no answer depends on enumeration order"
+            // is the stronger property, and it is what would make a later re-ordering safe. The
+            // promise removes a hazard; this guard is why removing it is allowed to be cheap.
             "read_surfaces_do_not_depend_on_enumeration_order",
             "traverse_order_and_truncation_parity_across_adapters",
             "traverse_dangling_endpoint_parity_across_adapters",
+            "traverse_bounds_depth_and_truncates_nearest_first",
+            "search_truncation_is_reproducible",
         ])),
     ]),
     (17, "Knowledge Sovereignty", &[

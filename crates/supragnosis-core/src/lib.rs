@@ -1042,7 +1042,12 @@ pub struct AttestationEvent {
 ///   failure is also `Err`, not a partial result.
 /// - **Reproducibility (Principle 16)**: the same query on the same state gives the same response. Sorting and limit
 ///   truncation are pinned to a stable key (id), and it is a contract violation if the iteration order of internal data
-///   structures (hash map / row order) leaks into the response.
+///   structures (hash map / row order) leaks into the response. The enumerations
+///   ([`KnowledgeStore::all_entities`] / [`KnowledgeStore::all_relations`] / [`KnowledgeStore::all_observations`])
+///   return rows in **ascending id order** - an enumeration is a response too, and it is the input to every fold on the
+///   read path, so a fold that resolves a tie by "first row seen" would otherwise inherit an order the store never
+///   promised. Naming the order is what makes the promise checkable
+///   (`crates/supragnosis-store/tests/port_conformance.rs`).
 pub trait KnowledgeStore: Send + Sync {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
     /// Restores an observation by id from the observation log - the back-reference path for search hits / derivation
