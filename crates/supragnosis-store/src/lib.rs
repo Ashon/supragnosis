@@ -190,7 +190,7 @@ impl KnowledgeStore for InMemoryStore {
     }
 
     fn all_entities(&self, workspace: Option<&str>) -> Result<Vec<Entity>, StoreError> {
-        Ok(self
+        let mut out: Vec<Entity> = self
             .entities
             .read()
             .unwrap()
@@ -199,29 +199,44 @@ impl KnowledgeStore for InMemoryStore {
                 workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws))
             })
             .cloned()
-            .collect())
+            .collect();
+        // Sort by id - keep HashMap iteration order from leaking into the response (Principle 16:
+        // reproducibility). An enumeration is a response like any other, and this one is the read
+        // path of the graph projection: a fold that breaks a tie by "first row seen" would otherwise
+        // inherit an order that is randomized per process, which is how a determinism guard fails one
+        // run in eight instead of every run (principles.md B.1).
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
     }
 
     fn all_relations(&self, workspace: Option<&str>) -> Result<Vec<Relation>, StoreError> {
-        Ok(self
+        let mut out: Vec<Relation> = self
             .relations
             .read()
             .unwrap()
             .values()
             .filter(|r| workspace.is_none_or(|ws| r.provenance.workspace == ws))
             .cloned()
-            .collect())
+            .collect();
+        // Sort by id (Principle 16) - see the note in all_entities.
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
     }
 
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
-        Ok(self
+        let mut out: Vec<Observation> = self
             .observations
             .read()
             .unwrap()
             .values()
             .filter(|o| workspace.is_none_or(|ws| o.workspace() == ws))
             .cloned()
-            .collect())
+            .collect();
+        // Sort by id (Principle 16) - see the note in all_entities. This is the input to every fold
+        // on the read path, so pinning it is what lets a fold be audited on its own terms rather than
+        // on whatever order the store happened to hand it.
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
     }
 
     fn search_semantic(
