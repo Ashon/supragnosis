@@ -504,6 +504,19 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "embed_failure_degrades_without_blocking_ingest",
             "merge_band_reports_whether_it_could_run_and_over_how_much",
         ])),
+        // The degrade above is only honest if "no vectors" and "vectors lost" are distinguishable.
+        // They were not: both embedding fields carry `#[serde(skip)]` - deliberately, so a vector
+        // never rides out through the MCP surface - which means an adapter that persists a row by
+        // serializing it accepts every vector and stores none. A third adapter did exactly that, and
+        // every semantic read answered the same empty result a vector-less backend gives. The clause
+        // exists because the failure is invisible from the outside unless something asks.
+        c("a vector the store accepted is a vector the store returns - a dropped recall aid must not \
+           be reported as a backend that has none",
+          Evidence::Scenario(&[
+            "a_stored_vector_survives_the_round_trip",
+            "semantic_recall_ranks_by_similarity_and_skips_unembedded",
+            "semantic_entity_recall_ranks_by_similarity",
+        ])),
     ]),
     (20, "Hexagonal Purity", &[
         c("dependencies point inward only",

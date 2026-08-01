@@ -159,7 +159,21 @@ impl KnowledgeStore for CountingStore {
 /// every branch a read surface can take is actually reachable. A fixture with no proposals would
 /// measure the cheap path and call it the cost.
 fn workspace_n(store: &Arc<CountingStore>, n: usize) -> Engine {
+    workspace_n_with(store, n, None)
+}
+
+/// The same fixture, optionally with an embedder attached - so a measurement can separate the cost
+/// of the rows from the cost of the vectors riding inside them.
+fn workspace_n_with(
+    store: &Arc<CountingStore>,
+    n: usize,
+    embedder: Option<Arc<dyn supragnosis_core::EmbeddingProvider>>,
+) -> Engine {
     let engine = Engine::new(store.clone(), "host-a", WS);
+    let engine = match embedder {
+        Some(e) => engine.with_embedder(e),
+        None => engine,
+    };
     for i in 0..n {
         engine
             .observe(ObserveInput {
@@ -310,25 +324,84 @@ fn scan_counts_do_not_grow_with_the_log() {
 #[test]
 #[ignore = "wall-clock measurement, not a guard - run manually with --nocapture"]
 fn read_path_wall_clock() {
-    // Measured over the Cozo adapter, not the in-memory one. A scan of InMemoryStore is a clone out
-    // of a map; a scan of Cozo parses a data JSON per row, embedding included. The scan count is the
-    // same either way - which store you measure decides whether that count costs anything.
+    // Measured over the file-backed adapters, not the in-memory one. A scan of InMemoryStore is a
+    // clone out of a map; a scan of a real store reconstructs a row per record, embedding included.
+    // The scan count is the same either way - which store you measure decides whether that count
+    // costs anything, which is also why both file-backed adapters are measured side by side rather
+    // than one standing in for the other.
+    //
+    // Run with and without vectors: `embedded` attaches a fixed-dimension embedder, so every row
+    // carries a 384-float vector that no fold on this path reads. The gap between the two columns is
+    // the cost of carrying it through the enumeration.
+    type Build = (&'static str, fn(&std::path::Path) -> Box<dyn KnowledgeStore>);
+    let adapters: [Build; 2] = [
+        ("cozo", |p| Box::new(supragnosis_store::CozoStore::open(p).expect("cozo"))),
+        ("redb", |p| {
+            Box::new(supragnosis_store::RedbStore::open(p.join("knowledge.redb")).expect("redb"))
+        }),
+    ];
+
+    /// A deterministic fixed-width vector - the storage cost of an embedding without the cost of a
+    /// model. What is being measured is carrying the bytes, not producing them.
+    struct FixedDim(usize);
+    impl supragnosis_core::EmbeddingProvider for FixedDim {
+        fn dimensions(&self) -> usize { self.0 }
+        fn id(&self) -> String { format!("fixed-{}", self.0) }
+        fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, supragnosis_core::EmbedError> {
+            // Full-precision values in [-1, 1], derived from the text by an LCG. Realism matters
+            // here in one specific way: a vector of round numbers serializes to a fraction of the
+            // bytes a real one does, so a degenerate fixture would measure the enumeration as free
+            // and report a saving that does not exist. (It did, on the first attempt - every
+            // component came out exactly 0.0.)
+            Ok(texts
+                .iter()
+                .map(|t| {
+                    let mut x = t
+                        .bytes()
+                        .fold(0x9E37_79B9u32, |a, b| a.wrapping_mul(31).wrapping_add(u32::from(b)));
+                    (0..self.0)
+                        .map(|_| {
+                            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                            (x as f32 / u32::MAX as f32).mul_add(2.0, -1.0)
+                        })
+                        .collect()
+                })
+                .collect())
+        }
+    }
+
     let dir = std::env::temp_dir().join(format!("supragnosis-readcost-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    for n in [50usize, 200, 800] {
-        let path = dir.join(format!("n{n}"));
-        let cozo = supragnosis_store::CozoStore::open(&path).expect("cozo");
-        let store = Arc::new(CountingStore::wrapping(Box::new(cozo)));
-        let engine = workspace_n(&store, n);
-        let total = store.all_observations(Some(WS)).expect("obs").len();
-        let t = std::time::Instant::now();
-        for _ in 0..20 { engine.curation(Some(WS)).expect("curation"); }
-        let curation = t.elapsed() / 20;
-        let t = std::time::Instant::now();
-        for _ in 0..20 { engine.graph(Some(WS)).expect("graph"); }
-        let graph = t.elapsed() / 20;
-        println!("{total:>5} observations: graph {graph:>10.2?}   curation {curation:>10.2?}");
+    println!(
+        "\n{:<6} {:>5} {:>12} {:>12} {:>12} {:>12}",
+        "store", "obs", "graph", "graph+vec", "curation", "curation+vec"
+    );
+    for (adapter, build) in adapters {
+        for n in [50usize, 200, 800] {
+            let mut timings = Vec::new();
+            for embedded in [false, true] {
+                let path = dir.join(format!("{adapter}-n{n}-e{embedded}"));
+                let store = Arc::new(CountingStore::wrapping(build(&path)));
+                let engine = if embedded {
+                    workspace_n_with(&store, n, Some(Arc::new(FixedDim(384))))
+                } else {
+                    workspace_n(&store, n)
+                };
+                let t = std::time::Instant::now();
+                for _ in 0..20 { engine.graph(Some(WS)).expect("graph"); }
+                let graph = t.elapsed() / 20;
+                let t = std::time::Instant::now();
+                for _ in 0..20 { engine.curation(Some(WS)).expect("curation"); }
+                timings.push((graph, t.elapsed() / 20));
+            }
+            let total = n;
+            println!(
+                "{adapter:<6} {total:>5} {:>12.2?} {:>12.2?} {:>12.2?} {:>12.2?}",
+                timings[0].0, timings[1].0, timings[0].1, timings[1].1
+            );
+        }
     }
+    println!();
 }
 
 /// A read-only view of another store that hands every enumeration back in the opposite order.

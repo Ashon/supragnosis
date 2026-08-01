@@ -34,7 +34,7 @@ use supragnosis_core::{EmbeddingProvider, KnowledgeStore, VersionVector};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, Event, SearchMode};
 use supragnosis_mcp::SupragnosisServer;
-use supragnosis_store::{CozoStore, InMemoryStore};
+use supragnosis_store::{CozoStore, InMemoryStore, RedbStore};
 
 #[derive(Parser)]
 #[command(name = "supragnosis", version, about = "MCP server that turns knowledge from many hosts/workspaces into an ontology")]
@@ -65,6 +65,18 @@ enum Cmd {
     Migrate(SyncArgs),
     /// Re-create a workspace's knowledge under another name, provenance intact (stop the daemon first)
     RekeyWorkspace(RekeyArgs),
+    /// Copy the observation log from the Cozo store into a redb store and re-materialize it (stop the daemon first)
+    MigrateStore(MigrateStoreArgs),
+}
+
+#[derive(Args, Clone)]
+struct MigrateStoreArgs {
+    /// Directory to hold the redb store (default ~/.supragnosis/redb).
+    #[arg(long, value_name = "DIR")]
+    to: Option<String>,
+    /// Report what would be copied and write nothing.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -103,10 +115,10 @@ struct RunArgs {
     /// Live ontology viewer unix socket path. start defaults to ~/.supragnosis/viz.sock.
     #[arg(long, value_name = "PATH")]
     viz: Option<String>,
-    /// Store: cozo (default, file-persistent) | mem (non-persistent).
+    /// Store: cozo (default, file-persistent) | redb (file-persistent, pure Rust) | mem (non-persistent).
     #[arg(long)]
     store: Option<String>,
-    /// Cozo data directory (default ~/.supragnosis/db).
+    /// Store directory (default ~/.supragnosis/db for cozo, ~/.supragnosis/redb for redb).
     #[arg(long, value_name = "DIR")]
     data_dir: Option<String>,
     /// Host id for provenance (default localhost).
@@ -135,6 +147,7 @@ fn main() -> Result<()> {
         Cmd::Reproject(a) => reproject_cmd(a),
         Cmd::Migrate(a) => migrate_cmd(a),
         Cmd::RekeyWorkspace(a) => rekey_workspace_cmd(a),
+        Cmd::MigrateStore(a) => migrate_store_cmd(a),
     }
 }
 
@@ -170,19 +183,25 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
     // spawn a second daemon into the single-process store lock. This matters for supervisors
     // that run `serve --http` directly (brew services, systemd) rather than `start`.
     let daemonish = daemon || http.is_some();
+    let store_kind = a
+        .store
+        .or_else(|| env("SUPRAGNOSIS_STORE"))
+        .unwrap_or_else(|| "cozo".to_string());
+    // The two file-backed stores get separate default directories rather than sharing one. RocksDB
+    // owns its directory, so dropping a redb file inside it invites the two to trip over each
+    // other - and keeping them apart is what lets both exist at once, which is the whole point of
+    // an opt-in migration: the Cozo store stays untouched and readable while redb is being tried.
+    let data_dir = a
+        .data_dir
+        .or_else(|| env("SUPRAGNOSIS_DATA_DIR"))
+        .unwrap_or_else(|| default_data_dir_for(&store_kind));
     Config {
         workspace: a
             .workspace
             .or_else(|| env("SUPRAGNOSIS_WORKSPACE"))
             .unwrap_or_else(|| "default".to_string()),
-        store_kind: a
-            .store
-            .or_else(|| env("SUPRAGNOSIS_STORE"))
-            .unwrap_or_else(|| "cozo".to_string()),
-        data_dir: a
-            .data_dir
-            .or_else(|| env("SUPRAGNOSIS_DATA_DIR"))
-            .unwrap_or_else(default_data_dir),
+        store_kind,
+        data_dir,
         embed_kind: a
             .embed
             .or_else(|| env("SUPRAGNOSIS_EMBED"))
@@ -201,9 +220,18 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
     }
 }
 
-fn default_data_dir() -> String {
+fn default_data_dir_for(store_kind: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    format!("{home}/.supragnosis/db")
+    match store_kind {
+        "redb" => format!("{home}/.supragnosis/redb"),
+        _ => format!("{home}/.supragnosis/db"),
+    }
+}
+
+/// The redb database file inside a store directory. One file, named rather than derived at each
+/// call site, so the migration command and the server cannot disagree about where the store lives.
+fn redb_path(data_dir: &str) -> std::path::PathBuf {
+    std::path::Path::new(data_dir).join("knowledge.redb")
 }
 
 /// Default viewer socket path (the viewer serves HTTP over UDS only - no TCP; the socket file's
@@ -270,6 +298,18 @@ fn build_engine(
         "mem" | "memory" => {
             tracing::info!("store=in-memory (non-persistent)");
             Arc::new(InMemoryStore::new())
+        }
+        "redb" => {
+            let path = redb_path(&cfg.data_dir);
+            let store = RedbStore::open(&path)
+                .with_context(|| format!("failed to open redb store at {}", path.display()))?;
+            // Same fail-fast as Cozo: two models share no vector space, so a swapped embedder is
+            // refused at open rather than discovered as quietly worse recall.
+            if let Some(e) = &embedder {
+                store.set_embedder(&e.id())?;
+            }
+            tracing::info!(path = %path.display(), ?embed_dim, "store=redb (persistent)");
+            Arc::new(store)
         }
         _ => {
             // Record/check the embedder identifier (model + dimensions) in the store -
@@ -608,6 +648,98 @@ fn rekey_workspace_cmd(a: RekeyArgs) -> Result<()> {
         }
         anyhow::Ok(())
     })
+}
+
+/// `supragnosis migrate-store` - copy the observation log out of the Cozo store into a redb store.
+///
+/// Only the LOG is copied. The entity/relation graph is a projection of it (Principle 1), so it is
+/// rebuilt by replay at the end rather than transferred - copying a projection would carry over
+/// whatever state it happened to be in, while a replay is defined by the log alone and is what every
+/// other node would compute from the same rows (Principle 16).
+///
+/// `add_observation` absorbs at the content address, so re-running this is idempotent and a partial
+/// run is resumable: an already-copied row unions with itself and stays one row (Principle 3).
+///
+/// The source store is opened and never written. That is what makes this reversible: until the
+/// `--store redb` flag is passed to a server, the Cozo store remains the live one.
+fn migrate_store_cmd(a: MigrateStoreArgs) -> Result<()> {
+    init_tracing();
+    let cfg = resolve(RunArgs::default(), false);
+    let target_dir = a.to.unwrap_or_else(|| default_data_dir_for("redb"));
+    let target = redb_path(&target_dir);
+    let source_dir = cfg.data_dir.clone();
+
+    // Both stores are single-process: a running daemon holds the Cozo lock, and opening it here
+    // would fail with a lock error rather than corrupt anything - but say so plainly first.
+    let source = CozoStore::open(&cfg.data_dir).with_context(|| {
+        format!(
+            "failed to open the Cozo store at {} - a running daemon holds it (the store is \
+             single-process). Stop it with `supragnosis stop` and try again",
+            cfg.data_dir
+        )
+    })?;
+
+    let observations = source.all_observations(None)?;
+    let mut workspaces: Vec<String> =
+        observations.iter().map(|o| o.workspace().to_string()).collect();
+    workspaces.sort();
+    workspaces.dedup();
+
+    println!(
+        "source {}: {} observation(s) across {} workspace(s): {}",
+        cfg.data_dir,
+        observations.len(),
+        workspaces.len(),
+        workspaces.join(", ")
+    );
+    if a.dry_run {
+        println!("dry run - nothing was written to {}", target.display());
+        return Ok(());
+    }
+
+    let mut copied = 0usize;
+    {
+        // Scoped so the handle is released before the replay below opens the same file. redb admits
+        // one process at a time, exactly like RocksDB, so holding this open across the reproject is
+        // a self-inflicted lock conflict - and one that only appears end to end, since each half
+        // works alone.
+        let dest = RedbStore::open(&target)
+            .with_context(|| format!("failed to open the redb store at {}", target.display()))?;
+        for obs in observations {
+            dest.add_observation(obs)?;
+            copied += 1;
+        }
+    }
+    println!("copied {copied} observation(s) to {}", target.display());
+
+    // Replay each workspace so the target holds a projection, not just a log. Built through the
+    // normal engine so the replay is the same one a server would do - including the embedder, which
+    // is what re-derives entity vectors (they are a node-local recall aid, so they are recomputed
+    // rather than carried).
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(async {
+        let target_cfg = Config {
+            store_kind: "redb".to_string(),
+            data_dir: target_dir.clone(),
+            ..cfg
+        };
+        let engine = build_engine(&target_cfg, None)?;
+        for ws in &workspaces {
+            let r = engine.reproject(Some(ws))?;
+            println!(
+                "reprojected {ws}: {} observations -> {} entities, {} relations",
+                r.observations, r.entities, r.relations
+            );
+        }
+        anyhow::Ok(())
+    })?;
+
+    println!(
+        "\ndone. The Cozo store at {source_dir} was not modified.\n\
+         Run against the new store with:  supragnosis start --store redb\n\
+         or set SUPRAGNOSIS_STORE=redb (the default is still cozo)."
+    );
+    Ok(())
 }
 
 /// `supragnosis reproject` - one-shot re-materialization (HLC-ordered replay, Prop C). For a node

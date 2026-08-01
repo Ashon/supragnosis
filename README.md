@@ -107,8 +107,10 @@ cargo test                                           # unit tests (network-depen
   - `SUPRAGNOSIS_HOST` - host id for provenance (default `localhost`). This is a display label only;
     the federation `node_id` is derived from the node keypair, not from this value.
   - `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`).
-  - `SUPRAGNOSIS_STORE` - `cozo` (default, file-persistent) | `mem` (non-persistent).
-  - `SUPRAGNOSIS_DATA_DIR` - Cozo data directory (default `~/.supragnosis/db`).
+  - `SUPRAGNOSIS_STORE` - `cozo` (default, file-persistent) | `redb` (file-persistent, pure Rust) |
+    `mem` (non-persistent).
+  - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/db` for cozo,
+    `~/.supragnosis/redb` for redb - separate on purpose, so both can exist while you try the new one).
   - `SUPRAGNOSIS_EMBED` - `fastembed` (default when compiled with the feature, local ONNX) | `hashing` (for development) | `none`. If it is absent or fails, degrades to keyword search.
   - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml` (default `~/.supragnosis/supragnosis.toml`). No file = a standalone node.
   - `SUPRAGNOSIS_VIZ_SOCK` - viewer unix socket path (daemon default `~/.supragnosis/viz.sock`). The
@@ -165,6 +167,25 @@ supragnosis reproject           # deterministic HLC-ordered re-materialization o
 supragnosis migrate             # re-create pre-0.1.x rows under the current content-address formula
 supragnosis --help              # all options
 ```
+### Trying the redb store
+`redb` is a second file-backed store adapter: a pure-Rust embedded B-tree, no C++ RocksDB bridge (so
+no `clang`/`libclang-dev` in the build) and no transitive dependencies. Both adapters are held to one
+contract by [`port_conformance.rs`](crates/supragnosis-store/tests/port_conformance.rs), which runs
+every case against every adapter.
+
+```bash
+supragnosis stop                     # both stores are single-process
+supragnosis migrate-store --dry-run  # what would be copied
+supragnosis migrate-store            # copy the log, then replay it into ~/.supragnosis/redb
+supragnosis start --store redb       # or SUPRAGNOSIS_STORE=redb
+```
+- Only the **observation log** is copied; the entity/relation graph is a projection of it, so it is
+  rebuilt by replay rather than transferred (Principle 1/16).
+- The Cozo store is opened read-only and left untouched, so this is reversible: drop the `--store
+  redb` flag to go back. **The default is still `cozo`.**
+- Re-running is safe. `add_observation` absorbs at the content address, so a repeated or partial run
+  converges to the same log (Principle 3).
+
 - `sync` / `reproject` / `migrate` need the daemon **stopped** (cozo/RocksDB is single-process). With a
   running daemon, use the `sync_*` MCP tools instead.
 - Option precedence: flags > `SUPRAGNOSIS_*` environment variables > defaults.

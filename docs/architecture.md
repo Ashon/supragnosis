@@ -238,6 +238,25 @@ A node advertises only the workspaces it will share, and the server enforces per
 Reason - a knowledge system needs all of (1) **semantic recall of fragments (vector)**, (2) ontology **graph traversal**,
 and (3) **relational queries over metadata/provenance**, and Cozo alone covers all three and is embedded.
 
+**Second file-backed adapter: redb (opt-in).** What the Datalog is actually spent on was measured
+rather than assumed: nineteen query shapes, of which one is genuinely recursive (`traverse`'s bounded
+BFS). The rest are point get/put, scans with a workspace filter, a two-rule union for `relations_of`,
+and an ANN lookup - and no time-travel operator is used at all. Since the `query` passthrough has
+never been opened (Principle 12/21), Datalog is an implementation detail of this layer alone, so a
+key-value B-tree with secondary indexes serves the same port. `redb` is that adapter: pure Rust with
+no transitive dependencies, which removes the C++ RocksDB bridge and the `clang`/`libclang-dev` it
+puts in the build.
+
+Measured on the read path (800 observations, release): `graph` 9.91ms -> 5.64ms, `curation` 22.66ms
+-> 14.13ms. With vectors attached the gap widens to 33.07ms -> 6.20ms on `graph`, because a
+hand-rolled f32 encoding costs about 2ns per component against roughly 75ns to parse a JSON float.
+`curation` with vectors stays expensive on both (281.77ms vs 236.66ms) - that cost is the O(E^2)
+merge band, not the store.
+
+The two adapters are held to one contract by
+`crates/supragnosis-store/tests/port_conformance.rs`, which runs every case against every adapter;
+`migrate-store` copies the log and replays it. Default remains Cozo.
+
 > **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability is a **hard requirement**, use Oxigraph.
 > Because of the port-adapter structure, it can be swapped by reimplementing only the `KnowledgeStore`
 > port (one trait covers the log, graph, and vector reads) - the store choice is isolated so it does

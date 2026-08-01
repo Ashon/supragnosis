@@ -35,6 +35,9 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
 cozo = { version = "0.7", features = ["storage-rocksdb"] }
+# Pure-Rust embedded B-tree store (single writer + MVCC readers) - the store adapter
+# being stood up beside cozo. No C/C++ toolchain, so cross-compiling needs no bindgen.
+redb = "4"
 # standalone daemon: HTTP server to mount the MCP streamable-http service (cli only).
 axum = "0.8"
 # Federation sync transport (M4 Phase 3, sync crate "http" feature only): in-process TLS + HTTP client.
