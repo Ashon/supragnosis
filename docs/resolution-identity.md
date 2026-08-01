@@ -111,8 +111,9 @@ as `reproject`, incrementally:
 
 ## 5. Latent conditions repaid with aliases (architecture.md Section 14)
 
-- **Keyword-search alias parity**: the Cozo adapter matches aliases exactly as InMemory does; a
-  cross-adapter parity test moves from latent to guard.
+- **Keyword-search alias parity**: every adapter matches aliases exactly as InMemory does; the
+  parity test moved from latent to guard, and is now one case of the port conformance suite
+  rather than a check bolted to one backend.
 - **Entity-embedding staleness**: the embedding text is `canonical_name + aliases` (existing
   `entity_text`); when the alias set or representative spelling changes, the embedding is
   recomputed best-effort (failure degrades, P19 - never blocks the write). **IR4**: the stored
@@ -175,7 +176,7 @@ deferral is non-destructive. M3c is scheduled after M3b, before M5.
 | `aliases_accumulate_and_converge` | guard | IR1 - set union, order-free, representative excluded | landed |
 | `merge_suggestions_never_commit` | guard | IR2 - no verdict, no projection change from suggestions | landed |
 | `incremental_write_equals_replay` | property | IR3 - interleaved observes vs fresh reproject | landed |
-| `cozo_keyword_matches_aliases` | guard (parity) | Section 5 - latent condition retired | landed |
+| `cozo_keyword_matches_aliases`, `search_matches_canonical_name_and_alias` | guard (parity) | Section 5 - latent condition retired; the parity case is now port-wide | landed |
 | `embedding_recomputed_on_alias_change` | guard | IR4 - stored embedding matches current text | landed |
 | `type_def_conflict_surfaces_contested` | guard | IR5 - glossary contested + mediation settles | landed |
 | `type_axis_collision_is_a_signal` | guard | Section 6 - P9 minimal axis-collision signal | landed |

@@ -116,7 +116,7 @@ flowchart TB
         P["Ports: KnowledgeStore, EmbeddingProvider, ResolutionPolicy, Clock, EventSink (Extractor: M5)"]
     end
     subgraph Store["supragnosis-store (adapter)"]
-        DB[("Cozo / RocksDB\nrelational+graph+vector")]
+        DB[("Cozo/RocksDB or redb\nlog + graph + vectors")]
         LOG[("Observation Log\nappend-only")]
     end
     Clients --> TR --> T --> Engine
@@ -157,7 +157,10 @@ sequenceDiagram
 
 ### 4.2 Query
 - `search`: **vector (HNSW) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
-- `traverse`: n-hop traversal from an entity (relation-type filter). Recursive traversal is expressed in Cozo Datalog.
+- `traverse`: n-hop traversal from an entity (relation-type filter). How the walk is expressed is the
+  adapter's business - recursive Datalog on Cozo, an explicit BFS on redb and in-memory - while the
+  port fixes what it must return: (depth, id) order, nearest-first truncation, and an unprojected
+  endpoint traversed through but never described (Section 6, port conformance).
 
 ### 4.3 Sync - topology-independent replication
 - Each host appends to its local observation log. Observations are **immutable + content-addressed + origin/HLC**.
@@ -225,18 +228,22 @@ A node advertises only the workspaces it will share, and the server enforces per
 
 ## 6. Store Selection
 
-| Criterion | **CozoDB (recommended)** | Oxigraph |
-|------|-------------------|----------|
-| Form | embedded relational+graph+vector, Datalog | embedded RDF triplestore, SPARQL |
-| Vector search | [o] native HNSW | [x] (needs a separate component) |
-| Graph traversal | [o] recursive Datalog | [o] SPARQL property path |
-| Ontology standards (OWL/RDFS) | model the schema directly | [o] standards-optimal |
-| Backend | RocksDB / SQLite / in-mem | RocksDB / in-mem |
-| File-based | [o] | [o] |
+| Criterion | **CozoDB (default)** | **redb (opt-in)** | Oxigraph (not adopted) |
+|------|-------------------|-------------------|----------|
+| Form | embedded relational+graph+vector, Datalog | embedded key-value B-tree, single writer + MVCC readers | embedded RDF triplestore, SPARQL |
+| Vector search | [o] native HNSW | brute-force cosine (no ANN index) | [x] (needs a separate component) |
+| Graph traversal | [o] recursive Datalog | [o] explicit BFS over a secondary index | [o] SPARQL property path |
+| Ontology standards (OWL/RDFS) | model the schema directly | model the schema directly | [o] standards-optimal |
+| Backend | RocksDB / SQLite / in-mem | its own file format | RocksDB / in-mem |
+| File-based | [o] | [o] | [o] |
+| Native toolchain | C++ (cozorocks -> bindgen/libclang) | none - pure Rust, zero transitive deps | C (librocksdb) |
+| Upstream | last release 2023-12-11 | actively released | actively released |
 
-**Recommended: CozoDB as the primary store.**
+**Standing default: CozoDB.**
 Reason - a knowledge system needs all of (1) **semantic recall of fragments (vector)**, (2) ontology **graph traversal**,
 and (3) **relational queries over metadata/provenance**, and Cozo alone covers all three and is embedded.
+That reasoning still describes what Cozo does. What changed is the price, and how much of the
+capability is actually drawn on.
 
 **Second file-backed adapter: redb (opt-in).** What the Datalog is actually spent on was measured
 rather than assumed: nineteen query shapes, of which one is genuinely recursive (`traverse`'s bounded
@@ -253,9 +260,10 @@ hand-rolled f32 encoding costs about 2ns per component against roughly 75ns to p
 `curation` with vectors stays expensive on both (281.77ms vs 236.66ms) - that cost is the O(E^2)
 merge band, not the store.
 
-The two adapters are held to one contract by
-`crates/supragnosis-store/tests/port_conformance.rs`, which runs every case against every adapter;
-`migrate-store` copies the log and replays it. Default remains Cozo.
+All three adapters (in-memory, Cozo, redb) are held to one contract by
+`crates/supragnosis-store/tests/port_conformance.rs`, which runs every case against every adapter, so
+a backend cannot bring its own reading of the port; `migrate-store` copies the log and replays it.
+Default remains Cozo.
 
 > **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability is a **hard requirement**, use Oxigraph.
 > Because of the port-adapter structure, it can be swapped by reimplementing only the `KnowledgeStore`
@@ -330,7 +338,7 @@ Principle 22 (curation as a by-product of work) on the MCP surface.
 |------|----------|
 | MCP server SDK | `rmcp` (`server`, `transport-io`, `macros`; `transport-streamable-http-server` in the CLI) |
 | Async runtime | `tokio` |
-| Embedded store | `cozo` (RocksDB backend) *(alternative: `oxigraph`)* |
+| Embedded store | `cozo` (RocksDB backend, default) / `redb` (pure Rust B-tree, opt-in) *(documented alternative: `oxigraph`)* |
 | Local embedding (optional) | `fastembed` (ONNX, local model) - if absent, degrade to keyword search |
 | Serialization | `serde`, `serde_json` |
 | Content-address ID | `blake3` |
@@ -352,7 +360,7 @@ supragnosis/
 |- docs/                      # architecture.md, principles.md, proposal-workflow.md, federation.md
 |- crates/
 |  |- supragnosis-core/       # domain models + port traits (zero IO)
-|  |- supragnosis-store/      # adapters: cozo, in-memory
+|  |- supragnosis-store/      # adapters: cozo, redb, in-memory (one conformance suite over all)
 |  |- supragnosis-engine/     # service: ingest/project/query/curation/proposals/reproject
 |  |- supragnosis-embed/      # EmbeddingProvider adapter (fastembed/hashing/none)
 |  |- supragnosis-sync/       # federation: version-vector delta replication, sync API, node signing
@@ -454,8 +462,9 @@ HTTP-over-UDS client (`curl --unix-socket`).
     the web-hardening checklist to the Phase 3.5 hub surface, but the shell renders synced content
     today, so the CSP half of that checklist is due earlier than the surface that named it.
 - **Independent of the MCP tool surface** (Principle 21): being a separate human-facing channel, it does not add to the LLM's tools.
-- **Single-process constraint**: because cozo/RocksDB is single-process, the viewer must be in-process with the server
-  (sharing the same `Arc<Engine>`), and two server instances at once would contend for the port/db lock.
+- **Single-process constraint**: an embedded store admits one process at a time (RocksDB and redb
+  alike), so the viewer must be in-process with the server (sharing the same `Arc<Engine>`), and two
+  server instances at once would contend for the port/db lock.
 - Endpoints (all GET - acceptable because the socket admits no third-party origin, per the bind policy
   above; the Phase 3.5 network read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
   `/api/graph[?workspace=<ws>]` (unspecified = default
@@ -588,8 +597,10 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - The first federation topology: **hub-and-spoke**. [o] Resolved in M4 - a hub gives always-available
   relay and catch-up between nodes that are never online together, and the replication primitive is
   topology-independent, so peer/mesh reuses it unchanged (federation.md).
-- Store: **CozoDB** confirmed in practice. [o] Oxigraph remains the documented alternative (Section 6);
-  no RDF/SPARQL requirement has materialized.
+- Store: **CozoDB** confirmed in practice. [o] A second file-backed adapter, **redb**, now ships
+  opt-in (Section 6): what the Datalog was actually spent on turned out to be one recursive query,
+  and Cozo's C++ RocksDB bridge is what puts `clang` in the build. Oxigraph remains the documented
+  alternative; no RDF/SPARQL requirement has materialized.
 - The "current belief" policy on conflict: **tier-weighted** (effective tier -> ordering HLC -> id),
   as a swappable strategy per Principle 1; confidence is carried verbatim but never selects (the
   Principle 2 combining rule, stated explicitly). [o] Decided and implemented in M3a
@@ -626,8 +637,11 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   observation log like any other assertion (Principles 1/23: no parallel storage). Descriptions are
   content identity (folded into the observation hash - Principle 14).
 - Principles 12/20 (minimal encoding bias/hexagonal): `core` has zero IO dependencies, Cozo concepts live only in the `store` adapter.
-  The store sits behind the `KnowledgeStore` port - swapping mem/cozo leaves the domain unchanged. The
-  Datalog passthrough has deliberately never been opened.
+  The store sits behind the `KnowledgeStore` port, and this stopped being a claim about a shape and
+  became a claim that was exercised: a **third** adapter (redb) was added without a line changing in
+  `core` or `engine`, and the port's own contract is now checked by one suite every adapter runs
+  (`crates/supragnosis-store/tests/port_conformance.rs`). The Datalog passthrough has deliberately
+  never been opened - which is also why replacing Datalog cost nothing outside the adapter.
 - Principle 10 (schema open to extension, closed to modification): the core ontology (Observation,
   Entity, Relation, Provenance, Workspace) is fixed in `core`, while the domain vocabulary extends
   through `define_type` without touching it - a new domain type invalidates no existing observation,
@@ -903,7 +917,9 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
    canon-policy-based evaluation (principal-to-key bindings deciding what a remote verdict/marker may
    grant - today a replicated console marker is honored under the single-principal premise).
 3. **Cross-adapter `traverse` parity for dangling relation endpoints** - REPAID. A relation endpoint with
-   no projected entity row is now **dropped by both adapters and traversed through**, so a node behind the
+   no projected entity row is now **dropped by every adapter and traversed through** (the rule is a case
+   of the port conformance suite, `traverse_passes_through_an_unprojected_endpoint`, so a new backend
+   inherits it rather than rediscovering it), so a node behind the
    gap stays reachable while nothing is invented about the gap itself. Cozo's final rule already
    inner-joined `*entity`; the InMemory adapter was the outlier, emitting a hit whose `name` was the empty
    string - a node claimed to exist under a blank name. Dropping is also what `graph()` and `curation()`
@@ -930,8 +946,10 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
 
 **Repaid by M3b (formerly M3 latent conditions)**
 - Cozo keyword-search alias parity - REPAID: the Cozo search matches aliases as InMemory does (an
-  alias pass over the workspace's entity rows), guarded by `cozo_keyword_matches_aliases`. Now that
-  aliases actually accumulate (IR1), the condition became reachable and was met in the same slice.
+  alias pass over the workspace's entity rows), guarded by `cozo_keyword_matches_aliases` and, since
+  the port gained one conformance suite, by `search_matches_canonical_name_and_alias` on every
+  adapter. Now that aliases actually accumulate (IR1), the condition became reachable and was met in
+  the same slice.
 - Entity-embedding recomputation on text change - REPAID (IR4): `project_entities` recomputes the
   name-meaning vector only when `canonical_name + aliases` changed since the stored row, so it is
   never silently stale. Guarded by `embedding_recomputed_on_alias_change`.
