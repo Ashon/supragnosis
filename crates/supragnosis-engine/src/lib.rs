@@ -766,6 +766,25 @@ fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> Trus
     })
 }
 
+/// The authoring attestation of an observation: earliest effective HLC, index-tiebroken. After an
+/// absorb the provenance vec is union-sorted (by host first), so `first()` names whichever host
+/// sorts first, and any max-over-attestations moves as attestations accumulate - neither names the
+/// author. This is the single rule for "who authored this act": the verdict surface marker
+/// (gate_grants), relation provenance (reproject) and proposal attribution (fold_proposals) must
+/// not each pick a different attestation off one row.
+fn authoring_attestation(obs: &Observation) -> Option<&Provenance> {
+    obs.provenance
+        .iter()
+        .enumerate()
+        .min_by_key(|(i, p)| {
+            (
+                p.sync.as_ref().map(|s| s.hlc.clone()).unwrap_or_else(|| Hlc::legacy(p.observed_at)),
+                *i,
+            )
+        })
+        .map(|(_, p)| p)
+}
+
 /// The canonical member set an observation co-asserts (the hyperedge membership rule): entity
 /// assertions + both relation endpoints, resolved by name to entity ids, forwarded through
 /// accepted merges, and kept only when present in the graph node set (closed hull - the same
@@ -1902,9 +1921,18 @@ impl Engine {
     /// Dedup by content address (Principle 14) is what normally prevents this; a re-keying is
     /// precisely the case where one content wears two ids, so the same rule has to be applied by
     /// hand. A predecessor is recognised structurally rather than by re-hashing every row: the
-    /// successor names it in `derived_from` AND carries byte-identical content and assertions.
-    /// Genuine derived knowledge cannot collide with that test - identical content and assertions
-    /// under the current formula IS the same content address, so it would be one row, not two.
+    /// successor names it in `derived_from` AND carries byte-identical content and assertions AND
+    /// lives in the same workspace. Genuine derived knowledge cannot collide with that test -
+    /// identical content and assertions under the current formula IS the same content address, so
+    /// it would be one row, not two.
+    ///
+    /// The same-workspace condition is what separates the two re-keyings: a `migrate` successor
+    /// shares its predecessor's workspace (the id FORMULA changed), so the pair is one act and the
+    /// door folds it to one row; a `rekey_workspace` successor does not (the WORKSPACE changed), so
+    /// both rows stay live - each workspace keeps its own support, and the unscoped view is the
+    /// union of the scoped ones. Without the condition the unscoped fold dropped the source row,
+    /// showing the source workspace's entities without the attestations its own scoped view reports
+    /// (a scoped and an unscoped read of one log must not disagree - Principle 16).
     ///
     /// Nothing is deleted (Principle 3). The predecessor stays in the store and stays
     /// dereferenceable by its id; the successor's `derived_from` is the record of the re-keying.
@@ -1917,7 +1945,8 @@ impl Engine {
                 successor.derived_from.iter().filter_map(|parent| {
                     let predecessor = by_id.get(parent.as_str())?;
                     (predecessor.content == successor.content
-                        && predecessor.assertions == successor.assertions)
+                        && predecessor.assertions == successor.assertions
+                        && predecessor.workspace() == successor.workspace())
                         .then(|| parent.clone())
                 })
             })
@@ -1937,10 +1966,11 @@ impl Engine {
         let mut tally: HashMap<String, ProposalTally> = HashMap::new();
         // Pass 1: opened events define the proposals (id = the opening observation id).
         for obs in obss {
-            let observed_at = obs.provenance.iter().map(|p| p.observed_at).max().unwrap_or(0);
-            let proposer = obs
-                .provenance
-                .first()
+            // Attribution follows the authoring attestation (P2) - a max over observed_at moves
+            // forward as attestations absorb, and first() names the sort-first host, not the author.
+            let author = authoring_attestation(obs);
+            let observed_at = author.map(|p| p.observed_at).unwrap_or(0);
+            let proposer = author
                 .map(|p| match &p.on_behalf_of {
                     Some(who) => format!("{}@{}", who, p.host),
                     None => p.host.clone(),
@@ -2544,21 +2574,9 @@ impl Engine {
                             continue;
                         }
                         // The verdict's surface marker rides the authoring attestation's source_ref
-                        // (engine-stamped, resolution.md R8). Authoring = earliest effective HLC.
-                        let source_ref = obs
-                            .provenance
-                            .iter()
-                            .enumerate()
-                            .min_by_key(|(i, p)| {
-                                (
-                                    p.sync
-                                        .as_ref()
-                                        .map(|s| s.hlc.clone())
-                                        .unwrap_or_else(|| Hlc::legacy(p.observed_at)),
-                                    *i,
-                                )
-                            })
-                            .and_then(|(_, p)| p.source_ref.clone());
+                        // (engine-stamped, resolution.md R8).
+                        let source_ref =
+                            authoring_attestation(obs).and_then(|p| p.source_ref.clone());
                         let cand = (okey.clone(), obs.id.clone(), source_ref);
                         rep_merge
                             .entry(ev.proposal.clone())
@@ -2829,15 +2847,21 @@ impl Engine {
     /// The workspace is part of the content address, so this is not a move and cannot be: a
     /// re-keyed observation is a NEW observation, and the original stays where it is (Principle 3).
     /// What makes it a re-key rather than a re-ingest is that **every attestation is copied
-    /// verbatim** - acting host, `on_behalf_of`, `observed_at`, confidence, claimed tier. Pushing
-    /// the same text back through `observe` would restamp all of it with this engine's clock and
-    /// host, which fabricates the two things the log exists to preserve (Principles 2 and 4) and
-    /// collapses the HLC order that last-write-wins fields are decided by. The one field dropped is
-    /// the sync stamp: it is bound to the old content id and signs it, so it cannot follow.
+    /// verbatim** - acting host, `on_behalf_of`, `observed_at`, confidence. Pushing the same text
+    /// back through `observe` would restamp all of it with this engine's clock and host, which
+    /// fabricates the two things the log exists to preserve (Principles 2 and 4) and collapses the
+    /// HLC order that last-write-wins fields are decided by. The one field dropped is the sync
+    /// stamp: it is bound to the old content id and signs it, so it cannot follow - and because
+    /// `evaluated_tier` trusts a stamp-less claim at face value, the claimed tier is carried as its
+    /// **pre-strip evaluation** rather than verbatim (a synced claim stays capped at HostSigned;
+    /// P18: dropping the stamp must not raise what the claim evaluates to).
     ///
     /// Shaped exactly like `migrate_legacy_ids`, which re-keys across a change of id FORMULA; this
-    /// re-keys across a change of WORKSPACE. Lineage records the origin, so the two rows are one act
-    /// and the live-set door counts them once.
+    /// re-keys across a change of WORKSPACE. Lineage records the origin either way, but the
+    /// live-set door treats the two differently on purpose: a migrated pair shares one workspace
+    /// and folds to one row, while a re-keyed pair spans two and BOTH rows stay live - each
+    /// workspace keeps its own support, and the unscoped view is the union of the scoped ones
+    /// (see [`Engine::observations`]).
     ///
     /// Proposal events are left behind deliberately - see [`RekeyReport::skipped_proposal_events`].
     /// `dry_run` reports what would move and writes nothing.
@@ -2866,6 +2890,11 @@ impl Engine {
             let mut provs = obs.provenance.clone();
             for p in &mut provs {
                 p.workspace = to.to_string();
+                // Clamp BEFORE the stamp drops: `evaluated_tier` trusts a stamp-less claim at
+                // face value, so a synced claim carried verbatim past this line would evaluate
+                // above HostSigned in the target workspace - a tier promotion by an operator
+                // act (P18: the tier is the receiver's evaluation, and a re-key must not raise it).
+                p.trust_tier = evaluated_tier(p);
                 p.sync = None; // the stamp signs the OLD content id and cannot follow it
             }
             if provs.is_empty() {
@@ -2915,15 +2944,7 @@ impl Engine {
         obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
         for obs in &obss {
-            let Some(prov) = obs
-                .provenance
-                .iter()
-                .enumerate()
-                .min_by_key(|(i, p)| {
-                    (p.sync.as_ref().map(|s| s.hlc.clone()).unwrap_or_else(|| Hlc::legacy(p.observed_at)), *i)
-                })
-                .map(|(_, p)| p.clone())
-            else {
+            let Some(prov) = authoring_attestation(obs).cloned() else {
                 continue;
             };
             for ra in &obs.assertions.relations {

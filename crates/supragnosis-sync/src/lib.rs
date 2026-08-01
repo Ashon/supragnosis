@@ -19,8 +19,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 use supragnosis_core::{
-    now_millis, observation_content_id, ordering_hlc, verify_attestation, AttestationEvent, Hlc,
-    KnowledgeStore, NodeIdentity, Observation, StoreError, SyncMeta, VersionVector,
+    evaluated_tier, now_millis, observation_content_id, ordering_hlc, verify_attestation,
+    AttestationEvent, Hlc, KnowledgeStore, NodeIdentity, Observation, StoreError, SyncMeta,
+    VersionVector,
 };
 
 /// Sync-layer failure. Store failures propagate (P5: a backend failure is never an empty result);
@@ -273,6 +274,10 @@ pub fn migrate_legacy_ids(
         }
         let mut provs = obs.provenance.clone();
         for p in &mut provs {
+            // Clamp BEFORE the stamp drops: `evaluated_tier` trusts a stamp-less claim at face
+            // value, so a synced claim carried verbatim would evaluate above HostSigned after
+            // the migration (P18 - same rule as `rekey_workspace`).
+            p.trust_tier = evaluated_tier(p);
             p.sync = None; // stale stamps bound the old id - the new row re-stamps at next export
         }
         if provs.is_empty() {

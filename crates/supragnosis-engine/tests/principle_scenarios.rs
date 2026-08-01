@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use supragnosis_core::{
-    Assertions, Entity, EntityAssertion, KnowledgeStore, Observation, Provenance, TrustTier,
-    VersionVector,
+    evaluated_tier, Assertions, Entity, EntityAssertion, Hlc, KnowledgeStore, Observation,
+    Provenance, SyncMeta, TrustTier, VersionVector,
 };
 use supragnosis_engine::{
     DefineTypeInput, Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, TypeDefInput,
@@ -1769,7 +1769,9 @@ fn p14_migration_rekeys_an_act_without_duplicating_it() {
 
 /// guard (principles.md P2 provenance first-class, P4 transaction time, P3 nothing is deleted):
 /// `rekey_workspace` re-creates a workspace's knowledge under another name with every attestation
-/// copied verbatim - acting host, `on_behalf_of`, `observed_at`, confidence, claimed tier.
+/// copied verbatim - acting host, `on_behalf_of`, `observed_at`, confidence. (The claimed tier is
+/// the one exception: it is carried as its pre-strip evaluation, not verbatim - see the P18
+/// laundering guard below.)
 ///
 /// The distinction this pins is the whole reason the operation exists. Pushing the same text back
 /// through `observe` would look equivalent and is not: the engine stamps its own clock and host, so
@@ -1842,6 +1844,132 @@ fn p2_a_workspace_rekey_carries_provenance_that_a_reingest_would_restamp() {
     assert_eq!(
         engine.rekey_workspace(WS, "archive", false).unwrap().already, 1,
         "it recognises what it already re-keyed"
+    );
+}
+
+// --- P18: dropping the sync stamp must not raise what a claim evaluates to ----------------------
+
+/// guard (P18 the tier is the receiver's evaluation; resolution.md Section 3): `evaluated_tier`
+/// trusts a stamp-less claim at face value on the premise that every stamp-less producer holds the
+/// line - the local observe door forces the default tier. Re-key and migration both strip the sync
+/// stamp (it signs the old content id and cannot follow), so each must clamp the carried claim to
+/// its pre-strip evaluation. Without the clamp, a peer-asserted human_confirmed - correctly
+/// evaluating HostSigned while stamped (the sibling guard above) - evaluates HumanConfirmed after
+/// one operator CLI act, and from there wins belief selection outright.
+#[test]
+fn p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation() {
+    let (store, engine) = engine();
+    let stamped_claim = || Provenance {
+        host: "peer-host".into(),
+        on_behalf_of: Some("mallory".into()),
+        workspace: WS.into(),
+        source_ref: None,
+        observed_at: 100,
+        confidence: None,
+        trust_tier: TrustTier::HumanConfirmed, // self-declared; stored verbatim per F13
+        sync: Some(SyncMeta {
+            origin_node: "peer-node".into(),
+            origin_seq: 1,
+            hlc: Hlc { wall: 100, counter: 0, node: "peer-node".into() },
+            signature: "not-verified-here".into(),
+            lineage: vec![],
+        }),
+    };
+
+    // Re-key path.
+    let synced =
+        Observation::with_assertions("peer-asserted claim".into(), stamped_claim(), Assertions::default());
+    store.add_observation(synced).unwrap();
+    let rep = engine.rekey_workspace(WS, "archive", false).expect("rekey");
+    assert_eq!(rep.moved, 1);
+    let moved = store.all_observations(Some("archive")).unwrap().pop().expect("re-keyed row");
+    let p = &moved.provenance[0];
+    assert!(p.sync.is_none(), "the stamp signs the old content id and cannot follow");
+    assert_eq!(
+        evaluated_tier(p),
+        TrustTier::HostSigned,
+        "the claim must evaluate after the re-key exactly as it evaluated before it - \
+         dropping the stamp is not a tier promotion"
+    );
+
+    // Migration path: the same stamped claim under a fabricated pre-formula id.
+    let mut legacy = Observation::with_assertions(
+        "legacy stamped claim".into(),
+        stamped_claim(),
+        Assertions::default(),
+    );
+    legacy.id = "legacy-era-stamped-id".into();
+    store.add_observation(legacy).unwrap();
+    assert_eq!(supragnosis_sync::migrate_legacy_ids(store.as_ref(), WS).unwrap(), 1);
+    let migrated = store
+        .all_observations(Some(WS))
+        .unwrap()
+        .into_iter()
+        .find(|o| o.derived_from.contains(&"legacy-era-stamped-id".to_string()))
+        .expect("migrated row");
+    let p = &migrated.provenance[0];
+    assert!(p.sync.is_none());
+    assert_eq!(
+        evaluated_tier(p),
+        TrustTier::HostSigned,
+        "the migration path holds the same line as the re-key path"
+    );
+}
+
+/// guard (P3 nothing is hidden, P16 scoped and unscoped reads agree): the live-set door supersedes
+/// a re-keyed predecessor only within one workspace (a migration). A re-keyed pair spans two
+/// workspaces, and dropping the source row from the workspace=None fold would show the source
+/// workspace's entities without the support its own scoped view reports - the unscoped view must
+/// be the union of the scoped ones.
+#[test]
+fn p3_a_rekey_keeps_the_source_row_live_in_the_unscoped_view() {
+    let (_store, engine) = engine();
+    observe(&engine, "the driver depends on the kernel", &["Driver"], vec![]);
+    engine.rekey_workspace(WS, "archive", false).expect("rekey");
+    assert_eq!(engine.observation_log(Some(WS), None, None).unwrap().len(), 1);
+    assert_eq!(engine.observation_log(Some("archive"), None, None).unwrap().len(), 1);
+    assert_eq!(
+        engine.observation_log(None, None, None).unwrap().len(),
+        2,
+        "the unscoped log is the union of the scoped ones - a re-key must not hide the source \
+         row from the all-workspaces view while its own workspace still shows it"
+    );
+}
+
+/// guard (P2 provenance first-class - attribution follows the author): after an absorb the
+/// provenance vec is union-sorted by host, so `first()` names whichever host sorts first, and a
+/// max over `observed_at` moves forward as attestations accumulate. The proposal view must name
+/// the authoring attestation (earliest effective HLC) - the same rule the verdict surface marker
+/// and relation provenance already follow.
+#[test]
+fn p2_proposal_attribution_names_the_authoring_attestation() {
+    let (store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    let p = propose_merge(&engine, &[&x, &y], &y, "alice");
+    let before = engine.list_proposals(Some(WS)).unwrap().pop().expect("one proposal");
+    // A second attestation of the same proposal row arrives by absorb: a host that sorts BEFORE
+    // the author's, observed LATER. Neither first() nor max(observed_at) may follow it.
+    let stored = store.get_observation(&p).unwrap().expect("proposal row");
+    let mut copy = stored.clone();
+    copy.provenance = vec![Provenance {
+        host: "aaa-relay".into(),
+        on_behalf_of: Some("mallory".into()),
+        workspace: WS.into(),
+        source_ref: None,
+        observed_at: before.opened_at + 60_000,
+        confidence: None,
+        trust_tier: TrustTier::default(),
+        sync: None,
+    }];
+    store.add_observation(copy).unwrap();
+    let after = engine.list_proposals(Some(WS)).unwrap().pop().expect("still one proposal");
+    assert_eq!(
+        after.proposer, before.proposer,
+        "the proposer is the authoring attestation's principal, not the sort-first host's"
+    );
+    assert_eq!(
+        after.opened_at, before.opened_at,
+        "opened_at is the authoring attestation's time and does not move as attestations accumulate"
     );
 }
 
