@@ -57,7 +57,7 @@ brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer s
 curl -fsSL https://supragnosis.dev/install.sh | sh
 ```
 - Or download the platform tar.gz directly from [Releases](https://github.com/Ashon/supragnosis/releases), extract it, and put `supragnosis` on your PATH.
-- Supported platforms: macOS (arm64/x86_64), Linux (x86_64). For other platforms, build from source below.
+- Supported platforms: macOS (arm64/x86_64), Linux (x86_64/aarch64). For other platforms, build from source below.
 - The prebuilt binary is **keyword + hashing search**. For local ONNX **semantic search**, build from source with `--features fastembed`.
 - On a `v*` tag push, GitHub Actions (`.github/workflows/release.yml`) builds and publishes the release.
 

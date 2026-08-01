@@ -20,7 +20,7 @@ usage() {
   cat <<'USAGE'
 supragnosis install script
 
-Detects the platform (macOS arm64/x86_64, Linux x86_64) and installs the GitHub Release binary
+Detects the platform (macOS arm64/x86_64, Linux x86_64/aarch64) and installs the GitHub Release binary
 (with sha256 checksum verification). The default install path is ~/.local/bin.
 
 Usage:
@@ -62,6 +62,7 @@ case "${os}-${arch}" in
   Darwin-arm64)   target="aarch64-apple-darwin" ;;
   Darwin-x86_64)  target="x86_64-apple-darwin" ;;
   Linux-x86_64)   target="x86_64-unknown-linux-gnu" ;;
+  Linux-aarch64)  target="aarch64-unknown-linux-gnu" ;;
   *)
     echo "Unsupported platform: ${os}-${arch}" >&2
     echo "Install via source build: https://github.com/${REPO} (cargo build --release)" >&2
