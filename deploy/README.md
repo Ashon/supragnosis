@@ -2,7 +2,7 @@
 
 Instead of spawning over stdio for each chat, **a single always-on local daemon** holds the db
 and exposes MCP streamable-http. Agents (Claude Code, etc.) just connect over http. Because the
-daemon is the sole holder of the db, the Cozo single-process lock problem also disappears.
+daemon is the sole holder of the db, the single-process lock problem also disappears.
 
 - MCP: `http://127.0.0.1:7373/mcp` (loopback-only, no auth = local trust surface, Principle 17)
 - Viewer: `~/.supragnosis/viz.sock` (HTTP over a unix socket, 0600 owner-only - no TCP port)

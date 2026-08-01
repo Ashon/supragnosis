@@ -10,7 +10,9 @@ over **MCP** - and humans govern what becomes canon.
 > `supragnosis` = *supra* (above/beyond) + *gnosis* (knowing) - knowledge above knowledge (meta-knowledge).
 
 - Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
-- Store: **embedded, file-based** `cozo`/RocksDB - unifies relational + graph + vector (HNSW).
+- Store: **embedded, file-based**. `cozo`/RocksDB (default) unifies relational + graph + vector
+  (HNSW); `redb` (opt-in) is a pure-Rust B-tree with no C++ toolchain. Both implement one
+  `KnowledgeStore` port and are held to it by a single conformance suite.
 - Status: **M4 Phase 4 federation + M3a/M3b resolution**. Semantic + keyword hybrid recall (M2),
   the **proposal gate (M3.5, both slices)** - review carries a computed belief diff of what a verdict
   would overturn and which references would rewire, and the fold enforces blocking checks so a merge
@@ -186,7 +188,8 @@ supragnosis start --store redb       # or SUPRAGNOSIS_STORE=redb
 - Re-running is safe. `add_observation` absorbs at the content address, so a repeated or partial run
   converges to the same log (Principle 3).
 
-- `sync` / `reproject` / `migrate` need the daemon **stopped** (cozo/RocksDB is single-process). With a
+- `sync` / `reproject` / `migrate` / `migrate-store` need the daemon **stopped** (an embedded store
+  admits one process at a time). With a
   running daemon, use the `sync_*` MCP tools instead.
 - Option precedence: flags > `SUPRAGNOSIS_*` environment variables > defaults.
 - The `start` daemon is self-managed (no launchd needed): pidfile `~/.supragnosis/supragnosis.pid` + logs
