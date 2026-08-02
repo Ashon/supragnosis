@@ -16,7 +16,13 @@ edition = "2021"
 # at all is what made clippy check it and say so. An older toolchain now fails naming the version.
 rust-version = "1.87"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ashon/supragnosis"
+repository = "https://github.com/Ashon/supragnosis"
+homepage = "https://supragnosis.dev"
+readme = "README.md"
+# crates.io caps both at five entries; keywords additionally at 20 characters each, and
+# categories must come from the fixed slug list (a typo is a publish-time rejection, not a warning).
+keywords = ["mcp", "knowledge-graph", "agent-memory", "event-sourcing", "local-first"]
+categories = ["database-implementations", "data-structures"]
 
 # Workspace-wide lints. Each crate inherits them via `[lints] workspace = true`.
 # Pin clippy warnings to deny to prevent regression of the cleaned-up state.
