@@ -8,10 +8,10 @@
 # means the image can be cut from any commit, which is what an operator running a hub ahead of a
 # release needs.
 
-# The builder is pinned, but NOT to the workspace's declared MSRV (1.87). Cargo checks rust-version
-# across the whole resolved graph, and the desktop shell - which this image does not build - depends
-# on `oxc`, which requires 1.95. So a 1.87 builder fails at resolution over a package that would
-# never be compiled. Pinned rather than `latest` so the image is reproducible; raise it deliberately.
+# The builder is pinned, but NOT to the workspace's declared MSRV (1.87), because that declaration is
+# wrong: `supragnosis-viz` takes `oxc` as a build-dependency to minify the viewer assets in release
+# builds, and oxc wants 1.95. Nothing about this image causes that - the floor belongs to a crate the
+# image does build. Pinned rather than `latest` so the image is reproducible; raise it deliberately.
 FROM rust:1.95-bookworm AS build
 WORKDIR /src
 
