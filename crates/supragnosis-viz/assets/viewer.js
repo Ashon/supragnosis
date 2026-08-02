@@ -316,7 +316,8 @@ async function refreshPeers() {
       ct.textContent = "";
       return;
     }
-    let html = `<div class="hint">this node: ${esc(String(f.node_id || "").slice(0, 16))} (${esc(f.role || "client")})</div>`;
+    let html = `<div class="hint">this node: ${esc(String(f.node_id || "").slice(0, 16))} (${esc(f.role || "client")})`
+      + ` &middot; <button class="fedcfgOpen" title="manage what each peer may read">settings</button></div>`;
     const hubs = f.servers || [];
     if (hubs.length) {
       html += `<div class="fsec">Hubs</div>`;
@@ -347,11 +348,130 @@ async function refreshPeers() {
     }
     // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
     host.innerHTML = html;
+    // Wired here rather than as an inline attribute: the page must stay free of inline handlers for
+    // the CSP the network read tier will need (federation.md 6d).
+    host.querySelectorAll(".fedcfgOpen").forEach(b => { b.onclick = openFedConfig; });
     const healthy = hubs.filter(s => s.healthy).length;
     ct.textContent = hubs.length ? `${healthy}/${hubs.length}` : (peers.length || "");
   } catch (e) {
     host.innerHTML = '<div class="empty">federation status unavailable</div>';
   }
+}
+
+// Federation settings dialog: where the sharing boundary is CHANGED. The Peers panel next door is
+// the monitor - health, sync drift, who checked in - and stays read-only; this is the acting surface.
+//
+// It only narrows. A grant is a chip you can drop, and there is no field to type a wider set into, so
+// "widen" is not expressible here at all (the server refuses it too - federation.md 6a - but a UI
+// that could ask for it would be inviting an error it then has to explain). Adding or removing a peer
+// stays in supragnosis.toml: admission needs the peer's key and bearer hash to arrive out of band,
+// which a console cannot do for the operator.
+//
+// Dropping is two-step - click arms the chip, a second click commits - rather than a native
+// confirm(), which blocks the webview and looks nothing like the rest of the page.
+let fedCfgArmed = null;   // "<node_id>\u0000<workspace>" of the chip awaiting its second click
+
+async function renderFedConfig() {
+  const host = document.getElementById("fedcfgBody");
+  let f;
+  try {
+    f = await (await fetch("/api/federation", { cache: "no-store" })).json();
+  } catch (e) {
+    host.innerHTML = '<div class="empty">federation status unavailable</div>';
+    return;
+  }
+  if (!f || f.configured === false) {
+    host.innerHTML = '<div class="empty">federation is not configured on this node - create '
+      + '~/.supragnosis/supragnosis.toml to join or host</div>';
+    return;
+  }
+
+  let html = `<div class="fsec">This node</div>`
+    + `<div class="prow"><span class="pid">${esc(String(f.node_id || ""))}</span>`
+    + `<span class="hint"> ${esc(f.role || "client")}</span></div>`;
+
+  const hubs = f.servers || [];
+  if (hubs.length) {
+    html += `<div class="fsec">Hubs this node syncs to</div>`;
+    for (const s of hubs) {
+      const dot = s.healthy ? TEAL : "#d96a5f";
+      html += `<div class="prow"><span class="dot" style="background:${dot}"></span> `
+        + `<span class="pid">${esc(String(s.url || "").replace(/^https?:\/\//, ""))}</span>`
+        + (s.version ? `<span class="hint"> v${esc(s.version)}</span>` : "")
+        + (s.healthy ? "" : `<span class="hint"> unreachable</span>`);
+      for (const w of (s.workspaces || [])) {
+        const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
+        html += `<div class="hint">${esc(w.workspace)}: ` + (insync
+          ? `in sync`
+          : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`) + `</div>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  const admitted = f.admitted || [];
+  if (f.role === "hub") {
+    html += `<div class="fsec">Peers admitted here, and what each may read</div>`;
+    if (!admitted.length) {
+      html += `<div class="prow none">no peer is admitted - add one in supragnosis.toml</div>`;
+    }
+    for (const a of admitted) {
+      const ws = a.shared_workspaces || [];
+      html += `<div class="prow"><span class="pid">${esc(String(a.node_id || ""))}</span>`
+        + `<div class="wschips">`;
+      if (!ws.length) {
+        html += `<span class="none">admitted, may read nothing</span>`;
+      } else {
+        for (const w of ws) {
+          const armed = fedCfgArmed === a.node_id + "\u0000" + w;
+          html += `<span class="wsc${armed ? " armed" : ""}" data-node="${esc(a.node_id)}" `
+            + `data-ws="${esc(w)}" title="${armed ? "click again to stop sharing" : "stop sharing this workspace with this peer"}">`
+            + `${esc(w)}<span class="x">${armed ? "confirm" : "x"}</span></span>`;
+        }
+      }
+      html += `</div></div>`;
+    }
+    html += `<div class="note">Removing a grant takes effect at once and is written to `
+      + `supragnosis.toml. It stops FUTURE reads - it does not recall what has already synced. `
+      + `Granting a workspace, and adding or removing a peer, stay in the file.</div>`;
+  }
+
+  // eslint-disable-next-line no-unsanitized/property -- every interpolation above goes through esc()
+  host.innerHTML = html;
+
+  host.querySelectorAll(".wsc").forEach(el => {
+    el.onclick = async () => {
+      const node = el.getAttribute("data-node"), ws = el.getAttribute("data-ws");
+      const key = node + "\u0000" + ws;
+      if (fedCfgArmed !== key) { fedCfgArmed = key; renderFedConfig(); return; }
+      fedCfgArmed = null;
+      const row = (admitted.find(a => a.node_id === node) || {}).shared_workspaces || [];
+      const keep = row.filter(w => w !== ws);
+      const q = `?node_id=${encodeURIComponent(node)}&workspaces=${encodeURIComponent(keep.join(","))}`;
+      try {
+        const r = await fetch("/api/peer/share" + q, { method: "POST", cache: "no-store" });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          const err = document.createElement("div");
+          err.className = "err";
+          err.textContent = body.error || `refused (${r.status})`;
+          host.appendChild(err);
+        }
+      } catch (e) { /* the re-render below shows the unchanged state */ }
+      renderFedConfig();
+      refreshPeers();
+    };
+  });
+}
+
+function openFedConfig() {
+  const d = document.getElementById("fedcfg");
+  if (!d) return;
+  fedCfgArmed = null;
+  renderFedConfig();
+  d.showModal();
+  // A chip left armed across a close would commit on the next stray click.
+  d.onclose = () => { fedCfgArmed = null; };
 }
 
 function renderLegend() {
