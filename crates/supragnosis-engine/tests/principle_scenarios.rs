@@ -1029,6 +1029,74 @@ fn aliases_accumulate_and_converge() {
     assert_ne!(a.0, b.0, "the recency cases must disagree, or the tie case proves nothing");
 }
 
+/// guard (P17 / excision.md Section 8 step 2): the curation report finds credential-shaped text
+/// ALREADY in the log, reports where without repeating it, and commits nothing.
+///
+/// The ingest door keeps new ones out. This is for what predates the door, arrived while it was off,
+/// or matches a pattern added since - the honest intermediate state while the removal path does not
+/// exist. Not being able to delete it is not a reason to leave the operator unaware of it.
+///
+/// The door and the scan walk ONE field list. Two would drift, and the drift is silent in the worst
+/// direction: a field the door checks and the scan does not is a secret reported as absent.
+#[test]
+fn p17_the_log_is_scanned_for_secrets_that_predate_the_door() {
+    let store = Arc::new(InMemoryStore::new());
+    // Written with the scan off - exactly the shape of a row that predates the hook.
+    let unguarded = Engine::new(store.clone(), "host-a", WS).with_secret_scan(false);
+    unguarded
+        .observe(ObserveInput {
+            content: "deploy notes: AKIAIOSFODNN7EXAMPLE".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "prod".into(),
+                kind: None,
+                description: Some("reached at postgres://admin:hunter2@db/app".into()),
+            }],
+            relations: vec![],
+        })
+        .expect("the scan is off, so it lands");
+
+    let engine = Engine::new(store.clone(), "host-a", WS);
+    let before = store.all_observations(Some(WS)).expect("log").len();
+    let report = engine.curation(Some(WS)).expect("curation");
+
+    assert_eq!(report.secrets.len(), 2, "both fields are found: {:?}", 
+        report.secrets.iter().map(|f| (f.field, f.pattern)).collect::<Vec<_>>());
+    let shapes: Vec<(&str, &str)> =
+        report.secrets.iter().map(|f| (f.field, f.pattern)).collect();
+    assert!(shapes.contains(&("content", "aws-access-key-id")), "{shapes:?}");
+    assert!(shapes.contains(&("entity description", "url-inline-credentials")), "{shapes:?}");
+
+    // The report names the shape and the place, never the value - it travels into logs and
+    // screenshots, so quoting the secret would copy it everywhere the report goes.
+    let rendered = serde_json::to_string(&report.secrets).expect("serialize");
+    assert!(!rendered.contains("AKIAIOSFODNN7EXAMPLE"), "the report quoted a secret: {rendered}");
+    assert!(!rendered.contains("hunter2"), "the report quoted a secret: {rendered}");
+
+    // A signal generates; it commits nothing (P7/I18).
+    assert_eq!(store.all_observations(Some(WS)).expect("log").len(), before);
+
+    // And a workspace with nothing credential-shaped reports nothing, rather than reporting noise.
+    let clean = Engine::new(store.clone(), "host-a", "ws-clean");
+    clean
+        .observe(ObserveInput {
+            content: "the deploy reads its key from the environment".into(),
+            workspace: Some("ws-clean".into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .expect("observe");
+    assert!(clean.curation(Some("ws-clean")).expect("curation").secrets.is_empty());
+}
+
 /// guard (P17, "provide a secret-redaction hook at ingest"): a credential-shaped observation is
 /// refused before the log, and the refusal does not repeat the secret.
 ///

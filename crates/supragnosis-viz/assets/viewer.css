@@ -445,6 +445,9 @@
   #settings .fclose svg { display:block; }
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */
+  /* A suspected secret is not housekeeping - it reads as an alert, above the hygiene signals. */
+  #curationBody .csec.hot { color:#d96a5f; }
+  #curationBody .grp.secret { border-left:2px solid #d96a5f; padding-left:7px; }
   #glossaryBody .gws { margin-left:6px; padding:0 4px; border:1px solid var(--line-soft);
                        border-radius:8px; color:var(--faint); font-size:9.5px; }
   /* Same visual language as the dock tabs, so the dialog reads as this application rather than a

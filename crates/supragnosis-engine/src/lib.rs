@@ -286,6 +286,16 @@ pub struct CurationReport {
     /// catches, and unlike `merge_suggestions` this needs NO embedder, so it works on every node.
     /// Read-only candidates: acting on one opens an entity_merge through the gate (I18/IR2).
     pub name_variants: Vec<NameVariantGroup>,
+    /// Observations already in the log whose text is credential-shaped (Principle 17,
+    /// [excision.md](../../docs/excision.md) Section 8 step 2).
+    ///
+    /// The ingest hook keeps new ones out; this finds what predates it, arrived while it was off, or
+    /// matches a pattern added since. It is the honest intermediate state between prevention and a
+    /// removal path that does not exist yet: it cannot delete anything, and it stops the operator
+    /// from being unaware, which is the only thing available while excision is unbuilt.
+    ///
+    /// Read-only, like every other signal here (P7: a consolidation pass generates, it never commits).
+    pub secrets: Vec<SecretFinding>,
     /// Type names defined on BOTH the entity and relation axes (resolution-identity.md Section 6,
     /// Principle 9). Informative, not blocking: an axis collision is legal but usually a mistake -
     /// the one structural T-Box check available before a subtype hierarchy exists (Principle 13).
@@ -701,6 +711,55 @@ pub struct GraphEdge {
     /// Valid interval end (Principle 4). Some means it was superseded/refuted and is no longer true now - the viewer draws it faded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid_to: Option<Timestamp>,
+}
+
+/// Every free-text field of an observation that can carry a secret, with the name the operator sees.
+///
+/// One list, shared by the ingest refusal and the stored-log scan. Two walks would drift, and the
+/// drift would be silent in the worst direction: a field the door checks but the scan does not means
+/// a secret that was refused at ingest, arrived some other way, and is then reported as absent.
+fn scannable_fields(obs: &Observation) -> Vec<(&'static str, &str)> {
+    let mut fields: Vec<(&'static str, &str)> = vec![("content", obs.content.as_str())];
+    for p in &obs.provenance {
+        if let Some(r) = &p.source_ref {
+            fields.push(("source_ref", r.as_str()));
+        }
+    }
+    for e in &obs.assertions.entities {
+        fields.push(("entity name", e.name.as_str()));
+        if let Some(d) = &e.description {
+            fields.push(("entity description", d.as_str()));
+        }
+    }
+    for r in &obs.assertions.relations {
+        if let Some(d) = &r.description {
+            fields.push(("relation description", d.as_str()));
+        }
+    }
+    for t in &obs.assertions.type_defs {
+        fields.push(("type description", t.description.as_str()));
+    }
+    for ev in &obs.assertions.proposal_events {
+        fields.push(("proposal payload", ev.payload.as_str()));
+    }
+    fields
+}
+
+/// One stored observation whose text is credential-shaped.
+///
+/// Carries the id, the field and the pattern - never the matched text, and never the surrounding
+/// content. A report that quoted the secret would copy it into every log, transcript and screenshot
+/// the report reaches, which is the same reason the ingest refusal does not quote it either
+/// (excision.md E2). Dereference the id to see the row, deliberately as a separate act.
+#[derive(Serialize)]
+pub struct SecretFinding {
+    pub observation: String,
+    /// Which field matched: `content`, `source_ref`, `entity name`, and so on.
+    pub field: &'static str,
+    /// The shape that matched, e.g. `aws-access-key-id`. Safe to display.
+    pub pattern: &'static str,
+    /// Byte offset within that field, so the operator can find it without the report showing it.
+    pub at: usize,
 }
 
 /// Graph summary metrics (the first measure of observability). BTreeMap for deterministic ordering.
@@ -1121,30 +1180,7 @@ impl Engine {
         if !self.scan_secrets {
             return Ok(());
         }
-        let mut fields: Vec<(&str, &str)> = vec![("content", obs.content.as_str())];
-        for p in &obs.provenance {
-            if let Some(r) = &p.source_ref {
-                fields.push(("source_ref", r.as_str()));
-            }
-        }
-        for e in &obs.assertions.entities {
-            fields.push(("entity name", e.name.as_str()));
-            if let Some(d) = &e.description {
-                fields.push(("entity description", d.as_str()));
-            }
-        }
-        for r in &obs.assertions.relations {
-            if let Some(d) = &r.description {
-                fields.push(("relation description", d.as_str()));
-            }
-        }
-        for t in &obs.assertions.type_defs {
-            fields.push(("type description", t.description.as_str()));
-        }
-        for ev in &obs.assertions.proposal_events {
-            fields.push(("proposal payload", ev.payload.as_str()));
-        }
-        for (field, text) in fields {
+        for (field, text) in scannable_fields(obs) {
             if let Some(hit) = supragnosis_core::detect_secret(text) {
                 return Err(ObserveError::Invalid(format!(
                     "refusing to store this: the {field} contains something shaped like a credential \
@@ -1758,7 +1794,22 @@ impl Engine {
             name_variants: name_variants.len(),
             type_axis_collisions: type_axis_collisions.len(),
         };
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, merge_band, name_variants, type_axis_collisions, stats })
+        // Over the rows this read already loaded, so the scan costs a pass and not a second walk of
+        // the log. Deterministic in (observation id, field order), like every other signal here (P16).
+        let mut secrets = Vec::new();
+        for obs in self.log(workspace, cx)?.iter() {
+            for (field, text) in scannable_fields(obs) {
+                if let Some(hit) = supragnosis_core::detect_secret(text) {
+                    secrets.push(SecretFinding {
+                        observation: obs.id.clone(),
+                        field,
+                        pattern: hit.pattern,
+                        at: hit.at,
+                    });
+                }
+            }
+        }
+        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, merge_band, name_variants, type_axis_collisions, secrets, stats })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
