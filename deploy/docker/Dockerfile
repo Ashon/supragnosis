@@ -8,10 +8,9 @@
 # means the image can be cut from any commit, which is what an operator running a hub ahead of a
 # release needs.
 
-# The builder is pinned, but NOT to the workspace's declared MSRV (1.87), because that declaration is
-# wrong: `supragnosis-viz` takes `oxc` as a build-dependency to minify the viewer assets in release
-# builds, and oxc wants 1.95. Nothing about this image causes that - the floor belongs to a crate the
-# image does build. Pinned rather than `latest` so the image is reproducible; raise it deliberately.
+# Pinned to the workspace's declared floor. That declaration is now tested by the `msrv` job in
+# rust.yml, so this line and Cargo.toml move together or CI says so - which is the only thing that
+# keeps a pin like this from drifting into a number nobody checked.
 FROM rust:1.95-bookworm AS build
 WORKDIR /src
 
@@ -21,13 +20,6 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock rustfmt.toml ./
 COPY crates ./crates
 COPY e2e ./e2e
-# The desktop shell is not built here, but cargo will not load a workspace whose member manifests
-# are missing - so `app` contributes its Cargo.toml and nothing else, plus a stub target to make
-# that manifest a valid package. Cargo never compiles it: `app` is outside default-members and this
-# build names one package. Copying the real shell would drag the whole Tauri toolchain into an image
-# that does not run it.
-COPY app/Cargo.toml ./app/Cargo.toml
-RUN mkdir -p app/src && echo 'fn main() {}' > app/src/main.rs
 
 # --locked: the lockfile in the repo is the one that ships. Resolving fresh here would mean the
 # image and CI can disagree about a dependency, which is the kind of difference that only shows up

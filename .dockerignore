@@ -8,7 +8,5 @@ docs/
 e2e/reports/
 *.log
 
-# The desktop shell is not in the image, but cargo refuses to load the workspace without every
-# member's manifest - so the toml comes in and nothing else does.
-app/**
-!app/Cargo.toml
+# The desktop shell is a separate workspace and nothing here builds it.
+app/

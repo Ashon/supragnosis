@@ -63,9 +63,16 @@ jobs:
           key: rust-check
 
       # rustfmt.toml exists so this check has one answer; before it, the tree had drifted to ~620
-      # divergent blocks with nothing checking. --all covers `app` too, which default-members skips.
+      # divergent blocks with nothing checking.
+      #
+      # Two invocations because the desktop shell is its own workspace: `--all` means every member of
+      # ONE workspace, so the root call does not reach app/ and its drift would go unseen. Verified by
+      # breaking a file there and watching the root call pass. rustfmt only parses, so this needs
+      # none of the platform toolchain that compiling the shell would.
       - name: fmt
-        run: cargo fmt --all -- --check
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path app/Cargo.toml --all -- --check
 
       # Workspace lints deny clippy::all, but that leaves every rustc lint at warn - including
       # dead_code, which is exactly what an un-#[test]ed guard becomes. principle_coverage.rs now
@@ -80,3 +87,42 @@ jobs:
       # #[ignore]d, so this runs the deliverables' tests, not a scorecard against a live model.
       - name: tests
         run: cargo test --locked
+
+  # The declared floor, tested instead of asserted. `rust-version` read 1.87 for a day and was wrong
+  # when it was written: clippy's incompatible_msrv lints this workspace's own code and never the
+  # dependency graph, and the gate above only ever ran stable. What actually sets the floor is `oxc`
+  # (1.95), a build-dependency of supragnosis-viz, and `darling` (1.88) through rmcp-macros.
+  #
+  # The toolchain comes from the manifest rather than a literal here, so there is one number to
+  # change and this job fails when it is optimistic.
+  #
+  # Server workspace only. The desktop shell is a separate workspace with its own floor and cannot
+  # be compiled on this runner (it needs the platform webview toolchain - see dev-app.yml, macOS).
+  msrv:
+    name: declared msrv builds
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: read the declared floor
+        id: msrv
+        run: |
+          set -euo pipefail
+          v=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          test -n "$v" || { echo "no rust-version in [workspace.package]" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "declared floor: $v"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+
+      # --all-targets so the tests count too: they are part of what a contributor on the floor runs,
+      # and principle_coverage.rs include_str!s the design docs, which only compiles under a test
+      # target. --locked because the shipped lockfile is the graph being claimed.
+      - name: check
+        run: cargo check --locked --all-targets

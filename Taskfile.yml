@@ -59,7 +59,7 @@ tasks:
         SUPRAGNOSIS_VIZ_SOCK={{.DEV_SOCK}}
         SUPRAGNOSIS_DATA_DIR={{.DEV_DATA}}
         SUPRAGNOSIS_HTTP_ADDR={{.DEV_HTTP}}
-        cargo run -p supragnosis-app
+        cargo run --manifest-path app/Cargo.toml
 
   server:
     desc: Run the server alone in the foreground (MCP http + viewer socket), no desktop shell
@@ -105,11 +105,11 @@ tasks:
         SUPRAGNOSIS_BIN={{.SERVER_BIN}}
         SUPRAGNOSIS_VIZ_SOCK={{.DEV_SOCK}}
         SUPRAGNOSIS_HTTP_ADDR={{.DEV_HTTP}}
-        cargo run -p supragnosis-app
+        cargo run --manifest-path app/Cargo.toml
 
   app:
     desc: Shell against the ALREADY-RUNNING daemon - builds nothing, shows that daemon's build
-    cmds: [cargo run -p supragnosis-app]
+    cmds: [cargo run --manifest-path app/Cargo.toml]
 
   # --- quality gate -----------------------------------------------------------------------------
 
@@ -122,13 +122,18 @@ tasks:
       - task: test
 
   fmt:
-    desc: rustfmt over the whole workspace, check-only (matches the rust.yml fmt step exactly)
+    desc: rustfmt over both workspaces, check-only (matches the rust.yml fmt step exactly)
     # Settings live in rustfmt.toml. `task fmt:write` applies them; this one only reports.
-    cmds: [cargo fmt --all -- --check]
+    # Two calls: the desktop shell is a separate workspace and `--all` covers one workspace.
+    cmds:
+      - cargo fmt --all -- --check
+      - cargo fmt --manifest-path app/Cargo.toml --all -- --check
 
   fmt:write:
-    desc: Apply rustfmt in place
-    cmds: [cargo fmt --all]
+    desc: Apply rustfmt in place, both workspaces
+    cmds:
+      - cargo fmt --all
+      - cargo fmt --manifest-path app/Cargo.toml --all
 
   lint:
     desc: cargo clippy over all targets, warnings denied (matches the rust.yml clippy step exactly)

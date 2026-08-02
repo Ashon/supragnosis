@@ -88,3 +88,11 @@ claude mcp remove supragnosis -s user
   with `--features fastembed` and switch the plist to `SUPRAGNOSIS_EMBED=fastembed` + a **new `SUPRAGNOSIS_DATA_DIR`**
   (the existing db is indexed with hashing-256, so swapping the embedder is rejected).
 - Only one daemon should run (single ownership of the db + ports). Do not use stdio registration and http registration at the same time.
+
+## Cutting a release
+
+The version lives in **two** manifests since the desktop shell became its own workspace:
+`Cargo.toml` (`[workspace.package] version`) and `app/Cargo.toml` (same key, its own
+workspace). They ship as one number - `supragnosis-vX.Y.Z-*.tar.gz` and
+`Supragnosis-vX.Y.Z-macos-universal.app.zip` - so the `release:` commit moves both, and the
+tag is what the release workflow triggers on.

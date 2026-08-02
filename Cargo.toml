@@ -1,20 +1,27 @@
 [workspace]
 resolver = "2"
 # e2e is a real-model end-to-end measurement suite, separate from the deliverables (crates/*).
-# app is the desktop shell (Tauri) - a thin client over the daemon's unix-socket viewer.
-members = ["crates/*", "e2e", "app"]
-# The shell needs platform webview toolchains (WebKit/GTK), so a bare `cargo build`/`cargo test`
-# skips it - build it explicitly with `cargo build -p supragnosis-app`.
-default-members = ["crates/*", "e2e"]
+members = ["crates/*", "e2e"]
+# The desktop shell is its own workspace (app/Cargo.toml says why). Excluded explicitly rather than
+# merely absent, so that adding a path dependency on it fails here instead of silently pulling 111
+# Tauri packages back into this lockfile.
+exclude = ["app"]
 
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-# The floor two features set. Trait upcasting (1.86) is what makes the store port narrowable -
-# `Arc<dyn KnowledgeStore>` -> `Arc<dyn AssertionStore>`, and with it Principle 1's "no API writes an
-# unasserted fact". `int::is_multiple_of` (1.87) was already in core, undeclared; declaring the floor
-# at all is what made clippy check it and say so. An older toolchain now fails naming the version.
-rust-version = "1.87"
+# The floor the DEPENDENCIES set, which is higher than anything this code needs. Our own two are
+# trait upcasting (1.86), which makes the store port narrowable - `Arc<dyn KnowledgeStore>` ->
+# `Arc<dyn AssertionStore>`, and with it Principle 1's "no API writes an unasserted fact" - and
+# `int::is_multiple_of` (1.87) in core. What actually decides it is `oxc` (1.95), which
+# supragnosis-viz takes as a build-dependency to minify the viewer assets in release builds, and
+# `darling` (1.88) through rmcp-macros.
+#
+# It read 1.87 until 2026-08-02 and was wrong the day it was written: clippy's incompatible_msrv
+# checks this workspace's code, never the graph, and CI only ever ran stable. The `msrv` job in
+# rust.yml is what makes this line testable instead of aspirational - raise the number there and
+# here together, and only after measuring.
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Ashon/supragnosis"
 homepage = "https://supragnosis.dev"
