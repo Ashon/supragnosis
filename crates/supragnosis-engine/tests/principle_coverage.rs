@@ -343,6 +343,14 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         ])),
         c("promoting a recurring context is an ordinary gated assertion that carries its lineage",
           Evidence::Scenario(&["p11_reify_asserts_group_with_lineage"])),
+        // P11 fixes the T-Box's scope at the workspace, and this registry had no row for it - so the
+        // demand had no guard, and the all-workspaces glossary merged same-named types out of
+        // unrelated workspaces without anything noticing. The clause omission is the more useful half
+        // of that finding: the completeness test couples to the PRINCIPLE set, so a principle can be
+        // present while one of its demands is missing entirely.
+        c("the T-Box is scoped to the workspace - an all-workspaces read is a union of glossaries, \
+           not one glossary",
+          Evidence::Scenario(&["p11_the_all_workspaces_glossary_does_not_merge_across_workspaces"])),
         c("type candidates are induced from repeated co-occurrence",
           Evidence::Deferred(
             "M5 with the Extractor port - the substrate exists, but naming an induced type is \

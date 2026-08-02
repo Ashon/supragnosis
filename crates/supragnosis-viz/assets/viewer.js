@@ -692,8 +692,15 @@ function esc(s) { return String(s).replace(/[<&>"']/g, c => ({ "<": "&lt;", "&":
 // IR5) shows the competing definitions with a confirm action, the same mediation as an entity kind.
 function renderGlossary() {
   const group = t => glossaryTypes.filter(x => x.target === t);
+  // The T-Box is scoped to the workspace (P11), so an all-workspaces read can legitimately contain
+  // the same NAME twice - two workspaces defining `Widget` have defined two different things. Label
+  // the workspace only when the view actually spans more than one, so the scoped glossary stays
+  // uncluttered and the label appears exactly where it carries information.
+  const spansWorkspaces = new Set(glossaryTypes.map(x => x.workspace || "")).size > 1;
   const item = x => {
-    let h = `<div class="item"><span class="nm">${esc(x.name)}</span><span class="src">${x.sources} src</span>`
+    let h = `<div class="item"><span class="nm">${esc(x.name)}</span>`
+      + (spansWorkspaces ? `<span class="gws">${esc(String(x.workspace || ""))}</span>` : "")
+      + `<span class="src">${x.sources} src</span>`
       + `<div class="def">${esc(x.description)}</div>`;
     // Contested definitions reuse the shared contested UI (keep / use this), so a type conflict and
     // an entity-kind conflict read identically - one mediation pattern (IR5).

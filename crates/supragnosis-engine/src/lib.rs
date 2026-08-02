@@ -141,6 +141,12 @@ pub struct GraphView {
 /// A projected T-Box type definition (the workspace glossary entry - Principle 8/11).
 #[derive(Serialize)]
 pub struct TypeDefView {
+    /// The workspace this definition belongs to. Part of the identity of a type, not a label on it:
+    /// P11 fixes the T-Box's scope AT the workspace ("there is no global domain T-Box"), so two
+    /// workspaces that both define `Widget` have defined two different things, and only an explicit
+    /// alignment assertion connects them. An all-workspaces read is the UNION of per-workspace
+    /// glossaries; it is not one glossary.
+    pub workspace: String,
     pub target: TypeTarget,
     pub name: String,
     /// The policy-selected definition (M3a policy over description candidates - resolution-identity.md
@@ -1363,7 +1369,14 @@ impl Engine {
         // Section 6): distinct definitions at a tied top tier are contested, not silently
         // last-write-won (M3a's contested treatment applied to the T-Box - IR5).
         type Acc = (TypeTarget, Vec<BeliefCandidate>, usize, TrustTier);
-        let mut descs: BTreeMap<(u8, String), Acc> = BTreeMap::new();
+        // Keyed by (workspace, target, name). Without the workspace this fold merged same-named types
+        // from unrelated workspaces into one row - picking one description as the winner and
+        // reporting the other as a `contested` competitor, which invents a conflict where there is
+        // none and hides one definition behind another. The scoped reads never showed it because they
+        // only ever hold one workspace; only the all-workspaces view could, and that is the view the
+        // console offers. The merge band already refuses to span workspaces for exactly this reason
+        // (P17 clause `p17_candidates_never_span_workspaces_in_the_all_view`); this fold did not.
+        let mut descs: BTreeMap<(String, u8, String), Acc> = BTreeMap::new();
         for obs in self.log(workspace, cx)?.iter() {
             let hlc = ordering_hlc(obs);
             let eff = effective_tier(obs, &gates); // receiver-evaluated + gate grants (F13)
@@ -1373,7 +1386,7 @@ impl Engine {
                     TypeTarget::Relation => 1,
                 };
                 let e = descs
-                    .entry((disc, t.name.clone()))
+                    .entry((obs.workspace().to_string(), disc, t.name.clone()))
                     .or_insert_with(|| (t.target, Vec::new(), 0, TrustTier::Unverified));
                 e.1.push(BeliefCandidate {
                     value: t.description.clone(),
@@ -1385,16 +1398,17 @@ impl Engine {
                 e.3 = e.3.max(eff);
             }
         }
-        // Deterministic order by (target, name) - BTreeMap key already gives it.
+        // Deterministic order by (workspace, target, name) - the BTreeMap key already gives it.
         Ok(descs
             .into_iter()
-            .map(|((_, name), (target, cands, sources, trust))| {
+            .map(|((workspace, _, name), (target, cands, sources, trust))| {
                 let (winner, contested, competitors) = self.resolve_kind(Some(&cands));
                 let (description, def_source) = match winner {
                     Some((d, obs)) => (d, Some(obs)),
                     None => (String::new(), None),
                 };
                 TypeDefView {
+                    workspace,
                     target,
                     name,
                     description,

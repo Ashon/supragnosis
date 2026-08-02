@@ -443,6 +443,10 @@
                       transition:color 0.15s ease, background 0.15s ease; }
   #settings .fclose:hover { color:var(--gold-bright); background:var(--gold-glass); }
   #settings .fclose svg { display:block; }
+  /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
+     where the same type name can legitimately appear twice (P11). */
+  #glossaryBody .gws { margin-left:6px; padding:0 4px; border:1px solid var(--line-soft);
+                       border-radius:8px; color:var(--faint); font-size:9.5px; }
   /* Same visual language as the dock tabs, so the dialog reads as this application rather than a
      form that wandered in. */
   #settings .stabs { display:flex; gap:3px; padding:8px 12px 0; }
