@@ -1029,6 +1029,93 @@ fn aliases_accumulate_and_converge() {
     assert_ne!(a.0, b.0, "the recency cases must disagree, or the tie case proves nothing");
 }
 
+/// guard (P17, "provide a secret-redaction hook at ingest"): a credential-shaped observation is
+/// refused before the log, and the refusal does not repeat the secret.
+///
+/// Refused, not rewritten. P1 forbids transforming an assertion before it reaches the log, and
+/// rewriting would change the content and therefore the content address (P14) - so the hook declines
+/// the write and tells the caller how to observe the knowledge without the secret (P21).
+///
+/// This is the moment that matters: the log is append-only, its only removal path is the destruction
+/// exception (unbuilt - excision.md), and a shared workspace replicates. Nothing later is cheap.
+#[test]
+fn p17_a_credential_is_refused_at_ingest_without_being_echoed() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS);
+    let secret = "AKIAIOSFODNN7EXAMPLE";
+
+    let err = engine
+        .observe(ObserveInput {
+            content: format!("the deploy uses {secret} for S3"),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .err()
+        .expect("a credential must not reach the log");
+    let msg = err.to_string();
+    assert!(msg.contains("aws-access-key-id"), "names the shape: {msg}");
+    assert!(msg.contains("content"), "names the field: {msg}");
+    assert!(!msg.contains(secret), "the refusal must not repeat the secret: {msg}");
+    assert!(
+        store.all_observations(Some(WS)).expect("log").is_empty(),
+        "nothing was written - the check runs before the append, which is the only moment it can"
+    );
+
+    // It reaches the assertion fields too, not just the free text.
+    assert!(engine
+        .observe(ObserveInput {
+            content: "a deploy note".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "prod-db".into(),
+                kind: None,
+                description: Some("postgres://admin:hunter2@db.internal/app".into()),
+            }],
+            relations: vec![],
+        })
+        .is_err());
+
+    // The same knowledge, said without the secret, goes in.
+    engine
+        .observe(ObserveInput {
+            content: "the deploy reads its S3 key from the environment".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput { name: "deploy".into(), kind: None, description: None }],
+            relations: vec![],
+        })
+        .expect("knowledge about a credential is not a credential");
+    assert_eq!(store.all_observations(Some(WS)).expect("log").len(), 1);
+
+    // Opt-out is explicit, so a corpus that trips the patterns is a decision rather than a workaround.
+    let unguarded = Engine::new(store.clone(), "host-a", WS).with_secret_scan(false);
+    unguarded
+        .observe(ObserveInput {
+            content: format!("the deploy uses {secret} for S3"),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .expect("the operator turned the scan off");
+    assert_eq!(store.all_observations(Some(WS)).expect("log").len(), 2);
+}
+
 /// guard (P11, "the scope of the T-Box is the workspace"): an all-workspaces read is the UNION of
 /// per-workspace glossaries, never one merged glossary.
 ///

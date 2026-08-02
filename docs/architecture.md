@@ -846,6 +846,13 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   redaction hook, then detection without destruction, then containment, then excision. A partial
   excision is worse than none, because it reports a removal it did not perform (E9).
 - Principle 21 (long-running tasks/human mediation): MCP Tasks exposure of sync/consolidate, merge/contradiction/promotion elicitation -> **M4 remainder** (see Section 7).
+- Principle 17 (the secret-redaction hook at ingest): **met** - credential-shaped text is refused at
+  every local ingest door, never rewritten (P1 forbids transforming before the log; a rewrite would
+  also move the content address). Deliberately absent from the sync apply path, because a detector's
+  patterns grow and acceptance must not become version-dependent (P16). Patterns are narrow by design:
+  a generic entropy heuristic fires on hashes and ids, and a detector the operator learns to override
+  is worse than none. Defence in depth, not a replacement for the sharing filter - and the reason it
+  comes first is that the removal path it backstops does not exist ([excision.md](excision.md)).
 - Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, but
   the MCP **prompts** that would induce voluntary observe/search during work do not exist (Section 7) -> incremental.
 - Principle 23 (the gateway to canon) *enforcement*: the structure is in place, and **three kinds now

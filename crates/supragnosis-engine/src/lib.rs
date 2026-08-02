@@ -1027,6 +1027,10 @@ pub struct Engine {
     /// from before it. Without this the rule "do not read through a context after writing" would be
     /// a convention, and the only thing enforcing it would be whoever reads the code next.
     log_epoch: std::sync::atomic::AtomicU64,
+    /// Whether the ingest doors refuse credential-shaped text (Principle 17). On by default; the
+    /// operator can disable it for a node whose corpus trips the patterns, which is a decision worth
+    /// making explicitly rather than by silently overriding each refusal.
+    scan_secrets: bool,
     /// The transaction-time source (Principle 20) - defaults to the node wall clock. What it returns
     /// becomes `observed_at`, which is the ordering key for a local attestation, so this is the seam
     /// that lets a test state the arrival order it is testing instead of sleeping to produce one.
@@ -1050,6 +1054,7 @@ impl Engine {
             policy: Arc::new(TierWeighted),
             log_epoch: std::sync::atomic::AtomicU64::new(0),
             clock: Arc::new(SystemClock),
+            scan_secrets: true,
             host: host.into(),
             default_workspace: default_workspace.into(),
         }
@@ -1060,6 +1065,13 @@ impl Engine {
     /// belief from the unchanged log.
     pub fn with_policy(mut self, policy: Arc<dyn ResolutionPolicy>) -> Self {
         self.policy = policy;
+        self
+    }
+
+    /// Turns the ingest secret scan off (builder, Principle 17). Defence in depth is opt-out rather
+    /// than opt-in because the cost of a miss is unbounded: the log is append-only and replicates.
+    pub fn with_secret_scan(mut self, on: bool) -> Self {
+        self.scan_secrets = on;
         self
     }
 
@@ -1090,6 +1102,61 @@ impl Engine {
     pub fn with_session(mut self, session: impl Into<String>) -> Self {
         self.session = session.into();
         self
+    }
+
+    /// Refuses to append an observation carrying credential-shaped text (Principle 17: the
+    /// secret-redaction hook at ingest).
+    ///
+    /// **Every local door, and only the local doors.** It deliberately does NOT run on the sync apply
+    /// path. `check_well_formed` can run there because structural validity is stable across versions,
+    /// but a detector's patterns grow - so a node on a newer build would refuse an event an older peer
+    /// accepted, and the two would hold different logs from the same event set. That is precisely the
+    /// P16 divergence the apply path exists to avoid. This is a node-local ingest aid, which is what
+    /// P17 asks for: "an aid to, not a replacement for, the sharing filter".
+    ///
+    /// The refusal names the field and the shape and never the value, so declining the write cannot
+    /// itself publish the secret (excision.md E2). The message is written for an agent to act on
+    /// without a human in the loop (P21).
+    fn refuse_secrets(&self, obs: &Observation) -> Result<(), ObserveError> {
+        if !self.scan_secrets {
+            return Ok(());
+        }
+        let mut fields: Vec<(&str, &str)> = vec![("content", obs.content.as_str())];
+        for p in &obs.provenance {
+            if let Some(r) = &p.source_ref {
+                fields.push(("source_ref", r.as_str()));
+            }
+        }
+        for e in &obs.assertions.entities {
+            fields.push(("entity name", e.name.as_str()));
+            if let Some(d) = &e.description {
+                fields.push(("entity description", d.as_str()));
+            }
+        }
+        for r in &obs.assertions.relations {
+            if let Some(d) = &r.description {
+                fields.push(("relation description", d.as_str()));
+            }
+        }
+        for t in &obs.assertions.type_defs {
+            fields.push(("type description", t.description.as_str()));
+        }
+        for ev in &obs.assertions.proposal_events {
+            fields.push(("proposal payload", ev.payload.as_str()));
+        }
+        for (field, text) in fields {
+            if let Some(hit) = supragnosis_core::detect_secret(text) {
+                return Err(ObserveError::Invalid(format!(
+                    "refusing to store this: the {field} contains something shaped like a credential \
+                     ({}, at byte {}). The log is append-only, so anything written here cannot be \
+                     taken back - and if this workspace is shared, it replicates. Remove the secret \
+                     and observe the knowledge without it: say that a credential exists and where it \
+                     is configured, never what it is",
+                    hit.pattern, hit.at
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Emits a UI event. Does nothing if there is no sink (observability is optional).
@@ -1237,6 +1304,7 @@ impl Engine {
             .write_guard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
@@ -1345,6 +1413,7 @@ impl Engine {
             .write_guard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(observation_id)
@@ -1812,6 +1881,7 @@ impl Engine {
             .write_guard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(id)
@@ -1879,6 +1949,7 @@ impl Engine {
             .write_guard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(id)

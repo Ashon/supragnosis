@@ -471,6 +471,17 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           )),
         c("a workspace boundary is not crossed by a derived suggestion either",
           Evidence::Scenario(&["p17_candidates_never_span_workspaces_in_the_all_view"])),
+        // The fourth enforcement demand, which had no row here at all until the excision spec asked
+        // what happens when a secret is already in the log and found the answer was "nothing"
+        // (excision.md Section 8). The hook refuses rather than rewrites: P1 forbids transforming an
+        // assertion before the log, and rewriting would move the content address (P14).
+        c("credential-shaped text is refused at every local ingest door, and the refusal does not \
+           repeat it",
+          Evidence::Scenario(&[
+            "p17_a_credential_is_refused_at_ingest_without_being_echoed",
+            "detect_secret_finds_credentials_without_firing_on_prose",
+            "a_finding_never_carries_the_secret",
+        ])),
         c("an authenticated network read tier filters workspace enumeration by the reader's grants",
           Evidence::Deferred(
             "M4 Phase 3.5 - retired for now by removing the reachable state (the viewer left TCP \
