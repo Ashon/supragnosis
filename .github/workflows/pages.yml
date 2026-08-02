@@ -7,9 +7,17 @@ on:
       - "site/**"
       - "scripts/install.sh"
       - ".github/workflows/pages.yml"
-  # The hero badge names the latest release, so publishing one has to redeploy. A tag push does not
-  # reach this workflow (it is branch-filtered), which is why this is a release trigger and not a
-  # tag trigger.
+  # The hero badge names the latest release, so publishing one has to redeploy - and a tag push does
+  # not reach this workflow, which is branch-filtered.
+  #
+  # It chains off the release WORKFLOW rather than the release EVENT. release.yml creates the release
+  # with GITHUB_TOKEN, and an event raised by that token does not start a workflow run - a documented
+  # rule, and one this repo learned by shipping v0.2.0 with the landing page still naming v0.1.21.
+  # `workflow_run` is the supported way to chain, and it fires because the upstream run came from a
+  # real tag push. The `release` trigger stays for a release published by hand, where it does work.
+  workflow_run:
+    workflows: [release]
+    types: [completed]
   release:
     types: [published]
   workflow_dispatch:
@@ -25,6 +33,9 @@ concurrency:
 
 jobs:
   deploy:
+    # workflow_run fires whatever the upstream conclusion was; a failed release build has nothing to
+    # advertise, and redeploying then would stamp a tag whose binaries do not exist.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
