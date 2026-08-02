@@ -87,7 +87,16 @@ jobs:
           set -euo pipefail
           # Move the dev tag to the built commit so the release page points at what was
           # actually built; the release itself persists and only its assets roll.
-          git push origin "+${GITHUB_SHA}:refs/tags/dev"
+          #
+          # Through the API rather than `git push`, because a push carrying commits that touch
+          # .github/workflows is refused for GITHUB_TOKEN - it has no `workflows` scope, and this
+          # job's whole purpose is to publish whatever main just became, workflow edits included.
+          # That is not hypothetical: it broke the first time a workflow file changed. The commit
+          # already exists in the repo, so this only re-points a ref and pushes no objects.
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/dev" \
+            -f sha="${GITHUB_SHA}" -F force=true \
+            || gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                 -f ref="refs/tags/dev" -f sha="${GITHUB_SHA}"
           if ! gh release view dev >/dev/null 2>&1; then
             gh release create dev --prerelease --title "dev channel (rolling)" --notes "bootstrap"
           fi
