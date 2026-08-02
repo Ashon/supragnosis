@@ -99,11 +99,20 @@ pub async fn bind_uds(path: &Path) -> anyhow::Result<UnixListener> {
 /// verbatim at /api/federation - the viz stays decoupled from the sync crate (it renders JSON).
 pub type FedStatus = Arc<std::sync::RwLock<serde_json::Value>>;
 
+/// Narrows one peer's shared workspaces: `(node_id, keep) -> Ok(now granted) | Err(reason)`.
+///
+/// Injected by the wiring layer rather than implemented here, for the same reason [`FedStatus`] is a
+/// JSON blob: this crate does not depend on the sync crate or know what a config file is. It renders
+/// and routes; the policy - narrow-only, re-read before write, update the live directory - lives
+/// where the config and the admission directory already do.
+pub type NarrowShare = Arc<dyn Fn(&str, &[String]) -> Result<Vec<String>, String> + Send + Sync>;
+
 pub async fn serve(
     engine: Arc<Engine>,
     listener: UnixListener,
     events: broadcast::Sender<String>,
     fed: Option<FedStatus>,
+    narrow: Option<NarrowShare>,
 ) -> anyhow::Result<()> {
     loop {
         // Peer trust is settled before accept ever runs: the socket file is 0600, so the OS only
@@ -118,8 +127,9 @@ pub async fn serve(
         let engine = Arc::clone(&engine);
         let events = events.clone();
         let fed = fed.clone();
+        let narrow = narrow.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(&engine, &events, stream, fed.as_ref()).await {
+            if let Err(e) = handle_conn(&engine, &events, stream, fed.as_ref(), narrow.as_ref()).await {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
@@ -138,6 +148,7 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     events: &broadcast::Sender<String>,
     mut stream: S,
     fed: Option<&FedStatus>,
+    narrow: Option<&NarrowShare>,
 ) -> anyhow::Result<()> {
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
@@ -164,7 +175,14 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         return stream_events(stream, events.subscribe()).await;
     }
 
-    let resp = if path == "/api/federation" {
+    let resp = if path == "/api/peer/share" {
+        // POST, unlike every other endpoint here. The GET-with-side-effect convention the rest of
+        // this surface uses is defensible because no third-party origin can reach a 0600 unix socket,
+        // and that argument still holds - but this one changes a sharing boundary rather than
+        // appending a gated verdict, and the method is the cheapest place to say so. Parameters stay
+        // in the query string, so the minimal server still needs no body parser.
+        narrow_share_response(method, query, narrow)
+    } else if path == "/api/federation" {
         // Federation status (hubs, health, per-workspace diff, known peers) - maintained by the
         // wiring layer; absent on a standalone node.
         Response {
@@ -843,6 +861,74 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
 
 /// `/api/workspaces` - the list of workspaces that hold knowledge (sorted, Principle 16). The viewer's
 /// workspace picker consumes it - letting you click to pick rather than type a name. A failure is 500 (Principle 5).
+/// `POST /api/peer/share?node_id=<id>&workspaces=a,b` - narrows what one federation peer may read.
+///
+/// Narrow-only, enforced by the injected handler: a request naming a workspace the peer does not
+/// already hold is refused rather than partially applied. An empty `workspaces` is a legitimate
+/// narrowing and means "admitted, but may read nothing" - which is why an absent parameter and an
+/// empty one are distinguished here rather than both defaulting to "no change".
+///
+/// This does not remove the peer. Revocation, and the question of what it means for knowledge that
+/// has already synced, is the deferred workflow in federation.md Section 11.
+fn narrow_share_response(method: &str, query: &str, narrow: Option<&NarrowShare>) -> Response {
+    if method != "POST" {
+        return Response {
+            status: "405 Method Not Allowed",
+            content_type: "application/json",
+            body: err_body("narrowing a peer's shared workspaces is a POST"),
+        };
+    }
+    let Some(narrow) = narrow else {
+        return Response {
+            status: "404 Not Found",
+            content_type: "application/json",
+            body: err_body(
+                "this node has no federation server role - there is no allowlist to narrow \
+                 (docs/federation.md Section 9)",
+            ),
+        };
+    };
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let Some(node_id) = param("node_id").filter(|s| !s.is_empty()) else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("needs ?node_id=<peer node id>&workspaces=<comma separated, may be empty>"),
+        };
+    };
+    // Absent means "you did not say", empty means "none" - collapsing them would turn a missing
+    // parameter into a silent full revocation of reads.
+    let Some(raw) = param("workspaces") else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(
+                "needs ?workspaces=... - pass it empty to narrow to nothing, omit nothing by accident",
+            ),
+        };
+    };
+    let keep: Vec<String> =
+        raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
+
+    match narrow(&node_id, &keep) {
+        Ok(now) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::json!({"node_id": node_id, "shared_workspaces": now}).to_string(),
+        },
+        Err(e) => Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(&e),
+        },
+    }
+}
+
 fn workspaces_response(engine: &Engine) -> Response {
     match engine.workspaces() {
         Ok(list) => match serde_json::to_string(&list) {

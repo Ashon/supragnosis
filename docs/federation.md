@@ -233,9 +233,16 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
   and have its relayed events verified anyway. The bind rule (F10) is about *starting* an
   unauthenticated surface and is unchanged; admission may later shrink to empty, which rejects every
   request rather than admitting anyone. The viewer's `/api/federation` publishes the current admitted
-  set (node id + shared workspaces; never the bearer hash). What is still static-edit is the *source*:
-  changes come from the config file at start. A surface that writes them is Section 11's deferred
-  rotation/revocation workflow.
+  set (node id + shared workspaces; never the bearer hash).
+- **Narrowing is operable; widening and revocation are not.** `POST /api/peer/share?node_id=..&
+  workspaces=..` on the viewer socket reduces one peer's `shared_workspaces`: it rewrites
+  `supragnosis.toml` in place (format-preserving, so the operator's comments survive), re-reads it,
+  and swaps the live directory - so the change takes effect at once and survives a restart. A request
+  naming a workspace the peer does not already hold is **refused**, not partially applied; an empty
+  set is a legitimate narrowing meaning "admitted, may read nothing". The asymmetry is the safety
+  argument for having the surface at all: the act can only move the way P17 already prefers, so a
+  mistake - or a console left open - can only share less. Widening stays in the file, where it is a
+  deliberate act with full context. Adding or removing a peer is Section 11's deferred workflow.
 - **Key distribution (three anchors)** - who verifies what with which key, incl. events the hub merely
   relays: (1) the hub's transport allowlist (above) decides who may connect and push; (2) the **origin
   public keys** a spoke needs to verify a relayed event (authored by another spoke) travel in the
@@ -666,11 +673,13 @@ input, not nondeterminism - F16).
 
 - Peer-to-peer mesh, NAT traversal, discovery.
 - gRPC transport (JSON/HTTPS first).
-- Key rotation / revocation workflow. The mechanism is in place - admission is a live directory the
-  server consults per request (6a) - but nothing yet writes to it except startup, so in practice the
-  allowlist is still edited in the file. What remains is the human surface and the revocation
-  semantics that must ship with it: removing a peer stops future reads, it does not recall what has
-  already synced (P17 filters at the boundary), and a management UI has to say so.
+- Key rotation / revocation workflow. Narrowing an admitted peer's workspaces is operable from the
+  console (6a); **admitting and removing peers is not**. What remains for it is mostly semantics
+  rather than mechanism: removing a peer stops future reads but does not recall what has already
+  synced (P17 filters at the boundary, it is not a takeback), and a surface that offers the act has to
+  say so plainly or it will be read as one. Admission additionally needs the peer's key and bearer
+  hash to arrive from somewhere, which is an out-of-band exchange the console cannot perform for the
+  operator.
 - Proposal **quorum / auto-merge policy** and a conflict-resolution UI (`proposal-workflow.md` line ~504,
   M4+). Note: cross-node verdict *convergence* is enabled by this milestone (Section 7a) - only these
   policy layers on top of it are deferred.
