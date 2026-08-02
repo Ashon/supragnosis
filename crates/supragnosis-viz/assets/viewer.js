@@ -371,16 +371,54 @@ async function refreshPeers() {
 // confirm(), which blocks the webview and looks nothing like the rest of the page.
 let fedCfgArmed = null;   // "<node_id>\u0000<workspace>" of the chip awaiting its second click
 
+// The tabs, in order. One list: the strip, the routing and the default all read from it, so adding a
+// topic is adding an entry rather than markup here plus styling there plus a branch somewhere else.
+const SETTINGS_TABS = [
+  { id: "about", label: "About", render: renderAboutSection },
+  { id: "peers", label: "Peers", render: renderFedSection },
+];
+let settingsTab = "about";
+
 async function renderSettings() {
+  const strip = document.getElementById("settingsTabs");
   const host = document.getElementById("settingsBody");
-  host.textContent = "";
-  // Each section owns its own fetch and its own failure - one unreachable surface must not blank the
-  // whole dialog. Append a section function here to add a topic.
-  for (const section of [renderFedSection]) {
-    const el = document.createElement("div");
-    host.appendChild(el);
-    await section(el);
+  strip.textContent = "";
+  for (const t of SETTINGS_TABS) {
+    const b = document.createElement("button");
+    b.className = "stab" + (t.id === settingsTab ? " on" : "");
+    b.textContent = t.label;
+    b.onclick = () => { settingsTab = t.id; renderSettings(); };
+    strip.appendChild(b);
   }
+  host.textContent = "";
+  const tab = SETTINGS_TABS.find(t => t.id === settingsTab) || SETTINGS_TABS[0];
+  // The tab owns its own fetch and its own failure, so an unreachable surface empties one tab rather
+  // than the dialog.
+  await tab.render(host);
+}
+
+// What this build IS. Read from the binary that answered the request rather than restated in the
+// page, so the version cannot drift from what is running.
+async function renderAboutSection(host) {
+  let a;
+  try {
+    a = await (await fetch("/api/about", { cache: "no-store" })).json();
+  } catch (e) {
+    host.innerHTML = '<div class="empty">version information unavailable</div>';
+    return;
+  }
+  const repo = String(a.repository || "");
+  const row = (k, v) => `<dt>${esc(k)}</dt><dd>${v}</dd>`;
+  // eslint-disable-next-line no-unsanitized/property -- every interpolation goes through esc()
+  host.innerHTML = `<dl class="kv">`
+    + row("package", esc(String(a.name || "supragnosis")))
+    + row("version", esc(String(a.version || "")))
+    + row("licence", esc(String(a.license || "")))
+    + (repo ? row("source", `<a href="${esc(repo)}" target="_blank" rel="noreferrer noopener">${esc(repo)}</a>`) : "")
+    + `</dl>`
+    + `<div class="note">Dependency licences are not restated here - a hand-kept list is one that `
+    + `rots without saying so. They are in the manifest and lockfile at the source above, which `
+    + `cannot disagree with this build.</div>`;
 }
 
 async function renderFedSection(host) {
