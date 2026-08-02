@@ -14,6 +14,11 @@ on:
       - "crates/supragnosis-viz/assets/**"
       - ".github/workflows/frontend-lint.yml"
 
+# `npm ci` runs whatever install scripts the dependency tree declares, so this job executes third
+# party code by design. A read-only token means that code cannot reach back into the repository.
+permissions:
+  contents: read
+
 jobs:
   eslint:
     runs-on: ubuntu-latest
