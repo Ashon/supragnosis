@@ -1251,30 +1251,22 @@ impl Engine {
         let cx = &ReadCtx::default();
         self.project_entities(&workspace, Some(&touched), cx)?;
 
-        let mut relations = Vec::new();
-        for r in input.relations {
-            let from = Entity::make_id(&workspace, &r.from);
-            let to = Entity::make_id(&workspace, &r.to);
-            // kind is projected into its canonical form - so the id and the stored notation always match
-            // (if only the id is normalized, different notations for the same id are left last-write-wins).
-            let kind = normalize_relation_kind(&r.kind);
-            let rel = Relation {
-                id: Relation::make_id(&from, &kind, &to),
-                from,
-                to,
-                kind,
-                // Human-readable explanation of the connection (last-write-wins in M0; the log keeps history).
-                description: r.description,
-                provenance: prov.clone(),
-                // Project the valid interval the client specified as-is (Principle 4 capture).
-                // Derivation logic such as auto-closing valid_to on refutation is M3c.
-                valid_from: r.valid_from,
-                valid_to: r.valid_to,
-            };
-            let rid = rel.id.clone();
-            self.store.add_relation(rel)?;
-            relations.push(rid);
-        }
+        // The edge ids this call asserted. Derived from the input rather than from the projection,
+        // because the two answer different questions: this is "what did this observe name", while the
+        // projection decides what each of those edges now looks like given the whole log.
+        let relations: Vec<String> = input
+            .relations
+            .iter()
+            .map(|r| {
+                Relation::make_id(
+                    &Entity::make_id(&workspace, &r.from),
+                    &normalize_relation_kind(&r.kind),
+                    &Entity::make_id(&workspace, &r.to),
+                )
+            })
+            .collect();
+        let touched_edges: HashSet<String> = relations.iter().cloned().collect();
+        self.project_relations(&workspace, Some(&touched_edges))?;
 
         Ok(ObserveOutput {
             observation_id,
@@ -2865,6 +2857,68 @@ impl Engine {
     ///
     /// Proposal events are left behind deliberately - see [`RekeyReport::skipped_proposal_events`].
     /// `dry_run` reports what would move and writes nothing.
+    /// Projects relations from the log - the edge half of what [`Engine::project_entities`] does for
+    /// nodes, and shared by `observe` and `reproject` for the same reason (IR3): if the incremental
+    /// write and a fresh replay run different code, they are two answers to one question and the
+    /// projection stops being a function of the log.
+    ///
+    /// They WERE different. `observe` stamped each edge with the attestation of the call that wrote
+    /// it, while `reproject` used [`authoring_attestation`] over the HLC-latest observation asserting
+    /// that edge. The two agree on a fresh single-attestation observation and part company as soon as
+    /// one absorbs a second attestation, or as soon as two observations assert the same edge - so a
+    /// reproject could move an edge's tier and confidence with no change in the log. Commit 3a04ece
+    /// already collected this rule into one helper for the proposal fold, the gate fold and
+    /// reprojection; this is the fourth site it missed.
+    ///
+    /// `only` bounds the work to the edges a single observe touched. It is a filter on which rows are
+    /// WRITTEN, never on which are read: the winner for an edge is still chosen across every
+    /// observation asserting it, so narrowing the write set cannot change what gets written.
+    fn project_relations(
+        &self,
+        ws: &str,
+        only: Option<&HashSet<String>>,
+    ) -> Result<usize, StoreError> {
+        let mut obss = self.observations(Some(ws))?;
+        obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
+        let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
+        for obs in &obss {
+            let Some(prov) = authoring_attestation(obs).cloned() else {
+                continue;
+            };
+            for ra in &obs.assertions.relations {
+                let from = Entity::make_id(ws, &ra.from);
+                let to = Entity::make_id(ws, &ra.to);
+                let kind = normalize_relation_kind(&ra.kind);
+                let id = Relation::make_id(&from, &kind, &to);
+                if only.is_some_and(|s| !s.contains(&id)) {
+                    continue;
+                }
+                // Ascending replay, upsert by id: description and valid interval are last-write, which
+                // is the store's own semantics given a deterministic order.
+                rels.insert(
+                    id.clone(),
+                    Relation {
+                        id,
+                        from,
+                        to,
+                        kind,
+                        description: ra.description.clone(),
+                        provenance: prov.clone(),
+                        // The client's valid interval is projected as-is (Principle 4 capture);
+                        // derivation such as auto-closing valid_to on refutation is M3c.
+                        valid_from: ra.valid_from,
+                        valid_to: ra.valid_to,
+                    },
+                );
+            }
+        }
+        let written = rels.len();
+        for (_, r) in rels {
+            self.store.add_relation(r)?;
+        }
+        Ok(written)
+    }
+
     pub fn rekey_workspace(
         &self,
         from: &str,
@@ -2938,44 +2992,13 @@ impl Engine {
         // (only = None) - so a reproject and an incremental write agree row-for-row (IR3).
         let entities = self.project_entities(&ws, None, cx)?;
 
-        // Relations: replay in (ordering HLC, id) order and upsert by id - description/valid-interval
-        // are last-write, matching the store's upsert-by-id semantics with a deterministic order.
-        let mut obss = self.observations(Some(&ws))?;
-        obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
-        let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
-        for obs in &obss {
-            let Some(prov) = authoring_attestation(obs).cloned() else {
-                continue;
-            };
-            for ra in &obs.assertions.relations {
-                let from = Entity::make_id(&ws, &ra.from);
-                let to = Entity::make_id(&ws, &ra.to);
-                let kind = normalize_relation_kind(&ra.kind);
-                let id = Relation::make_id(&from, &kind, &to);
-                rels.insert(
-                    id.clone(),
-                    Relation {
-                        id,
-                        from,
-                        to,
-                        kind,
-                        description: ra.description.clone(),
-                        provenance: prov.clone(),
-                        valid_from: ra.valid_from,
-                        valid_to: ra.valid_to,
-                    },
-                );
-            }
-        }
-        let report = ReprojectReport {
-            observations: obss.len(),
+        // The same fold the incremental write runs, over every edge rather than one observe's.
+        let relations = self.project_relations(&ws, None)?;
+        Ok(ReprojectReport {
+            observations: self.observations(Some(&ws))?.len(),
             entities,
-            relations: rels.len(),
-        };
-        for (_, r) in rels {
-            self.store.add_relation(r)?;
-        }
-        Ok(report)
+            relations,
+        })
     }
 
     /// The shared store port - the federation sync layer operates on the same log the engine

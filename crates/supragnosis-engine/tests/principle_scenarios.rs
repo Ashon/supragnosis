@@ -1029,6 +1029,77 @@ fn aliases_accumulate_and_converge() {
     assert_ne!(a.0, b.0, "the recency cases must disagree, or the tie case proves nothing");
 }
 
+/// guard (P1, "the graph is a projection: re-deriving it from the log reproduces it exactly"): the
+/// EDGE half of that claim, which its sibling above does not reach.
+///
+/// The sibling checks entities - kind, canonical_name, aliases, provenance count - and the clause it
+/// stands for says "the graph". Relations were the half nobody looked at, and they diverged: observe
+/// stamped an edge with the attestation of the call that wrote it, reproject with the authoring
+/// attestation of the HLC-latest observation asserting it. Identical for a fresh single-attestation
+/// row, different the moment one absorbs a second attestation - so a reproject could move an edge's
+/// tier and confidence with no change in the log at all.
+///
+/// The absorb is what makes the two rules disagree, so the fixture has to contain one: the same
+/// content observed twice under different attestations is one row (P3) whose authoring attestation is
+/// the earlier of them, while the second observe's own attestation is the later.
+#[test]
+fn incremental_write_equals_replay_for_relations() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS);
+
+    let observe = |host: &str| {
+        Engine::new(store.clone(), host, WS)
+            .observe(ObserveInput {
+                content: "alpha depends on beta".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![],
+                relations: vec![RelationInput {
+                    from: "Alpha".into(),
+                    kind: "depends_on".into(),
+                    to: "Beta".into(),
+                    description: None,
+                    valid_from: None,
+                    valid_to: None,
+                }],
+            })
+            .expect("observe")
+    };
+
+    // Same content, two hosts: one content address, two attestations (P3 absorb).
+    observe("host-a");
+    let out = observe("host-b");
+    let edge_id = out.relations.first().cloned().expect("the observe named an edge");
+
+    let after_incremental = store
+        .all_relations(Some(WS))
+        .expect("relations")
+        .into_iter()
+        .find(|r| r.id == edge_id)
+        .expect("the edge is projected");
+
+    engine.reproject(Some(WS)).expect("reproject");
+    let after_replay = store
+        .all_relations(Some(WS))
+        .expect("relations")
+        .into_iter()
+        .find(|r| r.id == edge_id)
+        .expect("the edge survives the replay");
+
+    assert_eq!(
+        (after_incremental.provenance.host.as_str(), after_incremental.provenance.observed_at),
+        (after_replay.provenance.host.as_str(), after_replay.provenance.observed_at),
+        "a replay must not restamp an edge the log did not change - incremental {:?} vs replay {:?}",
+        after_incremental.provenance,
+        after_replay.provenance,
+    );
+    assert_eq!(after_incremental.provenance.trust_tier, after_replay.provenance.trust_tier);
+    assert_eq!(after_incremental.provenance.confidence, after_replay.provenance.confidence);
+}
+
 /// guard (resolution-identity.md Section 4, IR3): the incremental projection of the last write
 /// equals what a fresh reproject would produce - the two paths run the same fold, so interleaved
 /// observes and a full replay agree on kind, canonical_name, aliases, and provenance count.
