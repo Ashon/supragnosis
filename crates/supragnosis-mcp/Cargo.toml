@@ -17,7 +17,6 @@ supragnosis-sync = { workspace = true, features = ["http"] }
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tracing.workspace = true
 # Tool handlers offload blocking store calls via spawn_blocking (HTTP concurrency).
 # rt(-multi-thread) is a workspace-wide feature, so spawn_blocking is available.
 tokio.workspace = true
