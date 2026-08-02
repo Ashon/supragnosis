@@ -1489,7 +1489,11 @@ mod tests {
             ("aws key AKIAIOSFODNN7EXAMPLE in the config", "aws-access-key-id"),
             ("token ghp_1234567890abcdefghijklmnopqrstuvwxyz here", "github-token"),
             ("xoxb-2411-2411-abcdefghij", "slack-token"),
-            ("AIzaSyA1234567890abcdefghijklmnopqrstuv", "google-api-key"),
+            // Split for the same reason as the Stripe key below. This one got through push
+            // protection and was then reported by secret scanning after the fact, which is the
+            // same collision arriving one step later: a scanner reads the shape, and a detector's
+            // test suite is made of shapes.
+            (concat!("AIza", "SyA1234567890abcdefghijklmnopqrstuv"), "google-api-key"),
             // Split from its prefix and rejoined by concat!. This is Stripe's own published
             // example key, but GitHub push protection scans the diff rather than the intent, so a
             // contiguous `sk_live_...` here blocks every push that touches this file - one detector

@@ -34,8 +34,8 @@ fn tool_json(res: &CallToolResult) -> Value {
 }
 
 /// Turn a serde_json object literal into tool arguments (JsonObject).
-fn args(v: Value) -> Option<Map<String, Value>> {
-    v.as_object().cloned()
+fn args(v: Value) -> Map<String, Value> {
+    v.as_object().cloned().expect("test arguments must be a JSON object")
 }
 
 #[tokio::test]
@@ -119,22 +119,17 @@ async fn mcp_protocol_surface_end_to_end() {
 
     // --- 2) observe: ingest knowledge (2 entities + 1 relation) -------------------
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "observe".into(),
-            arguments: args(json!({
-                "content": "supragnosis is a rust knowledge server built on rmcp",
-                "workspace": "ws",
-                "entities": [
-                    {"name": "supragnosis", "type": "Project"},
-                    {"name": "rmcp", "type": "Tool"}
-                ],
-                "relations": [
-                    {"from": "supragnosis", "type": "depends_on", "to": "rmcp"}
-                ]
-            })),
-            task: None,
-        })
+        .call_tool(CallToolRequestParams::new("observe").with_arguments(args(json!({
+            "content": "supragnosis is a rust knowledge server built on rmcp",
+            "workspace": "ws",
+            "entities": [
+                {"name": "supragnosis", "type": "Project"},
+                {"name": "rmcp", "type": "Tool"}
+            ],
+            "relations": [
+                {"from": "supragnosis", "type": "depends_on", "to": "rmcp"}
+            ]
+        }))))
         .await
         .expect("observe call");
     let out = tool_json(&res);
@@ -153,12 +148,10 @@ async fn mcp_protocol_surface_end_to_end() {
 
     // --- 3) search_knowledge: recall the ingested knowledge via hybrid search -----
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "search_knowledge".into(),
-            arguments: args(json!({"query": "rust", "workspace": "ws"})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("search_knowledge")
+                .with_arguments(args(json!({"query": "rust", "workspace": "ws"}))),
+        )
         .await
         .expect("search call");
     let found = tool_json(&res);
@@ -173,12 +166,10 @@ async fn mcp_protocol_surface_end_to_end() {
     // Hybrid returns the nearest neighbors with no similarity threshold, so we produce zero hits with an
     // empty-workspace scope (like the pre-sync partial knowledge of a distributed node).
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "search_knowledge".into(),
-            arguments: args(json!({"query": "anything", "workspace": "empty-ws"})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("search_knowledge")
+                .with_arguments(args(json!({"query": "anything", "workspace": "empty-ws"}))),
+        )
         .await
         .expect("empty search call");
     let empty = tool_json(&res);
@@ -193,12 +184,10 @@ async fn mcp_protocol_surface_end_to_end() {
 
     // --- 4) get_entity: re-query by the id observe returned (relations included) ---
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "get_entity".into(),
-            arguments: args(json!({"id": supragnosis_id})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("get_entity")
+                .with_arguments(args(json!({"id": supragnosis_id}))),
+        )
         .await
         .expect("get_entity call");
     let ent = tool_json(&res);
@@ -220,12 +209,10 @@ async fn mcp_protocol_surface_end_to_end() {
 
     // --- 5) traverse: supragnosis -> rmcp (depends_on, 1 hop) --------------------
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "traverse".into(),
-            arguments: args(json!({"id": supragnosis_id})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("traverse")
+                .with_arguments(args(json!({"id": supragnosis_id}))),
+        )
         .await
         .expect("traverse call");
     let reached = tool_json(&res);
@@ -238,12 +225,10 @@ async fn mcp_protocol_surface_end_to_end() {
 
     // --- 5b) traverse an unknown id: empty result + cause-distinguishing note (Principles 5/21) ---
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "traverse".into(),
-            arguments: args(json!({"id": "does-not-exist"})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("traverse")
+                .with_arguments(args(json!({"id": "does-not-exist"}))),
+        )
         .await
         .expect("traverse unknown call");
     let empty_tr = tool_json(&res);
@@ -256,12 +241,10 @@ async fn mcp_protocol_surface_end_to_end() {
 
     // --- 6) get_entity(unknown id): open-world - unknown, not an error (Principle 5) ---
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "get_entity".into(),
-            arguments: args(json!({"id": "does-not-exist"})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("get_entity")
+                .with_arguments(args(json!({"id": "does-not-exist"}))),
+        )
         .await
         .expect("get_entity unknown call");
     let unknown = tool_json(&res);
@@ -274,12 +257,10 @@ async fn mcp_protocol_surface_end_to_end() {
     // --- 7) workspace_map: survey co-occurrence clusters (Principle 11 second-order structure) ---
     // supragnosis + rmcp are asserted together in a single observation -> one size-2 cluster, exposed by name.
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "workspace_map".into(),
-            arguments: args(json!({"workspace": "ws"})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("workspace_map")
+                .with_arguments(args(json!({"workspace": "ws"}))),
+        )
         .await
         .expect("workspace_map call");
     let map = tool_json(&res);
@@ -320,21 +301,16 @@ async fn mcp_resource_graph_surface() {
 
     // Ingest knowledge: supragnosis --depends_on--> rmcp (2 nodes, 1 edge).
     let observed = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "observe".into(),
-            arguments: args(json!({
-                "content": "supragnosis depends on rmcp",
-                "workspace": "ws",
-                "on_behalf_of": "ashon",
-                "entities": [
-                    {"name": "supragnosis", "type": "Project"},
-                    {"name": "rmcp", "type": "Tool"}
-                ],
-                "relations": [{"from": "supragnosis", "type": "depends_on", "to": "rmcp"}]
-            })),
-            task: None,
-        })
+        .call_tool(CallToolRequestParams::new("observe").with_arguments(args(json!({
+            "content": "supragnosis depends on rmcp",
+            "workspace": "ws",
+            "on_behalf_of": "ashon",
+            "entities": [
+                {"name": "supragnosis", "type": "Project"},
+                {"name": "rmcp", "type": "Tool"}
+            ],
+            "relations": [{"from": "supragnosis", "type": "depends_on", "to": "rmcp"}]
+        }))))
         .await
         .expect("observe call");
     let observation_id = tool_json(&observed)["observation_id"]
@@ -360,10 +336,7 @@ async fn mcp_resource_graph_surface() {
 
     // --- 1b) read_resource(workspaces): array of workspace names that hold knowledge --------------
     let read = client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: "supragnosis://workspaces".into(),
-        })
+        .read_resource(ReadResourceRequestParams::new("supragnosis://workspaces"))
         .await
         .expect("read workspaces resource");
     let text = match read.contents.first().expect("one content") {
@@ -393,10 +366,7 @@ async fn mcp_resource_graph_surface() {
 
     // --- 3) read_resource: receive node-link graph JSON and confirm the ingested knowledge -------------
     let read = client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: "supragnosis://workspace/ws/graph".into(),
-        })
+        .read_resource(ReadResourceRequestParams::new("supragnosis://workspace/ws/graph"))
         .await
         .expect("read graph resource");
     let text = match read.contents.first().expect("one content") {
@@ -421,10 +391,7 @@ async fn mcp_resource_graph_surface() {
 
     // --- 3b) hypergraph resource: co-occurrence second-order structure (Principle 11) - members exposed by name --------
     let read = client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: "supragnosis://workspace/ws/hypergraph".into(),
-        })
+        .read_resource(ReadResourceRequestParams::new("supragnosis://workspace/ws/hypergraph"))
         .await
         .expect("read hypergraph resource");
     let text = match read.contents.first().expect("one content") {
@@ -451,10 +418,9 @@ async fn mcp_resource_graph_surface() {
 
     // --- 4) observation back-reference (Principles 2/14): query raw content+provenance+lineage by the id from a search hit/observe --
     let read = client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: format!("supragnosis://observation/{observation_id}"),
-        })
+        .read_resource(ReadResourceRequestParams::new(format!(
+            "supragnosis://observation/{observation_id}"
+        )))
         .await
         .expect("read observation resource");
     let text = match read.contents.first().expect("one content") {
@@ -479,17 +445,12 @@ async fn mcp_resource_graph_surface() {
 
     // --- 5) unknown observation id: absence is not_found (with an open-world hint) -------------------
     let missing = client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: "supragnosis://observation/does-not-exist".into(),
-        })
+        .read_resource(ReadResourceRequestParams::new("supragnosis://observation/does-not-exist"))
         .await;
     assert!(missing.is_err(), "an unknown observation id must be a not_found error");
 
     // --- 6) unknown URI: absence surfaces as an error (with a Principle 5 self-correction hint) ------------------
-    let bad = client
-        .read_resource(ReadResourceRequestParams { meta: None, uri: "supragnosis://nope".into() })
-        .await;
+    let bad = client.read_resource(ReadResourceRequestParams::new("supragnosis://nope")).await;
     assert!(bad.is_err(), "an unknown resource URI must be an error");
 
     client.cancel().await.expect("client shutdown");
@@ -515,33 +476,23 @@ async fn empty_default_workspace_names_where_knowledge_lives() {
     let client = ().serve(client_io).await.expect("client handshake");
 
     client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "observe".into(),
-            arguments: args(json!({
-                "content": "the proposal gate stands between free ingest and the shared canon",
-                "workspace": "supragnosis",
-                "entities": [
-                    {"name": "Proposal Gate", "type": "Mechanism"},
-                    {"name": "Canon", "type": "Concept"}
-                ],
-                "relations": [
-                    {"from": "Proposal Gate", "type": "guards", "to": "Canon"}
-                ]
-            })),
-            task: None,
-        })
+        .call_tool(CallToolRequestParams::new("observe").with_arguments(args(json!({
+            "content": "the proposal gate stands between free ingest and the shared canon",
+            "workspace": "supragnosis",
+            "entities": [
+                {"name": "Proposal Gate", "type": "Mechanism"},
+                {"name": "Canon", "type": "Concept"}
+            ],
+            "relations": [
+                {"from": "Proposal Gate", "type": "guards", "to": "Canon"}
+            ]
+        }))))
         .await
         .expect("observe call");
 
     // Survey with no workspace argument -> the node default, which is empty by design.
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "workspace_map".into(),
-            arguments: args(json!({})),
-            task: None,
-        })
+        .call_tool(CallToolRequestParams::new("workspace_map").with_arguments(args(json!({}))))
         .await
         .expect("workspace_map call");
     let map = tool_json(&res);
@@ -573,12 +524,10 @@ async fn empty_default_workspace_names_where_knowledge_lives() {
 
     // Scoping to the named workspace recovers the cluster that the default scope could not see.
     let res = client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: "workspace_map".into(),
-            arguments: args(json!({"workspace": "supragnosis"})),
-            task: None,
-        })
+        .call_tool(
+            CallToolRequestParams::new("workspace_map")
+                .with_arguments(args(json!({"workspace": "supragnosis"}))),
+        )
         .await
         .expect("workspace_map scoped call");
     let scoped = tool_json(&res);
