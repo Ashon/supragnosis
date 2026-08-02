@@ -324,22 +324,17 @@ fn scan_counts_do_not_grow_with_the_log() {
 #[test]
 #[ignore = "wall-clock measurement, not a guard - run manually with --nocapture"]
 fn read_path_wall_clock() {
-    // Measured over the file-backed adapters, not the in-memory one. A scan of InMemoryStore is a
-    // clone out of a map; a scan of a real store reconstructs a row per record, embedding included.
-    // The scan count is the same either way - which store you measure decides whether that count
-    // costs anything, which is also why both file-backed adapters are measured side by side rather
-    // than one standing in for the other.
+    // Measured over the file-backed store, not the in-memory one. A scan of InMemoryStore is a clone
+    // out of a map; a scan of a real store reconstructs a row per record. The scan count is the same
+    // either way - which store you measure decides whether that count costs anything.
     //
     // Run with and without vectors: `embedded` attaches a fixed-dimension embedder, so every row
     // carries a 384-float vector that no fold on this path reads. The gap between the two columns is
     // the cost of carrying it through the enumeration.
     type Build = (&'static str, fn(&std::path::Path) -> Box<dyn KnowledgeStore>);
-    let adapters: [Build; 2] = [
-        ("cozo", |p| Box::new(supragnosis_store::CozoStore::open(p).expect("cozo"))),
-        ("redb", |p| {
-            Box::new(supragnosis_store::RedbStore::open(p.join("knowledge.redb")).expect("redb"))
-        }),
-    ];
+    let adapters: [Build; 1] = [("redb", |p| {
+        Box::new(supragnosis_store::RedbStore::open(p.join("knowledge.redb")).expect("redb"))
+    })];
 
     /// A deterministic fixed-width vector - the storage cost of an embedding without the cost of a
     /// model. What is being measured is carrying the bytes, not producing them.
@@ -407,10 +402,9 @@ fn read_path_wall_clock() {
 /// A read-only view of another store that hands every enumeration back in the opposite order.
 ///
 /// All three enumerations are reversed, not just the log: a fold that picks among rows by position
-/// is order-dependent whichever table it reads, and the adapters disagree about all three (InMemory
-/// enumerates HashMaps, Cozo returns Datalog results). Reversing only the log left the entity and
-/// relation folds unguarded, which is how the duplicate-edge pick in `graph` stayed order-dependent
-/// while this test passed.
+/// is order-dependent whichever table it reads. Reversing only the log left the entity and relation
+/// folds unguarded, which is how the duplicate-edge pick in `graph` stayed order-dependent while
+/// this test passed.
 struct ReversedStore(Arc<InMemoryStore>);
 
 impl KnowledgeStore for ReversedStore {
@@ -442,9 +436,10 @@ impl KnowledgeStore for ReversedStore {
 /// guard (P16): the read surfaces must not depend on the order the store enumerates the log in.
 ///
 /// P16 names the iteration order of an internal structure leaking into a response as a violation by
-/// itself, and the stores do not agree on one order: `InMemoryStore` enumerates a HashMap, Cozo a
-/// Datalog result. Sharing one loaded copy across the folds pins whichever order the store gave for
-/// the whole call rather than per fold, which is only harmless if no answer depends on it.
+/// itself. The port now promises ascending id, but sharing one loaded copy across the folds still
+/// pins whichever order the store gave for the whole call rather than per fold, which is only
+/// harmless if no answer depends on it - and that is the stronger property, the one that would make
+/// a later re-ordering cheap.
 ///
 /// ONE log, read two ways - the reversed store is a view over the same rows, so the enumeration
 /// order is the only thing that differs. Building two workspaces through two stores would not test
@@ -568,8 +563,9 @@ fn embedding_cost_on_the_read_path() {
     let _ = std::fs::remove_dir_all(&dir);
     for embedded in [false, true] {
         let path = dir.join(if embedded { "with" } else { "without" });
-        let cozo = supragnosis_store::CozoStore::open(&path).expect("cozo");
-        let store = Arc::new(cozo);
+        let store = Arc::new(
+            supragnosis_store::RedbStore::open(path.join("knowledge.redb")).expect("redb"),
+        );
         let mut engine = Engine::new(store.clone(), "host-a", WS);
         if embedded {
             engine = engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
@@ -599,8 +595,10 @@ fn viewer_poll_cost() {
     let dir = std::env::temp_dir().join(format!("supragnosis-poll-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     for n in [100usize, 300] {
-        let cozo = supragnosis_store::CozoStore::open(dir.join(format!("n{n}"))).expect("cozo");
-        let store = Arc::new(cozo);
+        let store = Arc::new(
+            supragnosis_store::RedbStore::open(dir.join(format!("n{n}/knowledge.redb")))
+                .expect("redb"),
+        );
         let engine = Engine::new(store.clone(), "host-a", WS)
             .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
         for i in 0..n {
@@ -650,18 +648,17 @@ fn curation_cost_breakdown() {
     let _ = std::fs::remove_dir_all(&dir);
     for embedded in [false, true] {
         for n in [100usize, 200, 300] {
-            // Match how the CLI assembles these: an embedder means the store is opened WITH it, so
-            // the HNSW indexes exist and semantic lookup is ANN rather than brute force. Opening
-            // plain and attaching the embedder only to the engine measures a configuration the
-            // product never ships.
+            // Match how the CLI assembles these: an embedder is registered on the store, so a
+            // mismatch is refused at open. Semantic lookup is a cosine scan - there is no ANN index
+            // to build, which is the trade the store change made deliberately.
             let path = dir.join(format!("e{embedded}n{n}"));
             let emb = supragnosis_embed::HashingEmbedder::new(384);
-            let store: Arc<supragnosis_store::CozoStore> = Arc::new(if embedded {
-                supragnosis_store::CozoStore::open_with_embedder(&path, &emb.id(), emb.dimensions())
-                    .expect("cozo+hnsw")
-            } else {
-                supragnosis_store::CozoStore::open(&path).expect("cozo")
-            });
+            let store: Arc<supragnosis_store::RedbStore> = Arc::new(
+                supragnosis_store::RedbStore::open(path.join("knowledge.redb")).expect("redb"),
+            );
+            if embedded {
+                store.set_embedder(&emb.id()).expect("embedder id");
+            }
             let mut engine = Engine::new(store.clone(), "host-a", WS);
             if embedded {
                 engine = engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));

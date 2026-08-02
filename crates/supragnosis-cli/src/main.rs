@@ -34,7 +34,7 @@ use supragnosis_core::{EmbeddingProvider, KnowledgeStore, VersionVector};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, Event, SearchMode};
 use supragnosis_mcp::SupragnosisServer;
-use supragnosis_store::{CozoStore, InMemoryStore, RedbStore};
+use supragnosis_store::{InMemoryStore, RedbStore};
 
 #[derive(Parser)]
 #[command(name = "supragnosis", version, about = "MCP server that turns knowledge from many hosts/workspaces into an ontology")]
@@ -65,18 +65,6 @@ enum Cmd {
     Migrate(SyncArgs),
     /// Re-create a workspace's knowledge under another name, provenance intact (stop the daemon first)
     RekeyWorkspace(RekeyArgs),
-    /// Copy the observation log from the Cozo store into a redb store and re-materialize it (stop the daemon first)
-    MigrateStore(MigrateStoreArgs),
-}
-
-#[derive(Args, Clone)]
-struct MigrateStoreArgs {
-    /// Directory to hold the redb store (default ~/.supragnosis/redb).
-    #[arg(long, value_name = "DIR")]
-    to: Option<String>,
-    /// Report what would be copied and write nothing.
-    #[arg(long)]
-    dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -115,10 +103,10 @@ struct RunArgs {
     /// Live ontology viewer unix socket path. start defaults to ~/.supragnosis/viz.sock.
     #[arg(long, value_name = "PATH")]
     viz: Option<String>,
-    /// Store: cozo (default, file-persistent) | redb (file-persistent, pure Rust) | mem (non-persistent).
+    /// Store: redb (default, file-persistent) | mem (non-persistent).
     #[arg(long)]
     store: Option<String>,
-    /// Store directory (default ~/.supragnosis/db for cozo, ~/.supragnosis/redb for redb).
+    /// Store directory (default ~/.supragnosis/redb).
     #[arg(long, value_name = "DIR")]
     data_dir: Option<String>,
     /// Host id for provenance (default localhost).
@@ -147,7 +135,6 @@ fn main() -> Result<()> {
         Cmd::Reproject(a) => reproject_cmd(a),
         Cmd::Migrate(a) => migrate_cmd(a),
         Cmd::RekeyWorkspace(a) => rekey_workspace_cmd(a),
-        Cmd::MigrateStore(a) => migrate_store_cmd(a),
     }
 }
 
@@ -186,7 +173,7 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
     let store_kind = a
         .store
         .or_else(|| env("SUPRAGNOSIS_STORE"))
-        .unwrap_or_else(|| "cozo".to_string());
+        .unwrap_or_else(|| "redb".to_string());
     // The two file-backed stores get separate default directories rather than sharing one. RocksDB
     // owns its directory, so dropping a redb file inside it invites the two to trip over each
     // other - and keeping them apart is what lets both exist at once, which is the whole point of
@@ -223,8 +210,9 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
 fn default_data_dir_for(store_kind: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     match store_kind {
-        "redb" => format!("{home}/.supragnosis/redb"),
-        _ => format!("{home}/.supragnosis/db"),
+        // The pre-0.2 Cozo location, kept only so the un-migrated-store guard knows where to look.
+        "cozo" => format!("{home}/.supragnosis/db"),
+        _ => format!("{home}/.supragnosis/redb"),
     }
 }
 
@@ -287,11 +275,65 @@ fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
     None
 }
 
+/// The last release that could read a Cozo (RocksDB) store was v0.1.21. This build cannot, so an
+/// un-migrated store is knowledge this binary can neither open nor explain.
+///
+/// The failure mode that matters is not the error - it is the absence of one. A daemon that came up
+/// on an empty redb store beside a full Cozo directory would answer every read with "nothing here",
+/// which is exactly what a node with no knowledge looks like (Principle 5: absence must be
+/// distinguishable from unavailable, and here the honest answer is unavailable). Worse, it would then
+/// start accumulating a second, divergent log.
+///
+/// So this is a refusal with an instruction, and it is also what carries Principle 3's demand that
+/// every encoding the log has ever used stays readable: the encodings this build dropped are still
+/// reachable, through the release that wrote them, and skipping that step is made impossible rather
+/// than merely discouraged.
+///
+/// Detection is `CURRENT`, the file RocksDB always writes and redb never does. A bare directory is
+/// not enough - an empty `~/.supragnosis/db` left behind by a completed migration must not block a
+/// clean start forever.
+fn legacy_cozo_store_at(data_dir: &str) -> Option<std::path::PathBuf> {
+    let dir = std::path::Path::new(data_dir);
+    dir.join("CURRENT").is_file().then(|| dir.to_path_buf())
+}
+
+/// Refuses to start when an un-migrated Cozo store is present and the redb store does not yet exist.
+///
+/// Both conditions are required. Once the redb store exists the migration has run, and the Cozo
+/// directory is a rollback artifact the operator may keep as long as they like - blocking on it then
+/// would punish exactly the cautious path.
+fn refuse_unmigrated_store(cfg: &Config) -> Result<()> {
+    if cfg.store_kind != "redb" {
+        return Ok(());
+    }
+    if redb_path(&cfg.data_dir).exists() {
+        return Ok(());
+    }
+    let legacy = default_data_dir_for("cozo");
+    let Some(found) = legacy_cozo_store_at(&legacy) else {
+        return Ok(());
+    };
+    anyhow::bail!(
+        "found a Cozo store at {} and no redb store at {}.\n\n\
+         This build reads only redb. The knowledge is not lost - it is in a format the previous \
+         release can still read - but this binary cannot open it, and starting empty beside it \
+         would silently begin a second log.\n\n\
+         Migrate with v0.1.21, which reads both:\n  \
+         curl -fsSL https://supragnosis.dev/install.sh | sh -s -- --version v0.1.21\n  \
+         supragnosis migrate-store\n\n\
+         Then upgrade again. The Cozo store is opened read-only and left untouched, so the step is \
+         reversible. Full procedure: docs/store-migration.md",
+        found.display(),
+        redb_path(&cfg.data_dir).display(),
+    )
+}
+
 /// Assembles the store/embedder/engine from the configuration. If `events` is present, attaches a UI event sink (the viewer).
 fn build_engine(
     cfg: &Config,
     events: Option<&tokio::sync::broadcast::Sender<String>>,
 ) -> Result<Arc<Engine>> {
+    refuse_unmigrated_store(cfg)?;
     let embedder = build_embedder(&cfg.embed_kind);
     let embed_dim = embedder.as_ref().map(|e| e.dimensions());
     let store: Arc<dyn KnowledgeStore> = match cfg.store_kind.as_str() {
@@ -299,28 +341,16 @@ fn build_engine(
             tracing::info!("store=in-memory (non-persistent)");
             Arc::new(InMemoryStore::new())
         }
-        "redb" => {
+        _ => {
             let path = redb_path(&cfg.data_dir);
             let store = RedbStore::open(&path)
                 .with_context(|| format!("failed to open redb store at {}", path.display()))?;
-            // Same fail-fast as Cozo: two models share no vector space, so a swapped embedder is
-            // refused at open rather than discovered as quietly worse recall.
+            // Two models share no vector space, so a swapped embedder is refused at open rather than
+            // discovered later as quietly worse recall.
             if let Some(e) = &embedder {
                 store.set_embedder(&e.id())?;
             }
             tracing::info!(path = %path.display(), ?embed_dim, "store=redb (persistent)");
-            Arc::new(store)
-        }
-        _ => {
-            // Record/check the embedder identifier (model + dimensions) in the store -
-            // an explicit failure instead of silent corruption when reopened with a
-            // different embedder.
-            let store = match &embedder {
-                Some(e) => CozoStore::open_with_embedder(&cfg.data_dir, &e.id(), e.dimensions()),
-                None => CozoStore::open(&cfg.data_dir),
-            }
-            .with_context(|| format!("failed to open Cozo store at {}", cfg.data_dir))?;
-            tracing::info!(data_dir = %cfg.data_dir, ?embed_dim, "store=cozo (RocksDB, persistent)");
             Arc::new(store)
         }
     };
@@ -648,98 +678,6 @@ fn rekey_workspace_cmd(a: RekeyArgs) -> Result<()> {
         }
         anyhow::Ok(())
     })
-}
-
-/// `supragnosis migrate-store` - copy the observation log out of the Cozo store into a redb store.
-///
-/// Only the LOG is copied. The entity/relation graph is a projection of it (Principle 1), so it is
-/// rebuilt by replay at the end rather than transferred - copying a projection would carry over
-/// whatever state it happened to be in, while a replay is defined by the log alone and is what every
-/// other node would compute from the same rows (Principle 16).
-///
-/// `add_observation` absorbs at the content address, so re-running this is idempotent and a partial
-/// run is resumable: an already-copied row unions with itself and stays one row (Principle 3).
-///
-/// The source store is opened and never written. That is what makes this reversible: until the
-/// `--store redb` flag is passed to a server, the Cozo store remains the live one.
-fn migrate_store_cmd(a: MigrateStoreArgs) -> Result<()> {
-    init_tracing();
-    let cfg = resolve(RunArgs::default(), false);
-    let target_dir = a.to.unwrap_or_else(|| default_data_dir_for("redb"));
-    let target = redb_path(&target_dir);
-    let source_dir = cfg.data_dir.clone();
-
-    // Both stores are single-process: a running daemon holds the Cozo lock, and opening it here
-    // would fail with a lock error rather than corrupt anything - but say so plainly first.
-    let source = CozoStore::open(&cfg.data_dir).with_context(|| {
-        format!(
-            "failed to open the Cozo store at {} - a running daemon holds it (the store is \
-             single-process). Stop it with `supragnosis stop` and try again",
-            cfg.data_dir
-        )
-    })?;
-
-    let observations = source.all_observations(None)?;
-    let mut workspaces: Vec<String> =
-        observations.iter().map(|o| o.workspace().to_string()).collect();
-    workspaces.sort();
-    workspaces.dedup();
-
-    println!(
-        "source {}: {} observation(s) across {} workspace(s): {}",
-        cfg.data_dir,
-        observations.len(),
-        workspaces.len(),
-        workspaces.join(", ")
-    );
-    if a.dry_run {
-        println!("dry run - nothing was written to {}", target.display());
-        return Ok(());
-    }
-
-    let mut copied = 0usize;
-    {
-        // Scoped so the handle is released before the replay below opens the same file. redb admits
-        // one process at a time, exactly like RocksDB, so holding this open across the reproject is
-        // a self-inflicted lock conflict - and one that only appears end to end, since each half
-        // works alone.
-        let dest = RedbStore::open(&target)
-            .with_context(|| format!("failed to open the redb store at {}", target.display()))?;
-        for obs in observations {
-            dest.add_observation(obs)?;
-            copied += 1;
-        }
-    }
-    println!("copied {copied} observation(s) to {}", target.display());
-
-    // Replay each workspace so the target holds a projection, not just a log. Built through the
-    // normal engine so the replay is the same one a server would do - including the embedder, which
-    // is what re-derives entity vectors (they are a node-local recall aid, so they are recomputed
-    // rather than carried).
-    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
-    rt.block_on(async {
-        let target_cfg = Config {
-            store_kind: "redb".to_string(),
-            data_dir: target_dir.clone(),
-            ..cfg
-        };
-        let engine = build_engine(&target_cfg, None)?;
-        for ws in &workspaces {
-            let r = engine.reproject(Some(ws))?;
-            println!(
-                "reprojected {ws}: {} observations -> {} entities, {} relations",
-                r.observations, r.entities, r.relations
-            );
-        }
-        anyhow::Ok(())
-    })?;
-
-    println!(
-        "\ndone. The Cozo store at {source_dir} was not modified.\n\
-         Run against the new store with:  supragnosis start --store redb\n\
-         or set SUPRAGNOSIS_STORE=redb (the default is still cozo)."
-    );
-    Ok(())
 }
 
 /// `supragnosis reproject` - one-shot re-materialization (HLC-ordered replay, Prop C). For a node
@@ -1545,5 +1483,94 @@ mod fed {
             let typo = "share_workspace = [\"x\"]\n";
             assert!(toml::from_str::<FileConfig>(typo).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod legacy_store_guard_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before the unix epoch")
+            .as_nanos();
+        let d = std::env::temp_dir().join(format!(
+            "supragnosis-guard-{tag}-{}-{n}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&d).expect("temp dir");
+        d
+    }
+
+    /// A RocksDB directory is recognised by `CURRENT`, which redb never writes. A directory that
+    /// merely exists is not a store: an empty `~/.supragnosis/db` left behind after a completed
+    /// migration must not block a clean start forever.
+    #[test]
+    fn a_legacy_store_is_recognised_by_its_rocksdb_marker() {
+        let dir = tmp("detect");
+        assert!(
+            legacy_cozo_store_at(dir.to_str().expect("utf8")).is_none(),
+            "an empty directory is not a store"
+        );
+        std::fs::write(dir.join("CURRENT"), b"MANIFEST-000001\n").expect("write marker");
+        assert!(
+            legacy_cozo_store_at(dir.to_str().expect("utf8")).is_some(),
+            "a RocksDB CURRENT file is what identifies the old store"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The refusal names both stores, says the knowledge still exists, and gives the exact release
+    /// that can read it. An error that only said "cannot open" would leave the operator with a
+    /// directory they cannot interpret and no path forward.
+    ///
+    /// This is what carries Principle 3's "every encoding the log has ever used stays readable" now
+    /// that the adapter which read the older encodings is gone: they remain reachable through the
+    /// release that wrote them, and skipping that step fails loudly instead of starting empty.
+    #[test]
+    fn an_unmigrated_store_is_refused_with_the_way_out() {
+        let dir = tmp("refuse");
+        std::fs::write(dir.join("CURRENT"), b"MANIFEST-000001\n").expect("write marker");
+        // Point the default cozo location at the fixture, so the guard sees a legacy store.
+        let home = tmp("home");
+        std::fs::create_dir_all(home.join(".supragnosis")).expect("home");
+        std::fs::rename(&dir, home.join(".supragnosis/db")).expect("place legacy store");
+        let prev = std::env::var("HOME").ok();
+        // SAFETY-free: set_var is safe on this edition; the guard reads HOME through default_data_dir_for.
+        std::env::set_var("HOME", &home);
+
+        let cfg = Config {
+            host: "h".into(),
+            workspace: "default".into(),
+            store_kind: "redb".into(),
+            data_dir: home.join(".supragnosis/redb").to_string_lossy().into_owned(),
+            embed_kind: "none".into(),
+            session: "s".into(),
+            http: None,
+            viz: None,
+        };
+        let err = refuse_unmigrated_store(&cfg).expect_err("must refuse").to_string();
+        assert!(err.contains("Cozo store"), "names what it found: {err}");
+        assert!(err.contains("v0.1.21"), "names the release that can read it: {err}");
+        assert!(err.contains("migrate-store"), "names the command: {err}");
+        assert!(err.contains("not lost"), "says the knowledge survives: {err}");
+
+        // Once the redb store exists the migration has run; the leftover directory must not block.
+        std::fs::create_dir_all(home.join(".supragnosis/redb")).expect("redb dir");
+        std::fs::write(redb_path(&cfg.data_dir), b"").expect("redb file");
+        assert!(
+            refuse_unmigrated_store(&cfg).is_ok(),
+            "a rollback artifact beside a migrated store is not an error"
+        );
+
+        match prev {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

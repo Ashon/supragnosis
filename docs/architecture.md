@@ -6,7 +6,7 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through M4 Phase 4** (v0.1.21). M0-M2, **M3a (belief resolution) and M3b
+- Status: **implemented through M4 Phase 4** (v0.2.0). M0-M2, **M3a (belief resolution) and M3b
   (identity resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases 0-4 are complete
   (Phase 3.5 and 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
@@ -117,7 +117,7 @@ flowchart TB
         P["Ports: KnowledgeStore, EmbeddingProvider, ResolutionPolicy, Clock, EventSink (Extractor: M5)"]
     end
     subgraph Store["supragnosis-store (adapter)"]
-        DB[("Cozo/RocksDB or redb\nlog + graph + vectors")]
+        DB[("redb\nlog + graph + vectors")]
         LOG[("Observation Log\nappend-only")]
     end
     Clients --> TR --> T --> Engine
@@ -229,66 +229,49 @@ A node advertises only the workspaces it will share, and the server enforces per
 
 ## 6. Store Selection
 
-| Criterion | **CozoDB (default)** | **redb (opt-in)** | Oxigraph (not adopted) |
+**The store is `redb`**: an embedded, pure-Rust B-tree with a single writer and MVCC readers, and no
+transitive dependencies. It is the only file-backed adapter; `InMemoryStore` remains for tests and
+non-persistent runs. Both are held to the `KnowledgeStore` port by one suite
+(`crates/supragnosis-store/tests/port_conformance.rs`) that runs every case against every adapter.
+
+| Criterion | **redb** | CozoDB (used through v0.1.21) | Oxigraph (never adopted) |
 |------|-------------------|-------------------|----------|
-| Form | embedded relational+graph+vector, Datalog | embedded key-value B-tree, single writer + MVCC readers | embedded RDF triplestore, SPARQL |
-| Vector search | [o] native HNSW | brute-force cosine (no ANN index) | [x] (needs a separate component) |
-| Graph traversal | [o] recursive Datalog | [o] explicit BFS over a secondary index | [o] SPARQL property path |
-| Ontology standards (OWL/RDFS) | model the schema directly | model the schema directly | [o] standards-optimal |
-| Backend | RocksDB / SQLite / in-mem | its own file format | RocksDB / in-mem |
-| File-based | [o] | [o] | [o] |
-| Native toolchain | C++ (cozorocks -> bindgen/libclang) | none - pure Rust, zero transitive deps | C (librocksdb) |
-| Upstream | last release 2023-12-11 | actively released | actively released |
+| Form | embedded key-value B-tree | embedded relational+graph+vector, Datalog | embedded RDF triplestore, SPARQL |
+| Vector search | brute-force cosine (no ANN index) | native HNSW | needs a separate component |
+| Graph traversal | explicit BFS over a secondary index | recursive Datalog | SPARQL property path |
+| Native toolchain | **none** | C++ (cozorocks -> bindgen/libclang) | C (librocksdb) |
+| Upstream | actively released | last release 2023-12-11 | actively released |
 
-**Standing default: CozoDB.**
-Reason - a knowledge system needs all of (1) **semantic recall of fragments (vector)**, (2) ontology **graph traversal**,
-and (3) **relational queries over metadata/provenance**, and Cozo alone covers all three and is embedded.
-That reasoning still describes what Cozo does. What changed is the price, and how much of the
-capability is actually drawn on.
+**Why Cozo was replaced.** Not preference - what its expressiveness was actually spent on was
+measured. The adapter ran nineteen query shapes, of which exactly one was genuinely recursive
+(`traverse`'s bounded BFS); the rest were point get/put, scans with a workspace filter, a two-rule
+union for `relations_of`, and an ANN lookup. No time-travel operator was used at all. And the `query`
+passthrough has never been opened (Principles 12/21), so Datalog was an implementation detail of one
+adapter rather than a surface anything depended on. Against that, `cozorocks` is a C++ RocksDB bridge
+and was the only reason the build required `clang`/`libclang-dev`.
 
-**Second file-backed adapter: redb (opt-in).** What the Datalog is actually spent on was measured
-rather than assumed: nineteen query shapes, of which one is genuinely recursive (`traverse`'s bounded
-BFS). The rest are point get/put, scans with a workspace filter, a two-rule union for `relations_of`,
-and an ANN lookup - and no time-travel operator is used at all. Since the `query` passthrough has
-never been opened (Principle 12/21), Datalog is an implementation detail of this layer alone, so a
-key-value B-tree with secondary indexes serves the same port. `redb` is that adapter: pure Rust with
-no transitive dependencies, which removes the C++ RocksDB bridge and the `clang`/`libclang-dev` it
-puts in the build.
+Measured on the read path when both existed (800 observations, release build): `graph` 9.91ms ->
+5.64ms, `curation` 22.66ms -> 14.13ms; with vectors attached, `graph` 33.07ms -> 6.20ms, because an
+f32 decode costs about 2ns per component against roughly 75ns to parse a JSON float.
 
-Measured on the read path (800 observations, release): `graph` 9.91ms -> 5.64ms, `curation` 22.66ms
--> 14.13ms. With vectors attached the gap widens to 33.07ms -> 6.20ms on `graph`, because a
-hand-rolled f32 encoding costs about 2ns per component against roughly 75ns to parse a JSON float.
-`curation` with vectors stays expensive on both (281.77ms vs 236.66ms) - that cost is the O(E^2)
-merge band, not the store.
+**What was given up.** The native ANN index. Semantic recall is a cosine scan, which measured
+*faster* below roughly 5-6k embedded rows and slower above it (at 20k: 12.4ms with the index, 39.4ms
+without). Two things bound the cost: the index engaged only in a `--features fastembed` build, and an
+ANN index is a node-local recall aid exempt from the convergence norm (Principle 16, 4th revision) -
+so adding one back changes no answer the graph must agree on.
 
-The one capability Cozo has and redb does not is the **native HNSW index**, so the question of
-whether the older backend is still needed reduces to where that index starts to pay
-(`crates/supragnosis-store/tests/semantic_recall_cost.rs`, end-to-end semantic search, p50):
+**Migration.** v0.1.21 is the last release that reads a Cozo store; its `migrate-store` copies the
+log and replays it. This build refuses to start when it finds an un-migrated store rather than coming
+up empty beside one (`refuse_unmigrated_store`), which is also what keeps Principle 3's "every
+encoding the log has ever used stays readable" honest: the older encodings remain reachable through
+the release that wrote them, and skipping it fails loudly. Procedure:
+[store-migration.md](store-migration.md).
 
-| embedded rows | Cozo (HNSW) | redb (brute-force cosine) |
-|---|---|---|
-| 200 | 2.0ms | 0.3ms |
-| 1000 | 3.9ms | 2.1ms |
-| 5000 | 10.0ms | 9.5ms |
-| 20000 | 12.4ms | 39.4ms |
-
-The crossover sits near 5-6k embedded rows: below it the scan wins outright, because at that size
-both are dominated by fetching rows for snippets and the scan skips the index. Above it the ANN's
-sub-linear growth takes over. Two things bound how much this matters - the index engages only in a
-`--features fastembed` build (the prebuilt binary is `embed=none` and has no semantic surface at
-all), and an ANN index is a node-local recall aid exempt from the convergence norm (Principle 16,
-4th revision), so adding one to redb later changes no answer the graph is required to agree on.
-
-All three adapters (in-memory, Cozo, redb) are held to one contract by
-`crates/supragnosis-store/tests/port_conformance.rs`, which runs every case against every adapter, so
-a backend cannot bring its own reading of the port; `migrate-store` copies the log and replays it - the
-procedure, what it preserves, and what a replay deliberately does not reproduce are in
-[store-migration.md](store-migration.md). Default remains Cozo.
-
-> **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability is a **hard requirement**, use Oxigraph.
-> Because of the port-adapter structure, it can be swapped by reimplementing only the `KnowledgeStore`
-> port (one trait covers the log, graph, and vector reads) - the store choice is isolated so it does
-> not leak into the domain code.
+> **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability ever
+> becomes a hard requirement, Oxigraph remains the documented alternative. Because of the
+> port-adapter structure it is a matter of reimplementing only the `KnowledgeStore` port - which is
+> no longer a claim about a shape: the port has now survived one full backend replacement with no
+> change in `core` or `engine`, and the conformance suite is what a third adapter would be held to.
 
 ---
 
@@ -358,7 +341,7 @@ Principle 22 (curation as a by-product of work) on the MCP surface.
 |------|----------|
 | MCP server SDK | `rmcp` (`server`, `transport-io`, `macros`; `transport-streamable-http-server` in the CLI) |
 | Async runtime | `tokio` |
-| Embedded store | `cozo` (RocksDB backend, default) / `redb` (pure Rust B-tree, opt-in) *(documented alternative: `oxigraph`)* |
+| Embedded store | `redb` (pure Rust B-tree) *(documented alternative: `oxigraph`)* |
 | Local embedding (optional) | `fastembed` (ONNX, local model) - if absent, degrade to keyword search |
 | Serialization | `serde`, `serde_json` |
 | Content-address ID | `blake3` |
@@ -380,7 +363,7 @@ supragnosis/
 |- docs/                      # architecture.md, principles.md, proposal-workflow.md, federation.md
 |- crates/
 |  |- supragnosis-core/       # domain models + port traits (zero IO)
-|  |- supragnosis-store/      # adapters: cozo, redb, in-memory (one conformance suite over all)
+|  |- supragnosis-store/      # adapters: redb, in-memory (one conformance suite over both)
 |  |- supragnosis-engine/     # service: ingest/project/query/curation/proposals/reproject
 |  |- supragnosis-embed/      # EmbeddingProvider adapter (fastembed/hashing/none)
 |  |- supragnosis-sync/       # federation: version-vector delta replication, sync API, node signing
@@ -656,12 +639,15 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   fold over the log, exposed as `supragnosis://workspace/{ws}/types`. Type definitions ride the
   observation log like any other assertion (Principles 1/23: no parallel storage). Descriptions are
   content identity (folded into the observation hash - Principle 14).
-- Principles 12/20 (minimal encoding bias/hexagonal): `core` has zero IO dependencies, Cozo concepts live only in the `store` adapter.
-  The store sits behind the `KnowledgeStore` port, and this stopped being a claim about a shape and
-  became a claim that was exercised: a **third** adapter (redb) was added without a line changing in
-  `core` or `engine`, and the port's own contract is now checked by one suite every adapter runs
-  (`crates/supragnosis-store/tests/port_conformance.rs`). The Datalog passthrough has deliberately
-  never been opened - which is also why replacing Datalog cost nothing outside the adapter.
+- Principles 12/20 (minimal encoding bias/hexagonal): `core` has zero IO dependencies and store
+  concepts live only in the `store` adapter. This stopped being a claim about a shape and became one
+  that was exercised end to end: a third adapter was added, and then the original backend was
+  **deleted** - a different query paradigm, a different storage engine, a different dependency tree -
+  with no change in `core` or `engine`. What made that possible is that the Datalog passthrough was
+  never opened, so the query language was only ever an implementation detail of one adapter; and what
+  made it safe is that the port's contract is checked by one suite every adapter runs
+  (`crates/supragnosis-store/tests/port_conformance.rs`), so the demands outlived the backend that
+  used to carry them.
 - Principle 10 (schema open to extension, closed to modification): the core ontology (Observation,
   Entity, Relation, Provenance, Workspace) is fixed in `core`, while the domain vocabulary extends
   through `define_type` without touching it - a new domain type invalidates no existing observation,

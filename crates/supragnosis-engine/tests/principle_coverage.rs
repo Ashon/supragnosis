@@ -137,7 +137,6 @@ const SOURCES: &[&str] = &[
     include_str!("../src/lib.rs"),
     include_str!("../../supragnosis-core/src/lib.rs"),
     include_str!("../../supragnosis-store/src/lib.rs"),
-    include_str!("../../supragnosis-store/src/cozo_store.rs"),
     include_str!("../../supragnosis-store/tests/port_conformance.rs"),
     include_str!("../../supragnosis-sync/src/lib.rs"),
     include_str!("../../supragnosis-sync/src/http.rs"),
@@ -207,7 +206,6 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "absorb_union_is_order_independent_and_idempotent",
             "p3_a_new_spelling_accumulates_and_never_displaces",
             "log_retains_all_attestations_on_reobservation",
-            "cozo_reobservation_accumulates_attestations",
             // The same demand asked of the port rather than of one backend: absorb is what
             // `add_observation` promises, so an adapter that replaced the row would satisfy every
             // engine-level test above and still destroy provenance.
@@ -224,10 +222,14 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         )),
         c("every encoding the log has ever used stays readable",
           Evidence::Scenario(&[
-            // Append-only cuts both ways: a row can never be rewritten away, so a row that stops
-            // parsing is destroyed in effect. `migrate` cannot cover this - it walks the enumeration
-            // an unreadable row falls out of - which is why the repair is a permanent read shim.
-            "legacy_object_provenance_reads_as_one_attestation",
+            // Append-only cuts both ways: a row that stops parsing is destroyed in effect. While one
+            // store held every era, this was a permanent read shim inside that adapter. The store
+            // changed, so the demand moved rather than lapsed: the encodings this build cannot read
+            // are still readable by the release that wrote them, and the guard below makes skipping
+            // that release fail loudly instead of starting empty beside a full store - which is the
+            // only way the old rows could actually be lost.
+            "a_legacy_store_is_recognised_by_its_rocksdb_marker",
+            "an_unmigrated_store_is_refused_with_the_way_out",
         ])),
         c("a relation accumulates attestations the way an entity and an observation do",
           Evidence::Deferred(
@@ -420,9 +422,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // is the stronger property, and it is what would make a later re-ordering safe. The
             // promise removes a hazard; this guard is why removing it is allowed to be cheap.
             "read_surfaces_do_not_depend_on_enumeration_order",
-            "traverse_order_and_truncation_parity_across_adapters",
-            "traverse_dangling_endpoint_parity_across_adapters",
             "traverse_bounds_depth_and_truncates_nearest_first",
+            "traverse_passes_through_an_unprojected_endpoint",
             "search_truncation_is_reproducible",
         ])),
     ]),

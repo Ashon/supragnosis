@@ -31,18 +31,11 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           # ARM 리눅스 서버(Graviton, RPi 등) 배포용. 네이티브 arm64 러너라 크로스 툴체인
-          # 없이 RocksDB(C++)가 그대로 빌드된다. glibc 하한 논리는 x86_64 와 동일(22.04).
           # tap formula 는 이 타깃을 참조하지 않으므로 tap 갱신과는 무관하다.
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
-
-      # cozo/RocksDB(C++)의 librocksdb-sys 는 bindgen(libclang)이 필요하다 - Linux 러너에 설치.
-      # macOS 러너는 clang 이 기본 포함.
-      - name: install build deps (linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
 
       - name: install rust
         uses: dtolnay/rust-toolchain@stable

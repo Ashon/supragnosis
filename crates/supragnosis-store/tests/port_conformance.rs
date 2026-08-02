@@ -4,13 +4,10 @@
 //! (Principle 5), the same query on the same state gives the same response, and the iteration order
 //! of an internal data structure must not leak into a result (Principle 16).
 //!
-//! That contract was checked per adapter, in each adapter's own `mod tests`, with different cases
-//! and different counts. Cross-adapter parity existed only where a divergence had already bitten:
-//! `traverse`, guarded by two parity tests that live in the Cozo adapter's test module. The
-//! enumeration order was a known divergence rather than an unknown one. The P16 clause in
-//! `principle_coverage.rs` names it outright ("InMemory enumerates a HashMap, Cozo a Datalog
-//! result"), and the defence chosen was to prove no engine fold depends on the order
-//! (`read_surfaces_do_not_depend_on_enumeration_order`) instead of making the port promise one.
+//! That contract used to be checked per adapter, in each adapter's own `mod tests`, with different
+//! cases and different counts, and cross-adapter parity existed only where a divergence had already
+//! bitten. This suite is where the demands live now, which is what let a backend be replaced: the
+//! adapter that went away took its own tests with it and took nothing from the contract.
 //!
 //! This suite takes the other decision. A hazard every consumer must route around is worse than a
 //! promise the port keeps, especially with a third adapter arriving: "do not depend on the order"
@@ -21,9 +18,8 @@
 //! A new adapter earns its coverage by being added to that one list; it does not get to bring its
 //! own idea of the contract with it.
 //!
-//! Cases assert the PORT, never an adapter's internals. Anything only one backend can do (Cozo's
-//! HNSW index, its Datalog encoding) stays in that adapter's own tests - this file is the part that
-//! has to stay true when the backend is replaced.
+//! Cases assert the PORT, never an adapter's internals. Anything only one backend can do stays in
+//! that adapter's own tests - this file is the part that has to stay true when the backend changes.
 
 use std::path::PathBuf;
 
@@ -31,7 +27,7 @@ use supragnosis_core::{
     Entity, Hlc, KnowledgeStore, Observation, Provenance, Relation, SearchHit, SearchHitKind,
     SyncMeta, TrustTier, VersionVector,
 };
-use supragnosis_store::{CozoStore, InMemoryStore, RedbStore};
+use supragnosis_store::{InMemoryStore, RedbStore};
 
 // ---------------------------------------------------------------------------
 // harness
@@ -111,15 +107,6 @@ fn roster() -> Vec<Adapter> {
         (
             "in_memory",
             |_tag| Fixture { store: Some(Box::new(InMemoryStore::new())), dir: None },
-            StoresVectors::Yes,
-        ),
-        (
-            "cozo",
-            |tag| {
-                let dir = tmp_dir(tag);
-                let store = CozoStore::open(&dir).expect("cozo open");
-                Fixture { store: Some(Box::new(store)), dir: Some(dir) }
-            },
             StoresVectors::Yes,
         ),
         (

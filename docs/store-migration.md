@@ -3,14 +3,17 @@
 > How to move a node's knowledge from the Cozo (RocksDB) store to the redb store, what the move
 > preserves, and the one thing it deliberately does not carry across.
 >
-> The default store is still Cozo. Nothing here happens unless you ask for it, and every step is
-> reversible until you decide otherwise.
+> **Run this with v0.1.21**, the last release that reads a Cozo store. From v0.2.0 the store is redb
+> only, and that build refuses to start when it finds an un-migrated Cozo store rather than coming up
+> empty beside one - so the migration cannot be skipped by accident, only postponed.
+>
+> Every step is reversible: the Cozo store is opened read-only and never written.
 
-## 1. Why there is a second store
+## 1. Why the store changed
 
 Cozo's last release was 2023-12-11. The dependency that actually costs, though, is the one it
-carries: `cozorocks`, a C++ RocksDB bridge, which is why building supragnosis needs `clang` and
-`libclang-dev`.
+carried: `cozorocks`, a C++ RocksDB bridge, which was the only reason building supragnosis needed
+`clang` and `libclang-dev`. From v0.2.0 it needs neither.
 
 What the Datalog buys was measured rather than assumed. The adapter runs nineteen query shapes, of
 which exactly one is genuinely recursive - `traverse`'s bounded BFS. The rest are point get/put,
@@ -138,12 +141,15 @@ What to expect:
 
 ## 7. Rolling back
 
-There is nothing to undo. The Cozo store was never written, so:
+There is nothing to undo - the Cozo store was never written. On v0.1.21, going back is dropping the
+flag:
 
 ```bash
 supragnosis stop
-supragnosis start                       # default is cozo
+supragnosis start                       # v0.1.21 defaults to cozo
 ```
 
-Delete `~/.supragnosis/redb` if you want the disk back. Going forward again is another
-`migrate-store`.
+Delete `~/.supragnosis/redb` if you want the disk back; going forward again is another
+`migrate-store`. Note that rolling back means **staying on v0.1.21**: v0.2.0 has no Cozo adapter, so
+it is the migration that unblocks upgrading, not the other way round. Anything observed while running
+on redb lives only in the redb store, so decide before the two logs diverge.
