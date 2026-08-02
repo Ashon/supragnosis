@@ -14,6 +14,7 @@
   what does not.
 - Normative document: the design principles follow [`principles.md`](principles.md) (design principles).
 - Companion specs: [`federation.md`](federation.md) (M4), [`proposal-workflow.md`](proposal-workflow.md) (M3.5),
+  [`store-migration.md`](store-migration.md) (Cozo -> redb),
   [`resolution.md`](resolution.md) (M3a, implemented),
   [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6).
 
@@ -280,8 +281,9 @@ all), and an ANN index is a node-local recall aid exempt from the convergence no
 
 All three adapters (in-memory, Cozo, redb) are held to one contract by
 `crates/supragnosis-store/tests/port_conformance.rs`, which runs every case against every adapter, so
-a backend cannot bring its own reading of the port; `migrate-store` copies the log and replays it.
-Default remains Cozo.
+a backend cannot bring its own reading of the port; `migrate-store` copies the log and replays it - the
+procedure, what it preserves, and what a replay deliberately does not reproduce are in
+[store-migration.md](store-migration.md). Default remains Cozo.
 
 > **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability is a **hard requirement**, use Oxigraph.
 > Because of the port-adapter structure, it can be swapped by reimplementing only the `KnowledgeStore`
