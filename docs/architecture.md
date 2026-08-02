@@ -14,7 +14,8 @@
   what does not.
 - Normative document: the design principles follow [`principles.md`](principles.md) (design principles).
 - Companion specs: [`federation.md`](federation.md) (M4), [`proposal-workflow.md`](proposal-workflow.md) (M3.5),
-  [`store-migration.md`](store-migration.md) (Cozo -> redb),
+  [`store-migration.md`](store-migration.md) (Cozo -> redb), [`excision.md`](excision.md) (the P3
+  destruction exception, M4 Phase 5),
   [`resolution.md`](resolution.md) (M3a, implemented),
   [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6).
 
@@ -839,7 +840,11 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   **Now owned: M4 Phase 5.** That phase IS the first multi-principal deployment, so the condition
   above already named its own due date without anyone writing it down - which is exactly how an
   unscheduled item stays unscheduled. Recorded here so the ledger has no entry without a repayment
-  point.
+  point. **Specified in [excision.md](excision.md)**, which also records the demand that arrives before
+  any regulator does - a secret an agent observed while working (P22 makes capture a by-product, so
+  eventually one of them reads a credential) - and the ordering that follows from it: an ingest
+  redaction hook, then detection without destruction, then containment, then excision. A partial
+  excision is worse than none, because it reports a removal it did not perform (E9).
 - Principle 21 (long-running tasks/human mediation): MCP Tasks exposure of sync/consolidate, merge/contradiction/promotion elicitation -> **M4 remainder** (see Section 7).
 - Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, but
   the MCP **prompts** that would induce voluntary observe/search during work do not exist (Section 7) -> incremental.
