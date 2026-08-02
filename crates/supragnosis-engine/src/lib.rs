@@ -446,6 +446,37 @@ pub const PROPOSAL_KINDS: [&str; 6] = [
     "recall",
 ];
 
+/// Which way an endpoint travels in a merge/split preview: a merge moves it onto the canonical id,
+/// a split moves it back off. The only asymmetry between the two previews.
+#[derive(Clone, Copy)]
+enum Rewire {
+    OntoAnchor,
+    OffAnchor,
+}
+
+/// What a merge or split proposes, in the terms the preview needs: the forwarding map as it would
+/// stand, the ids the proposal relocates, the canonical id they travel to or from, and which way.
+/// One value rather than four parameters because they are one thing - a description of the change -
+/// and passing them separately invites a call site that pairs the wrong anchor with the wrong set.
+struct Relocation<'a> {
+    after_fwd: &'a HashMap<String, String>,
+    moving: &'a HashSet<String>,
+    anchor: &'a str,
+    rewire: Rewire,
+}
+
+/// A preview that cannot be computed, and why. An empty diff would read as "changes nothing", which
+/// is the opposite of the truth (Principle 5).
+fn uncomputable_diff(note: &str) -> BeliefDiff {
+    BeliefDiff {
+        computable: false,
+        note: Some(note.into()),
+        tier_changes: Vec::new(),
+        overturned: Vec::new(),
+        rewired: Vec::new(),
+    }
+}
+
 /// A merge verdict was cast on this proposal, whether or not the blocking checks let it commit.
 /// `merged` and `blocked` are the two states that carry one; `open`/`rejected`/`withdrawn` do not.
 ///
@@ -2560,44 +2591,72 @@ impl Engine {
         view: &ProposalView,
         cx: &ReadCtx,
     ) -> Result<BeliefDiff, StoreError> {
-        let uncomputable = |note: &str| BeliefDiff {
-            computable: false,
-            note: Some(note.into()),
-            tier_changes: Vec::new(),
-            overturned: Vec::new(),
-            rewired: Vec::new(),
-        };
         let Some(target) = view.targets.first().cloned() else {
-            return Ok(uncomputable("an entity_split names no proposal to reverse"));
+            return Ok(uncomputable_diff("an entity_split names no proposal to reverse"));
         };
         let props = self.fold_proposals(workspace, cx)?;
         let Some(merge) = props.get(&target) else {
-            return Ok(uncomputable(
+            return Ok(uncomputable_diff(
                 "the named proposal is not in the local log, so what it did cannot be read - under \
                  incomplete sync this is arrival order rather than a malformed split",
             ));
         };
         if merge.kind != "entity_merge" || !carries_merge_verdict(&merge.state) {
-            return Ok(uncomputable(
+            return Ok(uncomputable_diff(
                 "the named proposal is not an entity_merge that has been decided, so it forwards \
                  nothing for this to take back",
             ));
         }
         let Some(into) = merge.into.clone() else {
-            return Ok(uncomputable("the named entity_merge has no `into`, so it folded nothing"));
+            return Ok(uncomputable_diff(
+                "the named entity_merge has no `into`, so it folded nothing",
+            ));
         };
 
         let base_fwd = self.merge_forwarding(workspace, cx)?;
-        let after_fwd = self.forwarding_less(workspace, &HashSet::from([target.clone()]), cx)?;
+        let after_fwd = self.forwarding_less(workspace, &HashSet::from([target]), cx)?;
         // The ids that stop forwarding onto `into` when this merge is taken back. Read from the
         // difference between the two maps rather than from the merge's targets, because a target may
-        // still be forwarded by ANOTHER merge and would then not separate at all.
+        // still be forwarded by ANOTHER merge and would then not separate at all - saying it would
+        // overstate the blast radius in the one direction that matters.
         let separating: HashSet<String> =
             base_fwd.keys().filter(|id| !after_fwd.contains_key(*id)).cloned().collect();
 
+        self.forwarding_diff(
+            workspace,
+            &base_fwd,
+            Relocation {
+                after_fwd: &after_fwd,
+                moving: &separating,
+                anchor: &into,
+                rewire: Rewire::OffAnchor,
+            },
+            cx,
+        )
+    }
+    /// The half of a merge/split preview that is the same act in both directions: fold beliefs under
+    /// the forwarding map as it stands and as it would stand, and report what differs.
+    ///
+    /// `moving` is the ids the proposal directly relocates. They are skipped in `overturned` because
+    /// a folded target losing its own belief (or a separated one regaining it) IS the proposal, not a
+    /// surprise; and they are what `rewired` matches on. `anchor` is the canonical id those endpoints
+    /// travel to or from.
+    ///
+    /// Extracted because the two previews had drifted apart into 73 identical lines, and identical
+    /// lines are how a fix to one becomes a divergence from the other - in exactly the code whose
+    /// whole claim is that the preview and the verdict cannot disagree.
+    fn forwarding_diff(
+        &self,
+        workspace: Option<&str>,
+        base_fwd: &HashMap<String, String>,
+        to: Relocation<'_>,
+        cx: &ReadCtx,
+    ) -> Result<BeliefDiff, StoreError> {
+        let Relocation { after_fwd, moving, anchor, rewire } = to;
         let gates = self.gate_grants(workspace, cx)?;
-        let before = self.belief_fold(workspace, &base_fwd, &gates, cx)?;
-        let after = self.belief_fold(workspace, &after_fwd, &gates, cx)?;
+        let before = self.belief_fold(workspace, base_fwd, &gates, cx)?;
+        let after = self.belief_fold(workspace, after_fwd, &gates, cx)?;
+
         let name_of = |id: &str| -> Result<String, StoreError> {
             Ok(self
                 .store
@@ -2610,7 +2669,7 @@ impl Engine {
         ids.extend(after.kinds.keys());
         let mut overturned = Vec::new();
         for id in ids {
-            if separating.contains(id) {
+            if moving.contains(id) {
                 continue;
             }
             let (wb, cb, _) = self.resolve_kind(before.kinds.get(id));
@@ -2630,24 +2689,28 @@ impl Engine {
             });
         }
 
-        // Endpoints that move back off the canonical id. `rewired` is shaped for a merge, so the
-        // direction reads reversed here on purpose: `from_name` is the endpoint, `to_name` is where
-        // it lands - which for a split is the entity it belonged to before the merge.
+        // Reference rewiring (proposal-workflow.md Section 5, item 5): every edge with an endpoint
+        // the proposal relocates.
         let canon = |id: &str| after_fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let anchor_name = name_of(anchor)?;
         let mut rewired = Vec::new();
         for r in self.store.all_relations(workspace)? {
-            let (mf, mt) = (separating.contains(&r.from), separating.contains(&r.to));
+            let (mf, mt) = (moving.contains(&r.from), moving.contains(&r.to));
             if !mf && !mt {
                 continue;
             }
-            let moving = if mf { &r.from } else { &r.to };
-            let other = if mf { &r.to } else { &r.from };
+            let endpoint = name_of(if mf { &r.from } else { &r.to })?;
+            let other = name_of(if mf { &r.to } else { &r.from })?;
+            let (from_name, to_name) = match rewire {
+                Rewire::OntoAnchor => (endpoint, anchor_name.clone()),
+                Rewire::OffAnchor => (anchor_name.clone(), endpoint),
+            };
             rewired.push(RelationRewire {
                 relation: r.id.clone(),
                 kind: r.kind.clone(),
-                from_name: name_of(&into)?,
-                to_name: name_of(moving)?,
-                other_name: name_of(other)?,
+                from_name,
+                to_name,
+                other_name: other,
                 becomes_self_loop: canon(&r.from) == canon(&r.to),
             });
         }
@@ -2679,15 +2742,9 @@ impl Engine {
         cx: &ReadCtx,
     ) -> Result<BeliefDiff, StoreError> {
         let Some(into) = view.into.clone() else {
-            return Ok(BeliefDiff {
-                computable: false,
-                note: Some(
-                    "an entity_merge without `into` names no canonical id to fold onto".into(),
-                ),
-                tier_changes: Vec::new(),
-                overturned: Vec::new(),
-                rewired: Vec::new(),
-            });
+            return Ok(uncomputable_diff(
+                "an entity_merge without `into` names no canonical id to fold onto",
+            ));
         };
         let base_fwd = self.merge_forwarding(workspace, cx)?;
         let folded: HashSet<String> =
@@ -2696,81 +2753,18 @@ impl Engine {
         for t in &folded {
             after_fwd.insert(t.clone(), into.clone());
         }
-
-        let gates = self.gate_grants(workspace, cx)?;
-        let before = self.belief_fold(workspace, &base_fwd, &gates, cx)?;
-        let after = self.belief_fold(workspace, &after_fwd, &gates, cx)?;
-
-        let name_of = |id: &str| -> Result<String, StoreError> {
-            Ok(self
-                .store
-                .get_entity(id)?
-                .map(|e| e.canonical_name)
-                .unwrap_or_else(|| id.to_string()))
-        };
-
-        let mut ids: BTreeSet<&String> = before.kinds.keys().collect();
-        ids.extend(after.kinds.keys());
-        let mut overturned = Vec::new();
-        for id in ids {
-            // A folded-away target losing its own belief IS the proposal, not a surprise the reviewer
-            // needs flagged. What matters is what happens to the survivor.
-            if folded.contains(id) {
-                continue;
-            }
-            let (wb, cb, _) = self.resolve_kind(before.kinds.get(id));
-            let (wa, ca, _) = self.resolve_kind(after.kinds.get(id));
-            let (vb, va) = (wb.map(|(k, _)| k), wa.map(|(k, _)| k));
-            if vb == va && cb == ca {
-                continue;
-            }
-            overturned.push(BeliefChange {
-                entity: id.clone(),
-                name: name_of(id)?,
-                field: "kind".into(),
-                from: vb,
-                to: va,
-                contested_before: cb,
-                contested_after: ca,
-            });
-        }
-
-        // Reference rewiring (Section 5, item 5): every edge with an endpoint being folded away.
-        let canon = |id: &str| after_fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
-        let into_name = name_of(&into)?;
-        let mut rewired = Vec::new();
-        for r in self.store.all_relations(workspace)? {
-            let (mf, mt) = (folded.contains(&r.from), folded.contains(&r.to));
-            if !mf && !mt {
-                continue;
-            }
-            let moving = if mf { &r.from } else { &r.to };
-            let other = if mf { &r.to } else { &r.from };
-            rewired.push(RelationRewire {
-                relation: r.id.clone(),
-                kind: r.kind.clone(),
-                from_name: name_of(moving)?,
-                to_name: into_name.clone(),
-                other_name: name_of(other)?,
-                becomes_self_loop: canon(&r.from) == canon(&r.to),
-            });
-        }
-        rewired.sort_by(|a, b| {
-            a.kind
-                .cmp(&b.kind)
-                .then_with(|| a.other_name.cmp(&b.other_name))
-                .then_with(|| a.relation.cmp(&b.relation))
-        });
-        overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
-        Ok(BeliefDiff {
-            computable: true,
-            note: None,
-            tier_changes: Vec::new(),
-            overturned,
-            rewired,
-        })
+        self.forwarding_diff(
+            workspace,
+            &base_fwd,
+            Relocation {
+                after_fwd: &after_fwd,
+                moving: &folded,
+                anchor: &into,
+                rewire: Rewire::OntoAnchor,
+            },
+            cx,
+        )
     }
-
     fn belief_diff(
         &self,
         workspace: Option<&str>,

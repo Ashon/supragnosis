@@ -212,7 +212,10 @@ verdict lands, since it never passes through that path.
 The diff a reviewer reads is produced by running the forwarding fold with the target treated as
 reversed - the same computation the verdict performs, not a prediction of it. That is the argument
 `merge_diff` already makes for the other direction, and it is why the two cannot disagree: there is
-one transitive resolution, parameterized by which merges count.
+one transitive resolution, parameterized by which merges count, and one comparison, parameterized by
+which ids move and which way. The split preview shipped as a copy of the merge preview first, which
+is worth recording: 73 identical lines in the code whose entire claim is that a preview and a verdict
+cannot diverge is a fix to one becoming a divergence from the other, waiting.
 
 It reports the relation endpoints that move back off the canonical id, and any belief the separation
 overturns on an entity that is *not* one of the separating ones. The separating entities regaining
