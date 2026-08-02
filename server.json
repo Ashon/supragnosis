@@ -3,7 +3,7 @@
   "name": "io.github.ashon/supragnosis",
   "title": "supragnosis",
   "description": "Memory for AI agents that remembers who said it.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "websiteUrl": "https://supragnosis.dev/",
   "repository": {
     "url": "https://github.com/Ashon/supragnosis",
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/ashon/supragnosis:0.2.1",
+      "identifier": "ghcr.io/ashon/supragnosis:0.2.2",
       "transport": {
         "type": "stdio"
       },
