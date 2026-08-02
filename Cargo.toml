@@ -8,7 +8,7 @@ members = ["crates/*", "e2e"]
 exclude = ["app"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 # The floor the DEPENDENCIES set, which is higher than anything this code needs. Our own two are
 # trait upcasting (1.86), which makes the store port narrowable - `Arc<dyn KnowledgeStore>` ->
