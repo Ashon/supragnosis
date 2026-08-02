@@ -1,0 +1,10 @@
+# Commits that changed formatting and nothing else. `git blame` should look through them to the
+# commit that wrote the line, because in this repo the line and the reasoning behind it are the same
+# artifact - blaming a whitespace pass loses the argument the code was making.
+#
+# Opt in per clone (it is not automatic):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub reads this file by name and applies it without any configuration.
+
+# style: adopt rustfmt, configured to the density the code was already written at
+5f0142b1c1c362fa02bd5ad5757ed9c9be656da7

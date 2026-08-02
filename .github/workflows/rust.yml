@@ -56,6 +56,11 @@ jobs:
         with:
           key: rust-check
 
+      # rustfmt.toml exists so this check has one answer; before it, the tree had drifted to ~620
+      # divergent blocks with nothing checking. --all covers `app` too, which default-members skips.
+      - name: fmt
+        run: cargo fmt --all -- --check
+
       # Workspace lints deny clippy::all, but that leaves every rustc lint at warn - including
       # dead_code, which is exactly what an un-#[test]ed guard becomes. principle_coverage.rs now
       # rejects that case on its own; -D warnings is the general form, so the next lint that means
