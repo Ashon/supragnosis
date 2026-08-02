@@ -1,0 +1,55 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ashon/supragnosis",
+  "title": "supragnosis",
+  "description": "Memory for AI agents that remembers who said it.",
+  "version": "0.2.1",
+  "websiteUrl": "https://supragnosis.dev/",
+  "repository": {
+    "url": "https://github.com/Ashon/supragnosis",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/ashon/supragnosis:0.2.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "docker",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-i",
+          "description": "Keep stdin open. The MCP transport here is stdio, so the container speaks the protocol on its standard streams."
+        },
+        {
+          "type": "named",
+          "name": "--rm",
+          "description": "The container is disposable. Everything that must survive it is in the volume below."
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "value": "{state}:/var/lib/supragnosis/.supragnosis",
+          "description": "REQUIRED. The knowledge, the node key and the config all live here. The node key is written once and the node identity derives from it permanently, so a run without this volume is not a restarted node - it is a new one, with an empty log.",
+          "variables": {
+            "state": {
+              "description": "A named docker volume, or an absolute path on the host, to keep the knowledge in.",
+              "default": "supragnosis-state",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve",
+          "valueHint": "serve",
+          "description": "Foreground run on stdio. The image's default command starts an HTTP daemon instead, which is the shape a federation hub wants and not what an MCP client should launch."
+        }
+      ]
+    }
+  ]
+}
