@@ -908,7 +908,7 @@ pub struct Entity {
     ///
     /// Excluded from serde entirely (Principle 21): this vector is only an internal recall machine, so leaking it through the MCP
     /// surface (get_entity) would pollute the LLM context with hundreds of floats. Persistence is handled by the store
-    /// adapter with a hand-rolled encoding (Cozo data JSON), so it is not a domain serialization target.
+    /// adapter with a hand-rolled encoding (the row's stored JSON), so it is not a domain serialization target.
     #[serde(skip)]
     pub embedding: Option<Vec<f32>>,
 }
@@ -1051,7 +1051,7 @@ pub struct AttestationEvent {
     pub attestation: Provenance,
 }
 
-/// Storage port. Implemented by adapters such as in-memory / Cozo (RocksDB).
+/// Storage port. Implemented by adapters such as in-memory / redb.
 ///
 /// **Read contract** (the duty of every adapter):
 /// - **Distinguishing absence from failure (Principle 5)**: a backend failure propagates as `Err`. Swallowing a failure as an

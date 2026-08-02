@@ -212,10 +212,10 @@ const MERGE_BAND_K: usize = 8;
 /// included, and was asking the store for them again once per entity. That is N queries to rank
 /// data already in hand.
 ///
-/// Computing it here also makes the band say the same thing on every adapter. The InMemory store
-/// ranks exhaustively and Cozo runs an HNSW approximation, so the same log could produce different
-/// merge candidates depending on which store was underneath - the shape of divergence the traverse
-/// parity conditions exist to catch.
+/// Computing it here also makes the band say the same thing on every adapter. Both stores in the
+/// tree rank exhaustively, but an adapter is free to answer with an approximate index instead, and
+/// then the same log would produce different merge candidates depending on which store was
+/// underneath - the shape of divergence the traverse parity conditions exist to catch.
 fn nearest_by_embedding<'e>(
     subject: &Entity,
     pool: &'e [Entity],
@@ -3972,7 +3972,7 @@ impl Engine {
         // Ordered by the stable key before anything picks among rows (Principle 16). A merge can
         // fold two relations onto one (from, kind, to), and the survivor carries its own
         // description/tier/confidence - so "which duplicate" is answered by the relation id, not by
-        // whichever order the adapter enumerated (InMemory a HashMap, Cozo a Datalog result).
+        // whichever order the adapter enumerated (InMemory a HashMap, redb a B-tree range).
         // Choosing among duplicates on MERIT would be relation belief resolution, which is deferred
         // with negation semantics (architecture.md Section 14); pinning the tie is not.
         let mut relations = self.store.all_relations(workspace)?;

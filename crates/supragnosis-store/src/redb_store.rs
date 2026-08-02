@@ -1,20 +1,21 @@
 //! redb-backed store adapter - a pure-Rust embedded B-tree with a single writer and MVCC readers.
 //!
-//! **Why a second file-backed adapter.** The Cozo adapter reaches the same data through Datalog, and
-//! nineteen query shapes is what that expressiveness is spent on: point get/put on four relations,
-//! full scans with a workspace filter, a two-rule union for `relations_of`, an ANN lookup, and
-//! exactly one genuinely recursive query (`traverse`'s bounded BFS). No time-travel operator is used
-//! at all. That is a key-value workload with a graph walk on top, and the engine never sees Datalog
-//! either way - the passthrough tool has deliberately never been opened (Principle 12/21), so the
-//! query language is an implementation detail of this layer alone.
+//! **Why this replaced a Datalog store.** Through v0.1.21 the file-backed adapter was Cozo, which
+//! reached the same data through Datalog, and nineteen query shapes was what that expressiveness got
+//! spent on: point get/put on four relations, full scans with a workspace filter, a two-rule union
+//! for `relations_of`, an ANN lookup, and exactly one genuinely recursive query (`traverse`'s
+//! bounded BFS). No time-travel operator was used at all. That is a key-value workload with a graph
+//! walk on top, and the engine never saw Datalog either way - the passthrough tool has deliberately
+//! never been opened (Principle 12/21), so the query language was an implementation detail of this
+//! layer alone, and replaceable on that evidence rather than on taste.
 //!
 //! **What the shape buys.** A B-tree keyed by id gives the port's ascending-id enumeration for free
 //! rather than by sorting on the way out, and a workspace scan is a multimap lookup instead of a scan
 //! plus a filter. Being pure Rust it also drops the C++ RocksDB bridge, which is the thing that puts
 //! `clang`/`libclang-dev` in the build.
 //!
-//! **Layout.** Rows are JSON values under their id, exactly the payload the Cozo `data` column holds,
-//! so the two adapters reconstruct from the same encoding. Around them sit secondary indexes as redb
+//! **Layout.** Rows are JSON values under their id - the same encoding the Datalog store kept in its
+//! `data` column, so the migration was a copy rather than a re-encode. Around them sit secondary indexes as redb
 //! multimap tables (the DUPSORT analogue): workspace -> ids for each of the three enumerations, and
 //! from/to -> relation ids for `relations_of` and for the traversal's out-edges. Multimap values come
 //! back in sorted order, so every read path lands on ascending id without a sort.
@@ -126,7 +127,7 @@ impl RedbStore {
     }
 
     /// Records the embedder identity, so reopening under a different model can be refused before its
-    /// vectors mix with the stored ones (the same fail-fast the Cozo adapter applies).
+    /// vectors mix with the stored ones.
     pub fn set_embedder(&self, embedder_id: &str) -> Result<(), StoreError> {
         if let Some(existing) = self.embedder()? {
             if existing != embedder_id {
@@ -216,7 +217,7 @@ impl RedbStore {
 
 /// The workspace a projected row belongs to. An entity carries a list of attestations but its id is
 /// derived from (workspace, name), so every attestation on one row shares a workspace; the first is
-/// representative. This matches the Cozo adapter, which stores that same value in a column.
+/// representative, stored rather than recomputed on read.
 fn entity_workspace(e: &Entity) -> String {
     e.provenance.first().map(|p| p.workspace.clone()).unwrap_or_default()
 }
@@ -346,7 +347,7 @@ impl AssertionStore for RedbStore {
         let txn = self.db.begin_read().map_err(backend)?;
         let ids = self.ids_in(&txn, OBSERVATIONS, OBS_BY_WS, workspace)?;
         let mut rows = Self::load_rows::<Observation>(&txn, OBSERVATIONS, &ids, "observation")?;
-        // Attached for parity with the Cozo adapter, which reconstructs the vector out of its data
+        // Attached because the port's contract is that a read reconstructs the vector out of its data
         // JSON here. It is a cost with no reader: no fold on the read path touches
         // `Observation::embedding` - only `search_semantic` does, and that reads the vector table
         // directly. Withholding it is the available optimization, but it is a change to what the
@@ -761,8 +762,8 @@ mod tests {
     }
 
     /// Vectors from two models share no space, so mixing them degrades recall silently rather than
-    /// loudly. Reopening under a different embedder is refused for the same reason the Cozo adapter
-    /// refuses it - the failure has to happen at open, not at the first bad ranking.
+    /// loudly. Reopening under a different embedder is refused because the failure has to happen at
+    /// open, not at the first bad ranking.
     #[test]
     fn redb_refuses_a_reopen_under_a_different_embedder() {
         let path = tmp_path();
