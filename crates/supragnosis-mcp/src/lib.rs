@@ -1013,13 +1013,18 @@ fn sync_unconfigured() -> String {
     )
 }
 
-#[tool_handler]
+// The router is named explicitly so the handler reads the one built once in `new`. Left implicit,
+// rmcp calls `Self::tool_router()` instead, which rebuilds the whole table on every tools/list and
+// tools/call - and leaves the field dead, which is how the change would announce itself.
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for SupragnosisServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some(
+        // Built through the constructor rather than a struct literal: rmcp marks this
+        // #[non_exhaustive], so a literal - even one ending in `..Default::default()` - does not
+        // compile from outside the crate. `new` already fills server_info from the build env.
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
+            .with_server_info(Implementation::from_build_env())
+            .with_instructions(
                 "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
                  into an ontology. Ingest knowledge with observe and explore it with \
                  search_knowledge/get_entity/traverse. Survey a workspace's main co-occurrence \
@@ -1035,11 +1040,8 @@ impl ServerHandler for SupragnosisServer {
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
                  observation back-reference (raw content + provenance + lineage - use it to \
-                 confirm the basis of a search hit)."
-                    .to_string(),
-            ),
-            ..Default::default()
-        }
+                 confirm the basis of a search hit).",
+            )
     }
 
     /// Concrete resource listing: exposes the node's default workspace graph (other workspaces via templates).
@@ -1174,18 +1176,18 @@ impl ServerHandler for SupragnosisServer {
         let result = match parse_resource_uri(&uri) {
             // Workspace list (for discovery) - array of workspace names that hold knowledge.
             Some(ResourceUri::Workspaces) => match self.engine.workspaces() {
-                Ok(list) => Ok(ReadResourceResult {
-                    contents: vec![ResourceContents::text(to_json(&list), uri)],
-                }),
+                Ok(list) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&list), uri)]))
+                }
                 Err(e) => Err(ErrorData::internal_error(
                     format!("storage backend failure (not a missing resource): {e}"),
                     None,
                 )),
             },
             Some(ResourceUri::Graph(ws)) => match self.engine.graph(Some(ws)) {
-                Ok(graph) => Ok(ReadResourceResult {
-                    contents: vec![ResourceContents::text(to_json(&graph), uri)],
-                }),
+                Ok(graph) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&graph), uri)]))
+                }
                 // A backend failure is surfaced as an internal error, not not_found (absence) - preserving the Principle 5 distinction.
                 Err(e) => Err(ErrorData::internal_error(
                     format!("storage backend failure (not a missing resource): {e}"),
@@ -1194,9 +1196,9 @@ impl ServerHandler for SupragnosisServer {
             },
             // Co-occurrence second-order structure (Principle 11): the entity sets an observation asserted together, as hyperedges.
             Some(ResourceUri::Hypergraph(ws)) => match self.engine.hypergraph(Some(ws)) {
-                Ok(hg) => Ok(ReadResourceResult {
-                    contents: vec![ResourceContents::text(to_json(&hg), uri)],
-                }),
+                Ok(hg) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&hg), uri)]))
+                }
                 Err(e) => Err(ErrorData::internal_error(
                     format!("storage backend failure (not a missing resource): {e}"),
                     None,
@@ -1204,9 +1206,9 @@ impl ServerHandler for SupragnosisServer {
             },
             // T-Box glossary (Principle 8/11): the workspace's type definitions (entity + relation types + meanings).
             Some(ResourceUri::Types(ws)) => match self.engine.types(Some(ws)) {
-                Ok(types) => Ok(ReadResourceResult {
-                    contents: vec![ResourceContents::text(to_json(&types), uri)],
-                }),
+                Ok(types) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
+                }
                 Err(e) => Err(ErrorData::internal_error(
                     format!("storage backend failure (not a missing resource): {e}"),
                     None,
@@ -1214,9 +1216,9 @@ impl ServerHandler for SupragnosisServer {
             },
             // Observation back-reference (Principles 2/14): whoever knows the id can query the substance (raw content/provenance/lineage).
             Some(ResourceUri::Observation(id)) => match self.engine.get_observation(id) {
-                Ok(Some(obs)) => Ok(ReadResourceResult {
-                    contents: vec![ResourceContents::text(to_json(&obs), uri)],
-                }),
+                Ok(Some(obs)) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&obs), uri)]))
+                }
                 Ok(None) => Err(ErrorData::resource_not_found(
                     format!(
                         "observation id not found: {id} - absence is not a negation (open-world). \

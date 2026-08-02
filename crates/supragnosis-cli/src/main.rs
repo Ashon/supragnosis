@@ -944,6 +944,11 @@ async fn serve_http_daemon(
     // DNS-rebinding defense (MCP spec: validate Origin). The daemon is loopback-bound, so a rebound
     // browser page (attacker.com -> 127.0.0.1) is the only way a foreign origin reaches it; the guard
     // refuses any non-loopback Host/Origin so such a page cannot drive observe/search/review.
+    //
+    // rmcp grew its own Host allowlist in 1.4.0 (GHSA-89vp-x53w-74fx), which the default config above
+    // switches on, so the Host half is now checked twice. The guard stays: it is what covered this
+    // daemon for the whole time the dependency did not, and it is the only half that reads Origin,
+    // which rmcp leaves unchecked by default (`allowed_origins` defaults to empty = no check).
     let router = axum::Router::new()
         .nest_service("/mcp", service)
         // Inner: rewrites the service's own stale-session answer. Outer: the origin guard, so a foreign
