@@ -593,9 +593,9 @@ input, not nondeterminism - F16).
   `[server] listen / tls_cert / tls_key / allowlist` (entries: `node_id -> public key, bearer hash,
   shared workspaces`). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
   deferred - Section 11) and `anchor_key` (the Phase 5 policy anchor, 6a) are rejected loudly today
-  (deny-unknown), while an admin marking inside an allowlist entry (7a) would be silently ignored -
-  `AllowEntry` does not deny unknown keys, a small standing gap against the "typo cannot silently
-  disable" rule. `[node] role` was superseded: roles are implied by which sections are present
+  (deny-unknown), and so is an unknown key **inside** an allowlist entry - `AllowEntry` denies unknown
+  fields like every other section, closing the gap this spec used to record. An entry is where a typo
+  is most expensive, since it decides who may connect and what they may read (P17/P18). `[node] role` was superseded: roles are implied by which sections are present
   (architecture.md Section 10).
 - CLI: `supragnosis sync` (a one-shot round against the configured servers; the daemon separately
   pings its hubs on a slow interval for status - the Section 5 `ping`); the server role is started

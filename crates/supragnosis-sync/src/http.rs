@@ -21,7 +21,15 @@ use crate::{export_delta, version_vector, SyncError, SyncNode};
 
 /// One admitted peer node (docs/federation.md 6a): wire credentials + what it may read/write.
 /// `bearer_hash` is the blake3 hex of the peer's bearer token - the server never stores the token.
+///
+/// Denies unknown keys, like every other section of the config. It was the one struct that did not,
+/// and federation.md Section 9 recorded it as a standing gap: an admin marking or a misspelled
+/// `shared_workspaces` inside an entry parsed clean and did nothing, which is exactly the failure the
+/// rest of the file's `deny_unknown_fields` exists to prevent. An entry is also the place a typo is
+/// most expensive - it decides who may connect and what they may read (P17/P18), so failing to parse
+/// is the only safe way to be wrong about it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AllowEntry {
     pub node_id: String,
     pub public_key_hex: String,
