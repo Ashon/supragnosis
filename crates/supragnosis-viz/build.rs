@@ -26,8 +26,8 @@ fn main() {
     for name in ["viewer.html", "viewer.css", "viewer.js"] {
         let src = assets.join(name);
         println!("cargo:rerun-if-changed={}", src.display());
-        let content = fs::read_to_string(&src)
-            .unwrap_or_else(|e| panic!("read {}: {e}", src.display()));
+        let content =
+            fs::read_to_string(&src).unwrap_or_else(|e| panic!("read {}: {e}", src.display()));
         let processed = if release {
             match name {
                 "viewer.css" => minify_css(&content),

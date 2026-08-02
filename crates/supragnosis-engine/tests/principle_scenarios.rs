@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use supragnosis_core::{
-    evaluated_tier, Assertions, Entity, EntityAssertion, Hlc, AssertionStore, KnowledgeStore, Observation,
-    Provenance, SyncMeta, TrustTier, VersionVector,
+    evaluated_tier, AssertionStore, Assertions, Entity, EntityAssertion, Hlc, KnowledgeStore,
+    Observation, Provenance, SyncMeta, TrustTier, VersionVector,
 };
 use supragnosis_engine::{
     DefineTypeInput, Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, TypeDefInput,
@@ -92,11 +92,8 @@ fn graph_shape(engine: &Engine) -> (Vec<String>, Vec<(String, String, String)>) 
     let g = engine.graph(Some(WS)).expect("graph");
     let mut nodes: Vec<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
     nodes.sort();
-    let mut edges: Vec<(String, String, String)> = g
-        .edges
-        .iter()
-        .map(|e| (e.from.clone(), e.to.clone(), e.kind.clone()))
-        .collect();
+    let mut edges: Vec<(String, String, String)> =
+        g.edges.iter().map(|e| (e.from.clone(), e.to.clone(), e.kind.clone())).collect();
     edges.sort();
     (nodes, edges)
 }
@@ -226,7 +223,11 @@ fn kind_obs(name: &str, kind: &str, observed_at: u64) -> Observation {
             sync: None,
         },
         Assertions {
-            entities: vec![EntityAssertion { name: name.into(), kind: Some(kind.into()), description: None }],
+            entities: vec![EntityAssertion {
+                name: name.into(),
+                kind: Some(kind.into()),
+                description: None,
+            }],
             ..Default::default()
         },
     )
@@ -253,9 +254,16 @@ fn p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it() {
     assert!(n.contested, "tier-tied distinct values must flag contested (R6)");
     assert_eq!(n.competitors.len(), 1);
     assert_eq!(n.competitors[0].value, "Tool");
-    assert_eq!(n.kind_source.as_deref(), Some(id2.as_str()), "the winner's asserting observation is the mediation handle");
+    assert_eq!(
+        n.kind_source.as_deref(),
+        Some(id2.as_str()),
+        "the winner's asserting observation is the mediation handle"
+    );
     let cur = engine.curation(Some(WS)).expect("curation");
-    assert_eq!(cur.stats.contradictions, 1, "the conflict must appear in the P6 introspection list");
+    assert_eq!(
+        cur.stats.contradictions, 1,
+        "the conflict must appear in the P6 introspection list"
+    );
     assert!(cur.contradictions[0].contested);
 
     // Mediation: confirm "Tool" from the console. Promotion is a gated verdict (P23), and the
@@ -281,7 +289,11 @@ fn p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it() {
     let n = g.nodes.iter().find(|n| n.name == "cozo").expect("node");
     assert_eq!(n.kind, "Tool", "the confirmed side must win by tier (R5)");
     assert!(!n.contested, "trust decided - no longer contested (R6)");
-    assert_eq!(n.trust_tier, TrustTier::HumanConfirmed, "the node tier is the effective tier incl. the grant");
+    assert_eq!(
+        n.trust_tier,
+        TrustTier::HumanConfirmed,
+        "the node tier is the effective tier incl. the grant"
+    );
     assert_eq!(n.competitors.len(), 1, "the losing value stays queryable (R7)");
     assert_eq!(n.competitors[0].value, "Library");
     let cur = engine.curation(Some(WS)).expect("curation after mediation");
@@ -446,7 +458,11 @@ fn p16_canonical_name_selection_is_arrival_order_free() {
                 sync: None,
             },
             Assertions {
-                entities: vec![EntityAssertion { name: spelling.into(), kind: None, description: None }],
+                entities: vec![EntityAssertion {
+                    name: spelling.into(),
+                    kind: None,
+                    description: None,
+                }],
                 ..Default::default()
             },
         )
@@ -458,7 +474,11 @@ fn p16_canonical_name_selection_is_arrival_order_free() {
             store.add_observation(o.clone()).unwrap();
         }
         engine.reproject(Some(WS)).expect("reproject");
-        store.get_entity(&Entity::make_id(WS, "driver")).unwrap().expect("entity").canonical_name
+        store
+            .get_entity(&Entity::make_id(WS, "driver"))
+            .unwrap()
+            .expect("entity")
+            .canonical_name
     };
     let a = name_obs("driver", 100);
     let b = name_obs("Driver", 200);
@@ -641,8 +661,12 @@ fn p16_partitioned_and_duplicated_delivery_converges() {
     let node_c = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([3u8; 32]));
     let mut vv_c = VersionVector::default();
     let (first, second) = all.split_at(2);
-    node_c.apply(&*store_c, WS, second.to_vec(), &keys, &mut vv_c).expect("apply c1");
-    node_c.apply(&*store_c, WS, second.to_vec(), &keys, &mut vv_c).expect("apply c2 dup");
+    node_c
+        .apply(&*store_c, WS, second.to_vec(), &keys, &mut vv_c)
+        .expect("apply c1");
+    node_c
+        .apply(&*store_c, WS, second.to_vec(), &keys, &mut vv_c)
+        .expect("apply c2 dup");
     node_c.apply(&*store_c, WS, first.to_vec(), &keys, &mut vv_c).expect("apply c3");
 
     // Identical version vectors (F7) - both as advanced and as re-derived from the store.
@@ -778,7 +802,6 @@ fn p5_absent_entity_is_none_not_error() {
     assert!(got.is_none(), "absence is None (unknown), never fabricated");
 }
 
-
 // --- P15 / P11: hyperedge management - forwarding hygiene and the reify promotion path ---------
 
 /// guard (Principle 15/14; the engine:hypergraph forwarding follow-up, now landed): hyperedge
@@ -799,10 +822,20 @@ fn p15_hypergraph_membership_forwards_accepted_merges() {
     review(&engine, &p, "merge", "alice");
 
     let after = engine.hypergraph(Some(WS)).expect("hypergraph after merge");
-    assert_eq!(after.hyperedges.len(), 1, "canonicalized member sets must union into one hyperedge");
+    assert_eq!(
+        after.hyperedges.len(),
+        1,
+        "canonicalized member sets must union into one hyperedge"
+    );
     assert_eq!(after.hyperedges[0].sources, 2, "both co-assertions accumulate (P3)");
-    assert!(after.hyperedges[0].members.contains(&b), "membership forwards to the canonical id");
-    assert!(!after.nodes.iter().any(|n| n.id == a), "the merged-away row leaves the node set");
+    assert!(
+        after.hyperedges[0].members.contains(&b),
+        "membership forwards to the canonical id"
+    );
+    assert!(
+        !after.nodes.iter().any(|n| n.id == a),
+        "the merged-away row leaves the node set"
+    );
     // The curation grab-bag path shares the projection, so it sees the same canon (no re-check
     // needed here) - and the graph and hypergraph node sets now agree.
     let g = engine.graph(Some(WS)).expect("graph");
@@ -1064,17 +1097,23 @@ fn p17_the_log_is_scanned_for_secrets_that_predate_the_door() {
     let before = store.all_observations(Some(WS)).expect("log").len();
     let report = engine.curation(Some(WS)).expect("curation");
 
-    assert_eq!(report.secrets.len(), 2, "both fields are found: {:?}", 
-        report.secrets.iter().map(|f| (f.field, f.pattern)).collect::<Vec<_>>());
-    let shapes: Vec<(&str, &str)> =
-        report.secrets.iter().map(|f| (f.field, f.pattern)).collect();
+    assert_eq!(
+        report.secrets.len(),
+        2,
+        "both fields are found: {:?}",
+        report.secrets.iter().map(|f| (f.field, f.pattern)).collect::<Vec<_>>()
+    );
+    let shapes: Vec<(&str, &str)> = report.secrets.iter().map(|f| (f.field, f.pattern)).collect();
     assert!(shapes.contains(&("content", "aws-access-key-id")), "{shapes:?}");
     assert!(shapes.contains(&("entity description", "url-inline-credentials")), "{shapes:?}");
 
     // The report names the shape and the place, never the value - it travels into logs and
     // screenshots, so quoting the secret would copy it everywhere the report goes.
     let rendered = serde_json::to_string(&report.secrets).expect("serialize");
-    assert!(!rendered.contains("AKIAIOSFODNN7EXAMPLE"), "the report quoted a secret: {rendered}");
+    assert!(
+        !rendered.contains("AKIAIOSFODNN7EXAMPLE"),
+        "the report quoted a secret: {rendered}"
+    );
     assert!(!rendered.contains("hunter2"), "the report quoted a secret: {rendered}");
 
     // A signal generates; it commits nothing (P7/I18).
@@ -1330,7 +1369,11 @@ fn incremental_write_equals_replay() {
             confidence: None,
             on_behalf_of: None,
             derived_from: vec![],
-            entities: vec![EntityInput { name: "kernel".into(), kind: Some("Component".into()), description: None }],
+            entities: vec![EntityInput {
+                name: "kernel".into(),
+                kind: Some("Component".into()),
+                description: None,
+            }],
             relations: vec![],
         })
         .unwrap();
@@ -1390,7 +1433,10 @@ fn embedding_recomputed_on_alias_change() {
         let e = store.get_entity(&Entity::make_id(WS, "driver")).unwrap().unwrap();
         let stored = e.embedding.clone().expect("embedded");
         let fresh = embedder.embed_one(&text_of(&e)).unwrap();
-        assert_eq!(stored, fresh, "the stored embedding must match the current name+aliases text (IR4)");
+        assert_eq!(
+            stored, fresh,
+            "the stored embedding must match the current name+aliases text (IR4)"
+        );
     };
     observe_named(&engine, "one", "driver");
     corresponds(&store);
@@ -1460,7 +1506,10 @@ fn merge_suggestions_never_commit() {
     store.put_entity(ent("kernel", vec![0.0, 1.0, 0.0])).unwrap();
 
     let rep = engine.curation(Some(WS)).unwrap();
-    assert_eq!(rep.stats.merge_suggestions, 1, "the near pair is suggested, the orthogonal one is not");
+    assert_eq!(
+        rep.stats.merge_suggestions, 1,
+        "the near pair is suggested, the orthogonal one is not"
+    );
     let s = &rep.merge_suggestions[0];
     assert!((s.similarity - 1.0).abs() < 1e-6, "similarity carried for ranking");
     let mut names = vec![s.a_name.clone(), s.b_name.clone()];
@@ -1468,7 +1517,10 @@ fn merge_suggestions_never_commit() {
     assert_eq!(names, vec!["cozo".to_string(), "cozodb".to_string()]);
 
     // IR2: a suggestion is not a commit - no proposal exists and the entities are untouched.
-    assert!(engine.list_proposals(Some(WS)).unwrap().is_empty(), "a suggestion is not a proposal");
+    assert!(
+        engine.list_proposals(Some(WS)).unwrap().is_empty(),
+        "a suggestion is not a proposal"
+    );
     assert!(store.get_entity(&Entity::make_id(WS, "cozo")).unwrap().is_some());
     assert!(store.get_entity(&Entity::make_id(WS, "cozodb")).unwrap().is_some());
 
@@ -1489,7 +1541,10 @@ fn merge_suggestions_never_commit() {
         })
         .unwrap();
     let rep2 = engine.curation(Some(WS)).unwrap();
-    assert_eq!(rep2.stats.merge_suggestions, 0, "an open entity_merge suppresses the suggestion");
+    assert_eq!(
+        rep2.stats.merge_suggestions, 0,
+        "an open entity_merge suppresses the suggestion"
+    );
 }
 
 // --- M3b / Principle 9 vs 6: T-Box conflict surfacing (IR5) + axis collision --------------------
@@ -1531,8 +1586,12 @@ fn typedef_obs(
 fn type_def_conflict_surfaces_contested() {
     use supragnosis_core::TypeTarget;
     let (store, engine) = engine();
-    store.add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a kernel module", 100)).unwrap();
-    store.add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a person who drives", 200)).unwrap();
+    store
+        .add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a kernel module", 100))
+        .unwrap();
+    store
+        .add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a person who drives", 200))
+        .unwrap();
 
     let types = engine.types(Some(WS)).unwrap();
     let d = types.iter().find(|t| t.name == "Driver").expect("type present");
@@ -1540,7 +1599,10 @@ fn type_def_conflict_surfaces_contested() {
     assert_eq!(d.description, "a person who drives", "recency wins within the tied tier (R2)");
     assert_eq!(d.competitors.len(), 1);
     assert_eq!(d.competitors[0].value, "a kernel module");
-    assert!(d.def_source.is_some(), "the winning definition's observation is the mediation handle");
+    assert!(
+        d.def_source.is_some(),
+        "the winning definition's observation is the mediation handle"
+    );
 
     // Mediation: confirm the kernel-module definition (promote its observation, console surface).
     let target = d.competitors[0].observation.clone();
@@ -1561,10 +1623,19 @@ fn type_def_conflict_surfaces_contested() {
         .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
         .unwrap();
 
-    let d2 = engine.types(Some(WS)).unwrap().into_iter().find(|t| t.name == "Driver").unwrap();
+    let d2 = engine
+        .types(Some(WS))
+        .unwrap()
+        .into_iter()
+        .find(|t| t.name == "Driver")
+        .unwrap();
     assert_eq!(d2.description, "a kernel module", "the confirmed definition wins by tier (R5)");
     assert!(!d2.contested, "trust decided - no longer contested");
-    assert_eq!(d2.trust_tier, TrustTier::HumanConfirmed, "the glossary tier is the effective tier");
+    assert_eq!(
+        d2.trust_tier,
+        TrustTier::HumanConfirmed,
+        "the glossary tier is the effective tier"
+    );
 }
 
 /// guard (resolution-identity.md Section 6, Principle 9 minimal): a name defined on both the entity
@@ -1573,9 +1644,15 @@ fn type_def_conflict_surfaces_contested() {
 fn type_axis_collision_is_a_signal() {
     use supragnosis_core::TypeTarget;
     let (store, engine) = engine();
-    store.add_observation(typedef_obs(TypeTarget::Entity, "member_of", "a membership entity", 100)).unwrap();
-    store.add_observation(typedef_obs(TypeTarget::Relation, "member_of", "belongs to a group", 100)).unwrap();
-    store.add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a kernel module", 100)).unwrap();
+    store
+        .add_observation(typedef_obs(TypeTarget::Entity, "member_of", "a membership entity", 100))
+        .unwrap();
+    store
+        .add_observation(typedef_obs(TypeTarget::Relation, "member_of", "belongs to a group", 100))
+        .unwrap();
+    store
+        .add_observation(typedef_obs(TypeTarget::Entity, "Driver", "a kernel module", 100))
+        .unwrap();
 
     let rep = engine.curation(Some(WS)).unwrap();
     assert_eq!(
@@ -1602,7 +1679,11 @@ fn explain_matches_projection_and_surfaces_competitors() {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput { name: name.into(), kind: Some(kind.into()), description: None }],
+                entities: vec![EntityInput {
+                    name: name.into(),
+                    kind: Some(kind.into()),
+                    description: None,
+                }],
                 relations: vec![],
             })
             .expect("observe");
@@ -1631,11 +1712,23 @@ fn explain_matches_projection_and_surfaces_competitors() {
     let kind_field = ex.fields.iter().find(|f| f.field == "kind").expect("kind field");
     assert_eq!(kind_field.winner, view.entity.kind, "explain winner == projected kind");
     assert!(kind_field.contested, "two distinct kinds tie at the top tier -> contested");
-    let winners: Vec<&str> =
-        kind_field.candidates.iter().filter(|c| c.role == "winner").map(|c| c.value.as_str()).collect();
-    let competitors: Vec<&str> =
-        kind_field.candidates.iter().filter(|c| c.role == "competitor").map(|c| c.value.as_str()).collect();
-    assert_eq!(winners, vec![view.entity.kind.as_str()], "exactly the projected kind is the winner row");
+    let winners: Vec<&str> = kind_field
+        .candidates
+        .iter()
+        .filter(|c| c.role == "winner")
+        .map(|c| c.value.as_str())
+        .collect();
+    let competitors: Vec<&str> = kind_field
+        .candidates
+        .iter()
+        .filter(|c| c.role == "competitor")
+        .map(|c| c.value.as_str())
+        .collect();
+    assert_eq!(
+        winners,
+        vec![view.entity.kind.as_str()],
+        "exactly the projected kind is the winner row"
+    );
     assert_eq!(competitors.len(), 1, "the other kind is a competitor");
     assert_ne!(competitors[0], view.entity.kind, "the competitor is not the winner");
 
@@ -1652,7 +1745,10 @@ fn explain_matches_projection_and_surfaces_competitors() {
     assert!(ex.supporting[0].hlc >= ex.supporting[1].hlc, "supporting log is newest-first");
 
     // observation_log entity filter narrows to the same set; unfiltered returns everything.
-    assert_eq!(engine.observation_log(Some(WS), Some(&id), None).expect("log filtered").len(), 2);
+    assert_eq!(
+        engine.observation_log(Some(WS), Some(&id), None).expect("log filtered").len(),
+        2
+    );
     assert_eq!(engine.observation_log(Some(WS), None, None).expect("log all").len(), 2);
 }
 
@@ -1831,15 +1927,71 @@ fn p23_the_gate_surface_refuses_a_malformed_proposal() {
 
     for (label, kind, targets, into, tier, hint) in [
         ("unknown kind", "entity_split", pair(), None, None, "unknown proposal kind"),
-        ("no targets", "entity_merge", vec![], None, None, "at least one non-empty target"),
-        ("blank target", "entity_merge", vec![x.clone(), "  ".into()], None, None, "non-empty target"),
-        ("merge of one", "entity_merge", vec![x.clone()], Some(x.clone()), None, "at least 2 target"),
+        (
+            "no targets",
+            "entity_merge",
+            vec![],
+            None,
+            None,
+            "at least one non-empty target",
+        ),
+        (
+            "blank target",
+            "entity_merge",
+            vec![x.clone(), "  ".into()],
+            None,
+            None,
+            "non-empty target",
+        ),
+        (
+            "merge of one",
+            "entity_merge",
+            vec![x.clone()],
+            Some(x.clone()),
+            None,
+            "at least 2 target",
+        ),
         ("merge without into", "entity_merge", pair(), None, None, "needs `into`"),
-        ("into outside targets", "entity_merge", pair(), Some("other".into()), None, "must be one of the targets"),
-        ("gate kind without tier", "claim_promotion", vec![obs_id.clone()], None, None, "needs `tier`"),
-        ("unknown tier", "claim_promotion", vec![obs_id.clone()], None, Some("archangel".into()), "unknown tier"),
-        ("promote what is not here", "claim_promotion", vec!["no-such-observation".into()], None, Some("host_signed".into()), "not in the local log"),
-        ("tier on a non-gate kind", "entity_merge", pair(), Some(y.clone()), Some("host_signed".into()), "only applies to claim_promotion"),
+        (
+            "into outside targets",
+            "entity_merge",
+            pair(),
+            Some("other".into()),
+            None,
+            "must be one of the targets",
+        ),
+        (
+            "gate kind without tier",
+            "claim_promotion",
+            vec![obs_id.clone()],
+            None,
+            None,
+            "needs `tier`",
+        ),
+        (
+            "unknown tier",
+            "claim_promotion",
+            vec![obs_id.clone()],
+            None,
+            Some("archangel".into()),
+            "unknown tier",
+        ),
+        (
+            "promote what is not here",
+            "claim_promotion",
+            vec!["no-such-observation".into()],
+            None,
+            Some("host_signed".into()),
+            "not in the local log",
+        ),
+        (
+            "tier on a non-gate kind",
+            "entity_merge",
+            pair(),
+            Some(y.clone()),
+            Some("host_signed".into()),
+            "only applies to claim_promotion",
+        ),
     ] {
         let err = propose(kind, targets, into, tier)
             .err()
@@ -1862,7 +2014,14 @@ fn p23_the_gate_surface_refuses_a_malformed_proposal() {
         ("empty proposal id", "  ".to_string(), "merge", "proposal id is required"),
     ] {
         let err = engine
-            .review_proposal(None, id, decision.into(), None, Some("bob".into()), VerdictSurface::Console)
+            .review_proposal(
+                None,
+                id,
+                decision.into(),
+                None,
+                Some("bob".into()),
+                VerdictSurface::Console,
+            )
             .err()
             .unwrap_or_else(|| panic!("{label} must be refused"));
         assert!(
@@ -1916,7 +2075,8 @@ fn i8_blocking_check_conclusion_is_arrival_order_independent() {
         let node = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([9u8; 32]));
         let mut vv = VersionVector::default();
         for b in batches {
-            node.apply(&*store, WS, b, &keys, &mut vv).unwrap_or_else(|e| panic!("{label}: {e}"));
+            node.apply(&*store, WS, b, &keys, &mut vv)
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
         }
         Engine::new(store, "host-x", WS)
             .get_proposal(Some(WS), &p)
@@ -1945,7 +2105,11 @@ fn i8_blocking_check_conclusion_is_arrival_order_independent() {
     // synced node is in, and it is the safe direction (it can only later become merged).
     let without_entities: Vec<_> =
         all.iter().filter(|e| e.assertions.entities.is_empty()).cloned().collect();
-    assert_eq!(without_entities.len(), all.len() - 1, "exactly the entity observation is withheld");
+    assert_eq!(
+        without_entities.len(),
+        all.len() - 1,
+        "exactly the entity observation is withheld"
+    );
     assert_eq!(
         deliver(vec![without_entities], "targets withheld"),
         "blocked",
@@ -2094,14 +2258,24 @@ fn p2_a_workspace_rekey_carries_provenance_that_a_reingest_would_restamp() {
     assert_eq!(rep.moved, 1);
 
     let moved = store.all_observations(Some("archive")).unwrap().pop().expect("re-keyed row");
-    assert_eq!(moved.content, original.content, "content is unchanged - this is a re-key, not an edit");
-    assert_ne!(moved.id, original.id, "the workspace is inside the content address, so the id must differ");
+    assert_eq!(
+        moved.content, original.content,
+        "content is unchanged - this is a re-key, not an edit"
+    );
+    assert_ne!(
+        moved.id, original.id,
+        "the workspace is inside the content address, so the id must differ"
+    );
     // The whole attestation SET is carried, not a representative: re-observing the same content
     // absorbed a second attestation onto the row, and a re-key that kept only one would be losing
     // provenance just as surely as a re-ingest does (P3's union, P2's first-class provenance).
     // Found by identity rather than by index - indexing passed only while the fixture host happened
     // to sort first, which is a property of the alphabet, not of the code under test.
-    assert_eq!(moved.provenance.len(), 2, "both attestations of the source row are carried over");
+    assert_eq!(
+        moved.provenance.len(),
+        2,
+        "both attestations of the source row are carried over"
+    );
     assert!(
         moved.provenance.iter().all(|p| p.workspace == "archive"),
         "every carried attestation names the new workspace"
@@ -2125,9 +2299,14 @@ fn p2_a_workspace_rekey_carries_provenance_that_a_reingest_would_restamp() {
         "the source row must survive - the log is append-only"
     );
     // Idempotent, and the same act is not counted twice in the live set.
-    assert_eq!(engine.rekey_workspace(WS, "archive", false).unwrap().moved, 0, "a second run moves nothing");
     assert_eq!(
-        engine.rekey_workspace(WS, "archive", false).unwrap().already, 1,
+        engine.rekey_workspace(WS, "archive", false).unwrap().moved,
+        0,
+        "a second run moves nothing"
+    );
+    assert_eq!(
+        engine.rekey_workspace(WS, "archive", false).unwrap().already,
+        1,
         "it recognises what it already re-keyed"
     );
 }
@@ -2162,8 +2341,11 @@ fn p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation() {
     };
 
     // Re-key path.
-    let synced =
-        Observation::with_assertions("peer-asserted claim".into(), stamped_claim(), Assertions::default());
+    let synced = Observation::with_assertions(
+        "peer-asserted claim".into(),
+        stamped_claim(),
+        Assertions::default(),
+    );
     store.add_observation(synced).unwrap();
     let rep = engine.rekey_workspace(WS, "archive", false).expect("rekey");
     assert_eq!(rep.moved, 1);

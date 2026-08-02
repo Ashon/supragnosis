@@ -8,12 +8,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use supragnosis_core::{
-    AssertionStore,
-    evaluated_tier, hyperedge_id, normalize_relation_kind, ordering_hlc,
-    verdict_grant_ceiling, Assertions, BeliefCandidate, Clock, EmbeddingProvider, Entity,
-    EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
-    ProposalEventAssertion, ProposalEventKind, ResolutionPolicy, SearchHit, SearchHitKind,
-    StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
+    evaluated_tier, hyperedge_id, normalize_relation_kind, ordering_hlc, verdict_grant_ceiling,
+    AssertionStore, Assertions, BeliefCandidate, Clock, EmbeddingProvider, Entity, EntityAssertion,
+    Hlc, KnowledgeStore, Observation, ProposalEventAssertion, ProposalEventKind, Provenance,
+    Relation, RelationAssertion, ResolutionPolicy, SearchHit, SearchHitKind, StoreError,
+    SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
     VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
@@ -438,13 +437,8 @@ pub struct CurationStats {
 }
 
 /// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
-pub const PROPOSAL_KINDS: [&str; 5] = [
-    "entity_merge",
-    "claim_promotion",
-    "claim_demotion",
-    "tbox_change",
-    "recall",
-];
+pub const PROPOSAL_KINDS: [&str; 5] =
+    ["entity_merge", "claim_promotion", "claim_demotion", "tbox_change", "recall"];
 
 /// The two gate kinds with a tier commit effect (resolution.md Section 5).
 const GATE_KINDS: [&str; 2] = ["claim_promotion", "claim_demotion"];
@@ -827,9 +821,10 @@ fn reject_reserved_source_ref(source_ref: Option<&str>) -> Result<(), ObserveErr
 }
 
 fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> TrustTier {
-    gates.get(&obs.id).copied().unwrap_or_else(|| {
-        obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
-    })
+    gates
+        .get(&obs.id)
+        .copied()
+        .unwrap_or_else(|| obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default())
 }
 
 /// The authoring attestation of an observation: earliest effective HLC, index-tiebroken. After an
@@ -844,7 +839,10 @@ fn authoring_attestation(obs: &Observation) -> Option<&Provenance> {
         .enumerate()
         .min_by_key(|(i, p)| {
             (
-                p.sync.as_ref().map(|s| s.hlc.clone()).unwrap_or_else(|| Hlc::legacy(p.observed_at)),
+                p.sync
+                    .as_ref()
+                    .map(|s| s.hlc.clone())
+                    .unwrap_or_else(|| Hlc::legacy(p.observed_at)),
                 *i,
             )
         })
@@ -1201,10 +1199,7 @@ impl Engine {
     /// intent - a side channel unrelated to the storage/resolution logic.
     pub fn emit(&self, event: Event) {
         if let Some(sink) = &self.events {
-            sink.emit(&EventEnvelope {
-                session: self.session.clone(),
-                event,
-            });
+            sink.emit(&EventEnvelope { session: self.session.clone(), event });
         }
     }
 
@@ -1280,15 +1275,9 @@ impl Engine {
                 )));
             }
         }
-        let workspace = input
-            .workspace
-            .unwrap_or_else(|| self.default_workspace.clone());
-        let prov = self.provenance(
-            &workspace,
-            input.source_ref,
-            input.confidence,
-            input.on_behalf_of,
-        );
+        let workspace = input.workspace.unwrap_or_else(|| self.default_workspace.clone());
+        let prov =
+            self.provenance(&workspace, input.source_ref, input.confidence, input.on_behalf_of);
 
         // Structured assertions are enclosed in the observation log **verbatim** (Principle 1: the log is the source
         // of truth and the graph is a projection - if an assertion is not in the log, the graph cannot be recovered by
@@ -1337,10 +1326,7 @@ impl Engine {
         let observation_id = obs.id.clone();
         // Serialize the write section (prevents the read-merge-write race of concurrent observations' projections, see the field comment above).
         // Embedding (above, probabilistic/CPU) is left outside the lock; we lock from here. The read path is not locked.
-        let _write = self
-            .write_guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1379,11 +1365,7 @@ impl Engine {
         let touched_edges: HashSet<String> = relations.iter().cloned().collect();
         self.project_relations(&workspace, Some(&touched_edges))?;
 
-        Ok(ObserveOutput {
-            observation_id,
-            entities: entity_ids,
-            relations,
-        })
+        Ok(ObserveOutput { observation_id, entities: entity_ids, relations })
     }
 
     /// Records T-Box type definitions as an observation (Principle 8/11: an explicit define_type act,
@@ -1395,7 +1377,8 @@ impl Engine {
         reject_reserved_source_ref(input.source_ref.as_deref())?;
         if input.defs.is_empty() {
             return Err(ObserveError::Invalid(
-                "no type definitions provided. give at least one {target, name, description}".into(),
+                "no type definitions provided. give at least one {target, name, description}"
+                    .into(),
             ));
         }
         for d in &input.defs {
@@ -1413,9 +1396,7 @@ impl Engine {
                 )));
             }
         }
-        let workspace = input
-            .workspace
-            .unwrap_or_else(|| self.default_workspace.clone());
+        let workspace = input.workspace.unwrap_or_else(|| self.default_workspace.clone());
         let prov = self.provenance(&workspace, input.source_ref, None, input.on_behalf_of);
 
         // Synthesize readable content so the definition is also keyword/semantic searchable (Principle 22).
@@ -1425,7 +1406,11 @@ impl Engine {
                 TypeTarget::Entity => "entity",
                 TypeTarget::Relation => "relation",
             };
-            content.push_str(&format!("\n- {axis} type `{}`: {}", d.name.trim(), d.description.trim()));
+            content.push_str(&format!(
+                "\n- {axis} type `{}`: {}",
+                d.name.trim(),
+                d.description.trim()
+            ));
         }
         let assertions = Assertions {
             type_defs: input
@@ -1446,10 +1431,7 @@ impl Engine {
             }
         }
         let observation_id = obs.id.clone();
-        let _write = self
-            .write_guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1468,7 +1450,11 @@ impl Engine {
 
     /// [`Engine::types`] over an existing read context, so a caller that already loaded the
     /// log does not load it again (see [`ReadCtx`]).
-    fn types_in(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<Vec<TypeDefView>, StoreError> {
+    fn types_in(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<Vec<TypeDefView>, StoreError> {
         let gates = self.gate_grants(workspace, cx)?;
         // (disc, name) -> (target, description candidates, sources, max effective trust). The
         // description is resolved by the SAME policy as an entity kind (resolution-identity.md
@@ -1571,11 +1557,7 @@ impl Engine {
             // otherwise tell "no near-name pairs" from "this signal does not run here" (Principle 5).
             return Ok((
                 Vec::new(),
-                MergeBandCoverage {
-                    available: false,
-                    embedded: 0,
-                    examined: 0,
-                },
+                MergeBandCoverage { available: false, embedded: 0, examined: 0 },
             ));
         }
         // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
@@ -1591,8 +1573,10 @@ impl Engine {
             adj.entry(f.clone()).or_default().insert(t.clone());
             adj.entry(t).or_default().insert(f);
         }
-        let name_by_id: HashMap<&str, &str> =
-            all_entities.iter().map(|e| (e.id.as_str(), e.canonical_name.as_str())).collect();
+        let name_by_id: HashMap<&str, &str> = all_entities
+            .iter()
+            .map(|e| (e.id.as_str(), e.canonical_name.as_str()))
+            .collect();
 
         let mut seen: HashSet<(String, String)> = HashSet::new();
         let mut out: Vec<MergeSuggestion> = Vec::new();
@@ -1643,14 +1627,7 @@ impl Engine {
                 .then_with(|| x.a.cmp(&y.a))
                 .then_with(|| x.b.cmp(&y.b))
         });
-        Ok((
-            out,
-            MergeBandCoverage {
-                available: true,
-                embedded,
-                examined,
-            },
-        ))
+        Ok((out, MergeBandCoverage { available: true, embedded, examined }))
     }
 
     /// Read-only curation signals over the workspace (Principle 7 "generate, do not commit"): merge
@@ -1665,7 +1642,8 @@ impl Engine {
         // rewire relations through its canonical id (so an accepted dedup stops showing as a candidate).
         let fwd = self.merge_forwarding(workspace, cx)?;
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
-        let entities: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
+        let entities: Vec<&Entity> =
+            all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
         // Graph degree = relations whose both (canonical) endpoints are in the node set; dedup + no self-loops.
         let mut degree: HashMap<String, usize> = HashMap::new();
@@ -1716,7 +1694,12 @@ impl Engine {
             .hyperedges
             .into_iter()
             .filter(|h| h.size >= CURATION_GRAB_BAG_MIN)
-            .map(|h| GrabBag { id: h.id, size: h.size, sources: h.sources, member_names: h.member_names })
+            .map(|h| GrabBag {
+                id: h.id,
+                size: h.size,
+                sources: h.sources,
+                member_names: h.member_names,
+            })
             .collect();
         grab_bags.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.id.cmp(&b.id)));
         // (4) Contradictions (resolution.md Section 4.2): nodes whose kind has surviving competitors,
@@ -1771,8 +1754,13 @@ impl Engine {
             self.merge_band(workspace, &all_entities, &fwd, &relations, cx)?;
         // The deterministic name-variant ladder: the same intent as the band, on the axis that needs
         // no embedder - so a keyword-only node (the prebuilt binary) still has a dedup signal.
-        let name_variants =
-            name_variant_groups(&entities, &fwd, &relations, &self.open_merge_pairs(workspace, cx)?, &node);
+        let name_variants = name_variant_groups(
+            &entities,
+            &fwd,
+            &relations,
+            &self.open_merge_pairs(workspace, cx)?,
+            &node,
+        );
         // T-Box axis collisions (Principle 9 minimal): a name defined on both the entity and the
         // relation axis. A pure fold over the type glossary (deterministic, P16).
         let mut axis: BTreeMap<String, (bool, bool)> = BTreeMap::new();
@@ -1783,8 +1771,11 @@ impl Engine {
                 TypeTarget::Relation => e.1 = true,
             }
         }
-        let type_axis_collisions: Vec<String> =
-            axis.into_iter().filter(|(_, (ent, rel))| *ent && *rel).map(|(n, _)| n).collect();
+        let type_axis_collisions: Vec<String> = axis
+            .into_iter()
+            .filter(|(_, (ent, rel))| *ent && *rel)
+            .map(|(n, _)| n)
+            .collect();
         let stats = CurationStats {
             duplicate_groups: duplicates.len(),
             grab_bags: grab_bags.len(),
@@ -1810,7 +1801,20 @@ impl Engine {
                 }
             }
         }
-        Ok(CurationReport { workspace: workspace.map(String::from), duplicates, grab_bags, orphans, contradictions, merge_cycles, merge_suggestions, merge_band, name_variants, type_axis_collisions, secrets, stats })
+        Ok(CurationReport {
+            workspace: workspace.map(String::from),
+            duplicates,
+            grab_bags,
+            orphans,
+            contradictions,
+            merge_cycles,
+            merge_suggestions,
+            merge_band,
+            name_variants,
+            type_axis_collisions,
+            secrets,
+            stats,
+        })
     }
 
     // --- Proposal workflow (Principle 23, solo-scoped M3.5a) ---------------------------------------
@@ -1844,13 +1848,12 @@ impl Engine {
             match &input.into {
                 None => {
                     return Err(ObserveError::Invalid(
-                        "entity_merge needs `into` - the canonical target id the others fold into".into(),
+                        "entity_merge needs `into` - the canonical target id the others fold into"
+                            .into(),
                     ))
                 }
                 Some(into) if !input.targets.contains(into) => {
-                    return Err(ObserveError::Invalid(
-                        "`into` must be one of the targets".into(),
-                    ))
+                    return Err(ObserveError::Invalid("`into` must be one of the targets".into()))
                 }
                 _ => {}
             }
@@ -1892,9 +1895,7 @@ impl Engine {
             }
             None
         };
-        let workspace = input
-            .workspace
-            .unwrap_or_else(|| self.default_workspace.clone());
+        let workspace = input.workspace.unwrap_or_else(|| self.default_workspace.clone());
         let prov = self.provenance(&workspace, input.source_ref, None, input.on_behalf_of);
         // Relation type names are normalized so they match the graph's edge kinds exactly (the viewer
         // highlights edges by `kind`); entity type names are labels, kept verbatim.
@@ -1929,10 +1930,7 @@ impl Engine {
         };
         let obs = Observation::with_assertions(content, prov, assertions);
         let id = obs.id.clone();
-        let _write = self
-            .write_guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1984,23 +1982,17 @@ impl Engine {
         }
         // The surface marker rides source_ref, engine-stamped - the review surfaces accept no
         // source_ref of their own, so a client cannot mint the console marker (resolution.md R8).
-        let prov = self.provenance(&workspace, Some(surface.marker().to_string()), None, on_behalf_of);
+        let prov =
+            self.provenance(&workspace, Some(surface.marker().to_string()), None, on_behalf_of);
         let payload = serde_json::json!({ "decision": decision, "note": note }).to_string();
         let content = format!("proposal({decision}) {proposal}");
         let assertions = Assertions {
-            proposal_events: vec![ProposalEventAssertion {
-                proposal,
-                event,
-                payload,
-            }],
+            proposal_events: vec![ProposalEventAssertion { proposal, event, payload }],
             ..Default::default()
         };
         let obs = Observation::with_assertions(content, prov, assertions);
         let id = obs.id.clone();
-        let _write = self
-            .write_guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2076,7 +2068,7 @@ impl Engine {
                     (predecessor.content == successor.content
                         && predecessor.assertions == successor.assertions
                         && predecessor.workspace() == successor.workspace())
-                        .then(|| parent.clone())
+                    .then(|| parent.clone())
                 })
             })
             .collect();
@@ -2088,7 +2080,11 @@ impl Engine {
 
     /// Folds the proposal events in the workspace into their current states (I2). Solo decision rule:
     /// merge is the absorbing state (I16), then withdrawn, then rejected, else open.
-    fn fold_proposals(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<BTreeMap<String, ProposalView>, StoreError> {
+    fn fold_proposals(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<BTreeMap<String, ProposalView>, StoreError> {
         let obss = self.log(workspace, cx)?;
         let obss = obss.as_ref();
         let mut views: BTreeMap<String, ProposalView> = BTreeMap::new();
@@ -2212,7 +2208,11 @@ impl Engine {
     }
 
     /// One proposal's folded state by id (None if there is no such proposal).
-    pub fn get_proposal(&self, workspace: Option<&str>, id: &str) -> Result<Option<ProposalView>, StoreError> {
+    pub fn get_proposal(
+        &self,
+        workspace: Option<&str>,
+        id: &str,
+    ) -> Result<Option<ProposalView>, StoreError> {
         let cx = &ReadCtx::default();
         let Some(mut view) = self.fold_proposals(workspace, cx)?.remove(id) else {
             return Ok(None);
@@ -2295,9 +2295,16 @@ impl Engine {
                     if view.targets.is_empty() {
                         "a gate proposal names no target observation".into()
                     } else if missing.is_empty() {
-                        format!("all {} target observations are in the local log", view.targets.len())
+                        format!(
+                            "all {} target observations are in the local log",
+                            view.targets.len()
+                        )
                     } else {
-                        format!("{} target observation(s) are not in the local log: {}", missing.len(), missing.join(", "))
+                        format!(
+                            "{} target observation(s) are not in the local log: {}",
+                            missing.len(),
+                            missing.join(", ")
+                        )
                     },
                 );
                 check(
@@ -2319,7 +2326,8 @@ impl Engine {
                     } else if view.targets.contains(&into) {
                         "the canonical id is among the targets".into()
                     } else {
-                        "`into` is not among the targets - the fold would drop every named entity".into()
+                        "`into` is not among the targets - the fold would drop every named entity"
+                            .into()
                     },
                 );
                 let distinct: BTreeSet<&String> = view.targets.iter().collect();
@@ -2334,9 +2342,16 @@ impl Engine {
                     "referential integrity",
                     missing.is_empty(),
                     if missing.is_empty() {
-                        format!("all {} target entities are asserted in the local log", view.targets.len())
+                        format!(
+                            "all {} target entities are asserted in the local log",
+                            view.targets.len()
+                        )
                     } else {
-                        format!("{} target entit(ies) are not asserted in the local log: {}", missing.len(), missing.join(", "))
+                        format!(
+                            "{} target entit(ies) are not asserted in the local log: {}",
+                            missing.len(),
+                            missing.join(", ")
+                        )
                     },
                 );
             }
@@ -2399,7 +2414,9 @@ impl Engine {
         let Some(into) = view.into.clone() else {
             return Ok(BeliefDiff {
                 computable: false,
-                note: Some("an entity_merge without `into` names no canonical id to fold onto".into()),
+                note: Some(
+                    "an entity_merge without `into` names no canonical id to fold onto".into(),
+                ),
                 tier_changes: Vec::new(),
                 overturned: Vec::new(),
                 rewired: Vec::new(),
@@ -2529,10 +2546,8 @@ impl Engine {
         let mut tier_changes = Vec::new();
         for t in &view.targets {
             if let Some(obs) = self.store.get_observation(t)? {
-                let (from, to) = (
-                    effective_tier(&obs, &before_gates),
-                    effective_tier(&obs, &after_gates),
-                );
+                let (from, to) =
+                    (effective_tier(&obs, &before_gates), effective_tier(&obs, &after_gates));
                 if from != to {
                     tier_changes.push(TierChange { observation: t.clone(), from, to });
                 }
@@ -2570,14 +2585,24 @@ impl Engine {
         // Deterministic order (Principle 16): the diff is a read surface like any other.
         overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
         tier_changes.sort_by(|a, b| a.observation.cmp(&b.observation));
-        Ok(BeliefDiff { computable: true, note: None, tier_changes, overturned, rewired: Vec::new() })
+        Ok(BeliefDiff {
+            computable: true,
+            note: None,
+            tier_changes,
+            overturned,
+            rewired: Vec::new(),
+        })
     }
 
     /// Resolved id-forwarding from ACCEPTED entity-merge proposals (Principle 14/15): each merged-away
     /// target id -> its canonical (`into`) id, transitively resolved to the root. Projections apply this to
     /// collapse merged duplicates while the log keeps both (Principle 3 - un-merge is a new proposal). Pure
     /// deterministic function of the log (Principle 16).
-    fn merge_forwarding(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HashMap<String, String>, StoreError> {
+    fn merge_forwarding(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashMap<String, String>, StoreError> {
         let props = self.fold_proposals(workspace, cx)?;
         let mut fwd: HashMap<String, String> = HashMap::new();
         for p in props.values() {
@@ -2613,7 +2638,11 @@ impl Engine {
     /// into themselves. Returns deduped (member ids, proposal ids) pairs, deterministically ordered
     /// (BTreeMap keying, P16). The projection still resolves such cycles by hop-capped parity; this
     /// signal is what makes the contradiction visible instead of silent.
-    fn merge_cycle_sets(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<Vec<CycleSet>, StoreError> {
+    fn merge_cycle_sets(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<Vec<CycleSet>, StoreError> {
         let props = self.fold_proposals(workspace, cx)?;
         // target -> (into, proposal id): the raw merge edges before transitive resolution.
         let mut edge: BTreeMap<String, (String, String)> = BTreeMap::new();
@@ -2671,7 +2700,11 @@ impl Engine {
     /// present targets were already promoted. Skipping is the safe direction and stays monotone -
     /// when the missing target arrives the state flips to `merged` and the grant applies (the same
     /// blocked -> merged direction the blocking checks are pinned to).
-    fn gate_grants(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HashMap<String, TrustTier>, StoreError> {
+    fn gate_grants(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashMap<String, TrustTier>, StoreError> {
         // proposal id -> (targets, requested tier); collected from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier)> = HashMap::new();
         // proposal id -> representative merge verdict (ordering hlc, verdict obs id, source_ref).
@@ -2687,14 +2720,17 @@ impl Engine {
                         if !GATE_KINDS.contains(&kind) {
                             continue;
                         }
-                        let Some(tier) = v.get("tier").and_then(|x| x.as_str()).and_then(parse_tier)
+                        let Some(tier) =
+                            v.get("tier").and_then(|x| x.as_str()).and_then(parse_tier)
                         else {
                             continue; // a gate proposal without a tier grants nothing
                         };
                         let targets: Vec<String> = v
                             .get("targets")
                             .and_then(|x| x.as_array())
-                            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                            .map(|a| {
+                                a.iter().filter_map(|s| s.as_str().map(String::from)).collect()
+                            })
                             .unwrap_or_default();
                         opened.insert(obs.id.clone(), (targets, tier));
                     }
@@ -2820,9 +2856,7 @@ impl Engine {
             }
             let e = best.entry(c.value.as_str()).or_insert((c.tier, c.observation.as_str()));
             // Highest tier per value; tie-break by smallest observation id (stable, P16).
-            if (c.tier, std::cmp::Reverse(c.observation.as_str()))
-                > (e.0, std::cmp::Reverse(e.1))
-            {
+            if (c.tier, std::cmp::Reverse(c.observation.as_str())) > (e.0, std::cmp::Reverse(e.1)) {
                 *e = (c.tier, c.observation.as_str());
             }
         }
@@ -2834,7 +2868,8 @@ impl Engine {
                 observation: observation.to_string(),
             })
             .collect();
-        competitors.sort_by(|a, b| b.trust_tier.cmp(&a.trust_tier).then_with(|| a.value.cmp(&b.value)));
+        competitors
+            .sort_by(|a, b| b.trust_tier.cmp(&a.trust_tier).then_with(|| a.value.cmp(&b.value)));
         (
             Some((winner.value.clone(), winner.observation.clone())),
             choice.contested,
@@ -2861,10 +2896,17 @@ impl Engine {
     ///
     /// Same log -> same rows on every node/call (P16). Entity `properties` (not modeled by any
     /// assertion yet) are carried forward from the stored row rather than reset.
-    fn project_entities(&self, ws: &str, only: Option<&HashSet<String>>, cx: &ReadCtx) -> Result<usize, StoreError> {
+    fn project_entities(
+        &self,
+        ws: &str,
+        only: Option<&HashSet<String>>,
+        cx: &ReadCtx,
+    ) -> Result<usize, StoreError> {
         let gates = self.gate_grants(Some(ws), cx)?;
         let mut obss = self.observations(Some(ws))?;
-        obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
+        obss.sort_by(|a, b| {
+            (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
+        });
 
         let mut name_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
         let mut kind_cands: HashMap<String, Vec<BeliefCandidate>> = HashMap::new();
@@ -2879,31 +2921,37 @@ impl Engine {
             // credited to an entity's provenance exactly once - an entity named as both an assertion
             // and a relation endpoint in the same observation is one supporting observation, not two.
             let mut touched_here: BTreeSet<String> = BTreeSet::new();
-            let mut touch = |id: String, spelling: &str, kind: Option<&str>, description: Option<&str>| {
-                if !want(&id) {
-                    return;
-                }
-                name_cands.entry(id.clone()).or_default().push(BeliefCandidate {
-                    value: spelling.trim().to_string(),
-                    tier: eff,
-                    hlc: hlc.clone(),
-                    observation: obs.id.clone(),
-                });
-                if let Some(k) = kind {
-                    kind_cands.entry(id.clone()).or_default().push(BeliefCandidate {
-                        value: k.to_string(),
+            let mut touch =
+                |id: String, spelling: &str, kind: Option<&str>, description: Option<&str>| {
+                    if !want(&id) {
+                        return;
+                    }
+                    name_cands.entry(id.clone()).or_default().push(BeliefCandidate {
+                        value: spelling.trim().to_string(),
                         tier: eff,
                         hlc: hlc.clone(),
                         observation: obs.id.clone(),
                     });
-                }
-                if let Some(d) = description {
-                    descr.insert(id.clone(), d.to_string()); // ascending replay: highest HLC wins
-                }
-                touched_here.insert(id);
-            };
+                    if let Some(k) = kind {
+                        kind_cands.entry(id.clone()).or_default().push(BeliefCandidate {
+                            value: k.to_string(),
+                            tier: eff,
+                            hlc: hlc.clone(),
+                            observation: obs.id.clone(),
+                        });
+                    }
+                    if let Some(d) = description {
+                        descr.insert(id.clone(), d.to_string()); // ascending replay: highest HLC wins
+                    }
+                    touched_here.insert(id);
+                };
             for ea in &obs.assertions.entities {
-                touch(Entity::make_id(ws, &ea.name), &ea.name, ea.kind.as_deref(), ea.description.as_deref());
+                touch(
+                    Entity::make_id(ws, &ea.name),
+                    &ea.name,
+                    ea.kind.as_deref(),
+                    ea.description.as_deref(),
+                );
             }
             for ra in &obs.assertions.relations {
                 touch(Entity::make_id(ws, &ra.from), &ra.from, None, None);
@@ -2919,11 +2967,8 @@ impl Engine {
 
         let mut count = 0;
         for (id, ncs) in &name_cands {
-            let canonical = self
-                .policy
-                .choose(ncs)
-                .map(|c| ncs[c.index].value.clone())
-                .unwrap_or_default();
+            let canonical =
+                self.policy.choose(ncs).map(|c| ncs[c.index].value.clone()).unwrap_or_default();
             let aliases = alias_set(ncs, &canonical);
             let kind = kind_cands
                 .get(id)
@@ -3016,7 +3061,9 @@ impl Engine {
         only: Option<&HashSet<String>>,
     ) -> Result<usize, StoreError> {
         let mut obss = self.observations(Some(ws))?;
-        obss.sort_by(|a, b| (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str())));
+        obss.sort_by(|a, b| {
+            (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
+        });
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
         for obs in &obss {
             let Some(prov) = authoring_attestation(obs).cloned() else {
@@ -3201,7 +3248,14 @@ impl Engine {
         let effective_tier = belief.tiers.get(&canon_id).copied().unwrap_or_else(|| {
             entity.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
         });
-        Ok(Some(EntityView { entity, relations, effective_tier, contested, competitors, kind_source }))
+        Ok(Some(EntityView {
+            entity,
+            relations,
+            effective_tier,
+            contested,
+            competitors,
+            kind_source,
+        }))
     }
 
     /// The observation log for a workspace, flattened for the log-browser surface (observability).
@@ -3227,8 +3281,12 @@ impl Engine {
         // the fold is over rows already in the ReadCtx, and the name lookup is the one store scan,
         // which a workspace with no proposals never pays. The log panel is opened on demand, not
         // polled like the graph, so that scan is affordable where it would not be on the poll path.
-        let has_events = self.log(workspace, cx)?.iter().any(|o| !o.assertions.proposal_events.is_empty());
-        let proposals = if has_events { self.fold_proposals(workspace, cx)? } else { BTreeMap::new() };
+        let has_events = self
+            .log(workspace, cx)?
+            .iter()
+            .any(|o| !o.assertions.proposal_events.is_empty());
+        let proposals =
+            if has_events { self.fold_proposals(workspace, cx)? } else { BTreeMap::new() };
         let names: BTreeMap<String, String> = if has_events {
             self.store
                 .all_entities(workspace)?
@@ -3299,10 +3357,7 @@ impl Engine {
                         ProposalEventKind::Comment => "comment",
                     }
                     .to_string(),
-                    decision: payload
-                        .get("decision")
-                        .and_then(|d| d.as_str())
-                        .map(str::to_string),
+                    decision: payload.get("decision").and_then(|d| d.as_str()).map(str::to_string),
                     kind: view.map(|v| v.kind.clone()).unwrap_or_default(),
                     state: view.map(|v| v.state.clone()).unwrap_or_default(),
                     targets: view
@@ -3450,11 +3505,7 @@ impl Engine {
         let qvec = self.embedder.as_ref().and_then(|e| e.embed_one(query).ok());
         // mode is "did it reference the semantic surface" - even if semantic recall is zero, it did reference it, so it is
         // hybrid (the epistemic weight of zero results differs by mode, Principle 5/16 4th).
-        let mode = if qvec.is_some() {
-            SearchMode::Hybrid
-        } else {
-            SearchMode::Keyword
-        };
+        let mode = if qvec.is_some() { SearchMode::Hybrid } else { SearchMode::Keyword };
         let (semantic_obs, semantic_ent) = match &qvec {
             Some(v) => (
                 self.store.search_semantic(v, workspace, limit)?,
@@ -3689,7 +3740,9 @@ impl Engine {
                 // name. So a merged-away name and a case-variant spelling both surface here.
                 let mut aliases: Vec<String> = members
                     .iter()
-                    .flat_map(|m| std::iter::once(m.canonical_name.clone()).chain(m.aliases.iter().cloned()))
+                    .flat_map(|m| {
+                        std::iter::once(m.canonical_name.clone()).chain(m.aliases.iter().cloned())
+                    })
                     .filter(|n| n != &ce.canonical_name)
                     .collect();
                 aliases.sort();
@@ -3732,12 +3785,7 @@ impl Engine {
             type_counts,
             trust_counts,
         };
-        Ok(GraphView {
-            workspace: workspace.map(String::from),
-            nodes,
-            edges,
-            stats,
-        })
+        Ok(GraphView { workspace: workspace.map(String::from), nodes, edges, stats })
     }
 
     /// Projects the hypergraph (the second-order structure of co-occurrence) (Principle 11 "the ground of induction").
@@ -3754,7 +3802,11 @@ impl Engine {
 
     /// [`Engine::hypergraph`] over an existing read context, so a caller that already loaded the
     /// log does not load it again (see [`ReadCtx`]).
-    fn hypergraph_in(&self, workspace: Option<&str>, cx: &ReadCtx) -> Result<HyperGraphView, StoreError> {
+    fn hypergraph_in(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HyperGraphView, StoreError> {
         let all_entities = self.store.all_entities(workspace)?;
         // Gate grants feed the per-observation effective tier (resolution.md Section 3).
         let gates = self.gate_grants(workspace, cx)?;
@@ -3767,10 +3819,8 @@ impl Engine {
             all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = entities.iter().map(|e| e.id.as_str()).collect();
         // id -> canonical name (readability: hyperedge members are carried as names too).
-        let name_by_id: HashMap<&str, &str> = entities
-            .iter()
-            .map(|e| (e.id.as_str(), e.canonical_name.as_str()))
-            .collect();
+        let name_by_id: HashMap<&str, &str> =
+            entities.iter().map(|e| (e.id.as_str(), e.canonical_name.as_str())).collect();
 
         // Per-observation co-occurrence set -> accumulate hyperedges, deduping by member set.
         // Value: (sorted members, sources count, highest trust among contributing observations).
@@ -3799,14 +3849,7 @@ impl Engine {
                     .iter()
                     .map(|m| name_by_id.get(m.as_str()).copied().unwrap_or("").to_string())
                     .collect();
-                HyperEdge {
-                    size: members.len(),
-                    member_names,
-                    id,
-                    members,
-                    sources,
-                    trust_tier,
-                }
+                HyperEdge { size: members.len(), member_names, id, members, sources, trust_tier }
             })
             .collect();
         // Deterministic order (Principle 16): size desc (larger context first), ties broken by id asc.
@@ -3828,12 +3871,7 @@ impl Engine {
                 // Receiver-evaluated per attestation (resolution.md Section 3) - never the raw
                 // claimed max (F13). Kind belief/contested live on the graph projection; this
                 // overlay keeps the stored kind (the two share node ids, so the viewer joins them).
-                let trust = e
-                    .provenance
-                    .iter()
-                    .map(evaluated_tier)
-                    .max()
-                    .unwrap_or_default();
+                let trust = e.provenance.iter().map(evaluated_tier).max().unwrap_or_default();
                 GraphNode {
                     id: e.id.clone(),
                     name: e.canonical_name.clone(),
@@ -3845,7 +3883,8 @@ impl Engine {
                     degree: hyper_degree.get(&e.id).copied().unwrap_or(0),
                     sources: e.provenance.len(),
                     origins: {
-                        let mut o: Vec<String> = e.provenance.iter().map(|p| p.host.clone()).collect();
+                        let mut o: Vec<String> =
+                            e.provenance.iter().map(|p| p.host.clone()).collect();
                         o.sort();
                         o.dedup();
                         o
@@ -3864,12 +3903,7 @@ impl Engine {
             hyperedge_count: hyperedges.len(),
             max_size,
         };
-        Ok(HyperGraphView {
-            workspace: workspace.map(String::from),
-            nodes,
-            hyperedges,
-            stats,
-        })
+        Ok(HyperGraphView { workspace: workspace.map(String::from), nodes, hyperedges, stats })
     }
 
     /// Reifies a co-occurrence context into first-class ontology structure - the promotion path a
@@ -3983,7 +4017,11 @@ const HYPEREDGE_MIN_SIZE: usize = 2;
 /// choice as [`Engine::resolve_kind`]'s competitors - P16). The row equal to `winner` is tagged
 /// "winner"; every other value gets `loser_role` ("alias" for names, "competitor" for kinds).
 /// Ordered winner-first, then (tier desc, value asc) - a stable, arrival-order-free ranking.
-fn candidate_rows(cands: &[BeliefCandidate], winner: &str, loser_role: &'static str) -> Vec<CandidateRow> {
+fn candidate_rows(
+    cands: &[BeliefCandidate],
+    winner: &str,
+    loser_role: &'static str,
+) -> Vec<CandidateRow> {
     // value -> (highest tier, representative observation id, that candidate's hlc).
     let mut best: BTreeMap<&str, (TrustTier, &str, &Hlc)> = BTreeMap::new();
     for c in cands {
@@ -4128,11 +4166,7 @@ fn name_variant_groups(
     // every pair is already proposed contributes nothing new and drops out.
     let mut seen_pairs: HashSet<(String, String)> = open_pairs.clone();
 
-    for rung in [
-        VariantRung::Separator,
-        VariantRung::Plural,
-        VariantRung::Alias,
-    ] {
+    for rung in [VariantRung::Separator, VariantRung::Plural, VariantRung::Alias] {
         // Keyed by (workspace, normalization) so a group never spans workspaces.
         let mut by_key: BTreeMap<(&str, String), BTreeSet<String>> = BTreeMap::new();
         for e in entities {
@@ -4143,10 +4177,7 @@ fn name_variant_groups(
                     by_key.entry((ws, name_key)).or_default().insert(e.id.clone());
                 }
                 VariantRung::Plural => {
-                    by_key
-                        .entry((ws, plural_fold(&name_key)))
-                        .or_default()
-                        .insert(e.id.clone());
+                    by_key.entry((ws, plural_fold(&name_key))).or_default().insert(e.id.clone());
                 }
                 VariantRung::Alias => {
                     // Both the canonical name and every alias are entry points, so an entity is
@@ -4154,10 +4185,7 @@ fn name_variant_groups(
                     // alias parity the keyword search already has).
                     by_key.entry((ws, name_key)).or_default().insert(e.id.clone());
                     for a in &e.aliases {
-                        by_key
-                            .entry((ws, variant_key(a)))
-                            .or_default()
-                            .insert(e.id.clone());
+                        by_key.entry((ws, variant_key(a))).or_default().insert(e.id.clone());
                     }
                 }
             }
@@ -4207,9 +4235,7 @@ fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
     for list in lists {
         for (rank, hit) in list.iter().enumerate() {
             let contrib = 1.0 / (K + rank as f32 + 1.0);
-            let entry = acc
-                .entry((hit.kind, hit.id.clone()))
-                .or_insert_with(|| (hit.clone(), 0.0));
+            let entry = acc.entry((hit.kind, hit.id.clone())).or_insert_with(|| (hit.clone(), 0.0));
             entry.1 += contrib;
         }
     }
@@ -4255,7 +4281,11 @@ mod tests {
                     confidence: None,
                     on_behalf_of: None,
                     derived_from: vec![],
-                    entities: vec![EntityInput { name: name.into(), kind: None, description: None }],
+                    entities: vec![EntityInput {
+                        name: name.into(),
+                        kind: None,
+                        description: None,
+                    }],
                     relations: vec![],
                 })
                 .expect("observe");
@@ -4308,7 +4338,11 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![
-                        EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None },
+                        EntityInput {
+                            name: format!("E{i}"),
+                            kind: Some("Concept".into()),
+                            description: None,
+                        },
                         EntityInput { name: format!("E{}", i + 1), kind: None, description: None },
                     ],
                     relations: vec![RelationInput {
@@ -4329,8 +4363,14 @@ mod tests {
         let cx = ReadCtx::default();
         let shared_graph = serde_json::to_string(&engine.graph_in(ws, &cx).unwrap()).unwrap();
         let shared_hyper = serde_json::to_string(&engine.hypergraph_in(ws, &cx).unwrap()).unwrap();
-        assert_eq!(standalone_graph, shared_graph, "graph must not depend on whose context it ran in");
-        assert_eq!(standalone_hyper, shared_hyper, "hypergraph must not depend on whose context it ran in");
+        assert_eq!(
+            standalone_graph, shared_graph,
+            "graph must not depend on whose context it ran in"
+        );
+        assert_eq!(
+            standalone_hyper, shared_hyper,
+            "hypergraph must not depend on whose context it ran in"
+        );
         // And the same context answering both in sequence is still right for the second one.
         let again = serde_json::to_string(&engine.graph_in(ws, &cx).unwrap()).unwrap();
         assert_eq!(standalone_graph, again, "a reused context must stay correct on later reads");
@@ -4351,7 +4391,10 @@ mod tests {
             let node = SyncNode::new(NodeIdentity::from_secret_bytes([seed; 32]));
             (store, engine, node)
         };
-        let observe = |e: &Engine, content: &str, ents: Vec<(&str, Option<&str>, Option<&str>)>, rels: Vec<(&str, &str, &str)>| {
+        let observe = |e: &Engine,
+                       content: &str,
+                       ents: Vec<(&str, Option<&str>, Option<&str>)>,
+                       rels: Vec<(&str, &str, &str)>| {
             e.observe(ObserveInput {
                 workspace: None,
                 content: content.into(),
@@ -4386,16 +4429,37 @@ mod tests {
         let (store_b, engine_b, node_b) = mk(2);
         // Overlapping knowledge: both mention Driver (different descriptions - LWW must converge to
         // ONE winner by HLC on both sides), plus disjoint facts and a cross-entity relation each.
-        observe(&engine_a, "driver a", vec![("Driver", Some("Component"), Some("desc from A"))], vec![]);
-        observe(&engine_a, "kernel", vec![("Kernel", None, None)], vec![("Driver", "runs_on", "Kernel")]);
+        observe(
+            &engine_a,
+            "driver a",
+            vec![("Driver", Some("Component"), Some("desc from A"))],
+            vec![],
+        );
+        observe(
+            &engine_a,
+            "kernel",
+            vec![("Kernel", None, None)],
+            vec![("Driver", "runs_on", "Kernel")],
+        );
         observe(&engine_b, "driver b", vec![("Driver", None, Some("desc from B"))], vec![]);
-        observe(&engine_b, "loader", vec![("Loader", None, None)], vec![("Loader", "loads", "Driver")]);
-        engine_a.define_type(DefineTypeInput {
-            workspace: None,
-            defs: vec![TypeDefInput { target: TypeTarget::Entity, name: "Component".into(), description: "a deployable part".into() }],
-            source_ref: None,
-            on_behalf_of: None,
-        }).unwrap();
+        observe(
+            &engine_b,
+            "loader",
+            vec![("Loader", None, None)],
+            vec![("Loader", "loads", "Driver")],
+        );
+        engine_a
+            .define_type(DefineTypeInput {
+                workspace: None,
+                defs: vec![TypeDefInput {
+                    target: TypeTarget::Entity,
+                    name: "Component".into(),
+                    description: "a deployable part".into(),
+                }],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .unwrap();
 
         // Stamp and exchange full logs both ways (share = ws), applying in opposite orders per side.
         let share = vec!["ws".to_string()];
@@ -4407,8 +4471,10 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let delta_a = export_delta(store_a.as_ref(), "ws", &VersionVector::default(), &share).unwrap();
-        let delta_b = export_delta(store_b.as_ref(), "ws", &VersionVector::default(), &share).unwrap();
+        let delta_a =
+            export_delta(store_a.as_ref(), "ws", &VersionVector::default(), &share).unwrap();
+        let delta_b =
+            export_delta(store_b.as_ref(), "ws", &VersionVector::default(), &share).unwrap();
         let mut vv = VersionVector::default();
         let ra = node_a.apply(store_a.as_ref(), "ws", delta_b, &keys, &mut vv).unwrap();
         let mut vv = VersionVector::default();
@@ -4447,8 +4513,18 @@ mod tests {
         assert_eq!(da, db, "description LWW must pick the same winner everywhere");
         assert!(da.is_some());
         // The type glossary converges too (already a pure HLC fold).
-        let ta: Vec<_> = engine_a.types(Some("ws")).unwrap().into_iter().map(|t| (t.name, t.description)).collect();
-        let tb: Vec<_> = engine_b.types(Some("ws")).unwrap().into_iter().map(|t| (t.name, t.description)).collect();
+        let ta: Vec<_> = engine_a
+            .types(Some("ws"))
+            .unwrap()
+            .into_iter()
+            .map(|t| (t.name, t.description))
+            .collect();
+        let tb: Vec<_> = engine_b
+            .types(Some("ws"))
+            .unwrap()
+            .into_iter()
+            .map(|t| (t.name, t.description))
+            .collect();
         assert_eq!(ta, tb, "type glossary must converge (F5)");
         // The belief projection converges wholesale (resolution.md Section 7): kind winners,
         // contested flags, competitors, and effective tiers are part of the serialized view, so
@@ -4571,7 +4647,16 @@ mod tests {
                 on_behalf_of: None,
             })
             .unwrap();
-        engine.review_proposal(None, pid2.clone(), "reject".into(), None, None, VerdictSurface::Console).unwrap();
+        engine
+            .review_proposal(
+                None,
+                pid2.clone(),
+                "reject".into(),
+                None,
+                None,
+                VerdictSurface::Console,
+            )
+            .unwrap();
         assert_eq!(engine.get_proposal(Some("ws1"), &pid2).unwrap().unwrap().state, "rejected");
 
         // list_proposals returns both.
@@ -4639,7 +4724,12 @@ mod tests {
                 on_behalf_of: None,
             })
             .unwrap();
-        assert!(engine.get_proposal(Some("ws1"), &mid).unwrap().unwrap().affected_types.is_empty());
+        assert!(engine
+            .get_proposal(Some("ws1"), &mid)
+            .unwrap()
+            .unwrap()
+            .affected_types
+            .is_empty());
     }
 
     #[test]
@@ -4656,16 +4746,19 @@ mod tests {
                 on_behalf_of: Some("ashon".into()),
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput { description: None,
+                    EntityInput {
+                        description: None,
                         name: "rmcp".into(),
                         kind: Some("Tool".into()),
                     },
-                    EntityInput { description: None,
+                    EntityInput {
+                        description: None,
                         name: "supragnosis".into(),
                         kind: Some("Project".into()),
                     },
                 ],
-                relations: vec![RelationInput { description: None,
+                relations: vec![RelationInput {
+                    description: None,
                     from: "supragnosis".into(),
                     kind: "depends_on".into(),
                     to: "rmcp".into(),
@@ -4687,19 +4780,12 @@ mod tests {
 
         // Re-ingest converges to the same entity because of content addressing (only sources accumulate).
         let out = engine.search("rust", Some("ws1"), 10).unwrap();
-        assert!(
-            !out.hits.is_empty(),
-            "keyword search should find the observation"
-        );
+        assert!(!out.hits.is_empty(), "keyword search should find the observation");
         // An engine without an embedder has mode keyword (degrade marker, Principle 16 4th).
         assert_eq!(out.mode, SearchMode::Keyword);
 
         // Not visible from another workspace.
-        assert!(engine
-            .search("rust", Some("other"), 10)
-            .unwrap()
-            .hits
-            .is_empty());
+        assert!(engine.search("rust", Some("other"), 10).unwrap().hits.is_empty());
     }
 
     /// Notation variance in the relation kind (depends_on/dependsOn/depends-on) converges to the same single edge,
@@ -4720,7 +4806,8 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![],
-                    relations: vec![RelationInput { description: None,
+                    relations: vec![RelationInput {
+                        description: None,
                         from: "supragnosis".into(),
                         kind: kind.into(),
                         to: "rmcp".into(),
@@ -4758,7 +4845,8 @@ mod tests {
                     confidence: None,
                     on_behalf_of: None,
                     derived_from: vec![],
-                    entities: vec![EntityInput { description: None,
+                    entities: vec![EntityInput {
+                        description: None,
                         name: "supragnosis".into(),
                         kind: Some(kind.into()),
                     }],
@@ -4823,11 +4911,13 @@ mod tests {
                 relations,
             })
         };
-        let ent = |name: &str, kind: Option<&str>| EntityInput { description: None,
+        let ent = |name: &str, kind: Option<&str>| EntityInput {
+            description: None,
             name: name.into(),
             kind: kind.map(String::from),
         };
-        let rel = |from: &str, kind: &str, to: &str| RelationInput { description: None,
+        let rel = |from: &str, kind: &str, to: &str| RelationInput {
+            description: None,
             from: from.into(),
             kind: kind.into(),
             to: to.into(),
@@ -4880,7 +4970,8 @@ mod tests {
                     on_behalf_of: None,
                     derived_from: vec![],
                     entities: vec![],
-                    relations: vec![RelationInput { description: None,
+                    relations: vec![RelationInput {
+                        description: None,
                         from: "kim".into(),
                         kind: "leads".into(),
                         to: "team A".into(),
@@ -4926,7 +5017,8 @@ mod tests {
                     confidence: Some(conf),
                     on_behalf_of: Some(behalf.into()),
                     derived_from: vec![],
-                    entities: vec![EntityInput { description: None,
+                    entities: vec![EntityInput {
+                        description: None,
                         name: "thing".into(),
                         kind: None,
                     }],
@@ -4939,19 +5031,13 @@ mod tests {
         assert_eq!(first.observation_id, second.observation_id, "content-address dedup");
 
         let logged = store.get_observation(&first.observation_id).unwrap().unwrap();
-        let entity = store
-            .get_entity(&Entity::make_id("ws1", "thing"))
-            .unwrap()
-            .unwrap();
+        let entity = store.get_entity(&Entity::make_id("ws1", "thing")).unwrap().unwrap();
 
         // The log and the projection carry the same attestation count - the log is the source of truth.
         assert_eq!(logged.provenance.len(), 2, "two attestations preserved in the log");
         assert_eq!(entity.provenance.len(), 2);
-        let behalfs: Vec<Option<String>> = logged
-            .provenance
-            .iter()
-            .map(|p| p.on_behalf_of.clone())
-            .collect();
+        let behalfs: Vec<Option<String>> =
+            logged.provenance.iter().map(|p| p.on_behalf_of.clone()).collect();
         assert!(
             behalfs.contains(&Some("alice".into())) && behalfs.contains(&Some("bob".into())),
             "the first observation's provenance must not be destroyed: {behalfs:?}"
@@ -4993,20 +5079,18 @@ mod tests {
         // Keyword only (same store, no embedder) misses this query.
         let keyword_only = Engine::new(store.clone(), "h", "ws");
         let keyword_out = keyword_only.search(q, Some("ws"), 10).unwrap();
-        assert!(
-            keyword_out.hits.is_empty(),
-            "substring keyword search should miss this query"
-        );
+        assert!(keyword_out.hits.is_empty(), "substring keyword search should miss this query");
         assert_eq!(keyword_out.mode, SearchMode::Keyword, "degrade is marked keyword");
 
         // Hybrid recalls the lexically overlapping rust observation at the top.
         let out = hybrid.search(q, Some("ws"), 10).unwrap();
-        assert_eq!(out.mode, SearchMode::Hybrid, "marked hybrid when the semantic surface is referenced");
-        let hits = out.hits;
-        assert!(
-            !hits.is_empty(),
-            "hybrid search should recall via embedding"
+        assert_eq!(
+            out.mode,
+            SearchMode::Hybrid,
+            "marked hybrid when the semantic surface is referenced"
         );
+        let hits = out.hits;
+        assert!(!hits.is_empty(), "hybrid search should recall via embedding");
         assert!(
             hits[0].snippet.contains("native"),
             "semantic top hit should be the rust observation, got {:?}",
@@ -5046,7 +5130,8 @@ mod tests {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput { description: None,
+                entities: vec![EntityInput {
+                    description: None,
                     name: "rust".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -5083,16 +5168,19 @@ mod tests {
                 on_behalf_of: None,
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput { description: None,
+                    EntityInput {
+                        description: None,
                         name: "supragnosis".into(),
                         kind: Some("Project".into()),
                     },
-                    EntityInput { description: None,
+                    EntityInput {
+                        description: None,
                         name: "rmcp".into(),
                         kind: Some("Tool".into()),
                     },
                 ],
-                relations: vec![RelationInput { description: None,
+                relations: vec![RelationInput {
+                    description: None,
                     from: "supragnosis".into(),
                     kind: "depends_on".into(),
                     to: "rmcp".into(),
@@ -5111,7 +5199,8 @@ mod tests {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput { description: None,
+                entities: vec![EntityInput {
+                    description: None,
                     name: "elsewhere".into(),
                     kind: None,
                 }],
@@ -5170,7 +5259,8 @@ mod tests {
                     confidence: None,
                     on_behalf_of: None,
                     derived_from: vec![],
-                    entities: vec![EntityInput { description: None,
+                    entities: vec![EntityInput {
+                        description: None,
                         name: name.into(),
                         kind: None,
                     }],
@@ -5289,14 +5379,16 @@ mod tests {
                 derived_from: vec![],
                 entities: vec![],
                 relations: vec![
-                    RelationInput { description: None,
+                    RelationInput {
+                        description: None,
                         from: "M".into(),
                         kind: "relates_to".into(),
                         to: "N".into(),
                         valid_from: None,
                         valid_to: None,
                     },
-                    RelationInput { description: None,
+                    RelationInput {
+                        description: None,
                         from: "M".into(),
                         kind: "relates_to".into(),
                         to: "O".into(),
@@ -5309,7 +5401,11 @@ mod tests {
 
         let hg = engine.hypergraph(Some("ws1")).unwrap();
         assert_eq!(hg.stats.node_count, 4, "four nodes P,M,N,O");
-        assert_eq!(hg.hyperedges.len(), 1, "P is degenerate, only the relation observation is a hyperedge");
+        assert_eq!(
+            hg.hyperedges.len(),
+            1,
+            "P is degenerate, only the relation observation is a hyperedge"
+        );
         assert_eq!(hg.hyperedges[0].size, 3);
         let members = &hg.hyperedges[0].members;
         for n in ["M", "N", "O"] {
@@ -5405,11 +5501,7 @@ mod tests {
                     derived_from: vec![],
                     entities: names
                         .iter()
-                        .map(|n| EntityInput {
-                            name: (*n).into(),
-                            kind: None,
-                            description: None,
-                        })
+                        .map(|n| EntityInput { name: (*n).into(), kind: None, description: None })
                         .collect(),
                     relations: vec![],
                 })
@@ -5455,8 +5547,10 @@ mod tests {
         assert_eq!(rep.stats.name_variants, rep.name_variants.len());
 
         // Deterministic (P16): the same store serializes identically on a recomputation.
-        let once = serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
-        let twice = serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
+        let once =
+            serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
+        let twice =
+            serde_json::to_string(&engine.curation(Some("ws1")).unwrap().name_variants).unwrap();
         assert_eq!(once, twice);
     }
 

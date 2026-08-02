@@ -129,7 +129,9 @@ pub async fn serve(
         let fed = fed.clone();
         let narrow = narrow.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(&engine, &events, stream, fed.as_ref(), narrow.as_ref()).await {
+            if let Err(e) =
+                handle_conn(&engine, &events, stream, fed.as_ref(), narrow.as_ref()).await
+            {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
@@ -340,11 +342,7 @@ fn graph_response(engine: &Engine, query: &str) -> Response {
     };
     match engine.graph(ws_owned.as_deref()) {
         Ok(graph) => match serde_json::to_string(&graph) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",
@@ -378,11 +376,7 @@ fn hypergraph_response(engine: &Engine, query: &str) -> Response {
     };
     match engine.hypergraph(ws_owned.as_deref()) {
         Ok(hg) => match serde_json::to_string(&hg) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",
@@ -415,11 +409,7 @@ fn types_response(engine: &Engine, query: &str) -> Response {
     };
     match engine.types(ws_owned.as_deref()) {
         Ok(types) => match serde_json::to_string(&types) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",
@@ -453,11 +443,7 @@ fn curation_response(engine: &Engine, query: &str) -> Response {
     };
     match engine.curation(ws_owned.as_deref()) {
         Ok(report) => match serde_json::to_string(&report) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",
@@ -496,11 +482,7 @@ fn observations_response(engine: &Engine, query: &str) -> Response {
     let limit = param("limit").and_then(|s| s.parse::<usize>().ok());
     match engine.observation_log(ws_owned.as_deref(), entity.as_deref(), limit) {
         Ok(log) => match serde_json::to_string(&log) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",
@@ -540,11 +522,7 @@ fn explain_response(engine: &Engine, query: &str) -> Response {
     };
     match engine.explain_entity(&entity) {
         Ok(Some(ex)) => match serde_json::to_string(&ex) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",
@@ -554,7 +532,9 @@ fn explain_response(engine: &Engine, query: &str) -> Response {
         Ok(None) => Response {
             status: "404 Not Found",
             content_type: "application/json",
-            body: err_body("no entity for that id (it may have been merged away, or never existed)"),
+            body: err_body(
+                "no entity for that id (it may have been merged away, or never existed)",
+            ),
         },
         Err(e) => Response {
             status: "500 Internal Server Error",
@@ -723,7 +703,9 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
         targets: observations,
         into: None,
         tier: Some(tier),
-        rationale: rationale.or_else(|| Some("confirmed from the curation console (contested belief mediation)".into())),
+        rationale: rationale.or_else(|| {
+            Some("confirmed from the curation console (contested belief mediation)".into())
+        }),
         affected_types: Vec::new(),
         source_ref: None,
         on_behalf_of: None,
@@ -748,14 +730,16 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
         Ok(verdict) => Response {
             status: "200 OK",
             content_type: "application/json",
-            body: serde_json::json!({ "proposal_id": proposal, "verdict_observation_id": verdict }).to_string(),
+            body: serde_json::json!({ "proposal_id": proposal, "verdict_observation_id": verdict })
+                .to_string(),
         },
         Err(e) => Response {
             status: "400 Bad Request",
             content_type: "application/json",
             // The proposal was opened but the verdict failed - report both so the user can review it
             // by hand from the proposals panel (the proposal itself commits nothing, P23).
-            body: serde_json::json!({ "error": e.to_string(), "proposal_id": proposal }).to_string(),
+            body: serde_json::json!({ "error": e.to_string(), "proposal_id": proposal })
+                .to_string(),
         },
     }
 }
@@ -899,7 +883,9 @@ fn narrow_share_response(method: &str, query: &str, narrow: Option<&NarrowShare>
         return Response {
             status: "400 Bad Request",
             content_type: "application/json",
-            body: err_body("needs ?node_id=<peer node id>&workspaces=<comma separated, may be empty>"),
+            body: err_body(
+                "needs ?node_id=<peer node id>&workspaces=<comma separated, may be empty>",
+            ),
         };
     };
     // Absent means "you did not say", empty means "none" - collapsing them would turn a missing
@@ -913,8 +899,12 @@ fn narrow_share_response(method: &str, query: &str, narrow: Option<&NarrowShare>
             ),
         };
     };
-    let keep: Vec<String> =
-        raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
+    let keep: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
 
     match narrow(&node_id, &keep) {
         Ok(now) => Response {
@@ -954,11 +944,7 @@ fn about_response() -> Response {
 fn workspaces_response(engine: &Engine) -> Response {
     match engine.workspaces() {
         Ok(list) => match serde_json::to_string(&list) {
-            Ok(json) => Response {
-                status: "200 OK",
-                content_type: "application/json",
-                body: json,
-            },
+            Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
                 status: "500 Internal Server Error",
                 content_type: "application/json",

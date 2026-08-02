@@ -93,7 +93,8 @@ async fn model_uses_mcp_tools_correctly() {
     };
     let base = std::env::var("ANTHROPIC_BASE_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
-    let model = std::env::var("SUPRAGNOSIS_EVAL_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    let model =
+        std::env::var("SUPRAGNOSIS_EVAL_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
     // Pull the tool schemas from a live MCP server over the protocol (= the real surface the model will see).
     let engine = Arc::new(
@@ -147,11 +148,7 @@ async fn model_uses_mcp_tools_correctly() {
             .expect("anthropic request");
         let status = resp.status();
         let payload: Value = resp.json().await.expect("anthropic json");
-        assert!(
-            status.is_success(),
-            "[{}] API error {status}: {payload}",
-            sc.name
-        );
+        assert!(status.is_success(), "[{}] API error {status}: {payload}", sc.name);
 
         match first_tool_use(&payload) {
             Some((name, input)) if name == sc.expect_tool => match (sc.check_args)(&input) {

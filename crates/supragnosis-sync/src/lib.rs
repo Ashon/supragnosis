@@ -20,7 +20,7 @@ use std::sync::Mutex;
 
 use supragnosis_core::{
     evaluated_tier, now_millis, observation_content_id, ordering_hlc, verify_attestation,
-    AttestationEvent, Hlc, AssertionStore, NodeIdentity, Observation, StoreError, SyncMeta,
+    AssertionStore, AttestationEvent, Hlc, NodeIdentity, Observation, StoreError, SyncMeta,
     VersionVector,
 };
 
@@ -134,7 +134,11 @@ impl SyncNode {
     /// (inbound events always arrive stamped and are rejected otherwise), so this node IS their
     /// origin. Deterministic order: observations by (ordering HLC, id), attestations by their list
     /// order. Returns the number of attestations stamped.
-    pub fn backfill(&self, store: &dyn AssertionStore, workspace: &str) -> Result<usize, SyncError> {
+    pub fn backfill(
+        &self,
+        store: &dyn AssertionStore,
+        workspace: &str,
+    ) -> Result<usize, SyncError> {
         let mut obss = store.all_observations(Some(workspace))?;
         obss.sort_by(|a, b| {
             (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
@@ -256,10 +260,7 @@ fn check_event(
 /// provenance preserved (stale sync stamps stripped: they bound the old id), and the old id appended
 /// to `derived_from` so the lineage records the migration. The old row remains local history and
 /// never exports (the wire guard in `attestations_since`/`backfill`). Returns the migrated count.
-pub fn migrate_legacy_ids(
-    store: &dyn AssertionStore,
-    workspace: &str,
-) -> Result<usize, SyncError> {
+pub fn migrate_legacy_ids(store: &dyn AssertionStore, workspace: &str) -> Result<usize, SyncError> {
     let mut migrated = 0usize;
     for obs in store.all_observations(Some(workspace))? {
         let cur_id = observation_content_id(workspace, &obs.content, &obs.assertions);
@@ -284,9 +285,11 @@ pub fn migrate_legacy_ids(
             continue; // unreachable in practice (P2: at least one attestation), but never panic
         }
         let first = provs.remove(0);
-        let mut fresh = Observation::with_assertions(obs.content.clone(), first, obs.assertions.clone());
+        let mut fresh =
+            Observation::with_assertions(obs.content.clone(), first, obs.assertions.clone());
         for p in provs {
-            let mut copy = Observation::with_assertions(obs.content.clone(), p, obs.assertions.clone());
+            let mut copy =
+                Observation::with_assertions(obs.content.clone(), p, obs.assertions.clone());
             copy.derived_from = Vec::new();
             fresh.absorb(copy); // union semantics, dedup/order maintained
         }
@@ -353,10 +356,7 @@ mod tests {
     }
 
     fn keys(nodes: &[&SyncNode]) -> BTreeMap<String, String> {
-        nodes
-            .iter()
-            .map(|n| (n.node_id().to_string(), n.public_key_hex()))
-            .collect()
+        nodes.iter().map(|n| (n.node_id().to_string(), n.public_key_hex())).collect()
     }
 
     /// Snapshot of a store's log for convergence comparison: id -> (attestation count, sorted
@@ -383,7 +383,9 @@ mod tests {
         let mut o = Observation::new("fact".into(), prov("ws", 10));
         o.derived_from = vec!["parent".into()];
         store.add_observation(o).unwrap();
-        store.add_observation(Observation::new("fact two".into(), prov("ws", 20))).unwrap();
+        store
+            .add_observation(Observation::new("fact two".into(), prov("ws", 20)))
+            .unwrap();
 
         assert_eq!(a.backfill(&store, "ws").unwrap(), 2);
         // Stamped in place: still one attestation per observation, now carrying the stamp + signed lineage.
@@ -439,9 +441,12 @@ mod tests {
         let store_a = InMemoryStore::new();
         let a = node(1);
         let b = node(2);
-        store_a.add_observation(Observation::new("shared fact".into(), prov("ws", 5))).unwrap();
+        store_a
+            .add_observation(Observation::new("shared fact".into(), prov("ws", 5)))
+            .unwrap();
         a.backfill(&store_a, "ws").unwrap();
-        let delta = export_delta(&store_a, "ws", &VersionVector::default(), &[String::from("ws")]).unwrap();
+        let delta =
+            export_delta(&store_a, "ws", &VersionVector::default(), &[String::from("ws")]).unwrap();
 
         let store_b = InMemoryStore::new();
         let dir = keys(&[&a, &b]);
@@ -485,10 +490,17 @@ mod tests {
         let b = node(2);
         let mut bad_prov = prov("ws", 7);
         bad_prov.confidence = Some(5.0); // out of [0.0, 1.0]
-        store_a.add_observation(Observation::new("over-confident".into(), bad_prov)).unwrap();
+        store_a
+            .add_observation(Observation::new("over-confident".into(), bad_prov))
+            .unwrap();
         a.backfill(&store_a, "ws").unwrap();
-        let delta = export_delta(&store_a, "ws", &VersionVector::default(), &[String::from("ws")]).unwrap();
-        assert_eq!(delta.len(), 1, "the origin still signs and exports it - the gate is the receiver's");
+        let delta =
+            export_delta(&store_a, "ws", &VersionVector::default(), &[String::from("ws")]).unwrap();
+        assert_eq!(
+            delta.len(),
+            1,
+            "the origin still signs and exports it - the gate is the receiver's"
+        );
 
         let store_b = InMemoryStore::new();
         let dir = keys(&[&a, &b]);
@@ -515,7 +527,9 @@ mod tests {
         let mut legacy = Observation::new("old era fact".into(), prov("ws", 3));
         legacy.id = "legacy-old-formula-id".into(); // simulate a pre-0.1.x id era
         store.add_observation(legacy).unwrap();
-        store.add_observation(Observation::new("current fact".into(), prov("ws", 5))).unwrap();
+        store
+            .add_observation(Observation::new("current fact".into(), prov("ws", 5)))
+            .unwrap();
 
         // Backfill skips the legacy row and export never carries it (wire guard).
         assert_eq!(a.backfill(&store, "ws").unwrap(), 1);
@@ -568,10 +582,7 @@ mod tests {
         // Three delivery schedules: forward, reversed, and duplicated interleave.
         let schedules: Vec<(Vec<AttestationEvent>, Vec<AttestationEvent>)> = vec![
             (delta_b.clone(), delta_a.clone()),
-            (
-                delta_b.iter().rev().cloned().collect(),
-                delta_a.iter().rev().cloned().collect(),
-            ),
+            (delta_b.iter().rev().cloned().collect(), delta_a.iter().rev().cloned().collect()),
             (
                 delta_b.iter().chain(delta_b.iter()).cloned().collect(),
                 delta_a.iter().chain(delta_a.iter()).cloned().collect(),

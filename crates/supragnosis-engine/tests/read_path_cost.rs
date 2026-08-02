@@ -15,10 +15,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use supragnosis_core::{
-    AssertionStore,
-    Entity, KnowledgeStore, Observation, Relation, SearchHit, StoreError, TraverseHit,
+    AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit, StoreError,
+    TraverseHit,
 };
-use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
+use supragnosis_engine::{
+    Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface,
+};
 use supragnosis_store::InMemoryStore;
 
 const WS: &str = "ws";
@@ -62,7 +64,13 @@ impl CountingStore {
     }
 
     fn reset(&self) {
-        for c in [&self.obs_scans, &self.obs_rows, &self.entity_scans, &self.relation_scans, &self.semantic_queries] {
+        for c in [
+            &self.obs_scans,
+            &self.obs_rows,
+            &self.entity_scans,
+            &self.relation_scans,
+            &self.semantic_queries,
+        ] {
             c.store(0, Ordering::SeqCst);
         }
     }
@@ -189,7 +197,11 @@ fn workspace_n_with(
                 on_behalf_of: None,
                 derived_from: vec![],
                 entities: vec![
-                    EntityInput { name: format!("Ent {i}"), kind: Some("Concept".into()), description: None },
+                    EntityInput {
+                        name: format!("Ent {i}"),
+                        kind: Some("Concept".into()),
+                        description: None,
+                    },
                     EntityInput { name: format!("Ent {}", i + 1), kind: None, description: None },
                 ],
                 relations: vec![RelationInput {
@@ -261,15 +273,58 @@ fn a_read_walks_the_log_once() {
     let total = store.all_observations(Some(WS)).expect("obs").len();
 
     let surfaces: Vec<Surface> = vec![
-        ("graph", Box::new({ let e = &engine; move || { e.graph(Some(WS)).expect("graph"); } })),
-        ("curation", Box::new({ let e = &engine; move || { e.curation(Some(WS)).expect("curation"); } })),
-        ("hypergraph", Box::new({ let e = &engine; move || { e.hypergraph(Some(WS)).expect("hypergraph"); } })),
-        ("list_proposals", Box::new({ let e = &engine; move || { e.list_proposals(Some(WS)).expect("list"); } })),
-        ("types", Box::new({ let e = &engine; move || { e.types(Some(WS)).expect("types"); } })),
+        (
+            "graph",
+            Box::new({
+                let e = &engine;
+                move || {
+                    e.graph(Some(WS)).expect("graph");
+                }
+            }),
+        ),
+        (
+            "curation",
+            Box::new({
+                let e = &engine;
+                move || {
+                    e.curation(Some(WS)).expect("curation");
+                }
+            }),
+        ),
+        (
+            "hypergraph",
+            Box::new({
+                let e = &engine;
+                move || {
+                    e.hypergraph(Some(WS)).expect("hypergraph");
+                }
+            }),
+        ),
+        (
+            "list_proposals",
+            Box::new({
+                let e = &engine;
+                move || {
+                    e.list_proposals(Some(WS)).expect("list");
+                }
+            }),
+        ),
+        (
+            "types",
+            Box::new({
+                let e = &engine;
+                move || {
+                    e.types(Some(WS)).expect("types");
+                }
+            }),
+        ),
     ];
 
     println!("\n{total} observations in the workspace\n");
-    println!("{:<16} {:>6} {:>10} {:>9} {:>10}", "surface", "scans", "rows", "entities", "relations");
+    println!(
+        "{:<16} {:>6} {:>10} {:>9} {:>10}",
+        "surface", "scans", "rows", "entities", "relations"
+    );
     let mut costs: BTreeMap<&str, Cost> = BTreeMap::new();
     for (name, run) in &surfaces {
         let (_, c) = store.measure(run);
@@ -285,7 +340,10 @@ fn a_read_walks_the_log_once() {
         .iter()
         .filter(|(_, c)| c.observations > 1)
         .map(|(n, c)| {
-            format!("{n} walks the log {} times ({} rows deserialized)", c.observations, c.observation_rows)
+            format!(
+                "{n} walks the log {} times ({} rows deserialized)",
+                c.observations, c.observation_rows
+            )
         })
         .collect();
     assert!(
@@ -305,8 +363,12 @@ fn scan_counts_do_not_grow_with_the_log() {
         let store = Arc::new(CountingStore::new());
         let engine = workspace_n(&store, n);
         let total = store.all_observations(Some(WS)).expect("obs").len();
-        let (_, g) = store.measure(|| { engine.graph(Some(WS)).expect("graph"); });
-        let (_, c) = store.measure(|| { engine.curation(Some(WS)).expect("curation"); });
+        let (_, g) = store.measure(|| {
+            engine.graph(Some(WS)).expect("graph");
+        });
+        let (_, c) = store.measure(|| {
+            engine.curation(Some(WS)).expect("curation");
+        });
         rows.push((total, g.observations, c.observations, c.observation_rows));
     }
     println!("\n{:>6} {:>8} {:>11} {:>14}", "obs", "graph", "curation", "curation rows");
@@ -317,10 +379,14 @@ fn scan_counts_do_not_grow_with_the_log() {
     let first = rows.first().expect("rows");
     let last = rows.last().expect("rows");
     assert_eq!(
-        (first.1, first.2), (last.1, last.2),
+        (first.1, first.2),
+        (last.1, last.2),
         "scan counts must not depend on how much knowledge the workspace holds - \
          {} observations cost {:?} scans, {} observations cost {:?}",
-        first.0, (first.1, first.2), last.0, (last.1, last.2)
+        first.0,
+        (first.1, first.2),
+        last.0,
+        (last.1, last.2)
     );
 }
 
@@ -345,8 +411,12 @@ fn read_path_wall_clock() {
     /// model. What is being measured is carrying the bytes, not producing them.
     struct FixedDim(usize);
     impl supragnosis_core::EmbeddingProvider for FixedDim {
-        fn dimensions(&self) -> usize { self.0 }
-        fn id(&self) -> String { format!("fixed-{}", self.0) }
+        fn dimensions(&self) -> usize {
+            self.0
+        }
+        fn id(&self) -> String {
+            format!("fixed-{}", self.0)
+        }
         fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, supragnosis_core::EmbedError> {
             // Full-precision values in [-1, 1], derived from the text by an LCG. Realism matters
             // here in one specific way: a vector of round numbers serializes to a fraction of the
@@ -388,10 +458,14 @@ fn read_path_wall_clock() {
                     workspace_n(&store, n)
                 };
                 let t = std::time::Instant::now();
-                for _ in 0..20 { engine.graph(Some(WS)).expect("graph"); }
+                for _ in 0..20 {
+                    engine.graph(Some(WS)).expect("graph");
+                }
                 let graph = t.elapsed() / 20;
                 let t = std::time::Instant::now();
-                for _ in 0..20 { engine.curation(Some(WS)).expect("curation"); }
+                for _ in 0..20 {
+                    engine.curation(Some(WS)).expect("curation");
+                }
                 timings.push((graph, t.elapsed() / 20));
             }
             let total = n;
@@ -428,17 +502,33 @@ impl AssertionStore for ReversedStore {
         v.reverse();
         Ok(v)
     }
-    fn add_observation(&self, o: Observation) -> Result<(), StoreError> { self.0.add_observation(o) }
-    fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> { self.0.get_observation(id) }
-    fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> { self.0.get_entity(id) }
-    fn relations_of(&self, id: &str) -> Result<Vec<Relation>, StoreError> { self.0.relations_of(id) }
-    fn search(&self, q: &str, ws: Option<&str>, n: usize) -> Result<Vec<SearchHit>, StoreError> { self.0.search(q, ws, n) }
-    fn traverse(&self, id: &str, d: usize, n: usize) -> Result<Vec<TraverseHit>, StoreError> { self.0.traverse(id, d, n) }
+    fn add_observation(&self, o: Observation) -> Result<(), StoreError> {
+        self.0.add_observation(o)
+    }
+    fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
+        self.0.get_observation(id)
+    }
+    fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> {
+        self.0.get_entity(id)
+    }
+    fn relations_of(&self, id: &str) -> Result<Vec<Relation>, StoreError> {
+        self.0.relations_of(id)
+    }
+    fn search(&self, q: &str, ws: Option<&str>, n: usize) -> Result<Vec<SearchHit>, StoreError> {
+        self.0.search(q, ws, n)
+    }
+    fn traverse(&self, id: &str, d: usize, n: usize) -> Result<Vec<TraverseHit>, StoreError> {
+        self.0.traverse(id, d, n)
+    }
 }
 
 impl KnowledgeStore for ReversedStore {
-    fn put_entity(&self, e: Entity) -> Result<(), StoreError> { self.0.put_entity(e) }
-    fn add_relation(&self, r: Relation) -> Result<(), StoreError> { self.0.add_relation(r) }
+    fn put_entity(&self, e: Entity) -> Result<(), StoreError> {
+        self.0.put_entity(e)
+    }
+    fn add_relation(&self, r: Relation) -> Result<(), StoreError> {
+        self.0.add_relation(r)
+    }
 }
 
 /// guard (P16): the read surfaces must not depend on the order the store enumerates the log in.
@@ -461,7 +551,9 @@ fn read_surfaces_do_not_depend_on_enumeration_order() {
     // TierWeighted, which leaves a clock-stepped fixture green and this one failing.
     struct Frozen;
     impl supragnosis_core::Clock for Frozen {
-        fn now_millis(&self) -> supragnosis_core::Timestamp { 1_000 }
+        fn now_millis(&self) -> supragnosis_core::Timestamp {
+            1_000
+        }
     }
     let inner = Arc::new(InMemoryStore::new());
     let writer = Engine::new(inner.clone(), "host-a", WS).with_clock(Arc::new(Frozen));
@@ -536,7 +628,14 @@ fn read_surfaces_do_not_depend_on_enumeration_order() {
         })
         .expect("propose");
     writer
-        .review_proposal(None, merge, "merge".into(), None, Some("ashon".into()), VerdictSurface::Console)
+        .review_proposal(
+            None,
+            merge,
+            "merge".into(),
+            None,
+            Some("ashon".into()),
+            VerdictSurface::Console,
+        )
         .expect("review");
 
     let forward = Engine::new(inner.clone(), "host-a", WS);
@@ -579,19 +678,32 @@ fn embedding_cost_on_the_read_path() {
             engine = engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
         }
         for i in 0..400 {
-            engine.observe(ObserveInput {
-                content: format!("fact number {i} with some prose so the row is not trivial"),
-                workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
-                derived_from: vec![],
-                entities: vec![EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None }],
-                relations: vec![],
-            }).expect("observe");
+            engine
+                .observe(ObserveInput {
+                    content: format!("fact number {i} with some prose so the row is not trivial"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: format!("E{i}"),
+                        kind: Some("Concept".into()),
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+                .expect("observe");
         }
         let t = std::time::Instant::now();
-        for _ in 0..20 { store.all_observations(Some(WS)).expect("scan"); }
+        for _ in 0..20 {
+            store.all_observations(Some(WS)).expect("scan");
+        }
         let scan = t.elapsed() / 20;
         let t = std::time::Instant::now();
-        for _ in 0..20 { engine.graph(Some(WS)).expect("graph"); }
+        for _ in 0..20 {
+            engine.graph(Some(WS)).expect("graph");
+        }
         let graph = t.elapsed() / 20;
         println!("embedding={embedded:<5} scan {scan:>10.2?}   graph {graph:>10.2?}");
     }
@@ -610,37 +722,65 @@ fn viewer_poll_cost() {
         let engine = Engine::new(store.clone(), "host-a", WS)
             .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
         for i in 0..n {
-            engine.observe(ObserveInput {
-                content: format!("fact number {i} with prose so the row is not trivial"),
-                workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
-                derived_from: vec![],
-                entities: vec![
-                    EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None },
-                    EntityInput { name: format!("E{}", i + 1), kind: None, description: None },
-                ],
-                relations: vec![RelationInput {
-                    from: format!("E{i}"), kind: "relates_to".into(), to: format!("E{}", i + 1),
-                    description: None, valid_from: None, valid_to: None }],
-            }).expect("observe");
+            engine
+                .observe(ObserveInput {
+                    content: format!("fact number {i} with prose so the row is not trivial"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![
+                        EntityInput {
+                            name: format!("E{i}"),
+                            kind: Some("Concept".into()),
+                            description: None,
+                        },
+                        EntityInput { name: format!("E{}", i + 1), kind: None, description: None },
+                    ],
+                    relations: vec![RelationInput {
+                        from: format!("E{i}"),
+                        kind: "relates_to".into(),
+                        to: format!("E{}", i + 1),
+                        description: None,
+                        valid_from: None,
+                        valid_to: None,
+                    }],
+                })
+                .expect("observe");
         }
         let ws = Some(WS);
         let each = |label: &str, f: &dyn Fn()| {
             let t = std::time::Instant::now();
-            for _ in 0..5 { f(); }
+            for _ in 0..5 {
+                f();
+            }
             (label.to_string(), t.elapsed() / 5)
         };
         let parts = vec![
-            each("graph", &|| { engine.graph(ws).unwrap(); }),
-            each("hypergraph", &|| { engine.hypergraph(ws).unwrap(); }),
-            each("types", &|| { engine.types(ws).unwrap(); }),
-            each("curation (review tab)", &|| { engine.curation(ws).unwrap(); }),
-            each("observations (log tab)", &|| { engine.observation_log(ws, None, None).unwrap(); }),
+            each("graph", &|| {
+                engine.graph(ws).unwrap();
+            }),
+            each("hypergraph", &|| {
+                engine.hypergraph(ws).unwrap();
+            }),
+            each("types", &|| {
+                engine.types(ws).unwrap();
+            }),
+            each("curation (review tab)", &|| {
+                engine.curation(ws).unwrap();
+            }),
+            each("observations (log tab)", &|| {
+                engine.observation_log(ws, None, None).unwrap();
+            }),
         ];
         println!("\n--- {n} observations, 384-dim embeddings ---");
         let mut closed = std::time::Duration::ZERO;
         for (label, d) in &parts {
             println!("  {label:<26} {d:>10.2?}");
-            if matches!(label.as_str(), "graph" | "hypergraph" | "types") { closed += *d; }
+            if matches!(label.as_str(), "graph" | "hypergraph" | "types") {
+                closed += *d;
+            }
         }
         let all: std::time::Duration = parts.iter().map(|(_, d)| *d).sum();
         println!("  {:<26} {closed:>10.2?}  (every 2.5s)", "= poll, panels closed");
@@ -669,19 +809,31 @@ fn curation_cost_breakdown() {
             }
             let mut engine = Engine::new(store.clone(), "host-a", WS);
             if embedded {
-                engine = engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
+                engine =
+                    engine.with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
             }
             for i in 0..n {
-                engine.observe(ObserveInput {
-                    content: format!("fact {i}"),
-                    workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
-                    derived_from: vec![],
-                    entities: vec![EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None }],
-                    relations: vec![],
-                }).expect("observe");
+                engine
+                    .observe(ObserveInput {
+                        content: format!("fact {i}"),
+                        workspace: None,
+                        source_ref: None,
+                        confidence: None,
+                        on_behalf_of: None,
+                        derived_from: vec![],
+                        entities: vec![EntityInput {
+                            name: format!("E{i}"),
+                            kind: Some("Concept".into()),
+                            description: None,
+                        }],
+                        relations: vec![],
+                    })
+                    .expect("observe");
             }
             let t = std::time::Instant::now();
-            for _ in 0..3 { engine.curation(Some(WS)).unwrap(); }
+            for _ in 0..3 {
+                engine.curation(Some(WS)).unwrap();
+            }
             println!("embedder={embedded:<5} n={n:<4} curation {:>10.2?}", t.elapsed() / 3);
         }
     }
@@ -705,16 +857,30 @@ fn a_read_does_not_query_the_store_per_item() {
         let engine = Engine::new(store.clone(), "host-a", WS)
             .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
         for i in 0..n {
-            engine.observe(ObserveInput {
-                content: format!("fact {i}"),
-                workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
-                derived_from: vec![],
-                entities: vec![EntityInput { name: format!("E{i}"), kind: Some("Concept".into()), description: None }],
-                relations: vec![],
-            }).expect("observe");
+            engine
+                .observe(ObserveInput {
+                    content: format!("fact {i}"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: format!("E{i}"),
+                        kind: Some("Concept".into()),
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+                .expect("observe");
         }
-        let (_, c) = store.measure(|| { engine.curation(Some(WS)).unwrap(); });
-        println!("n={n:<4} curation: log scans {} / semantic queries {}", c.observations, c.semantic_queries);
+        let (_, c) = store.measure(|| {
+            engine.curation(Some(WS)).unwrap();
+        });
+        println!(
+            "n={n:<4} curation: log scans {} / semantic queries {}",
+            c.observations, c.semantic_queries
+        );
         assert_eq!(
             c.semantic_queries, 0,
             "curation asked the store {} times for {n} entities - a per-item query is an N+1 no \
@@ -738,23 +904,29 @@ fn merge_band_candidates_vs_exact() {
     // HashingEmbedder is a bag of tokens, so names sharing n-1 of n tokens sit at exactly (n-1)/n.
     // Eight tokens puts the cluster at 0.875, comfortably over SIM_CANDIDATE (0.85); four would sit
     // at 0.75 and nothing would be a candidate at all.
-    let cluster: Vec<String> =
-        (0..12).map(|i| format!("Alpha Ingest Service Node Cluster Primary Region {i}")).collect();
-    let others: Vec<String> =
-        (0..8).map(|i| format!("Zeta Archive Vault Shard Cold Storage Zone {i}")).collect();
+    let cluster: Vec<String> = (0..12)
+        .map(|i| format!("Alpha Ingest Service Node Cluster Primary Region {i}"))
+        .collect();
+    let others: Vec<String> = (0..8)
+        .map(|i| format!("Zeta Archive Vault Shard Cold Storage Zone {i}"))
+        .collect();
 
     let store = Arc::new(InMemoryStore::new());
-    let engine = Engine::new(store.clone(), "host-a", WS).with_embedder(Arc::new(
-        supragnosis_embed::HashingEmbedder::new(384),
-    ));
+    let engine = Engine::new(store.clone(), "host-a", WS)
+        .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
     for name in cluster.iter().chain(others.iter()) {
-        engine.observe(ObserveInput {
-            content: format!("mentions {name}"),
-            workspace: None, source_ref: None, confidence: None, on_behalf_of: None,
-            derived_from: vec![],
-            entities: vec![EntityInput { name: name.clone(), kind: None, description: None }],
-            relations: vec![],
-        }).expect("observe");
+        engine
+            .observe(ObserveInput {
+                content: format!("mentions {name}"),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput { name: name.clone(), kind: None, description: None }],
+                relations: vec![],
+            })
+            .expect("observe");
     }
 
     // What the band reports today. Note this is InMemoryStore, whose semantic search is exhaustive -
@@ -762,9 +934,17 @@ fn merge_band_candidates_vs_exact() {
     // approximation error mixed in. Over Cozo the HNSW index adds a second, separate source of
     // misses that this fixture deliberately does not measure.
     let rep = engine.curation(Some(WS)).expect("curation");
-    let mut band: Vec<(String, String)> = rep.merge_suggestions.iter()
-        .map(|s| { let (a, b) = (s.a_name.clone(), s.b_name.clone());
-                   if a <= b { (a, b) } else { (b, a) } })
+    let mut band: Vec<(String, String)> = rep
+        .merge_suggestions
+        .iter()
+        .map(|s| {
+            let (a, b) = (s.a_name.clone(), s.b_name.clone());
+            if a <= b {
+                (a, b)
+            } else {
+                (b, a)
+            }
+        })
         .collect();
     band.sort();
 
@@ -772,13 +952,23 @@ fn merge_band_candidates_vs_exact() {
     let ents = store.all_entities(Some(WS)).expect("entities");
     let cos = |a: &[f32], b: &[f32]| {
         let (mut d, mut na, mut nb) = (0f32, 0f32, 0f32);
-        for i in 0..a.len() { d += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
-        if na == 0.0 || nb == 0.0 { 0.0 } else { d / (na.sqrt() * nb.sqrt()) }
+        for i in 0..a.len() {
+            d += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+        }
+        if na == 0.0 || nb == 0.0 {
+            0.0
+        } else {
+            d / (na.sqrt() * nb.sqrt())
+        }
     };
     let mut exact: Vec<(String, String)> = Vec::new();
     for i in 0..ents.len() {
         for j in (i + 1)..ents.len() {
-            let (Some(x), Some(y)) = (&ents[i].embedding, &ents[j].embedding) else { continue };
+            let (Some(x), Some(y)) = (&ents[i].embedding, &ents[j].embedding) else {
+                continue;
+            };
             if cos(x, y) >= 0.85 {
                 let (a, b) = (ents[i].canonical_name.clone(), ents[j].canonical_name.clone());
                 exact.push(if a <= b { (a, b) } else { (b, a) });
@@ -792,15 +982,28 @@ fn merge_band_candidates_vs_exact() {
     let missed: Vec<_> = exact_set.difference(&band_set).cloned().collect();
     let extra: Vec<_> = band_set.difference(&exact_set).cloned().collect();
 
-    println!("\n{} entities ({} in one near-identical cluster), embedder dim {}",
-             ents.len(), cluster.len(), emb.dimensions());
-    println!("  band (top-{MERGE_BAND_K_ECHO} neighbours per entity): {} pairs", band_set.len());
+    println!(
+        "\n{} entities ({} in one near-identical cluster), embedder dim {}",
+        ents.len(),
+        cluster.len(),
+        emb.dimensions()
+    );
+    println!(
+        "  band (top-{MERGE_BAND_K_ECHO} neighbours per entity): {} pairs",
+        band_set.len()
+    );
     println!("  exact (all pairs >= 0.85):            {} pairs", exact_set.len());
     println!("  in exact but not reported by the band: {}", missed.len());
-    for p in missed.iter().take(6) { println!("      {} <-> {}", p.0, p.1); }
-    if missed.len() > 6 { println!("      ... and {} more", missed.len() - 6); }
+    for p in missed.iter().take(6) {
+        println!("      {} <-> {}", p.0, p.1);
+    }
+    if missed.len() > 6 {
+        println!("      ... and {} more", missed.len() - 6);
+    }
     println!("  reported by the band but not exact:    {}", extra.len());
-    for p in extra.iter().take(6) { println!("      {} <-> {}", p.0, p.1); }
+    for p in extra.iter().take(6) {
+        println!("      {} <-> {}", p.0, p.1);
+    }
 }
 const MERGE_BAND_K_ECHO: usize = 8;
 
@@ -815,27 +1018,38 @@ fn merge_band_scale() {
         let store = Arc::new(InMemoryStore::new());
         for i in 0..n {
             let name = format!("Service Node Region Shard Zone Tier Group {i}");
-            store.put_entity(supragnosis_core::Entity {
-                id: Entity::make_id(WS, &name),
-                kind: "Concept".into(),
-                canonical_name: name.clone(),
-                aliases: vec![],
-                description: None,
-                properties: serde_json::Value::Null,
-                provenance: vec![Provenance {
-                    host: "host-a".into(), on_behalf_of: None, workspace: WS.into(),
-                    source_ref: None, observed_at: 1, confidence: None,
-                    trust_tier: TrustTier::default(), sync: None,
-                }],
-                embedding: Some(emb.embed_one(&name).unwrap()),
-            }).expect("put");
+            store
+                .put_entity(supragnosis_core::Entity {
+                    id: Entity::make_id(WS, &name),
+                    kind: "Concept".into(),
+                    canonical_name: name.clone(),
+                    aliases: vec![],
+                    description: None,
+                    properties: serde_json::Value::Null,
+                    provenance: vec![Provenance {
+                        host: "host-a".into(),
+                        on_behalf_of: None,
+                        workspace: WS.into(),
+                        source_ref: None,
+                        observed_at: 1,
+                        confidence: None,
+                        trust_tier: TrustTier::default(),
+                        sync: None,
+                    }],
+                    embedding: Some(emb.embed_one(&name).unwrap()),
+                })
+                .expect("put");
         }
         let engine = Engine::new(store.clone(), "host-a", WS)
             .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::new(384)));
         let t = std::time::Instant::now();
-        for _ in 0..3 { engine.curation(Some(WS)).unwrap(); }
+        for _ in 0..3 {
+            engine.curation(Some(WS)).unwrap();
+        }
         let d = t.elapsed() / 3;
-        println!("entities={n:<5} curation {d:>10.2?}   ({:.1} pairs/ms)",
-                 (n as f64 * n as f64 / 2.0) / d.as_secs_f64() / 1000.0);
+        println!(
+            "entities={n:<5} curation {d:>10.2?}   ({:.1} pairs/ms)",
+            (n as f64 * n as f64 / 2.0) / d.as_secs_f64() / 1000.0
+        );
     }
 }

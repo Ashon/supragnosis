@@ -231,7 +231,9 @@ fn extract_html(text: &str) -> Option<String> {
             let body_start = start + marker.len();
             if let Some(end_rel) = text[body_start..].find("```") {
                 let body = text[body_start..body_start + end_rel].trim();
-                if body.contains("<canvas") || body.contains("<!doctype") || body.contains("<!DOCTYPE")
+                if body.contains("<canvas")
+                    || body.contains("<!doctype")
+                    || body.contains("<!DOCTYPE")
                 {
                     return Some(body.to_string());
                 }
@@ -239,7 +241,9 @@ fn extract_html(text: &str) -> Option<String> {
         }
     }
     // Accept models that spit out raw html with no code block.
-    if text.contains("<canvas") && (text.contains("<html") || text.contains("<!doctype") || text.contains("<!DOCTYPE")) {
+    if text.contains("<canvas")
+        && (text.contains("<html") || text.contains("<!doctype") || text.contains("<!DOCTYPE"))
+    {
         return Some(text.trim().to_string());
     }
     None
@@ -487,10 +491,7 @@ fn score_behavior(v: &Value) -> Behavior {
                 .collect()
         })
         .unwrap_or_default();
-    let (w, h) = (
-        v["width"].as_f64().unwrap_or(800.0),
-        v["height"].as_f64().unwrap_or(500.0),
-    );
+    let (w, h) = (v["width"].as_f64().unwrap_or(800.0), v["height"].as_f64().unwrap_or(500.0));
 
     // Use only the frames with the most common ball count as the trajectory (removing init/effect-frame noise).
     let nb = frames.iter().map(Vec::len).max().unwrap_or(0);
@@ -504,9 +505,8 @@ fn score_behavior(v: &Value) -> Behavior {
     let mut bounce_frame: Option<usize> = None;
     for ball in 0..nb {
         let ys: Vec<f64> = stable.iter().map(|f| f[ball].1).collect();
-        let (min, max) = ys
-            .iter()
-            .fold((f64::MAX, f64::MIN), |(lo, hi), y| (lo.min(*y), hi.max(*y)));
+        let (min, max) =
+            ys.iter().fold((f64::MAX, f64::MIN), |(lo, hi), y| (lo.min(*y), hi.max(*y)));
         ranges.push(max - min);
         // A fall (cumulative +30px) followed by a rise (-15px) = a bounce. Record the first
         // observed frame (for diagnosing time-scale bugs - per spec within 1 second, tens of
@@ -604,9 +604,7 @@ impl Evaluation {
     fn feedback(&self) -> String {
         let mut issues: Vec<String> = Vec::new();
         if self.html.is_none() {
-            issues.push(
-                "your reply did not contain a single complete ```html code block".into(),
-            );
+            issues.push("your reply did not contain a single complete ```html code block".into());
         }
         if let Some((false, err)) = &self.syntax {
             issues.push(format!("the JavaScript has a syntax error:\n{err}"));
@@ -651,12 +649,7 @@ fn evaluate(text: &str, tmp: &std::path::Path) -> Evaluation {
         .collect();
     let syntax = html.as_deref().and_then(|h| check_syntax(h, tmp));
     let behavior = html.as_deref().and_then(|h| run_behavior(h, tmp));
-    Evaluation {
-        html,
-        fingerprints,
-        syntax,
-        behavior,
-    }
+    Evaluation { html, fingerprints, syntax, behavior }
 }
 
 /// Obtains a single assistant text answer from the conversation history.
@@ -721,8 +714,16 @@ async fn run_with_repair(
     let mut error: Option<String> = None;
 
     for r in 0..=repair_rounds {
-        match next_answer(http, base, model, &mut messages, bridge, &mut search_calls, &mut tokens_sum)
-            .await
+        match next_answer(
+            http,
+            base,
+            model,
+            &mut messages,
+            bridge,
+            &mut search_calls,
+            &mut tokens_sum,
+        )
+        .await
         {
             Err(e) => {
                 // Transport/protocol errors cannot be fixed by feedback - stop.
@@ -751,9 +752,7 @@ async fn run_with_repair(
         }
     }
 
-    let initial_success = rounds
-        .first()
-        .is_some_and(|r0| r0.contains("success"));
+    let initial_success = rounds.first().is_some_and(|r0| r0.contains("success"));
     match last_eval {
         Some(eval) => {
             let success = eval.success();
@@ -803,12 +802,17 @@ fn load_ontology(engine: &Engine) {
                 entities: d
                     .entities
                     .iter()
-                    .map(|(n, t)| EntityInput { description: None, name: (*n).into(), kind: Some((*t).into()) })
+                    .map(|(n, t)| EntityInput {
+                        description: None,
+                        name: (*n).into(),
+                        kind: Some((*t).into()),
+                    })
                     .collect(),
                 relations: d
                     .relations
                     .iter()
-                    .map(|(f, k, t)| RelationInput { description: None,
+                    .map(|(f, k, t)| RelationInput {
+                        description: None,
                         from: (*f).into(),
                         kind: (*k).into(),
                         to: (*t).into(),
@@ -939,12 +943,7 @@ fn render_markdown(results: &[CodeResult]) -> String {
 
     md.push_str("\n## Round log (the repair convergence process)\n\n");
     for r in results {
-        md.push_str(&format!(
-            "- {} / {}: {}\n",
-            r.model,
-            r.condition,
-            r.rounds.join(" -> ")
-        ));
+        md.push_str(&format!("- {} / {}: {}\n", r.model, r.condition, r.rounds.join(" -> ")));
     }
     md.push_str("\n## Fingerprint detail\n\n");
     for r in results {
@@ -968,11 +967,8 @@ fn render_markdown(results: &[CodeResult]) -> String {
 async fn delegated_ontology_improves_coding() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
-    let models: Vec<&str> = models_env
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
+    let models: Vec<&str> =
+        models_env.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
 
     let dir = report_dir();
     let tmp = dir.join("physics_demos");
@@ -1064,8 +1060,8 @@ async fn delegated_ontology_improves_coding() {
                 "bare" => None,
                 _ => Some((&client, &tools)),
             };
-            let r = run_with_repair(&http, &base, model, condition, bridge, repair_rounds, &tmp)
-                .await;
+            let r =
+                run_with_repair(&http, &base, model, condition, bridge, repair_rounds, &tmp).await;
             eprintln!(
                 "  [{condition:<9}] {}  design conformance {}/{}  {} searches  ({}tk)",
                 r.rounds_label(),

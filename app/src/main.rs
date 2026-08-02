@@ -166,7 +166,14 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
             let tail = std::fs::read_to_string(logs.join("app-daemon.err.log"))
                 .ok()
                 .map(|s| {
-                    s.lines().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ")
+                    s.lines()
+                        .rev()
+                        .take(3)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .join(" | ")
                 })
                 .filter(|t| !t.trim().is_empty())
                 .unwrap_or_else(|| "no stderr output".to_string());
@@ -217,9 +224,7 @@ async fn uds_fetch(sock: &Path, target: &str) -> anyhow::Result<(u16, String, Ve
         .skip(1)
         .find_map(|l| {
             let (k, v) = l.split_once(':')?;
-            k.trim()
-                .eq_ignore_ascii_case("content-type")
-                .then(|| v.trim().to_string())
+            k.trim().eq_ignore_ascii_case("content-type").then(|| v.trim().to_string())
         })
         .unwrap_or_else(|| "application/octet-stream".to_string());
     Ok((status, ctype, body))
@@ -276,10 +281,8 @@ fn refresh_status(app: &tauri::AppHandle) {
 /// knows pidfile and launchd daemons); a foreign daemon the CLI cannot control is left alone and
 /// bring_up simply re-attaches to it.
 async fn restart_daemon(app: tauri::AppHandle, sock: PathBuf) {
-    let prev = std::mem::replace(
-        &mut *app.state::<DaemonGuard>().0.lock().unwrap(),
-        Daemon::Starting,
-    );
+    let prev =
+        std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
     refresh_status(&app);
     match prev {
         Daemon::Spawned(mut child) => {
@@ -288,10 +291,9 @@ async fn restart_daemon(app: tauri::AppHandle, sock: PathBuf) {
         }
         Daemon::External => {
             if let Some(bin) = find_server_bin() {
-                let _ = tokio::task::spawn_blocking(move || {
-                    Command::new(bin).arg("restart").status()
-                })
-                .await;
+                let _ =
+                    tokio::task::spawn_blocking(move || Command::new(bin).arg("restart").status())
+                        .await;
             }
         }
         Daemon::Starting | Daemon::Failed(_) => {}

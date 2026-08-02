@@ -37,7 +37,11 @@ use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::{InMemoryStore, RedbStore};
 
 #[derive(Parser)]
-#[command(name = "supragnosis", version, about = "MCP server that turns knowledge from many hosts/workspaces into an ontology")]
+#[command(
+    name = "supragnosis",
+    version,
+    about = "MCP server that turns knowledge from many hosts/workspaces into an ontology"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -249,7 +253,10 @@ fn build_embedder(kind: &str) -> Option<Arc<dyn EmbeddingProvider>> {
         }
         "fastembed" => build_fastembed(),
         other => {
-            tracing::warn!(kind = other, "unknown SUPRAGNOSIS_EMBED - proceeding with keyword search");
+            tracing::warn!(
+                kind = other,
+                "unknown SUPRAGNOSIS_EMBED - proceeding with keyword search"
+            );
             None
         }
     }
@@ -361,7 +368,9 @@ fn build_engine(
         Some("0") | Some("off") | Some("false")
     );
     if !scan {
-        tracing::warn!("SUPRAGNOSIS_SCAN_SECRETS=off - credential-shaped text will not be refused at ingest");
+        tracing::warn!(
+            "SUPRAGNOSIS_SCAN_SECRETS=off - credential-shaped text will not be refused at ingest"
+        );
     }
     let mut engine = Engine::new(store, cfg.host.clone(), cfg.workspace.clone())
         .with_session(cfg.session.clone())
@@ -379,10 +388,7 @@ fn build_engine(
 /// stdio. With viz, the live viewer is started alongside it in the same process.
 async fn run(cfg: Config) -> Result<()> {
     // Create the event channel only when the viewer is present - the engine sink and SSE subscription share it.
-    let events = cfg
-        .viz
-        .as_ref()
-        .map(|_| tokio::sync::broadcast::channel::<String>(256).0);
+    let events = cfg.viz.as_ref().map(|_| tokio::sync::broadcast::channel::<String>(256).0);
     let engine = build_engine(&cfg, events.as_ref())?;
 
     // Federation status blob (viewer /api/federation) - exists only when supragnosis.toml does.
@@ -425,7 +431,9 @@ fn build_sync_context(
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
 ) -> Result<(Option<Arc<supragnosis_mcp::SyncContext>>, Option<supragnosis_viz::NarrowShare>)> {
-    let Some(fc) = fedcfg else { return Ok((None, None)) };
+    let Some(fc) = fedcfg else {
+        return Ok((None, None));
+    };
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
     // clock and the per-workspace seq counters (two live counters over one store would collide).
     let identity = fed::load_or_create_identity()?;
@@ -440,20 +448,28 @@ fn build_sync_context(
         let hook_engine = engine.clone();
         let on_applied: supragnosis_sync::http::OnApplied = Arc::new(move |ws: &str| {
             match hook_engine.reproject(Some(ws)) {
-                Ok(r) => tracing::info!(workspace = ws, entities = r.entities, relations = r.relations, "re-materialized after inbound sync"),
-                Err(e) => tracing::error!(workspace = ws, error = %e, "re-materialization after inbound sync failed"),
+                Ok(r) => tracing::info!(
+                    workspace = ws,
+                    entities = r.entities,
+                    relations = r.relations,
+                    "re-materialized after inbound sync"
+                ),
+                Err(e) => {
+                    tracing::error!(workspace = ws, error = %e, "re-materialization after inbound sync failed")
+                }
             }
         });
         // Live observability: stream sync hits into the viewer's event feed (SSE activity log).
         let act_engine = engine.clone();
-        let on_activity: supragnosis_sync::http::OnActivity = Arc::new(move |a: supragnosis_sync::http::SyncActivity| {
-            act_engine.emit(Event::Sync {
-                direction: a.direction.to_string(),
-                peer: a.peer,
-                workspace: a.workspace,
-                count: a.count,
+        let on_activity: supragnosis_sync::http::OnActivity =
+            Arc::new(move |a: supragnosis_sync::http::SyncActivity| {
+                act_engine.emit(Event::Sync {
+                    direction: a.direction.to_string(),
+                    peer: a.peer,
+                    workspace: a.workspace,
+                    count: a.count,
+                });
             });
-        });
         // Federated recall: remote peers search THIS node's full recall surface (hybrid when the
         // embedder is present), not just the store's keyword path.
         let search_engine = engine.clone();
@@ -507,7 +523,9 @@ fn build_sync_context(
             let reloaded = fed::load()
                 .map_err(|e| format!("narrowed on disk, but re-reading the config failed: {e}"))?
                 .and_then(|c| c.server)
-                .ok_or_else(|| "narrowed on disk, but the config no longer has a [server] section".to_string())?;
+                .ok_or_else(|| {
+                    "narrowed on disk, but the config no longer has a [server] section".to_string()
+                })?;
             dir.replace(reloaded.allowlist);
             // Publish immediately rather than waiting for the status task's next pass. That task
             // recomputes `admitted` from this same directory, so the two agree either way - but it
@@ -530,16 +548,19 @@ fn build_sync_context(
         Arc::new(handler) as supragnosis_viz::NarrowShare
     });
 
-    Ok((Some(Arc::new(supragnosis_mcp::SyncContext {
-        node,
-        share_workspaces: fc.sync.share_workspaces.clone(),
-        servers: fc.sync.servers.clone(),
-        auth_token: fc.sync.auth_token.clone().unwrap_or_default(),
-        insecure_tls: fc.sync.insecure_tls,
-        origin_keys,
-        // Only a hub (server role) observes peers; a client-only node reports none.
-        peer_registry: fc.server.is_some().then_some(peer_registry),
-    })), narrow))
+    Ok((
+        Some(Arc::new(supragnosis_mcp::SyncContext {
+            node,
+            share_workspaces: fc.sync.share_workspaces.clone(),
+            servers: fc.sync.servers.clone(),
+            auth_token: fc.sync.auth_token.clone().unwrap_or_default(),
+            insecure_tls: fc.sync.insecure_tls,
+            origin_keys,
+            // Only a hub (server role) observes peers; a client-only node reports none.
+            peer_registry: fc.server.is_some().then_some(peer_registry),
+        })),
+        narrow,
+    ))
 }
 
 /// The federation status loop (every 60s): pings each configured hub (an authenticated no-op that
@@ -556,7 +577,9 @@ fn admitted_json(dir: &supragnosis_sync::http::PeerDirectory) -> Vec<serde_json:
     dir.admitted()
         .allowlist
         .iter()
-        .map(|e| serde_json::json!({"node_id": e.node_id, "shared_workspaces": e.shared_workspaces}))
+        .map(
+            |e| serde_json::json!({"node_id": e.node_id, "shared_workspaces": e.shared_workspaces}),
+        )
         .collect()
 }
 
@@ -582,7 +605,9 @@ fn spawn_fed_status(
                 let mut healthy = false;
                 let mut version = None;
                 let mut ws_json = Vec::new();
-                if let Ok(client) = supragnosis_sync::http::SyncClient::new(server, &token, sync.insecure_tls) {
+                if let Ok(client) =
+                    supragnosis_sync::http::SyncClient::new(server, &token, sync.insecure_tls)
+                {
                     match client.ping().await {
                         Ok(p) => {
                             healthy = true;
@@ -594,7 +619,9 @@ fn spawn_fed_status(
                                     supragnosis_sync::version_vector(store.as_ref(), &ws_owned)
                                 })
                                 .await;
-                                let (Ok(Ok(local)), Ok(remote)) = (local, client.advertise(ws).await) else {
+                                let (Ok(Ok(local)), Ok(remote)) =
+                                    (local, client.advertise(ws).await)
+                                else {
                                     continue;
                                 };
                                 ws_json.push(serde_json::json!({
@@ -812,7 +839,8 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
         let mut keys = fc.sync.origin_keys.clone();
         keys.insert(node.node_id().to_string(), node.public_key_hex());
         for server in &fc.sync.servers {
-            let client = supragnosis_sync::http::SyncClient::new(server, &token, fc.sync.insecure_tls)?;
+            let client =
+                supragnosis_sync::http::SyncClient::new(server, &token, fc.sync.insecure_tls)?;
             let s = client
                 .sync_workspace(&store, &node, &ws, &fc.sync.share_workspaces, &keys)
                 .await?;
@@ -1068,7 +1096,12 @@ mod daemon_guard_tests {
         for ok in ["127.0.0.1", "127.0.0.1:7373", "localhost:7373", "[::1]:7373", "[::1]"] {
             assert!(host_hdr_is_loopback(ok), "{ok} should be loopback");
         }
-        for bad in ["evil.example.com", "evil.example.com:7373", "10.0.0.5:7373", "attacker.127.0.0.1.nip.io"] {
+        for bad in [
+            "evil.example.com",
+            "evil.example.com:7373",
+            "10.0.0.5:7373",
+            "attacker.127.0.0.1.nip.io",
+        ] {
             assert!(!host_hdr_is_loopback(bad), "{bad} must be refused");
         }
         assert!(origin_is_loopback("http://127.0.0.1:7373"));
@@ -1102,11 +1135,7 @@ mod daemon_guard_tests {
         );
 
         // Any other 401 is a real authorization failure and must not be masked as a session expiry.
-        for body in [
-            &b"missing bearer token"[..],
-            &b"unknown bearer token"[..],
-            &b""[..],
-        ] {
+        for body in [&b"missing bearer token"[..], &b"unknown bearer token"[..], &b""[..]] {
             assert!(
                 !is_expired_session(unauthorized, body),
                 "an unrelated 401 must keep its status: {}",
@@ -1116,11 +1145,7 @@ mod daemon_guard_tests {
 
         // The status is part of the predicate: the same wording under a success or a different
         // failure must not be rewritten.
-        for status in [
-            StatusCode::OK,
-            StatusCode::FORBIDDEN,
-            StatusCode::NOT_ACCEPTABLE,
-        ] {
+        for status in [StatusCode::OK, StatusCode::FORBIDDEN, StatusCode::NOT_ACCEPTABLE] {
             assert!(
                 !is_expired_session(status, b"Unauthorized: Session not found"),
                 "{status} must not be translated - only a 401 carries this meaning"
@@ -1151,9 +1176,7 @@ fn log_dir() -> std::path::PathBuf {
 }
 #[cfg(unix)]
 fn read_pid() -> Option<i32> {
-    std::fs::read_to_string(pid_path())
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
+    std::fs::read_to_string(pid_path()).ok().and_then(|s| s.trim().parse().ok())
 }
 /// Checks whether the process is alive via `kill -0` (portable, without unsafe/libc).
 #[cfg(unix)]
@@ -1261,10 +1284,7 @@ fn status_http_addr() -> String {
 
 #[cfg(unix)]
 fn start(cfg: Config) -> Result<()> {
-    let http = cfg
-        .http
-        .clone()
-        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    let http = cfg.http.clone().unwrap_or_else(|| "127.0.0.1:7373".to_string());
     if let Some(pid) = read_pid() {
         if pid_alive(pid) {
             anyhow::bail!("already running (pid {pid}). Run 'supragnosis stop' and try again.");
@@ -1357,10 +1377,7 @@ fn restart(cfg: Config) -> Result<()> {
         return launchd_kickstart();
     }
     // (3) Nothing under our control - start a fresh self-managed daemon (unless a stranger holds the port).
-    let http = cfg
-        .http
-        .clone()
-        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    let http = cfg.http.clone().unwrap_or_else(|| "127.0.0.1:7373".to_string());
     if port_open(&http) {
         anyhow::bail!("a daemon is responding on {http} but is not managed by this CLI or launchd - cannot restart it from here.");
     }
@@ -1519,9 +1536,8 @@ mod fed {
         let path = config_path();
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let mut doc: toml_edit::DocumentMut = text
-            .parse()
-            .with_context(|| format!("parsing {}", path.display()))?;
+        let mut doc: toml_edit::DocumentMut =
+            text.parse().with_context(|| format!("parsing {}", path.display()))?;
 
         let entries = doc
             .get_mut("server")
@@ -1694,7 +1710,10 @@ shared_workspaces = ["alpha", "beta", "gamma"]
             let kept = narrow_shared_workspaces("peer-a", &["alpha".into()]).expect("narrow");
             assert_eq!(kept, vec!["alpha".to_string()]);
             let after = std::fs::read_to_string(&path).expect("read");
-            assert!(after.contains(r#"shared_workspaces = ["alpha"]"#), "the array narrowed: {after}");
+            assert!(
+                after.contains(r#"shared_workspaces = ["alpha"]"#),
+                "the array narrowed: {after}"
+            );
             assert!(
                 after.contains("# supragnosis hub - explains itself")
                     && after.contains("# ashons-MacBook-Air")

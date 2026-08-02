@@ -18,10 +18,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use supragnosis_core::{
-    observation_content_id, Assertions, Entity, AssertionStore, KnowledgeStore, Observation,
+    observation_content_id, AssertionStore, Assertions, Entity, KnowledgeStore, Observation,
     ProposalEventAssertion, ProposalEventKind, Provenance, TrustTier, VERDICT_SURFACE_CONSOLE,
 };
-use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
+use supragnosis_engine::{
+    Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface,
+};
 use supragnosis_store::InMemoryStore;
 
 const WS: &str = "ws";
@@ -137,11 +139,7 @@ impl Case {
             self.fail("no observation may leave the log", before, after);
         }
         if after.observations.len() != before.observations.len() + n {
-            self.fail(
-                &format!("the log must grow by exactly {n} observation(s)"),
-                before,
-                after,
-            );
+            self.fail(&format!("the log must grow by exactly {n} observation(s)"), before, after);
         }
     }
 
@@ -151,11 +149,7 @@ impl Case {
     fn forgot_nothing(&self, before: &Snapshot, after: &Snapshot) {
         for (id, was) in &before.entities {
             let Some(now) = after.entities.get(id) else {
-                self.fail(
-                    &format!("entity {id} ({}) disappeared", was.name),
-                    before,
-                    after,
-                );
+                self.fail(&format!("entity {id} ({}) disappeared", was.name), before, after);
             };
             let known_before: BTreeSet<&String> =
                 was.aliases.iter().chain(std::iter::once(&was.name)).collect();
@@ -196,11 +190,7 @@ fn observe(engine: &Engine, content: &str, names: &[&str]) {
             derived_from: vec![],
             entities: names
                 .iter()
-                .map(|n| EntityInput {
-                    name: (*n).into(),
-                    kind: None,
-                    description: None,
-                })
+                .map(|n| EntityInput { name: (*n).into(), kind: None, description: None })
                 .collect(),
             relations: vec![],
         })
@@ -222,10 +212,14 @@ fn p1_reprojection_rederives_without_touching_the_log() {
     engine.reproject(Some(WS)).expect("reproject");
     let after = snapshot(store.as_ref());
 
-    let case = Case::new("Principle 1", "the graph is a projection of the log, never a second source");
+    let case =
+        Case::new("Principle 1", "the graph is a projection of the log, never a second source");
     case.log_unchanged(&before, &after);
     case.forgot_nothing(&before, &after);
-    assert_eq!(before, after, "a replay of the same log must reproduce the same projection exactly");
+    assert_eq!(
+        before, after,
+        "a replay of the same log must reproduce the same projection exactly"
+    );
 }
 
 /// GIVEN entities that a generator will flag, WHEN the curation pass runs, THEN nothing whatsoever
@@ -375,9 +369,15 @@ fn p18_an_agent_surface_verdict_cannot_grant_human_confirmed() {
         .expect("review");
     let after = snapshot(store.as_ref());
 
-    let case = Case::new("Principle 18", "a claimed tier is the receiver's to evaluate, not the writer's to declare");
+    let case = Case::new(
+        "Principle 18",
+        "a claimed tier is the receiver's to evaluate, not the writer's to declare",
+    );
     case.forgot_nothing(&before, &after);
-    let view = engine.get_entity(&Entity::make_id(WS, "subject")).expect("get").expect("entity");
+    let view = engine
+        .get_entity(&Entity::make_id(WS, "subject"))
+        .expect("get")
+        .expect("entity");
     assert!(
         view.effective_tier <= TrustTier::HostSigned,
         "an agent-surface verdict granted {:?} - the ceiling is HostSigned",
@@ -466,7 +466,10 @@ fn p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon() {
         .expect("propose");
     let after = snapshot(store.as_ref());
 
-    let case = Case::new("Principle 23", "a diff is available before the verdict, and the verdict is what commits");
+    let case = Case::new(
+        "Principle 23",
+        "a diff is available before the verdict, and the verdict is what commits",
+    );
     case.log_appended(&before, &after, 1); // the proposal event, nothing else
     assert_eq!(
         before.entities, after.entities,
@@ -475,7 +478,10 @@ fn p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon() {
 
     let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
     let diff = view.belief_diff.expect("get_proposal must attach a diff");
-    assert!(diff.computable, "claim_promotion has a commit effect, so its diff is computable");
+    assert!(
+        diff.computable,
+        "claim_promotion has a commit effect, so its diff is computable"
+    );
     assert!(
         diff.tier_changes.iter().any(|t| t.observation == as_db),
         "the promoted observation's effective tier must appear as changing: {:?}",
@@ -490,7 +496,11 @@ fn p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon() {
         overturn.contested_before && !overturn.contested_after,
         "the diff must show the contradiction being settled: {overturn:?}"
     );
-    assert_eq!(overturn.to.as_deref(), Some("Database"), "promoting the Database claim must win it");
+    assert_eq!(
+        overturn.to.as_deref(),
+        Some("Database"),
+        "promoting the Database claim must win it"
+    );
 }
 
 /// A kind with no commit effect must say so rather than return an empty diff. An empty list would
@@ -549,9 +559,30 @@ fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
             entities: vec![],
             relations: vec![
                 // The duplicate pair, connected to each other AND each to a third party.
-                RelationInput { from: "Postgres".into(), kind: "relates_to".into(), to: "PostgreSQL".into(), description: None, valid_from: None, valid_to: None },
-                RelationInput { from: "Postgres".into(), kind: "used_by".into(), to: "App".into(), description: None, valid_from: None, valid_to: None },
-                RelationInput { from: "PostgreSQL".into(), kind: "runs_on".into(), to: "Linux".into(), description: None, valid_from: None, valid_to: None },
+                RelationInput {
+                    from: "Postgres".into(),
+                    kind: "relates_to".into(),
+                    to: "PostgreSQL".into(),
+                    description: None,
+                    valid_from: None,
+                    valid_to: None,
+                },
+                RelationInput {
+                    from: "Postgres".into(),
+                    kind: "used_by".into(),
+                    to: "App".into(),
+                    description: None,
+                    valid_from: None,
+                    valid_to: None,
+                },
+                RelationInput {
+                    from: "PostgreSQL".into(),
+                    kind: "runs_on".into(),
+                    to: "Linux".into(),
+                    description: None,
+                    valid_from: None,
+                    valid_to: None,
+                },
             ],
         })
         .expect("observe");
@@ -574,7 +605,10 @@ fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
         .expect("propose");
     let after = snapshot(store.as_ref());
 
-    let case = Case::new("Principle 23", "a merge is reviewable before it commits, and only the verdict commits");
+    let case = Case::new(
+        "Principle 23",
+        "a merge is reviewable before it commits, and only the verdict commits",
+    );
     case.log_appended(&before, &after, 1);
     assert_eq!(before.entities, after.entities, "opening the proposal must not fold anything");
 
@@ -588,14 +622,24 @@ fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
 
     // Every edge touching the folded-away side is named, and none touching only the survivor.
     let kinds: Vec<&str> = diff.rewired.iter().map(|r| r.kind.as_str()).collect();
-    assert!(kinds.contains(&"used_by"), "the folded entity's own edge must rewire: {kinds:?}");
-    assert!(kinds.contains(&"relates_to"), "the edge between the pair must be named: {kinds:?}");
+    assert!(
+        kinds.contains(&"used_by"),
+        "the folded entity's own edge must rewire: {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"relates_to"),
+        "the edge between the pair must be named: {kinds:?}"
+    );
     assert!(
         !kinds.contains(&"runs_on"),
         "an edge that only touches the survivor does not move: {kinds:?}"
     );
 
-    let between = diff.rewired.iter().find(|r| r.kind == "relates_to").expect("the pair's own edge");
+    let between = diff
+        .rewired
+        .iter()
+        .find(|r| r.kind == "relates_to")
+        .expect("the pair's own edge");
     assert!(
         between.becomes_self_loop,
         "merging two connected entities makes their edge a self-loop, which graph() drops - the \
@@ -603,7 +647,10 @@ fn p23_a_merge_proposal_names_the_references_it_would_rewire() {
     );
     let moved = diff.rewired.iter().find(|r| r.kind == "used_by").expect("used_by");
     assert!(!moved.becomes_self_loop);
-    assert_eq!(moved.other_name, "App", "the endpoint that stays is what the edge still connects to");
+    assert_eq!(
+        moved.other_name, "App",
+        "the endpoint that stays is what the edge still connects to"
+    );
     assert_eq!(moved.to_name, "PostgreSQL", "everything rewires onto the canonical id");
 }
 
@@ -660,7 +707,14 @@ fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
 
     // The local path refuses and says why, rather than letting the caller find out later.
     let refused = engine
-        .review_proposal(None, proposal.clone(), "merge".into(), None, Some("ashon".into()), VerdictSurface::Console)
+        .review_proposal(
+            None,
+            proposal.clone(),
+            "merge".into(),
+            None,
+            Some("ashon".into()),
+            VerdictSurface::Console,
+        )
         .expect_err("a merge that cannot commit must not be accepted silently");
     assert!(
         refused.to_string().contains("referential integrity"),
@@ -698,7 +752,8 @@ fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
 
     let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
     assert_eq!(view.state, "blocked", "the fold must call this merge blocked, not merged");
-    let case = Case::new("Principle 23", "a merge reaches canon only when the blocking checks pass");
+    let case =
+        Case::new("Principle 23", "a merge reaches canon only when the blocking checks pass");
     case.log_appended(&before, &after, 1);
     case.forgot_nothing(&before, &after);
     // The commit effect must not have applied either: Real still answers with its own references
@@ -711,7 +766,9 @@ fn p23_a_blocked_merge_verdict_does_not_reach_canon() {
         real_view.relations
     );
     assert!(
-        view.checks.iter().any(|c| c.blocking && !c.passed && c.name == "referential integrity"),
+        view.checks
+            .iter()
+            .any(|c| c.blocking && !c.passed && c.name == "referential integrity"),
         "the failing check must be visible on the proposal: {:?}",
         view.checks
     );
@@ -804,8 +861,11 @@ fn p23_a_blocked_gate_merge_grants_nothing() {
 
     let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
     assert_eq!(view.state, "blocked", "a merge with an absent target must fold to blocked");
-    Case::new("Principle 23", "a blocked merge is a merge that did not commit - it grants nothing")
-        .log_appended(&before, &after, 1);
+    Case::new(
+        "Principle 23",
+        "a blocked merge is a merge that did not commit - it grants nothing",
+    )
+    .log_appended(&before, &after, 1);
     assert_eq!(
         tier(&engine),
         TrustTier::AgentExtracted,
@@ -826,7 +886,10 @@ fn p23_a_blocked_gate_merge_grants_nothing() {
             relations: vec![],
         })
         .expect("late observe");
-    assert_eq!(late.observation_id, late_id, "the in-flight id resolves to the arrived observation");
+    assert_eq!(
+        late.observation_id, late_id,
+        "the in-flight id resolves to the arrived observation"
+    );
     let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
     assert_eq!(view.state, "merged", "the arrival of the target unblocks the same verdict");
     assert_eq!(
@@ -864,10 +927,14 @@ fn p23_a_well_formed_merge_passes_its_checks_and_commits() {
         view.checks
     );
     engine
-        .review_proposal(None, proposal.clone(), "merge".into(), None, Some("ashon".into()), VerdictSurface::Console)
+        .review_proposal(
+            None,
+            proposal.clone(),
+            "merge".into(),
+            None,
+            Some("ashon".into()),
+            VerdictSurface::Console,
+        )
         .expect("a passing proposal must be reviewable");
-    assert_eq!(
-        engine.get_proposal(None, &proposal).expect("get").expect("p").state,
-        "merged"
-    );
+    assert_eq!(engine.get_proposal(None, &proposal).expect("get").expect("p").state, "merged");
 }

@@ -24,11 +24,7 @@ fn sock_path(name: &str) -> PathBuf {
 }
 
 /// Bring up the viewer on a fresh unix socket and return its path (the server task runs detached).
-async fn serve_uds(
-    name: &str,
-    engine: Arc<Engine>,
-    events: broadcast::Sender<String>,
-) -> PathBuf {
+async fn serve_uds(name: &str, engine: Arc<Engine>, events: broadcast::Sender<String>) -> PathBuf {
     let path = sock_path(name);
     let _ = std::fs::remove_file(&path); // leftover from a previous run of this same test
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
@@ -74,10 +70,7 @@ async fn uds_get(path: &PathBuf, target: &str) -> String {
 /// Splits a raw response into (status line, body) and asserts the expected status.
 fn body_of<'a>(resp: &'a str, want_status: &str) -> &'a str {
     let status = resp.lines().next().unwrap_or("");
-    assert!(
-        status.contains(want_status),
-        "expected {want_status}, got: {status}"
-    );
+    assert!(status.contains(want_status), "expected {want_status}, got: {status}");
     resp.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("")
 }
 
@@ -95,16 +88,15 @@ fn observe_depends(engine: &Engine) {
             on_behalf_of: None,
             derived_from: vec![],
             entities: vec![
-                EntityInput { description: None,
+                EntityInput {
+                    description: None,
                     name: "supragnosis".into(),
                     kind: Some("Project".into()),
                 },
-                EntityInput { description: None,
-                    name: "rmcp".into(),
-                    kind: Some("Tool".into()),
-                },
+                EntityInput { description: None, name: "rmcp".into(), kind: Some("Tool".into()) },
             ],
-            relations: vec![RelationInput { description: None,
+            relations: vec![RelationInput {
+                description: None,
                 from: "supragnosis".into(),
                 kind: "depends_on".into(),
                 to: "rmcp".into(),
@@ -118,9 +110,8 @@ fn observe_depends(engine: &Engine) {
 #[tokio::test]
 async fn viz_serves_graph_index_and_404() {
     let store = Arc::new(InMemoryStore::new());
-    let engine = Arc::new(
-        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
-    );
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
     observe_depends(&engine);
     let sock = serve_uds("graph", engine, ev_channel()).await;
 
@@ -200,9 +191,8 @@ fn viz_source_escapes_untrusted_names() {
 async fn viz_socket_is_owner_only_and_review_needs_no_browser_headers() {
     use std::os::unix::fs::PermissionsExt;
     let store = Arc::new(InMemoryStore::new());
-    let engine = Arc::new(
-        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
-    );
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
     let sock = serve_uds("perm", engine, ev_channel()).await;
 
     // 0600: only the owning user may connect.
@@ -252,10 +242,7 @@ async fn viz_lists_workspaces_sorted_distinct() {
                 confidence: None,
                 on_behalf_of: None,
                 derived_from: vec![],
-                entities: vec![EntityInput { description: None,
-                    name: name.into(),
-                    kind: None,
-                }],
+                entities: vec![EntityInput { description: None, name: name.into(), kind: None }],
                 relations: vec![],
             })
             .unwrap();
@@ -289,11 +276,7 @@ async fn viz_streams_mcp_events_via_sse() {
     assert!(head.contains("text/event-stream"), "SSE content-type: {head}");
 
     // Now emit an event -> it must arrive as an SSE data: frame.
-    engine.emit(Event::GetEntity {
-        id: "abc".into(),
-        name: Some("rmcp".into()),
-        found: true,
-    });
+    engine.emit(Event::GetEntity { id: "abc".into(), name: Some("rmcp".into()), found: true });
     let mut got = String::new();
     for _ in 0..5 {
         let n = s.read(&mut buf).await.unwrap();
@@ -320,9 +303,8 @@ async fn viz_streams_mcp_events_via_sse() {
 #[tokio::test]
 async fn viz_serves_hypergraph() {
     let store = Arc::new(InMemoryStore::new());
-    let engine = Arc::new(
-        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
-    );
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
     // One observation co-asserts three entities -> a single hyperedge (size 3), no binary relations.
     engine
         .observe(ObserveInput {
@@ -333,7 +315,11 @@ async fn viz_serves_hypergraph() {
             on_behalf_of: None,
             derived_from: vec![],
             entities: vec![
-                EntityInput { description: None, name: "supragnosis".into(), kind: Some("Project".into()) },
+                EntityInput {
+                    description: None,
+                    name: "supragnosis".into(),
+                    kind: Some("Project".into()),
+                },
                 EntityInput { description: None, name: "rmcp".into(), kind: Some("Tool".into()) },
                 EntityInput { description: None, name: "cozo".into(), kind: Some("Tool".into()) },
             ],
@@ -369,7 +355,11 @@ async fn viz_resolve_settles_a_contested_belief() {
         confidence: None,
         on_behalf_of: None,
         derived_from: vec![],
-        entities: vec![EntityInput { description: None, name: "cozo".into(), kind: Some(kind.into()) }],
+        entities: vec![EntityInput {
+            description: None,
+            name: "cozo".into(),
+            kind: Some(kind.into()),
+        }],
         relations: vec![],
     };
     let first = engine.observe(observe_kind("Tool")).unwrap().observation_id;
@@ -384,7 +374,11 @@ async fn viz_resolve_settles_a_contested_belief() {
 
     // One console act settles it: promote the Tool-asserting observation to human_confirmed.
     let r = json_get(
-        &uds_get(&sock, &format!("/api/resolve?observation={first}&tier=human_confirmed&workspace=ws")).await,
+        &uds_get(
+            &sock,
+            &format!("/api/resolve?observation={first}&tier=human_confirmed&workspace=ws"),
+        )
+        .await,
     );
     assert!(r["proposal_id"].is_string(), "resolve: {r}");
     assert!(r["verdict_observation_id"].is_string());
@@ -436,7 +430,8 @@ async fn viz_reify_promotes_a_hyperedge_into_the_graph() {
     assert_eq!(hg["hyperedges"][0]["sources"], 2);
 
     let r = json_get(
-        &uds_get(&sock, &format!("/api/reify?hyperedge={hid}&name=boot%20stack&workspace=ws")).await,
+        &uds_get(&sock, &format!("/api/reify?hyperedge={hid}&name=boot%20stack&workspace=ws"))
+            .await,
     );
     assert!(r["observation_id"].is_string(), "reify: {r}");
 
@@ -467,9 +462,8 @@ async fn viz_reify_promotes_a_hyperedge_into_the_graph() {
 #[tokio::test]
 async fn viz_serves_observation_log_and_explain() {
     let store = Arc::new(InMemoryStore::new());
-    let engine = Arc::new(
-        Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())),
-    );
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
     // observe_depends: supragnosis(Project) --depends_on--> rmcp(Tool). Then a conflicting kind for
     // supragnosis (System) - two distinct kinds tie at the top tier -> contested.
     observe_depends(&engine);
@@ -481,7 +475,11 @@ async fn viz_serves_observation_log_and_explain() {
             confidence: None,
             on_behalf_of: None,
             derived_from: vec![],
-            entities: vec![EntityInput { description: None, name: "supragnosis".into(), kind: Some("System".into()) }],
+            entities: vec![EntityInput {
+                description: None,
+                name: "supragnosis".into(),
+                kind: Some("System".into()),
+            }],
             relations: vec![],
         })
         .expect("observe 2");
@@ -492,34 +490,36 @@ async fn viz_serves_observation_log_and_explain() {
     let arr = log.as_array().expect("log is an array");
     assert_eq!(arr.len(), 2, "two observations: {log}");
     assert!(arr[0]["attestations"][0]["host"].is_string(), "attestation host present: {log}");
-    let (w0, w1) = (arr[0]["hlc"]["wall"].as_u64().unwrap(), arr[1]["hlc"]["wall"].as_u64().unwrap());
+    let (w0, w1) =
+        (arr[0]["hlc"]["wall"].as_u64().unwrap(), arr[1]["hlc"]["wall"].as_u64().unwrap());
     assert!(w0 >= w1, "newest-first by hlc wall");
 
     // Resolve node ids from the graph, then the entity filter narrows the log.
     let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
     let node_id = |name: &str| {
-        g["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|n| n["name"] == name)
-            .unwrap()["id"]
+        g["nodes"].as_array().unwrap().iter().find(|n| n["name"] == name).unwrap()["id"]
             .as_str()
             .unwrap()
             .to_string()
     };
     let sid = node_id("supragnosis");
     let rid = node_id("rmcp");
-    let sfilt = json_get(&uds_get(&sock, &format!("/api/observations?workspace=ws&entity={sid}")).await);
+    let sfilt =
+        json_get(&uds_get(&sock, &format!("/api/observations?workspace=ws&entity={sid}")).await);
     assert_eq!(sfilt.as_array().unwrap().len(), 2, "both observations touch supragnosis");
-    let rfilt = json_get(&uds_get(&sock, &format!("/api/observations?workspace=ws&entity={rid}")).await);
+    let rfilt =
+        json_get(&uds_get(&sock, &format!("/api/observations?workspace=ws&entity={rid}")).await);
     assert_eq!(rfilt.as_array().unwrap().len(), 1, "only the depends_on obs touches rmcp");
 
     // Explain: the per-field decision; supragnosis kind is contested (Project vs System).
     let ex = json_get(&uds_get(&sock, &format!("/api/explain?entity={sid}")).await);
     assert_eq!(ex["id"], sid);
-    let kind_field =
-        ex["fields"].as_array().unwrap().iter().find(|f| f["field"] == "kind").expect("kind field");
+    let kind_field = ex["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["field"] == "kind")
+        .expect("kind field");
     assert_eq!(kind_field["contested"], true, "two kinds tie -> contested: {ex}");
     let roles: Vec<&str> = kind_field["candidates"]
         .as_array()
@@ -527,7 +527,10 @@ async fn viz_serves_observation_log_and_explain() {
         .iter()
         .map(|c| c["role"].as_str().unwrap())
         .collect();
-    assert!(roles.contains(&"winner") && roles.contains(&"competitor"), "winner + competitor: {ex}");
+    assert!(
+        roles.contains(&"winner") && roles.contains(&"competitor"),
+        "winner + competitor: {ex}"
+    );
     assert_eq!(ex["supporting"].as_array().unwrap().len(), 2, "both obs support supragnosis");
 
     // Bad input: missing entity -> 400; an id that resolves to nothing -> 404 (P5).
@@ -554,11 +557,7 @@ async fn p17_socket_directory_denies_foreign_users_before_the_socket_mode() {
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("viz.sock");
 
-    let engine = Arc::new(Engine::new(
-        Arc::new(InMemoryStore::new()),
-        "h",
-        "ws",
-    ));
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
     tokio::spawn(supragnosis_viz::serve(engine, listener, ev_channel(), None, None));
 

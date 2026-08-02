@@ -38,10 +38,7 @@ impl HashingEmbedder {
 
     fn embed_text(&self, text: &str) -> Vec<f32> {
         let mut v = vec![0f32; self.dims];
-        for tok in text
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|s| !s.is_empty())
-        {
+        for tok in text.split(|c: char| !c.is_alphanumeric()).filter(|s| !s.is_empty()) {
             let lower = tok.to_lowercase();
             let idx = (fnv1a(lower.as_bytes()) as usize) % self.dims;
             v[idx] += 1.0;

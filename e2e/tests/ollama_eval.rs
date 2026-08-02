@@ -27,8 +27,8 @@ use rmcp::RoleClient;
 use serde_json::{json, Value};
 
 use supragnosis_e2e::bridge::{
-    chat, exec_tool, ollama_reachable, openai_tools, push_message, push_tool_result,
-    serve_engine, tool_calls, DEFAULT_BASE,
+    chat, exec_tool, ollama_reachable, openai_tools, push_message, push_tool_result, serve_engine,
+    tool_calls, DEFAULT_BASE,
 };
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::Engine;
@@ -143,8 +143,7 @@ async fn eval_model(
             },
             Some((_, name, args)) => {
                 eprintln!("  [fail] {}: expected {}, got {name}({args})", sc.name, sc.expect_tool);
-                card.failed
-                    .push(format!("{}: got {name} want {}", sc.name, sc.expect_tool));
+                card.failed.push(format!("{}: got {name} want {}", sc.name, sc.expect_tool));
             }
             None => {
                 eprintln!("  [fail] {}: no tool_call (answered with text only)", sc.name);
@@ -197,10 +196,7 @@ async fn agent_loop(
     push_tool_result(&mut messages, &observe.0, &obs_result);
 
     // 2) now have it search what was saved -> expect search_knowledge -> actually execute it.
-    push_message(
-        &mut messages,
-        json!({ "role": "user", "content": AGENT_TURN2 }),
-    );
+    push_message(&mut messages, json!({ "role": "user", "content": AGENT_TURN2 }));
     let (msg2, _) = chat(http, base, model, &messages, Some(tools)).await?;
     let calls2 = tool_calls(&msg2);
     let search = calls2
@@ -222,7 +218,8 @@ async fn agent_loop(
 async fn ollama_models_use_mcp_tools() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
-    let models: Vec<&str> = models_env.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let models: Vec<&str> =
+        models_env.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))

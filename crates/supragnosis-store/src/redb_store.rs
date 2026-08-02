@@ -28,8 +28,8 @@ use std::path::Path;
 
 use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition};
 use supragnosis_core::{
-    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
-    StoreError, TraverseHit,
+    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit,
+    SearchHitKind, StoreError, TraverseHit,
 };
 
 /// The log, the projection, and the adapter's own metadata - each row a JSON value under its id.
@@ -149,9 +149,7 @@ impl RedbStore {
     pub fn embedder(&self) -> Result<Option<String>, StoreError> {
         let txn = self.db.begin_read().map_err(backend)?;
         let t = txn.open_table(META).map_err(backend)?;
-        Ok(t.get("embedder")
-            .map_err(backend)?
-            .map(|v| v.value().to_string()))
+        Ok(t.get("embedder").map_err(backend)?.map(|v| v.value().to_string()))
     }
 
     /// Every id in a workspace, ascending, or every id in the table when the scope is `None`. The two
@@ -220,10 +218,7 @@ impl RedbStore {
 /// derived from (workspace, name), so every attestation on one row shares a workspace; the first is
 /// representative. This matches the Cozo adapter, which stores that same value in a column.
 fn entity_workspace(e: &Entity) -> String {
-    e.provenance
-        .first()
-        .map(|p| p.workspace.clone())
-        .unwrap_or_default()
+    e.provenance.first().map(|p| p.workspace.clone()).unwrap_or_default()
 }
 
 impl AssertionStore for RedbStore {
@@ -559,9 +554,9 @@ impl KnowledgeStore for RedbStore {
             // a row to another workspace would otherwise leave the old membership behind, and the
             // stale entry would make the row appear in two scoped enumerations at once.
             let stale_ws = match t.get(entity.id.as_str()).map_err(backend)? {
-                Some(raw) => serde_json::from_slice::<Entity>(raw.value())
-                    .ok()
-                    .map(|e| entity_workspace(&e)),
+                Some(raw) => {
+                    serde_json::from_slice::<Entity>(raw.value()).ok().map(|e| entity_workspace(&e))
+                }
                 None => None,
             };
             let ws = entity_workspace(&entity);
@@ -575,7 +570,8 @@ impl KnowledgeStore for RedbStore {
                 let mut vt = txn.open_table(ENT_VEC).map_err(backend)?;
                 match &entity.embedding {
                     Some(vec) => {
-                        vt.insert(entity.id.as_str(), encode_vector(vec).as_slice()).map_err(backend)?;
+                        vt.insert(entity.id.as_str(), encode_vector(vec).as_slice())
+                            .map_err(backend)?;
                     }
                     None => {
                         vt.remove(entity.id.as_str()).map_err(backend)?;
@@ -645,10 +641,8 @@ mod tests {
             .expect("system time before the unix epoch")
             .as_nanos();
         let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "supragnosis-redb-{}-{nanos}-{seq}/knowledge.redb",
-            std::process::id()
-        ))
+        std::env::temp_dir()
+            .join(format!("supragnosis-redb-{}-{nanos}-{seq}/knowledge.redb", std::process::id()))
     }
 
     fn prov_in(ws: &str) -> Provenance {
@@ -714,7 +708,10 @@ mod tests {
 
         let store = RedbStore::open(&path).expect("reopen");
         assert_eq!(
-            store.get_entity(&Entity::make_id("ws1", "alpha")).expect("get").map(|e| e.canonical_name),
+            store
+                .get_entity(&Entity::make_id("ws1", "alpha"))
+                .expect("get")
+                .map(|e| e.canonical_name),
             Some("alpha".to_string()),
         );
         assert_eq!(store.all_relations(Some("ws1")).expect("relations").len(), 1);
@@ -772,7 +769,9 @@ mod tests {
         {
             let store = RedbStore::open(&path).expect("open");
             store.set_embedder("bge-small-en-v1.5:384").expect("first embedder");
-            store.set_embedder("bge-small-en-v1.5:384").expect("same embedder is idempotent");
+            store
+                .set_embedder("bge-small-en-v1.5:384")
+                .expect("same embedder is idempotent");
         }
         let store = RedbStore::open(&path).expect("reopen");
         let err = store.set_embedder("other-model:768").expect_err("mismatch must be refused");
