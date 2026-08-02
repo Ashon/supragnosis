@@ -78,6 +78,21 @@ async fn mcp_protocol_surface_end_to_end() {
         ]),
         "must expose the intent-level tools (workspace_map = orientation, define_type = T-Box, propose/review/list_proposals/get_proposal = the canon gate, sync_* = federation administration)"
     );
+    // Every gated intent has to be reachable, and an agent only learns a kind exists by reading this
+    // description. `entity_split` shipped in the engine before it was named here, which is the drift
+    // this guards: a kind the fold accepts and the surface never mentions is a kind nobody uses.
+    let propose_desc = tools
+        .iter()
+        .find(|t| t.name.as_ref() == "propose")
+        .and_then(|t| t.description.as_deref())
+        .expect("propose has a description");
+    for kind in supragnosis_engine::PROPOSAL_KINDS {
+        assert!(
+            propose_desc.contains(kind),
+            "propose must name every kind the engine accepts; '{kind}' is missing"
+        );
+    }
+
     for t in &tools {
         let desc = t.description.as_deref().unwrap_or("");
         assert!(

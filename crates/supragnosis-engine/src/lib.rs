@@ -2546,6 +2546,127 @@ impl Engine {
             .collect())
     }
 
+    /// The diff for an `entity_split`: the mirror of [`Self::merge_diff`]. The "after" map is the
+    /// forwarding fold run with this proposal's target treated as reversed, so it is the same
+    /// computation the verdict performs rather than a prediction of it (unmerge.md Section 9).
+    ///
+    /// What a reviewer is owed here (P23's informative checks): which entities separate, which
+    /// relation endpoints move back, and any belief the separation overturns on an entity that is
+    /// NOT one of the separating ones - that last being the surprise, since the separated entities
+    /// regaining their own beliefs is the proposal rather than a consequence of it.
+    fn split_diff(
+        &self,
+        workspace: Option<&str>,
+        view: &ProposalView,
+        cx: &ReadCtx,
+    ) -> Result<BeliefDiff, StoreError> {
+        let uncomputable = |note: &str| BeliefDiff {
+            computable: false,
+            note: Some(note.into()),
+            tier_changes: Vec::new(),
+            overturned: Vec::new(),
+            rewired: Vec::new(),
+        };
+        let Some(target) = view.targets.first().cloned() else {
+            return Ok(uncomputable("an entity_split names no proposal to reverse"));
+        };
+        let props = self.fold_proposals(workspace, cx)?;
+        let Some(merge) = props.get(&target) else {
+            return Ok(uncomputable(
+                "the named proposal is not in the local log, so what it did cannot be read - under \
+                 incomplete sync this is arrival order rather than a malformed split",
+            ));
+        };
+        if merge.kind != "entity_merge" || !carries_merge_verdict(&merge.state) {
+            return Ok(uncomputable(
+                "the named proposal is not an entity_merge that has been decided, so it forwards \
+                 nothing for this to take back",
+            ));
+        }
+        let Some(into) = merge.into.clone() else {
+            return Ok(uncomputable("the named entity_merge has no `into`, so it folded nothing"));
+        };
+
+        let base_fwd = self.merge_forwarding(workspace, cx)?;
+        let after_fwd = self.forwarding_less(workspace, &HashSet::from([target.clone()]), cx)?;
+        // The ids that stop forwarding onto `into` when this merge is taken back. Read from the
+        // difference between the two maps rather than from the merge's targets, because a target may
+        // still be forwarded by ANOTHER merge and would then not separate at all.
+        let separating: HashSet<String> =
+            base_fwd.keys().filter(|id| !after_fwd.contains_key(*id)).cloned().collect();
+
+        let gates = self.gate_grants(workspace, cx)?;
+        let before = self.belief_fold(workspace, &base_fwd, &gates, cx)?;
+        let after = self.belief_fold(workspace, &after_fwd, &gates, cx)?;
+        let name_of = |id: &str| -> Result<String, StoreError> {
+            Ok(self
+                .store
+                .get_entity(id)?
+                .map(|e| e.canonical_name)
+                .unwrap_or_else(|| id.to_string()))
+        };
+
+        let mut ids: BTreeSet<&String> = before.kinds.keys().collect();
+        ids.extend(after.kinds.keys());
+        let mut overturned = Vec::new();
+        for id in ids {
+            if separating.contains(id) {
+                continue;
+            }
+            let (wb, cb, _) = self.resolve_kind(before.kinds.get(id));
+            let (wa, ca, _) = self.resolve_kind(after.kinds.get(id));
+            let (vb, va) = (wb.map(|(k, _)| k), wa.map(|(k, _)| k));
+            if vb == va && cb == ca {
+                continue;
+            }
+            overturned.push(BeliefChange {
+                entity: id.clone(),
+                name: name_of(id)?,
+                field: "kind".into(),
+                from: vb,
+                to: va,
+                contested_before: cb,
+                contested_after: ca,
+            });
+        }
+
+        // Endpoints that move back off the canonical id. `rewired` is shaped for a merge, so the
+        // direction reads reversed here on purpose: `from_name` is the endpoint, `to_name` is where
+        // it lands - which for a split is the entity it belonged to before the merge.
+        let canon = |id: &str| after_fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let mut rewired = Vec::new();
+        for r in self.store.all_relations(workspace)? {
+            let (mf, mt) = (separating.contains(&r.from), separating.contains(&r.to));
+            if !mf && !mt {
+                continue;
+            }
+            let moving = if mf { &r.from } else { &r.to };
+            let other = if mf { &r.to } else { &r.from };
+            rewired.push(RelationRewire {
+                relation: r.id.clone(),
+                kind: r.kind.clone(),
+                from_name: name_of(&into)?,
+                to_name: name_of(moving)?,
+                other_name: name_of(other)?,
+                becomes_self_loop: canon(&r.from) == canon(&r.to),
+            });
+        }
+        rewired.sort_by(|a, b| {
+            a.kind
+                .cmp(&b.kind)
+                .then_with(|| a.other_name.cmp(&b.other_name))
+                .then_with(|| a.relation.cmp(&b.relation))
+        });
+        overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
+        Ok(BeliefDiff {
+            computable: true,
+            note: None,
+            tier_changes: Vec::new(),
+            overturned,
+            rewired,
+        })
+    }
+
     /// The diff for an entity_merge: the same two materializations as a gate proposal, except the
     /// thing that differs is the FORWARDING map rather than the gate grants. Merge forwarding is a
     /// read-time overlay applied by `belief_fold`, so adding this proposal's target -> into edges and
@@ -2658,6 +2779,9 @@ impl Engine {
     ) -> Result<BeliefDiff, StoreError> {
         if view.kind == "entity_merge" {
             return self.merge_diff(workspace, view, cx);
+        }
+        if view.kind == "entity_split" {
+            return self.split_diff(workspace, view, cx);
         }
         if !GATE_KINDS.contains(&view.kind.as_str()) {
             return Ok(BeliefDiff {
@@ -2788,11 +2912,28 @@ impl Engine {
         workspace: Option<&str>,
         cx: &ReadCtx,
     ) -> Result<HashMap<String, String>, StoreError> {
+        self.forwarding_less(workspace, &HashSet::new(), cx)
+    }
+
+    /// [`Self::merge_forwarding`] with additional merges treated as reversed - what the map WOULD be
+    /// if the named splits had merged. The preview of an `entity_split` is computed by running this
+    /// rather than by predicting an outcome, so the diff a reviewer reads and the effect the verdict
+    /// has cannot disagree (the same argument `merge_diff` makes for the other direction).
+    fn forwarding_less(
+        &self,
+        workspace: Option<&str>,
+        also_reversed: &HashSet<String>,
+        cx: &ReadCtx,
+    ) -> Result<HashMap<String, String>, StoreError> {
         let props = self.fold_proposals(workspace, cx)?;
         let reversed = self.reversed_merges(workspace, cx)?;
         let mut fwd: HashMap<String, String> = HashMap::new();
         for p in props.values() {
-            if p.kind == "entity_merge" && p.state == "merged" && !reversed.contains(&p.id) {
+            if p.kind == "entity_merge"
+                && p.state == "merged"
+                && !reversed.contains(&p.id)
+                && !also_reversed.contains(&p.id)
+            {
                 if let Some(into) = &p.into {
                     for t in &p.targets {
                         if t != into {

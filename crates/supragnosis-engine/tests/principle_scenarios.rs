@@ -2651,3 +2651,149 @@ fn p23_a_split_of_an_undecided_merge_has_no_commit_effect() {
         "and the real merge still stands - a split that did not commit reverses nothing"
     );
 }
+
+/// guard (unmerge.md Section 6, IR1): the two kinds of alias are indistinguishable in the row, so
+/// only the derivation tells them apart - a split that removes the wrong ones destroys asserted
+/// spellings while looking correct. An asserted spelling of the entity itself must survive the
+/// split; a name that arrived because of the merge must not.
+#[test]
+fn p3_a_split_removes_the_merged_name_and_keeps_the_asserted_spelling() {
+    let (_store, engine) = engine();
+    // Two spellings of ONE entity (case-normalized to the same id) - IR1's own union.
+    observe_named(&engine, "one", "cozo");
+    observe_named(&engine, "two", "Cozo");
+    // A genuinely different entity, folded in later by a merge.
+    observe_named(&engine, "three", "cozodb");
+    let other = Entity::make_id(WS, "cozodb");
+    let canon = Entity::make_id(WS, "cozo");
+
+    let aliases = |e: &Engine| {
+        let mut a = e.get_entity(&canon).unwrap().expect("entity").entity.aliases;
+        a.sort();
+        a
+    };
+    // Which of the two spellings wins the representative slot is the M3a policy's call; what
+    // matters here is that the loser is an asserted alias and the other entity is not one yet.
+    let asserted = aliases(&engine);
+    assert_eq!(
+        asserted.len(),
+        1,
+        "the second spelling of the same id is an asserted alias (IR1): {asserted:?}"
+    );
+    assert!(!asserted.iter().any(|a| a == "cozodb"), "and the other entity is not one yet");
+
+    let merge = propose_merge(&engine, &[other.as_str(), canon.as_str()], &canon, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+    assert!(
+        aliases(&engine).iter().any(|a| a == "cozodb"),
+        "the merge contributes the folded entity's name: {:?}",
+        aliases(&engine)
+    );
+
+    // The case that can actually go wrong: a re-materialization WHILE the merge stands. The
+    // projection collects name candidates through `canon`, so the folded entity's spellings are
+    // gathered under the canonical id - if they get written onto the stored row, the split cannot
+    // take them back and an asserted-looking alias survives a resolution that no longer exists.
+    engine.reproject(Some(WS)).expect("reproject while merged");
+    assert!(
+        aliases(&engine).iter().any(|a| a == "cozodb"),
+        "still contributed after a reproject: {:?}",
+        aliases(&engine)
+    );
+    // And the reason the split can take it back: the contribution lives in the READ, never on the
+    // row. A projection that wrote it would leave an asserted-looking alias behind for a resolution
+    // that no longer exists, and nothing downstream could tell the two apart.
+    assert_eq!(
+        _store.get_entity(&canon).unwrap().expect("row").aliases,
+        asserted,
+        "the stored row carries only IR1's asserted spellings, even while the merge stands"
+    );
+
+    let split = propose_split(&engine, &merge, "ashon");
+    review(&engine, &split, "merge", "reviewer");
+
+    assert_eq!(
+        aliases(&engine),
+        asserted,
+        "the split takes back exactly what the merge contributed and nothing else - IR1's set is \
+         the same size it was, because those spellings were never same-id assertions"
+    );
+    engine.reproject(Some(WS)).expect("reproject after the split");
+    assert_eq!(
+        aliases(&engine),
+        asserted,
+        "and a re-materialization after the split agrees - the row is a function of the log, not \
+         of which resolutions happened to stand when it was last written"
+    );
+    assert!(
+        engine.get_entity(&other).unwrap().expect("entity").entity.id == other,
+        "and the separated entity answers under its own id again rather than forwarding"
+    );
+}
+
+/// guard (P23 informative checks, unmerge.md Section 9): a reviewer is shown the blast radius before
+/// voting, and what they are shown is the same computation the verdict performs - the preview runs
+/// the forwarding fold with the target reversed rather than predicting an outcome, so the two cannot
+/// disagree. Here: the relation endpoint that moves back off the canonical id.
+#[test]
+fn p23_a_split_preview_shows_the_endpoints_that_move_back() {
+    let (_store, engine) = engine();
+    observe(&engine, "the pair and a neighbour", &["Ent X", "Ent Y", "Ctx"], vec![]);
+    // Y is connected to something else, so folding it moves a real edge.
+    observe(
+        &engine,
+        "y sits in ctx",
+        &["Ent Y", "Ctx"],
+        vec![RelationInput {
+            from: "Ent Y".into(),
+            to: "Ctx".into(),
+            kind: "member_of".into(),
+            description: None,
+            valid_from: None,
+            valid_to: None,
+        }],
+    );
+    let x = Entity::make_id(WS, "Ent X");
+    let y = Entity::make_id(WS, "Ent Y");
+
+    let merge = propose_merge(&engine, &[x.as_str(), y.as_str()], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+    let split = propose_split(&engine, &merge, "ashon");
+
+    let view = engine.get_proposal(Some(WS), &split).expect("get").expect("view");
+    let diff = view.belief_diff.expect("a split has a computable diff");
+    assert!(diff.computable, "note: {:?}", diff.note);
+    assert!(
+        diff.rewired.iter().any(|r| r.kind == "member_of" && r.to_name == "Ent Y"),
+        "the endpoint that moves back off the canonical id is named: {:?}",
+        diff.rewired
+    );
+
+    // And the preview matches what actually happens.
+    review(&engine, &split, "merge", "reviewer");
+    let g = engine.graph(Some(WS)).expect("graph");
+    assert!(
+        g.edges.iter().any(|e| e.from == y || e.to == y),
+        "after the verdict the edge really does land on the separated entity"
+    );
+}
+
+/// guard (unmerge.md Section 9): a split whose target cannot be read reports WHY rather than an
+/// empty diff - an empty one would read as "changes nothing", which is the opposite of the truth
+/// (Principle 5: absence and inability are different states).
+#[test]
+fn p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    let _ = (x, y);
+    let split = propose_split(&engine, "no-such-proposal", "ashon");
+
+    let view = engine.get_proposal(Some(WS), &split).expect("get").expect("view");
+    let diff = view.belief_diff.expect("diff");
+    assert!(!diff.computable, "an unreadable target is not a computable diff");
+    assert!(
+        diff.note.as_deref().is_some_and(|n| n.contains("not in the local log")),
+        "and the note says which of the reasons it is: {:?}",
+        diff.note
+    );
+}

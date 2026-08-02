@@ -3,10 +3,10 @@
 > The other half of `entity_merge`, specified in three documents and built in none. This fixes what
 > the reversal does, what it must not become, and which of the obvious cheap versions is a trap.
 >
-> Status: **the engine implements it; the surfaces do not.** `entity_split` is a proposal kind, a
-> merged one stops its merge forwarding, and the separated pair is suppressed as a suggestion -
-> guarded by scenarios named in the coverage registry. What is missing is the MCP and viewer surface
-> and the informative checks of Section 9, so today it is reachable only through `propose`/`review`.
+> Status: **built.** `entity_split` is a proposal kind with blocking and informative checks, a merged
+> one stops its merge forwarding, the separated pair is suppressed as a suggestion, and the act is
+> reachable from the MCP `propose` tool and from an un-merge button on a committed merge in the
+> console. Guarded by scenarios named in the coverage registry.
 >
 > Unlike [excision](excision.md), which needed a mechanism that does not exist, this needed almost
 > none - the cost was in the decisions, and Section 5 is the one that bites. Sections 7 and 9 carry
@@ -206,6 +206,22 @@ verdict lands, since it never passes through that path.
 - how many relation endpoints move back,
 - which aliases leave the canonical row - the Section 6 distinction made visible, so a reviewer can
   see that no asserted spelling is among them.
+
+## 9a. The preview
+
+The diff a reviewer reads is produced by running the forwarding fold with the target treated as
+reversed - the same computation the verdict performs, not a prediction of it. That is the argument
+`merge_diff` already makes for the other direction, and it is why the two cannot disagree: there is
+one transitive resolution, parameterized by which merges count.
+
+It reports the relation endpoints that move back off the canonical id, and any belief the separation
+overturns on an entity that is *not* one of the separating ones. The separating entities regaining
+their own beliefs is the proposal rather than a consequence of it, so flagging that would bury the
+surprise in the expected.
+
+The set of separating ids is read from the difference between the two forwarding maps rather than
+from the merge's target list, because a target may still be forwarded by another merge - in which
+case it does not separate at all, and saying it would be a lie about the blast radius.
 
 ## 10. What the projection does afterwards
 
