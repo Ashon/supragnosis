@@ -817,6 +817,15 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   This was acceptable while the deployment was a single-user workspace; **federation raises the stakes** - in a shared
   workspace any spoke could silently rewrite the vocabulary for everyone, HLC-latest-write winning on every node.
   Enforcing the gate is therefore a federation prerequisite (federation.md Section 1a, F18). -> **M4 Phase 5**.
+- Principles 3/15/23 (un-merge must be possible): the `entity_split` half of the third gated intent
+  **does not exist**. `PROPOSAL_KINDS` ships five names and the third is `entity_merge` alone, while
+  Principle 3 requires that "un-merge must be possible", Principle 15 requires a wrong merge and a wrong
+  split to be "both reversible", and proposal-workflow.md Section 3 names the kind "entity-merge /
+  split". A merge is therefore the one canon change with no way back, and P23's "every proposal kind
+  the surface accepts has a commit effect" is the same hole from the other side. The mechanism is
+  cheap - `merge_forwarding` is a single chokepoint and the store port has no delete, so the separated
+  rows are still there - and the cost is in the four decisions [docs/unmerge.md](unmerge.md) fixes,
+  of which the merge band re-suggesting a pair a human just split is the one that bites. -> **M4 Phase 5**.
 - Principle 13 (rigidity - essence vs role): no enforcement exists; `define_type` treats it as a written guideline only.
   There is no subtype hierarchy in the T-Box today, so the principle has nothing to bite on yet -> revisit when
   subtyping is introduced.
