@@ -116,9 +116,19 @@ tasks:
   check:
     desc: The full gate - clippy, viewer ESLint, tests. Same checks CI runs, so run it before pushing.
     cmds:
+      - task: fmt
       - task: lint
       - task: lint:web
       - task: test
+
+  fmt:
+    desc: rustfmt over the whole workspace, check-only (matches the rust.yml fmt step exactly)
+    # Settings live in rustfmt.toml. `task fmt:write` applies them; this one only reports.
+    cmds: [cargo fmt --all -- --check]
+
+  fmt:write:
+    desc: Apply rustfmt in place
+    cmds: [cargo fmt --all]
 
   lint:
     desc: cargo clippy over all targets, warnings denied (matches the rust.yml clippy step exactly)
