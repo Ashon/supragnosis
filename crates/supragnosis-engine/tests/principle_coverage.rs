@@ -170,6 +170,22 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // half of the claim that had no evidence.
             "incremental_write_equals_replay_for_relations",
         ])),
+        // The clause above says re-deriving the graph from the log reproduces it. That is only true
+        // while nothing writes a row the log never knew about, which was a convention and is now a
+        // type. The convention did hold - the whole workspace has exactly two calls to the projection
+        // writes, both inside the folds - but the author's own store still carries 35 entity rows no
+        // observation asserts, from an era when something did reach for the handle. They survive every
+        // re-projection, never cross the sync wire, and a replay cannot reproduce them.
+        //
+        // No test can guard this: it would have to enumerate callers that do not exist yet.
+        c("no API may write a fact that did not pass through an assertion directly into the graph",
+          Evidence::Structural(
+            "The store port is split: `AssertionStore` appends to the log and reads the graph, and \
+             `KnowledgeStore: AssertionStore` adds `put_entity`/`add_relation`. The engine holds the \
+             full trait and is the only thing that does - `Engine::store()` hands out the narrow one, \
+             so the sync crate applying replicated events, the MCP tools and the CLI cannot reach the \
+             projection writes. Knowledge enters through a fold or not at all.",
+        )),
         c("a generator proposes; nothing but a verdict commits",
           Evidence::Scenario(&["merge_suggestions_never_commit"])),
         // A read may reuse the rows it already loaded, but only where reusing them is

@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use supragnosis_core::{
-    evaluated_tier, Assertions, Entity, EntityAssertion, Hlc, KnowledgeStore, Observation,
+    evaluated_tier, Assertions, Entity, EntityAssertion, Hlc, AssertionStore, KnowledgeStore, Observation,
     Provenance, SyncMeta, TrustTier, VersionVector,
 };
 use supragnosis_engine::{

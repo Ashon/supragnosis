@@ -10,6 +10,11 @@ default-members = ["crates/*", "e2e"]
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
+# The floor two features set. Trait upcasting (1.86) is what makes the store port narrowable -
+# `Arc<dyn KnowledgeStore>` -> `Arc<dyn AssertionStore>`, and with it Principle 1's "no API writes an
+# unasserted fact". `int::is_multiple_of` (1.87) was already in core, undeclared; declaring the floor
+# at all is what made clippy check it and say so. An older toolchain now fails naming the version.
+rust-version = "1.87"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashon/supragnosis"
 

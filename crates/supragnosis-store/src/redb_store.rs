@@ -28,7 +28,7 @@ use std::path::Path;
 
 use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition};
 use supragnosis_core::{
-    cosine_similarity, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
+    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
     StoreError, TraverseHit,
 };
 
@@ -226,7 +226,7 @@ fn entity_workspace(e: &Entity) -> String {
         .unwrap_or_default()
 }
 
-impl KnowledgeStore for RedbStore {
+impl AssertionStore for RedbStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
         // Read-absorb-write: a re-arrival at the same content address unions attestations and
         // lineage rather than replacing the row (Principle 3). Reading inside the write transaction
@@ -307,86 +307,6 @@ impl KnowledgeStore for RedbStore {
             entity.embedding = decode_vector(v.value());
         }
         Ok(Some(entity))
-    }
-
-    fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
-        let txn = self.db.begin_write().map_err(backend)?;
-        {
-            let mut t = txn.open_table(ENTITIES).map_err(backend)?;
-            // The previous row's workspace has to be read before the overwrite: an upsert that moves
-            // a row to another workspace would otherwise leave the old membership behind, and the
-            // stale entry would make the row appear in two scoped enumerations at once.
-            let stale_ws = match t.get(entity.id.as_str()).map_err(backend)? {
-                Some(raw) => serde_json::from_slice::<Entity>(raw.value())
-                    .ok()
-                    .map(|e| entity_workspace(&e)),
-                None => None,
-            };
-            let ws = entity_workspace(&entity);
-            let bytes = serde_json::to_vec(&entity).map_err(backend)?;
-            t.insert(entity.id.as_str(), bytes.as_slice()).map_err(backend)?;
-            {
-                // An upsert that arrives without a vector clears the stored one, unlike an
-                // observation absorb. A projected entity is rebuilt from the log rather than merged
-                // into, so carrying a vector forward here would keep one whose text no longer
-                // matches - which is the stale-embedding bug, not a saving.
-                let mut vt = txn.open_table(ENT_VEC).map_err(backend)?;
-                match &entity.embedding {
-                    Some(vec) => {
-                        vt.insert(entity.id.as_str(), encode_vector(vec).as_slice()).map_err(backend)?;
-                    }
-                    None => {
-                        vt.remove(entity.id.as_str()).map_err(backend)?;
-                    }
-                }
-            }
-
-            let mut idx = txn.open_multimap_table(ENT_BY_WS).map_err(backend)?;
-            if let Some(old) = stale_ws.filter(|o| *o != ws) {
-                idx.remove(old.as_str(), entity.id.as_str()).map_err(backend)?;
-            }
-            idx.insert(ws.as_str(), entity.id.as_str()).map_err(backend)?;
-        }
-        txn.commit().map_err(backend)
-    }
-
-    fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
-        let txn = self.db.begin_write().map_err(backend)?;
-        {
-            let mut t = txn.open_table(RELATIONS).map_err(backend)?;
-            // As with an entity, the endpoints and the workspace of the previous row are what the
-            // stale index entries are keyed by. The relation id is derived from (from, kind, to), so
-            // the endpoints cannot actually move - but the workspace can, and reading one row is
-            // cheaper than a rule that has to stay true as the id formula evolves.
-            let previous = match t.get(rel.id.as_str()).map_err(backend)? {
-                Some(raw) => serde_json::from_slice::<Relation>(raw.value()).ok(),
-                None => None,
-            };
-            let ws = rel.provenance.workspace.clone();
-            let bytes = serde_json::to_vec(&rel).map_err(backend)?;
-            t.insert(rel.id.as_str(), bytes.as_slice()).map_err(backend)?;
-
-            let mut by_ws = txn.open_multimap_table(REL_BY_WS).map_err(backend)?;
-            let mut by_src = txn.open_multimap_table(REL_BY_SRC).map_err(backend)?;
-            let mut by_dst = txn.open_multimap_table(REL_BY_DST).map_err(backend)?;
-            if let Some(old) = previous {
-                if old.provenance.workspace != ws {
-                    by_ws
-                        .remove(old.provenance.workspace.as_str(), rel.id.as_str())
-                        .map_err(backend)?;
-                }
-                if old.from != rel.from {
-                    by_src.remove(old.from.as_str(), rel.id.as_str()).map_err(backend)?;
-                }
-                if old.to != rel.to {
-                    by_dst.remove(old.to.as_str(), rel.id.as_str()).map_err(backend)?;
-                }
-            }
-            by_ws.insert(ws.as_str(), rel.id.as_str()).map_err(backend)?;
-            by_src.insert(rel.from.as_str(), rel.id.as_str()).map_err(backend)?;
-            by_dst.insert(rel.to.as_str(), rel.id.as_str()).map_err(backend)?;
-        }
-        txn.commit().map_err(backend)
     }
 
     fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError> {
@@ -627,6 +547,88 @@ impl KnowledgeStore for RedbStore {
         });
         hits.truncate(limit);
         Ok(hits)
+    }
+}
+
+impl KnowledgeStore for RedbStore {
+    fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
+        let txn = self.db.begin_write().map_err(backend)?;
+        {
+            let mut t = txn.open_table(ENTITIES).map_err(backend)?;
+            // The previous row's workspace has to be read before the overwrite: an upsert that moves
+            // a row to another workspace would otherwise leave the old membership behind, and the
+            // stale entry would make the row appear in two scoped enumerations at once.
+            let stale_ws = match t.get(entity.id.as_str()).map_err(backend)? {
+                Some(raw) => serde_json::from_slice::<Entity>(raw.value())
+                    .ok()
+                    .map(|e| entity_workspace(&e)),
+                None => None,
+            };
+            let ws = entity_workspace(&entity);
+            let bytes = serde_json::to_vec(&entity).map_err(backend)?;
+            t.insert(entity.id.as_str(), bytes.as_slice()).map_err(backend)?;
+            {
+                // An upsert that arrives without a vector clears the stored one, unlike an
+                // observation absorb. A projected entity is rebuilt from the log rather than merged
+                // into, so carrying a vector forward here would keep one whose text no longer
+                // matches - which is the stale-embedding bug, not a saving.
+                let mut vt = txn.open_table(ENT_VEC).map_err(backend)?;
+                match &entity.embedding {
+                    Some(vec) => {
+                        vt.insert(entity.id.as_str(), encode_vector(vec).as_slice()).map_err(backend)?;
+                    }
+                    None => {
+                        vt.remove(entity.id.as_str()).map_err(backend)?;
+                    }
+                }
+            }
+
+            let mut idx = txn.open_multimap_table(ENT_BY_WS).map_err(backend)?;
+            if let Some(old) = stale_ws.filter(|o| *o != ws) {
+                idx.remove(old.as_str(), entity.id.as_str()).map_err(backend)?;
+            }
+            idx.insert(ws.as_str(), entity.id.as_str()).map_err(backend)?;
+        }
+        txn.commit().map_err(backend)
+    }
+
+    fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
+        let txn = self.db.begin_write().map_err(backend)?;
+        {
+            let mut t = txn.open_table(RELATIONS).map_err(backend)?;
+            // As with an entity, the endpoints and the workspace of the previous row are what the
+            // stale index entries are keyed by. The relation id is derived from (from, kind, to), so
+            // the endpoints cannot actually move - but the workspace can, and reading one row is
+            // cheaper than a rule that has to stay true as the id formula evolves.
+            let previous = match t.get(rel.id.as_str()).map_err(backend)? {
+                Some(raw) => serde_json::from_slice::<Relation>(raw.value()).ok(),
+                None => None,
+            };
+            let ws = rel.provenance.workspace.clone();
+            let bytes = serde_json::to_vec(&rel).map_err(backend)?;
+            t.insert(rel.id.as_str(), bytes.as_slice()).map_err(backend)?;
+
+            let mut by_ws = txn.open_multimap_table(REL_BY_WS).map_err(backend)?;
+            let mut by_src = txn.open_multimap_table(REL_BY_SRC).map_err(backend)?;
+            let mut by_dst = txn.open_multimap_table(REL_BY_DST).map_err(backend)?;
+            if let Some(old) = previous {
+                if old.provenance.workspace != ws {
+                    by_ws
+                        .remove(old.provenance.workspace.as_str(), rel.id.as_str())
+                        .map_err(backend)?;
+                }
+                if old.from != rel.from {
+                    by_src.remove(old.from.as_str(), rel.id.as_str()).map_err(backend)?;
+                }
+                if old.to != rel.to {
+                    by_dst.remove(old.to.as_str(), rel.id.as_str()).map_err(backend)?;
+                }
+            }
+            by_ws.insert(ws.as_str(), rel.id.as_str()).map_err(backend)?;
+            by_src.insert(rel.from.as_str(), rel.id.as_str()).map_err(backend)?;
+            by_dst.insert(rel.to.as_str(), rel.id.as_str()).map_err(backend)?;
+        }
+        txn.commit().map_err(backend)
     }
 }
 
