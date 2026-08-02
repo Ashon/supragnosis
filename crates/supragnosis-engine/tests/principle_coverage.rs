@@ -125,6 +125,10 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
         include_str!("../../../docs/proposal-workflow.md"),
     ),
     ("docs/federation.md", include_str!("../../../docs/federation.md")),
+    // Names no tests yet - nothing in it is built. Listed now so that the first "guarded by <test>"
+    // sentence it grows is checked from the day it is written, rather than on the day someone
+    // remembers this list exists.
+    ("docs/excision.md", include_str!("../../../docs/excision.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no

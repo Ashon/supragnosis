@@ -30,7 +30,8 @@ over **MCP** - and humans govern what becomes canon.
 - Docs: architecture -> [`docs/architecture.md`](docs/architecture.md), design principles ->
   [`docs/principles.md`](docs/principles.md), proposal workflow ->
   [`docs/proposal-workflow.md`](docs/proposal-workflow.md), federation ->
-  [`docs/federation.md`](docs/federation.md), store migration ->
+  [`docs/federation.md`](docs/federation.md), excision (the destruction exception) ->
+  [`docs/excision.md`](docs/excision.md), store migration ->
   [`docs/store-migration.md`](docs/store-migration.md), belief resolution (M3a) ->
   [`docs/resolution.md`](docs/resolution.md), identity resolution (M3b spec) ->
   [`docs/resolution-identity.md`](docs/resolution-identity.md)
