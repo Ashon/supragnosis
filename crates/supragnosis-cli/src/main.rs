@@ -1482,6 +1482,27 @@ mod fed {
             // A typo must fail loudly, not silently disable a role (P5).
             let typo = "share_workspace = [\"x\"]\n";
             assert!(toml::from_str::<FileConfig>(typo).is_err());
+
+            // The same rule one level down, inside an allowlist entry. This was the one struct that
+            // did not deny unknown keys (federation.md Section 9 recorded it as a standing gap), so a
+            // misspelled key in the place that decides who may connect and what they may read parsed
+            // clean and did nothing. An entry is where a typo is most expensive (P17/P18): the safe
+            // way to be wrong about it is to refuse to start.
+            let entry_typo = r#"
+                [server]
+                listen = "127.0.0.1:7420"
+                [[server.allowlist]]
+                node_id = "abc"
+                public_key_hex = "deadbeef"
+                bearer_hash = "hash"
+                shared_workspace = ["supragnosis"]
+            "#;
+            let err = toml::from_str::<FileConfig>(entry_typo)
+                .expect_err("a misspelled key inside an allowlist entry must not parse");
+            assert!(
+                err.to_string().contains("shared_workspace"),
+                "the error has to name the offending key: {err}"
+            );
         }
     }
 }
