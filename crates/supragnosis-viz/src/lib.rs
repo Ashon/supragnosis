@@ -1,7 +1,7 @@
 //! supragnosis-viz - live ontology visualization (local unix-socket viewer).
 //!
 //! A **human-facing read channel**, distinct from the MCP tool surface (Principle 21). It rides
-//! inside the server process and shares the same `Arc<Engine>` (cozo/RocksDB single-process
+//! inside the server process and shares the same `Arc<Engine>` (the embedded store is single-process
 //! constraint), so it exposes the `engine.graph()` projection directly, without the lock conflict
 //! that opening the db from a separate process would cause.
 //!

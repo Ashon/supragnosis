@@ -1,6 +1,6 @@
 [package]
 name = "supragnosis-store"
-description = "supragnosis store adapters: in-memory, Cozo(RocksDB), redb."
+description = "supragnosis store adapters: in-memory, redb."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,6 @@ workspace = true
 
 [dependencies]
 supragnosis-core.workspace = true
-cozo.workspace = true
 redb.workspace = true
 serde_json.workspace = true
 # DeserializeOwned bound on the redb adapter's generic row loader.

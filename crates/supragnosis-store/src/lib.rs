@@ -1,9 +1,9 @@
 //! supragnosis-store - storage adapter.
 //!
-//! Three adapters implement the same [`supragnosis_core::KnowledgeStore`] port: the process-memory
-//! `InMemoryStore` (test/non-persistent), the Cozo(RocksDB)-backed `CozoStore`, and the redb-backed
-//! `RedbStore` (both file-persistent). They are held to one contract by
-//! `tests/port_conformance.rs` - an adapter is not free to have its own reading of the port.
+//! Two adapters implement the same [`supragnosis_core::KnowledgeStore`] port: the process-memory
+//! `InMemoryStore` (test/non-persistent) and the redb-backed `RedbStore` (file-persistent). They are
+//! held to one contract by `tests/port_conformance.rs` - an adapter is not free to have its own
+//! reading of the port.
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -14,9 +14,7 @@ use supragnosis_core::{
     StoreError, TraverseHit,
 };
 
-mod cozo_store;
 mod redb_store;
-pub use cozo_store::CozoStore;
 pub use redb_store::RedbStore;
 
 /// In-memory knowledge store. For test/development/non-persistent runs.

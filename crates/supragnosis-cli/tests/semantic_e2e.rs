@@ -8,7 +8,7 @@ use std::sync::Arc;
 use supragnosis_core::EmbeddingProvider;
 use supragnosis_embed::FastEmbedProvider;
 use supragnosis_engine::{Engine, ObserveInput};
-use supragnosis_store::CozoStore;
+use supragnosis_store::RedbStore;
 
 fn observe(engine: &Engine, content: &str) {
     engine
@@ -27,7 +27,7 @@ fn observe(engine: &Engine, content: &str) {
 
 #[test]
 #[ignore = "fastembed model download + ONNX inference - for manual verification"]
-fn fastembed_cozo_hnsw_end_to_end() {
+fn fastembed_semantic_recall_end_to_end() {
     let embedder = Arc::new(FastEmbedProvider::try_default().expect("fastembed init"));
     let dim = embedder.dimensions();
     assert_eq!(dim, 384);
@@ -35,7 +35,11 @@ fn fastembed_cozo_hnsw_end_to_end() {
     let dir = std::env::temp_dir().join(format!("supragnosis-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let store =
-        Arc::new(CozoStore::open_with_embedder(&dir, &embedder.id(), dim).expect("open cozo"));
+        Arc::new({
+            let s = RedbStore::open(dir.join("knowledge.redb")).expect("open redb");
+            s.set_embedder(&embedder.id()).expect("register embedder");
+            s
+        });
     let engine = Engine::new(store, "h", "ws").with_embedder(embedder);
 
     observe(

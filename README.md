@@ -10,9 +10,10 @@ over **MCP** - and humans govern what becomes canon.
 > `supragnosis` = *supra* (above/beyond) + *gnosis* (knowing) - knowledge above knowledge (meta-knowledge).
 
 - Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
-- Store: **embedded, file-based**. `cozo`/RocksDB (default) unifies relational + graph + vector
-  (HNSW); `redb` (opt-in) is a pure-Rust B-tree with no C++ toolchain. Both implement one
-  `KnowledgeStore` port and are held to it by a single conformance suite.
+- Store: **embedded, file-based** `redb` - a pure-Rust B-tree with no native toolchain and no
+  transitive dependencies. It sits behind the `KnowledgeStore` port, held to it by a conformance
+  suite every adapter runs. (Through v0.1.21 the store was `cozo`/RocksDB; see
+  [`docs/store-migration.md`](docs/store-migration.md).)
 - Status: **M4 Phase 4 federation + M3a/M3b resolution**. Semantic + keyword hybrid recall (M2),
   the **proposal gate (M3.5, both slices)** - review carries a computed belief diff of what a verdict
   would overturn and which references would rewire, and the fold enforces blocking checks so a merge
@@ -110,10 +111,8 @@ cargo test                                           # unit tests (network-depen
   - `SUPRAGNOSIS_HOST` - host id for provenance (default `localhost`). This is a display label only;
     the federation `node_id` is derived from the node keypair, not from this value.
   - `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`).
-  - `SUPRAGNOSIS_STORE` - `cozo` (default, file-persistent) | `redb` (file-persistent, pure Rust) |
-    `mem` (non-persistent).
-  - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/db` for cozo,
-    `~/.supragnosis/redb` for redb - separate on purpose, so both can exist while you try the new one).
+  - `SUPRAGNOSIS_STORE` - `redb` (default, file-persistent) | `mem` (non-persistent).
+  - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/redb`).
   - `SUPRAGNOSIS_EMBED` - `fastembed` (default when compiled with the feature, local ONNX) | `hashing` (for development) | `none`. If it is absent or fails, degrades to keyword search.
   - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml` (default `~/.supragnosis/supragnosis.toml`). No file = a standalone node.
   - `SUPRAGNOSIS_VIZ_SOCK` - viewer unix socket path (daemon default `~/.supragnosis/viz.sock`). The
@@ -170,29 +169,24 @@ supragnosis reproject           # deterministic HLC-ordered re-materialization o
 supragnosis migrate             # re-create pre-0.1.x rows under the current content-address formula
 supragnosis --help              # all options
 ```
-### Trying the redb store
-`redb` is a second file-backed store adapter: a pure-Rust embedded B-tree, no C++ RocksDB bridge (so
-no `clang`/`libclang-dev` in the build) and no transitive dependencies. Both adapters are held to one
-contract by [`port_conformance.rs`](crates/supragnosis-store/tests/port_conformance.rs), which runs
-every case against every adapter.
+### Upgrading from a pre-0.2 store
+Through v0.1.21 the store was Cozo (RocksDB). This build reads only redb and **refuses to start when
+it finds an un-migrated Cozo store**, rather than coming up empty beside one. Migrate with the last
+release that reads both:
 
 ```bash
-supragnosis stop                     # both stores are single-process
-supragnosis migrate-store --dry-run  # what would be copied
-supragnosis migrate-store            # copy the log, then replay it into ~/.supragnosis/redb
-supragnosis start --store redb       # or SUPRAGNOSIS_STORE=redb
+supragnosis stop
+curl -fsSL https://supragnosis.dev/install.sh | sh -s -- --version v0.1.21
+supragnosis migrate-store            # copies the log, then replays it
+curl -fsSL https://supragnosis.dev/install.sh | sh   # back to latest
+supragnosis start
 ```
-Full procedure, verification and rollback: [`docs/store-migration.md`](docs/store-migration.md) -
-read Section 5 first if the store predates v0.1.x, since a replay reproduces exactly what the log
-asserts and early-era rows written outside it do not come across.
-- Only the **observation log** is copied; the entity/relation graph is a projection of it, so it is
-  rebuilt by replay rather than transferred (Principle 1/16).
-- The Cozo store is opened read-only and left untouched, so this is reversible: drop the `--store
-  redb` flag to go back. **The default is still `cozo`.**
-- Re-running is safe. `add_observation` absorbs at the content address, so a repeated or partial run
-  converges to the same log (Principle 3).
+Only the observation log is copied - the graph is a projection of it and is rebuilt by replay. The
+Cozo store is opened read-only and left untouched. **Read
+[`docs/store-migration.md`](docs/store-migration.md) Section 5 first**: a replay reproduces exactly
+what the log asserts, so early-era rows written outside it do not come across.
 
-- `sync` / `reproject` / `migrate` / `migrate-store` need the daemon **stopped** (an embedded store
+- `sync` / `reproject` / `migrate` need the daemon **stopped** (an embedded store
   admits one process at a time). With a
   running daemon, use the `sync_*` MCP tools instead.
 - Option precedence: flags > `SUPRAGNOSIS_*` environment variables > defaults.

@@ -8,7 +8,7 @@ members = ["crates/*", "e2e", "app"]
 default-members = ["crates/*", "e2e"]
 
 [workspace.package]
-version = "0.1.21"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashon/supragnosis"
@@ -34,9 +34,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
-cozo = { version = "0.7", features = ["storage-rocksdb"] }
-# Pure-Rust embedded B-tree store (single writer + MVCC readers) - the store adapter
-# being stood up beside cozo. No C/C++ toolchain, so cross-compiling needs no bindgen.
+# The embedded store: a pure-Rust B-tree (single writer + MVCC readers). No C/C++ toolchain, so
+# the build needs no bindgen and cross-compiling is a target flag rather than a sysroot.
 redb = "4"
 # standalone daemon: HTTP server to mount the MCP streamable-http service (cli only).
 axum = "0.8"
