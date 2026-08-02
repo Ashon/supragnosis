@@ -297,6 +297,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/proposal" => proposal_response(engine, query),
         "/api/propose_merge" => propose_merge_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
+        "/api/about" => about_response(),
         // The observation log (source of truth, Principle 1), newest-first; `entity=<id>` narrows to
         // the evidence set behind one node. A read-only projection (Principle 5: failure != empty).
         "/api/observations" => observations_response(engine, query),
@@ -927,6 +928,27 @@ fn narrow_share_response(method: &str, query: &str, narrow: Option<&NarrowShare>
             body: err_body(&e),
         },
     }
+}
+
+/// `/api/about` - what this build IS: name, version, license, source.
+///
+/// Read from the crate's own compile-time metadata rather than restated here, so the version in the
+/// settings dialog is the version of the binary that answered the request. A constant would agree
+/// with itself while the package moved.
+///
+/// Third-party notices are deliberately not assembled here. A hand-kept list of dependency licences
+/// is a list that rots silently, and this surface has no way to know when it has - so it points at
+/// the manifest, which cannot disagree with the build.
+fn about_response() -> Response {
+    let body = serde_json::json!({
+        // The product, not the crate that happens to serve this route. `CARGO_PKG_NAME` here is
+        // `supragnosis-viz`, which is an implementation detail no reader of a settings dialog wants.
+        "name": "supragnosis",
+        "version": env!("CARGO_PKG_VERSION"),
+        "license": env!("CARGO_PKG_LICENSE"),
+        "repository": env!("CARGO_PKG_REPOSITORY"),
+    });
+    Response { status: "200 OK", content_type: "application/json", body: body.to_string() }
 }
 
 fn workspaces_response(engine: &Engine) -> Response {

@@ -437,7 +437,20 @@
                     padding:9px 12px; border-bottom:1px solid var(--line-soft); }
   #settings .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
   #settings .fclose { padding:2px 8px; font:600 10.5px/1.6 var(--mono); }
-  #settingsBody { padding:10px 12px 14px; overflow:auto; max-height:calc(82vh - 40px); }
+  /* Same visual language as the dock tabs, so the dialog reads as this application rather than a
+     form that wandered in. */
+  #settings .stabs { display:flex; gap:3px; padding:8px 12px 0; }
+  #settings .stab { flex:0 0 auto; padding:5px 11px; font:600 9.5px/1.5 var(--mono);
+                    letter-spacing:.03em; text-transform:uppercase; border:1px solid var(--line-soft);
+                    background:var(--panel-2); color:var(--muted); border-radius:5px; cursor:pointer; }
+  #settings .stab:hover { color:var(--gold-bright); }
+  #settings .stab.on { color:var(--ink); border-color:var(--gold-dim); background:var(--surface); }
+  #settingsBody { padding:10px 12px 14px; overflow:auto; max-height:calc(82vh - 74px); }
+  /* About: a definition list of what this build is. */
+  #settings .kv { display:grid; grid-template-columns:max-content 1fr; gap:3px 12px; }
+  #settings .kv dt { color:var(--faint); }
+  #settings .kv dd { margin:0; color:var(--ink); }
+  #settings .kv dd a { color:var(--accent); }
   #settings .fsec { margin:12px 0 5px; color:var(--muted); font-weight:600; letter-spacing:0.05em;
                   text-transform:uppercase; font-size:10px; }
   #settings .fsec:first-child { margin-top:0; }
