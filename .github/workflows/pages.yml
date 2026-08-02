@@ -51,10 +51,14 @@ jobs:
       # has to name what a visitor can install. It read the workspace version until main moved ahead
       # of the last tag, and then the page advertised a v0.2.0 with no download behind it.
       - name: stamp the latest release into the hero badge
+        env:
+          # Authenticated, because an anonymous API call from a runner shares its rate limit with
+          # every other runner on that IP and comes back 403 - which is how the v0.2.1 deploy failed
+          # after the trigger had just been fixed. `contents: read` above is all this needs.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
-            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+          version=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)
           test -n "$version" || { echo "could not read the latest release tag" >&2; exit 1; }
           before=$(grep -c 'id="version-badge"' site/index.html)
           test "$before" -eq 1 || { echo "expected exactly one version-badge, found $before" >&2; exit 1; }
