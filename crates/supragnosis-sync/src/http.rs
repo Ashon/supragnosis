@@ -143,27 +143,110 @@ pub struct Hooks {
     pub peer_registry: Option<Arc<PeerRegistry>>,
 }
 
+/// The admitted peers, consulted per request instead of captured when the server was spawned.
+///
+/// Admission used to be a startup snapshot: `[server].allowlist` was read once, moved into the
+/// handler state, and the only way to change who may connect was to edit the file and restart. That
+/// is the shape federation.md Section 11 recorded as "allowlist is static-edit for now", and it is
+/// what a management surface has to replace first - otherwise "remove this peer" means "stop the
+/// daemon", which is not a thing an operator can do casually on a hub other nodes sync to.
+///
+/// `origin_keys` lives in here rather than beside it because it is **derived** from the allowlist:
+/// every admitted peer's key, plus this node's own. Two separately-mutable fields where one is a
+/// function of the other is a drift waiting to happen, and this particular drift is a security bug -
+/// a peer removed from the allowlist whose key stayed in the directory would be refused at the door
+/// and then have its relayed events verified anyway. Derivation happens on write, so the stale state
+/// is unrepresentable rather than merely avoided.
+///
+/// **An empty allowlist is fail-closed, and allowed at runtime.** `validate_bind` refuses to *start*
+/// a non-loopback surface with no admitted peers (F10), which stops an unauthenticated surface from
+/// existing; arriving at empty later rejects every request instead of admitting anyone, so it serves
+/// the same end. Refusing the mutation would mean an operator cannot remove their last peer without
+/// stopping the daemon - which is exactly the property this type exists to end.
+pub struct PeerDirectory {
+    inner: std::sync::RwLock<Admitted>,
+    /// This node's own id/key. Kept beside the lock because it is a constant of the process and the
+    /// one entry in `origin_keys` that does not come from the allowlist - recovering it by asking
+    /// which key has no matching entry would break the moment a peer's id collided with it.
+    own: (String, String),
+}
+
+/// One consistent view of admission for the length of one request. Taken once per handler so a
+/// concurrent change cannot land between authenticating a peer and verifying what it sent.
+#[derive(Clone)]
+pub struct Admitted {
+    pub allowlist: Vec<AllowEntry>,
+    /// Every admitted peer's origin key, plus this node's own - the directory apply verifies against.
+    pub origin_keys: BTreeMap<String, String>,
+}
+
+impl PeerDirectory {
+    pub fn new(allowlist: Vec<AllowEntry>, self_node_id: &str, self_public_key_hex: &str) -> Self {
+        let own = (self_node_id.to_string(), self_public_key_hex.to_string());
+        Self {
+            inner: std::sync::RwLock::new(Admitted::derive(allowlist, &own.0, &own.1)),
+            own,
+        }
+    }
+
+    /// The current view. Cheap enough to clone per request at any allowlist an operator would hand-
+    /// maintain, and cloning is what makes the "one view per request" property hold by construction.
+    pub fn admitted(&self) -> Admitted {
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Replaces the admitted set. The derived key directory is recomputed here, never separately.
+    pub fn replace(&self, allowlist: Vec<AllowEntry>) {
+        let mut g = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        *g = Admitted::derive(allowlist, &self.own.0, &self.own.1);
+    }
+}
+
+impl Admitted {
+    fn derive(allowlist: Vec<AllowEntry>, self_node_id: &str, self_public_key_hex: &str) -> Self {
+        let mut origin_keys: BTreeMap<String, String> =
+            allowlist.iter().map(|e| (e.node_id.clone(), e.public_key_hex.clone())).collect();
+        origin_keys.insert(self_node_id.to_string(), self_public_key_hex.to_string());
+        Self { allowlist, origin_keys }
+    }
+}
+
 /// Shared state of the sync API handlers.
 pub struct ServerState {
     pub store: Arc<dyn KnowledgeStore>,
     pub node: Arc<SyncNode>,
-    pub allowlist: Vec<AllowEntry>,
-    /// Origin-key directory for apply verification: every allowlisted key plus this node's own.
-    pub origin_keys: BTreeMap<String, String>,
+    /// Who may connect, and the keys derived from that - swappable without a restart.
+    pub peers: Arc<PeerDirectory>,
     on_applied: Option<OnApplied>,
     on_activity: Option<OnActivity>,
     on_search: Option<OnSearch>,
-    peers: Option<Arc<PeerRegistry>>,
+    registry: Option<Arc<PeerRegistry>>,
 }
 
 impl ServerState {
     pub fn new(store: Arc<dyn KnowledgeStore>, node: Arc<SyncNode>, allowlist: Vec<AllowEntry>) -> Self {
-        let mut origin_keys: BTreeMap<String, String> = allowlist
-            .iter()
-            .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
-            .collect();
-        origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
-        Self { store, node, allowlist, origin_keys, on_applied: None, on_activity: None, on_search: None, peers: None }
+        let peers = Arc::new(PeerDirectory::new(allowlist, node.node_id(), &node.public_key_hex()));
+        Self {
+            store,
+            node,
+            peers,
+            on_applied: None,
+            on_activity: None,
+            on_search: None,
+            registry: None,
+        }
+    }
+
+    /// The admission directory, so the wiring layer can hand it to a management surface. Handing out
+    /// the `Arc` rather than a setter is what lets admission change while the server keeps serving.
+    pub fn peers(&self) -> Arc<PeerDirectory> {
+        self.peers.clone()
+    }
+
+    /// Builds state around an existing directory, so the wiring layer keeps the handle it will hand
+    /// to a management surface - the same shape as the known-peer registry in [`Hooks`].
+    pub fn with_directory(store: Arc<dyn KnowledgeStore>, node: Arc<SyncNode>, peers: Arc<PeerDirectory>) -> Self {
+        Self { store, node, peers, on_applied: None, on_activity: None, on_search: None, registry: None }
     }
 
     /// Injects the post-apply re-materialization hook (the engine's reproject).
@@ -186,12 +269,12 @@ impl ServerState {
 
     /// Shares the known-peer registry (runtime observability, 6a).
     pub fn with_peers(mut self, r: Arc<PeerRegistry>) -> Self {
-        self.peers = Some(r);
+        self.registry = Some(r);
         self
     }
 
     fn seen(&self, node_id: &str, action: &str) {
-        if let Some(r) = &self.peers {
+        if let Some(r) = &self.registry {
             r.record(node_id, action);
         }
     }
@@ -314,7 +397,8 @@ async fn advertise_handler(
     headers: HeaderMap,
     Json(req): Json<AdvertiseReq>,
 ) -> Result<Json<AdvertiseResp>, HandlerError> {
-    let entry = authenticate(&headers, &state.allowlist)?;
+    let admitted = state.peers.admitted();
+    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     // Store calls are offloaded so a blocking backend cannot starve the async runtime (F11).
@@ -333,7 +417,8 @@ async fn pull_handler(
     headers: HeaderMap,
     Json(req): Json<PullReq>,
 ) -> Result<Json<PullResp>, HandlerError> {
-    let entry = authenticate(&headers, &state.allowlist)?;
+    let admitted = state.peers.admitted();
+    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     let node = state.node.clone();
@@ -357,11 +442,12 @@ async fn push_handler(
     headers: HeaderMap,
     Json(req): Json<PushReq>,
 ) -> Result<Json<PushResp>, HandlerError> {
-    let entry = authenticate(&headers, &state.allowlist)?;
+    let admitted = state.peers.admitted();
+    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     let node = state.node.clone();
-    let keys = state.origin_keys.clone();
+    let keys = admitted.origin_keys;
     let ws = req.workspace.clone();
     let report = tokio::task::spawn_blocking(move || {
         let mut vv = VersionVector::default();
@@ -396,7 +482,8 @@ async fn search_handler(
     headers: HeaderMap,
     Json(req): Json<SearchReq>,
 ) -> Result<Json<SearchResp>, HandlerError> {
-    let entry = authenticate(&headers, &state.allowlist)?;
+    let admitted = state.peers.admitted();
+    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let limit = req.limit.min(100);
     let ws = req.workspace.clone();
@@ -430,7 +517,8 @@ async fn ping_handler(
     State(state): State<Arc<ServerState>>,
     headers: HeaderMap,
 ) -> Result<Json<PingResp>, HandlerError> {
-    let entry = authenticate(&headers, &state.allowlist)?;
+    let admitted = state.peers.admitted();
+    let entry = authenticate(&headers, &admitted.allowlist)?;
     // Registry only (see advertise) - health checks are heartbeats, not knowledge movement.
     state.seen(&entry.node_id, "ping");
     Ok(Json(PingResp {
@@ -465,11 +553,14 @@ pub async fn serve(
     node: Arc<SyncNode>,
     listen: SocketAddr,
     tls: Option<TlsPaths>,
-    allowlist: Vec<AllowEntry>,
+    peers: Arc<PeerDirectory>,
     hooks: Hooks,
 ) -> Result<(), TransportError> {
-    validate_bind(&listen, tls.is_some(), allowlist.len())?;
-    let mut state = ServerState::new(store, node, allowlist);
+    // The bind rule is about STARTING an unauthenticated surface, so it is checked against admission
+    // as it stands now (F10). Admission may shrink later, including to empty - that rejects every
+    // request rather than admitting anyone, which serves the same end (see [`PeerDirectory`]).
+    validate_bind(&listen, tls.is_some(), peers.admitted().allowlist.len())?;
+    let mut state = ServerState::with_directory(store, node, peers);
     if let Some(hook) = hooks.on_applied {
         state = state.with_on_applied(hook);
     }
@@ -641,6 +732,60 @@ mod tests {
         }
     }
 
+    /// Admission is consulted per request, so removing a peer takes effect on the running server.
+    ///
+    /// The point is not that a `Vec` can be swapped - it is that the derived key directory moves with
+    /// it. A peer removed from the allowlist has to stop being verifiable too: if `origin_keys` kept
+    /// its entry, the peer would be turned away at the door and then have its relayed events accepted
+    /// anyway, which is the drift `PeerDirectory` exists to make unrepresentable.
+    #[tokio::test]
+    async fn admission_changes_take_effect_without_a_restart() {
+        let hub_store: Arc<dyn KnowledgeStore> = Arc::new(InMemoryStore::new());
+        let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let peer = SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]));
+        hub_store.add_observation(Observation::new("hub fact".into(), prov("ws", 1))).unwrap();
+
+        let state = Arc::new(ServerState::new(
+            hub_store.clone(),
+            hub_node.clone(),
+            vec![entry(&peer, "token-p", &["ws"])],
+        ));
+        let peers = state.peers();
+        assert!(
+            peers.admitted().origin_keys.contains_key(peer.node_id()),
+            "an admitted peer's key is in the verification directory"
+        );
+
+        let addr = spawn_server(state).await;
+        let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
+        assert_eq!(
+            client.pull("ws", &VersionVector::default()).await.unwrap().len(),
+            1,
+            "the admitted peer can pull before the change"
+        );
+
+        // Revoke, on the running server.
+        peers.replace(Vec::new());
+
+        let err = client.pull("ws", &VersionVector::default()).await.expect_err("must be refused now");
+        assert!(
+            err.to_string().contains("401") || err.to_string().to_lowercase().contains("unauthorized"),
+            "a removed peer is turned away at the door: {err}"
+        );
+        assert!(
+            !peers.admitted().origin_keys.contains_key(peer.node_id()),
+            "and its key left the verification directory with it - the derived half cannot lag"
+        );
+        assert!(
+            peers.admitted().origin_keys.contains_key(hub_node.node_id()),
+            "the node's own key survives an allowlist that no longer mentions anyone"
+        );
+
+        // Re-admitting restores both halves, so the change is a swap and not a one-way latch.
+        peers.replace(vec![entry(&peer, "token-p", &["ws"])]);
+        assert_eq!(client.pull("ws", &VersionVector::default()).await.unwrap().len(), 1);
+    }
+
     /// Spawns the sync API on an ephemeral loopback port (plain HTTP - the local trust surface;
     /// TLS material is exercised in production paths, the F10 guard below pins the policy).
     async fn spawn_server(state: Arc<ServerState>) -> SocketAddr {
@@ -708,7 +853,7 @@ mod tests {
 
         let allow = vec![entry(&a_node, "token-a", &["ws"]), entry(&b_node, "token-b", &["ws"])];
         let state = Arc::new(ServerState::new(hub_store.clone(), hub_node.clone(), allow));
-        let keys = state.origin_keys.clone();
+        let keys = state.peers.admitted().origin_keys;
         let addr = spawn_server(state).await;
         let base = format!("http://{addr}");
         let share = vec!["ws".to_string()];

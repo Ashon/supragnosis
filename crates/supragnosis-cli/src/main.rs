@@ -420,6 +420,8 @@ fn build_sync_context(
     let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     // Runtime peer observability (hub role): who actually checked in, when, how much.
+    // Set on a hub: the live admission directory, published so the console can show who is in.
+    let mut admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>> = None;
     let peer_registry = Arc::new(supragnosis_sync::http::PeerRegistry::default());
     if let Some(srv) = &fc.server {
         // Post-apply hook: re-materialize the workspace after inbound pushes (Prop C).
@@ -461,7 +463,7 @@ fn build_sync_context(
             on_search: Some(on_search),
             peer_registry: Some(peer_registry.clone()),
         };
-        spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?;
+        admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?);
     }
     let mut origin_keys = fc.sync.origin_keys.clone();
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -476,6 +478,7 @@ fn build_sync_context(
             fc.server.is_some(),
             fc.sync.clone(),
             peer_registry.clone(),
+            admitted.clone(),
         );
     }
     Ok(Some(Arc::new(supragnosis_mcp::SyncContext {
@@ -502,6 +505,7 @@ fn spawn_fed_status(
     is_hub: bool,
     sync: fed::SyncSection,
     registry: Arc<supragnosis_sync::http::PeerRegistry>,
+    admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>>,
 ) {
     /// Events `a` holds that `b` lacks, approximated by per-(origin, workspace) seq gaps.
     fn vv_ahead(a: &VersionVector, b: &VersionVector) -> u64 {
@@ -569,6 +573,26 @@ fn spawn_fed_status(
             } else {
                 serde_json::Value::Array(Vec::new())
             };
+            // Who is admitted RIGHT NOW, read from the live directory rather than from the config
+            // this process started with - so the console shows the running state, which is the whole
+            // point of admission no longer being a startup snapshot. `bearer_hash` is deliberately
+            // not published: it is a hash rather than a token, but nothing on this surface needs it,
+            // and a credential-shaped field is not worth carrying for no reader (P17/P18).
+            let allowlist_json: Vec<serde_json::Value> = admitted
+                .as_ref()
+                .map(|d| {
+                    d.admitted()
+                        .allowlist
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "node_id": e.node_id,
+                                "shared_workspaces": e.shared_workspaces,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             let blob = serde_json::json!({
                 "configured": true,
                 "node_id": node_id,
@@ -576,6 +600,7 @@ fn spawn_fed_status(
                 "updated_ms": supragnosis_core::now_millis(),
                 "servers": servers_json,
                 "known_peers": peers_json,
+                "admitted": allowlist_json,
             });
             if let Ok(mut w) = fed.write() {
                 *w = blob;
@@ -593,7 +618,7 @@ fn spawn_sync_server(
     node: Arc<supragnosis_sync::SyncNode>,
     srv: fed::ServerSection,
     hooks: supragnosis_sync::http::Hooks,
-) -> Result<()> {
+) -> Result<Arc<supragnosis_sync::http::PeerDirectory>> {
     use supragnosis_sync::http as sync_http;
     let listen: std::net::SocketAddr = srv
         .listen
@@ -607,12 +632,21 @@ fn spawn_sync_server(
     // Validate at startup so a misconfigured daemon dies here, not inside a spawned task (F10).
     sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len())?;
     tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
+    // Admission is created here and handed BOTH to the server and back to the caller, so who may
+    // connect stops being a startup snapshot: the returned handle is what a management surface
+    // changes, and the running server reads it per request.
+    let peers = Arc::new(sync_http::PeerDirectory::new(
+        srv.allowlist,
+        node.node_id(),
+        &node.public_key_hex(),
+    ));
+    let serving = peers.clone();
     tokio::spawn(async move {
-        if let Err(e) = sync_http::serve(store, node, listen, tls, srv.allowlist, hooks).await {
+        if let Err(e) = sync_http::serve(store, node, listen, tls, serving, hooks).await {
             tracing::error!(error = %e, "federation sync API terminated");
         }
     });
-    Ok(())
+    Ok(peers)
 }
 
 /// `supragnosis identity` - prints the node's federation identity (generating the keypair on first

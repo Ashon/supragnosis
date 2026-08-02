@@ -226,6 +226,16 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 - **Known-peer registry** (runtime observability): the hub records, per authenticated peer, the last
   seen time, last action, and hit count - reported via `sync_status`. Distinct from the allowlist:
   the allowlist ADMITS, the registry OBSERVES; it is in-memory and resets with the process.
+- **Admission is consulted per request, not captured at startup.** The allowlist lives in a
+  `PeerDirectory` the running server reads on every call, so removing a peer takes effect without
+  stopping a hub other nodes sync to. The origin-key directory apply verifies against is **derived**
+  inside that type and recomputed on every change, so a removed peer cannot be turned away at the door
+  and have its relayed events verified anyway. The bind rule (F10) is about *starting* an
+  unauthenticated surface and is unchanged; admission may later shrink to empty, which rejects every
+  request rather than admitting anyone. The viewer's `/api/federation` publishes the current admitted
+  set (node id + shared workspaces; never the bearer hash). What is still static-edit is the *source*:
+  changes come from the config file at start. A surface that writes them is Section 11's deferred
+  rotation/revocation workflow.
 - **Key distribution (three anchors)** - who verifies what with which key, incl. events the hub merely
   relays: (1) the hub's transport allowlist (above) decides who may connect and push; (2) the **origin
   public keys** a spoke needs to verify a relayed event (authored by another spoke) travel in the
@@ -656,7 +666,11 @@ input, not nondeterminism - F16).
 
 - Peer-to-peer mesh, NAT traversal, discovery.
 - gRPC transport (JSON/HTTPS first).
-- Key rotation / revocation workflow (allowlist is static-edit for now).
+- Key rotation / revocation workflow. The mechanism is in place - admission is a live directory the
+  server consults per request (6a) - but nothing yet writes to it except startup, so in practice the
+  allowlist is still edited in the file. What remains is the human surface and the revocation
+  semantics that must ship with it: removing a peer stops future reads, it does not recall what has
+  already synced (P17 filters at the boundary), and a management UI has to say so.
 - Proposal **quorum / auto-merge policy** and a conflict-resolution UI (`proposal-workflow.md` line ~504,
   M4+). Note: cross-node verdict *convergence* is enabled by this milestone (Section 7a) - only these
   policy layers on top of it are deferred.
