@@ -141,6 +141,13 @@ tasks:
     # is what a guard that lost its #[test] becomes. Keep this identical to rust.yml.
     cmds: [cargo clippy --all-targets -- -D warnings]
 
+  deny:
+    desc: cargo-deny over both workspaces - advisories, licences, bans, sources (mirrors rust.yml)
+    # Needs `cargo install cargo-deny`; CI uses the action. Config and reasoning live in deny.toml.
+    cmds:
+      - cargo deny check
+      - cargo deny --manifest-path app/Cargo.toml --config deny.toml check
+
   lint:web:
     desc: ESLint no-unsanitized on the viewer assets - mirrors the frontend-lint workflow
     deps: [_web-deps]

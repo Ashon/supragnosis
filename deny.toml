@@ -1,0 +1,63 @@
+# Supply-chain gate. SECURITY.md states a threat model in detail; a project that does that and has
+# no gate on what its dependencies carry is asymmetric, which is the argument for this file.
+#
+# Runs against both workspaces - the desktop shell has its own manifest and its own tree.
+
+[advisories]
+# A vulnerability fails the build; there is no ignore for one and there should not be.
+yanked = "deny"
+# Unmaintained is a different claim from vulnerable: it says the author stopped, not that there is a
+# hole. Scoped to what this project actually chose - a crate in a workspace manifest is a decision
+# someone here made and can revisit; one three levels down is upstream's schedule. Without this the
+# desktop shell fails on eighteen advisories, every one of them Tauri's GTK3 Linux backend, which
+# the macOS bundle never compiles.
+unmaintained = "workspace"
+ignore = [
+    # `daemonize`, used by `supragnosis start` to background the process. No vulnerability; the
+    # crate is small and stable. Closes when the daemonizing moves behind the supervisor
+    # (deploy/systemd, deploy/launchd, deploy/docker all run `serve` in the foreground already,
+    # which is the direction that removes this dependency entirely).
+    "RUSTSEC-2025-0069",
+]
+
+[licenses]
+# The project is MIT OR Apache-2.0, so the allow list is what a dual-licensed project can carry.
+# Measured from the actual tree rather than guessed - `cargo deny list` prints it.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    # Weak, file-level copyleft, and it arrives only through `lightningcss` - a BUILD-dependency of
+    # supragnosis-viz that minifies the viewer's CSS. What ships is the minified output, not the
+    # minifier, and MPL-2.0's obligations attach to modifications of the MPL files themselves. An
+    # MPL crate appearing anywhere else in the tree is a decision to make again, not one this line
+    # has already made.
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+# Deny anything whose expression this list cannot satisfy, including a crate with no license at all.
+confidence-threshold = 0.9
+
+[bans]
+# Warn rather than deny: the tree carries syn 1/2/3 and four hashbrown majors through transitive
+# dependencies that are not ours to unify. Denying would make the gate about someone else's
+# upgrade schedule instead of about this project's supply chain.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+# Everything comes from crates.io. A git dependency that appears without this file being edited is
+# the case worth failing on - it is the one that bypasses the registry's own guarantees.
+unknown-registry = "deny"
+unknown-git = "deny"
