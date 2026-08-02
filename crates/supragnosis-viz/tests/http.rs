@@ -625,3 +625,64 @@ async fn narrowing_a_peer_is_a_post_and_needs_a_federation_role() {
     let calls = seen.lock().unwrap().clone();
     assert_eq!(calls.len(), 2, "only the two accepted POSTs reached the handler: {calls:?}");
 }
+
+/// guard (unmerge.md): the console can reverse a committed merge, and doing so is as gated as the
+/// merge was - `/api/propose_split` OPENS a proposal and commits nothing. A route that exists and is
+/// never exercised is a route that rots; this one is the only surface an operator has for the act.
+#[tokio::test]
+async fn viz_propose_split_opens_a_reversal_without_committing_it() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "host-a", "ws1"));
+    observe_depends(&engine);
+    // Ids from the graph rather than recomputed - viz has no core dependency, and a test that
+    // re-derived the id formula would be asserting the formula rather than the route.
+    let id_of = |name: &str| {
+        engine
+            .graph(Some("ws1"))
+            .expect("graph")
+            .nodes
+            .into_iter()
+            .find(|n| n.name == name)
+            .unwrap_or_else(|| panic!("{name} is in the graph"))
+            .id
+    };
+    let (a, b) = (id_of("supragnosis"), id_of("rmcp"));
+    let merge = engine
+        .propose(supragnosis_engine::ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![a.clone(), b.clone()],
+            into: Some(b.clone()),
+            tier: None,
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose merge");
+    engine
+        .review_proposal(
+            None,
+            merge.clone(),
+            "merge".into(),
+            None,
+            None,
+            supragnosis_engine::VerdictSurface::Console,
+        )
+        .expect("accept the merge");
+
+    let sock = serve_uds("split", engine.clone(), ev_channel()).await;
+    let resp = uds_get(&sock, &format!("/api/propose_split?merge={merge}")).await;
+    let id = json_get(&resp)["proposal_id"].as_str().expect("a proposal id").to_string();
+
+    let view = engine.get_proposal(Some("ws1"), &id).expect("get").expect("view");
+    assert_eq!(view.kind, "entity_split");
+    assert_eq!(view.state, "open", "opening a reversal commits nothing - the human accepts it");
+    assert!(
+        engine.graph(Some("ws1")).expect("graph").nodes.iter().all(|n| n.id != a),
+        "and the merge still stands until then"
+    );
+
+    // A missing parameter is refused with the fix named, not silently treated as no-op.
+    let bad = uds_get(&sock, "/api/propose_split").await;
+    assert!(bad.starts_with("HTTP/1.1 400"), "got: {}", bad.lines().next().unwrap_or(""));
+}

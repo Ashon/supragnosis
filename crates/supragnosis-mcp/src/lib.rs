@@ -123,9 +123,10 @@ pub struct ProposeRequest {
     /// Workspace (defaults to the node default when omitted).
     #[serde(default)]
     pub workspace: Option<String>,
-    /// Proposal kind: entity_merge | claim_promotion | claim_demotion | tbox_change | recall.
+    /// Proposal kind: entity_merge | entity_split | claim_promotion | claim_demotion | tbox_change | recall.
     pub kind: String,
     /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
+    /// For entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.
     pub targets: Vec<String>,
     /// For entity_merge: the canonical target id the other targets fold into (must be one of targets).
     #[serde(default)]
@@ -687,7 +688,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), claim_promotion / claim_demotion (raise/lower the trust tier of observations - pass OBSERVATION ids in `targets` and the requested tier in `tier`; a merged verdict is what the resolution policy consumes, e.g. to settle a contested entity kind), tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state. For entity_merge, pass the entity ids in `targets` and the canonical one in `into`. For tbox_change, list the T-Box types you define/change in `affected_types` ({target: \"entity\"|\"relation\", name}) so the viewer can highlight the affected nodes/edges when the proposal is previewed."
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), entity_split (reverse a merge: pass the entity_merge PROPOSAL id as the single target and no `into` - the folded entities separate again, and the pair stops being suggested for merging without becoming unmergeable), claim_promotion / claim_demotion (raise/lower the trust tier of observations - pass OBSERVATION ids in `targets` and the requested tier in `tier`; a merged verdict is what the resolution policy consumes, e.g. to settle a contested entity kind), tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state. For entity_merge, pass the entity ids in `targets` and the canonical one in `into`. Re-merging a pair that was split needs a `rationale` saying why the split was wrong - a proposal is its content, so a verbatim re-open is the same proposal and stays reversed. For tbox_change, list the T-Box types you define/change in `affected_types` ({target: \"entity\"|\"relation\", name}) so the viewer can highlight the affected nodes/edges when the proposal is previewed."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
         // Map each affected type's string axis to the typed vocabulary (mirror define_type).

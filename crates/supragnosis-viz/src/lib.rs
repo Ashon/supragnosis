@@ -298,6 +298,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // The opened proposal then rides the normal accept flow in the proposals panel (IR2).
         "/api/proposal" => proposal_response(engine, query),
         "/api/propose_merge" => propose_merge_response(engine, query),
+        "/api/propose_split" => propose_split_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         "/api/about" => about_response(),
         // The observation log (source of truth, Principle 1), newest-first; `entity=<id>` narrows to
@@ -310,7 +311,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/workspaces, /api/observations, /api/explain, or /api/events",
+                "unknown path - try /, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/propose_split, /api/workspaces, /api/observations, /api/explain, or /api/events",
             ),
         },
     }
@@ -781,6 +782,57 @@ fn reify_response(engine: &Engine, query: &str) -> Response {
                 "relations": out.relations,
             })
             .to_string(),
+        },
+        Err(e) => Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(&e.to_string()),
+        },
+    }
+}
+
+/// `/api/propose_split?merge=<proposal id>[&workspace=<ws>]` - open an entity_split to reverse a
+/// merge that already committed (unmerge.md). Like `propose_merge` this only OPENS the proposal; the
+/// human accepts it in the proposals panel, so a reversal is as gated as the merge it undoes (P23).
+///
+/// The rationale is fixed rather than free-text for the reason `propose_merge`'s is: a proposal is an
+/// immutable observation, and what it says about its own provenance must be true and must not be
+/// shaped by the client (Principles 2, 18).
+fn propose_split_response(engine: &Engine, query: &str) -> Response {
+    let merge = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("merge="))
+        .map(percent_decode)
+        .filter(|s| !s.is_empty());
+    let workspace = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("workspace="))
+        .map(percent_decode)
+        .filter(|s| !s.is_empty());
+    let Some(merge) = merge else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(
+                "propose_split needs ?merge=<proposal id> (the entity_merge being reversed)",
+            ),
+        };
+    };
+    match engine.propose(supragnosis_engine::ProposeInput {
+        workspace: write_workspace(workspace),
+        kind: "entity_split".into(),
+        targets: vec![merge],
+        into: None,
+        tier: None,
+        rationale: Some("console reversal of an accepted merge".into()),
+        affected_types: Vec::new(),
+        source_ref: None,
+        on_behalf_of: None,
+    }) {
+        Ok(id) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::json!({ "proposal_id": id }).to_string(),
         },
         Err(e) => Response {
             status: "400 Bad Request",

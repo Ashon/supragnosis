@@ -936,6 +936,11 @@ async function refreshCuration() {
 function nameOf(id) { const n = nodeById(id); return n ? n.name : "(" + id.slice(0, 8) + ")"; }
 function renderProposals() {
   const open = proposals.filter(p => p.state === "open");
+  // Merges a committed split has already taken back. Derived from the proposal list itself rather
+  // than tracked, so it cannot disagree with what the engine forwards.
+  const reversedMerges = new Set(
+    proposals.filter(p => p.kind === "entity_split" && p.state === "merged")
+      .flatMap(p => p.targets || []));
   propCtEl.textContent = open.length || (proposals.length ? proposals.length : "");
   if (!proposals.length) { proposalsBodyEl.innerHTML = '<div class="empty">no proposals - open one with the propose tool, or from a merge candidate</div>'; return; }
   const chip = (id, into) => `<span class="nchip${id === into ? " into" : ""}" data-id="${esc(id)}" title="focus ${esc(nameOf(id))}${id === into ? " (canonical / into)" : ""}">${esc(nameOf(id))}</span>`;
@@ -958,6 +963,12 @@ function renderProposals() {
       html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}"${blocked ? " disabled title=\"a blocking check fails - the fold would refuse this merge\"" : ""}>accept</button>`
         + `<button data-act="reject" data-id="${esc(p.id)}">reject</button></div>`;
     }
+    // A committed merge can be taken back (unmerge.md). This only OPENS the entity_split - the
+    // reversal is as gated as the merge was - and it is offered only where it means something:
+    // a merge that is actually forwarding, and not one already reversed.
+    if (p.kind === "entity_merge" && p.state === "merged" && !reversedMerges.has(p.id)) {
+      html += `<div class="pacts"><button data-act="split" data-id="${esc(p.id)}" title="open a proposal to reverse this merge - the folded entities separate again">un-merge</button></div>`;
+    }
     html += `</div>`;
   }
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
@@ -974,6 +985,12 @@ function renderProposals() {
     b.onclick = async (ev) => {
       ev.stopPropagation();
       const ws = wsInput.value.trim();
+      if (b.dataset.act === "split") {
+        const sq = "?merge=" + encodeURIComponent(b.dataset.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+        try { await fetch("/api/propose_split" + sq, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
+        refreshProposals();
+        return;
+      }
       const q = "?proposal=" + encodeURIComponent(b.dataset.id) + "&decision=" + b.dataset.act + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
       // No CSRF header needed: the socket (0600) admits no third-party origin - this page, proxied
       // into the desktop shell, is the only one on the surface - so there is no attacker origin for
