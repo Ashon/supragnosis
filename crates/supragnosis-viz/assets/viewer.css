@@ -436,7 +436,13 @@
   #settings .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
                     padding:9px 12px; border-bottom:1px solid var(--line-soft); }
   #settings .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
-  #settings .fclose { padding:2px 8px; font:600 10.5px/1.6 var(--mono); }
+  /* Matches #detail/#obscard: a square hit target with a soft hover fill, not a bare glyph. */
+  #settings .fclose { width:22px; height:22px; padding:0; border:none; background:none;
+                      border-radius:5px; color:var(--muted); cursor:pointer;
+                      display:flex; align-items:center; justify-content:center;
+                      transition:color 0.15s ease, background 0.15s ease; }
+  #settings .fclose:hover { color:var(--gold-bright); background:var(--gold-glass); }
+  #settings .fclose svg { display:block; }
   /* Same visual language as the dock tabs, so the dialog reads as this application rather than a
      form that wandered in. */
   #settings .stabs { display:flex; gap:3px; padding:8px 12px 0; }

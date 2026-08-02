@@ -73,7 +73,13 @@
 <dialog id="settings">
   <form method="dialog" class="fchead">
     <span class="ftitle">settings</span>
-    <button class="fclose" title="close (Esc)">close</button>
+    <!-- Same glyph and hit target as the detail / observation card closers, so "close" looks the
+         same everywhere it appears. `method="dialog"` closes without any script. -->
+    <button class="fclose" title="close (Esc)" aria-label="close">
+      <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+        <path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </button>
   </form>
   <!-- Tab strip built in JS from one list, so a new tab is a list entry rather than markup here
        plus styling there plus a switch statement somewhere else. -->
