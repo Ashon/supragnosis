@@ -58,17 +58,24 @@
     <div class="tabpanel" data-panel="log"><div id="logBody"></div></div>
   </div>
 </aside>
-<div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
-<!-- Federation settings. The Peers panel is the monitor (health, sync drift, who checked in);
-     this is where the sharing boundary is actually changed. Native <dialog> for Esc/backdrop/focus
-     rather than a hand-rolled overlay, and every control is wired in JS - no inline handlers, so the
-     page stays clean under the CSP the network read tier will need (federation.md 6d). -->
-<dialog id="fedcfg">
+<div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span>
+  <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
+       being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->
+  <button id="settingsBtn" title="settings" aria-label="settings">
+    <svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="2.6"/><path d="M9 1.6v2M9 14.4v2M16.4 9h-2M3.6 9h-2M14.23 3.77l-1.41 1.41M5.18 12.82l-1.41 1.41M14.23 14.23l-1.41-1.41M5.18 5.18L3.77 3.77"/></svg>
+  </button>
+</div>
+<!-- Settings. One dialog, composed of sections - federation is the first, and the seam is where the
+     next one goes. The Peers panel next door stays the monitor (health, sync drift, who checked in);
+     this is where things are changed. Native <dialog> for Esc/backdrop/focus rather than another
+     hand-rolled overlay, and every control is wired in JS - no inline handlers, so the page stays
+     clean under the CSP the network read tier will need (federation.md 6d). -->
+<dialog id="settings">
   <form method="dialog" class="fchead">
-    <span class="ftitle">federation</span>
+    <span class="ftitle">settings</span>
     <button class="fclose" title="close (Esc)">close</button>
   </form>
-  <div id="fedcfgBody"></div>
+  <div id="settingsBody"></div>
 </dialog>
 <div id="tip"></div>
 <!-- Minimap (map-tool convention): whole-graph overview + viewport rectangle, docked at the

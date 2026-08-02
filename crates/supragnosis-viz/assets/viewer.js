@@ -316,8 +316,7 @@ async function refreshPeers() {
       ct.textContent = "";
       return;
     }
-    let html = `<div class="hint">this node: ${esc(String(f.node_id || "").slice(0, 16))} (${esc(f.role || "client")})`
-      + ` &middot; <button class="fedcfgOpen" title="manage what each peer may read">settings</button></div>`;
+    let html = `<div class="hint">this node: ${esc(String(f.node_id || "").slice(0, 16))} (${esc(f.role || "client")})</div>`;
     const hubs = f.servers || [];
     if (hubs.length) {
       html += `<div class="fsec">Hubs</div>`;
@@ -348,9 +347,6 @@ async function refreshPeers() {
     }
     // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
     host.innerHTML = html;
-    // Wired here rather than as an inline attribute: the page must stay free of inline handlers for
-    // the CSP the network read tier will need (federation.md 6d).
-    host.querySelectorAll(".fedcfgOpen").forEach(b => { b.onclick = openFedConfig; });
     const healthy = hubs.filter(s => s.healthy).length;
     ct.textContent = hubs.length ? `${healthy}/${hubs.length}` : (peers.length || "");
   } catch (e) {
@@ -358,8 +354,12 @@ async function refreshPeers() {
   }
 }
 
-// Federation settings dialog: where the sharing boundary is CHANGED. The Peers panel next door is
-// the monitor - health, sync drift, who checked in - and stays read-only; this is the acting surface.
+// Settings dialog. One composer, one section per topic - federation is the first, and adding the next
+// is adding a render function to the list, not another dialog. It hangs off the status bar rather than
+// a dock panel because it is not about the graph being viewed.
+//
+// The federation section is where the sharing boundary is CHANGED. The Peers panel next door is the
+// monitor - health, sync drift, who checked in - and stays read-only; this is the acting surface.
 //
 // It only narrows. A grant is a chip you can drop, and there is no field to type a wider set into, so
 // "widen" is not expressible here at all (the server refuses it too - federation.md 6a - but a UI
@@ -371,8 +371,19 @@ async function refreshPeers() {
 // confirm(), which blocks the webview and looks nothing like the rest of the page.
 let fedCfgArmed = null;   // "<node_id>\u0000<workspace>" of the chip awaiting its second click
 
-async function renderFedConfig() {
-  const host = document.getElementById("fedcfgBody");
+async function renderSettings() {
+  const host = document.getElementById("settingsBody");
+  host.textContent = "";
+  // Each section owns its own fetch and its own failure - one unreachable surface must not blank the
+  // whole dialog. Append a section function here to add a topic.
+  for (const section of [renderFedSection]) {
+    const el = document.createElement("div");
+    host.appendChild(el);
+    await section(el);
+  }
+}
+
+async function renderFedSection(host) {
   let f;
   try {
     f = await (await fetch("/api/federation", { cache: "no-store" })).json();
@@ -443,7 +454,7 @@ async function renderFedConfig() {
     el.onclick = async () => {
       const node = el.getAttribute("data-node"), ws = el.getAttribute("data-ws");
       const key = node + "\u0000" + ws;
-      if (fedCfgArmed !== key) { fedCfgArmed = key; renderFedConfig(); return; }
+      if (fedCfgArmed !== key) { fedCfgArmed = key; renderSettings(); return; }
       fedCfgArmed = null;
       const row = (admitted.find(a => a.node_id === node) || {}).shared_workspaces || [];
       const keep = row.filter(w => w !== ws);
@@ -458,17 +469,17 @@ async function renderFedConfig() {
           host.appendChild(err);
         }
       } catch (e) { /* the re-render below shows the unchanged state */ }
-      renderFedConfig();
+      renderSettings();
       refreshPeers();
     };
   });
 }
 
-function openFedConfig() {
-  const d = document.getElementById("fedcfg");
+function openSettings() {
+  const d = document.getElementById("settings");
   if (!d) return;
   fedCfgArmed = null;
-  renderFedConfig();
+  renderSettings();
   d.showModal();
   // A chip left armed across a close would commit on the next stray click.
   d.onclose = () => { fedCfgArmed = null; };
@@ -2609,6 +2620,7 @@ document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; 
 document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; e.currentTarget.classList.toggle("on", showFootprint); };
 document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e.currentTarget.classList.toggle("on", showPulses); };
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
+document.getElementById("settingsBtn").onclick = openSettings;
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
 
 // Restore the workspace selection from the URL (deep link / reload) before the first poll.
