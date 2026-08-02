@@ -29,7 +29,8 @@ over **MCP** - and humans govern what becomes canon.
 - Docs: architecture -> [`docs/architecture.md`](docs/architecture.md), design principles ->
   [`docs/principles.md`](docs/principles.md), proposal workflow ->
   [`docs/proposal-workflow.md`](docs/proposal-workflow.md), federation ->
-  [`docs/federation.md`](docs/federation.md), belief resolution (M3a) ->
+  [`docs/federation.md`](docs/federation.md), store migration ->
+  [`docs/store-migration.md`](docs/store-migration.md), belief resolution (M3a) ->
   [`docs/resolution.md`](docs/resolution.md), identity resolution (M3b spec) ->
   [`docs/resolution-identity.md`](docs/resolution-identity.md)
 
@@ -181,6 +182,9 @@ supragnosis migrate-store --dry-run  # what would be copied
 supragnosis migrate-store            # copy the log, then replay it into ~/.supragnosis/redb
 supragnosis start --store redb       # or SUPRAGNOSIS_STORE=redb
 ```
+Full procedure, verification and rollback: [`docs/store-migration.md`](docs/store-migration.md) -
+read Section 5 first if the store predates v0.1.x, since a replay reproduces exactly what the log
+asserts and early-era rows written outside it do not come across.
 - Only the **observation log** is copied; the entity/relation graph is a projection of it, so it is
   rebuilt by replay rather than transferred (Principle 1/16).
 - The Cozo store is opened read-only and left untouched, so this is reversible: drop the `--store
