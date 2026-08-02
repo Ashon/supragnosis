@@ -24,9 +24,9 @@
         <key>SUPRAGNOSIS_VIZ_SOCK</key>
         <string>/Users/ashon.lee/.supragnosis/viz.sock</string>
         <key>SUPRAGNOSIS_STORE</key>
-        <string>cozo</string>
+        <string>redb</string>
         <key>SUPRAGNOSIS_DATA_DIR</key>
-        <string>/Users/ashon.lee/.supragnosis/db</string>
+        <string>/Users/ashon.lee/.supragnosis/redb</string>
         <key>SUPRAGNOSIS_WORKSPACE</key>
         <string>supragnosis</string>
         <key>SUPRAGNOSIS_HOST</key>

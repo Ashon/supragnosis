@@ -143,6 +143,7 @@ fn main() -> Result<()> {
 }
 
 /// Resolved run configuration.
+#[derive(Clone)]
 struct Config {
     host: String,
     workspace: String,
@@ -309,8 +310,15 @@ fn legacy_cozo_store_at(data_dir: &str) -> Option<std::path::PathBuf> {
 /// Both conditions are required. Once the redb store exists the migration has run, and the Cozo
 /// directory is a rollback artifact the operator may keep as long as they like - blocking on it then
 /// would punish exactly the cautious path.
+///
+/// The skip is keyed on the in-memory store and nothing else, because that is the only value
+/// [`build_engine`] treats as not-redb: everything it does not recognise opens redb. Keyed the other
+/// way - skip unless the kind is exactly `redb` - a stale `SUPRAGNOSIS_STORE=cozo` walked past this
+/// guard and then opened redb anyway, inside the legacy directory, which is precisely the empty
+/// store beside a full one that this function exists to prevent. A configuration naming a store this
+/// build dropped has to reach the refusal, not slip under it.
 fn refuse_unmigrated_store(cfg: &Config) -> Result<()> {
-    if cfg.store_kind != "redb" {
+    if matches!(cfg.store_kind.as_str(), "mem" | "memory") {
         return Ok(());
     }
     if redb_path(&cfg.data_dir).exists() {
@@ -1819,6 +1827,21 @@ mod legacy_store_guard_tests {
         assert!(err.contains("v0.1.21"), "names the release that can read it: {err}");
         assert!(err.contains("migrate-store"), "names the command: {err}");
         assert!(err.contains("not lost"), "says the knowledge survives: {err}");
+
+        // A config still naming the dropped store must reach the same refusal. It used to skip the
+        // guard and then open redb inside the legacy directory - the exact silent-empty-start this
+        // guards against, reached by the one setting most likely to survive an upgrade.
+        let stale = Config { store_kind: "cozo".into(), ..cfg.clone() };
+        assert!(
+            refuse_unmigrated_store(&stale).is_err(),
+            "a stale store kind must not walk past the migration guard"
+        );
+        // The in-memory store touches no directory, so it is the one kind that legitimately skips.
+        let mem = Config { store_kind: "mem".into(), ..cfg.clone() };
+        assert!(
+            refuse_unmigrated_store(&mem).is_ok(),
+            "the in-memory store opens nothing on disk"
+        );
 
         // Once the redb store exists the migration has run; the leftover directory must not block.
         std::fs::create_dir_all(home.join(".supragnosis/redb")).expect("redb dir");
