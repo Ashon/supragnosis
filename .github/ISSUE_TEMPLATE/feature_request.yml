@@ -1,0 +1,59 @@
+name: Feature request
+description: Propose a capability that does not exist yet
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: [architecture.md](https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md)
+        Section 14 lists what is deliberately deferred and which milestone repays it. If your
+        request is already there, a comment on the existing issue is more useful than a new one.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        What are you trying to do that you cannot do today? Describe the situation, not the
+        solution. A concrete instance beats a general capability.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: Optional. If you already have a shape in mind, describe it.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface would carry it
+      options:
+        - A new or changed MCP tool
+        - A CLI subcommand
+        - The viewer
+        - Store or engine internals
+        - Federation
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: principles
+    attributes:
+      label: Principles it touches
+      description: |
+        Optional, and genuinely optional: if you have read
+        [principles.md](https://github.com/Ashon/supragnosis/blob/main/docs/principles.md)
+        and think this bumps into a clause, say which. If you have not, skip this. It is a
+        question for review, not a barrier to filing.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: |
+        Composing existing tools is the first thing review will ask about, so saying what you
+        already tried saves a round trip.
