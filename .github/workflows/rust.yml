@@ -33,6 +33,12 @@ on:
       # gate - the gate has to run when they change, or the coupling is one-way again.
       - "docs/*.md"
 
+# A gate reads the code and reports; it never writes to the repository. Declaring that explicitly
+# means the token this job hands to third-party actions (the toolchain installer, the cache) cannot
+# push, tag or open anything, whatever the repository-wide default happens to be set to.
+permissions:
+  contents: read
+
 # A newer push supersedes an in-flight run on the same ref - the gate should report on the tip, not
 # burn minutes finishing an answer about a commit nobody is waiting on any more.
 concurrency:
