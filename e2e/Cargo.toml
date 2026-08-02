@@ -24,7 +24,7 @@ supragnosis-core.workspace = true
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
 # Renders markdown reports to HTML in the index dashboard (with table extension).
-pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
 [dev-dependencies]
 # In physics_coding_eval, inspects the design fingerprint (numeric/formula patterns) of the generated code.
