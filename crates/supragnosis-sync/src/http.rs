@@ -15,7 +15,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use supragnosis_core::{AttestationEvent, AssertionStore, SearchHit, VersionVector};
+use supragnosis_core::{AssertionStore, AttestationEvent, SearchHit, VersionVector};
 
 use crate::{export_delta, version_vector, SyncError, SyncNode};
 
@@ -41,7 +41,9 @@ pub struct AllowEntry {
 /// store failures (P5: surfaced, never silent).
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
-    #[error("refusing to bind {addr}: {reason} (F10: non-loopback needs TLS + a non-empty allowlist)")]
+    #[error(
+        "refusing to bind {addr}: {reason} (F10: non-loopback needs TLS + a non-empty allowlist)"
+    )]
     Bind { addr: SocketAddr, reason: String },
     #[error("tls setup failed: {0}")]
     Tls(String),
@@ -57,7 +59,11 @@ pub enum TransportError {
 
 /// F10 bind guard: loopback is always fine (local trust surface); a non-loopback bind demands both
 /// in-process TLS and a non-empty allowlist. This mirrors, and never relaxes, the MCP/viz guard.
-pub fn validate_bind(addr: &SocketAddr, tls: bool, allowlist_len: usize) -> Result<(), TransportError> {
+pub fn validate_bind(
+    addr: &SocketAddr,
+    tls: bool,
+    allowlist_len: usize,
+) -> Result<(), TransportError> {
     if addr.ip().is_loopback() {
         return Ok(());
     }
@@ -183,10 +189,7 @@ pub struct Admitted {
 impl PeerDirectory {
     pub fn new(allowlist: Vec<AllowEntry>, self_node_id: &str, self_public_key_hex: &str) -> Self {
         let own = (self_node_id.to_string(), self_public_key_hex.to_string());
-        Self {
-            inner: std::sync::RwLock::new(Admitted::derive(allowlist, &own.0, &own.1)),
-            own,
-        }
+        Self { inner: std::sync::RwLock::new(Admitted::derive(allowlist, &own.0, &own.1)), own }
     }
 
     /// The current view. Cheap enough to clone per request at any allowlist an operator would hand-
@@ -204,8 +207,10 @@ impl PeerDirectory {
 
 impl Admitted {
     fn derive(allowlist: Vec<AllowEntry>, self_node_id: &str, self_public_key_hex: &str) -> Self {
-        let mut origin_keys: BTreeMap<String, String> =
-            allowlist.iter().map(|e| (e.node_id.clone(), e.public_key_hex.clone())).collect();
+        let mut origin_keys: BTreeMap<String, String> = allowlist
+            .iter()
+            .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
+            .collect();
         origin_keys.insert(self_node_id.to_string(), self_public_key_hex.to_string());
         Self { allowlist, origin_keys }
     }
@@ -224,7 +229,11 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(store: Arc<dyn AssertionStore>, node: Arc<SyncNode>, allowlist: Vec<AllowEntry>) -> Self {
+    pub fn new(
+        store: Arc<dyn AssertionStore>,
+        node: Arc<SyncNode>,
+        allowlist: Vec<AllowEntry>,
+    ) -> Self {
         let peers = Arc::new(PeerDirectory::new(allowlist, node.node_id(), &node.public_key_hex()));
         Self {
             store,
@@ -245,8 +254,20 @@ impl ServerState {
 
     /// Builds state around an existing directory, so the wiring layer keeps the handle it will hand
     /// to a management surface - the same shape as the known-peer registry in [`Hooks`].
-    pub fn with_directory(store: Arc<dyn AssertionStore>, node: Arc<SyncNode>, peers: Arc<PeerDirectory>) -> Self {
-        Self { store, node, peers, on_applied: None, on_activity: None, on_search: None, registry: None }
+    pub fn with_directory(
+        store: Arc<dyn AssertionStore>,
+        node: Arc<SyncNode>,
+        peers: Arc<PeerDirectory>,
+    ) -> Self {
+        Self {
+            store,
+            node,
+            peers,
+            on_applied: None,
+            on_activity: None,
+            on_search: None,
+            registry: None,
+        }
     }
 
     /// Injects the post-apply re-materialization hook (the engine's reproject).
@@ -582,12 +603,11 @@ pub async fn serve(
             // (reqwest) compiled in, rustls refuses to auto-select. Idempotent - a second install
             // attempt is fine to ignore.
             let _ = rustls::crypto::ring::default_provider().install_default();
-            let cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(paths.cert_pem, paths.key_pem)
-                .await
-                .map_err(|e| TransportError::Tls(e.to_string()))?;
-            axum_server::bind_rustls(listen, cfg)
-                .serve(app.into_make_service())
-                .await?;
+            let cfg =
+                axum_server::tls_rustls::RustlsConfig::from_pem_file(paths.cert_pem, paths.key_pem)
+                    .await
+                    .map_err(|e| TransportError::Tls(e.to_string()))?;
+            axum_server::bind_rustls(listen, cfg).serve(app.into_make_service()).await?;
         }
         None => {
             axum_server::bind(listen).serve(app.into_make_service()).await?;
@@ -615,13 +635,19 @@ pub struct SyncClient {
 impl SyncClient {
     /// `insecure_tls` accepts a self-signed server certificate (an internal-VM hub before a real CA);
     /// the signature layer (F6) still authenticates content end-to-end even then.
-    pub fn new(base_url: impl Into<String>, token: impl Into<String>, insecure_tls: bool) -> Result<Self, TransportError> {
+    pub fn new(
+        base_url: impl Into<String>,
+        token: impl Into<String>,
+        insecure_tls: bool,
+    ) -> Result<Self, TransportError> {
         // Same CryptoProvider pin as the server side (idempotent) - the client dials HTTPS hubs.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let http = reqwest::Client::builder()
-            .danger_accept_invalid_certs(insecure_tls)
-            .build()?;
-        Ok(Self { base: base_url.into().trim_end_matches('/').to_string(), token: token.into(), http })
+        let http = reqwest::Client::builder().danger_accept_invalid_certs(insecure_tls).build()?;
+        Ok(Self {
+            base: base_url.into().trim_end_matches('/').to_string(),
+            token: token.into(),
+            http,
+        })
     }
 
     async fn call<Req: Serialize, Resp: for<'de> Deserialize<'de>>(
@@ -647,17 +673,26 @@ impl SyncClient {
     }
 
     pub async fn advertise(&self, workspace: &str) -> Result<AdvertiseResp, TransportError> {
-        self.call("/sync/advertise", &AdvertiseReq { workspace: workspace.into() }).await
+        self.call("/sync/advertise", &AdvertiseReq { workspace: workspace.into() })
+            .await
     }
 
-    pub async fn pull(&self, workspace: &str, since: &VersionVector) -> Result<Vec<AttestationEvent>, TransportError> {
+    pub async fn pull(
+        &self,
+        workspace: &str,
+        since: &VersionVector,
+    ) -> Result<Vec<AttestationEvent>, TransportError> {
         let resp: PullResp = self
             .call("/sync/pull", &PullReq { workspace: workspace.into(), since: since.clone() })
             .await?;
         Ok(resp.events)
     }
 
-    pub async fn push(&self, workspace: &str, events: Vec<AttestationEvent>) -> Result<PushResp, TransportError> {
+    pub async fn push(
+        &self,
+        workspace: &str,
+        events: Vec<AttestationEvent>,
+    ) -> Result<PushResp, TransportError> {
         self.call("/sync/push", &PushReq { workspace: workspace.into(), events }).await
     }
 
@@ -668,8 +703,17 @@ impl SyncClient {
 
     /// Federated recall: search the SERVER's ontology (its recall surface, mode-labeled). Results
     /// are remote ids - pull the workspace to materialize them locally before traverse/get_entity.
-    pub async fn search(&self, workspace: &str, query: &str, limit: usize) -> Result<SearchResp, TransportError> {
-        self.call("/sync/search", &SearchReq { workspace: workspace.into(), query: query.into(), limit }).await
+    pub async fn search(
+        &self,
+        workspace: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchResp, TransportError> {
+        self.call(
+            "/sync/search",
+            &SearchReq { workspace: workspace.into(), query: query.into(), limit },
+        )
+        .await
     }
 
     /// One full sync round for a workspace: backfill-stamp local knowledge, push what the server
@@ -743,7 +787,9 @@ mod tests {
         let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
         let peer = SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]));
-        hub_store.add_observation(Observation::new("hub fact".into(), prov("ws", 1))).unwrap();
+        hub_store
+            .add_observation(Observation::new("hub fact".into(), prov("ws", 1)))
+            .unwrap();
 
         let state = Arc::new(ServerState::new(
             hub_store.clone(),
@@ -767,9 +813,13 @@ mod tests {
         // Revoke, on the running server.
         peers.replace(Vec::new());
 
-        let err = client.pull("ws", &VersionVector::default()).await.expect_err("must be refused now");
+        let err = client
+            .pull("ws", &VersionVector::default())
+            .await
+            .expect_err("must be refused now");
         assert!(
-            err.to_string().contains("401") || err.to_string().to_lowercase().contains("unauthorized"),
+            err.to_string().contains("401")
+                || err.to_string().to_lowercase().contains("unauthorized"),
             "a removed peer is turned away at the door: {err}"
         );
         assert!(
@@ -803,7 +853,10 @@ mod tests {
         let pub_addr: SocketAddr = "0.0.0.0:7420".parse().unwrap();
         assert!(validate_bind(&lo, false, 0).is_ok(), "loopback needs neither TLS nor allowlist");
         assert!(validate_bind(&pub_addr, false, 1).is_err(), "non-loopback without TLS refused");
-        assert!(validate_bind(&pub_addr, true, 0).is_err(), "non-loopback with empty allowlist refused");
+        assert!(
+            validate_bind(&pub_addr, true, 0).is_err(),
+            "non-loopback with empty allowlist refused"
+        );
         assert!(validate_bind(&pub_addr, true, 1).is_ok());
     }
 
@@ -845,11 +898,15 @@ mod tests {
 
         let a_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let a_node = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
-        a_store.add_observation(Observation::new("alpha".into(), prov("ws", 10))).unwrap();
+        a_store
+            .add_observation(Observation::new("alpha".into(), prov("ws", 10)))
+            .unwrap();
 
         let b_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let b_node = SyncNode::new(NodeIdentity::from_secret_bytes([2u8; 32]));
-        b_store.add_observation(Observation::new("beta".into(), prov("ws", 20))).unwrap();
+        b_store
+            .add_observation(Observation::new("beta".into(), prov("ws", 20)))
+            .unwrap();
 
         let allow = vec![entry(&a_node, "token-a", &["ws"]), entry(&b_node, "token-b", &["ws"])];
         let state = Arc::new(ServerState::new(hub_store.clone(), hub_node.clone(), allow));
@@ -870,12 +927,8 @@ mod tests {
 
         // All three logs converge to the same 3 observations (F5, log level).
         let ids = |s: &Arc<dyn AssertionStore>| {
-            let mut v: Vec<String> = s
-                .all_observations(Some("ws"))
-                .unwrap()
-                .into_iter()
-                .map(|o| o.id)
-                .collect();
+            let mut v: Vec<String> =
+                s.all_observations(Some("ws")).unwrap().into_iter().map(|o| o.id).collect();
             v.sort();
             v
         };

@@ -120,10 +120,7 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
         "docs/resolution-identity.md",
         include_str!("../../../docs/resolution-identity.md"),
     ),
-    (
-        "docs/proposal-workflow.md",
-        include_str!("../../../docs/proposal-workflow.md"),
-    ),
+    ("docs/proposal-workflow.md", include_str!("../../../docs/proposal-workflow.md")),
     ("docs/federation.md", include_str!("../../../docs/federation.md")),
     // Names no tests yet - nothing in it is built. Listed now so that the first "guarded by <test>"
     // sentence it grows is checked from the day it is written, rather than on the day someone
@@ -730,10 +727,7 @@ fn declares(name: &str) -> Declared {
             }
             let found = if attrs.iter().any(|a| a.starts_with("#[ignore")) {
                 Declared::Ignored
-            } else if attrs
-                .iter()
-                .any(|a| *a == "#[test]" || a.starts_with("#[tokio::test"))
-            {
+            } else if attrs.iter().any(|a| *a == "#[test]" || a.starts_with("#[tokio::test")) {
                 Declared::Running
             } else {
                 Declared::NotATest
@@ -856,10 +850,7 @@ fn doc_claims() -> Vec<DocClaim> {
         // qualifies. The unit that matches how the document reads is the paragraph: the contiguous
         // run of non-blank lines around this one.
         let paragraph = |i: usize| -> String {
-            let start = lines[..i]
-                .iter()
-                .rposition(|l| l.trim().is_empty())
-                .map_or(0, |p| p + 1);
+            let start = lines[..i].iter().rposition(|l| l.trim().is_empty()).map_or(0, |p| p + 1);
             let end = lines[i..]
                 .iter()
                 .position(|l| l.trim().is_empty())
@@ -873,13 +864,9 @@ fn doc_claims() -> Vec<DocClaim> {
             // running prose there is no such column, so the paragraph is read instead; that is
             // looser, and it is the price of letting the document write "the M5 test `x` lands
             // there" without contorting the sentence.
-            let milestoned =
-                |s: &str| ["M3", "M4", "M5", "M6"].iter().any(|m| s.contains(m));
+            let milestoned = |s: &str| ["M3", "M4", "M5", "M6"].iter().any(|m| s.contains(m));
             let planned = if line.trim_start().starts_with('|') {
-                line.rsplit('|')
-                    .map(str::trim)
-                    .find(|c| !c.is_empty())
-                    .is_some_and(milestoned)
+                line.rsplit('|').map(str::trim).find(|c| !c.is_empty()).is_some_and(milestoned)
             } else {
                 milestoned(&paragraph(i))
             };
@@ -948,7 +935,9 @@ fn design_docs_name_tests_that_run() {
 #[test]
 fn structural_and_deferred_states_are_justified() {
     let repayment_named = |why: &str| {
-        ["M3", "M4", "M5", "M6", "Revisit", "incremental"].iter().any(|m| why.contains(m))
+        ["M3", "M4", "M5", "M6", "Revisit", "incremental"]
+            .iter()
+            .any(|m| why.contains(m))
     };
     for (n, name, clauses) in REGISTRY {
         for cl in *clauses {
@@ -1021,7 +1010,10 @@ fn report_principle_coverage() {
          {pinned} pinned-but-unmet / {unguarded} unmet-and-unpinned",
         REGISTRY.len()
     );
-    println!("\nWhat the principles ask for and this system does not do yet ({}):", owed.len());
+    println!(
+        "\nWhat the principles ask for and this system does not do yet ({}):",
+        owed.len()
+    );
     for o in &owed {
         println!("  {o}");
     }

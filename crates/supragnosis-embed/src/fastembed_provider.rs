@@ -40,10 +40,7 @@ impl FastEmbedProvider {
                 .with_cache_dir(model_cache_dir()),
         )
         .map_err(|e| EmbedError::Provider(e.to_string()))?;
-        Ok(Self {
-            model,
-            dims: BGE_SMALL_EN_V15_DIMS,
-        })
+        Ok(Self { model, dims: BGE_SMALL_EN_V15_DIMS })
     }
 }
 
@@ -58,9 +55,7 @@ impl EmbeddingProvider for FastEmbedProvider {
 
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         let docs: Vec<&str> = texts.to_vec();
-        self.model
-            .embed(docs, None)
-            .map_err(|e| EmbedError::Provider(e.to_string()))
+        self.model.embed(docs, None).map_err(|e| EmbedError::Provider(e.to_string()))
     }
 }
 

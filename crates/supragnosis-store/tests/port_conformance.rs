@@ -24,9 +24,8 @@
 use std::path::PathBuf;
 
 use supragnosis_core::{
-    AssertionStore,
-    Entity, Hlc, KnowledgeStore, Observation, Provenance, Relation, SearchHit, SearchHitKind,
-    SyncMeta, TrustTier, VersionVector,
+    AssertionStore, Entity, Hlc, KnowledgeStore, Observation, Provenance, Relation, SearchHit,
+    SearchHitKind, SyncMeta, TrustTier, VersionVector,
 };
 use supragnosis_store::{InMemoryStore, RedbStore};
 
@@ -68,10 +67,8 @@ fn tmp_dir(tag: &str) -> PathBuf {
         .expect("system time before the unix epoch")
         .as_nanos();
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "supragnosis-conformance-{tag}-{}-{nanos}-{seq}",
-        std::process::id()
-    ))
+    std::env::temp_dir()
+        .join(format!("supragnosis-conformance-{tag}-{}-{nanos}-{seq}", std::process::id()))
 }
 
 /// One adapter's entry in the roster: its name, how to stand a fresh one up, and whether it claims
@@ -180,10 +177,7 @@ fn ent(name: &str) -> Entity {
 }
 
 fn rel_in(workspace: &str, from: &str, kind: &str, to: &str) -> Relation {
-    let (from, to) = (
-        Entity::make_id(workspace, from),
-        Entity::make_id(workspace, to),
-    );
+    let (from, to) = (Entity::make_id(workspace, from), Entity::make_id(workspace, to));
     Relation {
         id: Relation::make_id(&from, kind, &to),
         from,
@@ -236,8 +230,14 @@ fn absence_reads_as_absence_never_as_error() {
         assert!(store.get_observation("no-such-observation").expect("get_observation").is_none());
         assert!(store.relations_of("no-such-entity").expect("relations_of").is_empty());
         assert!(store.all_entities(Some("no-such-workspace")).expect("all_entities").is_empty());
-        assert!(store.all_relations(Some("no-such-workspace")).expect("all_relations").is_empty());
-        assert!(store.all_observations(Some("no-such-workspace")).expect("all_observations").is_empty());
+        assert!(store
+            .all_relations(Some("no-such-workspace"))
+            .expect("all_relations")
+            .is_empty());
+        assert!(store
+            .all_observations(Some("no-such-workspace"))
+            .expect("all_observations")
+            .is_empty());
         assert!(store.search("nothing matches this", None, 10).expect("search").is_empty());
         assert!(store.traverse("no-such-entity", 3, 10).expect("traverse").is_empty());
     });
@@ -256,7 +256,10 @@ fn absence_reads_as_absence_never_as_error() {
 fn reobservation_absorbs_attestations_and_lineage() {
     for_each_adapter(|store| {
         let make = |host: &str, derived: &str| {
-            let mut o = Observation::new("the same fact".into(), Provenance { host: host.into(), ..prov() });
+            let mut o = Observation::new(
+                "the same fact".into(),
+                Provenance { host: host.into(), ..prov() },
+            );
             o.derived_from = vec![derived.into()];
             o
         };
@@ -301,7 +304,10 @@ fn reobservation_converges_regardless_of_arrival_order() {
         let forward = forward.get_observation(&id).expect("get").expect("row");
 
         let key = |o: &Observation| -> Vec<(String, Option<u32>)> {
-            o.provenance.iter().map(|p| (p.host.clone(), p.confidence.map(f32::to_bits))).collect()
+            o.provenance
+                .iter()
+                .map(|p| (p.host.clone(), p.confidence.map(f32::to_bits)))
+                .collect()
         };
         assert_eq!(key(&reversed), key(&forward), "arrival order must not survive into the row");
     });
@@ -376,12 +382,17 @@ fn relations_of_returns_both_directions_ordered_by_id() {
 fn search_scopes_by_workspace() {
     for_each_adapter(|store| {
         store.add_observation(obs_in(WS, "rust ownership notes")).expect("ws1");
-        store.add_observation(obs_in(WS_OTHER, "rust ownership notes elsewhere")).expect("ws2");
+        store
+            .add_observation(obs_in(WS_OTHER, "rust ownership notes elsewhere"))
+            .expect("ws2");
 
         assert_eq!(store.search("ownership", Some(WS), 10).expect("scoped").len(), 1);
         assert_eq!(store.search("ownership", Some(WS_OTHER), 10).expect("scoped").len(), 1);
         assert_eq!(store.search("ownership", None, 10).expect("global").len(), 2);
-        assert!(store.search("ownership", Some("ws-absent"), 10).expect("empty scope").is_empty());
+        assert!(store
+            .search("ownership", Some("ws-absent"), 10)
+            .expect("empty scope")
+            .is_empty());
     });
 }
 
@@ -548,7 +559,9 @@ fn enumerations_filter_by_workspace() {
             store.put_entity(ent_in(ws, name)).expect("put");
         }
         store.add_relation(rel_in(WS, "alpha", "depends_on", "beta")).expect("rel ws1");
-        store.add_relation(rel_in(WS_OTHER, "gamma", "depends_on", "delta")).expect("rel ws2");
+        store
+            .add_relation(rel_in(WS_OTHER, "gamma", "depends_on", "delta"))
+            .expect("rel ws2");
         store.add_observation(obs_in(WS, "one")).expect("obs ws1");
         store.add_observation(obs_in(WS_OTHER, "two")).expect("obs ws2");
 
@@ -578,7 +591,9 @@ fn enumerations_are_ordered_by_id() {
         for i in 0..16 {
             store.put_entity(ent(&format!("node-{i}"))).expect("put");
             store.add_observation(obs(&format!("observation {i}"))).expect("obs");
-            store.add_relation(rel("node-0", "relates_to", &format!("node-{i}"))).expect("rel");
+            store
+                .add_relation(rel("node-0", "relates_to", &format!("node-{i}")))
+                .expect("rel");
         }
 
         let entities = store.all_entities(Some(WS)).expect("entities");
@@ -648,7 +663,10 @@ fn attestations_since_filters_by_version_vector() {
         vv.advance("node-a", WS, 2);
         assert!(store.attestations_since(WS, &vv).expect("delta").is_empty());
         assert!(
-            store.attestations_since(WS_OTHER, &VersionVector::default()).expect("delta").is_empty(),
+            store
+                .attestations_since(WS_OTHER, &VersionVector::default())
+                .expect("delta")
+                .is_empty(),
             "the delta read is scoped by workspace (the sharing boundary's input)"
         );
     });
@@ -677,7 +695,10 @@ fn semantic_recall_ranks_by_similarity_and_skips_unembedded() {
 
         let hits = store.search_semantic(&[1.0, 0.0, 0.0], Some(WS), 10).expect("semantic");
         if vectors == StoresVectors::No {
-            assert!(hits.is_empty(), "an adapter that declares no vector support must not invent hits");
+            assert!(
+                hits.is_empty(),
+                "an adapter that declares no vector support must not invent hits"
+            );
             return;
         }
         assert!(
@@ -692,7 +713,10 @@ fn semantic_recall_ranks_by_similarity_and_skips_unembedded() {
         assert!(ids.contains(&far_id.as_str()));
         assert!(!ids.contains(&plain_id.as_str()), "an unembedded row is not a candidate");
         assert!(
-            store.search_semantic(&[1.0, 0.0, 0.0], Some(WS_OTHER), 10).expect("scoped").is_empty(),
+            store
+                .search_semantic(&[1.0, 0.0, 0.0], Some(WS_OTHER), 10)
+                .expect("scoped")
+                .is_empty(),
             "semantic recall is workspace-scoped like every other read"
         );
     });
@@ -711,12 +735,20 @@ fn semantic_entity_recall_ranks_by_similarity() {
         store.put_entity(far).expect("far");
         store.put_entity(ent("unembedded")).expect("plain");
 
-        let hits = store.search_semantic_entities(&[1.0, 0.0, 0.0], Some(WS), 10).expect("semantic");
+        let hits = store
+            .search_semantic_entities(&[1.0, 0.0, 0.0], Some(WS), 10)
+            .expect("semantic");
         if vectors == StoresVectors::No {
-            assert!(hits.is_empty(), "an adapter that declares no vector support must not invent hits");
+            assert!(
+                hits.is_empty(),
+                "an adapter that declares no vector support must not invent hits"
+            );
             return;
         }
-        assert!(!hits.is_empty(), "a declared vector store must return the entity it was given a vector for");
+        assert!(
+            !hits.is_empty(),
+            "a declared vector store must return the entity it was given a vector for"
+        );
         assert_eq!(hits.first().map(|h| h.id.as_str()), Some(eid("near").as_str()));
         assert!(
             hits.iter().all(|h| h.kind == SearchHitKind::Entity),

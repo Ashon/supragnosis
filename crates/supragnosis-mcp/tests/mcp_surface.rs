@@ -49,10 +49,8 @@ async fn mcp_protocol_surface_end_to_end() {
     // Connect server<->client with an in-process bidirectional pipe.
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
     let server = tokio::spawn(async move {
-        let running = SupragnosisServer::new(engine)
-            .serve(server_io)
-            .await
-            .expect("server handshake");
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
         // Keep the server alive until the client finishes.
         let _ = running.waiting().await;
     });
@@ -154,11 +152,7 @@ async fn mcp_protocol_surface_end_to_end() {
         "search must find the ingested knowledge: {found}"
     );
     // The response reports the surface used (mode) (Principle 16, 4th revision) - this assembly has an embedder, so hybrid.
-    assert_eq!(
-        found["mode"].as_str(),
-        Some("hybrid"),
-        "the mode must be reported: {found}"
-    );
+    assert_eq!(found["mode"].as_str(), Some("hybrid"), "the mode must be reported: {found}");
 
     // --- 3b) empty search result: accompanied by an open-world note (Principle 5) ---
     // Hybrid returns the nearest neighbors with no similarity threshold, so we produce zero hits with an
@@ -178,9 +172,7 @@ async fn mcp_protocol_surface_end_to_end() {
         "query that must yield zero hits: {empty}"
     );
     assert!(
-        empty["note"]
-            .as_str()
-            .is_some_and(|n| n.contains("not a negation")),
+        empty["note"].as_str().is_some_and(|n| n.contains("not a negation")),
         "an empty result must carry an absence!=negation note (to prevent LLM misreading): {empty}"
     );
 
@@ -305,10 +297,8 @@ async fn mcp_resource_graph_surface() {
 
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
     let server = tokio::spawn(async move {
-        let running = SupragnosisServer::new(engine)
-            .serve(server_io)
-            .await
-            .expect("server handshake");
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
         let _ = running.waiting().await;
     });
     let client = ().serve(client_io).await.expect("client handshake");
@@ -367,17 +357,12 @@ async fn mcp_resource_graph_surface() {
     };
     let workspaces: Value = serde_json::from_str(&text).expect("workspaces resource is JSON");
     assert!(
-        workspaces
-            .as_array()
-            .is_some_and(|a| a.iter().any(|w| w == "ws")),
+        workspaces.as_array().is_some_and(|a| a.iter().any(|w| w == "ws")),
         "the workspace list must contain the ingested 'ws': {workspaces}"
     );
 
     // --- 2) list_resource_templates: templates for querying any workspace ------------------
-    let templates = client
-        .list_all_resource_templates()
-        .await
-        .expect("list templates");
+    let templates = client.list_all_resource_templates().await.expect("list templates");
     assert!(
         templates
             .iter()
@@ -404,16 +389,8 @@ async fn mcp_resource_graph_surface() {
         other => panic!("expected text resource contents, got {other:?}"),
     };
     let graph: Value = serde_json::from_str(&text).expect("graph resource is JSON");
-    assert_eq!(
-        graph["stats"]["node_count"].as_u64(),
-        Some(2),
-        "2 nodes in the graph: {graph}"
-    );
-    assert_eq!(
-        graph["stats"]["edge_count"].as_u64(),
-        Some(1),
-        "1 edge in the graph: {graph}"
-    );
+    assert_eq!(graph["stats"]["node_count"].as_u64(), Some(2), "2 nodes in the graph: {graph}");
+    assert_eq!(graph["stats"]["edge_count"].as_u64(), Some(1), "1 edge in the graph: {graph}");
     // The edge is depends_on and node names are carried in the graph.
     let names: Vec<&str> = graph["nodes"]
         .as_array()
@@ -496,10 +473,7 @@ async fn mcp_resource_graph_surface() {
 
     // --- 6) unknown URI: absence surfaces as an error (with a Principle 5 self-correction hint) ------------------
     let bad = client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: "supragnosis://nope".into(),
-        })
+        .read_resource(ReadResourceRequestParams { meta: None, uri: "supragnosis://nope".into() })
         .await;
     assert!(bad.is_err(), "an unknown resource URI must be an error");
 
@@ -516,17 +490,11 @@ async fn mcp_resource_graph_surface() {
 #[tokio::test]
 async fn empty_default_workspace_names_where_knowledge_lives() {
     // Node default is "default"; all knowledge is observed into the named workspace "supragnosis".
-    let engine = Arc::new(Engine::new(
-        Arc::new(InMemoryStore::new()),
-        "test-host",
-        "default",
-    ));
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "default"));
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
     let server = tokio::spawn(async move {
-        let running = SupragnosisServer::new(engine)
-            .serve(server_io)
-            .await
-            .expect("server handshake");
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
         let _ = running.waiting().await;
     });
     let client = ().serve(client_io).await.expect("client handshake");

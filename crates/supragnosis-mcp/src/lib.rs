@@ -292,11 +292,7 @@ pub struct SupragnosisServer {
 
 impl SupragnosisServer {
     pub fn new(engine: Arc<Engine>) -> Self {
-        Self {
-            engine,
-            sync: None,
-            tool_router: Self::tool_router(),
-        }
+        Self { engine, sync: None, tool_router: Self::tool_router() }
     }
 
     /// Attaches the federation sync wiring (M4 Phase 4) - enables the `sync_*` tools.
@@ -381,11 +377,8 @@ impl SupragnosisServer {
             // Open-world assumption (Principle 5): absence is not falsehood but unknown.
             // We do not return "not found" as an error, so the LLM does not misread absence as negation.
             Ok(Ok(None)) => {
-                self.engine.emit(Event::GetEntity {
-                    id: req.id.clone(),
-                    name: None,
-                    found: false,
-                });
+                self.engine
+                    .emit(Event::GetEntity { id: req.id.clone(), name: None, found: false });
                 serde_json::json!({
                     "found": false,
                     "id": req.id,
@@ -425,7 +418,9 @@ impl SupragnosisServer {
                         ) {
                             Ok(c) => c,
                             Err(e) => {
-                                remote_results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                                remote_results.push(
+                                    serde_json::json!({"server": server, "error": e.to_string()}),
+                                );
                                 continue;
                             }
                         };
@@ -444,8 +439,9 @@ impl SupragnosisServer {
                                     "note": "remote recall surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
                                 }));
                             }
-                            Err(e) => remote_results
-                                .push(serde_json::json!({"server": server, "error": e.to_string()})),
+                            Err(e) => remote_results.push(
+                                serde_json::json!({"server": server, "error": e.to_string()}),
+                            ),
                         }
                     }
                 }
@@ -618,10 +614,9 @@ impl SupragnosisServer {
             let engine = self.engine.clone();
             let listed = tokio::task::spawn_blocking(move || engine.workspaces()).await;
             let elsewhere: Vec<String> = match listed {
-                Ok(Ok(all)) => all
-                    .into_iter()
-                    .filter(|w| Some(w.as_str()) != scope.as_deref())
-                    .collect(),
+                Ok(Ok(all)) => {
+                    all.into_iter().filter(|w| Some(w.as_str()) != scope.as_deref()).collect()
+                }
                 // Enumeration is a diagnostic nicety, never a reason to fail the survey.
                 _ => Vec::new(),
             };
@@ -673,11 +668,7 @@ impl SupragnosisServer {
                     ))
                 }
             };
-            defs.push(EngineTypeDefInput {
-                target,
-                name: d.name,
-                description: d.description,
-            });
+            defs.push(EngineTypeDefInput { target, name: d.name, description: d.description });
         }
         let input = DefineTypeInput {
             workspace: req.workspace,
@@ -744,7 +735,14 @@ impl SupragnosisServer {
         // This is the agent-facing surface (resolution.md Section 6): the engine stamps the Agent
         // marker, capping what a merged promotion can grant. Never client-suppliable.
         match tokio::task::spawn_blocking(move || {
-            engine.review_proposal(ws, prop, dec, note, obo, supragnosis_engine::VerdictSurface::Agent)
+            engine.review_proposal(
+                ws,
+                prop,
+                dec,
+                note,
+                obo,
+                supragnosis_engine::VerdictSurface::Agent,
+            )
         })
         .await
         {
@@ -771,7 +769,9 @@ impl SupragnosisServer {
         }
     }
 
-    #[tool(description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts) by id.")]
+    #[tool(
+        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts) by id."
+    )]
     async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
             None => Some(self.engine.default_workspace().to_string()),
@@ -800,10 +800,10 @@ impl SupragnosisServer {
         description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, and the workspace's version vector (what this node holds per origin). Read-only."
     )]
     async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
-        let Some(ctx) = &self.sync else { return sync_unconfigured() };
-        let ws = req
-            .workspace
-            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let Some(ctx) = &self.sync else {
+            return sync_unconfigured();
+        };
+        let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
         let store = self.engine.store();
         let vv = match tokio::task::spawn_blocking({
             let ws = ws.clone();
@@ -812,7 +812,9 @@ impl SupragnosisServer {
         .await
         {
             Ok(Ok(vv)) => vv,
-            Ok(Err(e)) => return err_json(&format!("store failure while reading the version vector: {e}")),
+            Ok(Err(e)) => {
+                return err_json(&format!("store failure while reading the version vector: {e}"))
+            }
             Err(e) => return err_json(&format!("task join error: {e}")),
         };
         let mut status = serde_json::json!({
@@ -835,13 +837,17 @@ impl SupragnosisServer {
         description = "Pull the workspace's missing knowledge from the configured sync servers and apply it (verify signatures -> dedup/absorb -> re-materialize the projection). Returns per-server accepted/rejected counts."
     )]
     async fn sync_pull(&self, Parameters(req): Parameters<SyncPullRequest>) -> String {
-        let Some(ctx) = &self.sync else { return sync_unconfigured() };
-        let ws = req
-            .workspace
-            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let Some(ctx) = &self.sync else {
+            return sync_unconfigured();
+        };
+        let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
         let mut results = Vec::new();
         for server in &ctx.servers {
-            let client = match supragnosis_sync::http::SyncClient::new(server, &ctx.auth_token, ctx.insecure_tls) {
+            let client = match supragnosis_sync::http::SyncClient::new(
+                server,
+                &ctx.auth_token,
+                ctx.insecure_tls,
+            ) {
                 Ok(c) => c,
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}));
@@ -866,7 +872,11 @@ impl SupragnosisServer {
                     let keys = ctx.origin_keys.clone();
                     let ws2 = ws.clone();
                     let mut vv = mine;
-                    match tokio::task::spawn_blocking(move || node.apply(store.as_ref(), &ws2, events, &keys, &mut vv)).await {
+                    match tokio::task::spawn_blocking(move || {
+                        node.apply(store.as_ref(), &ws2, events, &keys, &mut vv)
+                    })
+                    .await
+                    {
                         Ok(Ok(report)) => {
                             self.engine.emit(Event::Sync {
                                 direction: "pull".into(),
@@ -880,32 +890,43 @@ impl SupragnosisServer {
                                 "rejected": report.rejected.len(),
                             }))
                         }
-                        Ok(Err(e)) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
-                        Err(e) => results.push(serde_json::json!({"server": server, "error": format!("join: {e}")})),
+                        Ok(Err(e)) => results
+                            .push(serde_json::json!({"server": server, "error": e.to_string()})),
+                        Err(e) => results.push(
+                            serde_json::json!({"server": server, "error": format!("join: {e}")}),
+                        ),
                     }
                 }
-                Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}))
+                }
             }
         }
         // Re-materialize once after all pulls (Prop C: convergence point).
         let engine = self.engine.clone();
         let ws2 = ws.clone();
-        let reprojected = match tokio::task::spawn_blocking(move || engine.reproject(Some(&ws2))).await {
-            Ok(Ok(r)) => serde_json::json!({"observations": r.observations, "entities": r.entities, "relations": r.relations}),
+        let reprojected = match tokio::task::spawn_blocking(move || engine.reproject(Some(&ws2)))
+            .await
+        {
+            Ok(Ok(r)) => {
+                serde_json::json!({"observations": r.observations, "entities": r.entities, "relations": r.relations})
+            }
             Ok(Err(e)) => serde_json::json!({"error": e.to_string()}),
             Err(e) => serde_json::json!({"error": format!("join: {e}")}),
         };
-        to_json(&serde_json::json!({"workspace": ws, "pulled": results, "reprojected": reprojected}))
+        to_json(
+            &serde_json::json!({"workspace": ws, "pulled": results, "reprojected": reprojected}),
+        )
     }
 
     #[tool(
         description = "Push the workspace's local knowledge to the configured sync servers (backfill-stamp unstamped attestations, then send what each server lacks per its advertised version vector). Only share-whitelisted workspaces leave this node."
     )]
     async fn sync_push(&self, Parameters(req): Parameters<SyncPushRequest>) -> String {
-        let Some(ctx) = &self.sync else { return sync_unconfigured() };
-        let ws = req
-            .workspace
-            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let Some(ctx) = &self.sync else {
+            return sync_unconfigured();
+        };
+        let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
         if !ctx.share_workspaces.iter().any(|w| w == &ws) {
             return err_json(&format!(
                 "workspace {ws:?} is not on the share whitelist (P17: nothing leaves by default) - \
@@ -917,13 +938,19 @@ impl SupragnosisServer {
             let store = self.engine.store();
             let node = ctx.node.clone();
             let ws2 = ws.clone();
-            if let Ok(Err(e)) = tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await {
+            if let Ok(Err(e)) =
+                tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await
+            {
                 return err_json(&format!("backfill stamping failed: {e}"));
             }
         }
         let mut results = Vec::new();
         for server in &ctx.servers {
-            let client = match supragnosis_sync::http::SyncClient::new(server, &ctx.auth_token, ctx.insecure_tls) {
+            let client = match supragnosis_sync::http::SyncClient::new(
+                server,
+                &ctx.auth_token,
+                ctx.insecure_tls,
+            ) {
                 Ok(c) => c,
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}));
@@ -967,7 +994,9 @@ impl SupragnosisServer {
                         "rejected": resp.rejected,
                     }))
                 }
-                Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}))
+                }
             }
         }
         to_json(&serde_json::json!({"workspace": ws, "pushed": results}))
@@ -987,10 +1016,7 @@ fn sync_unconfigured() -> String {
 impl ServerHandler for SupragnosisServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .enable_resources()
-                .build(),
+            capabilities: ServerCapabilities::builder().enable_tools().enable_resources().build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
@@ -1022,10 +1048,8 @@ impl ServerHandler for SupragnosisServer {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
         // Workspace discovery entry point - let the client see which workspaces exist first.
-        let mut ws_list = RawResource::new(
-            "supragnosis://workspaces".to_string(),
-            "Workspace list".to_string(),
-        );
+        let mut ws_list =
+            RawResource::new("supragnosis://workspaces".to_string(), "Workspace list".to_string());
         ws_list.description = Some(
             "Sorted list of workspace names that hold knowledge. Entry point for discovering which workspaces exist."
                 .to_string(),

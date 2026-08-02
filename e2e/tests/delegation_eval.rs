@@ -107,13 +107,7 @@ fn core_facts() -> Vec<Fact> {
         Fact {
             content: "from january 2024 until june 2025 the acme api was deployed on heroku",
             entities: &[("acme api", "Component"), ("heroku", "Tool")],
-            relations: &[(
-                "acme api",
-                "deployed_on",
-                "heroku",
-                Some(TS_2024_01),
-                Some(TS_2025_06),
-            )],
+            relations: &[("acme api", "deployed_on", "heroku", Some(TS_2024_01), Some(TS_2025_06))],
         },
         Fact {
             content: "since june 2025 the acme api is deployed on fly.io, migrated off heroku",
@@ -145,8 +139,8 @@ fn core_facts() -> Vec<Fact> {
 /// numbered service generations.
 fn distractor_facts(n: usize) -> Vec<String> {
     const SERVICES: [&str; 15] = [
-        "orion", "lyra", "vega", "altair", "deneb", "rigel", "castor", "pollux", "mira",
-        "spica", "atlas", "electra", "maia", "merope", "alcyone",
+        "orion", "lyra", "vega", "altair", "deneb", "rigel", "castor", "pollux", "mira", "spica",
+        "atlas", "electra", "maia", "merope", "alcyone",
     ];
     const TEAMS: [&str; 4] = ["falcon", "otter", "heron", "lynx"];
     const LANGS: [&str; 4] = ["go", "python", "typescript", "kotlin"];
@@ -156,10 +150,9 @@ fn distractor_facts(n: usize) -> Vec<String> {
             let s = format!("{}{}", SERVICES[i % SERVICES.len()], i / 60 + 1);
             match (i / SERVICES.len()) % 4 {
                 0 => format!("the {s} service exposes its api on port {}", 7000 + i),
-                1 => format!(
-                    "the {s} service is maintained by the {} team",
-                    TEAMS[i % TEAMS.len()]
-                ),
+                1 => {
+                    format!("the {s} service is maintained by the {} team", TEAMS[i % TEAMS.len()])
+                }
                 2 => format!("the {s} service keeps logs for {} days", 7 + (i % 5) * 7),
                 _ => format!("the {s} service is written in {}", LANGS[i % LANGS.len()]),
             }
@@ -317,23 +310,14 @@ struct ConditionResult {
 
 impl ConditionResult {
     fn answerable(&self) -> Vec<&QuestionResult> {
-        let answerable: Vec<&'static str> = questions()
-            .iter()
-            .filter(|q| !q.gold.is_empty())
-            .map(|q| q.name)
-            .collect();
-        self.results
-            .iter()
-            .filter(|r| answerable.contains(&r.question))
-            .collect()
+        let answerable: Vec<&'static str> =
+            questions().iter().filter(|q| !q.gold.is_empty()).map(|q| q.name).collect();
+        self.results.iter().filter(|r| answerable.contains(&r.question)).collect()
     }
 
     fn unanswerable(&self) -> Vec<&QuestionResult> {
-        let un: Vec<&'static str> = questions()
-            .iter()
-            .filter(|q| q.gold.is_empty())
-            .map(|q| q.name)
-            .collect();
+        let un: Vec<&'static str> =
+            questions().iter().filter(|q| q.gold.is_empty()).map(|q| q.name).collect();
         self.results.iter().filter(|r| un.contains(&r.question)).collect()
     }
 
@@ -361,10 +345,7 @@ impl ConditionResult {
     }
 
     fn total_tokens(&self) -> u64 {
-        self.results
-            .iter()
-            .map(|r| r.prompt_tokens + r.completion_tokens)
-            .sum()
+        self.results.iter().map(|r| r.prompt_tokens + r.completion_tokens).sum()
     }
 
     fn mean_tokens_per_question(&self) -> f64 {
@@ -413,17 +394,11 @@ async fn run_baseline(
     q: &Question,
     run: usize,
 ) -> QuestionResult {
-    let prompt = BASELINE_PROMPT
-        .replace("{corpus}", corpus_text)
-        .replace("{question}", q.text);
+    let prompt = BASELINE_PROMPT.replace("{corpus}", corpus_text).replace("{question}", q.text);
     let messages = json!([{ "role": "user", "content": prompt }]);
     match chat(http, base, model, &messages, None).await {
         Ok((msg, u)) => {
-            let answer = msg
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
+            let answer = msg.get("content").and_then(Value::as_str).unwrap_or("").to_string();
             QuestionResult {
                 run,
                 question: q.name,
@@ -482,11 +457,7 @@ async fn run_delegated(
 
         let calls = tool_calls(&msg);
         if calls.is_empty() {
-            let answer = msg
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
+            let answer = msg.get("content").and_then(Value::as_str).unwrap_or("").to_string();
             return QuestionResult {
                 run,
                 question: q.name,
@@ -534,7 +505,8 @@ fn load_corpus(engine: &Engine, scale: usize) {
                 entities: f
                     .entities
                     .iter()
-                    .map(|(n, t)| EntityInput { description: None,
+                    .map(|(n, t)| EntityInput {
+                        description: None,
                         name: (*n).into(),
                         kind: Some((*t).into()),
                     })
@@ -542,7 +514,8 @@ fn load_corpus(engine: &Engine, scale: usize) {
                 relations: f
                     .relations
                     .iter()
-                    .map(|(from, kind, to, vf, vt)| RelationInput { description: None,
+                    .map(|(from, kind, to, vf, vt)| RelationInput {
+                        description: None,
                         from: (*from).into(),
                         kind: (*kind).into(),
                         to: (*to).into(),
@@ -589,7 +562,10 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
         questions().iter().filter(|q| q.gold.is_empty()).count(),
         runs
     ));
-    md.push_str(&format!("- {} core facts; the noise scale is the scale column of the table\n\n", core_facts().len()));
+    md.push_str(&format!(
+        "- {} core facts; the noise scale is the scale column of the table\n\n",
+        core_facts().len()
+    ));
 
     // Quantitative summary table.
     md.push_str("## Quantitative summary\n\n");
@@ -601,10 +577,7 @@ fn render_report(conditions: &[ConditionResult], runs: usize) -> String {
     for c in conditions {
         let (correct, total) = c.accuracy();
         let (abstained, un_total) = c.abstain();
-        let tpc = c
-            .tokens_per_correct()
-            .map(|t| format!("{t:.0}"))
-            .unwrap_or_else(|| "-".into());
+        let tpc = c.tokens_per_correct().map(|t| format!("{t:.0}")).unwrap_or_else(|| "-".into());
         md.push_str(&format!(
             "| {} | {} | {} | {} | {}/{} | {} | {}/{} | {} | {:.0} | {} |\n",
             c.model,
@@ -676,15 +649,9 @@ fn write_report(md: &str) -> std::path::PathBuf {
 async fn delegation_beats_context_stuffing() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
-    let models: Vec<&str> = models_env
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
-    let runs: usize = std::env::var("EVAL_RUNS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1);
+    let models: Vec<&str> =
+        models_env.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let runs: usize = std::env::var("EVAL_RUNS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
     let scales: Vec<usize> = std::env::var("EVAL_SCALES")
         .unwrap_or_else(|_| "60".to_string())
         .split(',')
@@ -762,8 +729,7 @@ async fn delegation_beats_context_stuffing() {
                 };
                 for run in 1..=runs {
                     for q in questions() {
-                        let rd =
-                            run_delegated(&http, &base, model, &client, &tools, &q, run).await;
+                        let rd = run_delegated(&http, &base, model, &client, &tools, &q, run).await;
                         eprintln!(
                             "  [delegated/{emb_name:<9}] run{run} {:<28} {:<12} ({}tk, {} tool calls)",
                             q.name,
@@ -787,10 +753,7 @@ async fn delegation_beats_context_stuffing() {
     for c in &conditions {
         let (correct, total) = c.accuracy();
         let (abst, un) = c.abstain();
-        let tpc = c
-            .tokens_per_correct()
-            .map(|t| format!("{t:.0}"))
-            .unwrap_or_else(|| "-".into());
+        let tpc = c.tokens_per_correct().map(|t| format!("{t:.0}")).unwrap_or_else(|| "-".into());
         eprintln!(
             "  {:<14} n={:<5} {:<10} emb={:<9} acc {}/{}  stale {}  abstain {}/{}  halluc {}  tk/q {:.0}  tk/correct {}",
             c.model,
@@ -818,8 +781,5 @@ async fn delegation_beats_context_stuffing() {
     let any_answer = conditions
         .iter()
         .any(|c| c.results.iter().any(|r| !matches!(r.verdict, Verdict::Error(_))));
-    assert!(
-        any_answer,
-        "no model produced a valid answer - check the Ollama bridge/harness"
-    );
+    assert!(any_answer, "no model produced a valid answer - check the Ollama bridge/harness");
 }

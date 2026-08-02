@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use supragnosis_core::{
-    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
-    StoreError, TraverseHit,
+    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit,
+    SearchHitKind, StoreError, TraverseHit,
 };
 
 mod redb_store;
@@ -138,10 +138,7 @@ impl AssertionStore for InMemoryStore {
             let mut next: Vec<String> = frontier
                 .iter()
                 .flat_map(|node| {
-                    relations
-                        .values()
-                        .filter(move |r| &r.from == node)
-                        .map(|r| r.to.clone())
+                    relations.values().filter(move |r| &r.from == node).map(|r| r.to.clone())
                 })
                 .filter(|to| !visited.contains(to))
                 .collect();
@@ -184,9 +181,7 @@ impl AssertionStore for InMemoryStore {
             .read()
             .unwrap()
             .values()
-            .filter(|e| {
-                workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws))
-            })
+            .filter(|e| workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws)))
             .cloned()
             .collect();
         // Sort by id - keep HashMap iteration order from leaking into the response (Principle 16:
@@ -299,10 +294,7 @@ impl AssertionStore for InMemoryStore {
 
 impl KnowledgeStore for InMemoryStore {
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
-        self.entities
-            .write()
-            .unwrap()
-            .insert(entity.id.clone(), entity);
+        self.entities.write().unwrap().insert(entity.id.clone(), entity);
         Ok(())
     }
 
@@ -365,7 +357,10 @@ mod tests {
         assert!(store.attestations_since("ws1", &vv).unwrap().is_empty());
 
         // Workspace scoping: another workspace sees nothing (selective sharing boundary input, F9).
-        assert!(store.attestations_since("ws-other", &VersionVector::default()).unwrap().is_empty());
+        assert!(store
+            .attestations_since("ws-other", &VersionVector::default())
+            .unwrap()
+            .is_empty());
     }
 
     fn ent(name: &str) -> Entity {
@@ -399,7 +394,8 @@ mod tests {
         );
         for (from, to) in [(&a, &b), (&b, &c)] {
             store
-                .add_relation(Relation { description: None,
+                .add_relation(Relation {
+                    description: None,
                     id: Relation::make_id(from, "rel", to),
                     from: from.clone(),
                     to: to.clone(),
@@ -415,10 +411,7 @@ mod tests {
             .unwrap();
 
         // Lookup + relations (b appears in two relations, a->b and b->c).
-        assert_eq!(
-            store.get_entity(&a).unwrap().unwrap().canonical_name,
-            "a"
-        );
+        assert_eq!(store.get_entity(&a).unwrap().unwrap().canonical_name, "a");
         assert_eq!(store.relations_of(&b).unwrap().len(), 2);
 
         // Search: workspace scope.
@@ -439,11 +432,7 @@ mod tests {
         let make = |host: &str, conf: f32, derived: &str| {
             let mut o = Observation::new(
                 "same fact".into(),
-                Provenance {
-                    host: host.into(),
-                    confidence: Some(conf),
-                    ..prov()
-                },
+                Provenance { host: host.into(), confidence: Some(conf), ..prov() },
             );
             o.derived_from = vec![derived.into()];
             o

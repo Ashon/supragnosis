@@ -34,31 +34,20 @@ fn fastembed_semantic_recall_end_to_end() {
 
     let dir = std::env::temp_dir().join(format!("supragnosis-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let store =
-        Arc::new({
-            let s = RedbStore::open(dir.join("knowledge.redb")).expect("open redb");
-            s.set_embedder(&embedder.id()).expect("register embedder");
-            s
-        });
+    let store = Arc::new({
+        let s = RedbStore::open(dir.join("knowledge.redb")).expect("open redb");
+        s.set_embedder(&embedder.id()).expect("register embedder");
+        s
+    });
     let engine = Engine::new(store, "h", "ws").with_embedder(embedder);
 
-    observe(
-        &engine,
-        "the rust compiler lowers code to native machine binaries",
-    );
+    observe(&engine, "the rust compiler lowers code to native machine binaries");
     observe(&engine, "a simple recipe for banana bread with walnuts");
-    observe(
-        &engine,
-        "python is a dynamically typed interpreted language",
-    );
+    observe(&engine, "python is a dynamically typed interpreted language");
 
     // The query is not a substring of any observation - it relies on purely semantic (embedding) recall.
     let hits = engine
-        .search(
-            "compiling systems code into executable binaries",
-            Some("ws"),
-            3,
-        )
+        .search("compiling systems code into executable binaries", Some("ws"), 3)
         .unwrap()
         .hits;
     assert!(!hits.is_empty(), "semantic search should return hits");

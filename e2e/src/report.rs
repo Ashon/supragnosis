@@ -102,10 +102,7 @@ fn render_markdown_html(md: &str) -> String {
 /// - Extra .md/.html not on the list are appended afterward as plain cards (to avoid omissions).
 pub fn refresh_index() {
     let dir = report_dir();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
 
     // Table-of-contents entries: known artifacts (only those that exist) + extra unknown .md/.html.
     let mut entries: Vec<(String, String, String)> = KNOWN

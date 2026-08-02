@@ -207,13 +207,28 @@ pub fn node_id_from_public_key(pubkey: &[u8]) -> String {
 
 /// Verifies an attestation signature against a hex public key. `false` for any malformed input -
 /// verification failure is rejection, not an error path (F6).
-pub fn verify_attestation(pubkey_hex: &str, content_id: &str, p: &Provenance, meta: &SyncMeta) -> bool {
+pub fn verify_attestation(
+    pubkey_hex: &str,
+    content_id: &str,
+    p: &Provenance,
+    meta: &SyncMeta,
+) -> bool {
     use ed25519_dalek::Verifier;
-    let Some(pk_bytes) = hex_decode(pubkey_hex) else { return false };
-    let Ok(pk_arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) else { return false };
-    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&pk_arr) else { return false };
-    let Some(sig_bytes) = hex_decode(&meta.signature) else { return false };
-    let Ok(sig_arr) = <[u8; 64]>::try_from(sig_bytes.as_slice()) else { return false };
+    let Some(pk_bytes) = hex_decode(pubkey_hex) else {
+        return false;
+    };
+    let Ok(pk_arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) else {
+        return false;
+    };
+    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&pk_arr) else {
+        return false;
+    };
+    let Some(sig_bytes) = hex_decode(&meta.signature) else {
+        return false;
+    };
+    let Ok(sig_arr) = <[u8; 64]>::try_from(sig_bytes.as_slice()) else {
+        return false;
+    };
     let sig = ed25519_dalek::Signature::from_bytes(&sig_arr);
     key.verify(&attestation_signing_bytes(content_id, p, meta), &sig).is_ok()
 }
@@ -449,12 +464,7 @@ impl Assertions {
     /// field content identity (whether it is included in the hash)" - if omitted, two assertions differing only in that
     /// field collapse to the same content address (breaking the "different assertions on the same text mean a different observation" invariant).
     fn hash_into(&self, hasher: &mut blake3::Hasher) {
-        let Assertions {
-            entities,
-            relations,
-            type_defs,
-            proposal_events,
-        } = self;
+        let Assertions { entities, relations, type_defs, proposal_events } = self;
         hasher.update(&(entities.len() as u64).to_le_bytes());
         for e in entities {
             let EntityAssertion { name, kind, description } = e;
@@ -464,14 +474,7 @@ impl Assertions {
         }
         hasher.update(&(relations.len() as u64).to_le_bytes());
         for r in relations {
-            let RelationAssertion {
-                from,
-                kind,
-                to,
-                description,
-                valid_from,
-                valid_to,
-            } = r;
+            let RelationAssertion { from, kind, to, description, valid_from, valid_to } = r;
             hash_field(hasher, from.as_bytes());
             hash_field(hasher, kind.as_bytes());
             hash_field(hasher, to.as_bytes());
@@ -585,7 +588,11 @@ impl Observation {
     /// An observation enclosing structured assertions. If the assertions are empty the id is identical to `new`,
     /// and if there are assertions they are included in the id computation. Every field is encoded with a
     /// length-prefix, so boundary manipulation that plants a delimiter in content cannot collide it with another observation.
-    pub fn with_assertions(content: String, provenance: Provenance, assertions: Assertions) -> Self {
+    pub fn with_assertions(
+        content: String,
+        provenance: Provenance,
+        assertions: Assertions,
+    ) -> Self {
         let id = observation_content_id(&provenance.workspace, &content, &assertions);
         Self {
             id,
@@ -621,23 +628,37 @@ impl Observation {
         }
         for e in &self.assertions.entities {
             if e.name.trim().is_empty() {
-                return Err("an entity assertion has an empty name (a non-assertion with no referent)".into());
+                return Err(
+                    "an entity assertion has an empty name (a non-assertion with no referent)"
+                        .into(),
+                );
             }
             if e.kind.as_deref().is_some_and(|k| k.trim().is_empty()) {
-                return Err(format!("entity '{}' has an empty-string type (omit the type instead)", e.name));
+                return Err(format!(
+                    "entity '{}' has an empty-string type (omit the type instead)",
+                    e.name
+                ));
             }
         }
         for r in &self.assertions.relations {
             if r.from.trim().is_empty() || r.to.trim().is_empty() {
-                return Err(format!("a relation endpoint is empty (from: {:?}, to: {:?})", r.from, r.to));
+                return Err(format!(
+                    "a relation endpoint is empty (from: {:?}, to: {:?})",
+                    r.from, r.to
+                ));
             }
             if normalize_relation_kind(&r.kind).is_empty() {
-                return Err(format!("the relation type normalizes to an empty string (received: {:?})", r.kind));
+                return Err(format!(
+                    "the relation type normalizes to an empty string (received: {:?})",
+                    r.kind
+                ));
             }
         }
         for t in &self.assertions.type_defs {
             if t.name.trim().is_empty() || t.description.trim().is_empty() {
-                return Err("a type definition has an empty name or description (Principle 8)".into());
+                return Err(
+                    "a type definition has an empty name or description (Principle 8)".into()
+                );
             }
         }
         Ok(())
@@ -657,14 +678,8 @@ impl Observation {
         // forcing an explicit decision on "how that field is merged on re-arrival" -
         // a silent omission is the loss of that field on merge. Identity fields (id/content/assertions) are
         // discarded since the content address guarantees identity (a `_` binding is also a notation of the decision).
-        let Observation {
-            id: _,
-            content: _,
-            provenance,
-            assertions: _,
-            derived_from,
-            embedding,
-        } = other;
+        let Observation { id: _, content: _, provenance, assertions: _, derived_from, embedding } =
+            other;
         self.provenance.extend(provenance);
         self.provenance.sort_by(provenance_order);
         self.provenance
@@ -757,7 +772,12 @@ fn provenance_order(a: &Provenance, b: &Provenance) -> std::cmp::Ordering {
 pub fn ordering_hlc(obs: &Observation) -> Hlc {
     obs.provenance
         .iter()
-        .map(|p| p.sync.as_ref().map(|s| s.hlc.clone()).unwrap_or_else(|| Hlc::legacy(p.observed_at)))
+        .map(|p| {
+            p.sync
+                .as_ref()
+                .map(|s| s.hlc.clone())
+                .unwrap_or_else(|| Hlc::legacy(p.observed_at))
+        })
         .min()
         .unwrap_or_default()
 }
@@ -860,9 +880,7 @@ impl ResolutionPolicy for TierWeighted {
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| (c.tier, &c.hlc, Reverse(c.observation.as_str())))?;
-        let contested = candidates
-            .iter()
-            .any(|c| c.tier == winner.tier && c.value != winner.value);
+        let contested = candidates.iter().any(|c| c.tier == winner.tier && c.value != winner.value);
         Some(BeliefChoice { index, contested })
     }
 }
@@ -1308,7 +1326,10 @@ fn find_url_credentials(hay: &[u8]) -> Option<usize> {
     while let Some(rel) = find(&hay[from..], b"://") {
         let start = from + rel + 3;
         let rest = &hay[start..];
-        let end = rest.iter().position(|c| matches!(c, b'/' | b' ' | b'\n' | b'"')).unwrap_or(rest.len());
+        let end = rest
+            .iter()
+            .position(|c| matches!(c, b'/' | b' ' | b'\n' | b'"'))
+            .unwrap_or(rest.len());
         let userinfo_end = rest[..end].iter().position(|c| *c == b'@');
         if let Some(at) = userinfo_end {
             if let Some(colon) = rest[..at].iter().position(|c| *c == b':') {
@@ -1337,8 +1358,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// Convenience method for embedding a single text.
     fn embed_one(&self, text: &str) -> Result<Vec<f32>, EmbedError> {
         let mut v = self.embed(&[text])?;
-        v.pop()
-            .ok_or_else(|| EmbedError::Provider("empty embedding result".into()))
+        v.pop().ok_or_else(|| EmbedError::Provider("empty embedding result".into()))
     }
 }
 
@@ -1400,10 +1420,7 @@ pub enum Event {
         found: bool,
     },
     /// Graph traversal: start node + reached nodes.
-    Traverse {
-        start: String,
-        reached: Vec<String>,
-    },
+    Traverse { start: String, reached: Vec<String> },
     /// Federation sync activity (M4): a peer hit this node's sync API (hub side), or this node ran
     /// a round against a server (client side) - streamed to the viewer so remote hits are visible
     /// live in the activity feed.
@@ -1479,7 +1496,10 @@ mod tests {
             // refusing another detector's test suite. detect_secret still sees the whole string.
             (concat!("sk_live", "_4eC39HqLyjWDarjtT1zdp7dc"), "stripe-live-key"),
             ("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.x.y", "jwt"),
-            ("DATABASE_URL=postgres://admin:hunter2@db.internal:5432/app", "url-inline-credentials"),
+            (
+                "DATABASE_URL=postgres://admin:hunter2@db.internal:5432/app",
+                "url-inline-credentials",
+            ),
         ];
         for (text, want) in fires {
             let hit = detect_secret(text).unwrap_or_else(|| panic!("missed a {want}: {text}"));
@@ -1509,8 +1529,15 @@ mod tests {
         let text = "key AKIAIOSFODNN7EXAMPLE";
         let hit = detect_secret(text).expect("hit");
         let rendered = format!("{hit:?}");
-        assert!(!rendered.contains("AKIAIOSFODNN7EXAMPLE"), "the finding quoted the secret: {rendered}");
-        assert_eq!(&text[hit.at..hit.at + 4], "AKIA", "but it does point at where the match starts");
+        assert!(
+            !rendered.contains("AKIAIOSFODNN7EXAMPLE"),
+            "the finding quoted the secret: {rendered}"
+        );
+        assert_eq!(
+            &text[hit.at..hit.at + 4],
+            "AKIA",
+            "but it does point at where the match starts"
+        );
     }
     use super::*;
 
@@ -1533,10 +1560,7 @@ mod tests {
             );
         }
         // Already canonical means unchanged (idempotent).
-        assert_eq!(
-            normalize_relation_kind(&normalize_relation_kind("dependsOn")),
-            "depends_on"
-        );
+        assert_eq!(normalize_relation_kind(&normalize_relation_kind("dependsOn")), "depends_on");
         assert_eq!(normalize_relation_kind("relates_to"), "relates_to");
         // An uppercase letter after a digit is also a camelCase boundary.
         assert_eq!(normalize_relation_kind("layer2Uses"), "layer2_uses");
@@ -1581,7 +1605,8 @@ mod tests {
             "supragnosis uses rmcp".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { description: None,
+                entities: vec![EntityAssertion {
+                    description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -1597,7 +1622,8 @@ mod tests {
             "supragnosis uses rmcp".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { description: None,
+                entities: vec![EntityAssertion {
+                    description: None,
                     name: "rmcp".into(),
                     kind: Some("Project".into()),
                 }],
@@ -1613,7 +1639,8 @@ mod tests {
             "supragnosis uses rmcp".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { description: None,
+                entities: vec![EntityAssertion {
+                    description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -1634,7 +1661,8 @@ mod tests {
             "x".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { description: None,
+                entities: vec![EntityAssertion {
+                    description: None,
                     name: "rmcp".into(),
                     kind: Some("Tool".into()),
                 }],
@@ -1650,7 +1678,11 @@ mod tests {
             "x".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { description: None, name: "rmcp".into(), kind: None }],
+                entities: vec![EntityAssertion {
+                    description: None,
+                    name: "rmcp".into(),
+                    kind: None,
+                }],
                 relations: vec![],
                 type_defs: vec![],
                 proposal_events: vec![],
@@ -1660,7 +1692,8 @@ mod tests {
             "x".into(),
             prov(),
             Assertions {
-                entities: vec![EntityAssertion { description: None,
+                entities: vec![EntityAssertion {
+                    description: None,
                     name: "rmcp".into(),
                     kind: Some(String::new()),
                 }],
@@ -1676,16 +1709,8 @@ mod tests {
     /// naturally deduped (idempotent), and independent re-observations accumulate (Principle 3/16).
     #[test]
     fn absorb_union_is_order_independent_and_idempotent() {
-        let prov_a = Provenance {
-            host: "host-a".into(),
-            confidence: Some(0.9),
-            ..prov()
-        };
-        let prov_b = Provenance {
-            host: "host-b".into(),
-            confidence: Some(0.1),
-            ..prov()
-        };
+        let prov_a = Provenance { host: "host-a".into(), confidence: Some(0.9), ..prov() };
+        let prov_b = Provenance { host: "host-b".into(), confidence: Some(0.1), ..prov() };
 
         let make = |p: &Provenance, derived: &[&str]| {
             let mut o = Observation::new("same fact".into(), p.clone());
@@ -1738,9 +1763,8 @@ mod tests {
             o
         };
         // A comparable representation of the log state (Provenance does not implement PartialEq - via serde value).
-        let state = |o: &Observation| {
-            serde_json::to_value((&o.provenance, &o.derived_from)).unwrap()
-        };
+        let state =
+            |o: &Observation| serde_json::to_value((&o.provenance, &o.derived_from)).unwrap();
         let fold = |order: &[usize]| {
             let mut acc = make(&sources[order[0]]);
             for &i in &order[1..] {
@@ -1753,9 +1777,7 @@ mod tests {
         // Fisher-Yates shuffle with a seed-fixed LCG + duplicating the head to simulate a relay duplicate.
         let mut lcg: u64 = 0x9E37_79B9_7F4A_7C15;
         let mut next = |bound: usize| {
-            lcg = lcg
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             ((lcg >> 33) as usize) % bound
         };
         for round in 0..32 {
@@ -1857,7 +1879,8 @@ mod tests {
     fn signature_roundtrip_verifies_and_tamper_fails() {
         let identity = NodeIdentity::from_secret_bytes([42u8; 32]);
         let obs = Observation::new("signed fact".into(), prov());
-        let p = stamped(&identity, &obs.id, 1, Hlc { wall: 7, counter: 0, node: identity.node_id() });
+        let p =
+            stamped(&identity, &obs.id, 1, Hlc { wall: 7, counter: 0, node: identity.node_id() });
         let meta = p.sync.clone().expect("stamped");
         let pubkey = identity.public_key_hex();
         assert!(verify_attestation(&pubkey, &obs.id, &p, &meta), "round-trip must verify");
@@ -1894,7 +1917,8 @@ mod tests {
         // Stamped + legacy mixed -> the earliest effective HLC wins (federation.md Section 4).
         let identity = NodeIdentity::from_secret_bytes([1u8; 32]);
         let mut obs = Observation::new("fact".into(), Provenance { observed_at: 100, ..prov() });
-        let stamped_p = stamped(&identity, &obs.id, 1, Hlc { wall: 60, counter: 2, node: identity.node_id() });
+        let stamped_p =
+            stamped(&identity, &obs.id, 1, Hlc { wall: 60, counter: 2, node: identity.node_id() });
         obs.absorb(Observation::new("fact".into(), stamped_p));
         assert_eq!(ordering_hlc(&obs), Hlc { wall: 60, counter: 2, node: identity.node_id() });
     }
@@ -1905,7 +1929,8 @@ mod tests {
         // write-back, federation.md Phase 2) - both directions, so the upgrade is commutative (P16).
         let identity = NodeIdentity::from_secret_bytes([3u8; 32]);
         let base = Observation::new("fact".into(), prov());
-        let stamped_p = stamped(&identity, &base.id, 1, Hlc { wall: 5, counter: 0, node: identity.node_id() });
+        let stamped_p =
+            stamped(&identity, &base.id, 1, Hlc { wall: 5, counter: 0, node: identity.node_id() });
 
         // unstamped + stamped -> single stamped attestation.
         let mut o = Observation::new("fact".into(), prov());
@@ -1922,7 +1947,8 @@ mod tests {
         // A genuinely different attestation (different observed_at) is NOT superseded (P3).
         let mut o3 = Observation::new("fact".into(), prov());
         let other = Provenance { observed_at: 99, ..prov() };
-        let s2 = stamped(&identity, &o3.id, 2, Hlc { wall: 6, counter: 0, node: identity.node_id() });
+        let s2 =
+            stamped(&identity, &o3.id, 2, Hlc { wall: 6, counter: 0, node: identity.node_id() });
         o3.absorb(Observation::new("fact".into(), s2));
         o3.absorb(Observation::new("fact".into(), other));
         assert_eq!(o3.provenance.len(), 2, "distinct attestations still union");
@@ -1967,14 +1993,22 @@ mod tests {
             cand("Tool", TrustTier::AgentExtracted, 100, "obs-a"),
             cand("Library", TrustTier::AgentExtracted, 200, "obs-b"),
         ];
-        assert_eq!(cs[p.choose(&cs).unwrap().index].value, "Library", "recency decides within a band");
+        assert_eq!(
+            cs[p.choose(&cs).unwrap().index].value,
+            "Library",
+            "recency decides within a band"
+        );
         // Full tie -> smallest observation id, independent of slice order (P16).
         let a = cand("Tool", TrustTier::AgentExtracted, 100, "obs-a");
         let b = cand("Library", TrustTier::AgentExtracted, 100, "obs-b");
         let fwd = vec![a.clone(), b.clone()];
         let rev = vec![b, a];
         assert_eq!(fwd[p.choose(&fwd).unwrap().index].value, "Tool");
-        assert_eq!(rev[p.choose(&rev).unwrap().index].value, "Tool", "tie-break must not depend on slice order");
+        assert_eq!(
+            rev[p.choose(&rev).unwrap().index].value,
+            "Tool",
+            "tie-break must not depend on slice order"
+        );
         assert!(p.choose(&[]).is_none(), "no candidates -> no choice");
     }
 
@@ -2024,7 +2058,11 @@ mod tests {
             trust_tier: TrustTier::Unverified,
             ..stamped(&identity, "cid", 2, Hlc { wall: 6, counter: 0, node: identity.node_id() })
         };
-        assert_eq!(evaluated_tier(&remote_low), TrustTier::Unverified, "min() never raises a claim");
+        assert_eq!(
+            evaluated_tier(&remote_low),
+            TrustTier::Unverified,
+            "min() never raises a claim"
+        );
     }
 
     /// The two markers live inside the reserved namespace the ingest surfaces refuse - if one

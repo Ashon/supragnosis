@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use supragnosis_core::SearchHit;
-use supragnosis_engine::{Engine, EntityInput, ObserveInput, RelationInput};
 use supragnosis_embed::HashingEmbedder;
+use supragnosis_engine::{Engine, EntityInput, ObserveInput, RelationInput};
 use supragnosis_store::InMemoryStore;
 
 const WS: &str = "recall";
@@ -107,7 +107,9 @@ fn queries() -> Vec<Query> {
             name: "obs: rank fusion",
             query: "merges ranked lists by rank position",
             gold_entities: &[],
-            gold_observations: &["reciprocal rank fusion merges ranked lists by their rank position"],
+            gold_observations: &[
+                "reciprocal rank fusion merges ranked lists by their rank position",
+            ],
         },
     ]
 }
@@ -128,7 +130,8 @@ fn load(engine: &Engine) -> HashMap<&'static str, String> {
                 entities: d
                     .entities
                     .iter()
-                    .map(|(n, t)| EntityInput { description: None,
+                    .map(|(n, t)| EntityInput {
+                        description: None,
                         name: (*n).into(),
                         kind: Some((*t).into()),
                     })
@@ -136,7 +139,8 @@ fn load(engine: &Engine) -> HashMap<&'static str, String> {
                 relations: d
                     .relations
                     .iter()
-                    .map(|(f, k, t)| RelationInput { description: None,
+                    .map(|(f, k, t)| RelationInput {
+                        description: None,
                         from: (*f).into(),
                         kind: (*k).into(),
                         to: (*t).into(),
@@ -201,10 +205,19 @@ fn graph_enrichment_recalls_neighbor() {
             on_behalf_of: None,
             derived_from: vec![],
             entities: vec![
-                EntityInput { description: None, name: "alpha service".into(), kind: Some("Component".into()) },
-                EntityInput { description: None, name: "zeta backend".into(), kind: Some("Component".into()) },
+                EntityInput {
+                    description: None,
+                    name: "alpha service".into(),
+                    kind: Some("Component".into()),
+                },
+                EntityInput {
+                    description: None,
+                    name: "zeta backend".into(),
+                    kind: Some("Component".into()),
+                },
             ],
-            relations: vec![RelationInput { description: None,
+            relations: vec![RelationInput {
+                description: None,
                 from: "alpha service".into(),
                 kind: "depends_on".into(),
                 to: "zeta backend".into(),
@@ -244,8 +257,16 @@ fn graph_enrichment_recalls_neighbor() {
             on_behalf_of: None,
             derived_from: vec![],
             entities: vec![
-                EntityInput { description: None, name: "alpha service".into(), kind: Some("Component".into()) },
-                EntityInput { description: None, name: "zeta backend".into(), kind: Some("Component".into()) },
+                EntityInput {
+                    description: None,
+                    name: "alpha service".into(),
+                    kind: Some("Component".into()),
+                },
+                EntityInput {
+                    description: None,
+                    name: "zeta backend".into(),
+                    kind: Some("Component".into()),
+                },
             ],
             relations: vec![], // no relation
         })

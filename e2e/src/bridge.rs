@@ -99,10 +99,7 @@ pub async fn chat(
         .cloned()
         .ok_or_else(|| format!("no message in response: {payload}"))?;
     let usage = TokenUsage {
-        prompt: payload
-            .pointer("/usage/prompt_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        prompt: payload.pointer("/usage/prompt_tokens").and_then(Value::as_u64).unwrap_or(0),
         completion: payload
             .pointer("/usage/completion_tokens")
             .and_then(Value::as_u64)

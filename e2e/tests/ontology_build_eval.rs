@@ -120,9 +120,7 @@ impl BuildResult {
         self.graph["nodes"]
             .as_array()
             .map(|a| {
-                a.iter()
-                    .filter_map(|n| n["name"].as_str().map(|s| s.to_lowercase()))
-                    .collect()
+                a.iter().filter_map(|n| n["name"].as_str().map(|s| s.to_lowercase())).collect()
             })
             .unwrap_or_default()
     }
@@ -132,9 +130,7 @@ impl BuildResult {
         GOLD_CONCEPTS
             .iter()
             .map(|(label, pats)| {
-                let hit = names
-                    .iter()
-                    .any(|n| pats.iter().any(|p| n.contains(p)));
+                let hit = names.iter().any(|n| pats.iter().any(|p| n.contains(p)));
                 (*label, hit)
             })
             .collect()
@@ -143,11 +139,7 @@ impl BuildResult {
     fn isolated_nodes(&self) -> usize {
         self.graph["nodes"]
             .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter(|n| n["degree"].as_u64() == Some(0))
-                    .count()
-            })
+            .map(|a| a.iter().filter(|n| n["degree"].as_u64() == Some(0)).count())
             .unwrap_or(0)
     }
 
@@ -170,11 +162,7 @@ impl BuildResult {
         let edges = self.graph["stats"]["edge_count"].as_u64().unwrap_or(0);
         let kinds: std::collections::HashSet<&str> = self.graph["edges"]
             .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|e| e["type"].as_str())
-                    .collect()
-            })
+            .map(|a| a.iter().filter_map(|e| e["type"].as_str()).collect())
             .unwrap_or_default();
         (nodes, edges, kinds.len())
     }
@@ -203,17 +191,9 @@ names matter):\n{\"content\": \"...\", \"entities\": [{\"name\": \"rigid body\",
 relations must reference entity names from the entities list.";
 
 /// Feeds the entire set of notes to a single model in chunks and has it build the ontology.
-async fn build_ontology(
-    http: &reqwest::Client,
-    base: &str,
-    model: &str,
-) -> BuildResult {
+async fn build_ontology(http: &reqwest::Client, base: &str, model: &str) -> BuildResult {
     // Start from an empty engine - the ontology is built entirely from the model's extraction.
-    let engine = Arc::new(Engine::new(
-        Arc::new(InMemoryStore::new()),
-        "ontology-eval",
-        WS,
-    ));
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "ontology-eval", WS));
     let engine_view = engine.clone();
     let (client, server) = serve_engine(engine).await;
     let tools = openai_tools(&client).await;
@@ -300,12 +280,7 @@ async fn build_ontology(
     let _ = client.cancel().await;
     let _ = server.await;
 
-    BuildResult {
-        model: model.to_string(),
-        chunks,
-        graph,
-        resource_ok,
-    }
+    BuildResult { model: model.to_string(), chunks, graph, resource_ok }
 }
 
 // --- Report/viewer -----------------------------------------------------------
@@ -338,12 +313,8 @@ fn render_markdown(results: &[BuildResult]) -> String {
     }
     md.push_str("\n## Coverage detail\n\n");
     for r in results {
-        let miss: Vec<&str> = r
-            .coverage()
-            .into_iter()
-            .filter(|(_, h)| !h)
-            .map(|(l, _)| l)
-            .collect();
+        let miss: Vec<&str> =
+            r.coverage().into_iter().filter(|(_, h)| !h).map(|(l, _)| l).collect();
         md.push_str(&format!(
             "- {}: missing concepts = {}\n",
             r.model,
@@ -378,10 +349,7 @@ fn render_markdown(results: &[BuildResult]) -> String {
                     ));
                     // Even on failure, keep the arguments the model sent - qualitative evidence of surface friction.
                     if !c.args_summary.is_empty() {
-                        md.push_str(&format!(
-                            "  - args: `{}`\n",
-                            c.args_summary.replace('`', "'")
-                        ));
+                        md.push_str(&format!("  - args: `{}`\n", c.args_summary.replace('`', "'")));
                     }
                 }
             }
@@ -537,10 +505,8 @@ draw();
 fn write_outputs(results: &[BuildResult]) -> (std::path::PathBuf, std::path::PathBuf) {
     let md_path = report::write_report("ontology_build_eval.md", &render_markdown(results));
 
-    let data: Map<String, Value> = results
-        .iter()
-        .map(|r| (r.model.clone(), r.graph.clone()))
-        .collect();
+    let data: Map<String, Value> =
+        results.iter().map(|r| (r.model.clone(), r.graph.clone())).collect();
     let html = VIEWER_TEMPLATE.replace(
         "__DATA__",
         &serde_json::to_string(&Value::Object(data)).expect("graph data json"),
@@ -557,11 +523,8 @@ fn write_outputs(results: &[BuildResult]) -> (std::path::PathBuf, std::path::Pat
 async fn small_models_build_physics_ontology() {
     let base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let models_env = std::env::var("OLLAMA_MODELS").unwrap_or_else(|_| DEFAULT_MODELS.to_string());
-    let models: Vec<&str> = models_env
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
+    let models: Vec<&str> =
+        models_env.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
