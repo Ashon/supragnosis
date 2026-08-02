@@ -354,8 +354,18 @@ fn build_engine(
             Arc::new(store)
         }
     };
-    let mut engine =
-        Engine::new(store, cfg.host.clone(), cfg.workspace.clone()).with_session(cfg.session.clone());
+    // The ingest secret scan is on unless the operator turns it off (P17 defence in depth). Opt-out
+    // rather than opt-in, because a miss cannot be undone: the log is append-only and it replicates.
+    let scan = !matches!(
+        std::env::var("SUPRAGNOSIS_SCAN_SECRETS").ok().as_deref(),
+        Some("0") | Some("off") | Some("false")
+    );
+    if !scan {
+        tracing::warn!("SUPRAGNOSIS_SCAN_SECRETS=off - credential-shaped text will not be refused at ingest");
+    }
+    let mut engine = Engine::new(store, cfg.host.clone(), cfg.workspace.clone())
+        .with_session(cfg.session.clone())
+        .with_secret_scan(scan);
     if let Some(e) = embedder {
         engine = engine.with_embedder(e);
     }

@@ -112,6 +112,8 @@ cargo test                                           # unit tests (network-depen
   - `SUPRAGNOSIS_HOST` - host id for provenance (default `localhost`). This is a display label only;
     the federation `node_id` is derived from the node keypair, not from this value.
   - `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`).
+  - `SUPRAGNOSIS_SCAN_SECRETS` - `off` disables the ingest refusal of credential-shaped text
+    (on by default; the log is append-only and replicates, so a miss cannot be undone).
   - `SUPRAGNOSIS_STORE` - `redb` (default, file-persistent) | `mem` (non-persistent).
   - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/redb`).
   - `SUPRAGNOSIS_EMBED` - `fastembed` (default when compiled with the feature, local ONNX) | `hashing` (for development) | `none`. If it is absent or fails, degrades to keyword search.

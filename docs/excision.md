@@ -3,8 +3,9 @@
 > The one act that removes knowledge instead of adding it. This document fixes what it may do, what
 > it may not, and why the obvious cheaper versions are worse than not having it.
 >
-> Status: **specification**. Nothing here is built. The ledger owns it as M4 Phase 5
-> ([architecture.md](architecture.md) Section 14).
+> Status: **specification**. The excision path itself is unbuilt and the ledger owns it as M4 Phase 5
+> ([architecture.md](architecture.md) Section 14). Step 1 of Section 8 - the ingest hook that keeps
+> secrets out in the first place - has since been built; nothing else here has.
 
 ## 1. Why this exists, and why it is the only one
 
@@ -154,8 +155,12 @@ to be open.
 
 So the order is:
 
-1. **A redaction hook at ingest** (P17's fourth enforcement demand, currently unbuilt). Cheap, purely
-   additive, zero federation radius, and every secret it catches is one that never needs any of this.
+1. **A redaction hook at ingest** (P17's fourth enforcement demand). **Built.** It refuses rather than
+   rewrites - P1 forbids transforming an assertion before the log, and a rewrite would move the
+   content address (P14) - and the refusal names the shape and the field, never the value. It runs at
+   every local ingest door and deliberately NOT on the sync apply path: detector patterns grow, so a
+   newer node would refuse what an older peer accepted and the two would hold different logs from one
+   event set (P16). Every secret it catches is one that never needs any of this.
 2. **Detection without destruction.** The same detector, run over what is already stored, surfacing
    suspected secrets in the console. It cannot remove anything, and it stops the operator from being
    unaware - which is the honest intermediate state.
