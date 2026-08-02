@@ -11,7 +11,7 @@ use std::sync::Arc;
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::{RunningService, ServiceExt};
 use rmcp::RoleClient;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use supragnosis_engine::Engine;
 use supragnosis_mcp::SupragnosisServer;
@@ -141,16 +141,13 @@ pub async fn exec_tool(
     name: &str,
     args: &Value,
 ) -> String {
-    let arguments: Option<Map<String, Value>> = args.as_object().cloned();
-    match client
-        .call_tool(CallToolRequestParams {
-            meta: None,
-            name: name.to_string().into(),
-            arguments,
-            task: None,
-        })
-        .await
-    {
+    // rmcp marks CallToolRequestParams #[non_exhaustive], so the params are built through the
+    // constructor and then given their arguments. Assignment rather than `with_arguments` because a
+    // model can emit a non-object here, and absent arguments (`None`) have to stay distinguishable
+    // from an empty argument object (`Some({})`) - the server's schema check treats them differently.
+    let mut params = CallToolRequestParams::new(name.to_string());
+    params.arguments = args.as_object().cloned();
+    match client.call_tool(params).await {
         Ok(res) => res
             .content
             .first()

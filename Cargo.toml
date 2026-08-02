@@ -38,7 +38,7 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-rmcp = { version = "0.16", features = ["server", "transport-io", "macros"] }
+rmcp = { version = "1.8", features = ["server", "transport-io", "macros"] }
 # The embedded store: a pure-Rust B-tree (single writer + MVCC readers). No C/C++ toolchain, so
 # the build needs no bindgen and cross-compiling is a target flag rather than a sysroot.
 redb = "4"
