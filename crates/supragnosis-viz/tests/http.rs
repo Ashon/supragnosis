@@ -32,8 +32,32 @@ async fn serve_uds(
     let path = sock_path(name);
     let _ = std::fs::remove_file(&path); // leftover from a previous run of this same test
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
-    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None));
+    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None, None));
     path
+}
+
+/// Same, but with the injected narrowing handler - the surface a hub's console drives.
+async fn serve_uds_with_narrow(
+    name: &str,
+    engine: Arc<Engine>,
+    events: broadcast::Sender<String>,
+    narrow: supragnosis_viz::NarrowShare,
+) -> PathBuf {
+    let path = sock_path(name);
+    let _ = std::fs::remove_file(&path);
+    let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
+    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None, Some(narrow)));
+    path
+}
+
+/// One raw HTTP/1.1 request with an explicit method, for the endpoint that is not a GET.
+async fn uds_request(path: &PathBuf, method: &str, target: &str) -> String {
+    let mut s = UnixStream::connect(path).await.expect("connect viewer socket");
+    let req = format!("{method} {target} HTTP/1.1\r\nConnection: close\r\n\r\n");
+    s.write_all(req.as_bytes()).await.unwrap();
+    let mut resp = String::new();
+    s.read_to_string(&mut resp).await.unwrap();
+    resp
 }
 
 /// One raw HTTP/1.1 GET over the unix socket; returns the full response text (head + body).
@@ -536,7 +560,7 @@ async fn p17_socket_directory_denies_foreign_users_before_the_socket_mode() {
         "ws",
     ));
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
-    tokio::spawn(supragnosis_viz::serve(engine, listener, ev_channel(), None));
+    tokio::spawn(supragnosis_viz::serve(engine, listener, ev_channel(), None, None));
 
     let dir_mode = std::fs::metadata(&dir).expect("dir exists").permissions().mode() & 0o777;
     assert_eq!(
@@ -545,4 +569,60 @@ async fn p17_socket_directory_denies_foreign_users_before_the_socket_mode() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Narrowing a peer's shared workspaces: a POST, refused as a GET, and absent when there is no
+/// federation role to narrow.
+///
+/// The endpoint is deliberately the one exception to this surface's GET-with-side-effect convention.
+/// That convention is defensible - a 0600 unix socket has no third-party origin to ride - and it
+/// still governs the verdict endpoints. But this act changes a sharing boundary (P17) rather than
+/// appending a gated verdict, and the method is the cheapest place to record the difference.
+#[tokio::test]
+async fn narrowing_a_peer_is_a_post_and_needs_a_federation_role() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+
+    // No handler injected = no server role on this node.
+    let plain = serve_uds("narrow-none", engine.clone(), ev_channel()).await;
+    let resp = uds_request(&plain, "POST", "/api/peer/share?node_id=x&workspaces=").await;
+    assert!(resp.lines().next().unwrap_or("").contains("404"), "{resp}");
+
+    /// What the injected handler was asked to do, so a refused request can be shown never to reach it.
+    type Calls = Arc<std::sync::Mutex<Vec<(String, Vec<String>)>>>;
+    let seen: Calls = Arc::default();
+    let recorded = seen.clone();
+    let narrow: supragnosis_viz::NarrowShare = Arc::new(move |node_id: &str, keep: &[String]| {
+        if node_id == "unknown" {
+            return Err("no allowlist entry for node_id unknown".into());
+        }
+        recorded.lock().unwrap().push((node_id.to_string(), keep.to_vec()));
+        Ok(keep.to_vec())
+    });
+    let path = serve_uds_with_narrow("narrow-ok", engine, ev_channel(), narrow).await;
+
+    // A GET is refused, so the convention cannot be extended here by habit.
+    let resp = uds_request(&path, "GET", "/api/peer/share?node_id=a&workspaces=alpha").await;
+    assert!(resp.lines().next().unwrap_or("").contains("405"), "{resp}");
+    assert!(seen.lock().unwrap().is_empty(), "a refused method must not reach the handler");
+
+    // A POST narrows and echoes what is now granted.
+    let resp = uds_request(&path, "POST", "/api/peer/share?node_id=a&workspaces=alpha,beta").await;
+    let v = json_get(&resp);
+    assert_eq!(v["node_id"], "a");
+    assert_eq!(v["shared_workspaces"], serde_json::json!(["alpha", "beta"]));
+
+    // Empty is a narrowing to nothing - distinct from omitting the parameter, which is a 400.
+    let resp = uds_request(&path, "POST", "/api/peer/share?node_id=a&workspaces=").await;
+    let v = json_get(&resp);
+    assert_eq!(v["shared_workspaces"], serde_json::json!([]));
+    let resp = uds_request(&path, "POST", "/api/peer/share?node_id=a").await;
+    assert!(resp.lines().next().unwrap_or("").contains("400"), "{resp}");
+
+    // The handler's refusal reaches the caller as the reason, not as a bare failure.
+    let resp = uds_request(&path, "POST", "/api/peer/share?node_id=unknown&workspaces=").await;
+    let body = body_of(&resp, "400 Bad Request");
+    assert!(body.contains("no allowlist entry"), "{body}");
+
+    let calls = seen.lock().unwrap().clone();
+    assert_eq!(calls.len(), 2, "only the two accepted POSTs reached the handler: {calls:?}");
 }

@@ -381,13 +381,15 @@ async fn run(cfg: Config) -> Result<()> {
         .as_ref()
         .map(|_| Arc::new(std::sync::RwLock::new(serde_json::json!({"configured": true}))));
 
-    if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
-        spawn_viz(&engine, sock, tx.clone(), fed_status.clone()).await;
-    }
-
     // Federation wiring (M4 Phase 4, docs/federation.md Section 9): optional supragnosis.toml.
-    // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5).
-    let sync_ctx = build_sync_context(&engine, fedcfg, fed_status)?;
+    // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5). Built
+    // before the viewer so a misconfigured federation dies before any socket is bound, and so the
+    // console can be handed the admission handler this produces.
+    let (sync_ctx, narrow) = build_sync_context(&engine, fedcfg, fed_status.clone())?;
+
+    if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
+        spawn_viz(&engine, sock, tx.clone(), fed_status, narrow).await;
+    }
 
     match cfg.http.as_deref() {
         Some(http) => {
@@ -412,8 +414,8 @@ fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
-) -> Result<Option<Arc<supragnosis_mcp::SyncContext>>> {
-    let Some(fc) = fedcfg else { return Ok(None) };
+) -> Result<(Option<Arc<supragnosis_mcp::SyncContext>>, Option<supragnosis_viz::NarrowShare>)> {
+    let Some(fc) = fedcfg else { return Ok((None, None)) };
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
     // clock and the per-workspace seq counters (two live counters over one store would collide).
     let identity = fed::load_or_create_identity()?;
@@ -470,7 +472,7 @@ fn build_sync_context(
     // Federation status task: health-checks the configured hubs (connectivity + auth +
     // authorization in one round trip), computes per-workspace diffs vs each hub, snapshots the
     // known-peer registry (hub role), and publishes it all to the viewer's /api/federation.
-    if let Some(fs) = fed_status {
+    if let Some(fs) = fed_status.clone() {
         spawn_fed_status(
             engine.clone(),
             fs,
@@ -481,7 +483,44 @@ fn build_sync_context(
             admitted.clone(),
         );
     }
-    Ok(Some(Arc::new(supragnosis_mcp::SyncContext {
+    // The console's narrowing act, built here because this is where the config and the live
+    // admission directory both are - the viewer only routes it (P20: the viz crate knows nothing
+    // about the sync crate or the config file).
+    //
+    // The file is written first and then re-read to refresh the directory, so the running state is
+    // whatever the file says rather than a second copy maintained in parallel. One source of truth
+    // survives the round trip, and a hand-edit made in the meantime is picked up rather than lost.
+    let narrow: Option<supragnosis_viz::NarrowShare> = admitted.clone().map(|dir| {
+        let status = fed_status.clone();
+        let handler = move |node_id: &str, keep: &[String]| -> Result<Vec<String>, String> {
+            let now = fed::narrow_shared_workspaces(node_id, keep).map_err(|e| e.to_string())?;
+            let reloaded = fed::load()
+                .map_err(|e| format!("narrowed on disk, but re-reading the config failed: {e}"))?
+                .and_then(|c| c.server)
+                .ok_or_else(|| "narrowed on disk, but the config no longer has a [server] section".to_string())?;
+            dir.replace(reloaded.allowlist);
+            // Publish immediately rather than waiting for the status task's next pass. That task
+            // recomputes `admitted` from this same directory, so the two agree either way - but it
+            // runs on a slow interval, and a console that showed the old grant for up to a minute
+            // after a narrowing would be displaying the wrong sharing boundary, which is the one
+            // thing this surface exists to get right (P17).
+            if let Some(fs) = &status {
+                if let Ok(mut blob) = fs.write() {
+                    if let Some(obj) = blob.as_object_mut() {
+                        obj.insert(
+                            "admitted".into(),
+                            serde_json::to_value(admitted_json(&dir)).unwrap_or_default(),
+                        );
+                    }
+                }
+            }
+            tracing::info!(peer = node_id, granted = ?now, "narrowed a peer's shared workspaces");
+            Ok(now)
+        };
+        Arc::new(handler) as supragnosis_viz::NarrowShare
+    });
+
+    Ok((Some(Arc::new(supragnosis_mcp::SyncContext {
         node,
         share_workspaces: fc.sync.share_workspaces.clone(),
         servers: fc.sync.servers.clone(),
@@ -490,7 +529,7 @@ fn build_sync_context(
         origin_keys,
         // Only a hub (server role) observes peers; a client-only node reports none.
         peer_registry: fc.server.is_some().then_some(peer_registry),
-    })))
+    })), narrow))
 }
 
 /// The federation status loop (every 60s): pings each configured hub (an authenticated no-op that
@@ -498,6 +537,19 @@ fn build_sync_context(
 /// version-vector diff against each healthy hub ("who is ahead by how many events"), snapshots the
 /// known-peer registry (hub role), and publishes everything to the viewer at /api/federation.
 /// Health state CHANGES stream to the activity feed (hc-ok / hc-fail); steady state stays quiet.
+/// The admitted set as the console reads it: node id and what each peer may read, nothing else.
+///
+/// `bearer_hash` is deliberately absent. It is a hash rather than a token, so publishing it would not
+/// hand anyone a credential - but nothing on this surface reads it, and a credential-shaped field
+/// with no reader is only a liability (P17/P18).
+fn admitted_json(dir: &supragnosis_sync::http::PeerDirectory) -> Vec<serde_json::Value> {
+    dir.admitted()
+        .allowlist
+        .iter()
+        .map(|e| serde_json::json!({"node_id": e.node_id, "shared_workspaces": e.shared_workspaces}))
+        .collect()
+}
+
 fn spawn_fed_status(
     engine: Arc<Engine>,
     fed: supragnosis_viz::FedStatus,
@@ -578,21 +630,7 @@ fn spawn_fed_status(
             // point of admission no longer being a startup snapshot. `bearer_hash` is deliberately
             // not published: it is a hash rather than a token, but nothing on this surface needs it,
             // and a credential-shaped field is not worth carrying for no reader (P17/P18).
-            let allowlist_json: Vec<serde_json::Value> = admitted
-                .as_ref()
-                .map(|d| {
-                    d.admitted()
-                        .allowlist
-                        .iter()
-                        .map(|e| {
-                            serde_json::json!({
-                                "node_id": e.node_id,
-                                "shared_workspaces": e.shared_workspaces,
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let allowlist_json = admitted.as_ref().map(|d| admitted_json(d)).unwrap_or_default();
             let blob = serde_json::json!({
                 "configured": true,
                 "node_id": node_id,
@@ -807,6 +845,7 @@ async fn spawn_viz(
     sock_path: &str,
     events: tokio::sync::broadcast::Sender<String>,
     fed: Option<supragnosis_viz::FedStatus>,
+    narrow: Option<supragnosis_viz::NarrowShare>,
 ) {
     // The TCP viewer is gone: the viewer serves HTTP over a unix socket only. Point out stale
     // configuration loudly instead of silently ignoring it (Principle 5).
@@ -834,7 +873,7 @@ async fn spawn_viz(
     );
     let engine = Arc::clone(engine);
     tokio::spawn(async move {
-        if let Err(e) = supragnosis_viz::serve(engine, listener, events, fed).await {
+        if let Err(e) = supragnosis_viz::serve(engine, listener, events, fed, narrow).await {
             tracing::error!(error = %e, "viz server terminated");
         }
     });
@@ -1451,6 +1490,65 @@ mod fed {
         Ok(Some(cfg))
     }
 
+    /// Narrows one peer's `shared_workspaces` in `supragnosis.toml`, preserving the file's comments
+    /// and layout, and returns the set that is now granted.
+    ///
+    /// **Narrowing only.** The requested set must be a subset of what the peer already has; a request
+    /// naming anything it does not currently hold is refused rather than partially applied. That
+    /// asymmetry is the whole safety argument for putting this on a surface at all: the act can only
+    /// move in the direction P17 already prefers (less sharing), so the worst outcome of a mistake -
+    /// or of a console left open - is that a peer reads less than intended. Widening stays where it
+    /// is, in the file, where it is a deliberate act with the operator's full context.
+    ///
+    /// The file is re-read here rather than edited from the process's startup copy, so an operator
+    /// who hand-edited it while the daemon ran does not have their change silently reverted by a
+    /// console click. Removing every workspace is permitted and means the peer stays admitted but may
+    /// read nothing; removing the peer itself is not this function's job (the deferred revocation
+    /// workflow, federation.md Section 11).
+    pub fn narrow_shared_workspaces(node_id: &str, keep: &[String]) -> Result<Vec<String>> {
+        let path = config_path();
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let mut doc: toml_edit::DocumentMut = text
+            .parse()
+            .with_context(|| format!("parsing {}", path.display()))?;
+
+        let entries = doc
+            .get_mut("server")
+            .and_then(|s| s.get_mut("allowlist"))
+            .and_then(|a| a.as_array_of_tables_mut())
+            .ok_or_else(|| anyhow::anyhow!("no [[server.allowlist]] in {}", path.display()))?;
+
+        let entry = entries
+            .iter_mut()
+            .find(|t| t.get("node_id").and_then(|v| v.as_str()) == Some(node_id))
+            .ok_or_else(|| anyhow::anyhow!("no allowlist entry for node_id {node_id}"))?;
+
+        let current: Vec<String> = entry
+            .get("shared_workspaces")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+
+        let widened: Vec<&String> = keep.iter().filter(|w| !current.contains(w)).collect();
+        if !widened.is_empty() {
+            anyhow::bail!(
+                "refusing to widen: {node_id} does not currently share {widened:?} (it shares \
+                 {current:?}). This surface only narrows - grant a workspace by editing {}",
+                path.display()
+            );
+        }
+
+        let mut arr = toml_edit::Array::new();
+        for w in keep {
+            arr.push(w.as_str());
+        }
+        entry["shared_workspaces"] = toml_edit::value(arr);
+        std::fs::write(&path, doc.to_string())
+            .with_context(|| format!("writing {}", path.display()))?;
+        Ok(keep.to_vec())
+    }
+
     /// Loads (or generates exactly once) the node keypair at ~/.supragnosis/node.key - 32 raw
     /// secret bytes, mode 0600. The node_id derives from the public key and never changes (F14).
     pub fn load_or_create_identity() -> Result<supragnosis_core::NodeIdentity> {
@@ -1537,6 +1635,80 @@ mod fed {
                 err.to_string().contains("shared_workspace"),
                 "the error has to name the offending key: {err}"
             );
+        }
+
+        /// Narrowing rewrites only the one array it was asked to change, and refuses to widen.
+        ///
+        /// Comment preservation is not cosmetic here. `supragnosis.toml` is a hand-maintained
+        /// declaration - the hub config in the author's own deployment carries paragraphs explaining
+        /// why it has no `[sync]` section - and a console that reformatted it would make operators
+        /// stop trusting the console. Serializing the parsed struct back out would do exactly that,
+        /// which is why this edits the document rather than the model.
+        #[test]
+        fn narrowing_preserves_the_file_and_refuses_to_widen() {
+            let dir = std::env::temp_dir().join(format!(
+                "supragnosis-narrow-{}-{}",
+                std::process::id(),
+                supragnosis_core::now_millis()
+            ));
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            let path = dir.join("supragnosis.toml");
+            let original = r#"# supragnosis hub - explains itself, and must keep explaining itself
+host_label = "hub"
+
+[server]
+listen = "0.0.0.0:7420"   # F10: non-loopback needs TLS + a non-empty allowlist
+
+# ashons-MacBook-Air
+[[server.allowlist]]
+node_id = "peer-a"
+public_key_hex = "aa"
+bearer_hash = "hh"
+shared_workspaces = ["alpha", "beta", "gamma"]
+"#;
+            std::fs::write(&path, original).expect("write fixture");
+            let prev = std::env::var("SUPRAGNOSIS_CONFIG").ok();
+            std::env::set_var("SUPRAGNOSIS_CONFIG", &path);
+
+            // Widening is refused, and says what is actually granted.
+            let err = narrow_shared_workspaces("peer-a", &["alpha".into(), "delta".into()])
+                .expect_err("widening must be refused");
+            assert!(err.to_string().contains("delta"), "names what was refused: {err}");
+            assert_eq!(
+                std::fs::read_to_string(&path).expect("read"),
+                original,
+                "a refused request must not touch the file"
+            );
+
+            // A subset is applied.
+            let kept = narrow_shared_workspaces("peer-a", &["alpha".into()]).expect("narrow");
+            assert_eq!(kept, vec!["alpha".to_string()]);
+            let after = std::fs::read_to_string(&path).expect("read");
+            assert!(after.contains(r#"shared_workspaces = ["alpha"]"#), "the array narrowed: {after}");
+            assert!(
+                after.contains("# supragnosis hub - explains itself")
+                    && after.contains("# ashons-MacBook-Air")
+                    && after.contains("# F10: non-loopback"),
+                "every comment survives the edit: {after}"
+            );
+            assert!(after.contains(r#"host_label = "hub""#), "untouched keys stay put");
+            // It still parses as the config the daemon loads - an edit that produced valid TOML but
+            // an invalid config would only be discovered at the next restart.
+            toml::from_str::<FileConfig>(&after).expect("the edited file is still a valid config");
+
+            // Emptying is a legitimate narrowing: admitted, but may read nothing.
+            narrow_shared_workspaces("peer-a", &[]).expect("empty is a narrowing");
+            let after = std::fs::read_to_string(&path).expect("read");
+            assert!(after.contains("shared_workspaces = []"), "{after}");
+
+            // An unknown peer is an error, not a silent no-op.
+            assert!(narrow_shared_workspaces("nobody", &[]).is_err());
+
+            match prev {
+                Some(v) => std::env::set_var("SUPRAGNOSIS_CONFIG", v),
+                None => std::env::remove_var("SUPRAGNOSIS_CONFIG"),
+            }
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }

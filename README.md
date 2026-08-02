@@ -186,6 +186,11 @@ Cozo store is opened read-only and left untouched. **Read
 [`docs/store-migration.md`](docs/store-migration.md) Section 5 first**: a replay reproduces exactly
 what the log asserts, so early-era rows written outside it do not come across.
 
+- Federation peers: the viewer publishes the admitted set at `/api/federation`, and
+  `POST /api/peer/share?node_id=<id>&workspaces=<a,b>` **narrows** what one peer may read - written
+  through to `supragnosis.toml` (comments preserved) and applied without a restart. It only narrows;
+  widening and adding/removing peers stay in the file
+  ([`docs/federation.md`](docs/federation.md) 6a).
 - `sync` / `reproject` / `migrate` need the daemon **stopped** (an embedded store
   admits one process at a time). With a
   running daemon, use the `sync_*` MCP tools instead.
