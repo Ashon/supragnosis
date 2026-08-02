@@ -481,6 +481,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p17_a_credential_is_refused_at_ingest_without_being_echoed",
             "detect_secret_finds_credentials_without_firing_on_prose",
             "a_finding_never_carries_the_secret",
+            // The door only governs what arrives after it. Rows that predate it, or landed while it
+            // was off, are found by the same detector over the stored log and reported without being
+            // quoted - the honest state while there is no way to remove them (excision.md 8.2).
+            "p17_the_log_is_scanned_for_secrets_that_predate_the_door",
         ])),
         c("an authenticated network read tier filters workspace enumeration by the reader's grants",
           Evidence::Deferred(

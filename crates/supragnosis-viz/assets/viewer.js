@@ -755,9 +755,26 @@ function renderCuration() {
   const nchip = n => `<span class="nchip" data-id="${esc(n.id)}" title="focus ${esc(n.name)} (deg ${n.degree}, ${n.sources} src)">${esc(n.name)}<span class="ty">${esc(n.type)}</span></span>`;
   const dup = curation.duplicates || [], gb = curation.grab_bags || [], orph = curation.orphans || [];
   const con = curation.contradictions || [];
-  // Contested beliefs first (resolution.md 4.2): the signals where the system explicitly has no
+  // Suspected secrets go above everything, and only when there are any. Every other signal here is
+  // ontology hygiene that can wait; this one is knowledge that should not be in the log at all, and
+  // there is no way to take it out yet (docs/excision.md). Ranking it with the housekeeping would
+  // understate it, and the operator being unaware is the whole failure this signal exists to prevent.
+  const sec = curation.secrets || [];
+  let html = "";
+  if (sec.length) {
+    html += `<div class="csec hot">suspected secrets (${sec.length})</div>`
+      + `<div class="hint">the log is append-only - these cannot be removed yet. Stop the leak `
+      + `spreading by narrowing what this workspace shares (settings), and rotate the credential.</div>`;
+    for (const f of sec) {
+      html += `<div class="grp secret"><span class="nchip" data-obs="${esc(f.observation)}" `
+        + `title="open this observation">${esc(f.observation.slice(0, 12))}</span>`
+        + `<span class="ty">${esc(f.pattern)}</span>`
+        + `<div class="hint">in ${esc(f.field)}, at byte ${f.at | 0} - not shown here on purpose</div></div>`;
+    }
+  }
+  // Contested beliefs (resolution.md 4.2): the signals where the system explicitly has no
   // ground to choose, so a human call is the only thing that settles them. Confirm = /api/resolve.
-  let html = `<div class="csec">contested beliefs (${con.length})</div>`;
+  html += `<div class="csec">contested beliefs (${con.length})</div>`;
   html += con.length
     ? con.map(c =>
         `<div class="grp"><span class="nchip" data-id="${esc(c.id)}" title="focus ${esc(c.name)}">${esc(c.name)}</span>`
@@ -833,6 +850,16 @@ function renderCuration() {
   }
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
   curationBodyEl.innerHTML = html;
+  // The finding names the row without showing its text; clicking is the separate, deliberate act of
+  // looking at it. The Log tab holds the loaded rows, so fall back to it when this scope has not
+  // loaded the one being pointed at rather than silently doing nothing.
+  curationBodyEl.querySelectorAll("[data-obs]").forEach(el => {
+    el.onclick = () => {
+      const id = el.getAttribute("data-obs");
+      const o = (obsLog || []).find(x => x.id === id);
+      if (o) showObsCard(o); else panelOn("log");
+    };
+  });
   const s = curation.stats || {};
   reviewCtEl.textContent =
     (s.contradictions || 0) + (s.merge_cycles || 0) + (s.merge_suggestions || 0)

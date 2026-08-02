@@ -161,9 +161,12 @@ So the order is:
    every local ingest door and deliberately NOT on the sync apply path: detector patterns grow, so a
    newer node would refuse what an older peer accepted and the two would hold different logs from one
    event set (P16). Every secret it catches is one that never needs any of this.
-2. **Detection without destruction.** The same detector, run over what is already stored, surfacing
-   suspected secrets in the console. It cannot remove anything, and it stops the operator from being
-   unaware - which is the honest intermediate state.
+2. **Detection without destruction.** **Built.** The same detector, over the stored log, reported as a
+   curation signal - read-only like every other one (P7), and above the hygiene signals in the console
+   because this is not housekeeping. It reports the id, the field and the shape and never the text: a
+   report travels into logs and screenshots, so quoting the secret would copy it everywhere the report
+   goes. The door and the scan walk one shared field list, because two would drift silently in the
+   worst direction - a field the door checks and the scan does not is a secret reported as absent.
 3. **Containment, which already works today.** Narrowing a peer's shared workspaces stops a leak
    spreading now. It does not recall what has synced, and Section 4's ordering rule applies.
 4. **Excision**, with the lineage walk, the absorbing tombstone, cursor participation and propagation
