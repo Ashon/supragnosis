@@ -1,6 +1,6 @@
 //! Port conformance - one suite, every adapter.
 //!
-//! [`supragnosis_core::KnowledgeStore`] states a contract in prose: absence is not failure
+//! [`supragnosis_core::AssertionStore`] states a contract in prose: absence is not failure
 //! (Principle 5), the same query on the same state gives the same response, and the iteration order
 //! of an internal data structure must not leak into a result (Principle 16).
 //!
@@ -24,6 +24,7 @@
 use std::path::PathBuf;
 
 use supragnosis_core::{
+    AssertionStore,
     Entity, Hlc, KnowledgeStore, Observation, Provenance, Relation, SearchHit, SearchHitKind,
     SyncMeta, TrustTier, VersionVector,
 };

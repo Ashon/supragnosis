@@ -15,7 +15,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use supragnosis_core::{AttestationEvent, KnowledgeStore, SearchHit, VersionVector};
+use supragnosis_core::{AttestationEvent, AssertionStore, SearchHit, VersionVector};
 
 use crate::{export_delta, version_vector, SyncError, SyncNode};
 
@@ -213,7 +213,7 @@ impl Admitted {
 
 /// Shared state of the sync API handlers.
 pub struct ServerState {
-    pub store: Arc<dyn KnowledgeStore>,
+    pub store: Arc<dyn AssertionStore>,
     pub node: Arc<SyncNode>,
     /// Who may connect, and the keys derived from that - swappable without a restart.
     pub peers: Arc<PeerDirectory>,
@@ -224,7 +224,7 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(store: Arc<dyn KnowledgeStore>, node: Arc<SyncNode>, allowlist: Vec<AllowEntry>) -> Self {
+    pub fn new(store: Arc<dyn AssertionStore>, node: Arc<SyncNode>, allowlist: Vec<AllowEntry>) -> Self {
         let peers = Arc::new(PeerDirectory::new(allowlist, node.node_id(), &node.public_key_hex()));
         Self {
             store,
@@ -245,7 +245,7 @@ impl ServerState {
 
     /// Builds state around an existing directory, so the wiring layer keeps the handle it will hand
     /// to a management surface - the same shape as the known-peer registry in [`Hooks`].
-    pub fn with_directory(store: Arc<dyn KnowledgeStore>, node: Arc<SyncNode>, peers: Arc<PeerDirectory>) -> Self {
+    pub fn with_directory(store: Arc<dyn AssertionStore>, node: Arc<SyncNode>, peers: Arc<PeerDirectory>) -> Self {
         Self { store, node, peers, on_applied: None, on_activity: None, on_search: None, registry: None }
     }
 
@@ -549,7 +549,7 @@ pub struct TlsPaths {
 /// Serves the sync API. Loopback may run plain (a local trust surface); a non-loopback bind is
 /// refused unless TLS material is provided AND the allowlist is non-empty (F10).
 pub async fn serve(
-    store: Arc<dyn KnowledgeStore>,
+    store: Arc<dyn AssertionStore>,
     node: Arc<SyncNode>,
     listen: SocketAddr,
     tls: Option<TlsPaths>,
@@ -677,7 +677,7 @@ impl SyncClient {
     /// Re-materialization (engine reproject) is the caller's follow-up - transport moves the log.
     pub async fn sync_workspace(
         &self,
-        store: &Arc<dyn KnowledgeStore>,
+        store: &Arc<dyn AssertionStore>,
         node: &SyncNode,
         workspace: &str,
         share_workspaces: &[String],
@@ -740,7 +740,7 @@ mod tests {
     /// anyway, which is the drift `PeerDirectory` exists to make unrepresentable.
     #[tokio::test]
     async fn admission_changes_take_effect_without_a_restart() {
-        let hub_store: Arc<dyn KnowledgeStore> = Arc::new(InMemoryStore::new());
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
         let peer = SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]));
         hub_store.add_observation(Observation::new("hub fact".into(), prov("ws", 1))).unwrap();
@@ -809,7 +809,7 @@ mod tests {
 
     #[tokio::test]
     async fn wire_auth_rejects_bad_token_and_unshared_workspace() {
-        let hub_store: Arc<dyn KnowledgeStore> = Arc::new(InMemoryStore::new());
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
         let client_node = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
         let allow = vec![entry(&client_node, "secret-token", &["ws"])];
@@ -836,18 +836,18 @@ mod tests {
     /// hub (relay), and all three logs converge (F5 at the transport level).
     #[tokio::test]
     async fn two_clients_converge_through_the_hub() {
-        let hub_store: Arc<dyn KnowledgeStore> = Arc::new(InMemoryStore::new());
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
         // The hub has its own knowledge too.
         hub_store
             .add_observation(Observation::new("hub fact".into(), prov("ws", 5)))
             .unwrap();
 
-        let a_store: Arc<dyn KnowledgeStore> = Arc::new(InMemoryStore::new());
+        let a_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let a_node = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
         a_store.add_observation(Observation::new("alpha".into(), prov("ws", 10))).unwrap();
 
-        let b_store: Arc<dyn KnowledgeStore> = Arc::new(InMemoryStore::new());
+        let b_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let b_node = SyncNode::new(NodeIdentity::from_secret_bytes([2u8; 32]));
         b_store.add_observation(Observation::new("beta".into(), prov("ws", 20))).unwrap();
 
@@ -869,7 +869,7 @@ mod tests {
         assert_eq!((s3.pushed, s3.pulled), (0, 1));
 
         // All three logs converge to the same 3 observations (F5, log level).
-        let ids = |s: &Arc<dyn KnowledgeStore>| {
+        let ids = |s: &Arc<dyn AssertionStore>| {
             let mut v: Vec<String> = s
                 .all_observations(Some("ws"))
                 .unwrap()

@@ -1048,7 +1048,7 @@ pub struct AttestationEvent {
 ///   read path, so a fold that resolves a tie by "first row seen" would otherwise inherit an order the store never
 ///   promised. Naming the order is what makes the promise checkable
 ///   (`crates/supragnosis-store/tests/port_conformance.rs`).
-pub trait KnowledgeStore: Send + Sync {
+pub trait AssertionStore: Send + Sync {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
     /// Restores an observation by id from the observation log - the back-reference path for search hits / derivation
     /// lineage (Principle 2/14: whoever knows the id can reach the entity and its provenance) and the reference read for
@@ -1056,9 +1056,6 @@ pub trait KnowledgeStore: Send + Sync {
     fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError>;
     /// A missing id is `Ok(None)` (absence, the unknown of Principle 5) - only a backend failure is `Err`.
     fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError>;
-    /// Upsert keyed on entity.id.
-    fn put_entity(&self, entity: Entity) -> Result<(), StoreError>;
-    fn add_relation(&self, rel: Relation) -> Result<(), StoreError>;
     /// Relations whose from or to is entity_id.
     fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError>;
     fn search(
@@ -1155,6 +1152,31 @@ pub trait KnowledgeStore: Send + Sync {
     ) -> Result<Vec<SearchHit>, StoreError> {
         Ok(Vec::new())
     }
+}
+
+/// The full store: [`AssertionStore`] plus the two writes that put a row into the entity/relation
+/// projection directly.
+///
+/// The split is Principle 1's third enforcement demand made structural: *"no API may write a fact
+/// that did not pass through an assertion directly into the graph"*. Only the engine's projection
+/// folds hold this trait. Everything else - the sync crate applying replicated events, the MCP tools,
+/// the CLI - is handed an `AssertionStore`, through which knowledge can only enter as an appended
+/// assertion and the graph can only be read.
+///
+/// It was a convention before, and the convention held: the whole workspace contains exactly two
+/// calls to these methods, both inside `project_entities`/`project_relations`. What it did not hold
+/// against is the past. The author's own store carries 35 entity rows that no observation anywhere
+/// asserts - written directly, in an era when something did reach for this handle - and they are
+/// invisible to the log, survive every re-projection, and cannot cross the sync wire because there is
+/// nothing to export. A replay cannot reproduce them because the log never knew about them.
+///
+/// A test cannot guard this: it would have to enumerate callers that do not exist yet. A supertrait
+/// can, by not being reachable through the handle the engine hands out.
+pub trait KnowledgeStore: AssertionStore {
+    /// Upsert keyed on entity.id. Reachable only where the projection is computed.
+    fn put_entity(&self, entity: Entity) -> Result<(), StoreError>;
+    /// Upsert keyed on relation.id. Reachable only where the projection is computed.
+    fn add_relation(&self, rel: Relation) -> Result<(), StoreError>;
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -30,7 +30,7 @@ use clap::{Args, Parser, Subcommand};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ServiceExt;
-use supragnosis_core::{EmbeddingProvider, KnowledgeStore, VersionVector};
+use supragnosis_core::{AssertionStore, EmbeddingProvider, KnowledgeStore, VersionVector};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, Event, SearchMode};
 use supragnosis_mcp::SupragnosisServer;
@@ -662,7 +662,7 @@ fn spawn_fed_status(
 /// TLS + a non-empty allowlist, F10). A misconfigured [server] section fails daemon startup loudly
 /// (P5) instead of silently running without the role.
 fn spawn_sync_server(
-    store: Arc<dyn KnowledgeStore>,
+    store: Arc<dyn AssertionStore>,
     node: Arc<supragnosis_sync::SyncNode>,
     srv: fed::ServerSection,
     hooks: supragnosis_sync::http::Hooks,

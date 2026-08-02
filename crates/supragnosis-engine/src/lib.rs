@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use supragnosis_core::{
+    AssertionStore,
     evaluated_tier, hyperedge_id, normalize_relation_kind, ordering_hlc,
     verdict_grant_ceiling, Assertions, BeliefCandidate, Clock, EmbeddingProvider, Entity,
     EntityAssertion, Hlc, KnowledgeStore, Observation, Provenance, Relation, RelationAssertion,
@@ -3139,7 +3140,12 @@ impl Engine {
 
     /// The shared store port - the federation sync layer operates on the same log the engine
     /// projects from (M4 Phase 4 wiring; one process, one store, one clock).
-    pub fn store(&self) -> Arc<dyn KnowledgeStore> {
+    ///
+    /// Deliberately narrowed to [`AssertionStore`] (Principle 1, third enforcement demand). The engine
+    /// holds the full [`KnowledgeStore`] and is the only thing that does; what it hands out can append
+    /// to the log and read the graph, but cannot write an entity or a relation row. Knowledge reaches
+    /// the projection through `observe`/`apply` and the folds those run, or it does not reach it at all.
+    pub fn store(&self) -> Arc<dyn AssertionStore> {
         self.store.clone()
     }
 

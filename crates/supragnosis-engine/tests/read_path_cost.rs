@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use supragnosis_core::{
+    AssertionStore,
     Entity, KnowledgeStore, Observation, Relation, SearchHit, StoreError, TraverseHit,
 };
 use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};
@@ -84,7 +85,7 @@ impl CountingStore {
     }
 }
 
-impl KnowledgeStore for CountingStore {
+impl AssertionStore for CountingStore {
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
         self.obs_scans.fetch_add(1, Ordering::SeqCst);
         let rows = self.inner.all_observations(workspace)?;
@@ -109,12 +110,6 @@ impl KnowledgeStore for CountingStore {
     }
     fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> {
         self.inner.get_entity(id)
-    }
-    fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
-        self.inner.put_entity(entity)
-    }
-    fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
-        self.inner.add_relation(rel)
     }
     fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError> {
         self.inner.relations_of(entity_id)
@@ -152,6 +147,16 @@ impl KnowledgeStore for CountingStore {
     ) -> Result<Vec<SearchHit>, StoreError> {
         self.semantic_queries.fetch_add(1, Ordering::SeqCst);
         self.inner.search_semantic_entities(q, ws, n)
+    }
+}
+
+impl KnowledgeStore for CountingStore {
+    fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
+        self.inner.put_entity(entity)
+    }
+
+    fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
+        self.inner.add_relation(rel)
     }
 }
 
@@ -407,7 +412,7 @@ fn read_path_wall_clock() {
 /// this test passed.
 struct ReversedStore(Arc<InMemoryStore>);
 
-impl KnowledgeStore for ReversedStore {
+impl AssertionStore for ReversedStore {
     fn all_observations(&self, ws: Option<&str>) -> Result<Vec<Observation>, StoreError> {
         let mut v = self.0.all_observations(ws)?;
         v.reverse();
@@ -426,11 +431,14 @@ impl KnowledgeStore for ReversedStore {
     fn add_observation(&self, o: Observation) -> Result<(), StoreError> { self.0.add_observation(o) }
     fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> { self.0.get_observation(id) }
     fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> { self.0.get_entity(id) }
-    fn put_entity(&self, e: Entity) -> Result<(), StoreError> { self.0.put_entity(e) }
-    fn add_relation(&self, r: Relation) -> Result<(), StoreError> { self.0.add_relation(r) }
     fn relations_of(&self, id: &str) -> Result<Vec<Relation>, StoreError> { self.0.relations_of(id) }
     fn search(&self, q: &str, ws: Option<&str>, n: usize) -> Result<Vec<SearchHit>, StoreError> { self.0.search(q, ws, n) }
     fn traverse(&self, id: &str, d: usize, n: usize) -> Result<Vec<TraverseHit>, StoreError> { self.0.traverse(id, d, n) }
+}
+
+impl KnowledgeStore for ReversedStore {
+    fn put_entity(&self, e: Entity) -> Result<(), StoreError> { self.0.put_entity(e) }
+    fn add_relation(&self, r: Relation) -> Result<(), StoreError> { self.0.add_relation(r) }
 }
 
 /// guard (P16): the read surfaces must not depend on the order the store enumerates the log in.

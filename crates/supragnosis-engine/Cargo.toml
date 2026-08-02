@@ -3,6 +3,7 @@ name = "supragnosis-engine"
 description = "supragnosis service layer: observe/resolve/query/traverse."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 

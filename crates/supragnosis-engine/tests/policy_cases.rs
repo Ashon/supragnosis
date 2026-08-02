@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use supragnosis_core::{
-    observation_content_id, Assertions, Entity, KnowledgeStore, Observation,
+    observation_content_id, Assertions, Entity, AssertionStore, KnowledgeStore, Observation,
     ProposalEventAssertion, ProposalEventKind, Provenance, TrustTier, VERDICT_SURFACE_CONSOLE,
 };
 use supragnosis_engine::{Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface};

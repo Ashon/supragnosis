@@ -20,7 +20,7 @@ use std::sync::Mutex;
 
 use supragnosis_core::{
     evaluated_tier, now_millis, observation_content_id, ordering_hlc, verify_attestation,
-    AttestationEvent, Hlc, KnowledgeStore, NodeIdentity, Observation, StoreError, SyncMeta,
+    AttestationEvent, Hlc, AssertionStore, NodeIdentity, Observation, StoreError, SyncMeta,
     VersionVector,
 };
 
@@ -111,7 +111,7 @@ impl SyncNode {
     }
 
     /// Next origin_seq for `workspace`, seeding from the store's max own stamped seq on first use.
-    fn next_seq(&self, store: &dyn KnowledgeStore, workspace: &str) -> Result<u64, SyncError> {
+    fn next_seq(&self, store: &dyn AssertionStore, workspace: &str) -> Result<u64, SyncError> {
         let mut map = self.last_seq.lock().unwrap();
         if !map.contains_key(workspace) {
             let mut max_own = 0u64;
@@ -134,7 +134,7 @@ impl SyncNode {
     /// (inbound events always arrive stamped and are rejected otherwise), so this node IS their
     /// origin. Deterministic order: observations by (ordering HLC, id), attestations by their list
     /// order. Returns the number of attestations stamped.
-    pub fn backfill(&self, store: &dyn KnowledgeStore, workspace: &str) -> Result<usize, SyncError> {
+    pub fn backfill(&self, store: &dyn AssertionStore, workspace: &str) -> Result<usize, SyncError> {
         let mut obss = store.all_observations(Some(workspace))?;
         obss.sort_by(|a, b| {
             (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
@@ -186,7 +186,7 @@ impl SyncNode {
     /// attestation verbatim (F13 - evaluation is read-side, never an apply gate).
     pub fn apply(
         &self,
-        store: &dyn KnowledgeStore,
+        store: &dyn AssertionStore,
         workspace: &str,
         events: Vec<AttestationEvent>,
         origin_keys: &BTreeMap<String, String>,
@@ -257,7 +257,7 @@ fn check_event(
 /// to `derived_from` so the lineage records the migration. The old row remains local history and
 /// never exports (the wire guard in `attestations_since`/`backfill`). Returns the migrated count.
 pub fn migrate_legacy_ids(
-    store: &dyn KnowledgeStore,
+    store: &dyn AssertionStore,
     workspace: &str,
 ) -> Result<usize, SyncError> {
     let mut migrated = 0usize;
@@ -304,7 +304,7 @@ pub fn migrate_legacy_ids(
 /// but ONLY if the workspace is on the node's outbound share list (selective sharing, F9: filtered
 /// before the boundary, an unshared workspace yields nothing rather than an error).
 pub fn export_delta(
-    store: &dyn KnowledgeStore,
+    store: &dyn AssertionStore,
     workspace: &str,
     since: &VersionVector,
     share_workspaces: &[String],
@@ -317,7 +317,7 @@ pub fn export_delta(
 
 /// The node's current version vector for `workspace` (what it holds) - the `advertise` payload.
 pub fn version_vector(
-    store: &dyn KnowledgeStore,
+    store: &dyn AssertionStore,
     workspace: &str,
 ) -> Result<VersionVector, SyncError> {
     let mut vv = VersionVector::default();

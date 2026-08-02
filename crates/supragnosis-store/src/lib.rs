@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use supragnosis_core::{
-    cosine_similarity, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
+    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit, SearchHitKind,
     StoreError, TraverseHit,
 };
 
@@ -31,7 +31,7 @@ impl InMemoryStore {
     }
 }
 
-impl KnowledgeStore for InMemoryStore {
+impl AssertionStore for InMemoryStore {
     fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
         Ok(self.observations.read().unwrap().get(id).cloned())
     }
@@ -50,19 +50,6 @@ impl KnowledgeStore for InMemoryStore {
 
     fn get_entity(&self, id: &str) -> Result<Option<Entity>, StoreError> {
         Ok(self.entities.read().unwrap().get(id).cloned())
-    }
-
-    fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
-        self.entities
-            .write()
-            .unwrap()
-            .insert(entity.id.clone(), entity);
-        Ok(())
-    }
-
-    fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
-        self.relations.write().unwrap().insert(rel.id.clone(), rel);
-        Ok(())
     }
 
     fn relations_of(&self, entity_id: &str) -> Result<Vec<Relation>, StoreError> {
@@ -307,6 +294,21 @@ impl KnowledgeStore for InMemoryStore {
         });
         hits.truncate(limit);
         Ok(hits)
+    }
+}
+
+impl KnowledgeStore for InMemoryStore {
+    fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
+        self.entities
+            .write()
+            .unwrap()
+            .insert(entity.id.clone(), entity);
+        Ok(())
+    }
+
+    fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
+        self.relations.write().unwrap().insert(rel.id.clone(), rel);
+        Ok(())
     }
 }
 

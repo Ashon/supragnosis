@@ -3,6 +3,7 @@ name = "supragnosis-e2e"
 description = "Real-model end-to-end (e2e) measurement suite: produces a scorecard of model behavior - not a regression guard."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 publish = false
 
