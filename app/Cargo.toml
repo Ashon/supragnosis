@@ -4,6 +4,9 @@ description = "supragnosis desktop shell - a thin Tauri client over the daemon's
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# The desktop shell is not a library and needs platform webview toolchains; it ships as a
+# signed bundle from the release workflow, not from crates.io.
+publish = false
 
 [lints]
 workspace = true
