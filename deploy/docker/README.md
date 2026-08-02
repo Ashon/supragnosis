@@ -77,11 +77,11 @@ The image builds from source rather than from a release tarball, so it can be cu
 which is what running a hub ahead of a release requires - and so it cannot drift if a published
 asset is ever replaced.
 
-The builder is pinned to `rust:1.95`, **not** to the workspace's declared `rust-version = "1.87"`,
-because that declaration does not hold. `supragnosis-viz` takes `oxc` as a build-dependency - it
-minifies the viewer assets in release builds - and oxc requires 1.95; `rmcp-macros` brings `darling`,
-which requires 1.88. Both are crates this image builds, so the floor is real and the declaration is
-the thing that is wrong.
+The builder is pinned to the workspace's declared floor, `rust:1.95`. That floor is set by
+dependencies rather than by this code: `supragnosis-viz` takes `oxc` as a build-dependency to minify
+the viewer assets in release builds, and `rmcp-macros` brings `darling`. The `msrv` job in rust.yml
+builds at the declared version, so the number here and the number in `Cargo.toml` cannot quietly
+disagree.
 
 Runtime is `debian:bookworm-slim`, not Alpine: the binary is dynamically linked against glibc and
 this workspace neither builds nor tests a musl target. The image is around 120MB.
