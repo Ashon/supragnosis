@@ -24,7 +24,7 @@ vars:
   # Built by `task build`; also what the desktop shell spawns via SUPRAGNOSIS_BIN.
   SERVER_BIN: ./target/debug/supragnosis
   # Throwaway instance for dev / dev:snapshot / server. Kept off ~/.supragnosis so it never contends with
-  # a real daemon for the cozo/RocksDB single-process lock. The socket lives in /tmp because macOS
+  # a real daemon for the store's single-writer lock. The socket lives in /tmp because macOS
   # caps sun_path near 104 bytes - a long path fails with a bare "viz bind failed" and no viewer.
   DEV_SOCK: /tmp/supragnosis-dev.sock
   DEV_DATA: /tmp/supragnosis-dev-db
@@ -80,7 +80,7 @@ tasks:
       - task: _snapshot
       - task: dev
 
-  # cozo/RocksDB is single-process, so a dev instance cannot open the store a running daemon holds.
+  # The store takes a single writer, so a dev instance cannot open the store a running daemon holds.
   # A copy sidesteps that without stopping anything: RocksDB is crash-consistent, so a directory
   # copied from under a live writer opens the same way it would after a power cut (WAL recovery).
   # The copy is a SNAPSHOT in both directions - what you do in dev never reaches the real store, and
@@ -96,10 +96,10 @@ tasks:
     desc: Run YOUR build against the REAL store - requires `task stop` first, `task restart` after
     deps: [build]
     # No DATA_DIR override, so this opens the real store. The precondition exists because the raw
-    # failure is a cozo lock error that does not say what to do about it.
+    # failure is a store lock error that does not say what to do about it.
     preconditions:
       - sh: '! pgrep -f "supragnosis serve" >/dev/null'
-        msg: "a daemon is holding the store (cozo is single-process). `task stop` first, `task restart` when done - or use `task dev:snapshot` to work on a copy without stopping anything."
+        msg: "a daemon is holding the store (one writer at a time). `task stop` first, `task restart` when done - or use `task dev:snapshot` to work on a copy without stopping anything."
     cmds:
       - >-
         SUPRAGNOSIS_BIN={{.SERVER_BIN}}
@@ -199,7 +199,7 @@ tasks:
     deps: [build]
     cmds: ['{{.SERVER_BIN}} restart']
 
-  # --- maintenance (these need the daemon STOPPED - cozo is single-process) ----------------------
+  # --- maintenance (these need the daemon STOPPED - one writer at a time) -----------------------
 
   reproject:
     desc: Re-materialize the projection from the log. Stop the daemon first.

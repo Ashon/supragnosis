@@ -151,7 +151,7 @@ impl AssertionStore for InMemoryStore {
                 // emitted. It used to be emitted with `unwrap_or_default()`, i.e. as a hit claiming
                 // an entity whose name is the empty string - an invented node. Two reasons it is
                 // dropped instead:
-                //   - Parity (Principle 16): the Cozo adapter joins `*entity` in its final rule, so
+                //   - Parity (Principle 16): a join-based adapter drops the dangling row on its own, so
                 //     an unprojected endpoint never appears there. The same log must answer the same
                 //     traverse on either adapter, and sync's partial-ingest state is what makes this
                 //     reachable (architecture.md Section 14, overdue entry condition 3).
@@ -376,7 +376,7 @@ mod tests {
         }
     }
 
-    /// Directly verifies the InMemoryStore adapter - matches behavior parity with the Cozo adapter.
+    /// Directly verifies the InMemoryStore adapter - the behaviour every adapter is held to.
     #[test]
     fn in_memory_get_relations_search_traverse() {
         let store = InMemoryStore::new();

@@ -34,7 +34,7 @@ ExecStart=%h/.local/bin/supragnosis serve --http 127.0.0.1:7373 --viz %h/.suprag
 Restart=on-failure
 RestartSec=5s
 Environment=RUST_LOG=info
-; The store is single-process (one Cozo/RocksDB lock). Never let systemd run two.
+; The store takes a single writer (one lock on the database file). Never let systemd run two.
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30
