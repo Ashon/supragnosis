@@ -59,6 +59,17 @@
   </div>
 </aside>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span></div>
+<!-- Federation settings. The Peers panel is the monitor (health, sync drift, who checked in);
+     this is where the sharing boundary is actually changed. Native <dialog> for Esc/backdrop/focus
+     rather than a hand-rolled overlay, and every control is wired in JS - no inline handlers, so the
+     page stays clean under the CSP the network read tier will need (federation.md 6d). -->
+<dialog id="fedcfg">
+  <form method="dialog" class="fchead">
+    <span class="ftitle">federation</span>
+    <button class="fclose" title="close (Esc)">close</button>
+  </form>
+  <div id="fedcfgBody"></div>
+</dialog>
 <div id="tip"></div>
 <!-- Minimap (map-tool convention): whole-graph overview + viewport rectangle, docked at the
      bottom-right corner with the HUD column to its LEFT (one aligned control block). Drawn by

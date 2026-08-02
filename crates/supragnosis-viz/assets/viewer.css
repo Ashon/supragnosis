@@ -424,3 +424,42 @@
 .card .ocprop .pstate.merged { color:var(--teal); }
 .card .ocprop .pstate.blocked { color:var(--accent); }
 .card .echip.off { opacity:.5; cursor:default; text-decoration:line-through; }
+
+  /* --- federation settings dialog -------------------------------------------------------------
+     Small, centred, and deliberately plain: it is a settings surface, not a view. The peer rows
+     reuse the panel type scale so the dialog reads as the same application rather than a bolted-on
+     form. */
+  #fedcfg { width:min(560px,92vw); max-height:82vh; padding:0; border:1px solid var(--line);
+            border-radius:6px; background:var(--panel); color:var(--ink2);
+            font:12px/1.5 var(--mono); box-shadow:0 18px 60px rgba(0,0,0,0.55); }
+  #fedcfg::backdrop { background:rgba(8,9,13,0.62); }
+  #fedcfg .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
+                    padding:9px 12px; border-bottom:1px solid var(--line-soft); }
+  #fedcfg .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
+  #fedcfg .fclose { padding:2px 8px; font:600 10.5px/1.6 var(--mono); }
+  #fedcfgBody { padding:10px 12px 14px; overflow:auto; max-height:calc(82vh - 40px); }
+  #fedcfg .fsec { margin:12px 0 5px; color:var(--muted); font-weight:600; letter-spacing:0.05em;
+                  text-transform:uppercase; font-size:10px; }
+  #fedcfg .fsec:first-child { margin-top:0; }
+  #fedcfg .prow { padding:7px 8px; margin-bottom:5px; border:1px solid var(--line-soft);
+                  border-radius:4px; background:var(--panel-2); }
+  #fedcfg .pid { color:var(--ink); }
+  #fedcfg .wschips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  /* A grant is a chip you can only DROP. There is no field to type a wider set into, because the
+     surface only narrows (federation.md 6a) - the shape of the control is the rule. */
+  #fedcfg .wsc { display:inline-flex; align-items:center; gap:5px; padding:1.5px 6px;
+                 border:1px solid var(--line); border-radius:10px; background:var(--surface);
+                 color:var(--ink2); cursor:pointer; }
+  #fedcfg .wsc:hover { border-color:var(--gold-dim); color:var(--ink); }
+  #fedcfg .wsc .x { color:var(--faint); }
+  #fedcfg .wsc:hover .x { color:var(--accent); }
+  #fedcfg .wsc.armed { border-color:#d96a5f; color:#d96a5f; }
+  #fedcfg .wsc.armed .x { color:#d96a5f; }
+  #fedcfg .none { color:var(--faint); font-style:italic; }
+  #fedcfg .note { margin-top:10px; padding-top:9px; border-top:1px solid var(--line-soft);
+                  color:var(--faint); }
+  #fedcfg .err { color:#d96a5f; margin-top:6px; }
+  /* The entry point lives in the Peers panel, inline with the node line. */
+  #peersBody button.fedcfgOpen { padding:0 4px; font:inherit; background:none; border:none;
+                                 color:var(--accent); cursor:pointer; }
+  #peersBody button.fedcfgOpen:hover { text-decoration:underline; }
