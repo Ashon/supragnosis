@@ -126,6 +126,10 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // sentence it grows is checked from the day it is written, rather than on the day someone
     // remembers this list exists.
     ("docs/excision.md", include_str!("../../../docs/excision.md")),
+    // Same reason as excision.md: specified, unbuilt, and listed before it names a guard rather
+    // than after. Unlike excision it reverses something that already ships, so the first test it
+    // names will be one that an existing behaviour has to keep passing.
+    ("docs/unmerge.md", include_str!("../../../docs/unmerge.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
@@ -260,6 +264,16 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              the same edge replaces rather than accumulates. Recorded in architecture.md Section 14 \
              under the Principle 1/6 deferral but never given a clause here; the conflict-surfacing \
              half is Principle 6's own deferred row",
+        )),
+        // Named by three documents and tracked by none until now: P3 demands it here, P15 demands
+        // both directions of it, and proposal-workflow.md counts "entity-merge / split" as one of
+        // the five gated intents. The implementation shipped five kinds with the split half missing,
+        // so a merge is the only canon change with no way back.
+        c("entity merge preserves history, so un-merge is possible",
+          Evidence::Deferred(
+            "M4 Phase 5, with P23's \"every proposal kind has a commit effect\" - the same hole from \
+             the other side. Specified in docs/unmerge.md: the mechanism is one edge leaving \
+             merge_forwarding, and the cost is the four decisions that document fixes",
         )),
         c("a re-materialization concurrent with an observe cannot interleave",
           Evidence::Deferred(
