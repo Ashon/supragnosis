@@ -159,6 +159,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "observations_carry_assertions_in_log",
             "p1_reprojection_rederives_without_touching_the_log",
             "incremental_write_equals_replay",
+            // The clause says "the graph"; the guard above reads entities. Relations were the half
+            // nobody checked, and they diverged - observe stamped an edge with the attestation of the
+            // call that wrote it while reprojection used the authoring attestation, so a replay could
+            // move an edge's tier with no change in the log. Both run one fold now, and this is the
+            // half of the claim that had no evidence.
+            "incremental_write_equals_replay_for_relations",
         ])),
         c("a generator proposes; nothing but a verdict commits",
           Evidence::Scenario(&["merge_suggestions_never_commit"])),
