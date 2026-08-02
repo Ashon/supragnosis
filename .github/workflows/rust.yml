@@ -138,12 +138,15 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      # --all-features on both: the optional `fastembed` tree carries licences the default feature
+      # set never resolves, and a gate that does not see them is a gate against the easy half.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
           manifest-path: Cargo.toml
+          arguments: --all-features
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
           manifest-path: app/Cargo.toml
-          arguments: --config deny.toml
+          arguments: --all-features --config deny.toml
