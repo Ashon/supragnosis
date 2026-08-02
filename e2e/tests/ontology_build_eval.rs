@@ -254,10 +254,9 @@ async fn build_ontology(http: &reqwest::Client, base: &str, model: &str) -> Buil
 
     // Surface validation: read the default-ws graph via the MCP resource.
     let resource_ok = match client
-        .read_resource(ReadResourceRequestParams {
-            meta: None,
-            uri: format!("supragnosis://workspace/{WS}/graph"),
-        })
+        .read_resource(ReadResourceRequestParams::new(format!(
+            "supragnosis://workspace/{WS}/graph"
+        )))
         .await
     {
         Ok(read) => read
