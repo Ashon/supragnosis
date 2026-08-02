@@ -6,9 +6,12 @@ on:
     paths:
       - "site/**"
       - "scripts/install.sh"
-      # the hero badge is stamped from the workspace version, so a release has to redeploy
-      - "Cargo.toml"
       - ".github/workflows/pages.yml"
+  # The hero badge names the latest release, so publishing one has to redeploy. A tag push does not
+  # reach this workflow (it is branch-filtered), which is why this is a release trigger and not a
+  # tag trigger.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -33,15 +36,18 @@ jobs:
       - name: stage the install bootstrap into the site
         run: cp scripts/install.sh site/install.sh
       # The badge in the checked-in HTML is only a placeholder; the deployed page always shows
-      # the workspace version, so a release cannot leave a stale number on the landing page.
-      - name: stamp the workspace version into the hero badge
+      # the latest release tag. The badge sits in "Project facts" beside the install command, so it
+      # has to name what a visitor can install. It read the workspace version until main moved ahead
+      # of the last tag, and then the page advertised a v0.2.0 with no download behind it.
+      - name: stamp the latest release into the hero badge
         run: |
           set -euo pipefail
-          version=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
-          test -n "$version" || { echo "could not read version from Cargo.toml" >&2; exit 1; }
+          version=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+          test -n "$version" || { echo "could not read the latest release tag" >&2; exit 1; }
           before=$(grep -c 'id="version-badge"' site/index.html)
           test "$before" -eq 1 || { echo "expected exactly one version-badge, found $before" >&2; exit 1; }
-          sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">v${version}</li>|" site/index.html
+          sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">${version}</li>|" site/index.html
           grep -o '<li id="version-badge">[^<]*</li>' site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
