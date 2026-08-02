@@ -1926,7 +1926,9 @@ fn p23_the_gate_surface_refuses_a_malformed_proposal() {
     let pair = || vec![x.clone(), y.clone()];
 
     for (label, kind, targets, into, tier, hint) in [
-        ("unknown kind", "entity_split", pair(), None, None, "unknown proposal kind"),
+        // Was `entity_split` until that became a real kind (unmerge.md). The name the author
+        // reached for as an obviously-absent example is a fair marker of how long it was owed.
+        ("unknown kind", "entity_dissolve", pair(), None, None, "unknown proposal kind"),
         (
             "no targets",
             "entity_merge",
@@ -2474,5 +2476,178 @@ fn p23_a_rekey_does_not_carry_proposal_events_into_the_new_workspace() {
         engine.list_proposals(Some(WS)).unwrap().len(),
         1,
         "and the source keeps its gate history"
+    );
+}
+
+// --- Principles 3/15: un-merge, the other half of the third gated intent (unmerge.md) -----------
+
+fn propose_merge_because(
+    engine: &Engine,
+    targets: &[&str],
+    into: &str,
+    principal: &str,
+    why: &str,
+) -> String {
+    engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: targets.iter().map(|s| s.to_string()).collect(),
+            into: Some(into.into()),
+            tier: None,
+            rationale: Some(why.into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some(principal.into()),
+        })
+        .expect("propose")
+}
+
+fn propose_split(engine: &Engine, merge: &str, principal: &str) -> String {
+    engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_split".into(),
+            targets: vec![merge.into()],
+            into: None,
+            tier: None,
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some(principal.into()),
+        })
+        .expect("propose split")
+}
+
+/// guard (Principle 3, unmerge.md Section 3): "un-merge must be possible". A merged entity_merge
+/// forwards the folded id onto the canonical one; a merged entity_split stops that edge being
+/// contributed, and the two entities are separate again. Nothing is deleted to make that happen -
+/// the row was never removed, only filtered - so what comes back is what was there.
+#[test]
+fn p3_a_merged_split_reverses_the_merge_it_names() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+
+    let before = graph_shape(&engine);
+    let merge = propose_merge(&engine, &[&x, &y], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+
+    let merged = engine.graph(Some(WS)).expect("graph");
+    assert!(
+        !merged.nodes.iter().any(|n| n.id == y),
+        "the folded id is gone from the graph while the merge stands"
+    );
+
+    let split = propose_split(&engine, &merge, "ashon");
+    review(&engine, &split, "merge", "reviewer");
+
+    assert_eq!(
+        graph_shape(&engine),
+        before,
+        "after the split the graph is exactly what it was before the merge - the separated row was \
+         filtered, never deleted, so reversing the filter restores it"
+    );
+}
+
+/// guard (unmerge.md Section 5): the failure this feature could most easily ship with. "Already
+/// merged" is derived from the forwarding map, so removing the edge makes the pair a fresh
+/// high-similarity candidate and the console would propose re-merging what a human just pulled
+/// apart. A split suppresses the SUGGESTION - permanently, and derived from the log so every node
+/// with the same log suppresses it.
+#[test]
+fn p19_a_split_pair_is_never_suggested_again() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    let pair_offered = |e: &Engine| {
+        let r = e.curation(Some(WS)).expect("curation");
+        r.merge_suggestions
+            .iter()
+            .any(|s| (s.a == x && s.b == y) || (s.a == y && s.b == x))
+            || r.name_variants
+                .iter()
+                .any(|g| g.members.iter().any(|m| m.id == x) && g.members.iter().any(|m| m.id == y))
+    };
+
+    let merge = propose_merge(&engine, &[&x, &y], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+    assert!(!pair_offered(&engine), "a merged pair is not a candidate");
+
+    let split = propose_split(&engine, &merge, "ashon");
+    review(&engine, &split, "merge", "reviewer");
+
+    assert!(
+        !pair_offered(&engine),
+        "the pair must stay unsuggested after the split - re-offering it asks the operator to undo \
+         the decision they just made, every time they look at the console"
+    );
+}
+
+/// guard (Principle 15, unmerge.md Section 7): "both must be reversible". A split is not absorbing -
+/// unlike an excision tombstone - so re-merging separated entities is an ordinary new entity_merge
+/// and needs no special case. Suppression is of the suggestion, never of the possibility.
+#[test]
+fn p15_separated_entities_can_be_merged_again() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+
+    let merge = propose_merge(&engine, &[&x, &y], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+    let split = propose_split(&engine, &merge, "ashon");
+    review(&engine, &split, "merge", "reviewer");
+
+    // A proposal is its content (P14), so the re-merge has to be a distinguishable act - which it
+    // is, since a merge after a split has a reason the first one did not.
+    let again =
+        propose_merge_because(&engine, &[&x, &y], &x, "ashon", "the split read the names wrong");
+    review(&engine, &again, "merge", "reviewer");
+
+    let g = engine.graph(Some(WS)).expect("graph");
+    assert!(
+        !g.nodes.iter().any(|n| n.id == y),
+        "the re-merge takes effect: the first split cancelled the first merge, not the pair's \
+         eligibility to be merged"
+    );
+}
+
+/// guard (unmerge.md Section 9): a verdict must correspond to an act. A split naming something that
+/// is not a decided entity_merge - absent, another kind, or still open - records its verdict and
+/// reaches nothing, exactly as a blocked merge does.
+#[test]
+fn p23_a_split_of_an_undecided_merge_has_no_commit_effect() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    let merge = propose_merge(&engine, &[&x, &y], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+
+    // A different proposal over the same pair (different rationale, therefore different content and
+    // therefore a different id - P14), opened and deliberately never decided.
+    let undecided =
+        propose_merge_because(&engine, &[&x, &y], &x, "ashon", "a second opinion, never reviewed");
+    let split = propose_split(&engine, &undecided, "ashon");
+
+    // Opening it is fine - well-formedness only. The console refuses the VERDICT and says why,
+    // rather than letting the caller discover a `blocked` state afterwards; that state is what a
+    // replicated verdict from another node lands in, since it never passes through this path.
+    let err = engine
+        .review_proposal(
+            None,
+            split.clone(),
+            "merge".into(),
+            None,
+            Some("reviewer".into()),
+            VerdictSurface::Console,
+        )
+        .expect_err("a split of an undecided merge must not commit");
+    assert!(
+        err.to_string().contains("is not an entity_merge that has been decided"),
+        "the refusal names the fix (P21), got: {err}"
+    );
+
+    let view = engine.get_proposal(Some(WS), &split).expect("get").expect("view");
+    assert_eq!(view.state, "open", "no verdict landed, so it is still open");
+    let g = engine.graph(Some(WS)).expect("graph");
+    assert!(
+        !g.nodes.iter().any(|n| n.id == y),
+        "and the real merge still stands - a split that did not commit reverses nothing"
     );
 }

@@ -270,11 +270,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // the five gated intents. The implementation shipped five kinds with the split half missing,
         // so a merge is the only canon change with no way back.
         c("entity merge preserves history, so un-merge is possible",
-          Evidence::Deferred(
-            "M4 Phase 5, with P23's \"every proposal kind has a commit effect\" - the same hole from \
-             the other side. Specified in docs/unmerge.md: the mechanism is one edge leaving \
-             merge_forwarding, and the cost is the four decisions that document fixes",
-        )),
+          Evidence::Scenario(&[
+            "p3_a_merged_split_reverses_the_merge_it_names",
+            // The reversal is worth nothing if the band immediately asks to undo it, so the
+            // suppression guard is part of this clause holding rather than a separate nicety.
+            "p19_a_split_pair_is_never_suggested_again",
+        ])),
         c("a re-materialization concurrent with an observe cannot interleave",
           Evidence::Deferred(
             "Revisit with a store-level atomic upsert - `reproject` does not take `write_guard`, so \
@@ -430,6 +431,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         )),
     ]),
     (15, "Resolution Is Substrate's Job", &[
+        // P15 says a wrong merge is more expensive than a wrong split "though, by Principle 3, both
+        // must be reversible". The merge half shipped long ago; this is the other one, and the
+        // re-merge case is where content addressing (P14) turned out to bite - unmerge.md Section 7.
+        c("a merge and a split are both reversible",
+          Evidence::Scenario(&["p15_separated_entities_can_be_merged_again"])),
         c("the substrate proposes identity candidates rather than leaving them to the operator",
           Evidence::Scenario(&[
             "merge_suggestions_never_commit",

@@ -437,8 +437,26 @@ pub struct CurationStats {
 }
 
 /// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
-pub const PROPOSAL_KINDS: [&str; 5] =
-    ["entity_merge", "claim_promotion", "claim_demotion", "tbox_change", "recall"];
+pub const PROPOSAL_KINDS: [&str; 6] = [
+    "entity_merge",
+    "entity_split",
+    "claim_promotion",
+    "claim_demotion",
+    "tbox_change",
+    "recall",
+];
+
+/// A merge verdict was cast on this proposal, whether or not the blocking checks let it commit.
+/// `merged` and `blocked` are the two states that carry one; `open`/`rejected`/`withdrawn` do not.
+///
+/// This is the condition an `entity_split`'s target must satisfy, and deliberately NOT "is merged".
+/// The check runs inside the fold that decides merged-versus-blocked, so depending on that
+/// distinction would make one proposal's state depend on another's within a single pass. Reversing
+/// a merge that the checks are holding back is harmless anyway - it subtracts an edge that is not
+/// being contributed (unmerge.md Section 9).
+fn carries_merge_verdict(state: &str) -> bool {
+    matches!(state, "merged" | "blocked")
+}
 
 /// The two gate kinds with a tier commit effect (resolution.md Section 5).
 const GATE_KINDS: [&str; 2] = ["claim_promotion", "claim_demotion"];
@@ -1521,6 +1539,60 @@ impl Engine {
     /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
     /// already-merged (either side forwarded away), and pairs already under an open entity_merge.
     /// Without an embedder there are no candidates (degrade, P19). Within-node reproducible order
+    /// Every pair a candidate generator must not offer: in flight under an open merge
+    /// ([`Self::open_merge_pairs`]) or pulled apart by a merged split ([`Self::split_pairs`]).
+    ///
+    /// One set rather than two parameters, because both generators have to suppress both and a
+    /// generator that learned about only one would re-offer what the other withheld. Neither of them
+    /// knows what a split is; they know what they may not suggest.
+    fn suppressed_pairs(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashSet<(String, String)>, StoreError> {
+        let mut out = self.open_merge_pairs(workspace, cx)?;
+        out.extend(self.split_pairs(workspace, cx)?);
+        Ok(out)
+    }
+
+    /// Entity pairs a merged `entity_split` has pulled apart. Every candidate generator suppresses
+    /// these, for the reason unmerge.md Section 5 exists: "already merged" is derived from the
+    /// forwarding map, so the moment a split removes the edge the pair becomes a fresh
+    /// high-similarity candidate and the console proposes re-merging what a human just separated -
+    /// every time they look at it, forever.
+    ///
+    /// **The suppression is of the suggestion, never of the possibility.** Opening an `entity_merge`
+    /// on split entities by hand stays allowed and needs no special case; this only stops the machine
+    /// from asking. That is the line the band already draws - a generator proposes, a verdict commits
+    /// (P19, IR2).
+    ///
+    /// Derived from the log like [`Self::open_merge_pairs`] beside it, so nodes with equal logs
+    /// suppress equally (P16), and living next to it so the two cannot drift on what "do not offer
+    /// this again" means.
+    fn split_pairs(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashSet<(String, String)>, StoreError> {
+        let props = self.fold_proposals(workspace, cx)?;
+        let reversed: HashSet<&String> = props
+            .values()
+            .filter(|p| p.kind == "entity_split" && p.state == "merged")
+            .flat_map(|p| p.targets.iter())
+            .collect();
+        let mut out: HashSet<(String, String)> = HashSet::new();
+        for p in props.values() {
+            if p.kind == "entity_merge" && reversed.contains(&p.id) {
+                for i in 0..p.targets.len() {
+                    for j in (i + 1)..p.targets.len() {
+                        out.insert(unordered_pair(&p.targets[i], &p.targets[j]));
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Entity pairs already carried by an OPEN entity_merge proposal. Every candidate generator
     /// suppresses these: a pair in flight is not a fresh candidate, and re-offering it invites a
     /// second proposal for a merge already awaiting a verdict. Shared by the merge band and the
@@ -1561,7 +1633,7 @@ impl Engine {
             ));
         }
         // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
-        let open_pairs = self.open_merge_pairs(workspace, cx)?;
+        let open_pairs = self.suppressed_pairs(workspace, cx)?;
         // Canonicalized undirected adjacency for the shared-neighbor count (structural corroboration).
         let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
         let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
@@ -1758,7 +1830,7 @@ impl Engine {
             &entities,
             &fwd,
             &relations,
-            &self.open_merge_pairs(workspace, cx)?,
+            &self.suppressed_pairs(workspace, cx)?,
             &node,
         );
         // T-Box axis collisions (Principle 9 minimal): a name defined on both the entity and the
@@ -1858,6 +1930,27 @@ impl Engine {
                 _ => {}
             }
         }
+        // A split names the resolution it reverses, so its single target is an entity_merge PROPOSAL
+        // id, not an entity id (unmerge.md Section 4 - the unit of reversal is the unit of decision).
+        // Whether that proposal exists and actually merged is a blocking check, not well-formedness:
+        // on a spoke the proposal may simply not have synced yet, and refusing at capture would make
+        // an arrival-order accident look like a malformed request.
+        if input.kind == "entity_split" {
+            if input.targets.len() != 1 {
+                return Err(ObserveError::Invalid(
+                    "entity_split needs exactly one target - the entity_merge proposal id it \
+                     reverses"
+                        .into(),
+                ));
+            }
+            if input.into.is_some() {
+                return Err(ObserveError::Invalid(
+                    "entity_split takes no `into` - it reverses a resolution rather than choosing a \
+                     canonical id"
+                        .into(),
+                ));
+            }
+        }
         // Gate kinds (resolution.md Section 5): a requested tier is mandatory, and the targets are
         // OBSERVATION ids that must exist in the local log - the referential-integrity blocking check
         // of proposal-workflow.md Section 6, applied at capture ("you cannot promote what is not
@@ -1930,6 +2023,21 @@ impl Engine {
         };
         let obs = Observation::with_assertions(content, prov, assertions);
         let id = obs.id.clone();
+        // A proposal IS its content (Principle 14), so re-opening an identical merge yields the same
+        // id - including one a split has already reversed, and the split names that id forever. The
+        // re-proposal would be permanently dead: accepted, verdicted, and unable to ever forward.
+        // Refuse and name the fix instead (P21), which is also the honest one - a re-merge after a
+        // split is a different act and should say why (unmerge.md Section 7).
+        if input.kind == "entity_merge"
+            && self.reversed_merges(Some(&workspace), &ReadCtx::default())?.contains(&id)
+        {
+            return Err(ObserveError::Invalid(format!(
+                "this exact resolution was already reversed by an entity_split. A proposal is its \
+                 content (Principle 14), so re-opening it produces {id} again and it stays \
+                 reversed. Give the re-merge a `rationale` saying why the split was wrong - that \
+                 makes it a different proposal, which is what it is"
+            )));
+        }
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
@@ -1971,7 +2079,9 @@ impl Engine {
         if decision == "merge" {
             if let Some(view) = self.get_proposal(Some(&workspace), &proposal)? {
                 let asserted = self.asserted_entity_ids(Some(&workspace), cx)?;
-                let failures = self.blocking_failures(Some(&workspace), &view, &asserted)?;
+                let decided = self.decided_merges(Some(&workspace), cx)?;
+                let failures =
+                    self.blocking_failures(Some(&workspace), &view, &asserted, &decided)?;
                 if !failures.is_empty() {
                     return Err(ObserveError::Invalid(format!(
                         "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
@@ -2170,9 +2280,19 @@ impl Engine {
         if views.iter().any(|(id, _)| tally.get(id).is_some_and(|t| t.merge)) {
             // One log pass, shared by every proposal being checked.
             let asserted = self.asserted_entity_ids(workspace, cx)?;
+            // The entity_split check needs to know which merges were decided. This pass IS the fold
+            // that assigns states, so it cannot ask for them - but `t.merge` is precisely the
+            // condition [`carries_merge_verdict`] recognizes once a state exists.
+            let decided: HashSet<String> = views
+                .iter()
+                .filter(|(id, v)| {
+                    v.kind == "entity_merge" && tally.get(*id).is_some_and(|t| t.merge)
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
             for (id, view) in views.iter() {
                 if tally.get(id).is_some_and(|t| t.merge)
-                    && !self.blocking_failures(workspace, view, &asserted)?.is_empty()
+                    && !self.blocking_failures(workspace, view, &asserted, &decided)?.is_empty()
                 {
                     blocked.insert(id.clone());
                 }
@@ -2218,8 +2338,12 @@ impl Engine {
             return Ok(None);
         };
         view.belief_diff = Some(self.belief_diff(workspace, &view, cx)?);
-        view.checks =
-            self.blocking_checks(workspace, &view, &self.asserted_entity_ids(workspace, cx)?)?;
+        view.checks = self.blocking_checks(
+            workspace,
+            &view,
+            &self.asserted_entity_ids(workspace, cx)?,
+            &self.decided_merges(workspace, cx)?,
+        )?;
         Ok(Some(view))
     }
 
@@ -2272,6 +2396,7 @@ impl Engine {
         workspace: Option<&str>,
         view: &ProposalView,
         asserted: &HashSet<String>,
+        decided_merges: &HashSet<String>,
     ) -> Result<Vec<CheckResult>, StoreError> {
         let mut out = Vec::new();
         let mut check = |name: &str, passed: bool, detail: String| {
@@ -2279,6 +2404,26 @@ impl Engine {
         };
 
         match view.kind.as_str() {
+            "entity_split" => {
+                // Referential integrity for a reversal: you cannot un-merge what is not here. The
+                // target is an entity_merge PROPOSAL id (unmerge.md Section 4), and it has to have
+                // been decided - a split of something still open would be a verdict about an act
+                // nobody has committed to.
+                let t = view.targets.first();
+                let known = t.is_some_and(|t| decided_merges.contains(t));
+                check(
+                    "reversible target",
+                    known,
+                    match t {
+                        None => "an entity_split names no proposal to reverse".into(),
+                        Some(t) if known => format!("{t} is a decided entity_merge"),
+                        Some(t) => format!(
+                            "{t} is not an entity_merge that has been decided - it is absent from \
+                             the local log, is another kind, or has no merge verdict yet"
+                        ),
+                    },
+                );
+            }
             k if GATE_KINDS.contains(&k) => {
                 // Referential integrity: you cannot promote what is not here. Under incomplete sync
                 // the targets may simply not have arrived, and merging then would grant a tier to
@@ -2391,9 +2536,10 @@ impl Engine {
         workspace: Option<&str>,
         view: &ProposalView,
         asserted: &HashSet<String>,
+        decided_merges: &HashSet<String>,
     ) -> Result<Vec<String>, StoreError> {
         Ok(self
-            .blocking_checks(workspace, view, asserted)?
+            .blocking_checks(workspace, view, asserted, decided_merges)?
             .into_iter()
             .filter(|c| c.blocking && !c.passed)
             .map(|c| format!("{}: {}", c.name, c.detail))
@@ -2594,6 +2740,45 @@ impl Engine {
         })
     }
 
+    /// The `entity_merge` proposals a verdict has already decided - what an `entity_split` may name
+    /// (unmerge.md Section 9). For callers OUTSIDE [`Self::fold_proposals`]; the fold builds the same
+    /// set from its own tally, because it cannot ask itself.
+    fn decided_merges(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashSet<String>, StoreError> {
+        Ok(self
+            .fold_proposals(workspace, cx)?
+            .values()
+            .filter(|p| p.kind == "entity_merge" && carries_merge_verdict(&p.state))
+            .map(|p| p.id.clone())
+            .collect())
+    }
+
+    /// The `entity_merge` proposal ids that a merged `entity_split` has reversed (unmerge.md
+    /// Section 3). Shared by [`Self::merge_forwarding`] and [`Self::merge_cycle_sets`]: a merge that
+    /// no longer forwards must also stop contributing a cycle edge, and two separate notions of
+    /// "reversed" would disagree in exactly the case that matters.
+    ///
+    /// A pure fold of the log like every other proposal state, so nodes with equal logs reverse the
+    /// same merges (P16). Note this is where forwarding stops being monotonic in the naive sense -
+    /// appending an event removes an edge - which unmerge.md Section 7 argues is supersede rather
+    /// than an exception: every verdict stays, and the map is a function of all of them.
+    fn reversed_merges(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashSet<String>, StoreError> {
+        let mut out = HashSet::new();
+        for p in self.fold_proposals(workspace, cx)?.values() {
+            if p.kind == "entity_split" && p.state == "merged" {
+                out.extend(p.targets.iter().cloned());
+            }
+        }
+        Ok(out)
+    }
+
     /// Resolved id-forwarding from ACCEPTED entity-merge proposals (Principle 14/15): each merged-away
     /// target id -> its canonical (`into`) id, transitively resolved to the root. Projections apply this to
     /// collapse merged duplicates while the log keeps both (Principle 3 - un-merge is a new proposal). Pure
@@ -2604,9 +2789,10 @@ impl Engine {
         cx: &ReadCtx,
     ) -> Result<HashMap<String, String>, StoreError> {
         let props = self.fold_proposals(workspace, cx)?;
+        let reversed = self.reversed_merges(workspace, cx)?;
         let mut fwd: HashMap<String, String> = HashMap::new();
         for p in props.values() {
-            if p.kind == "entity_merge" && p.state == "merged" {
+            if p.kind == "entity_merge" && p.state == "merged" && !reversed.contains(&p.id) {
                 if let Some(into) = &p.into {
                     for t in &p.targets {
                         if t != into {
@@ -2644,10 +2830,11 @@ impl Engine {
         cx: &ReadCtx,
     ) -> Result<Vec<CycleSet>, StoreError> {
         let props = self.fold_proposals(workspace, cx)?;
+        let reversed = self.reversed_merges(workspace, cx)?;
         // target -> (into, proposal id): the raw merge edges before transitive resolution.
         let mut edge: BTreeMap<String, (String, String)> = BTreeMap::new();
         for p in props.values() {
-            if p.kind == "entity_merge" && p.state == "merged" {
+            if p.kind == "entity_merge" && p.state == "merged" && !reversed.contains(&p.id) {
                 if let Some(into) = &p.into {
                     for t in &p.targets {
                         if t != into {

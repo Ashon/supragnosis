@@ -3,9 +3,14 @@
 > The other half of `entity_merge`, specified in three documents and built in none. This fixes what
 > the reversal does, what it must not become, and which of the obvious cheap versions is a trap.
 >
-> Status: **specification**. Nothing here is built. Unlike [excision](excision.md), which needed a
-> mechanism that does not exist, this needs almost no mechanism at all - the cost is in four
-> decisions, and Section 5 is the one that bites.
+> Status: **the engine implements it; the surfaces do not.** `entity_split` is a proposal kind, a
+> merged one stops its merge forwarding, and the separated pair is suppressed as a suggestion -
+> guarded by scenarios named in the coverage registry. What is missing is the MCP and viewer surface
+> and the informative checks of Section 9, so today it is reachable only through `propose`/`review`.
+>
+> Unlike [excision](excision.md), which needed a mechanism that does not exist, this needed almost
+> none - the cost was in the decisions, and Section 5 is the one that bites. Sections 7 and 9 carry
+> what the implementation found that this document had got wrong.
 
 ## 1. Why this exists, and why it is already owed
 
@@ -133,8 +138,17 @@ spellings while looking correct.
 ## 7. Reversible in both directions, and what that costs P16
 
 Principle 15 does not say a merge must be reversible. It says **both** must be. So `merge -> split ->
-merge` has to work, and it does, without a special case: the re-merge is a new `entity_merge`
-proposal, the old one stays split, and the new one contributes its own edge.
+merge` has to work, and it does: the re-merge is a new `entity_merge` proposal, the old one stays
+split, and the new one contributes its own edge.
+
+**"New" is load-bearing, and it cost a refusal to get right.** A proposal is its content (P14), and
+an opened proposal's content is its kind, its targets and its payload - so re-opening a merge with
+the same targets and the same rationale produces *the same id*, which is the id the split named. The
+re-proposal would be permanently dead: openable, verdictable, and unable to ever forward, with no
+signal that anything was wrong. `propose` therefore refuses that case and names the fix. This is
+also the honest shape - a merge made after someone split it is a different act, and it should say
+why - but it is a consequence of content addressing rather than something the design chose, and it
+was found by a test rather than by writing this document.
 
 What this costs is worth being honest about. The forwarding map is **not monotonic**: appending a
 split verdict removes an edge that was there before. Neither is supersede, which P3 mandates
@@ -170,11 +184,21 @@ suite. A split's suite:
 
 - the named proposal exists in the local log,
 - its kind is `entity_merge`,
-- its state is `merged` - not `open`, not `blocked`, not `rejected`. Reversing something that never
-  committed is a withdrawal, and the state machine already has one.
-- it is not already reversed by an earlier merged split. A second split of the same resolution
-  changes nothing, so accepting it would put a verdict in the log that does not correspond to an
-  act.
+- it carries a merge verdict - `merged` or `blocked`, not `open` or `rejected`. Reversing something
+  that was never decided is a verdict about an act nobody committed to.
+
+  Deliberately **not** "its state is `merged`", which is what this document said before the check
+  was written. The check runs inside the fold that decides merged-versus-blocked, so depending on
+  that distinction would make one proposal's state depend on another's within a single pass.
+  Reversing a merge the checks are holding back is harmless anyway: it subtracts an edge that is not
+  being contributed.
+- Nothing refuses a second split of the same resolution. Reversal is set membership, so a second one
+  is idempotent, and blocking it would need a total order over splits - more machinery, in exchange
+  for making a no-op into an error.
+
+The local console refuses the *verdict* rather than letting it land as `blocked`, which is the
+existing behaviour for merges and exists to say why immediately. `blocked` is where a replicated
+verdict lands, since it never passes through that path.
 
 **Informative** (what the reviewer is owed - the P23 clause about showing blast radius):
 
@@ -207,7 +231,8 @@ out.
 | **S6** | Aliases contributed by the merge leave the canonical row; asserted spellings never do. IR1's set is unchanged by a split. |
 | **S7** | Merge and split are both reversible (P15). Re-merging separated entities is an ordinary new `entity_merge` and needs no special case. |
 | **S8** | A split is not absorbing. Unlike a tombstone (excision E3), it can be followed by a new merge, and the log records the whole argument. |
-| **S9** | Blocking checks refuse a split whose target is absent, is not an `entity_merge`, has not merged, or is already reversed - a verdict must always correspond to an act. |
+| **S9** | Blocking checks refuse a split whose target is absent, is not an `entity_merge`, or carries no merge verdict - a verdict must correspond to an act. A repeat split is idempotent rather than an error. |
+| **S10** | A re-merge must be a distinguishable proposal. Re-opening a reversed resolution verbatim is refused, because content addressing (P14) would hand back the id the split already named. |
 
 ## 12. Closure map
 
