@@ -61,11 +61,49 @@ curl -fsSL https://supragnosis.dev/install.sh | sh    # ~/.local/bin, checksum-v
 claude mcp add supragnosis -- $(command -v supragnosis)
 ```
 
-Then ask your agent to remember something and to look it up. Open the viewer to watch the
-graph build itself as it works.
-
 Prebuilt binaries are keyword search only. For local semantic recall (ONNX, no API calls),
 build with `--features fastembed`.
+
+### Your first minute
+
+Ask the agent to remember something, in whatever words you would use:
+
+> **you:** remember that auth in this repo is JWT with a 15-minute expiry, decided because the
+> mobile client cannot hold a session cookie
+
+The agent calls `observe`. What lands is not the sentence - it is an observation carrying the
+entities it names, the relations between them, and who said it:
+
+```
+observed  "auth in this repo is JWT with a 15-minute expiry..."
+          entities   JWT [AuthMechanism], mobile client [Component]
+          relations  repo --uses--> JWT,  JWT --constrained_by--> mobile client
+          provenance host=your-laptop  on_behalf_of=you  tier=human_confirmed
+```
+
+Later, in a different session, with none of that in the context window:
+
+> **you:** how does auth work here?
+>
+> **agent:** JWT with a 15-minute expiry. That came from you directly rather than from reading the
+> code, and the stated reason was that the mobile client cannot hold a session cookie.
+
+The second half of that answer is the point. `search_knowledge` returns the provenance beside the
+claim, so the agent can tell you *who said it and how sure to be* - and you can ask for the
+observation it came from and read the original text.
+
+The viewer runs alongside the daemon on a unix socket - the desktop app opens it, or read it
+directly:
+
+```bash
+curl -s --unix-socket ~/.supragnosis/viz.sock http://localhost/api/graph
+```
+
+Watching it while an agent works is the part that is hard to convey in text:
+
+<p align="center">
+  <img src="site/assets/viewer.webp" alt="The supragnosis viewer: an entity/relation graph with a curation panel beside it" width="820">
+</p>
 
 ## What the agent gets
 

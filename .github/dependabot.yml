@@ -1,0 +1,31 @@
+# Two cargo ecosystems, because the desktop shell is its own workspace with its own lockfile
+# (app/Cargo.toml says why). Dependabot resolves one manifest per directory entry, so an update to
+# the shell's dependency tree is invisible from the root - which is the same separation that keeps a
+# webview advisory from reading as an advisory against the daemon, seen from the other side.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR per week for the routine drift, so review attention goes to the majors.
+      patch-and-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      patch-and-minor:
+        update-types: [minor, patch]
+
+  # The workflows pin third-party actions and hand them a token. Pinning without updating is how a
+  # pinned action stays on a version whose advisory was published a year ago.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

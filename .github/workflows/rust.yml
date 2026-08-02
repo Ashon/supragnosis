@@ -126,3 +126,24 @@ jobs:
       # target. --locked because the shipped lockfile is the graph being claimed.
       - name: check
         run: cargo check --locked --all-targets
+
+  # SECURITY.md states a threat model in detail; a project that does that and gates nothing on what
+  # its dependencies carry is asymmetric. deny.toml carries the reasoning, including why an
+  # unmaintained crate three levels down is upstream's schedule and one in a manifest here is not.
+  #
+  # Both workspaces, one config: the desktop shell has its own tree, and a licence or a git source
+  # arriving through it is the same problem arriving somewhere the root check cannot see.
+  supply-chain:
+    name: cargo-deny
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          manifest-path: Cargo.toml
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          manifest-path: app/Cargo.toml
+          arguments: --config deny.toml

@@ -65,10 +65,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Internal (cross-crate)
-supragnosis-core = { path = "crates/supragnosis-core" }
-supragnosis-store = { path = "crates/supragnosis-store" }
-supragnosis-sync = { path = "crates/supragnosis-sync" }
-supragnosis-engine = { path = "crates/supragnosis-engine" }
-supragnosis-embed = { path = "crates/supragnosis-embed" }
-supragnosis-mcp = { path = "crates/supragnosis-mcp" }
-supragnosis-viz = { path = "crates/supragnosis-viz" }
+supragnosis-core = { path = "crates/supragnosis-core", version = "0.2.1" }
+supragnosis-store = { path = "crates/supragnosis-store", version = "0.2.1" }
+supragnosis-sync = { path = "crates/supragnosis-sync", version = "0.2.1" }
+supragnosis-engine = { path = "crates/supragnosis-engine", version = "0.2.1" }
+supragnosis-embed = { path = "crates/supragnosis-embed", version = "0.2.1" }
+supragnosis-mcp = { path = "crates/supragnosis-mcp", version = "0.2.1" }
+supragnosis-viz = { path = "crates/supragnosis-viz", version = "0.2.1" }

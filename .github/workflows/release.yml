@@ -1,17 +1,19 @@
 name: release
 
-# v* 태그를 push 하면 플랫폼별 릴리스 바이너리를 빌드해 tar.gz + sha256 로 GitHub Release
-# 에 첨부한다. workflow_dispatch 로는 빌드/패키징만 확인할 수 있다(게시 없음).
+# Pushing a v* tag builds the per-platform release binaries and attaches them to the GitHub Release
+# as tar.gz + sha256. workflow_dispatch builds and packages without publishing, so the pipeline can
+# be exercised without cutting a release.
 #
-# prebuilt 바이너리는 기본 빌드(키워드 + hashing 검색)다. 로컬 ONNX 의미 검색이 필요하면
-# 소스에서 `--features fastembed` 로 빌드한다(무거운 ort 의존이라 릴리스에는 넣지 않는다).
+# The prebuilt binaries are a default build: keyword plus hashing search. Local ONNX semantic search
+# means building from source with `--features fastembed`, which is kept out of the release because
+# the `ort` dependency it pulls is heavy.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write   # Release 생성/자산 업로드
+  contents: write   # create the Release, upload assets
 
 jobs:
   build:
@@ -21,17 +23,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14        # Apple Silicon (arm64 러너)
+          - os: macos-14        # Apple Silicon (arm64 runner)
             target: aarch64-apple-darwin
-          - os: macos-14        # Intel 바이너리는 arm64 러너에서 크로스 컴파일 - 희소한
-            target: x86_64-apple-darwin   # macos-13(Intel) 러너 의존을 제거한다.
+          - os: macos-14        # The Intel binary cross-compiles on the arm64 runner, which drops
+            target: x86_64-apple-darwin   # any dependence on the scarce macos-13 Intel runner.
           # build on the oldest supported glibc (22.04 = 2.35) so the binary runs on
           # 22.04+ - ubuntu-latest(24.04) produced GLIBC_2.38+ binaries that fail on
           # 22.04 servers.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          # ARM 리눅스 서버(Graviton, RPi 등) 배포용. 네이티브 arm64 러너라 크로스 툴체인
-          # tap formula 는 이 타깃을 참조하지 않으므로 tap 갱신과는 무관하다.
+          # For ARM Linux servers (Graviton, Raspberry Pi). A native arm64 runner, so no cross
+          # toolchain. The tap formula does not reference this target, so it is unrelated to the
+          # tap update below.
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
@@ -60,7 +63,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/supragnosis" "dist/${name}/"
           cp README.md "dist/${name}/" 2>/dev/null || true
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
-          # 체크섬: Linux 는 sha256sum, macOS 는 shasum.
+          # Checksums: sha256sum on Linux, shasum on macOS.
           cd dist
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
@@ -68,15 +71,15 @@ jobs:
             shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
           fi
 
-      # 태그가 아닌 실행(workflow_dispatch)에서도 산출물을 받아 빌드를 검증할 수 있게 한다.
+      # Uploaded on non-tag runs too (workflow_dispatch), so a build can be verified without a tag.
       - name: upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: supragnosis-${{ matrix.target }}
           path: dist/*.tar.gz*
 
-      # 릴리스 노트는 저장소에 커밋된 docs/releases/<tag>.md 를 쓴다(관리자가 릴리스마다
-      # 직접 작성 - 버전 관리되는 노트). 파일이 없으면 GitHub 자동 생성으로 폴백한다.
+      # The release body is docs/releases/<tag>.md, committed with the version bump and written by
+      # hand for each release. Falls back to GitHub's generated notes when that file is absent.
       - name: resolve release notes
         id: notes
         if: startsWith(github.ref, 'refs/tags/v')
@@ -85,7 +88,7 @@ jobs:
           f="docs/releases/${GITHUB_REF_NAME}.md"
           if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "path=" >> "$GITHUB_OUTPUT"; fi
 
-      # 태그 push 일 때만 Release 에 자산 첨부(여러 잡이 같은 Release 에 누적).
+      # Assets attach only on a tag push; several jobs accumulate onto the same Release.
       - name: publish to release (committed notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path != ''
         uses: softprops/action-gh-release@v2
@@ -104,14 +107,16 @@ jobs:
             dist/*.tar.gz
             dist/*.tar.gz.sha256
 
-  # 데스크탑 셸(.app, universal 바이너리)을 빌드해 서명/노터라이즈 후 zip 으로 릴리스에
-  # 첨부한다. Homebrew cask 가 이 zip 을 소스로 쓴다(DMG 없음 - deploy/homebrew/README.md).
-  # 서명 시크릿이 없으면(workflow_dispatch, 포크) 서명 없이 빌드만 검증한다.
+  # Builds the desktop shell (.app, universal binary), signs and notarizes it, and attaches the zip
+  # to the release. The Homebrew cask uses that zip as its source - there is no DMG, see
+  # deploy/homebrew/README.md. Without the signing secrets (workflow_dispatch, a fork) it builds
+  # unsigned and verifies nothing but the build.
   app:
     name: build desktop app (macos universal)
-    # macos-26 러너 고정: macOS 26 은 링크된 SDK 로 컨트롤 메트릭을 게이트한다 - 구 SDK 로
-    # 빌드된 앱은 호환(구형) 신호등 메트릭을 받아 오버레이 타이틀바의 신호등 y 캘리브레이션
-    # (app/src/main.rs show_viewer)이 어긋난다. 앱 잡만 해당(서버 바이너리는 UI 없음).
+    # Pinned to macos-26: macOS 26 gates control metrics on the linked SDK, so an app built against
+    # an older SDK gets the compatibility (legacy) traffic-light metrics and the y calibration for
+    # the overlay titlebar's traffic lights (app/src/main.rs show_viewer) lands wrong. The app job
+    # only - the server binaries have no UI.
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -126,8 +131,9 @@ jobs:
         with:
           key: app-universal
 
-      # 시크릿이 있을 때만 tauri 번들러의 서명/노터라이즈 환경 변수를 켠다. 빈 문자열을
-      # 넘기면 번들러가 서명을 시도하다 실패하므로, 존재 확인 후 GITHUB_ENV 로만 내보낸다.
+      # The bundler's signing and notarization variables are set only when the secrets exist:
+      # passing empty strings makes it attempt signing and fail, so presence is checked first and
+      # they are exported through GITHUB_ENV rather than declared unconditionally.
       - name: enable signing + notarization (when secrets exist)
         shell: bash
         env:
@@ -149,8 +155,8 @@ jobs:
             echo "no APPLE_SIGNING_IDENTITY secret - building unsigned"
           fi
 
-      # tauri-cli 는 npm 패키지의 prebuilt 바이너리를 쓴다(cargo install 보다 수 분 빠름).
-      # 프론트엔드 빌드는 없다 - 뷰어는 데몬이 서빙하고 셸은 정적 자산뿐이다.
+      # tauri-cli comes from the npm package's prebuilt binary, minutes faster than cargo install.
+      # There is no frontend build step - the daemon serves the viewer and the shell is static assets.
       - name: build the desktop app (universal, signed when enabled)
         working-directory: app
         run: npx --yes @tauri-apps/cli@^2 build --target universal-apple-darwin
@@ -168,7 +174,8 @@ jobs:
           test -d "$app" || { echo "no bundle at $app - did the shell's workspace or target dir move?" >&2; exit 1; }
           name="Supragnosis-${version}-macos-universal.app.zip"
           mkdir -p dist
-          # ditto 가 리소스 포크/서명을 보존한다(zip 대신 필수) - 노터라이즈 스테이플 유지.
+          # ditto rather than zip: it preserves resource forks and the signature, which is what
+          # keeps the notarization staple intact.
           ditto -c -k --keepParent "$app" "dist/${name}"
           cd dist && shasum -a 256 "${name}" > "${name}.sha256"
 
@@ -204,12 +211,13 @@ jobs:
             dist/*.app.zip
             dist/*.app.zip.sha256
 
-  # 릴리스 자산이 모두 첨부된 뒤 tap 리포(Ashon/homebrew-tap)의 formula/cask 를 새
-  # 버전/sha256 으로 갱신해 push 한다. update-tap.sh 가 릴리스의 .sha256 사이드카를
-  # curl 로 읽으므로 build/app 잡이 전부 끝난 뒤에만 실행한다. 이 잡이 실패해도 릴리스
-  # 자산은 이미 게시된 상태다 - 수동 폴백은 deploy/homebrew/README.md 의 릴리스마다 절.
-  # TAP_PUSH_TOKEN 시크릿(fine-grained PAT, Ashon/homebrew-tap 의 Contents write 만)이
-  # 없으면 APPLE_* 시크릿과 같은 방식으로 건너뛴다.
+  # Once every release asset is attached, updates the formula and cask in the tap repository
+  # (Ashon/homebrew-tap) to the new version and sha256, and pushes. update-tap.sh curls the .sha256
+  # sidecars from the release, so this runs only after the build and app jobs have all finished. If
+  # this job fails the release assets are already published - the manual fallback is the per-release
+  # section of deploy/homebrew/README.md. Without the TAP_PUSH_TOKEN secret (a fine-grained PAT with
+  # Contents write on Ashon/homebrew-tap and nothing else) it is skipped, the same way the APPLE_*
+  # secrets are.
   tap:
     name: update homebrew tap
     needs: [build, app]
