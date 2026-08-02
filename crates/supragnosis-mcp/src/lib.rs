@@ -123,7 +123,18 @@ pub struct ProposeRequest {
     /// Workspace (defaults to the node default when omitted).
     #[serde(default)]
     pub workspace: Option<String>,
-    /// Proposal kind: entity_merge | entity_split | claim_promotion | claim_demotion | tbox_change | recall.
+    /// Proposal kind, one of:
+    /// - `entity_merge` - fold duplicate entities into one canonical id.
+    /// - `entity_split` - reverse a merge. The folded entities separate again and the pair stops
+    ///   being suggested for merging, without becoming unmergeable.
+    /// - `claim_promotion` / `claim_demotion` - raise or lower the trust tier of observations. A
+    ///   merged verdict is what the resolution policy consumes, so this settles a contested entity
+    ///   kind; demotion is also the revert path for knowledge that turned out wrong.
+    /// - `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was
+    ///   so far only induced from use into one the canon declares.
+    /// - `recall` - bulk retraction of everything derived from a contamination source, for when bad
+    ///   input has already been built on. Its verdict is always a human's direct act: neither this
+    ///   surface nor an agent acting on someone's behalf can approve one.
     pub kind: String,
     /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
     /// For entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.
@@ -137,12 +148,15 @@ pub struct ProposeRequest {
     /// requires the human console (a human's direct act, Principle 18).
     #[serde(default)]
     pub tier: Option<String>,
-    /// Why (natural language) - the proposal rationale.
+    /// Why (natural language) - the proposal rationale. Required to re-merge a pair that was split:
+    /// a proposal is its content, so a verbatim re-open is the same proposal and stays reversed. Say
+    /// what makes the split wrong this time.
     #[serde(default)]
     pub rationale: Option<String>,
     /// For tbox_change: the entity/relation types this proposal defines or changes, so the viewer can
     /// highlight the affected nodes (entity types) / edges (relation types) when previewing it. Each
-    /// item is {target, name} where target is "entity" or "relation".
+    /// item is {target, name} where target is "entity" or "relation". One name may not be listed on
+    /// both axes - the proposal is blocked rather than merely flagged.
     #[serde(default)]
     pub affected_types: Vec<AffectedTypeItem>,
     #[serde(default)]
@@ -306,7 +320,7 @@ impl SupragnosisServer {
 #[tool_router]
 impl SupragnosisServer {
     #[tool(
-        description = "Ingest a knowledge fragment. Stores it as an immutable observation (the source of truth) and links the entities/relations provided alongside it into the ontology. Each entity and each relation may carry an optional description - a human-readable explanation of what the entity is or what the connection means, so the ontology captures the definitions/reasoning, not just names and types. Returns the observation id and the linked entity/relation ids."
+        description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id and the linked entity/relation ids."
     )]
     async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
         // The workspace actually used (node default when omitted) - carried on the event so the viewer knows the scope.
@@ -688,7 +702,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon). kind is one of entity_merge (fold duplicate entities into one canonical id), entity_split (reverse a merge: pass the entity_merge PROPOSAL id as the single target and no `into` - the folded entities separate again, and the pair stops being suggested for merging without becoming unmergeable), claim_promotion / claim_demotion (raise/lower the trust tier of observations - pass OBSERVATION ids in `targets` and the requested tier in `tier`; a merged verdict is what the resolution policy consumes, e.g. to settle a contested entity kind), tbox_change, recall. A proposal is itself an observation and does not change anything until it is accepted via `review`; use `get_proposal` to see its state. For entity_merge, pass the entity ids in `targets` and the canonical one in `into`. Re-merging a pair that was split needs a `rationale` saying why the split was wrong - a proposal is its content, so a verbatim re-open is the same proposal and stays reversed. For tbox_change, list the T-Box types you define/change in `affected_types` ({target: \"entity\"|\"relation\", name}) so the viewer can highlight the affected nodes/edges when the proposal is previewed."
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
         // Map each affected type's string axis to the typed vocabulary (mirror define_type).
