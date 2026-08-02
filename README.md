@@ -1,250 +1,170 @@
 # supragnosis
 
-**Portable memory for AI agents - with provenance.** An embedded, file-based Rust
-server: agents shed observations as a by-product of work, the knowledge moves between
-your machines, tools and team, and every claim arrives carrying who said it, on what
-basis, and how far to trust it. What accumulates across multiple **hosts** and
-**workspaces** is an **ontology (a concept/relation graph)** you query and explore
-over **MCP** - and humans govern what becomes canon.
+**Memory for AI agents that remembers who said it.**
 
-> `supragnosis` = *supra* (above/beyond) + *gnosis* (knowing) - knowledge above knowledge (meta-knowledge).
+[![CI](https://github.com/Ashon/supragnosis/actions/workflows/rust.yml/badge.svg)](https://github.com/Ashon/supragnosis/actions/workflows/rust.yml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-- Language/runtime: **Rust** (`rmcp` 0.16 official MCP SDK, `tokio`)
-- Store: **embedded, file-based** `redb` - a pure-Rust B-tree with no native toolchain and no
-  transitive dependencies. It sits behind the `KnowledgeStore` port, held to it by a conformance
-  suite every adapter runs. (Through v0.1.21 the store was `cozo`/RocksDB; see
-  [`docs/store-migration.md`](docs/store-migration.md).)
-- Status: **M4 Phase 4 federation + M3a/M3b resolution**. Semantic + keyword hybrid recall (M2),
-  the **proposal gate (M3.5, both slices)** - review carries a computed belief diff of what a verdict
-  would overturn and which references would rewire, and the fold enforces blocking checks so a merge
-  that cannot commit does not - hub-and-spoke log replication with ed25519-signed
-  events over TLS (M4 Phases 0-4), **belief resolution (M3a)** - a replaceable tier-weighted policy
-  computes the current belief, contested beliefs surface for mediation, claim_promotion/demotion
-  verdicts commit - and **identity resolution (M3b)** - aliases accumulate and forward, the
-  conservative merge band proposes entity-merge candidates from name-embedding similarity (the gate
-  commits), the resolution write path makes an incremental write equal a fresh replay, and T-Box
-  definition conflicts surface contested. **Deferred**: canon effects for `tbox_change`/`recall` and
-  multi-principal governance (federation remainder), induced type candidates (naming a type is
-  probabilistic -> M5), and bitemporal time-travel queries (M3c, blocked on explicit negation). Per-milestone detail and the honest
-  record of what is deferred: [`docs/architecture.md`](docs/architecture.md) Sections 12/14.
-- Docs: architecture -> [`docs/architecture.md`](docs/architecture.md), design principles ->
-  [`docs/principles.md`](docs/principles.md), proposal workflow ->
-  [`docs/proposal-workflow.md`](docs/proposal-workflow.md), federation ->
-  [`docs/federation.md`](docs/federation.md), excision (the destruction exception) ->
-  [`docs/excision.md`](docs/excision.md), store migration ->
-  [`docs/store-migration.md`](docs/store-migration.md), belief resolution (M3a) ->
-  [`docs/resolution.md`](docs/resolution.md), identity resolution (M3b spec) ->
-  [`docs/resolution-identity.md`](docs/resolution-identity.md)
+An embedded, file-based knowledge server for MCP clients. Agents shed observations as a
+by-product of work; every claim they store arrives carrying who asserted it, on what basis,
+and how far this node has decided to trust it. Nothing leaves your machine unless you say so.
 
-## Install (prebuilt binary)
+```
+supragnosis = supra (above) + gnosis (knowing) - knowledge about knowledge.
+```
 
-### Homebrew (macOS / Linux)
+## The problem it solves
+
+Most agent memory answers *what was remembered*. It does not answer *who said so*.
+
+That is fine for a single assistant remembering one user's preferences. It stops being fine
+the moment two agents, two machines, or two people write into the same memory:
+
+- Two agents assert opposite facts. Last write wins, and the disagreement is gone.
+- An agent summarizes a poisoned document into memory. Nothing records where it came from,
+  so nothing can trace what else that summary contaminated.
+- You want to share project knowledge with a teammate but not your private notes. There is
+  no boundary to draw, because the store has no concept of whose knowledge this is.
+- A credential ends up in the log. There is no way to find it and no way to get it out.
+
+supragnosis treats an assertion and a fact as different things. What is stored is never
+"X is true" but "host H, at time T, on the basis of S, asserted X". The current belief is
+computed from those assertions by a policy you can replace, so changing your mind about how
+to resolve conflicts means recomputing, not rewriting.
+
+## What that buys you
+
+| | |
+|---|---|
+| **Provenance on every claim** | acting host, principal on whose behalf, workspace, source, observation time, confidence, and a trust tier the receiving node computes rather than accepts |
+| **Conflicts stay visible** | contradictory assertions coexist and surface for mediation instead of one silently overwriting the other |
+| **Nothing is destroyed** | the observation log is append-only and content-addressed. A correction is a new observation; a merge can be un-merged |
+| **A gate before the canon** | entity merges, trust promotions, and schema changes go through a proposal with a computed diff of what the verdict would overturn |
+| **Sharing is opt-in** | a workspace leaves the node only if you list it. Peers are authorized per workspace, on the sync path and the query path alike |
+| **Secrets do not enter** | credential-shaped text is refused at ingest, not rewritten, because an append-only log that has replicated cannot take it back |
+| **Local-first, no cloud** | one binary, an embedded pure-Rust store, no C toolchain, no account, no network unless you configure a peer |
+
+## Quick start
+
 ```bash
 brew tap ashon/tap
-brew install supragnosis                # desktop app (macOS, signed/notarized) - pulls the server with it
-brew install supragnosis-server         # server/CLI only (macOS / Linux)
-brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer socket)
-```
-- `supragnosis` is the desktop-app cask and depends on the `supragnosis-server` formula - the app
-  attaches to the server binary on PATH (no bundled sidecar). The installed binary is named
-  `supragnosis` either way; only the brew tokens differ.
-- Upgrading: `brew upgrade` swaps the binaries and relaunches the app, but does not restart a
-  running daemon - follow it with `brew services restart supragnosis-server` (brew prints the same
-  reminder in the formula caveats).
-- **Dev channel**: `brew install --HEAD supragnosis-server` builds current `main` from source
-  (rust pulled as a build dep; refresh with `brew upgrade --fetch-HEAD supragnosis-server`). The
-  viewer UI is embedded in the server binary, so the stable desktop app renders the dev viewer.
-  For a dev app shell too: `brew install --cask supragnosis-dev` (the rolling signed `dev`
-  pre-release; refresh with `brew reinstall supragnosis-dev`).
-  Swap procedure and cautions: [`deploy/homebrew/`](deploy/homebrew/).
-- Tap templates and the per-release update procedure: [`deploy/homebrew/`](deploy/homebrew/).
+brew install supragnosis-server
+brew services start supragnosis-server     # MCP on :7373 + local viewer
 
-### Install script
+claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp
+```
+
+Not on Homebrew:
+
 ```bash
-# Detect platform -> install the latest release binary to ~/.local/bin (with checksum verification)
-curl -fsSL https://supragnosis.dev/install.sh | sh
+curl -fsSL https://supragnosis.dev/install.sh | sh    # ~/.local/bin, checksum-verified
+claude mcp add supragnosis -- $(command -v supragnosis)
 ```
-- Or download the platform tar.gz directly from [Releases](https://github.com/Ashon/supragnosis/releases), extract it, and put `supragnosis` on your PATH.
-- Supported platforms: macOS (arm64/x86_64), Linux (x86_64/aarch64). For other platforms, build from source below.
-- The prebuilt binary is **keyword + hashing search**. For local ONNX **semantic search**, build from source with `--features fastembed`.
-- On a `v*` tag push, GitHub Actions (`.github/workflows/release.yml`) builds and publishes the release.
 
-## Development (Taskfile)
-[`Taskfile.yml`](Taskfile.yml) wraps the common loops (`brew install go-task`, then `task` to list
-everything). The raw `cargo` equivalents are all in the sections below - the task runner is a
-convenience, not a requirement.
-```bash
-task dev            # the viewer UI on YOUR build - own db/socket/port, isolated from ~/.supragnosis
-task dev:snapshot   # same, but on a COPY of the live daemon's knowledge (real data, nothing at risk)
-task app            # shell against the already-running daemon (builds nothing)
-task server         # server only (MCP http + viewer socket), no desktop shell
-task check          # clippy + viewer ESLint + tests
-task viz -- /api/curation   # GET the viewer API over its unix socket
-```
-- `task dev` starts empty, because cozo/RocksDB is single-process and a running daemon holds the
-  real store. `task dev:snapshot` copies it first, so you develop against real knowledge without
-  stopping anything - RocksDB is crash-consistent, so a copy taken from under a live writer opens
-  the way it would after a power cut. It is a snapshot both ways: dev edits never reach the real
-  store, and later daemon writes never reach dev. `task dev:live` opens the real store directly and
-  refuses to start while a daemon holds it.
-- `task dev` pins `SUPRAGNOSIS_VIZ_SOCK`/`DATA_DIR`/`HTTP_ADDR` on purpose. The shell does
-  attach-or-spawn: if the socket it resolves already answers it attaches and never consults
-  `SUPRAGNOSIS_BIN`, so an unpinned socket would silently show you an installed daemon's build
-  instead of the one you just compiled. Use `task app` when attaching is what you actually want.
-- **`task check` runs the same checks CI does**, so a green run locally means a green run there:
-  clippy + tests ([`rust.yml`](.github/workflows/rust.yml)) and the viewer's ESLint
-  ([`frontend-lint.yml`](.github/workflows/frontend-lint.yml)). Keep the two in step - a check added
-  to one belongs in the other.
-- There is deliberately **no dev web server task**. The viewer is unix-socket-only (see the bind
-  policy in [`docs/architecture.md`](docs/architecture.md) Section 10), so `task dev` runs the
-  desktop shell, which proxies its webview onto the socket via `viz://`. Proxying the socket to a
-  TCP port would re-expose the browser attack class v0.1.10 deleted the defenses for, and would
-  launder the `/api/review` surface ceiling - don't.
+Then ask your agent to remember something and to look it up. Open the viewer to watch the
+graph build itself as it works.
 
-## Build & run
-```bash
-cargo build                                          # default (keyword search) - lightweight build
-cargo build -p supragnosis-cli --features fastembed  # includes semantic search (fastembed local ONNX model)
-cargo test                                           # unit tests (network-dependent fastembed tests are excluded via --ignored)
-./target/debug/supragnosis                           # stdio MCP server (launched by the MCP client as a child process)
-```
-- Environment variables:
-  - `SUPRAGNOSIS_HOST` - host id for provenance (default `localhost`). This is a display label only;
-    the federation `node_id` is derived from the node keypair, not from this value.
-  - `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`).
-  - `SUPRAGNOSIS_SCAN_SECRETS` - `off` disables the ingest refusal of credential-shaped text
-    (on by default; the log is append-only and replicates, so a miss cannot be undone).
-  - `SUPRAGNOSIS_STORE` - `redb` (default, file-persistent) | `mem` (non-persistent).
-  - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/redb`).
-  - `SUPRAGNOSIS_EMBED` - `fastembed` (default when compiled with the feature, local ONNX) | `hashing` (for development) | `none`. If it is absent or fails, degrades to keyword search.
-  - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml` (default `~/.supragnosis/supragnosis.toml`). No file = a standalone node.
-  - `SUPRAGNOSIS_VIZ_SOCK` - viewer unix socket path (daemon default `~/.supragnosis/viz.sock`). The
-    viewer serves HTTP over UDS only - no TCP port; the socket file's 0600 mode is the access control.
-  - `SUPRAGNOSIS_HTTP_ADDR` - MCP streamable-HTTP bind consulted by `serve`/`start`/`status`
-    (loopback only; `start`/`status` default `127.0.0.1:7373`). Running with no arguments stays a
-    stdio MCP server regardless.
-  - `SUPRAGNOSIS_SESSION` - session label grouping the viewer's activity stream (falls back to
-    `CLAUDE_CODE_SESSION_ID`, then `<host>-<timestamp>`).
-- Tools (13): `observe`, `search_knowledge` (hybrid recall, `scope` = local | remote | both),
-  `get_entity`, `traverse`, `workspace_map` (co-occurrence hyperedges), `define_type` (T-Box glossary),
-  `propose` / `review` / `list_proposals` / `get_proposal` (the canon gate, Principle 23),
-  `sync_status` / `sync_pull` / `sync_push` (federation).
-- Resources: `supragnosis://workspaces`, `supragnosis://workspace/{ws}/graph`,
-  `supragnosis://workspace/{ws}/hypergraph`, `supragnosis://workspace/{ws}/types`,
-  `supragnosis://observation/{id}`.
-- Crates: `core` (domain/ports), `store` (adapters), `engine` (services), `embed` (embedder adapters),
-  `sync` (federation), `mcp` (rmcp tools/resources), `viz` (live viewer), `cli` (binary).
-  `e2e/` is a separate real-model measurement suite (Ollama/Anthropic scorecards, `#[ignore]`d by
-  default) - a scorecard, not a regression guard.
+Prebuilt binaries are keyword search only. For local semantic recall (ONNX, no API calls),
+build with `--features fastembed`.
 
-## Desktop app (macOS)
-`app/` is a thin Tauri shell over the daemon's unix-socket viewer: it attaches to a running
-daemon (launchd / `supragnosis start`) or spawns one as a child (reaped on quit), proxies the
-webview onto the viz socket via a `viz://` custom protocol, and bridges the SSE event stream.
-The UI itself is served by the daemon - the shell embeds no frontend.
+## What the agent gets
 
-The shell is **tray-resident**: closing the window hides it (macOS: the app leaves the dock too)
-while the daemon keeps running in the background; the menu-bar mark reopens the viewer, shows
-daemon status (spawned vs externally managed), restarts the daemon, and quits. Quit reaps a
-spawned daemon but never an attached external one.
-```bash
-cargo run -p supragnosis-app    # dev run (finds the server binary via SUPRAGNOSIS_BIN,
-                                # ~/.local/bin, the debug build, or PATH)
-```
-Packaged install: `brew install supragnosis` - the release workflow attaches a signed/notarized
-universal `.app.zip` to each release and the cask installs it, depending on the
-`supragnosis-server` formula for the daemon (the app bundles no sidecar).
+13 MCP tools, each one recurring intent:
 
-## Usage (CLI)
-The single binary is controlled through subcommands. Run it **with no arguments** and it
-comes up as a stdio MCP server (the backward-compatible path where the MCP client launches
-it as a child process).
-```bash
-supragnosis                     # stdio MCP server (default, no arguments)
-supragnosis serve --http 127.0.0.1:7373 --viz ~/.supragnosis/viz.sock   # foreground (HTTP daemon + viewer)
-supragnosis start               # start the background daemon (default MCP :7373 + viewer socket ~/.supragnosis/viz.sock)
-supragnosis status              # status (pid + port health)
-supragnosis stop                # stop
-supragnosis restart             # restart
-supragnosis identity            # print this node's federation id / public key
-supragnosis sync                # one-shot sync round against the configured servers
-supragnosis reproject           # deterministic HLC-ordered re-materialization of the projection
-supragnosis migrate             # re-create pre-0.1.x rows under the current content-address formula
-supragnosis --help              # all options
-```
-### Upgrading from a pre-0.2 store
-Through v0.1.21 the store was Cozo (RocksDB). This build reads only redb and **refuses to start when
-it finds an un-migrated Cozo store**, rather than coming up empty beside one. Migrate with the last
-release that reads both:
+- `observe` - free text plus optional structured assertions. No schema required up front.
+- `search_knowledge` - hybrid keyword and semantic recall, labelled with the mode it used.
+- `get_entity`, `traverse` - exact lookup and bounded graph walks.
+- `workspace_map` - co-occurrence hyperedges: what tends to get said together.
+- `define_type` - promote a pattern into the workspace glossary.
+- `propose`, `review`, `list_proposals`, `get_proposal` - the gate to the canon.
+- `sync_status`, `sync_pull`, `sync_push` - federation.
+
+Plus dereferenceable resources: `supragnosis://workspaces`,
+`supragnosis://workspace/{ws}/graph`, `supragnosis://workspace/{ws}/hypergraph`,
+`supragnosis://workspace/{ws}/types`, `supragnosis://observation/{id}`.
+
+## How it works
+
+Three ideas, and everything else follows from them.
+
+**Event sourcing.** Immutable, content-addressed observations are the source of truth. The
+entity and relation graph is a projection you can throw away and rebuild by replaying the
+log. Changing the resolution policy is a re-projection, not a migration.
+
+**Topology-independent convergence.** Nodes holding the same set of observations materialize
+the same graph, no matter which path events took or in what order they arrived. Content
+addressing dedups, hybrid logical clocks order, and the projection is a deterministic fold.
+Local-only, hub-and-spoke, direct peer, or a mix: the topology is an operational choice, not
+a semantic one.
+
+**Hexagonal ports.** The domain crate has zero IO dependencies. Store, embedder, and
+transport sit behind ports held to one conformance suite. This is not an aspiration: a third
+store adapter was added and the original backend deleted, a different query paradigm and a
+different storage engine, without changing a line of `core` or `engine`.
+
+## Documentation
+
+| | |
+|---|---|
+| [architecture.md](docs/architecture.md) | what is built, how, and Section 14: the honest record of what is not |
+| [principles.md](docs/principles.md) | the normative document. Every design decision is justified against it |
+| [federation.md](docs/federation.md) | node identity, the sync protocol, trust evaluation |
+| [proposal-workflow.md](docs/proposal-workflow.md) | the gate to the canon |
+| [resolution.md](docs/resolution.md) | how assertions become a current belief |
+| [excision.md](docs/excision.md) | the one act that removes knowledge, and why it is last |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to build, test, and send a change |
+
+## Status
+
+Working today: hybrid recall, belief resolution with contested claims surfaced, identity
+resolution with an entity merge gate that can be reversed, hub-and-spoke log replication with
+ed25519-signed events over TLS, and a live viewer.
+
+Not yet: bitemporal time-travel queries, multi-principal governance, recall demotion and idle
+consolidation, and automatic type induction.
+
+That second list is not a roadmap gesture. Every unmet demand is a named clause with a
+declared evidence state, tested by
+[`principle_coverage.rs`](crates/supragnosis-engine/tests/principle_coverage.rs), and every
+deferral names the milestone that repays it. If a guard is deleted or renamed, the clause
+reports itself as unguarded. See [architecture.md](docs/architecture.md) Section 14.
+
+Versions before 1.0 may break the store format. Migrations are provided and documented.
+
+## Configuration
+
+Everything has a default that works. `supragnosis --help` for the full surface;
+[docs/architecture.md](docs/architecture.md) for the reasoning behind the defaults.
+
+Most used:
+
+- `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`)
+- `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/redb`)
+- `SUPRAGNOSIS_EMBED` - `fastembed` | `hashing` | `none`. Degrades to keyword search if absent
+- `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml`. No file means a standalone node
+
+The MCP HTTP daemon is loopback-only and the viewer has no TCP port at all: it serves over a
+unix socket whose 0600 mode is the access control. A non-loopback federation bind requires
+TLS and a non-empty allowlist, and refuses to start without both.
+
+## Upgrading from a pre-0.2 store
+
+Through v0.1.21 the store was Cozo. This build reads only redb and refuses to start beside an
+un-migrated Cozo store rather than coming up empty next to one. Read
+[docs/store-migration.md](docs/store-migration.md) Section 5 first, then:
 
 ```bash
 supragnosis stop
 curl -fsSL https://supragnosis.dev/install.sh | sh -s -- --version v0.1.21
-supragnosis migrate-store            # copies the log, then replays it
-curl -fsSL https://supragnosis.dev/install.sh | sh   # back to latest
+supragnosis migrate-store
+curl -fsSL https://supragnosis.dev/install.sh | sh
 supragnosis start
 ```
-Only the observation log is copied - the graph is a projection of it and is rebuilt by replay. The
-Cozo store is opened read-only and left untouched. **Read
-[`docs/store-migration.md`](docs/store-migration.md) Section 5 first**: a replay reproduces exactly
-what the log asserts, so early-era rows written outside it do not come across.
 
-- Federation peers: the viewer publishes the admitted set at `/api/federation`, and
-  `POST /api/peer/share?node_id=<id>&workspaces=<a,b>` **narrows** what one peer may read - written
-  through to `supragnosis.toml` (comments preserved) and applied without a restart. It only narrows;
-  widening and adding/removing peers stay in the file
-  ([`docs/federation.md`](docs/federation.md) 6a).
-- `sync` / `reproject` / `migrate` need the daemon **stopped** (an embedded store
-  admits one process at a time). With a
-  running daemon, use the `sync_*` MCP tools instead.
-- Option precedence: flags > `SUPRAGNOSIS_*` environment variables > defaults.
-- The `start` daemon is self-managed (no launchd needed): pidfile `~/.supragnosis/supragnosis.pid` + logs
-  `~/.supragnosis/log`. For OS service registration such as auto-start on login, see [`deploy/README.md`](deploy/README.md).
-- The MCP HTTP daemon is **loopback-only** (no auth = local trust surface). The viewer has no TCP
-  port at all: it serves HTTP over a unix socket (0600, owner-only), e.g.
-  `curl --unix-socket ~/.supragnosis/viz.sock http://viz/api/graph`. The authenticated network read
-  tier is federation Phase 3.5. Example MCP client registration:
-  - stdio: `claude mcp add supragnosis -- $(command -v supragnosis)`
-  - HTTP (daemon): `claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp`
+## License
 
-## Federation (hub-and-spoke)
-A node can run as a **sync server (hub)** that aggregates and relays other nodes' observation logs.
-Only the log replicates - never the projection - so every node re-materializes the same graph from the
-same event set. Design: [`docs/federation.md`](docs/federation.md).
+MIT OR Apache-2.0, at your option. See [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-APACHE](LICENSE-APACHE).
 
-- **Identity**: an ed25519 keypair is generated once at `~/.supragnosis/node.key`; `node_id` derives
-  from the public key (self-certifying, immutable). `supragnosis identity` prints it.
-- **Protocol**: version-vector delta exchange (`advertise` -> `pull`/`push`), content-address dedup,
-  HLC causal ordering, then a deterministic re-materialization pass.
-- **Trust**: every attestation is ed25519-signed by its origin, and the receiver recomputes the
-  content id before verifying - a forged id or a relay-tampered lineage never lands.
-- **Sharing is opt-in** (Principle 17): only workspaces on `[sync] share_workspaces` leave the node,
-  and the hub authorizes each peer per workspace.
-- **Configuration** (`supragnosis.toml`, unknown keys rejected loudly so a typo cannot silently
-  disable a role):
-  ```toml
-  [sync]
-  share_workspaces = ["supragnosis"]
-  servers = ["https://hub.example:7420"]
-  auth_token = "..."            # bearer presented to the hub
-  origin_keys = { }             # node_id -> public key directory (manual until canon-policy lands)
-
-  [server]                      # only when this node runs a hub
-  listen = "0.0.0.0:7420"
-  tls_cert = "cert.pem"
-  tls_key  = "key.pem"
-  allowlist = [ ]               # per-node: node_id, public key, bearer hash, shared workspaces
-  ```
-- **Current limits**: single-principal only (multi-principal governance - the `tbox_change` gate and
-  the canon-policy artifact - is Phase 5); a non-loopback bind requires TLS **and** a non-empty
-  allowlist; embeddings do not replicate (they are a node-local recall aid, so synced knowledge answers
-  keyword search immediately but needs local re-embedding for semantic recall).
-
-## Core ideas
-- Knowledge arrives as **immutable observation events** (the source of truth, preserving
-  provenance), and the entity/relation graph is **materialized** from the log (event sourcing).
-- **Local-first + topology-independent log replication** - whether local-only / central server (hub)
-  / direct peer / hybrid, any connection topology converges without conflict under the same merge semantics.
-- A hexagonal (port/adapter) structure isolates the store/embedder/extractor so they are swappable.
-
-For details, see the [architecture design doc](docs/architecture.md).
+Unless you state otherwise, any contribution you intentionally submit for inclusion is dual
+licensed as above, with no additional terms.
