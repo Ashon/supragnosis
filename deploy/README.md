@@ -1,6 +1,9 @@
 # Operating the supragnosis standalone daemon (macOS)
 
 > Linux: see [systemd/README.md](systemd/README.md) - a user unit plus the federation-hub setup.
+>
+> Container: see [docker/README.md](docker/README.md) - the shape a hub wants. Not this one: the
+> viewer and MCP surfaces below are local-only by design, and a container has no local.
 
 Instead of spawning over stdio for each chat, **a single always-on local daemon** holds the db
 and exposes MCP streamable-http. Agents (Claude Code, etc.) just connect over http. Because the
