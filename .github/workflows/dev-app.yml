@@ -71,7 +71,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="target/universal-apple-darwin/release/bundle/macos/Supragnosis.app"
+          # app/target, not target: the desktop shell is its own workspace, so its build output no
+          # longer lands in the root workspace's shared target directory. Checked explicitly because
+          # the failure otherwise arrives as `ditto: Cannot get the real path`, which names the
+          # symptom and not the cause.
+          app="app/target/universal-apple-darwin/release/bundle/macos/Supragnosis.app"
+          test -d "$app" || { echo "no bundle at $app - did the shell's workspace or target dir move?" >&2; exit 1; }
           name="Supragnosis-dev-macos-universal.app.zip"
           mkdir -p dist
           # ditto preserves resource forks/signatures (required over zip) - keeps the

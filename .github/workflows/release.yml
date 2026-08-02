@@ -160,7 +160,12 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME:-dev}"
-          app="target/universal-apple-darwin/release/bundle/macos/Supragnosis.app"
+          # app/target, not target: the desktop shell is its own workspace, so its build output no
+          # longer lands in the root workspace's shared target directory. Checked explicitly because
+          # the failure otherwise arrives as `ditto: Cannot get the real path`, which names the
+          # symptom and not the cause.
+          app="app/target/universal-apple-darwin/release/bundle/macos/Supragnosis.app"
+          test -d "$app" || { echo "no bundle at $app - did the shell's workspace or target dir move?" >&2; exit 1; }
           name="Supragnosis-${version}-macos-universal.app.zip"
           mkdir -p dist
           # ditto 가 리소스 포크/서명을 보존한다(zip 대신 필수) - 노터라이즈 스테이플 유지.
