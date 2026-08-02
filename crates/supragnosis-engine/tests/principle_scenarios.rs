@@ -1029,6 +1029,65 @@ fn aliases_accumulate_and_converge() {
     assert_ne!(a.0, b.0, "the recency cases must disagree, or the tie case proves nothing");
 }
 
+/// guard (P11, "the scope of the T-Box is the workspace"): an all-workspaces read is the UNION of
+/// per-workspace glossaries, never one merged glossary.
+///
+/// The fold keyed definitions by (target, name) and not by workspace, so two workspaces that both
+/// defined `Widget` collapsed into one row: one description won, the other was reported as a
+/// `contested` competitor, and the sources count summed across them. Every part of that is wrong
+/// under P11 - there is no global domain T-Box, so those are two different types, and the only thing
+/// that connects types across a workspace boundary is an explicit alignment assertion.
+///
+/// It was invisible from a scoped read, which only ever holds one workspace. Only the all-view could
+/// show it, and that is the view the console offers.
+#[test]
+fn p11_the_all_workspaces_glossary_does_not_merge_across_workspaces() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", "ws-a");
+    for (ws, desc) in [("ws-a", "a thing in A"), ("ws-b", "a DIFFERENT thing in B")] {
+        engine
+            .define_type(DefineTypeInput {
+                workspace: Some(ws.into()),
+                source_ref: None,
+                on_behalf_of: None,
+                defs: vec![TypeDefInput {
+                    target: TypeTarget::Entity,
+                    name: "Widget".into(),
+                    description: desc.into(),
+                }],
+            })
+            .expect("define_type");
+    }
+
+    let all = engine.types(None).expect("all-workspaces glossary");
+    let widgets: Vec<_> = all.iter().filter(|t| t.name == "Widget").collect();
+    assert_eq!(
+        widgets.len(),
+        2,
+        "two workspaces defining the same name are two types, not one: {:?}",
+        all.iter().map(|t| (&t.workspace, &t.name, &t.description)).collect::<Vec<_>>()
+    );
+    for t in &widgets {
+        assert_eq!(t.sources, 1, "a definition is corroborated within its workspace, not across");
+        assert!(!t.contested, "unrelated workspaces do not put a type in conflict with itself");
+    }
+    let mut seen: Vec<(&str, &str)> =
+        widgets.iter().map(|t| (t.workspace.as_str(), t.description.as_str())).collect();
+    seen.sort_unstable();
+    assert_eq!(
+        seen,
+        vec![("ws-a", "a thing in A"), ("ws-b", "a DIFFERENT thing in B")],
+        "each workspace keeps its own definition"
+    );
+
+    // And the scoped reads, which never showed the bug, must still answer as they did.
+    for (ws, desc) in [("ws-a", "a thing in A"), ("ws-b", "a DIFFERENT thing in B")] {
+        let scoped = engine.types(Some(ws)).expect("scoped glossary");
+        assert_eq!(scoped.len(), 1);
+        assert_eq!((scoped[0].workspace.as_str(), scoped[0].description.as_str()), (ws, desc));
+    }
+}
+
 /// guard (P1, "the graph is a projection: re-deriving it from the log reproduces it exactly"): the
 /// EDGE half of that claim, which its sibling above does not reach.
 ///
