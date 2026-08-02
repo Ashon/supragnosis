@@ -132,3 +132,9 @@ ends should report the same entity and relation counts.
 **Multi-principal needs Phase 5.** One person across many machines is the P23 solo exception and
 works today; onboarding a second principal requires the governance enforcement that has not
 landed (`docs/federation.md` Section 10).
+
+## The other Linux option
+
+[../docker/README.md](../docker/README.md) runs the same daemon as a container. Prefer this
+unit when the hub shares a machine you already administer; prefer the container when the host
+is disposable and the state volume is what you back up.

@@ -1,0 +1,81 @@
+# A federation hub as a container. See README.md for what a container changes; the two things that
+# matter most are here as configuration rather than prose, because prose does not stop a mistake.
+#
+#   docker compose -f deploy/docker/compose.yaml up -d --build
+#
+# Run it from the repository root - the build context is the workspace.
+
+services:
+  supragnosis:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: supragnosis:local
+    container_name: supragnosis-hub
+
+    # ONE writer. redb takes a single lock on the store file, so a second container against this
+    # volume does not race - it fails to open, and if it somehow did it would corrupt. `docker
+    # compose up` never starts two of a service by default; this is here so that scaling it is a
+    # decision someone has to take deliberately, against this comment.
+    #
+    # It also means no overlapping restarts. The default recreate stops the old container before
+    # starting the new one, which is what you want; do not switch it to start-first.
+    deploy:
+      replicas: 1
+
+    restart: unless-stopped
+
+    volumes:
+      # The node key, the config, the store and the viewer socket all live under $HOME/.supragnosis.
+      # A NAMED volume, not an anonymous one: the node_id is derived from node.key and is immutable
+      # (F14), so losing this volume does not lose a container - it retires a node identity that
+      # every peer's allowlist still names.
+      - supragnosis-state:/var/lib/supragnosis/.supragnosis
+      # Federation needs TLS and a non-empty allowlist before it will bind anything non-loopback
+      # (F10), so the certificate and the config come from the host, read-only.
+      # - ./supragnosis.toml:/var/lib/supragnosis/.supragnosis/supragnosis.toml:ro
+      # - ./tls:/var/lib/supragnosis/tls:ro
+
+    ports:
+      # The federation sync API. The ONLY surface allowed off loopback, and only with TLS plus a
+      # non-empty allowlist - the daemon refuses to bind otherwise rather than serving in the open.
+      - "7420:7420"
+      # MCP (7373) is deliberately absent. It is unauthenticated by design as a local trust surface
+      # (Principle 17), so publishing it would put an unauthenticated write surface on the network.
+      # To use it, reach the container rather than opening the port: `docker exec` for the viewer
+      # socket, or an ssh tunnel to the host and `docker compose exec`.
+
+    # Mirrors the hardening in deploy/systemd/supragnosis.service, which is documented there. A
+    # container can enforce more of it than an unprivileged user manager can.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    environment:
+      RUST_LOG: info
+
+    # The store is a single file the daemon holds open; a SIGKILL mid-write is what you are avoiding.
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+
+    healthcheck:
+      # Asks the daemon a question only a working store can answer, over the viewer socket - which
+      # stays inside the container. `serve` being alive is not the same as the store being readable,
+      # and a hub whose store failed to open should not read as healthy.
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS --unix-socket /var/lib/supragnosis/.supragnosis/viz.sock
+          http://localhost/api/workspaces > /dev/null
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  supragnosis-state:
+    name: supragnosis-state

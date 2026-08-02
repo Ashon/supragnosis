@@ -1,0 +1,14 @@
+# The build stage copies manifests + crates + e2e and nothing else, but an unfiltered context still
+# ships everything to the daemon - and target/ alone is gigabytes on a working checkout.
+target/
+**/node_modules/
+.git/
+site/
+docs/
+e2e/reports/
+*.log
+
+# The desktop shell is not in the image, but cargo refuses to load the workspace without every
+# member's manifest - so the toml comes in and nothing else does.
+app/**
+!app/Cargo.toml
