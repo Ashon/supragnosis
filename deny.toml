@@ -23,6 +23,9 @@ ignore = [
 [licenses]
 # The project is MIT OR Apache-2.0, so the allow list is what a dual-licensed project can carry.
 # Measured from the actual tree rather than guessed - `cargo deny list` prints it.
+#
+# Measure with --all-features. Without it the optional `fastembed` tree is absent and the list comes
+# out short, which is how NCSA was missed here and found in CI instead.
 allow = [
     "0BSD",
     "Apache-2.0",
@@ -36,6 +39,11 @@ allow = [
     "ISC",
     "MIT",
     "MIT-0",
+    # Permissive, BSD-style (University of Illinois/NCSA). Reached only under --all-features, and
+    # only as `(MIT OR Apache-2.0) AND NCSA` on libfuzzer-sys - rav1e's fuzzing harness, four levels
+    # below the optional `fastembed` feature (fastembed -> image -> ravif -> rav1e). It ships in
+    # nothing. Listed rather than worked around, because the licence itself is not the problem.
+    "NCSA",
     # Weak, file-level copyleft, and it arrives only through `lightningcss` - a BUILD-dependency of
     # supragnosis-viz that minifies the viewer's CSS. What ships is the minified output, not the
     # minifier, and MPL-2.0's obligations attach to modifications of the MPL files themselves. An
