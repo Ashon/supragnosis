@@ -52,6 +52,14 @@ WORKDIR /var/lib/supragnosis
 
 COPY --from=build /src/target/release/supragnosis /usr/local/bin/supragnosis
 
+# How the MCP Registry verifies that this image is ours: the annotation has to match the `name` in
+# server.json exactly. It is the whole of the ownership proof for an OCI package, so it moves only
+# when that name does - which is never, since the name is the namespace GitHub authenticated.
+LABEL io.modelcontextprotocol.server.name="io.github.ashon/supragnosis"
+LABEL org.opencontainers.image.source="https://github.com/Ashon/supragnosis"
+LABEL org.opencontainers.image.description="Memory for AI agents that remembers who said it."
+LABEL org.opencontainers.image.licenses="MIT OR Apache-2.0"
+
 # The state directory has to exist in the image, owned by the runtime user and 0700. A fresh named
 # volume inherits the mount point's ownership from the image; without this it is created root-owned
 # and the daemon cannot open its own store. 0700 is also what the viewer socket's directory wants -

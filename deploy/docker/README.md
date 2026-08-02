@@ -110,3 +110,20 @@ fail rather than quietly write somewhere a backup does not cover.
 `supragnosis identity` prints the node_id and **creates `node.key` if it does not exist yet** - the
 one time that file is written (F14). Running it on a fresh volume is the normal way to learn the id
 a peer has to admit; running it against the wrong volume mints an identity you did not want.
+
+## As an MCP server, not a hub
+
+The same image runs the server on stdio, which is what an MCP client launches and what the
+[MCP Registry](https://modelcontextprotocol.io/registry/about) entry in `server.json` describes:
+
+```bash
+docker run -i --rm -v supragnosis-state:/var/lib/supragnosis/.supragnosis \
+  ghcr.io/ashon/supragnosis:latest serve
+```
+
+`serve` overrides the image's default command, which starts the HTTP daemon a hub wants. The volume
+is the same requirement as everywhere else on this page and matters more here, because a client
+launches the container per session: without it, every session is a different node with an empty log.
+
+Verified end to end rather than assumed - an `observe` in one container is found by a
+`search_knowledge` in the next, and the identity survives both.

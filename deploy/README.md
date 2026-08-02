@@ -91,8 +91,12 @@ claude mcp remove supragnosis -s user
 
 ## Cutting a release
 
-The version lives in **two** manifests since the desktop shell became its own workspace:
-`Cargo.toml` (`[workspace.package] version`) and `app/Cargo.toml` (same key, its own
-workspace). They ship as one number - `supragnosis-vX.Y.Z-*.tar.gz` and
-`Supragnosis-vX.Y.Z-macos-universal.app.zip` - so the `release:` commit moves both, and the
-tag is what the release workflow triggers on.
+The version lives in **three** places, and the `release:` commit moves all of them:
+
+- `Cargo.toml` (`[workspace.package] version`)
+- `app/Cargo.toml` (same key, its own workspace since the desktop shell was split out)
+- `server.json` (`version`, and the tag inside `packages[0].identifier`)
+
+They ship as one number - `supragnosis-vX.Y.Z-*.tar.gz`, `Supragnosis-vX.Y.Z-macos-universal.app.zip`
+and `ghcr.io/ashon/supragnosis:X.Y.Z`. The release workflow fails if `server.json` and the image tag
+disagree, so a missed bump is a red build rather than a registry entry pointing at nothing.

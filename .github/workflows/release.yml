@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write   # create the Release, upload assets
+  packages: write   # push the container image to ghcr.io
 
 jobs:
   build:
@@ -218,6 +219,68 @@ jobs:
   # section of deploy/homebrew/README.md. Without the TAP_PUSH_TOKEN secret (a fine-grained PAT with
   # Contents write on Ashon/homebrew-tap and nothing else) it is skipped, the same way the APPLE_*
   # secrets are.
+  # The container image, published so the MCP Registry has something to point at. Its ownership
+  # proof is the io.modelcontextprotocol.server.name label baked into the image (deploy/docker),
+  # which has to equal the `name` in server.json - a mismatch is not a broken build, it is a
+  # registry entry that will not verify.
+  #
+  # Multi-arch, because a hub is as likely to be an arm64 box as an x86 one, and because an MCP
+  # client on Apple silicon should not emulate.
+  image:
+    name: publish container image
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Lowercase, because ghcr rejects an uppercase path and the account is `Ashon`. The version
+      # drops the leading v: server.json names `ghcr.io/ashon/supragnosis:0.2.1`, and the tag here
+      # is what that string has to match.
+      - name: derive tags
+        id: tags
+        run: |
+          set -euo pipefail
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          version="${GITHUB_REF_NAME#v}"
+          echo "image=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # Only a tag publishes. workflow_dispatch builds and proves the Dockerfile still works.
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: |
+            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}
+            ${{ steps.tags.outputs.image }}:latest
+
+      # server.json names an exact image tag, so a release whose image and manifest disagree would
+      # publish a registry entry pointing at something that does not exist. Checked here rather than
+      # discovered by the first person who tries to install it.
+      - name: server.json names this image
+        run: |
+          set -euo pipefail
+          want="${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}"
+          got=$(python3 -c "import json;print(json.load(open('server.json'))['packages'][0]['identifier'])")
+          test "$want" = "$got" || {
+            echo "server.json points at $got but this release publishes $want" >&2; exit 1; }
+          v=$(python3 -c "import json;print(json.load(open('server.json'))['version'])")
+          test "$v" = "${{ steps.tags.outputs.version }}" || {
+            echo "server.json version $v does not match the tag" >&2; exit 1; }
+          echo "server.json agrees: $got"
+
   tap:
     name: update homebrew tap
     needs: [build, app]
