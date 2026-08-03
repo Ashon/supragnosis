@@ -198,10 +198,24 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
     Ok(Some(child))
 }
 
-/// One GET over the socket -> (status, content-type, body). The daemon answers Connection: close,
-/// so read-to-EOF terminates. /api/events must never come through here (an endless stream) - the
-/// protocol handler short-circuits it.
-async fn uds_fetch(sock: &Path, target: &str) -> anyhow::Result<(u16, String, Vec<u8>)> {
+/// What the daemon answered, minus the headers this proxy does not forward.
+struct Fetched {
+    status: u16,
+    ctype: String,
+    /// The daemon's Content-Security-Policy, forwarded verbatim rather than restated here.
+    ///
+    /// The shell is a separate workspace by design ("It shares no code with the server"), so a
+    /// shared constant is not available - and a second copy of the policy would be a second thing to
+    /// keep in step, which is the failure this proxy already avoids for content-type by reading it
+    /// rather than assuming it. The daemon serves the page; the daemon's policy governs it.
+    csp: Option<String>,
+    body: Vec<u8>,
+}
+
+/// One GET over the socket. The daemon answers Connection: close, so read-to-EOF terminates.
+/// /api/events must never come through here (an endless stream) - the protocol handler
+/// short-circuits it.
+async fn uds_fetch(sock: &Path, target: &str) -> anyhow::Result<Fetched> {
     let mut s = UnixStream::connect(sock).await?;
     s.write_all(format!("GET {target} HTTP/1.1\r\nConnection: close\r\n\r\n").as_bytes())
         .await?;
@@ -219,18 +233,69 @@ async fn uds_fetch(sock: &Path, target: &str) -> anyhow::Result<(u16, String, Ve
         .and_then(|l| l.split_whitespace().nth(1))
         .and_then(|c| c.parse().ok())
         .context("malformed status line")?;
-    let ctype = head
-        .lines()
-        .skip(1)
-        .find_map(|l| {
+    let header = |name: &str| {
+        head.lines().skip(1).find_map(|l| {
             let (k, v) = l.split_once(':')?;
-            k.trim().eq_ignore_ascii_case("content-type").then(|| v.trim().to_string())
+            k.trim().eq_ignore_ascii_case(name).then(|| v.trim().to_string())
         })
-        .unwrap_or_else(|| "application/octet-stream".to_string());
-    Ok((status, ctype, body))
+    };
+    let ctype = header("content-type").unwrap_or_else(|| "application/octet-stream".to_string());
+    Ok(Fetched { status, ctype, csp: header("content-security-policy"), body })
 }
 
-fn resp(status: u16, ctype: &str, body: Vec<u8>) -> http::Response<Vec<u8>> {
+/// The policy for responses the SHELL authors rather than proxies: the starting splash and the
+/// error JSONs. Strictly tighter than the daemon's - none of them loads a script or an image, and
+/// the splash's inline styles are the only reason `style-src` is not `'none'` too.
+///
+/// It is not a fallback for the viewer page. If the daemon ever answers without a policy, that is a
+/// daemon that stopped sending one, and serving its HTML under a shell-authored guess would hide
+/// exactly that.
+const SHELL_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; \
+     form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+
+/// The origins Tauri's IPC rides on, which the daemon has no reason to know about.
+///
+/// This is the one place the forwarded policy must be edited rather than passed through. Tauri
+/// normally solves it by extending the CSP itself - but it does that for a policy declared in
+/// `tauri.conf.json`, and this one arrives as a header on a proxied response, so nothing extends it
+/// and `connect-src 'self'` would refuse the transport `window.__TAURI__.event.emit/listen` uses.
+/// The window would render and then be deaf to the tray.
+///
+/// Note what does NOT need an entry: `shell-init.js` is injected as a webview user script rather
+/// than fetched by the document, so it is not `script-src`'s business - which is why Tauri apps run
+/// under policies with no `'unsafe-inline'` at all.
+const TAURI_IPC_SOURCES: &str = "ipc: http://ipc.localhost";
+
+/// Adds the IPC origins to a forwarded policy's `connect-src`.
+///
+/// A duplicate directive would be ignored (a browser honours the first occurrence), so the existing
+/// one is widened in place. A policy with no `connect-src` gets one, because `default-src 'none'`
+/// would otherwise deny the fetch by inheritance.
+fn with_ipc_sources(csp: &str) -> String {
+    if csp.trim().is_empty() {
+        return String::new(); // nothing to extend; forward the absence honestly
+    }
+    let mut found = false;
+    let mut out: Vec<String> = csp
+        .split(';')
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .map(|d| {
+            if d == "connect-src" || d.starts_with("connect-src ") {
+                found = true;
+                format!("{d} {TAURI_IPC_SOURCES}")
+            } else {
+                d.to_string()
+            }
+        })
+        .collect();
+    if !found {
+        out.push(format!("connect-src {TAURI_IPC_SOURCES}"));
+    }
+    out.join("; ")
+}
+
+fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Vec<u8>> {
     http::Response::builder()
         .status(status)
         .header("content-type", ctype)
@@ -238,6 +303,13 @@ fn resp(status: u16, ctype: &str, body: Vec<u8>) -> http::Response<Vec<u8>> {
         // without it WKWebView disk-caches the viewer assets and serves STALE pages across
         // app restarts (live-updating data and a hand-deployed daemon make caching all wrong).
         .header("cache-control", "no-store")
+        // Same laundering concern, higher stakes. The webview renders entity names, descriptions and
+        // proposal rationale, which under federation are synced, attacker-influenceable input - so
+        // the daemon's Content-Security-Policy is the second line of defence behind output escaping,
+        // and a proxy that drops it leaves the shell (the surface a human actually looks at) with
+        // only the first. It used to drop it, because it forwarded content-type and nothing else.
+        .header("content-security-policy", csp)
+        .header("x-content-type-options", "nosniff")
         .body(body)
         .unwrap_or_else(|_| http::Response::new(Vec::new()))
 }
@@ -407,21 +479,29 @@ fn main() {
                     resp(
                         404,
                         "application/json",
+                        SHELL_CSP,
                         br#"{"error":"SSE rides the Tauri event bridge (viz-event), not the proxy"}"#.to_vec(),
                     )
                 } else {
                     match tokio::time::timeout(Duration::from_secs(15), uds_fetch(&sock, &target)).await {
-                        Ok(Ok((status, ctype, body))) => resp(status, &ctype, body),
+                        // The daemon's own policy governs the daemon's own page. An answer with no
+                        // policy is forwarded with none, so a daemon that stopped sending one shows
+                        // up as that rather than as a shell-authored guess (see SHELL_CSP).
+                        Ok(Ok(f)) => {
+                            let csp = with_ipc_sources(f.csp.as_deref().unwrap_or(""));
+                            resp(f.status, &f.ctype, &csp, f.body)
+                        }
                         // Socket not answering: the index gets a self-refreshing splash carrying
                         // the live daemon state (a Failed reason must be readable, not an eternal
                         // "starting..."); API calls get an honest 502 (Principle 5).
                         _ if target == "/" => {
                             let status = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
-                            resp(200, "text/html; charset=utf-8", starting_html(&status).into_bytes())
+                            resp(200, "text/html; charset=utf-8", SHELL_CSP, starting_html(&status).into_bytes())
                         }
                         Ok(Err(e)) => resp(
                             502,
                             "application/json",
+                            SHELL_CSP,
                             serde_json::json!({ "error": format!("viewer socket unreachable: {e}") })
                                 .to_string()
                                 .into_bytes(),
@@ -429,6 +509,7 @@ fn main() {
                         Err(_) => resp(
                             504,
                             "application/json",
+                            SHELL_CSP,
                             br#"{"error":"viewer socket timed out"}"#.to_vec(),
                         ),
                     }
@@ -547,4 +628,57 @@ fn main() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod csp_tests {
+    use super::{with_ipc_sources, TAURI_IPC_SOURCES};
+
+    /// The forwarded policy reaches the webview widened for IPC and unchanged everywhere else.
+    ///
+    /// The failure this guards is silent in both directions: too narrow and the tray goes deaf
+    /// (`connect-src 'self'` refuses Tauri's transport), too wide and the proxy has quietly relaxed
+    /// a policy the daemon meant strictly. So `script-src` is asserted to survive byte for byte.
+    #[test]
+    fn forwarding_widens_connect_src_and_nothing_else() {
+        let daemon =
+            "default-src 'none'; script-src 'self' viz:; style-src 'self' 'unsafe-inline'; \
+                      img-src 'self' data:; connect-src 'self'; base-uri 'none'";
+        let out = with_ipc_sources(daemon);
+
+        let connect = out
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("connect-src"))
+            .expect("connect-src survives");
+        assert_eq!(connect, format!("connect-src 'self' {TAURI_IPC_SOURCES}"));
+
+        // Exactly one connect-src: a second would be ignored by the browser, which is the quiet way
+        // this fix could look applied and do nothing.
+        assert_eq!(out.matches("connect-src").count(), 1, "one directive, widened in place: {out}");
+
+        // Everything else is byte-identical - the script half above all.
+        assert!(out.contains("script-src 'self' viz:"), "script-src must be untouched: {out}");
+        assert!(!out.contains("unsafe-eval"));
+        for d in ["default-src 'none'", "img-src 'self' data:", "base-uri 'none'"] {
+            assert!(out.contains(d), "{d} must survive: {out}");
+        }
+    }
+
+    /// A policy with no `connect-src` still needs one: `default-src 'none'` denies the fetch by
+    /// inheritance, so "absent" is not "permitted".
+    #[test]
+    fn a_policy_without_connect_src_gains_one() {
+        let out = with_ipc_sources("default-src 'none'; script-src 'self'");
+        assert!(out.contains(&format!("connect-src {TAURI_IPC_SOURCES}")), "got: {out}");
+        assert!(out.contains("default-src 'none'"), "got: {out}");
+    }
+
+    /// No policy stays no policy. A daemon that stopped sending one must look like that, not like a
+    /// shell-authored guess (the reason the proxy forwards rather than restates).
+    #[test]
+    fn an_absent_policy_is_not_invented() {
+        assert_eq!(with_ipc_sources(""), "");
+        assert_eq!(with_ipc_sources("   "), "");
+    }
 }

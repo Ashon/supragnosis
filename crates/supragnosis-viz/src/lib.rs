@@ -1015,9 +1015,49 @@ fn workspaces_response(engine: &Engine) -> Response {
     }
 }
 
+/// The second line of defence against stored XSS in the viewer page.
+///
+/// The first is output escaping, and it is guarded: `esc()` wraps every untrusted value reaching an
+/// innerHTML sink, `viz_source_escapes_untrusted_names` pins it, and ESLint's `no-unsanitized` runs
+/// over the sinks in CI. But the page renders entity names, descriptions and proposal rationale, and
+/// under federation those are synced, attacker-influenceable input - so the class that survives a
+/// missed `esc()` is script execution with full reach over this socket. One escape is one mistake
+/// away from being none; a policy the browser enforces does not depend on remembering.
+///
+/// `architecture.md` Section 10 recorded this as owed, and scoped the web-hardening checklist to the
+/// Phase 3.5 hub surface - but the shell renders synced content today, so this half came due before
+/// the surface that named it.
+///
+/// Directive by directive, against what the page actually does:
+/// - `default-src 'none'` - nothing is fetchable unless named below.
+/// - `script-src 'self' viz:` - `viewer.html` carries no inline `<script>` (only
+///   `<script src="/viewer.js">`), so this needs no `'unsafe-inline'`, which is what makes it worth
+///   having: an injected `<script>`, an `onclick=` attribute and a `javascript:` URI are all refused.
+///   `viz:` is for the desktop shell, whose webview serves this page from a custom-scheme origin
+///   (`viz://localhost`) - `'self'` should already cover it, and naming the scheme means a webview
+///   that treats that origin as opaque degrades to "still works" rather than "blank window".
+/// - `style-src 'self' 'unsafe-inline'` - six generated spans carry `style="background:<color>"`.
+///   `'unsafe-inline'` buys CSS injection, whose exfiltration route is a URL fetch, and `img-src`
+///   below is what closes that. It costs nothing on the script side, which is the class that matters.
+/// - `img-src 'self' data:` - the favicon and the CSS noise texture are `data:` SVGs.
+/// - `connect-src 'self'` - polling and the SSE stream, same origin.
+/// - `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'`, `object-src 'none'` - the
+///   page has no `<base>`, no form and no plugin, and nothing should frame it. Denying what is
+///   unused costs nothing and removes the redirect tricks that turn one injection into two.
+const CSP: &str = "default-src 'none'; \
+     script-src 'self' viz:; \
+     style-src 'self' 'unsafe-inline'; \
+     img-src 'self' data:; \
+     connect-src 'self'; \
+     base-uri 'none'; \
+     form-action 'none'; \
+     frame-ancestors 'none'; \
+     object-src 'none'";
+
 async fn write_response<S: AsyncWrite + Unpin>(stream: &mut S, r: &Response) -> anyhow::Result<()> {
     let header = format!(
-        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n",
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\
+         Content-Security-Policy: {CSP}\r\nX-Content-Type-Options: nosniff\r\n\r\n",
         r.status,
         r.content_type,
         r.body.len()

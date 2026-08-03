@@ -184,6 +184,63 @@ fn viz_source_escapes_untrusted_names() {
     );
 }
 
+/// Every response carries a Content-Security-Policy, and the script half of it stays strict.
+///
+/// Escaping is the first defence and it is guarded by the test above; this is the one that survives
+/// a missed `esc()`. The assertions are deliberately split: that the header EXISTS on both the page
+/// and the API responses, and that `script-src` names neither `'unsafe-inline'` nor `'unsafe-eval'` -
+/// because the way a CSP dies is not deletion, it is someone widening one directive to make a
+/// feature work and leaving a header that still looks like a policy.
+///
+/// `style-src` is exempt from that second assertion on purpose: the viewer generates six
+/// `style="background:<color>"` attributes, so it needs `'unsafe-inline'` there. What that buys an
+/// attacker is CSS injection, whose exfiltration route is a URL fetch that `img-src 'self' data:`
+/// and `default-src 'none'` refuse - and it costs nothing on the script side, which is the class
+/// that turns a stored name into code execution.
+#[tokio::test]
+async fn every_response_carries_a_script_strict_csp() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
+    let sock = serve_uds("csp", engine, ev_channel()).await;
+
+    // The page, the script it loads, and a JSON API response: the header is unconditional, so a new
+    // endpoint cannot forget it by being new.
+    for target in ["/", "/viewer.js", "/api/graph", "/api/curation"] {
+        let resp = uds_get(&sock, target).await;
+        let head = resp.split("\r\n\r\n").next().unwrap_or_default().to_lowercase();
+        let csp = head
+            .lines()
+            .find_map(|l| l.strip_prefix("content-security-policy:"))
+            .unwrap_or_else(|| panic!("{target} carries no Content-Security-Policy header"))
+            .trim()
+            .to_string();
+
+        assert!(
+            csp.contains("default-src 'none'"),
+            "{target}: the policy must deny by default, got: {csp}"
+        );
+        assert!(
+            head.contains("x-content-type-options: nosniff"),
+            "{target} must refuse content-type sniffing"
+        );
+
+        // Isolate script-src: 'unsafe-inline' elsewhere (style-src) is a deliberate concession and
+        // must not make this assertion pass or fail.
+        let script_src = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("script-src"))
+            .unwrap_or_else(|| panic!("{target}: the policy names no script-src, got: {csp}"))
+            .to_string();
+        assert!(
+            !script_src.contains("unsafe-inline") && !script_src.contains("unsafe-eval"),
+            "{target}: script-src must stay strict - an injected name that reaches innerHTML is only \
+             inert while it is. Got: {script_src}"
+        );
+    }
+}
+
 /// The socket file IS the access control (F19): bind_uds must chmod it 0600, refuse to steal a
 /// live socket, and replace a stale one. The browser-facing gates (Host / CSRF) are gone with the
 /// TCP listener - /api/review is reachable over the socket with no special headers.
