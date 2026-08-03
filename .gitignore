@@ -1,4 +1,8 @@
 /target
+# The desktop shell is its own workspace, so its build output lands here rather than in /target
+# above (release.yml says the same thing about where it looks for the bundle). Anyone who builds
+# the shell locally got an untracked directory until this line existed.
+/app/target
 **/*.rs.bk
 Cargo.lock.orig
 .DS_Store
