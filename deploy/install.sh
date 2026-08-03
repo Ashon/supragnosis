@@ -46,7 +46,16 @@ if curl -s -o /dev/null -m 3 "http://127.0.0.1:7373/mcp" ; then echo "  MCP port
 
 echo "[5/5] Register Claude Code with the http transport"
 claude mcp remove supragnosis -s user 2>/dev/null || true
-claude mcp add --transport http supragnosis "$MCP_URL" --scope user
+# The daemon requires its bearer token: loopback confines the surface to this host, and on a
+# multi-user box that is every local account. Generated on first start, mode 0600.
+MCP_TOKEN="$(cat "$HOME/.supragnosis/mcp.token" 2>/dev/null || true)"
+if [ -n "$MCP_TOKEN" ]; then
+  claude mcp add --transport http supragnosis "$MCP_URL" --scope user \
+    --header "Authorization: Bearer $MCP_TOKEN"
+else
+  echo "  no token at ~/.supragnosis/mcp.token yet - run 'supragnosis status' once the daemon is up"
+  echo "  and register with the command it prints."
+fi
 
 echo ""
 echo "Done. Viewer socket: ~/.supragnosis/viz.sock (HTTP over UDS) | Logs: ~/.supragnosis/log/"

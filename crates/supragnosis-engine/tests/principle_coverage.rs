@@ -493,15 +493,16 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "bind_guard_enforces_f10",
             "loopback_hosts_and_origins_pass_foreign_ones_refused",
         ])),
+        // Repaid by the auth layer, not by the socket: MCP clients reach the daemon over HTTP, so
+        // the viewer's repair (move to a unix socket, let its 0600 mode be the access control) does
+        // not transfer. What transfers is the FILE MODE - the token lives at ~/.supragnosis/mcp.token
+        // under the same 0600, so the surface is confined to one OS user either way.
         c("the MCP daemon admits only the local principal - loopback TCP is host-local, not \
            single-user",
-          Evidence::Deferred(
-            "M4 remainder - the streamable-http daemon binds 127.0.0.1 with only a Host/Origin \
-             rebinding guard, so on a multi-user host any local OS account reaches the full tool \
-             surface (writes and sync_push included), while P17 scopes the workspace-scope-less \
-             surface to 'stdio, single user'. Repay the way the viewer was repaid: a unix-socket \
-             transport, or an auth layer (architecture.md Sections 10/14)",
-          )),
+          Evidence::Scenario(&[
+            "only_the_exact_token_is_admitted",
+            "digest_equality_separates_digests_that_differ_anywhere",
+        ])),
         c("a workspace boundary is not crossed by a derived suggestion either",
           Evidence::Scenario(&["p17_candidates_never_span_workspaces_in_the_all_view"])),
         // The fourth enforcement demand, which had no row here at all until the excision spec asked

@@ -51,8 +51,13 @@ brew tap ashon/tap
 brew install supragnosis-server
 brew services start supragnosis-server     # MCP on :7373 + local viewer
 
-claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp
+claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp \
+  --header "Authorization: Bearer $(cat ~/.supragnosis/mcp.token)"
 ```
+
+The daemon speaks HTTP on loopback, and loopback confines it to the *host*, not to one user - so
+a bearer token is what makes it yours. It is generated on first start at `~/.supragnosis/mcp.token`
+(mode 0600); `supragnosis status` prints the command above with the token filled in.
 
 Not on Homebrew:
 
@@ -180,10 +185,19 @@ Most used:
 - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/redb`)
 - `SUPRAGNOSIS_EMBED` - `fastembed` | `hashing` | `none`. Degrades to keyword search if absent
 - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml`. No file means a standalone node
+- `SUPRAGNOSIS_MCP_AUTH` - `on` (default) | `off`. `off` drops the daemon's bearer check
 
-The MCP HTTP daemon is loopback-only and the viewer has no TCP port at all: it serves over a
-unix socket whose 0600 mode is the access control. A non-loopback federation bind requires
-TLS and a non-empty allowlist, and refuses to start without both.
+The MCP HTTP daemon is loopback-only **and requires a bearer token**. Those are two different
+guards because loopback answers a different question than people assume: it confines the surface
+to this *host*, not to one *user*, so on a shared machine any local account could otherwise
+`observe`, `review` and `sync_push` through it. The token (`~/.supragnosis/mcp.token`, mode 0600)
+is what makes the surface yours, and it is the same access control the viewer gets from its socket
+file - the viewer could move to a unix socket, and the daemon cannot, because MCP clients speak
+HTTP.
+
+The viewer has no TCP port at all: it serves over a unix socket whose 0600 mode is the access
+control, and every response carries a Content-Security-Policy. A non-loopback federation bind
+requires TLS and a non-empty allowlist, and refuses to start without both.
 
 ## Upgrading from a pre-0.2 store
 
