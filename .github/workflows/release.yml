@@ -17,8 +17,41 @@ permissions:
   packages: write   # push the container image to ghcr.io
 
 jobs:
+  # The tree agrees with itself already: manifest_consistency.rs (the rust gate) holds the workspace
+  # version, the seven internal dependency requirements, app/Cargo.toml and server.json equal, on
+  # every push. What no test can check is the one comparison that needs a TAG to exist - whether the
+  # number they all agree on is the number being released.
+  #
+  # v0.2.2 is why this job exists. Its commit message says "a missed bump is a red build"; in fact
+  # only server.json was checked, and the bump that was actually missed (the internal requirements)
+  # was in neither place. Nothing here can publish, so it costs one runner-minute and gates every job
+  # that can.
+  manifest:
+    name: manifest agrees with the tag
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: the workspace version is the tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME:-}"
+          case "$tag" in
+            v*) want="${tag#v}" ;;
+            # workflow_dispatch has no tag. Nothing downstream publishes on that path, so there is
+            # nothing to hold to a number - report and pass rather than invent one.
+            *) echo "no v* tag on this run (${tag:-none}) - nothing to compare"; exit 0 ;;
+          esac
+          got=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          test -n "$got" || { echo "no version in [workspace.package]" >&2; exit 1; }
+          test "$got" = "$want" || {
+            echo "tag $tag releases $want but [workspace.package].version is $got" >&2
+            echo "the release: commit must move the version with the tag" >&2
+            exit 1; }
+          echo "manifest agrees: $got"
+
   build:
     name: build ${{ matrix.target }}
+    needs: manifest
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -114,6 +147,7 @@ jobs:
   # unsigned and verifies nothing but the build.
   app:
     name: build desktop app (macos universal)
+    needs: manifest
     # Pinned to macos-26: macOS 26 gates control metrics on the linked SDK, so an app built against
     # an older SDK gets the compatibility (legacy) traffic-light metrics and the y calibration for
     # the overlay titlebar's traffic lights (app/src/main.rs show_viewer) lands wrong. The app job
@@ -228,6 +262,7 @@ jobs:
   # client on Apple silicon should not emulate.
   image:
     name: publish container image
+    needs: manifest
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
