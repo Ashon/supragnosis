@@ -411,13 +411,25 @@ sections are present, and `peers` awaits the P2P phase.
 - **Standalone daemon**: given `--http` / `SUPRAGNOSIS_HTTP_ADDR` (e.g. 127.0.0.1:7373), it exposes
   MCP **streamable-HTTP** persistently instead of stdio (rmcp `StreamableHttpService` -> axum `/mcp`). Because the daemon is
   the sole holder of the db, the single-process lock problem disappears, and multiple agents connect via
-  `claude mcp add --transport http http://127.0.0.1:7373/mcp` (without spawning per chat).
-  **Loopback only** - and note the honest scope of that guard (Principle 17): loopback confines the
-  surface to the local HOST, not to a single user. On a multi-user host any local OS account reaches
-  the full tool surface, writes and `sync_push` included, so P17's "stdio, single user" holds for the
-  stdio transport only; the daemon's single-user confinement is owed (Section 14, and the P17 row of
-  the coverage registry) - repay the way the viewer was repaid, with a unix-socket transport or an
-  auth layer. The tool handlers offload
+  `claude mcp add --transport http http://127.0.0.1:7373/mcp --header "Authorization: Bearer ..."`
+  (without spawning per chat).
+  **Loopback and a bearer token** - two guards, because loopback alone answers the wrong question
+  (Principle 17): it confines the surface to the local HOST, not to a single user, so on a
+  multi-user host any local OS account reached the full tool surface, writes and `sync_push`
+  included. That was an overdue M4 entry condition (Section 14). **Repaid**: the daemon now requires
+  `Authorization: Bearer <token>` against `~/.supragnosis/mcp.token` (32 bytes of entropy, hex, mode
+  0600, in the 0700 `~/.supragnosis` dir), generated once on first start. It is the viewer's repair
+  applied to the surface that could not take it - the viewer moved to a unix socket and let the
+  file's 0600 mode be the access control, and a daemon MCP clients reach as
+  `http://127.0.0.1:7373/mcp` cannot follow, so the confinement moves from the socket to a secret
+  that the same file mode protects. The check is the outermost layer, so an unauthenticated request
+  is refused before the session bookkeeping can allocate state for it; it answers `401` with
+  `WWW-Authenticate: Bearer`, deliberately not the `404` that the stale-session rewrite produces
+  (that one means "re-handshake", which here would fail identically). `SUPRAGNOSIS_MCP_AUTH=off`
+  disables it for a single-user box - opt-out, like the ingest secret scan, and it warns on every
+  start naming what is exposed rather than that a setting is off; anything other than an explicit
+  `off` means on, so a typo fails safe. Guarded by `only_the_exact_token_is_admitted` and
+  `digest_equality_separates_digests_that_differ_anywhere`. The tool handlers offload
   blocking store calls via `spawn_blocking` to prevent runtime starvation - the Section 14 precondition
   for remote transport, now **discharged**.
   For operations (launchd, etc.) see [`deploy/README.md`](../deploy/README.md).
@@ -979,13 +991,21 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
    authenticated network read tier, workspace enumeration and `workspace=*` MUST be filtered by that user's grants
    (already stated as a Phase 3.5 requirement in federation.md 6d).
    **Correction (2026-08): the retirement covered one of the two surfaces.** The MCP streamable-http
-   daemon still serves the same workspace-scope-less queries (`search_knowledge` with no workspace,
+   daemon still served the same workspace-scope-less queries (`search_knowledge` with no workspace,
    `workspace_map` over `*`, the workspaces resource) - and every write tool - on loopback TCP with no
-   auth, so on a multi-user host any local OS account reaches them. Loopback is host-local, not
+   auth, so on a multi-user host any local OS account reached them. Loopback is host-local, not
    single-user, and the P17 registry row that used to cite the viewer/sync guards as covering "the
-   local read surface" over-claimed exactly this; it now carries the daemon as its own deferred
-   clause (M4 remainder). Repay the way the viewer was repaid: a unix-socket transport, or an auth
-   layer (Section 10).
+   local read surface" over-claimed exactly this.
+   **REPAID (2026-08)**, by the second of the two routes this entry named: an auth layer rather than a
+   unix-socket transport, because MCP clients reach the daemon over HTTP and cannot speak the socket.
+   A per-node bearer token at `~/.supragnosis/mcp.token` (0600) is now required on every request, so
+   the confinement the viewer gets from its socket file is the same one this surface gets from its
+   token file - one OS user, enforced by the OS. Section 10 carries the mechanism and the opt-out.
+   What is NOT repaid by this and stays owed for federation Phase 3.5: the transport-aware guard
+   proper - once the authenticated network read tier exists, workspace enumeration and `workspace=*`
+   must be filtered by *that user's grants* rather than admitted wholesale to whoever holds the local
+   token (federation.md 6d). A single-user gate is not a per-principal one; it is what makes the
+   deployment single-principal, which is the premise the rest of this ledger already rests on.
 
 **Repaid by M3b (formerly M3 latent conditions)**
 - Cozo keyword-search alias parity - REPAID: the Cozo search matches aliases as InMemory does (an

@@ -382,7 +382,9 @@ claude mcp add supragnosis \
 <span class="c"># or point at the background daemon over HTTP</span>
 supragnosis start
 claude mcp add supragnosis \
-  --transport http http://127.0.0.1:7373/mcp</code></pre>
+  --transport http http://127.0.0.1:7373/mcp \
+  --header "Authorization: Bearer $(cat \
+    ~/.supragnosis/mcp.token)"</code></pre>
         </div>
         <dl class="tools">
           <div><dt>observe</dt><dd>load knowledge: entities, relations, and text become observation events</dd></div>

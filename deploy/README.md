@@ -41,7 +41,8 @@ launchctl load ~/Library/LaunchAgents/com.supragnosis.daemon.plist
 
 # 4) Register Claude Code with the http transport (no more spawning per chat)
 claude mcp remove supragnosis -s user 2>/dev/null || true
-claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp --scope user
+claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp --scope user \
+  --header "Authorization: Bearer $(cat ~/.supragnosis/mcp.token)"   # loopback is host-local, not user-local
 ```
 
 Now any chat/session attaches to this daemon. The viewer serves HTTP over the unix socket, e.g.

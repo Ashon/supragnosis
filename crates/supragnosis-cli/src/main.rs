@@ -125,6 +125,10 @@ struct RunArgs {
     /// Session id (footprint grouping key).
     #[arg(long)]
     session: Option<String>,
+    /// MCP daemon bearer auth: on (default) | off. `off` exposes the full tool surface to every
+    /// local OS account on this host - loopback confines the surface to the host, not to a user.
+    #[arg(long, value_name = "on|off")]
+    mcp_auth: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -155,6 +159,9 @@ struct Config {
     http: Option<String>,
     /// Some = accompanied by the live viewer (unix socket path).
     viz: Option<String>,
+    /// Whether the streamable-http daemon requires its bearer token (Principle 17). Default on.
+    /// Only consulted when `http` is Some - stdio is already confined to the process that spawned it.
+    mcp_auth: bool,
 }
 
 /// Resolves a Config from RunArgs + environment variables + defaults. When
@@ -207,6 +214,13 @@ fn resolve(a: RunArgs, daemon: bool) -> Config {
             .viz
             .or_else(|| env("SUPRAGNOSIS_VIZ_SOCK"))
             .or_else(|| daemonish.then(default_viz_sock)),
+        // Defence in depth is opt-OUT, for the reason `Engine::with_secret_scan` is: the cost of
+        // being wrong is unbounded and one-directional. Anything other than an explicit "off" means
+        // on, so a typo fails safe rather than silently opening the surface.
+        mcp_auth: !a
+            .mcp_auth
+            .or_else(|| env("SUPRAGNOSIS_MCP_AUTH"))
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("off")),
         http,
         host,
     }
@@ -417,7 +431,16 @@ async fn run(cfg: Config) -> Result<()> {
 
     match cfg.http.as_deref() {
         Some(http) => {
-            serve_http_daemon(engine, sync_ctx, http, &cfg.host, &cfg.workspace, &cfg.session).await
+            serve_http_daemon(
+                engine,
+                sync_ctx,
+                http,
+                cfg.mcp_auth,
+                &cfg.host,
+                &cfg.workspace,
+                &cfg.session,
+            )
+            .await
         }
         None => {
             tracing::info!(host = %cfg.host, workspace = %cfg.workspace, session = %cfg.session, "supragnosis / starting stdio MCP server");
@@ -927,12 +950,17 @@ async fn spawn_viz(
 
 /// Standalone daemon: keeps the MCP streamable-http server running continuously. A
 /// factory builds a `SupragnosisServer` per session while sharing the same
-/// `Arc<Engine>` (same db). Loopback-only bind (Principle 17: local trust surface -
-/// no authentication is justified).
+/// `Arc<Engine>` (same db).
+///
+/// Two guards, and they answer different questions. `parse_loopback_addr` refuses a non-local bind,
+/// which keeps the surface on this HOST. A bearer token ([`require_token`]) keeps it to this USER,
+/// which loopback never did - the sentence "loopback is the local trust surface, so no
+/// authentication is justified" stood here and was wrong on any multi-user machine.
 async fn serve_http_daemon(
     engine: Arc<Engine>,
     sync_ctx: Option<Arc<supragnosis_mcp::SyncContext>>,
     http_addr: &str,
+    auth: bool,
     host: &str,
     workspace: &str,
     session: &str,
@@ -963,10 +991,31 @@ async fn serve_http_daemon(
         // origin is refused before it reaches either.
         .layer(axum::middleware::from_fn(expired_session_is_not_found))
         .layer(axum::middleware::from_fn(guard_local_origin));
+    // Outermost, so an unauthenticated request is refused before any other layer reads it - including
+    // the session bookkeeping, which would otherwise let an unauthenticated caller allocate state.
+    let router = match auth {
+        true => {
+            let token = Arc::new(load_or_create_mcp_token()?);
+            tracing::info!(path = %mcp_token_path().display(), "MCP daemon requires a bearer token");
+            router.layer(axum::middleware::from_fn(move |req, next| {
+                require_token(token.clone(), req, next)
+            }))
+        }
+        false => {
+            // Loud, every start, and naming what is exposed rather than that a setting is off. An
+            // operator who chose this on a single-user box should see it confirmed; one who inherited
+            // it from a stale environment variable should see what it costs.
+            tracing::warn!(
+                "MCP daemon authentication is DISABLED (SUPRAGNOSIS_MCP_AUTH=off) - every local OS \
+                 account on this host can observe, review and sync_push through {addr}"
+            );
+            router
+        }
+    };
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
-    tracing::info!(%host, %workspace, %session, %addr, "supragnosis / MCP streamable-http daemon: http://{addr}/mcp");
+    tracing::info!(%host, %workspace, %session, %addr, auth, "supragnosis / MCP streamable-http daemon: http://{addr}/mcp");
     axum::serve(listener, router).await?;
     Ok(())
 }
@@ -1084,6 +1133,188 @@ fn host_hdr_is_loopback(h: &str) -> bool {
 fn origin_is_loopback(o: &str) -> bool {
     let after = o.split_once("://").map(|(_, r)| r).unwrap_or(o);
     host_hdr_is_loopback(after)
+}
+
+// --- MCP daemon single-user confinement (Principle 17) --------------------------------------------
+
+/// The daemon's bearer token file. Mode 0600, in the 0700 `~/.supragnosis` dir - the same access
+/// control the viewer socket uses, applied to the one surface that could not use a socket.
+fn mcp_token_path() -> std::path::PathBuf {
+    fed::fed_base_dir().join("mcp.token")
+}
+
+/// Loads (or generates exactly once) the daemon's bearer token.
+///
+/// **Why a token and not a unix socket.** The viewer repaid this by moving off TCP entirely, and its
+/// socket's 0600 mode became the whole access control. The MCP daemon cannot follow: MCP clients
+/// reach it as `http://127.0.0.1:7373/mcp`, and an HTTP-over-UDS transport is not something
+/// `claude mcp add --transport http` can speak. So the confinement moves from the socket to a
+/// secret, and the secret gets the property the socket had - a file only this user can read.
+///
+/// 32 bytes of entropy, hex. Same shape and same generator as `node.key`; unlike the node key it is
+/// not an identity and may be deleted and regenerated freely (the cost is re-adding the client).
+fn load_or_create_mcp_token() -> Result<String> {
+    let path = mcp_token_path();
+    if path.exists() {
+        let tok = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?
+            .trim()
+            .to_string();
+        if !tok.is_empty() {
+            return Ok(tok);
+        }
+        // An empty file is a half-written one (an interrupted first start, an editor). Regenerating
+        // is safe and is the only outcome that leaves a working daemon; treating it as a valid
+        // empty token would authenticate everyone.
+        tracing::warn!(path = %path.display(), "the MCP token file is empty - generating a new token");
+    }
+    let mut raw = [0u8; 32];
+    getrandom::getrandom(&mut raw).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
+    let tok = raw.iter().fold(String::with_capacity(64), |mut s, b| {
+        use std::fmt::Write;
+        let _ = write!(s, "{b:02x}");
+        s
+    });
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&path, &tok).with_context(|| format!("writing {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("chmod {}", path.display()))?;
+    }
+    tracing::info!(path = %path.display(), "generated the MCP daemon token (0600)");
+    Ok(tok)
+}
+
+/// Constant-time equality over two blake3 digests.
+///
+/// The digests are what is compared, not the tokens - the same choice the sync API's bearer check
+/// makes, and it is the load-bearing one: a prefix leak on a hash tells an attacker nothing about
+/// the token that produced it. Constant time on top of that costs one fold and removes the need to
+/// make that argument at all.
+fn digests_equal(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Extracts a bearer token from the Authorization header.
+fn bearer_of(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+}
+
+/// Decides one request against the expected token. Split out from the middleware so the decision is
+/// testable without standing up a server - the middleware is then only plumbing.
+fn token_admits(headers: &axum::http::HeaderMap, expected: &str) -> bool {
+    let Some(presented) = bearer_of(headers) else {
+        return false;
+    };
+    digests_equal(
+        blake3::hash(presented.as_bytes()).as_bytes(),
+        blake3::hash(expected.as_bytes()).as_bytes(),
+    )
+}
+
+/// Confines the MCP daemon to the single OS user that owns its token file (Principle 17).
+///
+/// **The gap this closes.** `parse_loopback_addr` refuses a non-loopback bind, and that guard is
+/// real - but loopback is host-local, not user-local. On a multi-user host every local account could
+/// reach the full tool surface: `observe`, `review`, `sync_push`, the workspace enumeration, a
+/// `search_knowledge` with no workspace scope. P17's "stdio, single user" held for the stdio
+/// transport and never for this one, and architecture.md Section 14 carried it as an overdue M4
+/// entry condition ("Repay the way the viewer was repaid: a unix-socket transport, or an auth
+/// layer").
+///
+/// It sits OUTSIDE `guard_local_origin` in the layer stack, so an unauthenticated request is refused
+/// before anything else looks at it.
+///
+/// 401 with `WWW-Authenticate: Bearer` is the honest status: this is an authentication failure, and
+/// a client that gets one has enough to know what to present. It is deliberately not the 404 that
+/// `expired_session_is_not_found` produces - that rewrite is for a *stale session*, a client that
+/// authenticated fine and should reconnect. Conflating the two would tell a client to retry a
+/// handshake that will fail identically.
+async fn require_token(
+    expected: Arc<String>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    if token_admits(req.headers(), &expected) {
+        return next.run(req).await;
+    }
+    (
+        axum::http::StatusCode::UNAUTHORIZED,
+        [(axum::http::header::WWW_AUTHENTICATE, "Bearer")],
+        "Unauthorized: this MCP daemon requires the local bearer token. Loopback confines the \
+         surface to this HOST, not to one user, so the token is what makes it yours. Read it from \
+         ~/.supragnosis/mcp.token (mode 0600) and present it as `Authorization: Bearer <token>` - \
+         `supragnosis status` prints the client command.",
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+mod mcp_token_tests {
+    use super::{digests_equal, token_admits};
+    use axum::http::HeaderMap;
+
+    fn headers(auth: Option<&str>) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        if let Some(v) = auth {
+            h.insert(axum::http::header::AUTHORIZATION, v.parse().unwrap());
+        }
+        h
+    }
+
+    /// The whole point of the layer: the right token gets in and nothing else does.
+    ///
+    /// The near-miss cases are the ones worth listing. A token that is a prefix of the real one, or
+    /// the real one with something appended, is what a comparison written against the wrong length
+    /// lets through - and `blake3` is what makes both of them ordinary mismatches rather than
+    /// special cases.
+    #[test]
+    fn only_the_exact_token_is_admitted() {
+        let real = "8f14e45fceea167a5a36dedd4bea2543";
+        assert!(token_admits(&headers(Some(&format!("Bearer {real}"))), real));
+
+        let refused = [
+            None,                                             // no header at all
+            Some("Bearer "),                                  // header present, token empty
+            Some(""),                                         // empty header
+            Some(real),                                       // token without the Bearer scheme
+            Some("Basic 8f14e45fceea167a5a36dedd4bea2543"),   // wrong scheme
+            Some("Bearer 8f14e45fceea167a5a36dedd4bea254"),   // one char short (prefix)
+            Some("Bearer 8f14e45fceea167a5a36dedd4bea25433"), // one char long (extension)
+            Some("Bearer 8F14E45FCEEA167A5A36DEDD4BEA2543"),  // case differs - a token is bytes
+            Some("Bearer "),                                  // whitespace only after the scheme
+        ];
+        for r in refused {
+            assert!(!token_admits(&headers(r), real), "must refuse Authorization: {r:?}");
+        }
+    }
+
+    /// A constant-time comparison is only useful if it is also a CORRECT one - the failure mode of
+    /// hand-rolling one is a fold that returns true for everything.
+    #[test]
+    fn digest_equality_separates_digests_that_differ_anywhere() {
+        let a = *blake3::hash(b"one").as_bytes();
+        assert!(digests_equal(&a, &a));
+        assert!(!digests_equal(&a, blake3::hash(b"two").as_bytes()));
+        // Differing in the last byte only: a comparison that stops early on the first match, or one
+        // that folds with the wrong operator, passes every other case in this file and fails here.
+        let mut tail = a;
+        tail[31] ^= 1;
+        assert!(!digests_equal(&a, &tail));
+        let mut head = a;
+        head[0] ^= 1;
+        assert!(!digests_equal(&a, &head));
+    }
 }
 
 #[cfg(test)]
@@ -1286,6 +1517,18 @@ fn launchd_bootout() -> Result<()> {
     Ok(())
 }
 
+/// Prints the exact command that connects an MCP client to this daemon.
+///
+/// This exists because the token is a **breaking change for anyone already connected**: an existing
+/// `claude mcp add --transport http` entry starts getting 401 on upgrade. A security fix whose
+/// recovery path is "read the release notes" mostly produces people turning it off, so the way back
+/// is printed where the break is noticed - on `start`, and again on `status`.
+fn print_client_command(http: &str, token: &str) {
+    println!("  token   {} (0600)", mcp_token_path().display());
+    println!("  connect claude mcp add supragnosis --transport http http://{http}/mcp \\");
+    println!("            --header \"Authorization: Bearer {token}\"");
+}
+
 /// Resolved MCP http address for status/lifecycle checks (env var or default).
 #[cfg(unix)]
 fn status_http_addr() -> String {
@@ -1318,6 +1561,12 @@ fn start(cfg: Config) -> Result<()> {
         .unwrap_or_else(|| "(off)".to_string());
     println!("supragnosis daemon started - MCP http://{http}/mcp  viewer {viz_msg}");
     println!("  pidfile {}  logs {}", pid_path().display(), log_dir().display());
+    // Generated here rather than in the child, so the connect line can be printed to the terminal
+    // the operator is actually looking at. It is the same file the daemon then loads.
+    if cfg.mcp_auth {
+        let token = load_or_create_mcp_token()?;
+        print_client_command(&http, &token);
+    }
     // fork/setsid/pidfile/stdio redirect. The code after this runs only in the daemonized child.
     daemonize::Daemonize::new()
         .pid_file(pid_path())
@@ -1401,6 +1650,19 @@ fn restart(cfg: Config) -> Result<()> {
 fn status() -> Result<()> {
     let http = status_http_addr();
     let up = port_open(&http);
+    // The connect line is reported for a RUNNING daemon whose token file exists. Read, never
+    // generated: `status` must not create state, and a missing file here is the honest report that
+    // this daemon is running without auth rather than an invitation to mint a token it is not using.
+    let token = std::fs::read_to_string(mcp_token_path())
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let report_client = |http: &str| match &token {
+        Some(t) => print_client_command(http, t),
+        None => println!(
+            "  auth    none - every local OS account on this host can reach the tool surface"
+        ),
+    };
     // (1) Self-managed (pidfile) daemon.
     if let Some(pid) = read_pid() {
         if pid_alive(pid) {
@@ -1409,6 +1671,7 @@ fn status() -> Result<()> {
                 "  MCP http://{http}/mcp  ({})",
                 if up { "responding" } else { "port not responding" }
             );
+            report_client(&http);
             return Ok(());
         }
     }
@@ -1420,6 +1683,7 @@ fn status() -> Result<()> {
             "  MCP http://{http}/mcp  ({})",
             if up { "responding" } else { "not responding" }
         );
+        report_client(&http);
         println!("  control: supragnosis restart | supragnosis stop");
         return Ok(());
     }
@@ -1427,6 +1691,7 @@ fn status() -> Result<()> {
     if up {
         println!("running (external; no pidfile, not launchd)");
         println!("  MCP http://{http}/mcp  (responding)");
+        report_client(&http);
         return Ok(());
     }
     match read_pid() {
@@ -1506,7 +1771,10 @@ mod fed {
         pub allowlist: Vec<supragnosis_sync::http::AllowEntry>,
     }
 
-    fn fed_base_dir() -> PathBuf {
+    /// `~/.supragnosis` - where the node key, the config and the daemon token live. Public because
+    /// the MCP token is not a federation concern but wants the same directory (and the same 0700
+    /// that already protects it) rather than a second answer to "where does state go".
+    pub fn fed_base_dir() -> PathBuf {
         PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".supragnosis")
     }
 
@@ -1821,6 +2089,7 @@ mod legacy_store_guard_tests {
             session: "s".into(),
             http: None,
             viz: None,
+            mcp_auth: true,
         };
         let err = refuse_unmigrated_store(&cfg).expect_err("must refuse").to_string();
         assert!(err.contains("Cozo store"), "names what it found: {err}");
