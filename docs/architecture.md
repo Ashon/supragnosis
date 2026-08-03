@@ -462,9 +462,22 @@ HTTP-over-UDS client (`curl --unix-socket`).
     entity names, descriptions and proposal rationale, which under federation are synced,
     attacker-influenceable input. That is why output escaping there is a guarded invariant
     (`viz_source_escapes_untrusted_names`, plus `no-unsanitized` over the innerHTML sinks in CI) and
-    not a matter of style. A Content-Security-Policy header is still owed - federation.md 6d scopes
-    the web-hardening checklist to the Phase 3.5 hub surface, but the shell renders synced content
-    today, so the CSP half of that checklist is due earlier than the surface that named it.
+    not a matter of style. **Repaid**: every viewer response now carries a **Content-Security-Policy**
+    (and `X-Content-Type-Options: nosniff`), so the second line of defence no longer rests on nobody
+    ever missing an `esc()`. `script-src` is strict - the page carries no inline `<script>`, so an
+    injected `<script>`, an `onclick=` attribute and a `javascript:` URI are all refused - while
+    `style-src` takes `'unsafe-inline'` for the six generated `style="background:<color>"` spans,
+    whose only exfiltration route is a URL fetch that `default-src 'none'` + `img-src 'self' data:`
+    already close. Guarded by `every_response_carries_a_script_strict_csp`, which asserts the header
+    on the page and on the API responses and pins `script-src` against widening - a policy dies not
+    by deletion but by one directive loosened to make a feature work. The **desktop shell forwards
+    it**: the `viz://` proxy kept only `content-type` and `cache-control`, so the one surface a human
+    actually looks at was the one getting no policy. It now forwards the daemon's verbatim - never a
+    restated copy, since the shell shares no code with the server and a second copy would be a second
+    thing to keep in step - and applies a tighter shell-authored policy to the splash and error
+    bodies it writes itself. This was the CSP half of the federation.md 6d web-hardening checklist,
+    due earlier than the Phase 3.5 surface that named it because the shell renders synced content
+    today.
 - **Independent of the MCP tool surface** (Principle 21): being a separate human-facing channel, it does not add to the LLM's tools.
 - **Single-process constraint**: an embedded store admits one process at a time (RocksDB and redb
   alike), so the viewer must be in-process with the server (sharing the same `Arc<Engine>`), and two
