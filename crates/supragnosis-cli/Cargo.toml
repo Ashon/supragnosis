@@ -51,7 +51,7 @@ toml = "0.8"
 # Format-preserving TOML edits: supragnosis.toml is a hand-maintained declaration with comments,
 # so a narrowing written by the console must not reformat the operator's file. Already in the tree -
 # `toml` is built on it - so this adds a direct dependency, not a compilation unit.
-toml_edit = "0.22"
+toml_edit = "0.25"
 getrandom = "0.2"
 
 # Background daemon (start): fork/setsid/pidfile/log redirect. Since unsafe_code=forbid, we do not
