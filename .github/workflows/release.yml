@@ -107,7 +107,7 @@ jobs:
 
       # Uploaded on non-tag runs too (workflow_dispatch), so a build can be verified without a tag.
       - name: upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: supragnosis-${{ matrix.target }}
           path: dist/*.tar.gz*
