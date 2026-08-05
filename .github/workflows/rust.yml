@@ -16,6 +16,10 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust.yml"
+      # The supply-chain job reads deny.toml, so an edit to the gate's own configuration has to run
+      # the gate. Without this an allow list could be widened, or an advisory ignored, and nothing
+      # would check the result until the next unrelated push happened to land.
+      - "deny.toml"
       # principle_coverage.rs include_str!s the design documents (the principle registry reads
       # principles.md, and the doc-claim sweep reads the rest), so editing one can fail the Rust
       # gate - the gate has to run when they change, or the coupling is one-way again.
@@ -28,6 +32,10 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust.yml"
+      # The supply-chain job reads deny.toml, so an edit to the gate's own configuration has to run
+      # the gate. Without this an allow list could be widened, or an advisory ignored, and nothing
+      # would check the result until the next unrelated push happened to land.
+      - "deny.toml"
       # principle_coverage.rs include_str!s the design documents (the principle registry reads
       # principles.md, and the doc-claim sweep reads the rest), so editing one can fail the Rust
       # gate - the gate has to run when they change, or the coupling is one-way again.
