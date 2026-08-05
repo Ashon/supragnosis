@@ -9,6 +9,8 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.3.0](docs/releases/v0.3.0.md) | The HTTP daemon requires a bearer token now, which breaks every client already connected. Loopback |
+| [v0.2.2](docs/releases/v0.2.2.md) | There is a container image now, published to ghcr.io on every release, and a server.json that |
 | [v0.2.1](docs/releases/v0.2.1.md) | Upgrade if you are on v0.2.0. The guard that was supposed to stop a Cozo-era node from starting |
 | [v0.2.0](docs/releases/v0.2.0.md) | Cozo is gone. redb is the store - the only file-backed one - and the C++ RocksDB bridge that |
 | [v0.1.21](docs/releases/v0.1.21.md) | A second store. redb - a pure-Rust embedded B-tree with no transitive dependencies - now sits |
@@ -36,6 +38,12 @@ diff is already public.
 
 ## Breaking changes
 
+- **v0.3.0** put the HTTP transport behind a bearer token. An existing `claude mcp add --transport
+  http` entry answers 401 after the upgrade: read the token from `~/.supragnosis/mcp.token` and send
+  it as `Authorization: Bearer <token>`. `supragnosis start` and `supragnosis status` both print the
+  full command, and `SUPRAGNOSIS_MCP_AUTH=off` drops the check on a single-user machine. Loopback
+  confines a socket to a host, not to a user, so on a shared box every local account could reach the
+  whole tool surface. See [the v0.3.0 note](docs/releases/v0.3.0.md).
 - **v0.2.0** replaced the store: Cozo is gone, redb is the only file-backed one, and a node running
   a Cozo store must migrate through v0.1.21 first. The build refuses to start on an un-migrated
   store rather than coming up empty beside it. See
