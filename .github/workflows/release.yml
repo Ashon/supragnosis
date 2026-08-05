@@ -125,7 +125,7 @@ jobs:
       # Assets attach only on a tag push; several jobs accumulate onto the same Release.
       - name: publish to release (committed notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: ${{ steps.notes.outputs.path }}
           files: |
@@ -134,7 +134,7 @@ jobs:
 
       - name: publish to release (auto notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path == ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
@@ -230,7 +230,7 @@ jobs:
 
       - name: publish to release (committed notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: ${{ steps.notes.outputs.path }}
           files: |
@@ -239,7 +239,7 @@ jobs:
 
       - name: publish to release (auto notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path == ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
