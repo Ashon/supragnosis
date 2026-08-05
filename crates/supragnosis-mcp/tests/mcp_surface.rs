@@ -320,7 +320,7 @@ async fn mcp_resource_graph_surface() {
 
     // --- 1) list_resources: expose the default workspace graph + workspace list resources ----
     let resources = client.list_all_resources().await.expect("list resources");
-    let uris: Vec<&str> = resources.iter().map(|r| r.raw.uri.as_str()).collect();
+    let uris: Vec<&str> = resources.iter().map(|r| r.uri.as_str()).collect();
     assert!(
         uris.contains(&"supragnosis://workspace/ws/graph"),
         "must expose the default workspace graph resource: {uris:?}"
@@ -354,13 +354,13 @@ async fn mcp_resource_graph_surface() {
     assert!(
         templates
             .iter()
-            .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/graph"),
+            .any(|t| t.uri_template == "supragnosis://workspace/{workspace}/graph"),
         "must expose the graph resource template"
     );
     assert!(
         templates
             .iter()
-            .any(|t| t.raw.uri_template == "supragnosis://workspace/{workspace}/hypergraph"),
+            .any(|t| t.uri_template == "supragnosis://workspace/{workspace}/hypergraph"),
         "must also expose the hypergraph resource template"
     );
 

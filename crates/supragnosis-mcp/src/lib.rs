@@ -1065,51 +1065,43 @@ impl ServerHandler for SupragnosisServer {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
         // Workspace discovery entry point - let the client see which workspaces exist first.
-        let mut ws_list =
-            RawResource::new("supragnosis://workspaces".to_string(), "Workspace list".to_string());
-        ws_list.description = Some(
-            "Sorted list of workspace names that hold knowledge. Entry point for discovering which workspaces exist."
-                .to_string(),
-        );
-        ws_list.mime_type = Some("application/json".to_string());
+        let ws_list = Resource::new("supragnosis://workspaces", "Workspace list")
+            .with_description(
+                "Sorted list of workspace names that hold knowledge. Entry point for discovering which workspaces exist.",
+            )
+            .with_mime_type("application/json");
 
         let ws = self.engine.default_workspace();
-        let mut res = RawResource::new(
+        let res = Resource::new(
             format!("supragnosis://workspace/{ws}/graph"),
             format!("{ws} ontology graph"),
-        );
-        res.description = Some(
-            "Node-link graph of entities (nodes) + relations (edges). Includes provenance/trust tier/valid interval; a read-only derived view."
-                .to_string(),
-        );
-        res.mime_type = Some("application/json".to_string());
+        )
+        .with_description(
+            "Node-link graph of entities (nodes) + relations (edges). Includes provenance/trust tier/valid interval; a read-only derived view.",
+        )
+        .with_mime_type("application/json");
 
         // Co-occurrence second-order structure (Principle 11) - also expose the default workspace's hypergraph as a concrete resource.
-        let mut hyper = RawResource::new(
+        let hyper = Resource::new(
             format!("supragnosis://workspace/{ws}/hypergraph"),
             format!("{ws} hypergraph (co-occurrence)"),
-        );
-        hyper.description = Some(
-            "Derived view of the entity sets (hyperedges) a single observation asserted together - recovery of the context that binary relations discard (Principle 11)."
-                .to_string(),
-        );
-        hyper.mime_type = Some("application/json".to_string());
+        )
+        .with_description(
+            "Derived view of the entity sets (hyperedges) a single observation asserted together - recovery of the context that binary relations discard (Principle 11).",
+        )
+        .with_mime_type("application/json");
 
         // T-Box glossary (Principle 8/11) - the default workspace's type definitions.
-        let mut types = RawResource::new(
+        let types = Resource::new(
             format!("supragnosis://workspace/{ws}/types"),
             format!("{ws} type glossary"),
-        );
-        types.description = Some(
-            "Type vocabulary (T-Box) of the workspace: entity types and relation types with their natural-language definitions (via define_type)."
-                .to_string(),
-        );
-        types.mime_type = Some("application/json".to_string());
+        )
+        .with_description(
+            "Type vocabulary (T-Box) of the workspace: entity types and relation types with their natural-language definitions (via define_type).",
+        )
+        .with_mime_type("application/json");
         std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
-            ws_list.no_annotation(),
-            res.no_annotation(),
-            hyper.no_annotation(),
-            types.no_annotation(),
+            ws_list, res, hyper, types,
         ])))
     }
 
@@ -1119,63 +1111,50 @@ impl ServerHandler for SupragnosisServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + Send + '_ {
-        let graph = RawResourceTemplate {
-            uri_template: "supragnosis://workspace/{workspace}/graph".to_string(),
-            name: "workspace-graph".to_string(),
-            title: Some("Workspace ontology graph".to_string()),
-            description: Some(
-                "Entity-relation graph (node-link) of a specific workspace. Fill in {workspace} to query."
-                    .to_string(),
-            ),
-            mime_type: Some("application/json".to_string()),
-            icons: None,
-        };
+        let graph = ResourceTemplate::new(
+            "supragnosis://workspace/{workspace}/graph",
+            "workspace-graph",
+        )
+        .with_title("Workspace ontology graph")
+        .with_description(
+            "Entity-relation graph (node-link) of a specific workspace. Fill in {workspace} to query.",
+        )
+        .with_mime_type("application/json");
         // Co-occurrence second-order structure (Principle 11): the set of entities a single observation asserted together = a hyperedge.
-        let hypergraph = RawResourceTemplate {
-            uri_template: "supragnosis://workspace/{workspace}/hypergraph".to_string(),
-            name: "workspace-hypergraph".to_string(),
-            title: Some("Workspace hypergraph (co-occurrence second-order structure)".to_string()),
-            description: Some(
-                "Derived view that revives, as hyperedges, the entity sets a single observation \
-                 asserted together - recovery of the context (what was said together) that binary \
-                 relations discard. Fill in {workspace} to query."
-                    .to_string(),
-            ),
-            mime_type: Some("application/json".to_string()),
-            icons: None,
-        };
+        let hypergraph = ResourceTemplate::new(
+            "supragnosis://workspace/{workspace}/hypergraph",
+            "workspace-hypergraph",
+        )
+        .with_title("Workspace hypergraph (co-occurrence second-order structure)")
+        .with_description(
+            "Derived view that revives, as hyperedges, the entity sets a single observation \
+             asserted together - recovery of the context (what was said together) that binary \
+             relations discard. Fill in {workspace} to query.",
+        )
+        .with_mime_type("application/json");
         // T-Box glossary (Principle 8/11): the workspace's type vocabulary + definitions.
-        let types = RawResourceTemplate {
-            uri_template: "supragnosis://workspace/{workspace}/types".to_string(),
-            name: "workspace-types".to_string(),
-            title: Some("Workspace type glossary (T-Box)".to_string()),
-            description: Some(
-                "Entity types and relation types defined for a workspace, each with its \
-                 natural-language definition (recorded via define_type). Fill in {workspace} to query."
-                    .to_string(),
-            ),
-            mime_type: Some("application/json".to_string()),
-            icons: None,
-        };
+        let types =
+            ResourceTemplate::new("supragnosis://workspace/{workspace}/types", "workspace-types")
+                .with_title("Workspace type glossary (T-Box)")
+                .with_description(
+                    "Entity types and relation types defined for a workspace, each with its \
+             natural-language definition (recorded via define_type). Fill in {workspace} to query.",
+                )
+                .with_mime_type("application/json");
         // Observation back-reference (Principles 2/14): a path from a search hit's observation id to
         // the raw content + provenance + lineage - the surface that answers "where did this answer come from".
-        let observation = RawResourceTemplate {
-            uri_template: "supragnosis://observation/{id}".to_string(),
-            name: "observation".to_string(),
-            title: Some("Observation (raw content + provenance + lineage)".to_string()),
-            description: Some(
+        let observation = ResourceTemplate::new("supragnosis://observation/{id}", "observation")
+            .with_title("Observation (raw content + provenance + lineage)")
+            .with_description(
                 "By observation id (the kind=observation id from a search_knowledge hit), query the \
-                 raw content, the full provenance attestation, and the derived_from lineage."
-                    .to_string(),
-            ),
-            mime_type: Some("application/json".to_string()),
-            icons: None,
-        };
+                 raw content, the full provenance attestation, and the derived_from lineage.",
+            )
+            .with_mime_type("application/json");
         std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
-            graph.no_annotation(),
-            hypergraph.no_annotation(),
-            types.no_annotation(),
-            observation.no_annotation(),
+            graph,
+            hypergraph,
+            types,
+            observation,
         ])))
     }
 
@@ -1185,7 +1164,7 @@ impl ServerHandler for SupragnosisServer {
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ReadResourceResult, ErrorData>> + Send + '_ {
+    ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + Send + '_ {
         let uri = request.uri;
         let result = match parse_resource_uri(&uri) {
             // Workspace list (for discovery) - array of workspace names that hold knowledge.
@@ -1254,7 +1233,10 @@ impl ServerHandler for SupragnosisServer {
                 None,
             )),
         };
-        std::future::ready(result)
+        // rmcp 3 wraps the read result in ReadResourceResponse so a server can answer a read with
+        // "I need input first" instead of content. This server never does - every branch above
+        // either has the bytes or has an error - so every Ok is the Complete arm.
+        std::future::ready(result.map(Into::into))
     }
 }
 
