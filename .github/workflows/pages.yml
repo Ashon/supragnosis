@@ -65,7 +65,7 @@ jobs:
           sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">${version}</li>|" site/index.html
           grep -o '<li id="version-badge">[^<]*</li>' site/index.html
       - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
