@@ -47,7 +47,7 @@ supragnosis-sync = { workspace = true, features = ["http"] }
 serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true
-toml = "0.8"
+toml = "1.1"
 # Format-preserving TOML edits: supragnosis.toml is a hand-maintained declaration with comments,
 # so a narrowing written by the console must not reformat the operator's file. Already in the tree -
 # `toml` is built on it - so this adds a direct dependency, not a compilation unit.
