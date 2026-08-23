@@ -90,7 +90,7 @@ Returning to stable is the mirror procedure (`brew uninstall --cask supragnosis-
 The server's version string reads `HEAD-<sha>`, so `brew info` shows which commit you run; the
 dev release page names the app's built commit.
 Data-compatibility caution: if a dev build changed the schema/id formula, check the release
-notes' migrate guidance before returning to stable (`~/.supragnosis/db` is shared).
+notes' migrate guidance before returning to stable (`~/.supragnosis/redb` is shared).
 
 ## Upgrades
 

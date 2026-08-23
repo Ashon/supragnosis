@@ -31,8 +31,14 @@ vars:
   DEV_HTTP: 127.0.0.1:7399
   # The socket a normally-installed daemon uses. Override by exporting SUPRAGNOSIS_VIZ_SOCK.
   VIZ_SOCK: '${SUPRAGNOSIS_VIZ_SOCK:-$HOME/.supragnosis/viz.sock}'
-  # The store a normally-installed daemon uses - the source for dev:snapshot.
-  LIVE_DATA: '${SUPRAGNOSIS_DATA_DIR:-$HOME/.supragnosis/db}'
+  # The store a normally-installed daemon uses - the source for dev:snapshot. This is the redb
+  # directory, not the pre-0.2 Cozo one beside it: `default_data_dir_for` in the CLI answers
+  # ~/.supragnosis/redb for every store kind except the "cozo" name kept for the migration guard.
+  # It read .supragnosis/db until 2026-08-23, four releases after Cozo was removed, and the failure
+  # was silent - the copied directory holds no knowledge.redb, so the dev daemon creates an empty
+  # one and comes up with nothing, which is the one outcome a task promising "real data" must not
+  # produce quietly.
+  LIVE_DATA: '${SUPRAGNOSIS_DATA_DIR:-$HOME/.supragnosis/redb}'
 
 tasks:
   default:
@@ -81,8 +87,12 @@ tasks:
       - task: dev
 
   # The store takes a single writer, so a dev instance cannot open the store a running daemon holds.
-  # A copy sidesteps that without stopping anything: RocksDB is crash-consistent, so a directory
-  # copied from under a live writer opens the same way it would after a power cut (WAL recovery).
+  # A copy sidesteps that without stopping anything. Note this is a weaker guarantee than the
+  # RocksDB-era argument that used to stand here: redb is one file, and `cp` reads it while the
+  # writer may still be rewriting pages it already passed, so the result can be torn in a way a
+  # power cut is not. What makes that acceptable is that the failure is loud - redb refuses to open
+  # a file whose commit slot and pages disagree, so a bad copy is an error at startup, never a
+  # quietly short graph. Re-run if it happens, or take the copy while nothing is writing.
   # The copy is a SNAPSHOT in both directions - what you do in dev never reaches the real store, and
   # writes the daemon makes afterwards never reach dev. Re-run to refresh.
   _snapshot:
