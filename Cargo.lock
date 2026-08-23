@@ -4497,7 +4497,7 @@ dependencies = [
  "blake3",
  "clap",
  "daemonize",
- "getrandom 0.2.17",
+ "getrandom 0.4.3",
  "rmcp",
  "serde",
  "serde_json",

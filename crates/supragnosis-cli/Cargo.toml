@@ -52,7 +52,7 @@ toml = "0.8"
 # so a narrowing written by the console must not reformat the operator's file. Already in the tree -
 # `toml` is built on it - so this adds a direct dependency, not a compilation unit.
 toml_edit = "0.25"
-getrandom = "0.2"
+getrandom = "0.4"
 
 # Background daemon (start): fork/setsid/pidfile/log redirect. Since unsafe_code=forbid, we do not
 # implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern). unix only.
