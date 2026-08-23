@@ -4,6 +4,13 @@ name: release
 # as tar.gz + sha256. workflow_dispatch builds and packages without publishing, so the pipeline can
 # be exercised without cutting a release.
 #
+# "Without publishing" means nothing reaches the GitHub Release, ghcr, or the Homebrew tap - every
+# step that would is guarded on the tag ref, and the image build passes `push: false`. It does NOT
+# mean the run has no outside effect: the app job's signing step is gated on whether the APPLE_*
+# secrets exist rather than on the ref, so a dispatch with those secrets set submits the bundle to
+# Apple's notary service like a real release does. That is deliberate - an unnotarized dry run would
+# not prove the step that most often breaks - but it is worth knowing before triggering one.
+#
 # The prebuilt binaries are a default build: keyword plus hashing search. Local ONNX semantic search
 # means building from source with `--features fastembed`, which is kept out of the release because
 # the `ort` dependency it pulls is heavy.
@@ -304,7 +311,17 @@ jobs:
       # server.json names an exact image tag, so a release whose image and manifest disagree would
       # publish a registry entry pointing at something that does not exist. Checked here rather than
       # discovered by the first person who tries to install it.
+      #
+      # Tag-guarded like the publish steps, and for the same reason they are: `version` comes from
+      # `${GITHUB_REF_NAME#v}`, which on a workflow_dispatch is the branch name. So this compared
+      # `...:main` against `...:0.3.0` and failed by construction on every dispatch - meaning the
+      # dry-run path this workflow's own header offers ("builds and packages without publishing, so
+      # the pipeline can be exercised without cutting a release") could never come back green, and
+      # the one job it exists to prove - the container build - was the job it reddened. Nothing is
+      # lost by the guard: manifest_consistency.rs holds server.json equal to the workspace version
+      # on every push, and the comparison that genuinely needs a tag still runs on every tag.
       - name: server.json names this image
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           want="${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}"
