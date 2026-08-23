@@ -79,16 +79,15 @@ fn encode_vector(v: &[f32]) -> Vec<u8> {
 /// Decodes a stored vector. A length that is not a multiple of four is a corrupt row rather than an
 /// absent one, but a vector is a recall aid (Principle 19): losing one degrades recall, it does not
 /// make the knowledge wrong, so this drops the vector rather than failing the read of the row.
+///
+/// The length guard is load-bearing rather than defensive: `as_chunks` discards a trailing partial
+/// chunk silently, so without the early return a corrupt row would decode to a short vector and be
+/// used as if it were whole. Rejecting the row is the reported outcome; a truncated one is not.
 fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
-    Some(
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect(),
-    )
+    Some(bytes.as_chunks::<4>().0.iter().copied().map(f32::from_le_bytes).collect())
 }
 
 /// A file-backed knowledge store on redb.
