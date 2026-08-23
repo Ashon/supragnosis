@@ -19,7 +19,7 @@ echo "[1/5] Release build"
 ( cd "$REPO_ROOT" && cargo build --release --bin supragnosis )
 
 echo "[2/5] Stop existing daemon (release db lock/binary hold)"
-mkdir -p "$HOME/.local/bin" "$HOME/.supragnosis/db" "$HOME/.supragnosis/log"
+mkdir -p "$HOME/.local/bin" "$HOME/.supragnosis/redb" "$HOME/.supragnosis/log"
 # Stop first before replacing - overwriting a file while running breaks the mapping. Stop the launchd-managed
 # process with unload, and any leftover with pkill (by install path - the daemon runs from $BIN_DST).
 launchctl unload "$PLIST_DST" 2>/dev/null || true
