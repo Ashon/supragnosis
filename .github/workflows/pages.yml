@@ -41,7 +41,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Publish the install bootstrap at https://supragnosis.dev/install.sh from its single source
       # (scripts/install.sh) - copied into the artifact so there is no duplicate file in the repo.
       - name: stage the install bootstrap into the site
