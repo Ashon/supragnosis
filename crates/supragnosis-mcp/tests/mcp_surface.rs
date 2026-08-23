@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ReadResourceRequestParams, ResourceContents,
+    CacheScope, CallToolRequestParams, CallToolResult, ReadResourceRequestParams, ResourceContents,
 };
 use rmcp::ServiceExt;
 use serde_json::{json, Map, Value};
@@ -539,4 +539,55 @@ async fn empty_default_workspace_names_where_knowledge_lives() {
 
     client.cancel().await.expect("client shutdown");
     let _ = server.await;
+}
+
+/// Every list result carries the SEP-2549 cache hints, at every protocol version.
+///
+/// `#[tool_handler]` would emit these only once the negotiated version reaches 2026-07-28. A client
+/// that validates them earlier gets a result with both fields absent and rejects the whole
+/// response - which does not narrow the surface, it removes it: all thirteen tools vanish behind
+/// one "tools fetch failed". This asserts the fields are present and says what they must be, so
+/// that dropping the hand-written `list_tools` and letting the macro generate one again is a red
+/// test rather than a surface that disappears for whoever upgrades their client first.
+///
+/// `ttl_ms` is 0 deliberately - see `list_tools` for why a fixed list still refuses to be cached.
+#[tokio::test]
+async fn every_list_result_carries_cache_hints() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    let tools = client.list_tools(None).await.expect("list tools");
+    assert_eq!(
+        tools.ttl_ms,
+        Some(0),
+        "tools/list must declare a freshness window, and it is none"
+    );
+    assert_eq!(
+        tools.cache_scope,
+        Some(CacheScope::Private),
+        "a response reachable only with this node's bearer token is not shareable across \
+         authorization contexts (Principle 17)"
+    );
+
+    let resources = client.list_resources(None).await.expect("list resources");
+    assert_eq!(
+        resources.ttl_ms,
+        Some(0),
+        "resources/list grows with the workspaces, so a freshness window is a window in which a \
+         client is told a workspace does not exist (Principle 5)"
+    );
+    assert_eq!(resources.cache_scope, Some(CacheScope::Private));
+
+    let templates = client.list_resource_templates(None).await.expect("list resource templates");
+    assert_eq!(templates.ttl_ms, Some(0));
+    assert_eq!(templates.cache_scope, Some(CacheScope::Private));
+
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
 }
