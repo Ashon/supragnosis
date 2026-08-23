@@ -8,7 +8,7 @@ members = ["crates/*", "e2e"]
 exclude = ["app"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 # The floor the DEPENDENCIES set, which is higher than anything this code needs. Our own two are
 # trait upcasting (1.86), which makes the store port narrowable - `Arc<dyn KnowledgeStore>` ->
@@ -74,10 +74,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # the publish that had been failing on a mistake made a release earlier would have failed here - and
 # it did not, because `manifest_consistency.rs` makes the drift a red build at PR time instead of a
 # discovery at publish time. Keep these equal to [workspace.package].version.
-supragnosis-core = { path = "crates/supragnosis-core", version = "0.3.0" }
-supragnosis-store = { path = "crates/supragnosis-store", version = "0.3.0" }
-supragnosis-sync = { path = "crates/supragnosis-sync", version = "0.3.0" }
-supragnosis-engine = { path = "crates/supragnosis-engine", version = "0.3.0" }
-supragnosis-embed = { path = "crates/supragnosis-embed", version = "0.3.0" }
-supragnosis-mcp = { path = "crates/supragnosis-mcp", version = "0.3.0" }
-supragnosis-viz = { path = "crates/supragnosis-viz", version = "0.3.0" }
+supragnosis-core = { path = "crates/supragnosis-core", version = "0.3.1" }
+supragnosis-store = { path = "crates/supragnosis-store", version = "0.3.1" }
+supragnosis-sync = { path = "crates/supragnosis-sync", version = "0.3.1" }
+supragnosis-engine = { path = "crates/supragnosis-engine", version = "0.3.1" }
+supragnosis-embed = { path = "crates/supragnosis-embed", version = "0.3.1" }
+supragnosis-mcp = { path = "crates/supragnosis-mcp", version = "0.3.1" }
+supragnosis-viz = { path = "crates/supragnosis-viz", version = "0.3.1" }
