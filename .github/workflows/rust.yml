@@ -58,7 +58,7 @@ jobs:
     name: clippy + tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: install rust
         uses: dtolnay/rust-toolchain@stable
@@ -110,7 +110,7 @@ jobs:
     name: declared msrv builds
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: read the declared floor
         id: msrv
@@ -145,7 +145,7 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # --all-features on both: the optional `fastembed` tree carries licences the default feature
       # set never resolves, and a gate that does not see them is a gate against the easy half.
       - uses: EmbarkStudios/cargo-deny-action@v2
