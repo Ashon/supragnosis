@@ -1058,6 +1058,43 @@ impl ServerHandler for SupragnosisServer {
             )
     }
 
+    /// Tool listing, hand-written so that the SEP-2549 cache hints are always present.
+    ///
+    /// `#[tool_handler]` generates this method only when the impl does not define one, and the
+    /// version it generates gates `ttlMs`/`cacheScope` on the NEGOTIATED protocol being at least
+    /// 2026-07-28 - the version rmcp's own field documentation calls them required at. A client
+    /// that negotiates 2025-11-25 and validates them anyway therefore receives a result with both
+    /// fields absent and rejects the whole response, which does not degrade the surface, it deletes
+    /// it: every tool disappears at once and the failure reads as "tools fetch failed" rather than
+    /// as a version disagreement. That is what a Claude Code client does today, and it is how this
+    /// was found - a daemon that had not been restarted since before rmcp 3 kept working while the
+    /// shipped binary did not.
+    ///
+    /// Emitting them unconditionally is safe in the other direction: a client older than the field
+    /// is a client that ignores unknown members, so nothing below 2026-07-28 can be broken by their
+    /// presence, while everything at or above it is owed them.
+    ///
+    /// `ttl_ms = 0` means "do not treat this as fresh", which is what rmcp hands a 2026-07-28
+    /// client and is the answer this server wants regardless: the list is fixed at compile time, so
+    /// a long TTL would buy nothing, and it would let a client keep serving a tool list from before
+    /// an upgrade that added one.
+    ///
+    /// `cache_scope` is Private where rmcp's generated version says Public. The list itself is the
+    /// same for every caller, but reaching it at all requires this node's bearer token, and
+    /// Principle 17's argument for that token is that loopback confines the surface to the host
+    /// rather than to a user. Labelling a token-gated response as shareable across authorization
+    /// contexts contradicts the reason the token exists, and at `ttl_ms = 0` the honest label costs
+    /// nothing because nothing is cached either way.
+    fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
+        std::future::ready(Ok(ListToolsResult::with_all_items(self.tool_router.list_all())
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private)))
+    }
+
     /// Concrete resource listing: exposes the node's default workspace graph (other workspaces via templates).
     fn list_resources(
         &self,
@@ -1100,9 +1137,15 @@ impl ServerHandler for SupragnosisServer {
             "Type vocabulary (T-Box) of the workspace: entity types and relation types with their natural-language definitions (via define_type).",
         )
         .with_mime_type("application/json");
+        // Same cache hints as list_tools, and here `ttl_ms = 0` is not merely harmless but
+        // required: this list grows when a workspace does, so any freshness window is a window in
+        // which a client is told a workspace does not exist. Principle 5 draws that line for the
+        // read path and a cache would move it back.
         std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
             ws_list, res, hyper, types,
-        ])))
+        ])
+        .with_ttl_ms(0)
+        .with_cache_scope(CacheScope::Private)))
     }
 
     /// Resource templates: let clients query any workspace's graph and observation back-references via URI patterns.
@@ -1150,12 +1193,17 @@ impl ServerHandler for SupragnosisServer {
                  raw content, the full provenance attestation, and the derived_from lineage.",
             )
             .with_mime_type("application/json");
+        // The template set IS fixed at compile time, unlike the concrete list above, but it gets
+        // the same zero: a client that cached templates while refusing to cache the resources they
+        // expand over would hold two halves of one answer with different ages.
         std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
             graph,
             hypergraph,
             types,
             observation,
-        ])))
+        ])
+        .with_ttl_ms(0)
+        .with_cache_scope(CacheScope::Private)))
     }
 
     /// Resource read: parse the workspace from the URI and return the graph projection JSON.
