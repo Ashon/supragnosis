@@ -38,13 +38,13 @@ const INTERNAL: &[&str] = &[
     "supragnosis-viz",
 ];
 
-fn root() -> toml::Value {
-    ROOT_MANIFEST.parse::<toml::Value>().expect("the root manifest parses")
+fn root() -> toml::Table {
+    ROOT_MANIFEST.parse::<toml::Table>().expect("the root manifest parses")
 }
 
 /// Owned rather than borrowed, so a caller can write `workspace_version(&root())` without keeping
 /// the parsed document alive for the sake of one string.
-fn workspace_version(root: &toml::Value) -> String {
+fn workspace_version(root: &toml::Table) -> String {
     root["workspace"]["package"]["version"]
         .as_str()
         .expect("[workspace.package].version is a string")
@@ -95,7 +95,7 @@ fn internal_dependencies_require_the_version_this_workspace_builds() {
 #[test]
 fn the_desktop_shell_declares_the_same_version() {
     let want = workspace_version(&root());
-    let app = APP_MANIFEST.parse::<toml::Value>().expect("the app manifest parses");
+    let app = APP_MANIFEST.parse::<toml::Table>().expect("the app manifest parses");
     // Its `[package]` inherits from its OWN `[workspace.package]`, which is the literal that moves.
     let got = workspace_version(&app);
     assert_eq!(
