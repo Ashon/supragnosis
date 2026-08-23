@@ -155,6 +155,7 @@ different storage engine, without changing a line of `core` or `engine`.
 | [proposal-workflow.md](docs/proposal-workflow.md) | the gate to the canon |
 | [resolution.md](docs/resolution.md) | how assertions become a current belief |
 | [excision.md](docs/excision.md) | the one act that removes knowledge, and why it is last |
+| [consolidation.md](docs/consolidation.md) | how a workspace stays tidy without anything being deleted |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to build, test, and send a change |
 
 ## Status

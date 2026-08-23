@@ -130,6 +130,11 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // than after. Unlike excision it reverses something that already ships, so the first test it
     // names will be one that an existing behaviour has to keep passing.
     ("docs/unmerge.md", include_str!("../../../docs/unmerge.md")),
+    // Same reason again, with one difference worth naming: this one specifies the surface that
+    // three unmet clauses across three principles are all waiting on (P7 demotion, P18
+    // trust-weighted recall, P23's effect-less `recall` kind), so the tests it eventually names
+    // will be cited from three registry rows rather than one.
+    ("docs/consolidation.md", include_str!("../../../docs/consolidation.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
@@ -331,7 +336,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p7_curation_generates_candidates_and_commits_nothing",
         ])),
         c("forgetting happens as recall demotion at idle, never as deletion",
-          Evidence::Deferred("M6 - the generate side landed early with M3.5; the demotion side does not exist")),
+          Evidence::Deferred(
+            "M6 ([consolidation.md](../../../docs/consolidation.md)) - the generate side landed early \
+             with M3.5; the demotion side does not exist. The weight it needs is a fold, not a \
+             column, and it converges only if it consumes neither wall clock nor usage")),
     ]),
     (8, "Clarity", &[
         // The clause with teeth is a refusal, checked on both entry points: a passing-path test
@@ -554,7 +562,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["viz_source_escapes_untrusted_names"])),
         c("derived assertions without lineage are quarantined, recall is trust-weighted, and \
            contamination can be traced back and cleaned",
-          Evidence::Deferred("M5 with the extraction port - the tier weights belief today, not the ranked recall surfaces")),
+          Evidence::Deferred(
+            "M5 with the extraction port - the tier weights belief today, not the ranked recall \
+             surfaces, because `fuse_rrf` fuses by rank position and takes no per-item term. The \
+             recall half is specified with M6's weight ([consolidation.md](../../../docs/consolidation.md) \
+             Section 4.3); the quarantine and lineage-cleanup halves stay here")),
         c("a replicated verdict marker is evaluated against the canon policy, not honored as sent",
           Evidence::Deferred(
             "M4 Phase 5 - the surface ceiling reads the marker off the log, so a console marker that \
@@ -658,7 +670,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("every proposal kind the surface accepts has a commit effect",
           Evidence::Deferred(
             "M4 Phase 5 / M5 - tbox_change and recall fold correctly and change nothing, which is \
-             assigned rather than accidental (proposal-workflow.md Section 13)",
+             assigned rather than accidental (proposal-workflow.md Section 13). What a merged \
+             recall must then do is specified in \
+             [consolidation.md](../../../docs/consolidation.md) Section 6 - retract and floor, \
+             never delete, which is what separates it from excision",
         )),
         c("a verdict binds to the base it reviewed, and a stale or withdrawn proposal cannot merge",
           Evidence::Deferred(
