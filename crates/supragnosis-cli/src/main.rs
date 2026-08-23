@@ -1169,7 +1169,7 @@ fn load_or_create_mcp_token() -> Result<String> {
         tracing::warn!(path = %path.display(), "the MCP token file is empty - generating a new token");
     }
     let mut raw = [0u8; 32];
-    getrandom::getrandom(&mut raw).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
+    getrandom::fill(&mut raw).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
     let tok = raw.iter().fold(String::with_capacity(64), |mut s, b| {
         use std::fmt::Write;
         let _ = write!(s, "{b:02x}");
@@ -1870,8 +1870,7 @@ mod fed {
             return Ok(supragnosis_core::NodeIdentity::from_secret_bytes(arr));
         }
         let mut secret = [0u8; 32];
-        getrandom::getrandom(&mut secret)
-            .map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
+        getrandom::fill(&mut secret).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
