@@ -29,7 +29,7 @@ installs and loads the LaunchAgent -> re-registers Claude Code with the http tra
 ```sh
 # 1) Build + put the binary on a stable path (so it survives cargo clean)
 cargo build --release --bin supragnosis
-mkdir -p ~/.local/bin ~/.supragnosis/db ~/.supragnosis/log
+mkdir -p ~/.local/bin ~/.supragnosis/redb ~/.supragnosis/log
 cp target/release/supragnosis ~/.local/bin/supragnosis
 
 # 2) Clean up any existing stdio server that is holding the db lock
