@@ -92,17 +92,30 @@ agrees on.
 exactly what P16 forbids: "No use of nondeterminism (wall clock, arrival order, random numbers) in
 projection/resolution logic."
 
-The fix is to stop asking the machine what time it is and ask the log instead. Age is a **rank
-against the workspace's own HLC frontier**
+The fix is to stop asking the machine what time it is and ask the log instead. Age is a **position
+in the time span the workspace's own log covers** - 0.0 at its oldest recorded HLC, 1.0 at its
+newest
 
-> **Correction, from implementing it.** An earlier draft of this section rejected arithmetic on the
-> HLC's `wall` value as "smuggling physical time into the fold". That was too strong and the reason
-> was wrong: reading the OS clock is nondeterministic and forbidden, while *comparing two recorded
-> HLC values* is comparing two data points and is perfectly deterministic. Rank is still the better
-> choice, but for a different reason - it is uniform, where a wall-value ratio is compressed by
-> write bursts and stretched by quiet periods, so the same knowledge would weigh differently
-> depending on how busy the workspace was around it. Keeping a wrong argument for a right decision
-> is how the next reader inherits the wrong rule.
+> **Corrected twice while building it, and both corrections matter.** This section first said a
+> *rank* in the ordering, and rejected arithmetic on the HLC's `wall` value as "smuggling physical
+> time into the fold". The reason was wrong: reading the OS clock is nondeterministic and forbidden,
+> while comparing two *recorded* HLC values is comparing two data points and is perfectly
+> deterministic.
+>
+> With that objection gone the two readings could be judged on their merits, and the rank loses. A
+> rank **invents age differences that did not happen**: a thousand rows written inside one hour are
+> spread by rank across the whole range, so the first and the five-hundredth are treated as far
+> apart when they are seconds apart. For a signal whose entire job is to say how stale something is,
+> manufacturing staleness is the one error that matters.
+>
+> The span also costs two numbers per workspace where a rank costs a position per observation, and
+> that is what makes step 2 possible at all: **the log is immutable, so a per-observation value has
+> nowhere to be written** (P3 - it cannot ride on the observation rows), and carrying it elsewhere
+> means a parallel table for a derived number, which is a port change to store something no
+> observation asserts. Two scalars need neither.
+>
+> Guarded by `p7_observations_written_at_one_instant_share_one_frontier_position`, which fails under
+> the rank reading.
 
 : an observation's position in the ordering the log already
 carries, normalized by the newest HLC in that workspace. Two nodes holding the same observations
@@ -286,9 +299,10 @@ them. Step 1 landed and then step 2 would not fit:
 1. **The weight, fold-only, unused.** *(landed)* Compute it, expose it on the curation report, change no
    ranking. This is the whole of Section 4 and it is observable before it is load-bearing: an
    operator can look at what the system would demote before it demotes anything.
-2. **The materialized ordering.** The frontier rank computed where the log is already being walked
-   and carried on the projection, the way resolution.md materializes the belief at `reproject`.
-   Formerly step 5; it comes here because step 3 cannot afford to compute it per query.
+2. **The materialized span.** The workspace's oldest and newest ordering HLC, computed where the
+   log is already being walked and carried the way resolution.md materializes the belief at
+   `reproject`. Formerly step 5; it comes here because step 3 cannot afford to compute it per query.
+   *(4.2's correction shrank this from a per-observation table to two scalars.)*
 3. **The weight enters the ranked surfaces.** `fuse_rrf` gains a per-item term. `recall_eval.rs`
    already pins mean recall@5 >= 0.9 with an entity-gold subset at >= 0.99, so this step has a
    regression gate the day it lands - which is why the weight is designed before the pass that

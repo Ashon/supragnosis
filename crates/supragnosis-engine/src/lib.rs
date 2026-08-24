@@ -325,10 +325,14 @@ pub struct RecallWeight {
     /// The receiver's evaluation, never the claimed tier (P18) - the "recall is trust-weighted"
     /// half of P18's unmet clause.
     pub tier: &'static str,
-    /// Position in the workspace's own HLC ordering: 0.0 at the oldest observation, 1.0 at the
-    /// frontier. RANK, not the HLC's wall value - reading `wall` would smuggle physical time back
-    /// into a fold that P16 forbids it in, while a rank uses only the ordering the log already
-    /// carries (Section 4.2).
+    /// Where this observation falls in the time SPAN the workspace's own log covers: 0.0 at the
+    /// oldest, 1.0 at the newest. A span rather than a rank, because a rank invents age differences
+    /// that did not happen - a thousand rows written inside one hour would be spread across the
+    /// whole range as if the first and the five-hundredth were far apart in age.
+    ///
+    /// Both ends are recorded HLC fields, so this is arithmetic on data and not a reading of this
+    /// machine's clock: P16 forbids consulting the clock, not comparing two timestamps the log
+    /// already carries (consolidation.md Section 4.2).
     pub frontier: f32,
     /// Derived from other knowledge and attested by nobody else. The P18 shape that should not
     /// crowd a ranked surface: lineage without corroboration.
@@ -4606,16 +4610,31 @@ const RECALL_FLOOR: f32 = 0.05;
 /// Deterministic in the observation set alone: no wall clock (Section 4.2), no arrival order, no
 /// node-local signal (Section 4.1). Ties break on id, like every other ordered response (P16).
 fn recall_weights(log: &[Observation], gates: &HashMap<String, TrustTier>) -> Vec<RecallWeight> {
-    // Frontier position is a RANK over the log's own ordering. Sorting by (hlc, id) reuses the
-    // ordering `reproject` replays in, so "newest" means the same thing here as it does there.
-    let mut order: Vec<(Hlc, &str)> =
-        log.iter().map(|o| (supragnosis_core::ordering_hlc(o), o.id.as_str())).collect();
-    order.sort();
-    let rank: HashMap<&str, usize> =
-        order.iter().enumerate().map(|(i, (_, id))| (*id, i)).collect();
-    // One observation, or several sharing one position, are all AT the frontier - there is no older
-    // half for them to be the old end of.
-    let span = order.len().saturating_sub(1);
+    // Frontier position is where this observation's ordering HLC falls in the SPAN the workspace's
+    // own log covers - not its rank in that ordering. Two reasons, and the second is why the first
+    // is affordable.
+    //
+    // A rank manufactures age differences that did not happen. A thousand observations written
+    // inside one hour get spread by rank across the whole range, so the first and the five-hundredth
+    // are treated as far apart in age when they are seconds apart; the span says what actually
+    // occurred. For a signal whose whole job is "how stale is this", inventing staleness is the one
+    // error that matters.
+    //
+    // And a span needs two numbers per workspace where a rank needs a position per observation.
+    // That is what makes this materializable at all (consolidation.md Section 8 step 2): the log is
+    // immutable, so a per-observation value could not be written onto the observation rows without
+    // mutating the log (P3), and carrying it anywhere else means a parallel table holding a derived
+    // number - a port change to store something no observation asserts. Two scalars need neither.
+    //
+    // `wall` is a recorded field, not a reading of this machine's clock, so comparing two of them
+    // stays deterministic (P16 forbids consulting the clock, not arithmetic on data).
+    let walls: Vec<u64> = log.iter().map(|o| supragnosis_core::ordering_hlc(o).wall).collect();
+    let (oldest, newest) = (
+        walls.iter().copied().min().unwrap_or(0),
+        walls.iter().copied().max().unwrap_or(0),
+    );
+    // A workspace written in one instant is a workspace where nothing is old.
+    let span = newest.saturating_sub(oldest);
 
     let mut out: Vec<RecallWeight> = log
         .iter()
@@ -4630,7 +4649,8 @@ fn recall_weights(log: &[Observation], gates: &HashMap<String, TrustTier>) -> Ve
             let frontier = if span == 0 {
                 1.0
             } else {
-                rank.get(obs.id.as_str()).copied().unwrap_or(span) as f32 / span as f32
+                let w = supragnosis_core::ordering_hlc(obs).wall.saturating_sub(oldest);
+                (w as f64 / span as f64) as f32
             };
             // Age is a weak signal and the oldest row keeps most of its weight: a workspace nobody
             // has written to has not become less current about its subject (Section 4.2).
