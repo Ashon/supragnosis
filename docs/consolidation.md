@@ -175,9 +175,91 @@ never exercised it. A recall whose diff was computed over a closure that has sin
 silently widen - it binds to the base it reviewed, which is the same Stale-base debt P23 already
 carries, and this kind is where it starts to bite.
 
-## 7. Ordering
+## 7. Condensation, and the layer it belongs to
 
-Each step is useful alone and none reports work it did not do.
+Demotion answers "what surfaces". The question next to it is "how many things surface as one" -
+folding a body of observations into a single condensed statement. It is the same layer and a
+different act, and it splits in two.
+
+### 7.1 Structural condensation is already here
+
+A set of entities co-asserted by one observation is a hyperedge, and `workspace_map` recovers from
+the log the context that the binary-relation projection discarded (P11). `reify_hyperedge` promotes
+a recurring one into a group entity plus `member_of` relations through the ordinary gated ingest.
+That is condensation - N observations become one named thing - and it is deterministic, convergent,
+recomputable and reversible, because the hyperedge stays a derived view and only the asserted
+grouping becomes first-class.
+
+What is missing is not the mechanism but the **selection**: which recurring contexts have earned a
+name. That is a deterministic fold over stability, corroboration and cohesion, and P11 already fixes
+its counting rule - corroboration counts **independent sources by delegation-chain principal**,
+never raw repetition, because a signal that cannot be verified against self-declaration must not be
+bought with volume.
+
+Nothing in this half needs a model, and it is the first condensation worth building.
+
+### 7.2 Semantic condensation is a display act, not a storage act
+
+A summary sentence over forty observations needs an extractor, and the moment it becomes what recall
+returns, three things go wrong at once:
+
+- **It resolves the conflict it should be reporting.** If three of the forty disagree, a summary
+  picks a reading and the disagreement leaves the only surface an agent actually reads. P6 exists to
+  keep contradictions visible, and summarization is precisely the operation that hides them.
+- **It launders contamination.** One poisoned observation among forty becomes one confident sentence
+  with no visible dissent and no provenance spread. P11 already names this failure for co-occurrence;
+  a summary is its stronger form.
+- **It replicates, and therefore multiplies.** This is the one that has no answer anywhere else in
+  these documents. P7 says a probabilistic consolidation's output "is ingested as a derived
+  observation" - and observations replicate. Two nodes holding the same log each run a pass, each
+  produces a *different* summary, both are signed and both sync. Next round summarizes the summaries.
+  Consolidation would grow the log with divergent content, which is the opposite of what the word
+  means.
+
+So a generated summary lives where an embedding lives: **node-local, regenerated from current state,
+never stored, and labelled by the `mode` field that already tells a client which surface answered.**
+Every one of the three problems dissolves there. A summary rebuilt at read time can *carry* the
+contradiction ("three competing claims") instead of settling it; nothing enters the log to be
+laundered; and nothing replicates, so nothing multiplies.
+
+### 7.3 The rule that follows, and the two clauses it reconciles
+
+> **Generation is node-local. Only commitment replicates.**
+
+P7 can be read two ways, and the readings appear to conflict. The 3rd-revision clause says a
+probabilistic consolidation's output "is ingested as a derived observation carrying confidence and
+`derived_from` lineage". The 7th-revision clause says "consolidation generates, it does not commit".
+Read the first alone and every summary becomes a log entry; read the second alone and no summary
+ever does.
+
+The later and more specific clause governs, and the first is a constraint on **form, not on
+frequency**: *if* a consolidation output enters the log, it enters as a derived, lineage-bearing,
+confidence-carrying observation - never as a fact, never superseding its sources. It does not say
+every generated artifact must enter.
+
+What decides whether one enters is the gate, which already exists.
+[proposal-workflow.md](proposal-workflow.md) Section 14.1 blesses exactly this shape: an LLM may
+enrich a **candidate proposal** with a summary or a merge rationale, and that enrichment enters as a
+derived, lowest-trust, lineage-bearing observation while the model never casts the verdict. So the
+serialization point is the human verdict: many nodes may generate many candidates, and only an
+accepted one becomes an observation - once, converging, attributable.
+
+This needs no new machinery. It is I18 - "consolidation generates, never commits" - applied to the
+**artifact** rather than only to the effect, and it answers the authorship question the ledger never
+asked: any node may consolidate, precisely because consolidating changes nothing that leaves it.
+
+## 8. Ordering
+
+Two tracks, independent of each other. Each step is useful alone and none reports work it did not do.
+
+**Condensation (Section 7.1)** is the shorter track and has no dependency on the weight: the
+hyperedge projection and `reify_hyperedge` both ship, so what it adds is the selection fold - a
+stability/corroboration/cohesion score over recurring contexts, surfaced as candidates like every
+other curation signal. It is the first condensation worth building because it needs no extractor and
+carries none of Section 7.2's three hazards. Section 7.2's display-layer summary comes after the
+weight, since it summarizes what the weight decided to surface.
+
+**The weight** is the longer track:
 
 1. **The weight, fold-only, unused.** Compute it, expose it on the curation report, change no
    ranking. This is the whole of Section 4 and it is observable before it is load-bearing: an
@@ -196,7 +278,7 @@ Step 4 could precede 1-3. It should not: a retraction whose only visible effect 
 selection teaches reviewers that `recall` is a weaker `claim_demotion`, and that is the wrong mental
 model to install first.
 
-## 8. Invariants
+## 9. Invariants
 
 | | Invariant |
 |---|---|
@@ -208,9 +290,12 @@ model to install first.
 | **C6** | A merged `recall` retracts and floors; it deletes nothing and is reversible by a new proposal (P3). |
 | **C7** | A recall proposal presents its `derived_from` closure in the belief diff and binds to the base it reviewed. The closure is never cascaded silently. |
 | **C8** | Retraction is not excision. A demand to destroy is answered by excision.md or by saying it is unbuilt - never by a recall reported as removal (E9). |
-| **C9** | A partial implementation is not shipped past step 1. A weight that ranks without the floor, or a recall that retracts without the diff, reports a curation the system did not perform. |
+| **C9** | Structural condensation (hyperedge -> reify) selects by a deterministic fold, and corroboration counts independent principals rather than repetitions (P11). |
+| **C10** | A generated summary is node-local, regenerated, never stored, and labelled by `mode`. It reports contradictions rather than resolving them. |
+| **C11** | Generation is node-local; only commitment replicates. A consolidation artifact reaches the log only as the enrichment of a gated candidate (proposal-workflow.md 14.1), so no node's pass can multiply another's. |
+| **C12** | A partial implementation is not shipped past step 1. A weight that ranks without the floor, or a recall that retracts without the diff, reports a curation the system did not perform. |
 
-## 9. Closure map
+## 10. Closure map
 
 | Demand | Where it is answered |
 |---|---|
@@ -226,3 +311,7 @@ model to install first.
 | P3 - nothing is destroyed | Sections 2, 6; C6, C8 |
 | P1 - no API writes a fact that did not pass through an assertion | Section 3; C1 |
 | P5 - a retracted subject with no other assertion is absent, not false | Section 6 point 2 |
+| P11 - the induction substrate is second-order structure; a reference, not a judge | Section 7.1; C9 |
+| P6 - a condensation must not settle a contradiction it should surface | Section 7.2; C10 |
+| P19 - the probabilistic edge widens recall and never commits | Sections 7.2, 7.3; C10, C11 |
+| P7 - the two readings of "ingested as a derived observation" reconciled | Section 7.3 |
