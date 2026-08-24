@@ -2896,3 +2896,37 @@ fn p18_a_merged_demotion_lowers_the_recall_weight_of_its_target() {
         "a merged demotion must lower the target's recall weight (was {before}, now {after})"
     );
 }
+
+/// guard (consolidation.md Section 4.2): the frontier is a position in the log's time SPAN, not a
+/// rank in its ordering, so observations written at one instant share one position.
+///
+/// This is the whole difference between the two readings and the reason the span won. A rank would
+/// spread the three rows below across the range as if the first were meaningfully older than the
+/// third, when nothing happened between them - and for a signal whose job is to say how stale
+/// something is, inventing staleness is the error that matters. It is also what makes the term
+/// materializable: a span is two numbers per workspace, a rank is one per observation, and the log
+/// is immutable so a per-observation value has nowhere to be written (P3).
+#[test]
+fn p7_observations_written_at_one_instant_share_one_frontier_position() {
+    let (store, engine) = engine();
+    for name in ["a", "b", "c"] {
+        store.add_observation(kind_obs(name, "Thing", 100)).unwrap();
+    }
+    store.add_observation(kind_obs("later", "Thing", 900)).unwrap();
+
+    let report = engine.curation(Some(WS)).expect("curation");
+    let mut burst: Vec<f32> = report
+        .demotion_candidates
+        .iter()
+        .filter(|w| w.frontier < 1.0)
+        .map(|w| w.frontier)
+        .collect();
+    burst.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+
+    assert_eq!(burst.len(), 3, "the three same-instant rows must all be behind the frontier");
+    assert!(
+        burst.iter().all(|f| *f == burst[0]),
+        "rows written at one instant must share one frontier position, not be spread by rank: {burst:?}"
+    );
+    assert_eq!(burst[0], 0.0, "the oldest instant is the start of the span");
+}
