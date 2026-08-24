@@ -338,8 +338,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("forgetting happens as recall demotion at idle, never as deletion",
           Evidence::Deferred(
             "M6 ([consolidation.md](../../../docs/consolidation.md)) - the generate side landed early \
-             with M3.5; the demotion side does not exist. The weight it needs is a fold, not a \
-             column, and it converges only if it consumes neither wall clock nor usage")),
+             with M3.5, and Section 8 step 1 has now landed too: the weight is computed and \
+             reported as `demotion_candidates`. The clause stays unmet because nothing \
+             consumes it - `fuse_rrf` still fuses by rank position alone (step 2), and a \
+             weight that ranks nothing forgets nothing")),
     ]),
     (8, "Clarity", &[
         // The clause with teeth is a refusal, checked on both entry points: a passing-path test
@@ -467,6 +469,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // never declared here. It also covers the tied-HLC branch, where convergence rests on
             // the id tiebreak rather than on recency.
             "aliases_accumulate_and_converge",
+            // The newest fold on the read path, declared here on the day it landed rather than the
+            // day someone audits it. Its convergence is what decides which side of P16's two-layer
+            // split it may live on: a weight that inherited arrival order could only ever be a
+            // node-local recall aid (consolidation.md Section 4).
+            "p16_the_recall_weight_is_the_same_on_any_arrival_order",
         ])),
         c("a query response is reproducible, and ties and truncation break on a stable key",
           Evidence::Scenario(&[
