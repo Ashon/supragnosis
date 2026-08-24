@@ -93,7 +93,18 @@ exactly what P16 forbids: "No use of nondeterminism (wall clock, arrival order, 
 projection/resolution logic."
 
 The fix is to stop asking the machine what time it is and ask the log instead. Age is a **rank
-against the workspace's own HLC frontier**: an observation's position in the ordering the log already
+against the workspace's own HLC frontier**
+
+> **Correction, from implementing it.** An earlier draft of this section rejected arithmetic on the
+> HLC's `wall` value as "smuggling physical time into the fold". That was too strong and the reason
+> was wrong: reading the OS clock is nondeterministic and forbidden, while *comparing two recorded
+> HLC values* is comparing two data points and is perfectly deterministic. Rank is still the better
+> choice, but for a different reason - it is uniform, where a wall-value ratio is compressed by
+> write bursts and stretched by quiet periods, so the same knowledge would weigh differently
+> depending on how busy the workspace was around it. Keeping a wrong argument for a right decision
+> is how the next reader inherits the wrong rule.
+
+: an observation's position in the ordering the log already
 carries, normalized by the newest HLC in that workspace. Two nodes holding the same observations
 compute the same frontier and therefore the same recency, and the number moves when knowledge
 arrives rather than when time passes - which is also the more honest reading of "stale", since a
@@ -259,22 +270,36 @@ other curation signal. It is the first condensation worth building because it ne
 carries none of Section 7.2's three hazards. Section 7.2's display-layer summary comes after the
 weight, since it summarizes what the weight decided to surface.
 
-**The weight** is the longer track:
+**The weight** is the longer track, and its steps are not in the order this document first gave
+them. Step 1 landed and then step 2 would not fit:
 
-1. **The weight, fold-only, unused.** Compute it, expose it on the curation report, change no
+> **The dependency this ordering missed.** Two of the weight's three factors - tier and lineage - are
+> properties of the row itself, readable from a hit. The third, position against the workspace's HLC
+> frontier, needs the whole ordering. `search` answers from the store's indexes and walks the log
+> zero times (pinned by `a_search_does_not_walk_the_log`), so supplying the frontier inside a query
+> would turn a bounded lookup into a full deserialization of the log - seconds per query at 10k
+> observations, for a ranking nudge. **Materialization is therefore a precondition for ranking, not
+> an optimization after it**, and what was step 5 moves ahead of step 2's frontier half. The
+> alternative - shipping ranking with a frontier-neutral weight - was rejected because it would put
+> two different numbers in the system under one name.
+
+1. **The weight, fold-only, unused.** *(landed)* Compute it, expose it on the curation report, change no
    ranking. This is the whole of Section 4 and it is observable before it is load-bearing: an
    operator can look at what the system would demote before it demotes anything.
-2. **The weight enters the ranked surfaces.** `fuse_rrf` gains a per-item term. `recall_eval.rs`
+2. **The materialized ordering.** The frontier rank computed where the log is already being walked
+   and carried on the projection, the way resolution.md materializes the belief at `reproject`.
+   Formerly step 5; it comes here because step 3 cannot afford to compute it per query.
+3. **The weight enters the ranked surfaces.** `fuse_rrf` gains a per-item term. `recall_eval.rs`
    already pins mean recall@5 >= 0.9 with an entity-gold subset at >= 0.99, so this step has a
    regression gate the day it lands - which is why the weight is designed before the pass that
    would tune it.
-3. **The node-local re-rank.** Usage tracking, layered after and labelled by `mode` (4.1).
-4. **The recall commit effect.** Section 6. Independent of 1-3 except for the weight floor.
-5. **Idle scheduling.** Only now is there anything worth scheduling. Steps 1-4 are recomputation on
-   the read path; this step is the decision to precompute at `reproject` time, and it is a
-   performance change with no semantics of its own.
+4. **The node-local re-rank.** Usage tracking, layered after and labelled by `mode` (4.1).
+5. **The recall commit effect.** Section 6. Independent of the rest except for the weight floor.
+6. **Idle scheduling.** Whether the materialization of step 2 runs on a timer rather than only at an
+   explicit `reproject`. A scheduling decision with no semantics of its own, which is why it is last
+   and why it was wrong to file the materialization itself here.
 
-Step 4 could precede 1-3. It should not: a retraction whose only visible effect is on belief
+The recall commit effect could precede everything else. It should not: a retraction whose only visible effect is on belief
 selection teaches reviewers that `recall` is a weaker `claim_demotion`, and that is the wrong mental
 model to install first.
 
@@ -282,7 +307,7 @@ model to install first.
 
 | | Invariant |
 |---|---|
-| **C1** | The recall weight is a fold over the log, never a stored column. No consolidation pass writes to the projection. |
+| **C1** | The recall weight is a fold over the log. It may be **materialized at `reproject`**, the way resolution.md materializes the belief - what is forbidden is a consolidation pass writing a score of its own, which is a projection write no observation asserts. An earlier wording said "never a stored column" and so forbade the precedent it meant to follow. |
 | **C2** | The weight consumes no wall clock, no arrival order and no randomness. Recency is rank against the workspace HLC frontier. |
 | **C3** | The committed weight consumes no node-local signal. Usage may only re-rank the already-exempt surfaces, labelled by `mode`. |
 | **C4** | The weight has a positive floor. `get_entity`, `get_observation` and `traverse` do not consult it - demoted knowledge stays reachable by explicit query (P7). |
