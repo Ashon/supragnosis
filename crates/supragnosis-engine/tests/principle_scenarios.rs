@@ -2797,3 +2797,102 @@ fn p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing() {
         diff.note
     );
 }
+
+/// guard (consolidation.md Section 4, C2/C3): the recall weight is a fold over the observation set
+/// and nothing else, so two stores fed the same observations in opposite orders compute the same
+/// weights. This is the property that lets the weight enter the surfaces P16 binds - a ranking that
+/// depended on insertion order could only ever live behind the recall-aid exemption.
+#[test]
+fn p16_the_recall_weight_is_the_same_on_any_arrival_order() {
+    let read = |forward: bool| {
+        let (store, engine) = engine();
+        let mut rows = vec![
+            kind_obs("cozo", "Tool", 100),
+            kind_obs("redb", "Store", 200),
+            kind_obs("hlc", "Clock", 300),
+        ];
+        if !forward {
+            rows.reverse();
+        }
+        for o in rows {
+            store.add_observation(o).unwrap();
+        }
+        engine
+            .curation(Some(WS))
+            .expect("curation")
+            .demotion_candidates
+            .iter()
+            .map(|w| (w.observation.clone(), w.weight, w.frontier))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(read(true), read(false), "the weight must not inherit arrival order (P16)");
+}
+
+/// guard (consolidation.md C4): no weight is zero. A zero weight is an item that can never surface,
+/// which is deletion performed by arithmetic - and P7 requires demoted knowledge to stay reachable
+/// by an explicit query. The floor is what keeps "demoted" from quietly meaning "gone".
+#[test]
+fn p7_the_recall_weight_never_reaches_zero() {
+    let (store, engine) = engine();
+    for (i, name) in ["a", "b", "c"].iter().enumerate() {
+        store.add_observation(kind_obs(name, "Thing", 100 + i as u64)).unwrap();
+    }
+    let report = engine.curation(Some(WS)).expect("curation");
+    assert!(!report.demotion_candidates.is_empty(), "fixture must produce rows");
+    for w in &report.demotion_candidates {
+        assert!(
+            w.weight > 0.0,
+            "{} weighs {} - a zero weight is deletion by arithmetic",
+            w.observation,
+            w.weight
+        );
+    }
+}
+
+/// guard (consolidation.md Section 4.3, P18's unmet "recall is trust-weighted" clause): the tier the
+/// weight consumes is the receiver's evaluation, so a merged demotion lowers what the observation
+/// would recall at. Asserted as a difference across the act rather than as a final state, because
+/// "the weight responds to the gate" is a statement about a change (Appendix B.2).
+#[test]
+fn p18_a_merged_demotion_lowers_the_recall_weight_of_its_target() {
+    let (store, engine) = engine();
+    store.add_observation(kind_obs("cozo", "Tool", 100)).unwrap();
+    let o2 = kind_obs("cozo", "Library", 200);
+    let id2 = o2.id.clone();
+    store.add_observation(o2).unwrap();
+
+    let weight_of = |id: &str| {
+        engine
+            .curation(Some(WS))
+            .expect("curation")
+            .demotion_candidates
+            .iter()
+            .find(|w| w.observation == id)
+            .map(|w| w.weight)
+            .expect("target must be reported")
+    };
+    let before = weight_of(&id2);
+
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_demotion".into(),
+            targets: vec![id2.clone()],
+            into: None,
+            tier: Some("unverified".into()),
+            rationale: Some("wrong extraction".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose");
+    engine
+        .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
+        .expect("verdict");
+
+    let after = weight_of(&id2);
+    assert!(
+        after < before,
+        "a merged demotion must lower the target's recall weight (was {before}, now {after})"
+    );
+}

@@ -296,11 +296,43 @@ pub struct CurationReport {
     ///
     /// Read-only, like every other signal here (P7: a consolidation pass generates, it never commits).
     pub secrets: Vec<SecretFinding>,
+    /// The lowest-weighted observations - what a demotion pass would push down, were anything
+    /// consuming the weight yet ([consolidation.md](../../../docs/consolidation.md) Section 8 step 1).
+    /// Read-only like every other signal here, and in this case doubly so: nothing ranks by it.
+    pub demotion_candidates: Vec<RecallWeight>,
     /// Type names defined on BOTH the entity and relation axes (resolution-identity.md Section 6,
     /// Principle 9). Informative, not blocking: an axis collision is legal but usually a mistake -
     /// the one structural T-Box check available before a subtype hierarchy exists (Principle 13).
     pub type_axis_collisions: Vec<String>,
     pub stats: CurationStats,
+}
+
+/// One observation's recall weight ([consolidation.md](../../../docs/consolidation.md) Section 4).
+///
+/// Computed and reported, consumed by nothing: Section 8 step 1 is deliberately observable before it
+/// is load-bearing, so an operator can read what the system would demote before it demotes anything.
+/// `fuse_rrf` still fuses by rank position alone and takes no per-item term.
+///
+/// Every input is a fold over the log (C1/C2/C3). None of them is a wall clock, an arrival order or a
+/// node-local signal, which is what lets this converge on the surfaces P16 binds - two nodes holding
+/// the same observations compute the same weight.
+#[derive(Serialize)]
+pub struct RecallWeight {
+    pub observation: String,
+    /// In `[FLOOR, 1.0]`. Never zero: a weight of zero is deletion by arithmetic, and P7 requires
+    /// demoted knowledge to stay reachable by an explicit query (C4).
+    pub weight: f32,
+    /// The receiver's evaluation, never the claimed tier (P18) - the "recall is trust-weighted"
+    /// half of P18's unmet clause.
+    pub tier: &'static str,
+    /// Position in the workspace's own HLC ordering: 0.0 at the oldest observation, 1.0 at the
+    /// frontier. RANK, not the HLC's wall value - reading `wall` would smuggle physical time back
+    /// into a fold that P16 forbids it in, while a rank uses only the ordering the log already
+    /// carries (Section 4.2).
+    pub frontier: f32,
+    /// Derived from other knowledge and attested by nobody else. The P18 shape that should not
+    /// crowd a ranked surface: lineage without corroboration.
+    pub derived_alone: bool,
 }
 
 /// One conservative-merge-band candidate (resolution-identity.md Section 3): a pair of distinct
@@ -1904,6 +1936,10 @@ impl Engine {
                 }
             }
         }
+        // The recall weight (consolidation.md Section 4), over the same log pass the secret scan
+        // walks. Reported, consumed by nothing - Section 8 step 1.
+        let gates = self.gate_grants(workspace, cx)?;
+        let demotion_candidates = recall_weights(&self.log(workspace, cx)?, &gates);
         Ok(CurationReport {
             workspace: workspace.map(String::from),
             duplicates,
@@ -1916,6 +1952,7 @@ impl Engine {
             name_variants,
             type_axis_collisions,
             secrets,
+            demotion_candidates,
             stats,
         })
     }
@@ -4549,6 +4586,78 @@ fn name_variant_groups(
 /// Reciprocal Rank Fusion. Fuses rankings on different scales (keyword score vs cosine similarity) by rank alone,
 /// combining them without scale normalization. The same (kind, id) has its contributions summed.
 /// A deterministic function (Principle 16) - the same input ranks give the same result on any node.
+/// How many lowest-weighted rows the curation report carries. A cap, not a threshold: the report is
+/// a thing a human reads, and "everything, sorted" is not a curation signal.
+const DEMOTION_CANDIDATES: usize = 20;
+
+/// The floor of the recall weight. Positive on purpose (C4): zero would make an item unrankable,
+/// which is deletion performed by arithmetic, and P7 requires demoted knowledge to stay reachable.
+const RECALL_FLOOR: f32 = 0.05;
+
+/// The recall weight of every observation, lowest first ([consolidation.md](../../../docs/consolidation.md)
+/// Section 4.3).
+///
+/// Three factors compose multiplicatively rather than additively, because the signal being looked
+/// for is the conjunction: old knowledge is not weak, untrusted knowledge is not weak, uncorroborated
+/// derivation is not weak - old AND untrusted AND uncorroborated is. A sum would let any one factor
+/// carry a row on its own, which is how a recency heuristic ends up demoting a human-confirmed fact
+/// for the crime of having been true for a while.
+///
+/// Deterministic in the observation set alone: no wall clock (Section 4.2), no arrival order, no
+/// node-local signal (Section 4.1). Ties break on id, like every other ordered response (P16).
+fn recall_weights(log: &[Observation], gates: &HashMap<String, TrustTier>) -> Vec<RecallWeight> {
+    // Frontier position is a RANK over the log's own ordering. Sorting by (hlc, id) reuses the
+    // ordering `reproject` replays in, so "newest" means the same thing here as it does there.
+    let mut order: Vec<(Hlc, &str)> =
+        log.iter().map(|o| (supragnosis_core::ordering_hlc(o), o.id.as_str())).collect();
+    order.sort();
+    let rank: HashMap<&str, usize> =
+        order.iter().enumerate().map(|(i, (_, id))| (*id, i)).collect();
+    // One observation, or several sharing one position, are all AT the frontier - there is no older
+    // half for them to be the old end of.
+    let span = order.len().saturating_sub(1);
+
+    let mut out: Vec<RecallWeight> = log
+        .iter()
+        .map(|obs| {
+            let tier = effective_tier(obs, gates);
+            let tier_f = match tier {
+                TrustTier::Unverified => 0.25,
+                TrustTier::AgentExtracted => 0.5,
+                TrustTier::HostSigned => 0.75,
+                TrustTier::HumanConfirmed => 1.0,
+            };
+            let frontier = if span == 0 {
+                1.0
+            } else {
+                rank.get(obs.id.as_str()).copied().unwrap_or(span) as f32 / span as f32
+            };
+            // Age is a weak signal and the oldest row keeps most of its weight: a workspace nobody
+            // has written to has not become less current about its subject (Section 4.2).
+            let frontier_f = 0.4 + 0.6 * frontier;
+            // Lineage WITHOUT corroboration. Derived knowledge that several principals also assert
+            // is not the P18 shape - one attestation and a parent is.
+            let derived_alone = !obs.derived_from.is_empty() && obs.provenance.len() == 1;
+            let lineage_f = if derived_alone { 0.6 } else { 1.0 };
+            RecallWeight {
+                observation: obs.id.clone(),
+                weight: RECALL_FLOOR + (1.0 - RECALL_FLOOR) * tier_f * frontier_f * lineage_f,
+                tier: tier_label(tier),
+                frontier,
+                derived_alone,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.weight
+            .partial_cmp(&b.weight)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.observation.cmp(&b.observation))
+    });
+    out.truncate(DEMOTION_CANDIDATES);
+    out
+}
+
 fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
     // RRF constant. Larger values flatten the advantage of top ranks (60 is the information-retrieval convention).
     const K: f32 = 60.0;

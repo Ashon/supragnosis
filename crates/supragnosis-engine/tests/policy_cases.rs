@@ -240,6 +240,13 @@ fn p7_curation_generates_candidates_and_commits_nothing() {
         !report.name_variants.is_empty() || !report.orphans.is_empty(),
         "fixture must actually produce candidates, or this proves nothing"
     );
+    // The recall weight is computed on this same pass (consolidation.md Section 8 step 1). It is the
+    // newest thing in the report and the one most likely to reach for a store write, so the
+    // commits-nothing assertion below has to be exercising it.
+    assert!(
+        !report.demotion_candidates.is_empty(),
+        "the weight must be part of what this case proves changes nothing"
+    );
     Case::new("Principle 7", "consolidation generates candidates but never commits them")
         .changed_nothing(&before, &after);
 }
