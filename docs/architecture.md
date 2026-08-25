@@ -6,7 +6,7 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through M4 Phase 4** (v0.2.2). M0-M2, **M3a (belief resolution) and M3b
+- Status: **implemented through M4 Phase 4** (v0.3.1). M0-M2, **M3a (belief resolution) and M3b
   (identity resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases 0-4 are complete
   (Phase 3.5 and 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
@@ -17,7 +17,8 @@
   [`store-migration.md`](store-migration.md) (Cozo -> redb), [`excision.md`](excision.md) (the P3
   destruction exception, M4 Phase 5),
   [`resolution.md`](resolution.md) (M3a, implemented),
-  [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6).
+  [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6),
+  [`consolidation.md`](consolidation.md) (M6, specified - Section 8 step 1 landed).
 
 ---
 
@@ -610,7 +611,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
      (Phase 5), which is why deployment is single-principal today; sync/consolidate as **MCP Tasks** and
      human mediation as **elicitation** (Principle 21) - see Section 7.
 7. **M5 - Inference/extraction/contamination defense [ ]**: lightweight inference, the `Extractor` port, mandatory `derived_from` lineage/quarantine/cleanup (Principle 18).
-8. **M6 - Forgetting/consolidation [ ]**: deterministic idle-time reprojection + recall demotion (Principle 7, sleep-time). Selection of consolidation targets is based on hyperedge stability/corroboration/cohesion metrics (Principle 11 second-order structure). Design -> [consolidation.md](consolidation.md), which also carries the recall half of M5's P18 clause and the commit effect M3.5 left `recall` without: all three wait on one absent mechanism, a per-item recall weight, because `fuse_rrf` fuses by rank position and has nowhere for a weight to enter.
+8. **M6 - Forgetting/consolidation [ ]**: deterministic idle-time reprojection + recall demotion (Principle 7, sleep-time). Selection of consolidation targets is based on hyperedge stability/corroboration/cohesion metrics (Principle 11 second-order structure). Design -> [consolidation.md](consolidation.md), which also carries the recall half of M5's P18 clause and the commit effect M3.5 left `recall` without: all three wait on one mechanism, a per-item recall weight. It now exists as a fold and is reported (`demotion_candidates`), and the three clauses stay unmet because nothing consumes it - `fuse_rrf` still fuses by rank position and has nowhere for a weight to enter. A weight that ranks nothing forgets nothing.
 
 ---
 
