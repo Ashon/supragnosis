@@ -4,9 +4,14 @@
 > a consolidation pass may compute, what may act on the result, and why the obvious cheaper version -
 > a mutable score column that a background job writes - is worse than not having it.
 >
-> Status: **specification**. Nothing here is built. The ledger owns it as M6
-> ([architecture.md](architecture.md) Section 12). The generate half - the read-only curation
-> signals - landed early with M3.5 and this document builds on it rather than replacing it.
+> Status: **specification, with Section 8 step 1 landed.** The weight is computed and reported as
+> `demotion_candidates` on the curation report; nothing consumes it, so nothing is demoted and no
+> clause here is met. The ledger owns the rest as M6 ([architecture.md](architecture.md) Section 12).
+> The generate half - the read-only curation signals - landed early with M3.5 and this document
+> builds on it rather than replacing it.
+>
+> Sections 4.2 and 8 carry corrections that building step 1 forced. They are recorded in place
+> rather than edited away, because the reasoning that was wrong is the part worth reading.
 
 ## 1. The one mechanism three clauses are waiting on
 
