@@ -308,6 +308,27 @@ them. Step 1 landed and then step 2 would not fit:
    log is already being walked and carried the way resolution.md materializes the belief at
    `reproject`. Formerly step 5; it comes here because step 3 cannot afford to compute it per query.
    *(4.2's correction shrank this from a per-observation table to two scalars.)*
+
+   > **Not a small step, and the survey is worth inheriting.** Two scalars still need somewhere to
+   > live, and neither route is cheap.
+   >
+   > **A store port change.** `KnowledgeStore` adds exactly two methods to `AssertionStore` -
+   > `put_entity` and `add_relation` - and both write projection rows that observations assert. A
+   > third for a workspace-scoped derived pair would be the first port method for a number no
+   > observation asserts, and it lands in core, both adapters and the conformance suite. That is a
+   > deliberate widening of the narrowest interface in the system, and it should be argued on its
+   > merits rather than arrived at by needing a cache.
+   >
+   > **An engine-level cache.** `ReadCtx` already memoizes the log per `(log_epoch, scope)`, but it
+   > is per-request: a fresh one per call means the first search after any write walks the log,
+   > which `a_search_does_not_walk_the_log` refuses. Promoting it to long-lived state runs into a
+   > defect that already exists - `sync_pull` reaches the store through `engine.store()` and calls
+   > the sync functions directly, so `log_epoch` never advances for an applied pull. A cache keyed
+   > on that counter would serve a stale span after every sync. **Fix the invalidation before
+   > building anything on it**, or the first symptom is a ranking that quietly disagrees with the
+   > log on a federated node - the hardest possible place to notice it.
+   >
+   > Which is why this document stops here rather than reaching for whichever route is quicker.
 3. **The weight enters the ranked surfaces.** `fuse_rrf` gains a per-item term. `recall_eval.rs`
    already pins mean recall@5 >= 0.9 with an entity-gold subset at >= 0.99, so this step has a
    regression gate the day it lands - which is why the weight is designed before the pass that
