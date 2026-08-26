@@ -184,10 +184,13 @@ HTTPS (JSON wire format initially; gRPC is a later optimization):
   where the caller is behind, shared workspaces only.
 - `push(events)` -> the caller sends events for ranges where it is ahead. The receiver verifies, dedups by
   CAS, absorbs provenance, and re-projects.
-- `ping` -> **health check**: an authenticated no-op that verifies connectivity, auth, and the
-  caller's per-workspace authorization in one round trip (the response carries the hub identity,
-  version, and the caller's shared workspaces). A spoke pings its hubs at startup and on a slow
-  interval; state changes stream to the activity feed.
+- `ping` -> **health check and surface negotiation**: an authenticated no-op that verifies
+  connectivity, auth, and the caller's per-workspace authorization in one round trip. The response
+  carries the hub identity, version, and the **caller's** shared workspaces - the peer's entitlement,
+  never the host's inventory (6e, F21). A spoke pings its hubs at startup and on a slow interval;
+  state changes stream to the activity feed. The authorization half is not a diagnostic afterthought:
+  it is the only mechanism by which a spoke *learns*, rather than restates from local config, which
+  host holds which workspace (6e).
 - `search(workspace, query)` -> **federated recall**: an authenticated read of the SERVER's ontology,
   answered from that node's recall surface (hybrid/keyword, mode-labeled). Local state can lag the
   remote store, so a local miss may mean "not synced yet" - this call lets an agent check without
@@ -349,6 +352,66 @@ F19's hard line (no unauthenticated write surface) holds by transport **on the v
 daemon is the standing exception: loopback TCP with no auth layer is a write surface open to every
 local OS account on the host - host-local, not single-user (architecture.md Sections 10/14; owed as
 the P17 registry row records). Network reads return with the user-key read tier.
+
+### 6e. Negotiated surface - the boundary made legible (P17, P18, P5)
+
+The `ping` response (Section 5) already tells an authenticated peer which workspaces it may sync. That
+answer is the **negotiated surface** of the link: what this peer may reach on this host, as the host
+itself computes it. It is the authoritative form of a question a multi-host spoke would otherwise
+answer from local configuration - and configuration that restates a remote decision goes stale
+silently.
+
+Making the surface legible adds **no mechanism**: the data is produced by the Phase 3 transport and the
+Phase 4 allowlist, and the only change is that it is consumed and shown instead of discarded. Nothing
+about it enters the log, so no convergence claim (8a) depends on it - it sits in the region the
+proposition chain already excludes, alongside recall aids and hub availability. Six clauses keep
+it there; F21 states them normatively, one clause per demand.
+
+- **Entitlement, never inventory.** The response is scoped to the authenticated caller's own grants. A
+  peer learns exactly the set it was already granted, which it can confirm one name at a time anyway:
+  `authorize_workspace` answers a non-admitted workspace with `403`, not with an empty result. What
+  advertising adds is *enumeration*, and that removes a P5 hazard rather than creating a P17 one -
+  today a spoke that fails to guess a granted workspace's name concludes "no knowledge" where the
+  truth is "granted, never asked". Advertising the host's full workspace list instead would disclose
+  the existence of workspaces the peer may not read: the same class of leak as the deferred
+  cross-workspace lineage exposure (Section 11), and a P17 violation.
+- **Narrow only, never widen.** The answer may shrink what this node asks of that peer; it may never
+  add a workspace to the local `share_workspaces`. This is P18 on the outbound axis - the peer's answer
+  is the sender's claim about access, exactly as a claimed trust tier is the sender's evaluation, and
+  neither binds the receiver. Widening would let a compromised host induce a push of a workspace the
+  operator never shared: a read-authorization answer escalated into a write-authorization decision. The
+  answer is not even signed (bearer-authenticated transport, weaker than the F6 event path), which is a
+  second reason it can only narrow.
+- **Outside the log.** The negotiated surface is per-link runtime state and is never observed into the
+  log. Recording it would place a node-relative value - each peer sees its own grants - into a
+  structure that must converge, breaking Prop B for anything folded over it.
+- **Three-valued.** `admitted | not-admitted | unknown`. An unreachable host yields *unknown*, never an
+  empty entitlement: collapsing the two renders a host that is down as a grant that was revoked, which
+  is precisely the failure F12 forbids.
+- **Response-labelled.** Narrowing fan-out makes a result set smaller, and a smaller set offered
+  without explanation reads as a smaller world - the exact misreading P5 exists to prevent. So a
+  response the map narrowed states which hosts it consulted and which it skipped as not-admitted. This
+  is P16's mode-labelling guard carried onto the host axis: there a response says which surface
+  answered it (convergence surface or recall aid), here which hosts were in scope at all. Without the
+  label the feature *regresses* legibility while claiming to improve it, because the caller cannot tell
+  a narrowed fan-out from an empty world.
+- **Non-monotonic.** A grant can be narrowed at any time (6a), so the map is not stable under further
+  information the way a log-derived conclusion is - P16 separates convergence from monotonicity, and
+  this surface has the first property only. It therefore carries the time it was negotiated, and
+  nothing durable is stacked on it: a routing decision is re-derived, never treated as settled.
+
+What the surface buys beyond diagnosis is that a **workspace-to-host map** becomes derivable at
+runtime. Fan-out - sync push/pull and federated `search` - can then address only the hosts that admit
+the workspace, so a remote miss becomes interpretable instead of being mixed with denials and
+timeouts, and the P17 default ("nothing leaves") holds on the host axis and not only the workspace
+axis.
+
+**Report the difference, not the intersection.** The operator value is in the disagreement between what
+this node believes it shares and what the peer says it admits. Silently intersecting the two hides the
+misconfiguration that produced it, so the surface is reported in three buckets: **both**; **local-only**
+(this node lists the workspace, the peer does not admit it - a setup error that today vanishes from the
+drift view without a word); and **peer-only** (the peer would admit it, this node does not share it -
+knowledge left on the table).
 
 ## 7. Topology
 
@@ -557,6 +620,17 @@ changing the canon policy without a central admin - is out of scope.
   act bytes carry the user key's signature alongside the hub's node signature). Recall verdicts (I17)
   and `HumanConfirmed` promotion (P18) require strength (ii) by default; the canon policy may relax
   only low-stakes acts to (i), never those two.
+- **F21** The negotiated surface (6e) obeys six clauses, stated one per demand because a single
+  verdict over the set would hide the unmet ones (the B.1 discipline of principles.md): (1)
+  **entitlement-scoped** - `ping` reports the authenticated caller's own grants, never the host's
+  inventory; (2) **narrowing-only** - a peer's answer may reduce what this node asks of that peer and
+  may never extend its local `share_workspaces`; (3) **log-external** - the answer is never written to
+  the observation log; (4) **three-valued** - an unreachable peer yields *unknown*, never an empty
+  grant set; (5) **response-labelled** - a response the map narrowed states which hosts it consulted
+  and which it skipped as not-admitted; (6) **non-monotonic** - a grant may be narrowed at any time, so
+  the map carries its negotiation time and is never a premise for a durable conclusion. Violating them
+  yields, in order: a P17 disclosure, a P18 outbound escalation, a Prop B divergence, an F12 false
+  negative, a P5 absence-read-as-negation, and a conclusion stacked on a revoked grant.
 
 ## 8a. Propositions - how convergence follows from the invariants
 
@@ -609,7 +683,10 @@ input, not nondeterminism - F16).
   `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys`,
   `[server] listen / tls_cert / tls_key / allowlist` (entries: `node_id -> public key, bearer hash,
   shared workspaces`). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
-  deferred - Section 11) and `anchor_key` (the Phase 5 policy anchor, 6a) are rejected loudly today
+  deferred - Section 11), `anchor_key` (the Phase 5 policy anchor, 6a), and the per-server sync entries
+  the Phase 7 prerequisite needs (`[[sync.server]]` carrying `url` / `auth_token` / `share_workspaces`,
+  mirroring the per-peer shape `[[server.allowlist]]` already has - today `servers` and `auth_token` are
+  flat and global, so one credential and one share list apply to every host) are rejected loudly today
   (deny-unknown), and so is an unknown key **inside** an allowlist entry - `AllowEntry` denies unknown
   fields like every other section, closing the gap this spec used to record. An entry is where a typo
   is most expensive, since it decides who may connect and what they may read (P17/P18). `[node] role` was superseded: roles are implied by which sections are present
@@ -668,6 +745,21 @@ input, not nondeterminism - F16).
   register a client, verify end-to-end convergence. May go live after Phase 4 **restricted to
   single-principal workspaces** (the P23 solo exception - one principal across many machines); onboarding a
   second principal requires Phase 5.
+- **Phase 7** - **negotiated surface and surface-aware routing** (6e, F21): consume the `ping`
+  authorization answer instead of discarding it, hold it per server as link-local state, and expose it
+  through `sync_status` and the viewer's federation blob as the three-bucket difference (both /
+  local-only / peer-only) with the negotiation time attached (F21.6). Then filter fan-out - `sync_push`, `sync_pull`, federated `search` - on the
+  negotiated map, so a workspace is offered only to hosts that admit it - each such response naming
+  the hosts consulted and those skipped (F21.5), since a silently narrowed fan-out is a worse answer
+  than an unnarrowed one. **No new MCP tool**:
+  `sync_status` already reports the share whitelist and the configured servers, and Appendix A of
+  principles.md settles the P21 tension in favour of composing an existing tool over adding one.
+  **Prerequisite - per-server credentials.** `[sync] auth_token` is one token presented to every
+  configured server, so one host learns the bearer that also authorizes at another and could
+  impersonate the spoke there. An answer promoted to a routing input must not rest on a credential
+  shared across the hosts being routed between, so the config gains per-server entries (url, token,
+  share list - mirroring the shape `[[server.allowlist]]` already has per peer) before the map decides
+  where knowledge goes.
 
 ## 11. Deferred (not this milestone)
 
@@ -696,6 +788,14 @@ input, not nondeterminism - F16).
 - **Cross-workspace lineage exposure**: a shared observation whose `derived_from` points into an unshared
   workspace carries that (opaque blake3) id across the boundary, revealing the referenced observation's
   existence. Redacting dangling cross-workspace lineage at export is a follow-up.
+- **Negotiated-surface boundaries** (6e, F21). Three neighbouring capabilities stay out, and saying so
+  is what keeps 6e free of a dangling dependency. **Host discovery**: negotiation runs over the
+  configured server set only, never to find hosts the operator did not name - that is the deferred
+  mesh/discovery item above. **Sub-workspace surfaces**: the advertised grain is the workspace, bounded
+  by the deferred finer-than-workspace redaction item. **Peer admission**: the surface is read-only;
+  admitting or removing a peer remains the deferred key-rotation/revocation workflow. And 6e is **not**
+  a mitigation for a withholding host - one that lies by omission can under-report entitlement exactly
+  as it can withhold events, so the surface must never be documented as an availability defence.
 
 ## 12. Closure map
 
@@ -712,6 +812,7 @@ property of the spec: no dangling dependency.
 | Sync transport (axum/rustls/reqwest), allowlist/bearer | Phase 3 |
 | Hub human surface: read tier (user-key enrollment + grants, share grades, RO, web hardening) | Phase 3.5 |
 | Config (supragnosis.toml: `host_label`, origin keys, allowlist), node.key identity, CLI roles, `sync_*` tools | Phase 4 |
+| Negotiated surface (entitlement advertisement, three-bucket difference, surface-aware routing) | Phase 7 (the data itself: Phase 3 `ping` + Phase 4 allowlist) |
 | Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (principal-signed acts, F20) | Phase 5 |
 | Hub deployment (systemd, single-principal until Phase 5) | Phase 6 |
 | Mesh/NAT/discovery, gRPC, key rotation, quorum/auto-merge/conflict UI, fine-grained redaction, hub-withholding mitigation, cross-workspace lineage redaction, HLC drift bound | Deferred (Section 11) |
