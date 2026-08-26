@@ -776,16 +776,26 @@ pub struct GraphNode {
     /// until the next re-materialization (F5's transient window, Prop C). `reproject` closes it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origin_nodes: Vec<String>,
-    /// The workspace this entity belongs to - single-valued, unlike `origins`.
+    /// The workspace this entity belongs to, or empty when it does not sit in exactly one.
     ///
     /// `Entity::make_id` hashes the workspace with the canonical name, so the same name in two
-    /// workspaces is two entities and no entity can straddle them. That makes the workspace an exact
-    /// partition of the graph, which is why it can be drawn as a boundary where `origins` cannot: a
-    /// host set unions across nodes (F4) and a workspace does not.
+    /// workspaces is two entities and an *observed* entity never straddles them. That is what lets
+    /// the workspace be drawn as a boundary where `origins` cannot: a host set unions across nodes
+    /// (F4), and a workspace does not.
     ///
-    /// It is read from the attestations rather than stored on the entity, because it is already
-    /// determined by the id every one of them projected into - a field on the model would be a
-    /// second copy of something the identity already fixes (P14).
+    /// **One case breaks it, and it is reachable rather than theoretical.** An `entity_merge` folds
+    /// several ids into one canonical id, and its checks are `into`-among-targets, at least two
+    /// distinct targets, and referential integrity - none of them compares workspaces. The curation
+    /// report meanwhile surfaces cross-workspace name collisions as merge candidates by design, so
+    /// the suggestion arrives on its own. A merge taken across that boundary leaves one entity whose
+    /// attestations name two workspaces, and the surviving id's own workspace cannot be recovered
+    /// from it (the id is a hash). So this field reports **empty** rather than picking one: an
+    /// arbitrary pick would be a claim the log does not make, and the boundary layer draws nothing
+    /// for a node with no workspace, which is the honest picture of an entity that spans two.
+    ///
+    /// Read from the attestations rather than stored on the entity: it is already determined by the
+    /// id they projected into, and a model field would be a second copy of what the identity fixes
+    /// (P14).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace: String,
     /// The node's representative trust: the highest EFFECTIVE tier over its supporting observations
@@ -4167,12 +4177,16 @@ impl Engine {
                         o.dedup();
                         o
                     },
-                    workspace: members
-                        .iter()
-                        .flat_map(|m| m.provenance.iter())
-                        .map(|p| p.workspace.clone())
-                        .next()
-                        .unwrap_or_default(),
+                    workspace: {
+                        let mut it = members
+                            .iter()
+                            .flat_map(|m| m.provenance.iter())
+                            .map(|p| p.workspace.as_str());
+                        match it.next() {
+                            Some(w) if it.all(|o| o == w) => w.to_string(),
+                            _ => String::new(),
+                        }
+                    },
                     trust_tier: trust,
                     contested,
                     competitors,
@@ -4310,13 +4324,16 @@ impl Engine {
                         o.dedup();
                         o
                     },
-                    // Any attestation answers this: they all projected into an id that hashed the
-                    // workspace, so taking the first is not a choice between candidates.
-                    workspace: e
-                        .provenance
-                        .first()
-                        .map(|p| p.workspace.clone())
-                        .unwrap_or_default(),
+                    // Agreement, not the first: a merge can fold entities from two workspaces
+                    // (nothing on that path compares them), and picking either would assert a
+                    // membership the log does not. Disagreement reports empty.
+                    workspace: {
+                        let mut it = e.provenance.iter().map(|p| p.workspace.as_str());
+                        match it.next() {
+                            Some(w) if it.all(|o| o == w) => w.to_string(),
+                            _ => String::new(),
+                        }
+                    },
                     trust_tier: trust,
                     contested: false,
                     competitors: Vec::new(),

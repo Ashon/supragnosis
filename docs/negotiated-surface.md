@@ -59,8 +59,14 @@ release notes for v0.3.1 record a task promising "real data" serving zero rows a
 holding 168).
 
 **Labelling is therefore a precondition of filtering, not a companion to it.** A response the map
-narrowed states which hosts it consulted and which it skipped as not-admitted, and that has to ship
-before anything starts skipping.
+narrowed states which hosts it skipped as not-admitted, and that has to ship before anything starts
+skipping.
+
+One thing this section claimed and should not have: that routing carries P17's "nothing leaves by
+default" onto the host axis. It does not. A host is dropped only on an explicit refusal (N11), so the
+host-axis default is to ask - and it has to be, or ignorance reads as refusal. What may leave was
+already settled by `share_workspaces` (F9) and what may be read by the host's allowlist; the map
+narrows rounds across two boundaries that already existed rather than adding a third.
 
 ## 5. Per-server credentials, the prerequisite
 
@@ -210,7 +216,7 @@ that it does.
 
 | Demand | Where it is answered |
 |---|---|
-| P17 - nothing leaves by default, on the host axis and not only the workspace axis | Sections 3, 4; N3, N10 |
+| P17 - what leaves is decided by this node's share list, which the map never widens | Sections 3, 5; N3, N10 |
 | P17 - the boundary governs the remote read surface too | Section 4; N5 |
 | P18 - a remote claim never binds the receiver's own policy | Section 5; N3 |
 | P5 - absence is unknown, never negation | Section 4; N4, N5 |
