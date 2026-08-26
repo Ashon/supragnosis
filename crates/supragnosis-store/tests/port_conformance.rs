@@ -478,7 +478,7 @@ fn traverse_follows_direction_and_reports_depth() {
 #[test]
 fn traverse_bounds_depth_and_truncates_nearest_first() {
     for_each_adapter(|store| {
-        // Hash-selected fixture, the same trick the Cozo adapter's own parity test uses: the
+        // Hash-selected fixture, the trick this suite uses wherever id order could mask a bug: the
         // candidate whose derived id sorts FIRST is planted as the depth-2 grandchild. Under a
         // regression to id-order truncation it would necessarily surface and push a depth-1
         // neighbour out, so this case fails every time rather than only when the hashes happen to

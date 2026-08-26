@@ -31,9 +31,10 @@ Sections 12-14):
 3. **The write path is provisional.** The entity upsert is read-merge-write under a coarse
    `write_guard` mutex, and the incremental projection applies arrival-order interim rules that
    only `reproject` corrects (the F5 transient window).
-4. **Latent conditions come due with aliases** (architecture.md Section 14): Cozo keyword search
-   does not match aliases (only InMemory does - latent while aliases are empty), and the entity
-   embedding is computed once when absent, so alias growth would leave it silently stale.
+4. **Latent conditions came due with aliases** (architecture.md Section 14): keyword search matching
+   aliases and recomputing the entity embedding when the name text changes were both latent while
+   aliases stayed empty, and both were repaid once aliases began to accumulate - alias matching is now
+   a port conformance case, so every adapter inherits it.
 5. **T-Box conflicts resolve silently.** The type glossary is HLC-last-write-wins per (target,
    name) with no conflict signal - the same silence M3a removed for entity kinds.
 

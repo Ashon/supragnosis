@@ -1,4 +1,6 @@
-//! Full M2 end-to-end verification: fastembed (ONNX) + Cozo HNSW (native ANN) + hybrid search.
+//! Full M2 end-to-end verification: fastembed (ONNX) embeddings + hybrid search over the redb store.
+//! redb has no ANN index, so the semantic leg is a scan - see architecture.md Section 6 for what that
+//! costs and where it stops being acceptable.
 //! Compiled only under the `fastembed` feature, and excluded from the default run because it requires a model download/inference.
 //! Manual verification: `cargo test -p supragnosis-cli --features fastembed -- --ignored`
 #![cfg(feature = "fastembed")]
