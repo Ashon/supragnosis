@@ -66,6 +66,40 @@ pub struct NegotiatedSurface {
 pub type NegotiatedSurfaces =
     std::sync::Arc<std::sync::RwLock<std::collections::BTreeMap<String, NegotiatedSurface>>>;
 
+/// Which servers a workspace's round should reach, and which were left out because they said so.
+#[derive(Debug, Clone, Default)]
+pub struct Routed {
+    /// Server urls to consult, in the order they were configured.
+    pub consult: Vec<String>,
+    /// Server urls skipped because their negotiated surface does not admit this workspace.
+    pub skipped: Vec<String>,
+}
+
+/// Narrow a round to the hosts that admit the workspace (federation.md 6e, F21 clause 2).
+///
+/// **A host is skipped only when it said so.** `admits: None` means unknown - the host has not
+/// answered since this process started, or its last check failed - and skipping on that would turn
+/// "not asked yet" into "not allowed", which is the absence-as-negation reading P5 exists to
+/// prevent and the empty-versus-unknown collapse F12 forbids. So unknown is consulted, and the
+/// host's own `403` remains the answer if it really does not admit the workspace: the loud failure
+/// stays reachable rather than being replaced by a quiet skip.
+///
+/// Narrowing only. The map can remove a host from a round; nothing here can add a workspace to what
+/// this node shares. A host's answer is its claim about access, and letting it widen local policy
+/// would turn a read authorization into a write authorization - P18 on the outbound axis.
+pub fn route(links: &[ServerLink], surfaces: &NegotiatedSurfaces, workspace: &str) -> Routed {
+    let map = surfaces.read().ok();
+    let mut r = Routed::default();
+    for link in links {
+        let admits = map.as_ref().and_then(|m| m.get(&link.url)).and_then(|s| s.admits.as_ref());
+        match admits {
+            Some(list) if !list.iter().any(|w| w == workspace) => r.skipped.push(link.url.clone()),
+            _ => r.consult.push(link.url.clone()),
+        }
+    }
+    r
+}
+
 /// The disagreement between what this node shares and what a host admits.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SurfaceDiff {
@@ -442,6 +476,41 @@ mod tests {
             m.insert(obs.id.clone(), (obs.provenance.len(), origins, obs.derived_from.clone()));
         }
         m
+    }
+
+    /// Routing skips a host only on an explicit refusal, never on not knowing.
+    #[test]
+    fn routing_narrows_on_a_refusal_and_never_on_ignorance() {
+        let link = |u: &str| ServerLink { url: u.into(), auth_token: "t".into() };
+        let links = vec![link("https://a"), link("https://b"), link("https://c")];
+        let surfaces: NegotiatedSurfaces = Default::default();
+        {
+            let mut m = surfaces.write().unwrap();
+            // a admits it, b answered and does not, c has never answered.
+            m.insert(
+                "https://a".into(),
+                NegotiatedSurface { admits: Some(vec!["ws".into()]), negotiated_at: Some(1) },
+            );
+            m.insert(
+                "https://b".into(),
+                NegotiatedSurface { admits: Some(vec!["other".into()]), negotiated_at: Some(1) },
+            );
+        }
+        let r = route(&links, &surfaces, "ws");
+        assert_eq!(r.consult, ["https://a", "https://c"], "unknown is consulted, not skipped");
+        assert_eq!(r.skipped, ["https://b"], "only the host that said no is skipped");
+
+        // An empty grant set is an answer - "admitted, may read nothing" - so it does narrow.
+        {
+            let mut m = surfaces.write().unwrap();
+            m.insert(
+                "https://c".into(),
+                NegotiatedSurface { admits: Some(vec![]), negotiated_at: Some(1) },
+            );
+        }
+        let r = route(&links, &surfaces, "ws");
+        assert_eq!(r.consult, ["https://a"]);
+        assert_eq!(r.skipped, ["https://b", "https://c"]);
     }
 
     /// The three buckets, and the reason there are three. An intersection would report the first

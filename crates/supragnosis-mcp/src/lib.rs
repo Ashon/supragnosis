@@ -427,7 +427,18 @@ impl SupragnosisServer {
                         .workspace
                         .clone()
                         .unwrap_or_else(|| self.engine.default_workspace().to_string());
-                    for link in &ctx.servers {
+                    // Ask only hosts that admit this workspace, and name the ones left out. Without
+                    // the naming a narrowed recall is indistinguishable from an empty world, which is
+                    // the reading P5 exists to prevent (N5); without the narrowing every non-
+                    // admitting host answers 403 and the misses drown in denials.
+                    let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws_name);
+                    if !routed.skipped.is_empty() {
+                        remote_results.push(serde_json::json!({
+                            "skipped": routed.skipped,
+                            "why": "these hosts do not admit this workspace - not consulted, not empty",
+                        }));
+                    }
+                    for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
                         let server = &link.url;
                         let client = match supragnosis_sync::http::SyncClient::new(
                             server,
@@ -892,8 +903,12 @@ impl SupragnosisServer {
             return sync_unconfigured();
         };
         let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
+        // Narrow the round to hosts that admit this workspace, and say which were left out. The two
+        // halves ship together on purpose: filtering alone replaces a host's loud `403` with a
+        // silent skip, which trades a legible failure for an invisible one (N5).
+        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
         let mut results = Vec::new();
-        for link in &ctx.servers {
+        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
             let server = &link.url;
             let client = match supragnosis_sync::http::SyncClient::new(
                 server,
@@ -967,7 +982,7 @@ impl SupragnosisServer {
             Err(e) => serde_json::json!({"error": format!("join: {e}")}),
         };
         to_json(
-            &serde_json::json!({"workspace": ws, "pulled": results, "reprojected": reprojected}),
+            &serde_json::json!({"workspace": ws, "pulled": results, "skipped": routed.skipped, "reprojected": reprojected}),
         )
     }
 
@@ -996,8 +1011,12 @@ impl SupragnosisServer {
                 return err_json(&format!("backfill stamping failed: {e}"));
             }
         }
+        // Narrow the round to hosts that admit this workspace, and say which were left out. The two
+        // halves ship together on purpose: filtering alone replaces a host's loud `403` with a
+        // silent skip, which trades a legible failure for an invisible one (N5).
+        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
         let mut results = Vec::new();
-        for link in &ctx.servers {
+        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
             let server = &link.url;
             let client = match supragnosis_sync::http::SyncClient::new(
                 server,
@@ -1052,7 +1071,7 @@ impl SupragnosisServer {
                 }
             }
         }
-        to_json(&serde_json::json!({"workspace": ws, "pushed": results}))
+        to_json(&serde_json::json!({"workspace": ws, "pushed": results, "skipped": routed.skipped}))
     }
 }
 
