@@ -289,24 +289,24 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the negotiated answer is never written to the observation log",
-            Evidence::Deferred(
-                "it holds because no code writes it, which is not the same as being enforced - nothing would fail if someone observed it tomorrow. Owed a guard in M4 Phase 7 rather than left resting on absence",
-            ),
+            Evidence::Scenario(&["routing_on_the_negotiated_map_records_nothing"]),
         ),
         c(
             "an unreachable host yields unknown, never an empty grant set",
-            Evidence::Deferred(
-                "the empty-versus-absent distinction is exercised by the surface-difference case, but the unreachable path lives in the daemon's background loop and nothing exercises it. Owed in M4 Phase 7",
-            ),
+            Evidence::Scenario(&["a_failed_check_records_unknown_and_not_an_empty_grant"]),
         ),
         c(
             "a response the map narrowed names the hosts it skipped",
             Evidence::Scenario(&["a_narrowed_round_names_the_hosts_it_skipped"]),
         ),
         c(
-            "the map carries its negotiation time and is never a premise for a durable conclusion",
+            "an answer carries the time it arrived, and only an answer does",
+            Evidence::Scenario(&["a_failed_check_records_unknown_and_not_an_empty_grant"]),
+        ),
+        c(
+            "nothing durable is stacked on the map",
             Evidence::Deferred(
-                "the timestamp is recorded and published, but nothing consumes it and no case pins that a stale entry cannot be stacked on. Owed with the routing step, M4 Phase 7",
+                "the half that can be checked - a reader can always date what it acts on - now is. This half is a claim about every future consumer, and the only consumer today re-derives per round rather than caching, so there is nothing yet for a case to catch doing otherwise. Revisit when something wants to keep a routing decision",
             ),
         ),
     ]),
