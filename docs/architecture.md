@@ -161,7 +161,8 @@ sequenceDiagram
 ### 4.2 Query
 - `search`: **vector (HNSW) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
 - `traverse`: n-hop traversal from an entity (relation-type filter). How the walk is expressed is the
-  adapter's business - recursive Datalog on Cozo, an explicit BFS on redb and in-memory - while the
+  adapter's business - an explicit BFS in both shipping adapters, a recursive Datalog rule in the
+  file-backed adapter that preceded them - while the
   port fixes what it must return: (depth, id) order, nearest-first truncation, and an unprojected
   endpoint traversed through but never described (Section 6, port conformance).
 
@@ -539,9 +540,10 @@ HTTP-over-UDS client (`curl --unix-socket`).
 ## 12. Roadmap (phases)
 
 1. **M0 - Skeleton [o]**: workspace scaffold, `core` models, in-memory store, an `observe`+`get_entity`+`search` (keyword) stdio MCP server. (rmcp 0.16, E2E handshake verified)
-2. **M1 - Embedded store [o]**: Cozo adapter (observations/entities/relations), `traverse` (recursive Datalog), file persistence. (E2E verified)
-3. **M2 - Semantic search [o]**: `EmbeddingProvider` (fastembed BGE-small-en-v1.5, 384d) + Cozo native
-   HNSW, RRF fusion of keyword/semantic-observation/semantic-entity lists, 1-hop graph enrichment.
+2. **M1 - Embedded store [o]**: file-backed adapter (observations/entities/relations), `traverse`,
+   file persistence. (E2E verified. Delivered on Cozo/RocksDB; replaced by redb in v0.2.0 - Section 6.)
+3. **M2 - Semantic search [o]**: `EmbeddingProvider` (fastembed BGE-small-en-v1.5, 384d) + a native
+   HNSW index in the then-current store, RRF fusion of keyword/semantic-observation/semantic-entity lists, 1-hop graph enrichment.
    Recall regression set in place (`recall_eval.rs`: mean recall@5 >= 0.9, entity-gold subset >= 0.99).
 4. **M3 - Resolution/schema/bitemporal: M3a [o] and M3b [o] done (M3b except IR6), M3c open** (split into slices):
    - **M3a - belief resolution [o] ([resolution.md](resolution.md))**: a replaceable
@@ -627,10 +629,12 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - The first federation topology: **hub-and-spoke**. [o] Resolved in M4 - a hub gives always-available
   relay and catch-up between nodes that are never online together, and the replication primitive is
   topology-independent, so peer/mesh reuses it unchanged (federation.md).
-- Store: **CozoDB** confirmed in practice. [o] A second file-backed adapter, **redb**, now ships
-  opt-in (Section 6): what the Datalog was actually spent on turned out to be one recursive query,
-  and Cozo's C++ RocksDB bridge is what puts `clang` in the build. Oxigraph remains the documented
-  alternative; no RDF/SPARQL requirement has materialized.
+- Store: **redb** - settled, and the second answer to this question. [o] The file-backed store was
+  Cozo/RocksDB through v0.1.21 and is redb from v0.2.0 (Section 6): what the Datalog was actually
+  spent on turned out to be one recursive query, while its C++ RocksDB bridge was the only reason the
+  build needed `clang` - which it no longer does. Oxigraph remains the documented alternative; no
+  RDF/SPARQL requirement has materialized. That the swap left the knowledge model untouched is the
+  standing evidence for Principle 12.
 - The "current belief" policy on conflict: **tier-weighted** (effective tier -> ordering HLC -> id),
   as a swappable strategy per Principle 1; confidence is carried verbatim but never selects (the
   Principle 2 combining rule, stated explicitly). [o] Decided and implemented in M3a
@@ -1009,10 +1013,10 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
    deployment single-principal, which is the premise the rest of this ledger already rests on.
 
 **Repaid by M3b (formerly M3 latent conditions)**
-- Cozo keyword-search alias parity - REPAID: the Cozo search matches aliases as InMemory does (an
-  alias pass over the workspace's entity rows), guarded by `cozo_keyword_matches_aliases` and, since
-  the port gained one conformance suite, by `search_matches_canonical_name_and_alias` on every
-  adapter. Now that aliases actually accumulate (IR1), the condition became reachable and was met in
+- Keyword-search alias parity - REPAID: the file-backed search matches aliases as InMemory does (an
+  alias pass over the workspace's entity rows), guarded by `search_matches_canonical_name_and_alias`
+  in the port conformance suite, so every adapter inherits it. (The original per-adapter guard was
+  named here long after it was gone; the conformance case is the one that runs.) Now that aliases actually accumulate (IR1), the condition became reachable and was met in
   the same slice.
 - Entity-embedding recomputation on text change - REPAID (IR4): `project_entities` recomputes the
   name-meaning vector only when `canonical_name + aliases` changed since the stored row, so it is

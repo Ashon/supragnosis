@@ -372,14 +372,17 @@ self-refinement agenda.
 ### Principle 12. Minimal Encoding Bias (Minimal Encoding Bias)
 
 **The knowledge model is not tied to a particular store/representation format.** The model is defined
-at the knowledge level, and whether the encoding is Cozo Datalog or RDF is the adapter's concern.
+at the knowledge level, and whether the encoding is a B-tree, Datalog or RDF is the adapter's concern.
 
 - **Rationale**: The store choice (architecture.md section 6) is a decision that can change. If
   encoding leaks into the model, the store holds the domain hostage.
 - **Enforcement**:
   - `supragnosis-core` does not depend on any store crate (dependency direction is enforced).
-  - It is a violation if a Cozo-specific concept (e.g., a particular index structure) is exposed in
-    the domain model / MCP surface. Should the `query` passthrough tool ever be opened it is the only
+  - It is a violation if a store-specific concept (e.g., a particular index structure) is exposed in
+    the domain model / MCP surface. This clause has been paid once rather than merely asserted: the
+    file-backed store was replaced wholesale (Datalog/RocksDB -> an embedded B-tree, architecture.md
+    Section 6) and the knowledge model did not move - the same port, held by one conformance suite.
+    A principle that survived its store being swapped is the evidence this clause asks for. Should the `query` passthrough tool ever be opened it is the only
     permitted exception, and then only documented as an "escape hatch for advanced users". (It has
     never been opened - whether to open it, and under what authorization guard, is still an open
     decision in architecture.md Section 13. This clause used to describe the tool as existing.)
@@ -572,7 +575,7 @@ and the dependency direction always points from the outside (adapters) to the in
   replacing a part becomes a rewrite of the asset. (It is also the structural enforcement mechanism for
   Principle 12.)
 - **Enforcement**:
-  - It is a violation if an IO crate (tokio, cozo, reqwest, etc.) appears in `core`'s `Cargo.toml`.
+  - It is a violation if an IO crate (tokio, redb, reqwest, etc.) appears in `core`'s `Cargo.toml`.
   - All engine logic must be unit-testable with an in-memory adapter alone.
 
 ### Principle 21. A Narrow, Clear Surface for the LLM (Narrow, LLM-Legible Surface)
