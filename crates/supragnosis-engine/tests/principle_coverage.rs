@@ -301,9 +301,7 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a response the map narrowed names the hosts it skipped",
-            Evidence::Deferred(
-                "the three daemon fan-out sites now carry a `skipped` list, so the clause holds in code - but no case asserts the response SHAPE, only that the routing decision is right. Owed a surface test in M4 Phase 7's remainder",
-            ),
+            Evidence::Scenario(&["a_narrowed_round_names_the_hosts_it_skipped"]),
         ),
         c(
             "the map carries its negotiation time and is never a premise for a durable conclusion",
