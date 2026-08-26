@@ -87,7 +87,49 @@ precedence rule - a precedence rule is a silent degrade wearing a specification.
 validation is where F14's unmet leg is repaid: a node whose own id sits in its own allowlist starts
 without complaint today, and the check belongs beside the one that reads those entries.
 
-## 6. Ordering
+## 6. Editing this configuration from a console
+
+The per-peer narrowing act (federation.md 6a) already writes `supragnosis.toml` from the viewer:
+`toml_edit` parses the file into a mutable document, one value is replaced, and the document is
+written back with the operator's comments and layout intact. Nothing about that machinery is specific
+to narrowing - it edits any key - so the question of whether a console may manage the rest of this
+configuration is a policy question, not a capability one.
+
+**The answer given in 6a does not transfer to the local desktop shell, and reading it as if it did was
+a mistake worth recording.** 6a's argument is about a threat: an act that can only narrow means a
+mistake, or a console left open, can only share less. That distinguishes a console from a file editor
+only where the console is reachable by someone who could not edit the file. On the hub that is exactly
+the case - the human surface is a network surface authenticated by enrolled user keys (F19), a
+different boundary from the file - and 6a is written for the hub. Locally it is not: the viewer is a
+unix socket at mode 0600, so whoever can reach it is whoever can write the config, the same OS
+account. Applying the hub's asymmetry to the local shell forbids nothing an attacker could not
+already do and costs the operator a surface for no gain.
+
+What does constrain a console editor is elsewhere, and it is P5 rather than P17.
+
+- **Writing works; taking effect mostly does not.** `fed::load` runs at exactly two points in the
+  daemon: startup, and the narrowing handler's re-read. That handler feeds one live structure, the
+  admission directory. Every other value - the server links, their credentials, the outbound share
+  list, the origin keys - is a startup snapshot cloned into the running state. A console that edits
+  them and reports success reports an application that did not happen, and the store is single-process
+  so the restart that would apply it is not free. Either a value gets a live path or the surface says
+  "on restart"; what it must not do is stay silent about which.
+- **Validate before writing, not after.** The narrowing handler writes first and re-reads second, and
+  its own error string admits the order: "narrowed on disk, but re-reading the config failed". For one
+  narrow act that is survivable. A general editor inheriting that order can leave a document on disk
+  that the next start refuses - unknown keys, a bind that violates F10, two server shapes at once -
+  which turns one console mistake into a node that will not come up. The candidate document has to
+  parse into the config type before it replaces the file.
+- **A credential is write-only on this surface.** The status blob already declines to publish
+  `bearer_hash`, on the grounds that a credential-shaped field with no reader is only a liability
+  (P17/P18). A console may send a token; it must not be able to read one back.
+
+Ordering follows from this. The three-bucket difference (Section 3) is what makes a configuration
+editor worth having, because it puts the host's own answer beside the file being edited. Without it a
+console edits blind against local belief - which is the state the drift view is in today, and the
+reason a workspace the hub does not admit simply vanishes from it.
+
+## 7. Ordering
 
 Three steps. Each is useful alone, each lands on a green tree, and only the third changes behaviour.
 The sequence is not the order the work was first imagined in - filtering was the interesting part and
@@ -124,7 +166,7 @@ adapter the port conformance suite would use broadly) are independent. F11's cla
 Step 3, since a round that consults a map is no longer the "one small delta exchange" its deferral
 rests on.
 
-## 7. Invariants
+## 8. Invariants
 
 These are implementation obligations. What must hold is F21; these are what the code has to do so
 that it does.
@@ -142,7 +184,7 @@ that it does.
 | **N9** | A node whose own id appears in its own allowlist is refused at startup (F14). |
 | **N10** | What a host advertises is the caller's entitlement and never the host's inventory. This is a property of the existing handler and must survive the change (F21.1, P17). |
 
-## 8. Closure map
+## 9. Closure map
 
 | Demand | Where it is answered |
 |---|---|
@@ -154,9 +196,12 @@ that it does.
 | P16 - a response says which surface, and which hosts, answered it | Section 4; N5 |
 | P16 - convergence and monotonicity are different properties | Section 3; N7 |
 | P20 - adapters depend inward, never on each other | Section 2 |
-| P21 - a recurring intent, not a new tool: `sync_status` already reports the share list | Section 6 step 2 |
-| F11 - sync never blocks a tool handler | Section 6 step 2; N1 |
+| P21 - a recurring intent, not a new tool: `sync_status` already reports the share list | Section 7 step 2 |
+| F11 - sync never blocks a tool handler | Section 7 step 2; N1 |
 | F12 - a failure is reported as a failure, never as empty | Section 4; N4 |
 | F14 - the sync role refuses a colliding node id | Section 5; N9 |
 | F21 - all six clauses | Sections 3, 4, 5; N1-N10 |
+| P5 - a console edit that does not take effect must say so | Section 6 |
+| P5 - a written configuration parses, or it is not written | Section 6 |
+| P17/P18 - a credential-shaped field has no reader on a status surface | Section 6 |
 | Host discovery, sub-workspace grain, peer admission | Out of scope by federation.md Section 11 |
