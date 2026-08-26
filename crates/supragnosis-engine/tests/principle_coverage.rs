@@ -922,6 +922,19 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              blanket label but will mislabel reviewed merges the moment there are two principals",
         )),
     ]),
+    (24, "Operational Posture", &[
+        c("a subsystem that cannot come up leaves the node serving, and says what it disabled",
+          Evidence::Scenario(&["config_parses_and_rejects_typos"])),
+        c("the workaround reaches the operator's own surface, not only a startup log",
+          Evidence::Scenario(&["a_configuration_workaround_reaches_the_operator_surface"])),
+        c("a workaround narrows without asking only toward sharing less, never toward more",
+          Evidence::Scenario(&["a_node_is_never_its_own_peer_through_either_path"])),
+        c("refusal is reserved for proceeding being worse: a wrong answer, or an unauthorized surface",
+          Evidence::Scenario(&[
+              "bind_guard_enforces_f10",
+              "an_unmigrated_store_is_refused_with_the_way_out",
+          ])),
+    ]),
 ];
 
 /// The principles `docs/principles.md` actually declares, as (number, short name) in document

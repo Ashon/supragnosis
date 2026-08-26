@@ -766,3 +766,53 @@ async fn routing_on_the_negotiated_map_records_nothing() {
     client.cancel().await.ok();
     server.abort();
 }
+
+/// A configuration this build worked around is reported where an operator will pass it.
+///
+/// P24: degrading is allowed, degrading invisibly is not. A startup log scrolls away, so the note
+/// rides `sync_status` - the surface someone checks when asking why nothing is syncing. A degrade
+/// whose only trace was one line at boot has become a silent one a week later, which is what P5
+/// forbids.
+#[tokio::test]
+async fn a_configuration_workaround_reaches_the_operator_surface() {
+    use supragnosis_core::NodeIdentity;
+    use supragnosis_sync::SyncNode;
+
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let note = "[sync] lists 1 server(s) but no auth_token - federation is OFF".to_string();
+    let sync = Arc::new(supragnosis_mcp::SyncContext {
+        node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([4u8; 32]))),
+        share_workspaces: vec!["ws".into()],
+        config_notes: vec![note.clone()],
+        servers: Vec::new(),
+        surfaces: Default::default(),
+        insecure_tls: false,
+        origin_keys: Default::default(),
+        peer_registry: None,
+    });
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .with_sync(sync)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    let res = client
+        .call_tool(CallToolRequestParams::new("sync_status").with_arguments(args(json!({}))))
+        .await
+        .expect("sync_status");
+    let v = tool_json(&res);
+    let notes: Vec<&str> = v["config_notes"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
+        .unwrap_or_else(|| panic!("sync_status carries no `config_notes`: {v}"));
+    assert_eq!(notes, [note.as_str()], "the workaround must be readable here, not only at boot");
+
+    client.cancel().await.ok();
+    server.abort();
+}
