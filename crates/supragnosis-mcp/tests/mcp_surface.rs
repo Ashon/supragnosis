@@ -666,3 +666,101 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
     client.cancel().await.ok();
     server.abort();
 }
+
+/// GIVEN knowledge in the log, WHEN a round is routed on the negotiated map, THEN the log is
+/// byte-identical - nothing about the negotiation was recorded as knowledge.
+///
+/// F21 clause 3. The surface is per-link runtime state, and the reason that matters is Prop B: each
+/// peer sees its own grants, so an observation carrying one would be a node-relative value inside a
+/// structure that has to converge. `sync_pull` rather than `sync_push` on purpose - push stamps via
+/// `backfill` before it exports, which enriches attestations by design (F4), and mixing that in
+/// would make the assertion about the wrong act.
+#[tokio::test]
+async fn routing_on_the_negotiated_map_records_nothing() {
+    use supragnosis_core::{AssertionStore, NodeIdentity};
+    use supragnosis_sync::{NegotiatedSurface, NegotiatedSurfaces, ServerLink, SyncNode};
+
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
+
+    let surfaces: NegotiatedSurfaces = Default::default();
+    {
+        let mut m = surfaces.write().expect("lock");
+        m.insert(
+            "http://127.0.0.1:1".into(),
+            NegotiatedSurface { admits: Some(vec!["ws".into()]), negotiated_at: Some(1) },
+        );
+        m.insert(
+            "http://127.0.0.1:2".into(),
+            NegotiatedSurface { admits: Some(vec!["other".into()]), negotiated_at: Some(1) },
+        );
+    }
+    let sync = Arc::new(supragnosis_mcp::SyncContext {
+        node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]))),
+        share_workspaces: vec!["ws".into()],
+        servers: vec![
+            ServerLink { url: "http://127.0.0.1:1".into(), auth_token: "t".into() },
+            ServerLink { url: "http://127.0.0.1:2".into(), auth_token: "t".into() },
+        ],
+        surfaces,
+        insecure_tls: false,
+        origin_keys: Default::default(),
+        peer_registry: None,
+    });
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .with_sync(sync)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    client
+        .call_tool(CallToolRequestParams::new("observe").with_arguments(args(json!({
+            "content": "knowledge that predates the round",
+            "workspace": "ws",
+            "entities": [{"name": "Alpha", "type": "Concept"}]
+        }))))
+        .await
+        .expect("observe");
+
+    let log_of = |s: &InMemoryStore| {
+        let mut v: Vec<(String, String)> = s
+            .all_observations(Some("ws"))
+            .expect("observations")
+            .into_iter()
+            .map(|o| (o.id.clone(), o.content.clone()))
+            .collect();
+        v.sort();
+        v
+    };
+    let before = log_of(store.as_ref());
+    assert!(!before.is_empty(), "the case is vacuous without knowledge to leave alone");
+
+    let res = client
+        .call_tool(
+            CallToolRequestParams::new("sync_pull")
+                .with_arguments(args(json!({"workspace": "ws"}))),
+        )
+        .await
+        .expect("sync_pull");
+    let v = tool_json(&res);
+    assert!(
+        !v["skipped"].as_array().expect("skipped").is_empty(),
+        "the round must have narrowed: {v}"
+    );
+
+    assert_eq!(
+        before,
+        log_of(store.as_ref()),
+        "a routed round appended nothing: the negotiated surface is link-local state, and an \
+         observation carrying it would be a node-relative value in a structure that must converge"
+    );
+
+    client.cancel().await.ok();
+    server.abort();
+}

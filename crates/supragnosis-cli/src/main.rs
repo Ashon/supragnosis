@@ -727,12 +727,8 @@ fn spawn_fed_status(task: FedStatusTask) {
                         Err(e) => {
                             // Unreachable is *unknown*, never an empty grant set: a host that is
                             // down must not read as a grant that was revoked (F21 clause 4, F12).
-                            if let Ok(mut m) = surfaces.write() {
-                                m.insert(
-                                    server.clone(),
-                                    supragnosis_sync::NegotiatedSurface::default(),
-                                );
-                            }
+                            // The distinction lives in `record_ping`, where a case holds it.
+                            supragnosis_sync::record_ping(&surfaces, server, None, 0);
                             if last.get(server).copied() != Some(false) {
                                 tracing::warn!(%server, error = %e, "hub health check failed");
                             }

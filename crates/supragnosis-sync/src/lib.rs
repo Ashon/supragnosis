@@ -66,6 +66,24 @@ pub struct NegotiatedSurface {
 pub type NegotiatedSurfaces =
     std::sync::Arc<std::sync::RwLock<std::collections::BTreeMap<String, NegotiatedSurface>>>;
 
+/// Record what a host's health check found, as the negotiated surface for that link.
+///
+/// `Some(admits)` is an answer and gets a timestamp; `None` means the check failed, and the entry
+/// becomes **unknown** - not an empty grant set (F21 clause 4). The two are different facts: an
+/// empty list is a host saying "admitted, may read nothing" (6a), while unknown is a host that has
+/// not said anything, and collapsing them renders a host that is down as a grant that was revoked
+/// (F12). The timestamp goes with the answer and only with it, so a reader can always tell how old
+/// what it is acting on is and never mistakes a stale grant for a current one (F21 clause 6).
+pub fn record_ping(surfaces: &NegotiatedSurfaces, url: &str, admits: Option<Vec<String>>, at: u64) {
+    let entry = match admits {
+        Some(list) => NegotiatedSurface { admits: Some(list), negotiated_at: Some(at) },
+        None => NegotiatedSurface::default(),
+    };
+    if let Ok(mut m) = surfaces.write() {
+        m.insert(url.to_string(), entry);
+    }
+}
+
 /// Which servers a workspace's round should reach, and which were left out because they said so.
 #[derive(Debug, Clone, Default)]
 pub struct Routed {
@@ -476,6 +494,49 @@ mod tests {
             m.insert(obs.id.clone(), (obs.provenance.len(), origins, obs.derived_from.clone()));
         }
         m
+    }
+
+    /// A failed check writes unknown, never an empty grant - and only an answer carries a time.
+    #[test]
+    fn a_failed_check_records_unknown_and_not_an_empty_grant() {
+        let surfaces: NegotiatedSurfaces = Default::default();
+        let url = "https://hub";
+
+        // An answer: the list is kept and stamped with when it arrived.
+        record_ping(&surfaces, url, Some(vec!["ws".into()]), 111);
+        {
+            let m = surfaces.read().unwrap();
+            let e = m.get(url).expect("entry");
+            assert_eq!(e.admits.as_deref(), Some(&["ws".to_string()][..]));
+            assert_eq!(e.negotiated_at, Some(111), "an answer carries its time (F21 clause 6)");
+        }
+
+        // An empty list is also an answer - "admitted, may read nothing" - and stays distinguishable
+        // from not knowing.
+        record_ping(&surfaces, url, Some(vec![]), 222);
+        {
+            let m = surfaces.read().unwrap();
+            let e = m.get(url).expect("entry");
+            assert_eq!(e.admits.as_deref(), Some(&[][..]), "empty is an answer, not an absence");
+            assert_eq!(e.negotiated_at, Some(222));
+        }
+
+        // A failed check erases the answer rather than emptying it: a host that is down must not
+        // read as one that revoked everything (F21 clause 4, F12).
+        record_ping(&surfaces, url, None, 333);
+        {
+            let m = surfaces.read().unwrap();
+            let e = m.get(url).expect("entry");
+            assert!(e.admits.is_none(), "unreachable is unknown, never an empty grant set");
+            assert!(e.negotiated_at.is_none(), "there is no answer to date");
+        }
+        // And unknown does not narrow, while the empty answer did.
+        assert_eq!(
+            route(&[ServerLink { url: url.into(), auth_token: "t".into() }], &surfaces, "ws")
+                .skipped
+                .len(),
+            0
+        );
     }
 
     /// Routing skips a host only on an explicit refusal, never on not knowing.
