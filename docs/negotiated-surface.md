@@ -162,10 +162,24 @@ panel. It is now named in `local_only`, which is the bucket that exists for it.
 > **negotiation stays there and handlers read the cached map**. This is not a new norm; it is F11
 > applied to work that had not existed yet.
 
-**Step 3 - route, and say what was skipped.** The four fan-out sites - `sync_push`, `sync_pull`,
-federated search, and the CLI's one-shot round - consult the map, and every narrowed response names
-the hosts it consulted and those it skipped. Step 2 first, for the reason Section 4 gives: filtering
-without labelling introduces a silent failure in exchange for removing a loud one.
+**Step 3 - route, and say what was skipped. [done]** The daemon's three fan-out sites - `sync_push`,
+`sync_pull` and federated `search` - consult the map, and each narrowed response carries a `skipped`
+list. The two halves shipped in one change, for the reason Section 4 gives: filtering without
+labelling trades a loud failure for an invisible one.
+
+**A host is skipped only when it said so.** `admits: None` is unknown - not asked yet, or the last
+check failed - and skipping on that would turn "not asked" into "not allowed", the absence-as-
+negation reading P5 forbids and the unknown-versus-empty collapse F12 names. Unknown is consulted,
+so the host's own `403` stays reachable. An empty grant set, by contrast, IS an answer ("admitted,
+may read nothing", 6a) and does narrow.
+
+**The CLI's one-shot round deliberately does not narrow**, which is a departure from this document's
+first plan. `supragnosis sync --workspace X` is an explicit request for one workspace, and narrowing
+it would turn that request into a silent no-op. Worse, the CLI holds no map - there is no health loop
+in a one-shot process - so it would have to ping first to decide whether to advertise, and the
+advertise it was going to make answers `403` with the workspace and the node named. That is strictly
+more information for strictly less work. Narrowing earns its place where a round fans out across
+hosts, not where one command names one target.
 
 **Not in this track.** F11 proper (pollable tasks) and F12's store leg (which wants a fault-injecting
 adapter the port conformance suite would use broadly) are independent. F11's claim gets weaker after
@@ -183,7 +197,9 @@ that it does.
 | **N2** | The map is link-local runtime state and is never written to the observation log. Nothing folds over it, so no proposition depends on it (F21.3). |
 | **N3** | The map may only narrow what this node asks of a host. It never extends `share_workspaces` - a read-authorization answer must not become a write-authorization decision (F21.2). |
 | **N4** | An unreachable host yields *unknown*, never an empty grant set. A host that is down must not read as a grant that was revoked (F21.4, F12). |
-| **N5** | Every response the map narrowed names the hosts consulted and the hosts skipped as not-admitted. Filtering does not ship before labelling (F21.5, P5). |
+| **N5** | Every response the map narrowed names the hosts skipped as not-admitted. Filtering does not ship before labelling (F21.5, P5). |
+| **N11** | A host is dropped from a round only on an explicit refusal. Unknown is consulted, so "not asked yet" can never present as "not allowed" (P5, F12). |
+| **N12** | Narrowing applies to fan-out, not to a command naming one target. A one-shot round keeps the host's own answer, which says more than a skip (P5). |
 | **N6** | The difference is reported in three buckets and never as the intersection, which would hide the misconfiguration that produced it. |
 | **N7** | The map carries the time it was negotiated and is never a premise for a durable conclusion (F21.6). |
 | **N8** | Two configuration shapes present at once is a startup failure, not a precedence rule (P5). |
@@ -206,7 +222,8 @@ that it does.
 | F11 - sync never blocks a tool handler | Section 7 step 2; N1 |
 | F12 - a failure is reported as a failure, never as empty | Section 4; N4 |
 | F14 - the sync role refuses a colliding node id | Section 5; N9 |
-| F21 - all six clauses | Sections 3, 4, 5; N1-N10 |
+| F21 - all six clauses | Sections 3, 4, 5; N1-N12 |
+| P5 - unknown is not a refusal, and a narrowed answer says so | Section 7 step 3; N11, N12 |
 | P5 - a console edit that does not take effect must say so | Section 6 |
 | P5 - a written configuration parses, or it is not written | Section 6 |
 | P17/P18 - a credential-shaped field has no reader on a status surface | Section 6 |

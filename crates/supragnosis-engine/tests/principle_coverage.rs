@@ -276,9 +276,7 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a peer's answer may reduce what this node asks of it and never extend the share list",
-            Evidence::Deferred(
-                "nothing routes on the answer yet, so there is no narrowing to constrain. Lands with the routing step of M4 Phase 7, which is where the widening direction first becomes reachable",
-            ),
+            Evidence::Scenario(&["routing_narrows_on_a_refusal_and_never_on_ignorance"]),
         ),
         c(
             "the negotiated answer is never written to the observation log",
@@ -293,9 +291,9 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             ),
         ),
         c(
-            "a response the map narrowed names the hosts it consulted and those it skipped",
+            "a response the map narrowed names the hosts it skipped",
             Evidence::Deferred(
-                "no response is narrowed yet - the routing step that would narrow one is the step that owes this label, and shipping the two apart is what turns a loud 403 into a silent skip. M4 Phase 7",
+                "the three daemon fan-out sites now carry a `skipped` list, so the clause holds in code - but no case asserts the response SHAPE, only that the routing decision is right. Owed a surface test in M4 Phase 7's remainder",
             ),
         ),
         c(
