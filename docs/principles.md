@@ -721,6 +721,15 @@ Questions to apply quickly during design/PR review:
 - Is there a path that makes self-approval possible? (Principle 23)
 - Do we measure recall quality? - search/recall changes are verified with a regression eval set in the
   style of a memory benchmark (LongMemEval-like).
+- Does this change assert something about the system that another document contradicts? The coverage
+  registry checks that a clause declares evidence, never that prose is true, so a document disagreeing
+  with a document is invisible to every gate. It has happened twice: a store removal left three design
+  documents describing the store it removed, and a federation section claimed a default the invariant
+  one page later reversed.
+- Does a comment state a premise more strongly than the code guarantees? The recurring shape is a
+  comment that is right about the common case and silent about the path that breaks it - "taking the
+  first is not a choice between candidates" was true of an observed entity and false after a merge
+  that compares no workspaces. A premise worth stating is worth naming the case that ends it.
 
 ### B.1 - A checklist is not an enforcement
 
@@ -740,7 +749,7 @@ no fifth:
 | `Scenario` | Named tests demonstrate the clause holds | The tests must exist and run; renaming, deleting, or ignoring one reports the clause as unguarded |
 | `Structural` | Violation is unrepresentable by construction (a crate graph, an exhaustive `match`) | Must state the mechanism - "structural" without one is an untested clause wearing a label |
 | `Characterized` | The clause does NOT hold; named running tests pin the current behavior so that repaying it must rewrite them | The tests must exist and run, and the repayment milestone must be named - a passing characterization test is a record, not an endorsement |
-| `Deferred` | The clause does not hold and nothing pins it | Must name the repayment milestone, so the registry and [architecture.md](architecture.md) Section 14 cannot drift apart on what is owed |
+| `Deferred` | The clause is **not guaranteed**: either it does not hold, or it holds only incidentally and nothing checks it | Must name the repayment milestone, so the registry and [architecture.md](architecture.md) Section 14 cannot drift apart on what is owed |
 
 Rules this imposes:
 
@@ -751,6 +760,12 @@ Rules this imposes:
   a question lives while it is still a judgment; the registry is where it goes when it stops being
   one. Items that stay judgments (is this tool really a recurring intent?) legitimately stay here.
 - **`Deferred` is a debt, not a category.** It names a milestone and is expected to move.
+- **`Deferred` covers "unchecked", not only "unmet".** This wording was too narrow at first and
+  three clauses had nowhere honest to sit: they hold today because no code violates them, which
+  `Scenario` cannot claim (there is no test) and "does not hold" misdescribes. Filing them as
+  not-guaranteed is the accurate reading and needs no fifth state - an unchecked guarantee is a
+  guarantee on paper, which is the whole argument of this section. `holds()` stays false for them
+  deliberately: the registry reports what is *assured*, not what happens to be true this week.
 
 The registry deliberately does not assert a coverage ratio. Pinning a number invites editing the
 number; what it enforces is that no principle is silently unaccounted for.
