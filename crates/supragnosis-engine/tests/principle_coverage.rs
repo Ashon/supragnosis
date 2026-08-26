@@ -108,6 +108,181 @@ const fn c(demands: &'static str, evidence: Evidence) -> Clause {
 /// a failure in this file until it is given an evidence state.
 const PRINCIPLES_DOC: &str = include_str!("../../../docs/principles.md");
 
+/// `docs/federation.md`, embedded for the same reason as the principles document: the invariant set
+/// is read from the normative text, so an invariant added there is a failure here until it is given
+/// an evidence state. This is the coupling the F axis lacked - `every_principle_declares_its_evidence`
+/// parses the principles document only, so F21 could be written into the spec with no accounting at
+/// all, and F1..F20 had never been mapped to their guards either. Several of them turned out to be
+/// guarded by tests nobody had connected to them (F10 by `bind_guard_enforces_f10`), which is the
+/// shape of the debt: not unenforced, unmapped.
+const FEDERATION_DOC: &str = include_str!("../../../docs/federation.md");
+
+/// One row per `F` invariant of federation.md Section 8, in document order.
+///
+/// The clause split follows the invariant's own text: where it enumerates demands (F5, F9, F12, F13,
+/// F14) they are separate rows, for the reason [`Clause`] gives - a conjunction filed as one verdict
+/// reports the met half and hides the other. Where it states a single demand there is one clause.
+const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "sync replicates the observation log, never a projection",
+        Evidence::Structural(
+            "the wire has no representation for a projection: `PullResp` and `PushReq` carry              `Vec<AttestationEvent>` and nothing else, and there is no serializable entity or              relation row in the sync crate, so sending one is not a thing the codec can express",
+        ),
+    )]),
+    (2, &[c(
+        "the content-address id excludes sync metadata, so identical content dedups across nodes",
+        Evidence::Scenario(&["cross_node_identical_id_dedups_and_unions", "observation_id_includes_assertions"]),
+    )]),
+    (3, &[c(
+        "apply is verify -> CAS dedup/absorb -> advance VV -> re-project, and trust never gates it",
+        Evidence::Scenario(&["apply_verifies_rejects_and_stays_idempotent"]),
+    )]),
+    (4, &[c(
+        "provenance is a monotonic enrichment-ordered union: nothing is removed or overwritten",
+        Evidence::Scenario(&[
+            "absorb_union_is_order_independent_and_idempotent",
+            "absorb_stamp_upgrade_supersedes_unstamped_base",
+            "reobservation_absorbs_attestations_and_lineage",
+        ]),
+    )]),
+    (5, &[
+        c(
+            "fold-projections converge continuously with the log, ordered by HLC and not by arrival",
+            Evidence::Scenario(&["types_fold_orders_by_hlc_not_observed_at"]),
+        ),
+        c(
+            "materialized projections converge at re-materialization, over any exchange order",
+            Evidence::Scenario(&["cross_node_reprojection_converges", "two_nodes_converge_under_any_exchange_order"]),
+        ),
+    ]),
+    (6, &[c(
+        "an event with a bad signature, unknown origin key or bad bearer token is never applied",
+        Evidence::Scenario(&[
+            "apply_verifies_rejects_and_stays_idempotent",
+            "signature_roundtrip_verifies_and_tamper_fails",
+            "wire_auth_rejects_bad_token_and_unshared_workspace",
+        ]),
+    )]),
+    (7, &[c(
+        "origin_seq is monotonic per (origin, workspace) and apply is hole-tolerant and idempotent",
+        Evidence::Scenario(&[
+            "seq_continues_after_restart",
+            "two_nodes_converge_under_any_exchange_order",
+            "attestations_since_filters_by_version_vector",
+        ]),
+    )]),
+    (8, &[c(
+        "HLC is monotonic and totally ordered, and an observation orders by its earliest attestation",
+        Evidence::Scenario(&["hlc_is_monotonic_and_merge_lands_after_both", "ordering_hlc_takes_earliest_and_falls_back_to_legacy"]),
+    )]),
+    (9, &[
+        c(
+            "only whitelisted workspaces leave the node, filtered before the boundary",
+            Evidence::Scenario(&["export_respects_share_list_and_vv"]),
+        ),
+        c(
+            "the server enforces per-node access, and the remote read surface obeys the same list",
+            Evidence::Scenario(&["wire_auth_rejects_bad_token_and_unshared_workspace"]),
+        ),
+    ]),
+    (10, &[c(
+        "the sync surface binds non-loopback only with TLS and a non-empty allowlist",
+        Evidence::Scenario(&["bind_guard_enforces_f10", "parse_loopback_addr_accepts_loopback_rejects_public"]),
+    )]),
+    (11, &[c(
+        "sync is a non-blocking pollable task that never blocks a tool handler",
+        Evidence::Deferred(
+            "the sync_* tools ship as ordinary blocking calls - federation.md Section 9 records this              as the P21 remainder, and store work does offload via spawn_blocking, but no test pins              either half. Revisit when a round grows past one small delta exchange",
+        ),
+    )]),
+    (12, &[
+        c(
+            "a transport failure is reported as a failure, never as an empty result",
+            Evidence::Scenario(&["wire_auth_rejects_bad_token_and_unshared_workspace"]),
+        ),
+        c(
+            "a store failure is reported as a failure, never as empty or converged",
+            Evidence::Deferred(
+                "the port returns Result at every call site and `internal()` maps a store error to                  500, but nothing forbids a future caller substituting a default, and no test pins                  it because there is no fault-injecting adapter. Revisit when one exists",
+            ),
+        ),
+    ]),
+    (13, &[
+        c(
+            "a valid signature proves origin, never that the content is well-formed or true",
+            Evidence::Scenario(&["apply_rejects_signed_but_malformed_event"]),
+        ),
+        c(
+            "the effective tier is the receiver's evaluation and never maxes in a remote claim",
+            Evidence::Scenario(&["evaluated_tier_caps_remote_claimed"]),
+        ),
+    ]),
+    (14, &[
+        c(
+            "node_id is derived from the public key and is stable across restarts",
+            Evidence::Scenario(&["node_id_derives_from_public_key_and_is_stable"]),
+        ),
+        c(
+            "the sync role refuses to start on an empty, default or allowlist-colliding node_id",
+            Evidence::Deferred(
+                "no such refusal exists: the identity is always generated, so empty and `localhost`                  are unreachable by construction, but a node whose own id sits in its own allowlist                  starts without complaint. Revisit alongside the M4 Phase 5 allowlist work",
+            ),
+        ),
+    ]),
+    (15, &[c(
+        "a replicated verdict_cast applies only after the I9 and I17 checks, HLC-ordered",
+        Evidence::Deferred(
+            "the verdict fold is pinned by `proposal_open_verdict_fold`, but the cross-node I9/I17              checks are not written - the fold hardcodes the solo self-attested path. Lands with M4              Phase 5 (governance enforcement), which federation.md Phasing already names",
+        ),
+    )]),
+    (16, &[c(
+        "the accept gate is the sole commit path to canon, and a verdict is final once causally stable",
+        Evidence::Deferred(
+            "the gate exists, the log-borne canon policy and the causal-stability watermark do not,              so policy-in-force at a verdict's HLC cannot be computed yet. Lands with M4 Phase 5 -              federation.md 8a says the same about Prop D's premise set",
+        ),
+    )]),
+    (17, &[c(
+        "a governance stakeholder is a principal rather than a host, bound by the canon policy",
+        Evidence::Deferred(
+            "principal identity across nodes rests on the canon policy's principal-to-key binding,              which is M4 Phase 5 work; until then a deployment stays single-principal under the P23              solo exception and the comparison never has two principals to make",
+        ),
+    )]),
+    (18, &[c(
+        "in a multi-principal shared workspace a T-Box change passes the accept gate",
+        Evidence::Deferred(
+            "define_type is ungated working-set last-write-wins today, which the invariant itself              says is tolerable only under the solo exception - and so federated deployment stays              single-principal until the M4 Phase 5 gate exists",
+        ),
+    )]),
+    (19, &[c(
+        "the hub human surface authenticates by enrolled user keys and never accepts an unattributable write",
+        Evidence::Deferred(
+            "there is no human surface yet - the viewer is a local unix socket with no network bind,              so the clause has nothing to govern. Owed the moment that tier opens, which is M4              Phase 3.5 in federation.md Phasing",
+        ),
+    )]),
+    (20, &[c(
+        "a recall verdict and a HumanConfirmed promotion require a principal-signed act",
+        Evidence::Deferred(
+            "surface markers cap a grant today (`verdict_ceiling_by_surface_marker`), which is the              weaker strength (i) story; client-side user-key signatures over the act bytes are M4              Phase 5 work and nothing pins strength (ii) yet",
+        ),
+    )]),
+    (21, &[c(
+        "the negotiated surface is entitlement-scoped, narrowing-only, log-external, three-valued, response-labelled and non-monotonic",
+        Evidence::Deferred(
+            "6e specifies the surface and `ping` already answers with the caller's grants, but no              caller consumes that answer, so none of the six clauses has anything to hold. Lands              with M4 Phase 7, which federation.md Phasing names",
+        ),
+    )]),
+];
+
+/// The invariant numbers `docs/federation.md` Section 8 declares, in document order.
+fn documented_invariants() -> Vec<u8> {
+    FEDERATION_DOC
+        .lines()
+        .filter_map(|l| l.trim_end().strip_prefix("- **F"))
+        .filter_map(|rest| rest.split_once("**"))
+        .filter_map(|(num, _)| num.parse::<u8>().ok())
+        .collect()
+}
+
 /// The design documents, which make "guarded by <test>" claims of their own - test-plan tables in
 /// resolution.md / resolution-identity.md, and the compliance ledger in architecture.md. Those
 /// claims are the same shape of promise as this registry and were rotting the same way: five names
@@ -863,11 +1038,76 @@ fn declared_scenarios_exist() {
             }
         }
     }
+    for (n, clauses) in FEDERATION_REGISTRY {
+        for cl in *clauses {
+            let (tests, kind) = match &cl.evidence {
+                Evidence::Scenario(t) => (*t, "Scenario"),
+                Evidence::Characterized(t, _) => (*t, "Characterized"),
+                Evidence::Structural(_) | Evidence::Deferred(_) => continue,
+            };
+            assert!(
+                !tests.is_empty(),
+                "F{n} files \"{}\" as {kind} but names no test - use Deferred instead",
+                cl.demands
+            );
+            for t in tests {
+                let why = match declares(t) {
+                    Declared::Running => continue,
+                    Declared::NotFound => "no such function (renamed, deleted, or a typo here)",
+                    Declared::NotATest => "exists but has no #[test] attribute, so it never runs",
+                    Declared::Ignored => "is #[ignore]d, so a plain `cargo test` skips it",
+                };
+                broken.push(format!("F{n} \"{}\" -> {t}: {why}", cl.demands));
+            }
+        }
+    }
     assert!(
         broken.is_empty(),
         "declared scenario tests that are not running evidence:\n  {}",
         broken.join("\n  ")
     );
+}
+
+/// The F axis of the same coupling: an invariant written into `docs/federation.md` Section 8 has no
+/// evidence state until someone gives it one, and this fails until they do.
+///
+/// The hole this closes is not hypothetical. F21 was added to the spec in this same branch and
+/// nothing anywhere objected, because the only completeness check read the principles document.
+#[test]
+fn every_invariant_declares_its_evidence() {
+    let documented = documented_invariants();
+    assert!(
+        documented.len() > 10,
+        "parsed {} invariants out of docs/federation.md - the list format changed and this registry \
+         is no longer reading the document it claims to mirror",
+        documented.len()
+    );
+    for (i, n) in documented.iter().enumerate() {
+        assert_eq!(
+            *n,
+            i as u8 + 1,
+            "docs/federation.md must number its invariants contiguously from 1: entry {i} is F{n}"
+        );
+    }
+    assert_eq!(
+        FEDERATION_REGISTRY.len(),
+        documented.len(),
+        "docs/federation.md declares {} invariants, the registry has {} rows - an invariant was \
+         added or removed and has no evidence state",
+        documented.len(),
+        FEDERATION_REGISTRY.len()
+    );
+    for ((n, clauses), dn) in FEDERATION_REGISTRY.iter().zip(&documented) {
+        assert_eq!(n, dn, "the registry must mirror the document: registry F{n}, document F{dn}");
+        assert!(!clauses.is_empty(), "F{n} declares no clause");
+        for cl in *clauses {
+            assert!(
+                cl.demands.len() > 20,
+                "F{n}: a clause must state the demand it is evidence for, not a label: {:?}",
+                cl.demands
+            );
+        }
+    }
 }
 
 /// A backtick-quoted identifier in a design document, and whether the document excused it from
@@ -1047,6 +1287,28 @@ fn structural_and_deferred_states_are_justified() {
             }
         }
     }
+    for (n, clauses) in FEDERATION_REGISTRY {
+        for cl in *clauses {
+            let d = cl.demands;
+            match &cl.evidence {
+                Evidence::Scenario(_) => {}
+                Evidence::Structural(why) => assert!(
+                    why.len() > 60,
+                    "F{n} \"{d}\": Structural needs the mechanism that makes violation unrepresentable"
+                ),
+                Evidence::Characterized(_, why) | Evidence::Deferred(why) => {
+                    assert!(
+                        why.len() > 60,
+                        "F{n} \"{d}\": an unmet clause needs a reason and a repayment point"
+                    );
+                    assert!(
+                        repayment_named(why),
+                        "F{n} \"{d}\": an unmet clause must name where it is repaid"
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// The coverage summary, printed with `--nocapture`. Not an assertion: the ratio is a fact about
@@ -1092,6 +1354,51 @@ fn report_principle_coverage() {
          {pinned} pinned-but-unmet / {unguarded} unmet-and-unpinned",
         REGISTRY.len()
     );
+
+    // The same accounting for the federation invariants. Reported separately rather than summed in,
+    // because the two documents answer different questions - principles say what the system must be,
+    // invariants say what federation must preserve - and one blended ratio would hide that most of
+    // the F debt is a single milestone rather than a scatter.
+    let (mut f_guarded, mut f_structural, mut f_pinned, mut f_unguarded) = (0, 0, 0, 0);
+    let mut f_owed: Vec<String> = Vec::new();
+    println!("\ndocs/federation.md Section 8 - invariants");
+    for (n, clauses) in FEDERATION_REGISTRY {
+        println!("  F{n}");
+        for cl in *clauses {
+            let mark = match &cl.evidence {
+                Evidence::Scenario(t) => {
+                    f_guarded += 1;
+                    format!("guard    ({} tests)", t.len())
+                }
+                Evidence::Structural(_) => {
+                    f_structural += 1;
+                    "structural".to_string()
+                }
+                Evidence::Characterized(t, _) => {
+                    f_pinned += 1;
+                    format!("OWED     (pinned by {} test)", t.len())
+                }
+                Evidence::Deferred(_) => {
+                    f_unguarded += 1;
+                    "OWED     (nothing pins it)".to_string()
+                }
+            };
+            println!("       {mark:<28} {}", cl.demands);
+            if !cl.evidence.holds() {
+                f_owed.push(format!("F{n:02} {}", cl.demands));
+            }
+        }
+    }
+    let f_total = f_guarded + f_structural + f_pinned + f_unguarded;
+    println!(
+        "\n{f_total} clauses over {} invariants: {f_guarded} guarded / {f_structural} structural / \
+         {f_pinned} pinned-but-unmet / {f_unguarded} unmet-and-unpinned",
+        FEDERATION_REGISTRY.len()
+    );
+    println!("\nWhat federation promises and this build does not enforce yet ({}):", f_owed.len());
+    for o in &f_owed {
+        println!("  {o}");
+    }
     println!(
         "\nWhat the principles ask for and this system does not do yet ({}):",
         owed.len()
