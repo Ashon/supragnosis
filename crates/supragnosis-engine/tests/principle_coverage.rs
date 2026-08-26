@@ -310,6 +310,10 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // trust-weighted recall, P23's effect-less `recall` kind), so the tests it eventually names
     // will be cited from three registry rows rather than one.
     ("docs/consolidation.md", include_str!("../../../docs/consolidation.md")),
+    // Listed on the day it was written rather than the day it grows a guard, like the three above.
+    // It carries one difference: the invariant it implements, F21, is already a registry row, so the
+    // first test it names has somewhere to be cited FROM as well as checked against.
+    ("docs/negotiated-surface.md", include_str!("../../../docs/negotiated-surface.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
