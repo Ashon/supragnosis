@@ -314,9 +314,20 @@ fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
 /// Detection is `CURRENT`, the file RocksDB always writes and redb never does. A bare directory is
 /// not enough - an empty `~/.supragnosis/db` left behind by a completed migration must not block a
 /// clean start forever.
+///
+/// Two locations, because the Cozo adapter did not put the marker where the first version of this
+/// function looked for it: it handed RocksDB a `data` subdirectory of the configured dir and kept
+/// `manifest` beside it, so a real store has `data/CURRENT`. Checking only the top level made the
+/// guard match nothing on any store it was written to catch. The flat form stays accepted, since a
+/// store that was moved or unpacked by hand is still one.
 fn legacy_cozo_store_at(data_dir: &str) -> Option<std::path::PathBuf> {
     let dir = std::path::Path::new(data_dir);
-    dir.join("CURRENT").is_file().then(|| dir.to_path_buf())
+    for marker in [dir.join("data").join("CURRENT"), dir.join("CURRENT")] {
+        if marker.is_file() {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
 }
 
 /// Refuses to start when an un-migrated Cozo store is present and the redb store does not yet exist.
@@ -338,8 +349,15 @@ fn refuse_unmigrated_store(cfg: &Config) -> Result<()> {
     if redb_path(&cfg.data_dir).exists() {
         return Ok(());
     }
-    let legacy = default_data_dir_for("cozo");
-    let Some(found) = legacy_cozo_store_at(&legacy) else {
+    // The configured dir first. A node that was ever told where to keep its data - `SUPRAGNOSIS_DATA_DIR`
+    // in a systemd unit is the ordinary case - has its store there and not under the default, so a
+    // guard that consulted only the default was blind on exactly the deployments that had been
+    // administered. Checking the configured dir is also what makes the redb-exists skip above
+    // symmetric: that test already reads `cfg.data_dir`.
+    let default_legacy = default_data_dir_for("cozo");
+    let Some(found) =
+        legacy_cozo_store_at(&cfg.data_dir).or_else(|| legacy_cozo_store_at(&default_legacy))
+    else {
         return Ok(());
     };
     anyhow::bail!(
@@ -2320,18 +2338,76 @@ mod legacy_store_guard_tests {
     /// A RocksDB directory is recognised by `CURRENT`, which redb never writes. A directory that
     /// merely exists is not a store: an empty `~/.supragnosis/db` left behind after a completed
     /// migration must not block a clean start forever.
+    ///
+    /// The first version of this case built `dir/CURRENT` by hand, which is the shape the function
+    /// assumed rather than the shape Cozo wrote. Both were wrong the same way, so the test passed
+    /// while the guard matched no real store. It now builds the layout a live store has.
     #[test]
     fn a_legacy_store_is_recognised_by_its_rocksdb_marker() {
-        let dir = tmp("detect");
+        let at = |d: &std::path::Path| legacy_cozo_store_at(d.to_str().expect("utf8")).is_some();
+
+        let empty = tmp("detect-empty");
+        assert!(!at(&empty), "an empty directory is not a store");
+
+        // What the Cozo adapter actually produced: RocksDB under `data`, `manifest` alongside.
+        let real = tmp("detect-real");
+        std::fs::create_dir_all(real.join("data")).expect("data dir");
+        std::fs::write(real.join("manifest"), b"storage_version").expect("manifest");
+        std::fs::write(real.join("data").join("CURRENT"), b"MANIFEST-000001\n").expect("marker");
+        assert!(at(&real), "data/CURRENT is where a Cozo-era store keeps its marker");
+
+        // A store moved or unpacked flat is still a store.
+        let flat = tmp("detect-flat");
+        std::fs::write(flat.join("CURRENT"), b"MANIFEST-000001\n").expect("marker");
+        assert!(at(&flat), "a marker at the top level is accepted too");
+
+        // And a redb directory is not mistaken for one, in either position.
+        let redb = tmp("detect-redb");
+        std::fs::write(redb.join("knowledge.redb"), b"redb").expect("redb file");
+        assert!(!at(&redb), "redb writes no CURRENT anywhere");
+
+        for d in [empty, real, flat, redb] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// The store a node was configured to use is the one the guard has to look at. Every deployment
+    /// that set `SUPRAGNOSIS_DATA_DIR` - the systemd case - kept its knowledge outside the default,
+    /// so a guard reading only the default would wave through the upgrade it exists to stop.
+    #[test]
+    fn the_guard_looks_where_the_node_was_configured_to_keep_its_data() {
+        let dir = tmp("configured-legacy");
+        std::fs::create_dir_all(dir.join("data")).expect("data dir");
+        std::fs::write(dir.join("data").join("CURRENT"), b"MANIFEST-000001\n").expect("marker");
+
+        let cfg = Config {
+            host: "h".into(),
+            workspace: "default".into(),
+            store_kind: "redb".into(),
+            data_dir: dir.to_str().expect("utf8").to_string(),
+            embed_kind: "none".into(),
+            session: "s".into(),
+            http: None,
+            viz: None,
+            mcp_auth: true,
+        };
+        // HOME is never read on this path: the configured dir answers first, so this case needs
+        // none of the environment juggling the default-location case does.
+        let err =
+            refuse_unmigrated_store(&cfg).expect_err("a legacy store at data_dir must refuse");
+        let msg = err.to_string();
         assert!(
-            legacy_cozo_store_at(dir.to_str().expect("utf8")).is_none(),
-            "an empty directory is not a store"
+            msg.contains(dir.to_str().expect("utf8")),
+            "the refusal names the store it found: {msg}"
         );
-        std::fs::write(dir.join("CURRENT"), b"MANIFEST-000001\n").expect("write marker");
+
+        // Once the redb store exists the migration has run, and the leftover is the operator's.
+        std::fs::write(redb_path(&cfg.data_dir), b"redb").expect("redb file");
         assert!(
-            legacy_cozo_store_at(dir.to_str().expect("utf8")).is_some(),
-            "a RocksDB CURRENT file is what identifies the old store"
+            refuse_unmigrated_store(&cfg).is_ok(),
+            "a migrated node starts with the old directory still present"
         );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2345,7 +2421,8 @@ mod legacy_store_guard_tests {
     #[test]
     fn an_unmigrated_store_is_refused_with_the_way_out() {
         let dir = tmp("refuse");
-        std::fs::write(dir.join("CURRENT"), b"MANIFEST-000001\n").expect("write marker");
+        std::fs::create_dir_all(dir.join("data")).expect("data dir");
+        std::fs::write(dir.join("data").join("CURRENT"), b"MANIFEST-000001\n").expect("marker");
         // Point the default cozo location at the fixture, so the guard sees a legacy store.
         let home = tmp("home");
         std::fs::create_dir_all(home.join(".supragnosis")).expect("home");
