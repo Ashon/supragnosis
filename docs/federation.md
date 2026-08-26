@@ -404,10 +404,17 @@ it there; F21 states them normatively, one clause per demand.
   nothing durable is stacked on it: a routing decision is re-derived, never treated as settled.
 
 What the surface buys beyond diagnosis is that a **workspace-to-host map** becomes derivable at
-runtime. Fan-out - sync push/pull and federated `search` - can then address only the hosts that admit
-the workspace, so a remote miss becomes interpretable instead of being mixed with denials and
-timeouts, and the P17 default ("nothing leaves") holds on the host axis and not only the workspace
-axis.
+runtime. Fan-out - sync push/pull and federated `search` - can then stop addressing a host that has
+said it does not admit the workspace, so a remote miss becomes interpretable instead of being mixed
+with denials and timeouts.
+
+That is narrower than it first reads, and the wider reading was written here and was wrong. **It does
+not extend P17's "nothing leaves by default" to the host axis.** A host is dropped only on an
+explicit refusal - a host that has not answered is consulted, because dropping it would read
+ignorance as refusal (P5), so the host-axis default is to ask. Nor does it need to be a gate: what
+may leave is already decided by this node's `share_workspaces` (F9), and what may be read is already
+decided by the host's own allowlist. The map sits on top of two boundaries that were already there,
+as an optimization and a legibility aid, and calling it a third one overstates it.
 
 **Report the difference, not the intersection.** The operator value is in the disagreement between what
 this node believes it shares and what the peer says it admits. Silently intersecting the two hides the

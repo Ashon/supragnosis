@@ -85,10 +85,16 @@ let showFootprint = true, showPulses = true, showSuperseded = true, showMini = t
 // structure), this is an outline saying "these are the same sharing unit". Sharing one visual would
 // merge two meanings.
 //
-// It can be an outline rather than an overlapping region because the workspace is an exact
-// partition: `Entity::make_id` hashes the workspace with the name, so no entity straddles two.
-// `origins` cannot be drawn this way - a host set unions across nodes (F4), so those regions would
-// overlap and an outline would imply a boundary that is not there.
+// It can be an outline rather than an overlapping region because the workspace partitions the
+// OBSERVED graph: `Entity::make_id` hashes the workspace with the name, so an observed entity never
+// straddles two. `origins` cannot be drawn this way - a host set unions across nodes (F4), so those
+// regions would overlap and an outline would imply a boundary that is not there.
+//
+// The one exception is handled upstream rather than here. An `entity_merge` can fold ids from two
+// workspaces (nothing on that path compares them, and the curation report suggests such merges), so
+// the projection reports an empty workspace for an entity whose attestations disagree, and a node
+// with no workspace is left out of every outline. An entity that spans two sharing units gets no
+// boundary, which is the honest picture.
 //
 // Render-only, with no force of its own. The hyperedge hulls are the layout organizer (hullForce);
 // a second set of attractors would put two meanings in competition over one set of positions.
@@ -2004,7 +2010,8 @@ function drawWsHulls(ctx, hullLabels) {
     groups.get(key).push(n);
   };
   if (boundaryMode === "workspace") {
-    // Exactly one key per node: the workspace is a partition (the entity id hashes it).
+    // At most one key per node. Empty means the projection found attestations naming more than one
+    // workspace (a merge folded across the boundary), and such a node joins no region.
     for (const n of nodes) if (n.workspace) push(n.workspace, n);
   } else {
     // Several keys per node, on purpose. Attestations union across nodes (F4), so an entity both
