@@ -860,6 +860,33 @@ mod tests {
         assert!(validate_bind(&pub_addr, true, 1).is_ok());
     }
 
+    /// `ping` answers with the CALLER's grants, never the host's inventory.
+    ///
+    /// This is the premise the negotiated surface rests its P17 argument on (federation.md 6e, F21
+    /// clause 1): advertising discloses nothing because a peer only learns the set it was already
+    /// granted. Return the union, or every admitted workspace, and the argument inverts - the
+    /// response would reveal the existence of workspaces the caller may not read.
+    #[tokio::test]
+    async fn ping_answers_with_the_callers_own_grants_and_not_the_hosts_inventory() {
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let a = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
+        let b = SyncNode::new(NodeIdentity::from_secret_bytes([2u8; 32]));
+        let allow = vec![entry(&a, "tok-a", &["ws-a"]), entry(&b, "tok-b", &["ws-b", "ws-shared"])];
+        let addr = spawn_server(Arc::new(ServerState::new(hub_store, hub, allow))).await;
+        let base = format!("http://{addr}");
+
+        let pa = SyncClient::new(&base, "tok-a", false).unwrap().ping().await.unwrap();
+        assert_eq!(pa.shared_workspaces, ["ws-a"], "A learns only its own grant");
+
+        let pb = SyncClient::new(&base, "tok-b", false).unwrap().ping().await.unwrap();
+        assert_eq!(pb.shared_workspaces, ["ws-b", "ws-shared"], "B learns only its own");
+
+        // Neither answer leaks the other's workspaces, which is the whole disclosure question.
+        assert!(!pa.shared_workspaces.iter().any(|w| w.starts_with("ws-b")));
+        assert!(!pb.shared_workspaces.contains(&"ws-a".to_string()));
+    }
+
     #[tokio::test]
     async fn wire_auth_rejects_bad_token_and_unshared_workspace() {
         let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());

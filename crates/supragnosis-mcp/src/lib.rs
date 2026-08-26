@@ -287,6 +287,10 @@ pub struct SyncContext {
     pub share_workspaces: Vec<String>,
     /// The sync servers (hubs) this node talks to, each with the credential presented to it.
     pub servers: Vec<supragnosis_sync::ServerLink>,
+    /// What each host last said this node may reach. Written by the daemon's background health
+    /// loop; read here under a lock. A handler never negotiates - that would add a round trip per
+    /// host to a call that already blocks (F11, negotiated-surface.md N1).
+    pub surfaces: supragnosis_sync::NegotiatedSurfaces,
     /// Accept a self-signed hub certificate (internal VMs; content authenticity stays with F6).
     pub insecure_tls: bool,
     /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
@@ -811,7 +815,7 @@ impl SupragnosisServer {
     // with setup guidance (P5: an unconfigured capability is explained, never a silent failure).
 
     #[tool(
-        description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, and the workspace's version vector (what this node holds per origin). Read-only."
+        description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, the workspace's version vector (what this node holds per origin), and `negotiated` - what each host last said this node may reach, as a three-way difference against the share whitelist (`both` / `local_only` = listed here but not admitted there, a setup error / `peer_only` = admitted there but not shared here). A host with state `unknown` has not answered yet; that is not an empty grant set. Read-only."
     )]
     async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
         let Some(ctx) = &self.sync else {
@@ -831,7 +835,40 @@ impl SupragnosisServer {
             }
             Err(e) => return err_json(&format!("task join error: {e}")),
         };
+        // What each host admits for this node, against what this node shares - reported as the
+        // three-way difference rather than the intersection, because the disagreement is the part
+        // worth seeing: intersecting hides the misconfiguration that produced it (N6).
+        let negotiated: Vec<serde_json::Value> = {
+            let map = ctx.surfaces.read().ok();
+            ctx.servers
+                .iter()
+                .map(|link| {
+                    let entry = map.as_ref().and_then(|m| m.get(&link.url));
+                    match entry.and_then(|e| e.admits.as_ref()) {
+                        Some(admits) => {
+                            let d = supragnosis_sync::surface_diff(&ctx.share_workspaces, admits);
+                            serde_json::json!({
+                                "server": link.url,
+                                "state": "negotiated",
+                                "negotiated_at": entry.and_then(|e| e.negotiated_at),
+                                "both": d.both,
+                                "local_only": d.local_only,
+                                "peer_only": d.peer_only,
+                            })
+                        }
+                        None => serde_json::json!({
+                            "server": link.url,
+                            "state": "unknown",
+                            "note": "this host has not answered since the daemon started, or its \
+                                     last health check failed. Unknown is not an empty grant set - \
+                                     do not read it as a revoked grant",
+                        }),
+                    }
+                })
+                .collect()
+        };
         let mut status = serde_json::json!({
+            "negotiated": negotiated,
             "node_id": ctx.node.node_id(),
             "public_key": ctx.node.public_key_hex(),
             "workspace": ws,

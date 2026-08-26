@@ -269,12 +269,42 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "surface markers cap a grant today (`verdict_ceiling_by_surface_marker`), which is the              weaker strength (i) story; client-side user-key signatures over the act bytes are M4              Phase 5 work and nothing pins strength (ii) yet",
         ),
     )]),
-    (21, &[c(
-        "the negotiated surface is entitlement-scoped, narrowing-only, log-external, three-valued, response-labelled and non-monotonic",
-        Evidence::Deferred(
-            "6e specifies the surface and `ping` already answers with the caller's grants, but no              caller consumes that answer, so none of the six clauses has anything to hold. Lands              with M4 Phase 7, which federation.md Phasing names",
+    (21, &[
+        c(
+            "ping reports the authenticated caller's own grants, never the host's inventory",
+            Evidence::Scenario(&["ping_answers_with_the_callers_own_grants_and_not_the_hosts_inventory"]),
         ),
-    )]),
+        c(
+            "a peer's answer may reduce what this node asks of it and never extend the share list",
+            Evidence::Deferred(
+                "nothing routes on the answer yet, so there is no narrowing to constrain. Lands with the routing step of M4 Phase 7, which is where the widening direction first becomes reachable",
+            ),
+        ),
+        c(
+            "the negotiated answer is never written to the observation log",
+            Evidence::Deferred(
+                "it holds because no code writes it, which is not the same as being enforced - nothing would fail if someone observed it tomorrow. Owed a guard in M4 Phase 7 rather than left resting on absence",
+            ),
+        ),
+        c(
+            "an unreachable host yields unknown, never an empty grant set",
+            Evidence::Deferred(
+                "the empty-versus-absent distinction is exercised by the surface-difference case, but the unreachable path lives in the daemon's background loop and nothing exercises it. Owed in M4 Phase 7",
+            ),
+        ),
+        c(
+            "a response the map narrowed names the hosts it consulted and those it skipped",
+            Evidence::Deferred(
+                "no response is narrowed yet - the routing step that would narrow one is the step that owes this label, and shipping the two apart is what turns a loud 403 into a silent skip. M4 Phase 7",
+            ),
+        ),
+        c(
+            "the map carries its negotiation time and is never a premise for a durable conclusion",
+            Evidence::Deferred(
+                "the timestamp is recorded and published, but nothing consumes it and no case pins that a stale entry cannot be stacked on. Owed with the routing step, M4 Phase 7",
+            ),
+        ),
+    ]),
 ];
 
 /// The invariant numbers `docs/federation.md` Section 8 declares, in document order.

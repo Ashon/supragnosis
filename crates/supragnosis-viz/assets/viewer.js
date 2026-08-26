@@ -331,6 +331,23 @@ async function refreshPeers() {
             ? `<span style="color:${TEAL}">in sync</span>`
             : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`) + `</div>`;
         }
+        // The two buckets the old view had no way to state. Listed here but not admitted there is a
+        // setup error that used to just vanish from this panel; admitted there but not shared here
+        // is knowledge left on the table. Intersecting the two lists would have hidden both.
+        for (const w of (s.local_only || [])) {
+          html += `<div class="fws">${esc(w)}: <span style="color:#d96a5f">not admitted</span></div>`;
+        }
+        for (const w of (s.peer_only || [])) {
+          html += `<div class="fws">${esc(w)}: <span class="hint">admitted, not shared</span></div>`;
+        }
+        // Unknown is not an empty grant set: a host that has not answered must not read as one that
+        // revoked everything.
+        if (!s.negotiated_at) {
+          html += `<div class="fws"><span class="hint">surface unknown - no answer yet</span></div>`;
+        } else if (f.updated_ms) {
+          const age = Math.max(0, Math.round((f.updated_ms - s.negotiated_at) / 1000));
+          html += `<div class="fws"><span class="hint">surface negotiated ${age}s ago</span></div>`;
+        }
       }
     }
     const peers = f.known_peers || [];
