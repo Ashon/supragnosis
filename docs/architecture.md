@@ -693,10 +693,17 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   author's own store - so they fell out of `all_observations` and `get_observation` and were invisible to
   every fold. `migrate` structurally could not repair them: migration walks `all_observations`, the very
   enumeration an unreadable row drops out of, so the rows needing repair were the ones it could not see.
-  The repair is therefore a permanent **read shim** (`provenance_from_json`), not a migration: since the
-  log is append-only and a row can never be rewritten away, every encoding it has ever used has to stay
-  readable, or Principle 3's "nothing is destroyed" quietly stops holding at the storage layer.
-  Guarded by `legacy_object_provenance_reads_as_one_attestation`.
+  The repair was a **read shim** in that adapter, not a migration: migration could not reach a row the
+  enumeration drops, while a shim could, and since the log is append-only every encoding it has ever
+  used has to stay readable or Principle 3's "nothing is destroyed" quietly stops holding at the
+  storage layer. The shim went with the adapter in v0.2.0, and the obligation moved rather than
+  lapsing. redb never holds the pre-list encoding - every row in it was written by v0.2.0 or later,
+  by a fresh observe or by `migrate-store` re-serializing through the current model - so there is
+  nothing for a shim to read; what keeps the dropped encodings reachable is that this build refuses to
+  start beside an un-migrated store instead of coming up empty next to it, which forces the read
+  through the release that can still do it. Guarded by
+  `a_legacy_store_is_recognised_by_its_rocksdb_marker` and
+  `an_unmigrated_store_is_refused_with_the_way_out`.
   Note what this does NOT change, since the blast radius was easy to overstate: keyword and semantic
   search read the observation table's columns directly and never reconstruct, so those rows were always
   recallable. What was broken is everything downstream of reconstruction - the folds, the log browser,
@@ -984,9 +991,10 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
    inner-joined `*entity`; the InMemory adapter was the outlier, emitting a hit whose `name` was the empty
    string - a node claimed to exist under a blank name. Dropping is also what `graph()` and `curation()`
    already do with an edge whose endpoint falls outside the node set, so the three projections now agree.
-   Guarded by `traverse_dangling_endpoint_parity_across_adapters`, which fails on the pre-fix InMemory
-   behavior. Sync's partial-ingest state, the condition that made this reachable, no longer splits the
-   answer by adapter (Principle 16).
+   The cross-adapter parity test that pinned this went with the second file-backed adapter in v0.2.0;
+   the conformance case named above is what carries the rule now, and it carries it for every backend
+   rather than for the pair that happened to exist. Sync's partial-ingest state, the condition that
+   made this reachable, no longer splits the answer by adapter (Principle 16).
 
 **Overdue [x] - from "on introducing remote transport"**
 4. **No transport-aware guard confines workspace-scope-less global queries to the local trust surface** - RETIRED by
