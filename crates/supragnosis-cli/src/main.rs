@@ -359,21 +359,29 @@ fn refuse_unmigrated_store(cfg: &Config) -> Result<()> {
 
 /// F14's other half: a node whose own id sits in its own allowlist admits itself as a peer.
 ///
-/// It would answer its own pulls, and once the negotiated surface routes on a host's answer
-/// (negotiated-surface.md N9) it would negotiate with itself. Nothing consumed such an entry before,
-/// so nothing ever complained - the invariant claimed a refusal the code did not perform. An entry
-/// naming this node is either a copied template or a mistyped id, and both are cheaper to fail on
-/// than to run with.
-fn refuse_self_admission(node_id: &str, server: Option<&fed::ServerSection>) -> Result<()> {
+/// It would answer its own pulls, and once routing consults a host's answer it would negotiate with
+/// itself. Nothing consumed such an entry before, so nothing ever complained - the invariant claimed
+/// a refusal the code did not perform. An entry naming this node is either a copied template or a
+/// mistyped id.
+///
+/// **Dropped rather than refused, and the file is left alone.** Refusing was the first version and it
+/// broke an upgrade over a mistake that costs nothing to work around: an allowlist entry is a live
+/// credential (admission authenticates by bearer hash, not by node id), so removing this one from the
+/// running directory can only share LESS - the one direction 6a says a mistake may move on its own.
+/// The file keeps the entry, so the operator's intent stays visible and a mistyped id is still theirs
+/// to correct; the note says what was ignored and why.
+fn drop_self_admission(node_id: &str, server: Option<&fed::ServerSection>) -> Vec<String> {
     let Some(srv) = server else {
-        return Ok(());
+        return Vec::new();
     };
-    anyhow::ensure!(
-        !srv.allowlist.iter().any(|e| e.node_id == node_id),
-        "[server] allowlist admits this node's own id {node_id} - a node cannot be its own peer. \
-         The entry is either a copied template or a mistyped id; remove it (F14)."
-    );
-    Ok(())
+    if srv.allowlist.iter().any(|e| e.node_id == node_id) {
+        return vec![format!(
+            "[server] allowlist admits this node's own id {node_id} - a node cannot be its own peer. \
+             The entry is IGNORED for this run (it is a live credential, so ignoring it only shares \
+             less). It is still in supragnosis.toml: remove it, or correct the id if it was mistyped."
+        )];
+    }
+    Vec::new()
 }
 
 /// Assembles the store/embedder/engine from the configuration. If `events` is present, attaches a UI event sink (the viewer).
@@ -489,8 +497,11 @@ fn build_sync_context(
     let identity = fed::load_or_create_identity()?;
     let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
-    let links = fc.sync.links()?;
-    refuse_self_admission(node.node_id(), fc.server.as_ref())?;
+    let (links, mut config_notes) = fc.sync.links();
+    config_notes.extend(drop_self_admission(node.node_id(), fc.server.as_ref()));
+    for n in &config_notes {
+        tracing::error!("federation configuration: {n}");
+    }
     // One handle, written by the health loop and read by the tools. Created here because this is
     // where both sides are wired, and typed in the sync crate so neither adapter has to depend on
     // the other to see it (negotiated-surface.md Section 2).
@@ -611,6 +622,7 @@ fn build_sync_context(
             node,
             share_workspaces: fc.sync.share_workspaces.clone(),
             servers: links,
+            config_notes,
             surfaces: surfaces.clone(),
             insecure_tls: fc.sync.insecure_tls,
             origin_keys,
@@ -923,7 +935,10 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
             fed::config_path().display()
         )
     })?;
-    let links = fc.sync.links()?;
+    let (links, notes) = fc.sync.links();
+    for n in &notes {
+        tracing::error!("federation configuration: {n}");
+    }
     anyhow::ensure!(
         !links.is_empty(),
         "[sync] names no server - nothing to sync against. Add [[sync.server]] entries with a url \
@@ -1855,42 +1870,70 @@ mod fed {
         /// resolved by precedence: a precedence rule here is a silent degrade wearing a
         /// specification, and P5 asks explicit configuration to work or fail
         /// (negotiated-surface.md N8).
-        pub fn links(&self) -> Result<Vec<supragnosis_sync::ServerLink>> {
+        /// The servers to talk to, each with its own credential - plus what had to be worked
+        /// around to get there.
+        ///
+        /// **Nothing here fails.** A federation configuration mistake disables or narrows
+        /// federation; it does not stop a node serving its own knowledge. That is the shape this
+        /// codebase already uses for a subsystem it cannot bring up - a missing embedder proceeds
+        /// with keyword search, a viewer socket that will not bind proceeds without the viewer - and
+        /// a sync token is not different in kind. Refusing to start was the first version, and it
+        /// turned a broken hub link into a dead node.
+        ///
+        /// It does not degrade silently either, which is the half P5 actually asks for. Every
+        /// workaround comes back as a note: logged at startup and carried into `sync_status`, so it
+        /// sits on the surface an operator reads rather than in a log they scrolled past once.
+        pub fn links(&self) -> (Vec<supragnosis_sync::ServerLink>, Vec<String>) {
+            let mut notes = Vec::new();
             let flat_present = !self.servers.is_empty() || self.auth_token.is_some();
-            anyhow::ensure!(
-                self.server.is_empty() || !flat_present,
-                "supragnosis.toml sets both [[sync.server]] entries and the flat [sync] \
-                 servers/auth_token keys. Which one applies is not a question this build answers by \
-                 precedence - remove one shape. The per-server entries are the current one; the flat \
-                 keys present a single token to every host, which is what they are being replaced for."
-            );
+
             if !self.server.is_empty() {
-                return Ok(self
+                if flat_present {
+                    // Precedence, loudly. An earlier version refused, on the ground that choosing
+                    // between two stated intents is a guess - true, but the cost fell on an upgrade
+                    // rather than on the mistake. Per-server entries win because the other direction
+                    // is worse than dropping a host: one flat token presented to a host that has its
+                    // own would be the WRONG credential on the wire.
+                    notes.push(format!(
+                        "[sync] has both per-server entries and the flat servers/auth_token keys. \
+                         The {} entr(ies) are used and the flat keys are IGNORED, including {} host(s) \
+                         listed only there. Remove the flat keys once they are folded in.",
+                        self.server.len(),
+                        self.servers.len()
+                    ));
+                }
+                let links = self
                     .server
                     .iter()
                     .map(|e| supragnosis_sync::ServerLink {
                         url: e.url.clone(),
                         auth_token: e.auth_token.clone(),
                     })
-                    .collect());
+                    .collect();
+                return (links, notes);
             }
+
             if self.servers.is_empty() {
-                return Ok(Vec::new());
+                return (Vec::new(), notes);
             }
-            let token = self.auth_token.clone().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "[sync] servers is set but auth_token is not - every hub refuses an \
-                     unauthenticated caller, so this configuration cannot sync with any of them"
-                )
-            })?;
-            Ok(self
+            let Some(token) = self.auth_token.clone() else {
+                notes.push(format!(
+                    "[sync] lists {} server(s) but no auth_token, and every hub refuses an \
+                     unauthenticated caller - so federation is OFF rather than failing every round. \
+                     Set auth_token, or move each host to a [[sync.server]] entry with its own.",
+                    self.servers.len()
+                ));
+                return (Vec::new(), notes);
+            };
+            let links = self
                 .servers
                 .iter()
                 .map(|url| supragnosis_sync::ServerLink {
                     url: url.clone(),
                     auth_token: token.clone(),
                 })
-                .collect())
+                .collect();
+            (links, notes)
         }
     }
 
@@ -2063,7 +2106,8 @@ mod fed {
                 auth_token = "tok-net"
             "#;
             let cfg: FileConfig = toml::from_str(per_server).expect("per-server shape must parse");
-            let links = cfg.sync.links().expect("two independent links");
+            let (links, notes) = cfg.sync.links();
+            assert!(notes.is_empty(), "a clean per-server config needs no workaround: {notes:?}");
             assert_eq!(links.len(), 2);
             assert_eq!(links[0].auth_token, "tok-cloud");
             assert_eq!(links[1].auth_token, "tok-net", "each host gets its own credential");
@@ -2076,7 +2120,8 @@ mod fed {
                 auth_token = "shared"
             "#;
             let cfg: FileConfig = toml::from_str(flat).expect("the flat shape still parses");
-            let links = cfg.sync.links().expect("flat resolves");
+            let (links, notes) = cfg.sync.links();
+            assert!(notes.is_empty(), "the flat shape alone is still a supported configuration");
             assert_eq!(links.len(), 2);
             assert!(links.iter().all(|l| l.auth_token == "shared"));
 
@@ -2092,17 +2137,29 @@ mod fed {
                 auth_token = "own"
             "#;
             let cfg: FileConfig = toml::from_str(both).expect("both shapes parse individually");
-            let err = cfg.sync.links().expect_err("coexistence must be refused");
-            assert!(
-                err.to_string().contains("remove one shape"),
-                "the error must say what to do: {err}"
-            );
+            let (links, notes) = cfg.sync.links();
+            // Precedence, loudly. Refusing was the first version and it broke an upgrade over a
+            // mistake that costs nothing to work around; per-server wins because the other way round
+            // would put one flat token on the wire to a host that has its own.
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].auth_token, "own", "the per-server credential is the one used");
+            assert_eq!(notes.len(), 1, "and the operator is told the flat keys were ignored");
+            assert!(notes[0].contains("IGNORED"), "the note names what was dropped: {notes:?}");
 
             // `servers` with no token cannot reach any hub, so it fails at load rather than at the
             // first round - every hub refuses an unauthenticated caller (F6).
             let tokenless = "[sync]\nservers = [\"https://a:7420\"]\n";
             let cfg: FileConfig = toml::from_str(tokenless).expect("parses");
-            assert!(cfg.sync.links().is_err(), "servers without auth_token must fail loudly");
+            let (links, notes) = cfg.sync.links();
+            // Federation off, node up. A missing sync token is a subsystem this build cannot bring
+            // up, which is the case the embedder and the viewer socket already answer by degrading
+            // with a loud line rather than by killing a node that serves its own knowledge.
+            assert!(links.is_empty(), "no link can be built without a credential");
+            assert_eq!(notes.len(), 1, "and it is not silent: {notes:?}");
+            assert!(
+                notes[0].contains("federation is OFF"),
+                "the note says what stopped: {notes:?}"
+            );
 
             // A typo must fail loudly, not silently disable a role (P5).
             let typo = "share_workspace = [\"x\"]\n";
@@ -2229,11 +2286,12 @@ mod legacy_store_guard_tests {
         d
     }
 
-    /// F14: an allowlist entry naming this node admits it as its own peer. The invariant claimed a
-    /// refusal for years and nothing performed it, which the coverage registry now records - this is
-    /// the half being repaid.
+    /// F14: an allowlist entry naming this node is reported and ignored, not fatal.
+    ///
+    /// The ignoring happens in `PeerDirectory` (pinned there, through both construction paths); this
+    /// covers the operator-facing half - that the workaround is stated rather than done quietly.
     #[test]
-    fn a_node_that_admits_itself_is_refused() {
+    fn a_node_that_admits_itself_is_reported_and_ignored() {
         let entry = |id: &str| supragnosis_sync::http::AllowEntry {
             node_id: id.into(),
             public_key_hex: "deadbeef".into(),
@@ -2247,14 +2305,16 @@ mod legacy_store_guard_tests {
             allowlist: ids.iter().map(|i| entry(i)).collect(),
         };
 
-        // No server role at all: nothing to check, and a client-only node must still start.
-        assert!(refuse_self_admission("self", None).is_ok());
-        // Other peers only.
-        assert!(refuse_self_admission("self", Some(&section(&["peer-a", "peer-b"]))).is_ok());
-        // Its own id among them.
-        let err = refuse_self_admission("self", Some(&section(&["peer-a", "self"])))
-            .expect_err("a node cannot be its own peer");
-        assert!(err.to_string().contains("own id self"), "names what it found: {err}");
+        assert!(
+            drop_self_admission("self", None).is_empty(),
+            "a client-only node has nothing to say"
+        );
+        assert!(drop_self_admission("self", Some(&section(&["peer-a", "peer-b"]))).is_empty());
+
+        let notes = drop_self_admission("self", Some(&section(&["peer-a", "self"])));
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].contains("own id self"), "names what it found: {notes:?}");
+        assert!(notes[0].contains("IGNORED"), "and says it was worked around: {notes:?}");
     }
 
     /// A RocksDB directory is recognised by `CURRENT`, which redb never writes. A directory that

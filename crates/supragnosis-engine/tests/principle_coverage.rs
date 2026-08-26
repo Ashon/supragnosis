@@ -238,8 +238,11 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             ),
         ),
         c(
-            "the sync role refuses to start when its own id sits in its own allowlist",
-            Evidence::Scenario(&["a_node_that_admits_itself_is_refused"]),
+            "an allowlist entry naming this node is dropped, and the workaround is reported",
+            Evidence::Scenario(&[
+                "a_node_is_never_its_own_peer_through_either_path",
+                "a_node_that_admits_itself_is_reported_and_ignored",
+            ]),
         ),
     ]),
     (15, &[c(

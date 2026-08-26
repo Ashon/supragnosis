@@ -594,8 +594,14 @@ changing the canon policy without a central admin - is out of scope.
   preserved. Low-trust inbound is a down-weighted candidate, not a structural quarantine. The claimed tier
   is log data (converges); the **effective/representative tier is an evaluation** - the projection must not
   max in unverified remote claimed tiers (6b).
-- **F14** `node_id` is globally unique and bound to the node's public key. The sync role refuses to start
-  on an empty, default (`localhost`), or allowlist-colliding `node_id`.
+- **F14** `node_id` is globally unique and bound to the node's public key. Empty and default
+  (`localhost`) ids are unreachable rather than checked - the id derives from a generated keypair and
+  is never configured. An allowlist entry naming **this** node is **dropped, not refused**: a node
+  cannot be its own peer, and since admission matches a bearer hash rather than a node id, such an
+  entry is a live credential whose removal can only share less - the direction 6a lets a mistake move
+  without asking. Refusing was the earlier reading and it took a working node down over a copied
+  template, which is a cost the mistake does not justify. The entry stays in the file and the
+  workaround is reported (`sync_status`), so a mistyped id is still the operator's to correct.
 - **F15** A replicated proposal `verdict_cast` is applied only after passing the workflow's own checks -
   I9 (no self-approval, principals by signing key) and I17 (a recall verdict is a human's direct act) -
   HLC-ordered (I11). Signing enables these checks cross-node; it does not bypass them.

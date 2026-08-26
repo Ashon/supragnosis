@@ -88,10 +88,16 @@ share list that parses and is not obeyed reports a narrowing the system did not 
 arrives with Step 3, the step that obeys it. Adding a field later is the open direction of P10;
 accepting one before its consumer exists is a silent degrade.
 
-Two rules come out of P5 rather than convenience. Both shapes present is a **startup failure**, not a
-precedence rule - a precedence rule is a silent degrade wearing a specification. And the same
-validation is where F14's unmet leg is repaid: a node whose own id sits in its own allowlist starts
-without complaint today, and the check belongs beside the one that reads those entries.
+Both shapes present resolves by **precedence, loudly**: the per-server entries win, the flat keys are
+reported as ignored, and the node starts. Refusing was the first reading of P5 here and it was too
+strict - P5 asks configuration to work or fail and never to degrade *silently*, and a precedence rule
+that names what it dropped is not silent. Per-server wins because the other direction is worse than
+losing a host from a round: one flat token presented to a host that has its own would be the wrong
+credential on the wire.
+
+The same reasoning covers a missing `auth_token` and F14's self-admitting entry - see N8 and N9. None
+of the three stops the daemon. A release that breaks startup for a configuration mistake teaches
+operators to fear upgrades, and every one of these has a reading that narrows instead.
 
 ## 6. Editing this configuration from a console
 
@@ -214,8 +220,8 @@ that it does.
 | **N12** | Narrowing applies to fan-out, not to a command naming one target. A one-shot round keeps the host's own answer, which says more than a skip (P5). |
 | **N6** | The difference is reported in three buckets and never as the intersection, which would hide the misconfiguration that produced it. |
 | **N7** | The map carries the time it was negotiated and is never a premise for a durable conclusion (F21.6). |
-| **N8** | Two configuration shapes present at once is a startup failure, not a precedence rule (P5). |
-| **N9** | A node whose own id appears in its own allowlist is refused at startup (F14). |
+| **N8** | A federation configuration mistake disables or narrows federation and never stops a node serving its own knowledge - the shape a missing embedder and an unbindable viewer socket already use. Every workaround is reported in `sync_status`, so degrading is loud rather than silent (P5). |
+| **N9** | An allowlist entry naming this node is dropped in the admission directory, through every construction path, and the file is left alone (F14). |
 | **N10** | What a host advertises is the caller's entitlement and never the host's inventory. This is a property of the existing handler and must survive the change (F21.1, P17). |
 
 ## 9. Closure map
