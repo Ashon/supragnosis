@@ -369,8 +369,11 @@ it there; F21 states them normatively, one clause per demand.
 
 - **Entitlement, never inventory.** The response is scoped to the authenticated caller's own grants. A
   peer learns exactly the set it was already granted, which it can confirm one name at a time anyway:
-  `authorize_workspace` answers a non-admitted workspace with `403`, not with an empty result. What
-  advertising adds is *enumeration*, and that removes a P5 hazard rather than creating a P17 one -
+  `authorize_workspace` answers a non-admitted workspace with `403`, not with an empty result. That
+  distinguishability is what this clause rests on, so it is named rather than assumed - pinned by
+  `wire_auth_rejects_bad_token_and_unshared_workspace`. Should the answer ever degrade to an empty
+  result, the argument here stops holding and has to be rewritten, not quietly kept. What advertising
+  adds is *enumeration*, and that removes a P5 hazard rather than creating a P17 one -
   today a spoke that fails to guess a granted workspace's name concludes "no knowledge" where the
   truth is "granted, never asked". Advertising the host's full workspace list instead would disclose
   the existence of workspaces the peer may not read: the same class of leak as the deferred
