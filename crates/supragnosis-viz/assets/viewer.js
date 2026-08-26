@@ -39,6 +39,7 @@ const wsInput = { value: "" };
 const searchEl = document.getElementById("search");
 const chipBar = document.getElementById("wschips");
 const legendNodesEl = document.getElementById("legendNodes"), legendEdgesEl = document.getElementById("legendEdges");
+const legendBoundaryEl = document.getElementById("legendBoundary");
 const nodeCtEl = document.getElementById("nodeCt"), edgeCtEl = document.getElementById("edgeCt");
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
 const loaderEl = document.getElementById("loader");
@@ -594,6 +595,7 @@ function renderLegend() {
   fill(legendEdgesEl, edgeKeys, t => edgeTypeColor[t], edgeTypeOff, true);
   nodeCtEl.textContent = nodeKeys.length || "";
   edgeCtEl.textContent = edgeKeys.length || "";
+  renderBoundaryChips();
 }
 
 // Legend chip tooltip: the type's glossary definition (T-Box), anchored beside the chip. A type
@@ -654,7 +656,7 @@ async function poll() {
             hyperedges = hg.hyperedges || [];
             const drawn = hyperedges.filter(h => h.size >= 3).length;
             document.getElementById("stats").textContent += ` / hyperedges ${hyperedges.length} (hull ${drawn})`;
-            renderBoundaryMode();
+
           }
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
@@ -2059,12 +2061,35 @@ function drawWsHulls(ctx, hullLabels) {
   ctx.globalAlpha = 1;
 }
 
-// Append the boundary mode to the stats line, replacing any previous mention. Called on toggle and
-// after a graph load, since that load rewrites the line from scratch.
-function renderBoundaryMode() {
-  const el = document.getElementById("stats");
-  if (!el) return;
-  el.textContent = el.textContent.replace(/ \/ boundaries [a-z]+$/, "") + " / boundaries " + boundaryMode;
+// The boundary-mode chips, in the same language as the type legends above them: a chip per mode,
+// the inactive ones dimmed with `.off`, click to switch.
+//
+// A keyboard-only toggle was the first version and it was the wrong call. The dock already carries
+// every other view switch, so a mode that lives only behind "b" reads as absent - the first question
+// it drew was "why is it grouping by workspace", which is what a control with no affordance earns.
+// "b" still cycles, for whoever finds it.
+const BOUNDARY_MODES = [
+  ["workspace", "each workspace is a sharing unit, and no entity is in two"],
+  ["origin", "who signed for each entity - regions OVERLAP where two peers both attested it"],
+  ["off", "no boundaries"],
+];
+function renderBoundaryChips() {
+  if (!legendBoundaryEl) return;
+  legendBoundaryEl.innerHTML = "";
+  for (const [mode, why] of BOUNDARY_MODES) {
+    const el = document.createElement("span");
+    el.className = "lg" + (boundaryMode === mode ? "" : " off");
+    const sw = document.createElement("span");
+    sw.className = "sw";
+    // Dashed swatch for the two that draw, hollow for off - the same outline the layer uses.
+    if (mode === "off") { sw.style.background = "transparent"; sw.style.border = "1px dashed #666"; }
+    else { sw.style.background = "transparent"; sw.style.border = "1px dashed " + hyperColor(mode + ":swatch"); }
+    el.appendChild(sw);
+    el.appendChild(document.createTextNode(mode));
+    el.title = why;
+    el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); requestFrame(); };
+    legendBoundaryEl.appendChild(el);
+  }
 }
 
 function roundedHullPath(c, g) {
@@ -2801,7 +2826,7 @@ window.addEventListener("keydown", e => {
     // The mode belongs in the stats line, which is durable, and not in `statusEl`, which the render
     // loop rewrites every frame - the first version put it there and the feedback was gone before it
     // could be read, so the toggle looked like it had done nothing.
-    renderBoundaryMode();
+    renderBoundaryChips();
     requestFrame();
   }
   else if (e.key === "Escape") { if (obscardEl.classList.contains("on")) hideObsCard(); else setViewPop(false); }
