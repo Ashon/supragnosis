@@ -756,6 +756,18 @@ pub struct GraphNode {
     /// from, e.g. ["ashon-mac", "knowledge-vm"] on a hub after a sync (federation observability).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origins: Vec<String>,
+    /// The workspace this entity belongs to - single-valued, unlike `origins`.
+    ///
+    /// `Entity::make_id` hashes the workspace with the canonical name, so the same name in two
+    /// workspaces is two entities and no entity can straddle them. That makes the workspace an exact
+    /// partition of the graph, which is why it can be drawn as a boundary where `origins` cannot: a
+    /// host set unions across nodes (F4) and a workspace does not.
+    ///
+    /// It is read from the attestations rather than stored on the entity, because it is already
+    /// determined by the id every one of them projected into - a field on the model would be a
+    /// second copy of something the identity already fixes (P14).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub workspace: String,
     /// The node's representative trust: the highest EFFECTIVE tier over its supporting observations
     /// (receiver-evaluated + gate grants - resolution.md Section 3; never a max over claimed tiers,
     /// which would let a remote self-declaration raise the displayed tier - F13).
@@ -4125,6 +4137,12 @@ impl Engine {
                     degree: degree.get(cid).copied().unwrap_or(0),
                     sources,
                     origins,
+                    workspace: members
+                        .iter()
+                        .flat_map(|m| m.provenance.iter())
+                        .map(|p| p.workspace.clone())
+                        .next()
+                        .unwrap_or_default(),
                     trust_tier: trust,
                     contested,
                     competitors,
@@ -4252,6 +4270,13 @@ impl Engine {
                         o.dedup();
                         o
                     },
+                    // Any attestation answers this: they all projected into an id that hashed the
+                    // workspace, so taking the first is not a choice between candidates.
+                    workspace: e
+                        .provenance
+                        .first()
+                        .map(|p| p.workspace.clone())
+                        .unwrap_or_default(),
                     trust_tier: trust,
                     contested: false,
                     competitors: Vec::new(),
