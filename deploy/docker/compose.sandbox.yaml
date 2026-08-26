@@ -1,0 +1,170 @@
+# A two-node federation sandbox on the CURRENT WORKING TREE, reachable from a browser.
+#
+#   task sandbox:up      # or: docker compose -f deploy/docker/compose.sandbox.yaml up -d --build
+#   open http://127.0.0.1:7531      # the spoke's viewer - where the negotiated surface shows
+#   open http://127.0.0.1:7521      # the hub's viewer - known peers, served activity
+#   task sandbox:down    # removes the containers AND the sandbox volumes
+#
+# Why it exists: the negotiated surface (federation.md 6e) is a statement about what ANOTHER host
+# admits, so one node cannot show it. Until this file there was no way to see federation end to end
+# without two real machines, which is the sort of gap that leaves a feature reasoned about rather
+# than watched.
+#
+# ---------------------------------------------------------------------------------------------
+# ISOLATION FROM AN INSTALLED RELEASE. A developer running this very likely has the released
+# package on the same machine, holding ~/.supragnosis and port 7373. Nothing here may touch either,
+# and the separation is by construction rather than by care:
+#
+#   * No bind mount into $HOME. Both nodes keep state in named volumes of their own, and the volume
+#     names are prefixed `supragnosis-sandbox-` so they cannot collide with `supragnosis-state`,
+#     which compose.yaml (the real hub) uses.
+#   * `name:` sets its own compose project, so `down` here never reaches the other file's stack.
+#   * The image is tagged `supragnosis:sandbox`, not `supragnosis:local`.
+#   * Published ports are a distinct block (752x/753x) and every one of them is bound to 127.0.0.1
+#     explicitly. 7373 (the installed daemon's MCP), 7374-7376 and 7399 (`task dev`) are untouched,
+#     and 7420 is deliberately NOT published - the real hub's compose file publishes it, and two
+#     stacks fighting over it is exactly the collision this block avoids.
+#   * MCP is not published at all, from either node. It is an unauthenticated local trust surface
+#     by design (P17); a sandbox is not a reason to put one on a network interface.
+# ---------------------------------------------------------------------------------------------
+
+name: supragnosis-sandbox
+
+x-node: &node
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+  image: supragnosis:sandbox
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment:
+    RUST_LOG: info
+  stop_signal: SIGTERM
+  stop_grace_period: 10s
+
+services:
+  # Volume ownership and the hub's certificate, both as root because neither can be done later.
+  #
+  # A fresh named volume takes its ownership from the mount point in the image, and only when that
+  # path exists there. Mounted anywhere else - as it must be here, since one container has to hold
+  # both nodes' state at once - Docker creates the directory root-owned, and every later container
+  # runs as uid 10001 (the Dockerfile fixes it so the volume's ownership keeps matching across image
+  # changes). So the chown is not tidying: without it the daemon cannot create its own store.
+  #
+  # The certificate is not optional either. The F10 bind guard refuses a non-loopback sync surface
+  # without TLS and a non-empty allowlist, so a hub without one does not come up at all.
+  prepare:
+    image: alpine:3
+    volumes:
+      - hub-state:/hub-state
+      - spoke-state:/spoke-state
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        chown 10001:10001 /hub-state /spoke-state
+        chmod 700 /hub-state /spoke-state
+        if [ -f /hub-state/tls/cert.pem ]; then
+          echo "certificate present"
+        else
+          apk add --no-cache openssl >/dev/null
+          mkdir -p /hub-state/tls
+          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -subj /CN=hub -addext subjectAltName=DNS:hub \
+            -keyout /hub-state/tls/key.pem -out /hub-state/tls/cert.pem 2>/dev/null
+          echo "certificate generated"
+        fi
+        chown -R 10001:10001 /hub-state/tls
+        chmod 600 /hub-state/tls/key.pem
+        echo "prepare done"
+
+  # Node keys and both configs. Mounts BOTH state volumes, which is the shortcut a sandbox is
+  # allowed and a deployment is not: it holds each side's identity while writing the other's
+  # allowlist, so the out-of-band exchange never has to happen. See sandbox-init.sh.
+  keygen:
+    <<: *node
+    restart: "no"
+    read_only: false
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+    volumes:
+      - hub-state:/hub/.supragnosis
+      - spoke-state:/spoke/.supragnosis
+      - ./sandbox-init.sh:/sandbox-init.sh:ro
+    entrypoint: [/bin/sh, /sandbox-init.sh]
+
+  hub:
+    <<: *node
+    container_name: supragnosis-sandbox-hub
+    hostname: hub
+    depends_on:
+      keygen: {condition: service_completed_successfully}
+    volumes:
+      - hub-state:/var/lib/supragnosis/.supragnosis
+    # One writer per store: redb takes a single lock, so a second container on this volume does not
+    # race, it fails to open. Scaling this is a decision, not a default.
+    deploy: {replicas: 1}
+    healthcheck: &viz-health
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS --unix-socket /var/lib/supragnosis/.supragnosis/viz.sock
+          http://localhost/api/workspaces > /dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  spoke:
+    <<: *node
+    container_name: supragnosis-sandbox-spoke
+    hostname: spoke
+    depends_on:
+      keygen: {condition: service_completed_successfully}
+      hub: {condition: service_healthy}
+    volumes:
+      - spoke-state:/var/lib/supragnosis/.supragnosis
+    deploy: {replicas: 1}
+    healthcheck: *viz-health
+
+  # The viewer speaks HTTP over a unix socket and has no TCP bind - that is the access control (P17),
+  # and it is why a browser needs a proxy in front of it. The real hub does this with
+  # systemd-socket-proxyd plus nginx; a sandbox does it with socat and one less moving part.
+  #
+  # These proxies expose the viewer's WRITE endpoints (/api/review, /api/resolve, /api/reify,
+  # /api/propose_merge) with no authentication in front of them, which is the reason the real hub
+  # puts nginx there to return 403. Acceptable here ONLY because the published port is bound to
+  # 127.0.0.1: reachable by this machine's accounts, never by the network. Do not change the bind.
+  hub-viewer:
+    image: alpine/socat:latest
+    container_name: supragnosis-sandbox-hub-viewer
+    restart: unless-stopped
+    depends_on:
+      hub: {condition: service_healthy}
+    volumes:
+      - hub-state:/state
+    ports: ["127.0.0.1:7521:8080"]
+    command: TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/state/viz.sock
+
+  spoke-viewer:
+    image: alpine/socat:latest
+    container_name: supragnosis-sandbox-spoke-viewer
+    restart: unless-stopped
+    depends_on:
+      spoke: {condition: service_healthy}
+    volumes:
+      - spoke-state:/state
+    ports: ["127.0.0.1:7531:8080"]
+    command: TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/state/viz.sock
+
+volumes:
+  # Deliberately NOT `supragnosis-state`: that name belongs to compose.yaml, the real hub. A sandbox
+  # that shares a volume with a hub is not a sandbox.
+  hub-state:
+    name: supragnosis-sandbox-hub
+  spoke-state:
+    name: supragnosis-sandbox-spoke

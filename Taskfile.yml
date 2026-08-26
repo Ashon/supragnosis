@@ -123,6 +123,27 @@ tasks:
 
   # --- quality gate -----------------------------------------------------------------------------
 
+  sandbox:up:
+    desc: Two-node federation sandbox on YOUR tree - browser at 127.0.0.1:7531 (spoke) / :7521 (hub)
+    cmds:
+      - docker compose -f deploy/docker/compose.sandbox.yaml up -d --build
+      - 'echo "spoke viewer: http://127.0.0.1:7531   hub viewer: http://127.0.0.1:7521"'
+
+  sandbox:down:
+    desc: Stop the sandbox and delete its volumes - never touches ~/.supragnosis or the real hub stack
+    cmds:
+      - docker compose -f deploy/docker/compose.sandbox.yaml down -v --remove-orphans
+
+  sandbox:logs:
+    desc: Follow the sandbox daemons (both nodes)
+    cmds:
+      - docker compose -f deploy/docker/compose.sandbox.yaml logs -f hub spoke
+
+  sandbox:surface:
+    desc: The spoke's negotiated surface as JSON - the three buckets the panel renders
+    cmds:
+      - 'curl -sS http://127.0.0.1:7531/api/federation | python3 -m json.tool'
+
   check:
     desc: The full gate - clippy, viewer ESLint, tests. Same checks CI runs, so run it before pushing.
     cmds:
