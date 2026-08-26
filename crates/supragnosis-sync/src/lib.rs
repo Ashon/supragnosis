@@ -46,6 +46,61 @@ pub struct ServerLink {
     pub auth_token: String,
 }
 
+/// What a host said this node may reach, and when it said it (federation.md 6e).
+///
+/// `admits` is `None` while unknown: the host has not answered since this process started, or the
+/// last attempt failed. Never an empty vector for that case. An empty grant set is a legitimate
+/// answer meaning "admitted, may read nothing" (6a), so collapsing the two would render a host that
+/// is down as a grant that was revoked - the reading F12 forbids and F21 clause 4 names.
+#[derive(Debug, Clone, Default)]
+pub struct NegotiatedSurface {
+    pub admits: Option<Vec<String>>,
+    pub negotiated_at: Option<u64>,
+}
+
+/// Per-server negotiated surfaces, keyed by server url.
+///
+/// Link-local runtime state. It is never written to the observation log, so no projection and no
+/// proposition depends on it (F21 clause 3) - and the writer is the daemon's background health loop
+/// alone, so reading it costs a lock and never a round trip (F21 clause 6, N1).
+pub type NegotiatedSurfaces =
+    std::sync::Arc<std::sync::RwLock<std::collections::BTreeMap<String, NegotiatedSurface>>>;
+
+/// The disagreement between what this node shares and what a host admits.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SurfaceDiff {
+    /// Shared here and admitted there.
+    pub both: Vec<String>,
+    /// This node lists it, the host does not admit it - a setup error.
+    pub local_only: Vec<String>,
+    /// The host would admit it, this node does not share it - knowledge left on the table.
+    pub peer_only: Vec<String>,
+}
+
+/// Three buckets rather than an intersection: intersecting silently hides the misconfiguration that
+/// produced the gap, and the gap is the whole operator value (N6). Each bucket is sorted, so a
+/// response over the same state is reproducible down to its order (P16).
+pub fn surface_diff(local_share: &[String], admits: &[String]) -> SurfaceDiff {
+    let mut d = SurfaceDiff::default();
+    for w in local_share {
+        if admits.contains(w) {
+            d.both.push(w.clone());
+        } else {
+            d.local_only.push(w.clone());
+        }
+    }
+    for w in admits {
+        if !local_share.contains(w) {
+            d.peer_only.push(w.clone());
+        }
+    }
+    for b in [&mut d.both, &mut d.local_only, &mut d.peer_only] {
+        b.sort();
+        b.dedup();
+    }
+    d
+}
+
 /// Why an inbound event was rejected (F6). Rejections are reported, never silently dropped (P5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RejectReason {
@@ -387,6 +442,28 @@ mod tests {
             m.insert(obs.id.clone(), (obs.provenance.len(), origins, obs.derived_from.clone()));
         }
         m
+    }
+
+    /// The three buckets, and the reason there are three. An intersection would report the first
+    /// bucket and drop the two that say something is wrong.
+    #[test]
+    fn the_surface_difference_reports_both_directions_of_disagreement() {
+        let local = ["cloud".to_string(), "network".to_string()];
+        let admits = ["network".to_string(), "rebellions".to_string()];
+        let d = surface_diff(&local, &admits);
+        assert_eq!(d.both, ["network"], "shared here and admitted there");
+        assert_eq!(d.local_only, ["cloud"], "listed here, not admitted - a setup error");
+        assert_eq!(d.peer_only, ["rebellions"], "admitted there, not shared - left on the table");
+
+        // An empty grant set is an answer, not an absence: everything local becomes local_only
+        // rather than the difference reporting nothing.
+        let d = surface_diff(&local, &[]);
+        assert_eq!(d.local_only, ["cloud", "network"]);
+        assert!(d.both.is_empty() && d.peer_only.is_empty());
+
+        // Order in, order out: the buckets are sorted so a response is reproducible (P16).
+        let d = surface_diff(&["b".into(), "a".into()], &["b".into(), "a".into()]);
+        assert_eq!(d.both, ["a", "b"]);
     }
 
     #[test]

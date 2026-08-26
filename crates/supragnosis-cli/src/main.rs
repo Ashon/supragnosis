@@ -491,6 +491,10 @@ fn build_sync_context(
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     let links = fc.sync.links()?;
     refuse_self_admission(node.node_id(), fc.server.as_ref())?;
+    // One handle, written by the health loop and read by the tools. Created here because this is
+    // where both sides are wired, and typed in the sync crate so neither adapter has to depend on
+    // the other to see it (negotiated-surface.md Section 2).
+    let surfaces: supragnosis_sync::NegotiatedSurfaces = Default::default();
     // Runtime peer observability (hub role): who actually checked in, when, how much.
     // Set on a hub: the live admission directory, published so the console can show who is in.
     let mut admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>> = None;
@@ -558,6 +562,7 @@ fn build_sync_context(
             is_hub: fc.server.is_some(),
             sync: fc.sync.clone(),
             links: links.clone(),
+            surfaces: surfaces.clone(),
             registry: peer_registry.clone(),
             admitted: admitted.clone(),
         });
@@ -606,6 +611,7 @@ fn build_sync_context(
             node,
             share_workspaces: fc.sync.share_workspaces.clone(),
             servers: links,
+            surfaces: surfaces.clone(),
             insecure_tls: fc.sync.insecure_tls,
             origin_keys,
             // Only a hub (server role) observes peers; a client-only node reports none.
@@ -645,12 +651,14 @@ struct FedStatusTask {
     is_hub: bool,
     sync: fed::SyncSection,
     links: Vec<supragnosis_sync::ServerLink>,
+    surfaces: supragnosis_sync::NegotiatedSurfaces,
     registry: Arc<supragnosis_sync::http::PeerRegistry>,
     admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>>,
 }
 
 fn spawn_fed_status(task: FedStatusTask) {
-    let FedStatusTask { engine, fed, node_id, is_hub, sync, links, registry, admitted } = task;
+    let FedStatusTask { engine, fed, node_id, is_hub, sync, links, surfaces, registry, admitted } =
+        task;
     /// Events `a` holds that `b` lacks, approximated by per-(origin, workspace) seq gaps.
     fn vv_ahead(a: &VersionVector, b: &VersionVector) -> u64 {
         a.0.iter().map(|(k, sa)| sa.saturating_sub(*b.0.get(k).unwrap_or(&0))).sum()
@@ -664,6 +672,8 @@ fn spawn_fed_status(task: FedStatusTask) {
                 let mut healthy = false;
                 let mut version = None;
                 let mut ws_json = Vec::new();
+                let mut diff = supragnosis_sync::SurfaceDiff::default();
+                let mut negotiated_at = None;
                 if let Ok(client) = supragnosis_sync::http::SyncClient::new(
                     server,
                     &link.auth_token,
@@ -673,7 +683,29 @@ fn spawn_fed_status(task: FedStatusTask) {
                         Ok(p) => {
                             healthy = true;
                             version = Some(p.version);
-                            for ws in &sync.share_workspaces {
+                            // The authorization half of the answer, kept rather than dropped. This
+                            // is the only place negotiation happens: handlers read the map under a
+                            // lock and never ping, so nothing is added to a call that already
+                            // blocks (F11, negotiated-surface.md N1).
+                            diff = supragnosis_sync::surface_diff(
+                                &sync.share_workspaces,
+                                &p.shared_workspaces,
+                            );
+                            negotiated_at = Some(supragnosis_core::now_millis());
+                            if let Ok(mut m) = surfaces.write() {
+                                m.insert(
+                                    server.clone(),
+                                    supragnosis_sync::NegotiatedSurface {
+                                        admits: Some(p.shared_workspaces.clone()),
+                                        negotiated_at,
+                                    },
+                                );
+                            }
+                            // Drift only for what both sides hold. Asking a host to advertise a
+                            // workspace it does not admit answers 403, which this loop used to
+                            // discard with a bare `continue` - so a misconfigured workspace simply
+                            // left the view. It is now named in `local_only` instead.
+                            for ws in &diff.both {
                                 let store = engine.store();
                                 let ws_owned = ws.clone();
                                 let local = tokio::task::spawn_blocking(move || {
@@ -693,6 +725,14 @@ fn spawn_fed_status(task: FedStatusTask) {
                             }
                         }
                         Err(e) => {
+                            // Unreachable is *unknown*, never an empty grant set: a host that is
+                            // down must not read as a grant that was revoked (F21 clause 4, F12).
+                            if let Ok(mut m) = surfaces.write() {
+                                m.insert(
+                                    server.clone(),
+                                    supragnosis_sync::NegotiatedSurface::default(),
+                                );
+                            }
                             if last.get(server).copied() != Some(false) {
                                 tracing::warn!(%server, error = %e, "hub health check failed");
                             }
@@ -715,7 +755,12 @@ fn spawn_fed_status(task: FedStatusTask) {
                     "url": server,
                     "healthy": healthy,
                     "version": version,
+                    // Unchanged key, narrowed meaning: drift rows for the workspaces both sides
+                    // hold. The two new buckets are what the old view had no way to say.
                     "workspaces": ws_json,
+                    "local_only": diff.local_only,
+                    "peer_only": diff.peer_only,
+                    "negotiated_at": negotiated_at,
                 }));
             }
             let peers_json = if is_hub {

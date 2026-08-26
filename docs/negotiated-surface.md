@@ -145,9 +145,15 @@ routing decision on a premise already known to be weak.
 The step landed narrower than this document first described it: the shape it showed included a
 per-server share list, and Step 1 has no consumer for one (Section 5).
 
-**Step 2 - keep the answer, report the difference.** The health loop stops discarding
+**Step 2 - keep the answer, report the difference. [done]** The health loop stops discarding
 `shared_workspaces` and writes the typed map; the drift view becomes the three buckets with their
-negotiation time; `sync_status` and the viewer's federation blob expose it. Read-only throughout.
+negotiation time; `sync_status`, the viewer's federation blob and the viewer's own federation panel
+expose it. Read-only throughout.
+
+One thing the step found rather than built: the old drift view called `advertise` for every workspace
+on the local share list, and a host that does not admit one answers `403`, which the loop discarded
+with a bare `continue`. So a misconfigured workspace did not merely go unexplained - it left the
+panel. It is now named in `local_only`, which is the bucket that exists for it.
 
 > **The constraint this step exists under.** F11 - sync never blocks a tool handler - is already
 > unmet: the `sync_*` tools ship as ordinary blocking calls. Negotiating inside a handler would add a
