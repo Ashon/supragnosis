@@ -71,6 +71,64 @@ share_workspaces = ["..."]
 `0.0.0.0` is the bind address *inside* the container; what peers dial is the host address you map
 `7420` to. Those are different strings and only the second one belongs in a peer's config.
 
+## The two-node sandbox
+
+`compose.yaml` above runs one hub, which is the shape a deployment wants and the wrong shape for
+watching federation work. A negotiated surface (federation.md 6e) is a statement about what
+**another** host admits, so a single node cannot render one, and until `compose.sandbox.yaml` there
+was no way to see federation end to end without two machines.
+
+```bash
+task sandbox:up                  # builds the working tree, brings up hub + spoke
+open http://127.0.0.1:7531       # the spoke's viewer - the negotiated surface is in Federation
+open http://127.0.0.1:7521       # the hub's viewer - known peers, served activity
+task sandbox:surface             # the same data as JSON
+task sandbox:down                # containers and volumes, both gone
+```
+
+The two sides are configured to **disagree on purpose**: the hub admits `shared` and `hub-only`, the
+spoke shares `shared` and `spoke-only`. That is what makes all three buckets appear at once -
+
+| Panel line | Bucket | What it means |
+|---|---|---|
+| `shared: in sync` | both | shared here, admitted there |
+| `spoke-only: not admitted` | local_only | this node lists it, the host does not admit it |
+| `hub-only: admitted, not shared` | peer_only | the host would admit it, this node does not share it |
+| `surface negotiated Ns ago` | - | when the answer arrived; absent reads as *unknown*, not as a revoked grant |
+
+Symmetric configuration would show one bucket and demonstrate nothing, which is why the mismatch is
+in `sandbox-init.sh` rather than left to whoever runs it.
+
+### It is isolated from an installed release, by construction
+
+A developer running this most likely has the released package on the same machine, holding
+`~/.supragnosis` and port 7373. Nothing in the sandbox touches either, and the separation does not
+rest on remembering:
+
+- **No bind mount into `$HOME`.** Both nodes keep state in named volumes, prefixed
+  `supragnosis-sandbox-` so they cannot collide with `supragnosis-state`, which the hub compose file
+  uses. `down -v` deletes the sandbox's and no other.
+- **Its own compose project** (`name: supragnosis-sandbox`), so `down` here cannot reach the other
+  stack, and its own image tag (`supragnosis:sandbox`).
+- **A separate port block, bound to loopback.** 752x/753x, each published as `127.0.0.1:`. 7373 and
+  7374-7376 (an installed daemon), 7399 (`task dev`) and 7420 (the real hub compose) are untouched.
+- **MCP is not published from either node**, for the reason it is not published above: it is an
+  unauthenticated local trust surface by design (P17), and a sandbox is not a reason to move one
+  onto a network interface.
+
+### What it shortcuts, and why that is not a template
+
+`sandbox-init.sh` mounts both nodes' state at once so it can write the hub's allowlist from the
+spoke's freshly generated identity. A deployment cannot do that - the peer's `node_id`, public key
+and bearer hash arrive out of band, which is the exchange federation.md Section 11 defers - so the
+script is a sandbox convenience and not a pattern to copy into one.
+
+The browser proxies are the other shortcut. The viewer has no TCP bind because the unix socket's
+mode is the access control; `socat` in front of it puts the viewer's write endpoints
+(`/api/review`, `/api/resolve`, `/api/reify`, `/api/propose_merge`) on a port with nothing
+authenticating them. That is why the real hub answers those four with `403` at the nginx layer, and
+why the sandbox's published ports are bound to `127.0.0.1` rather than every interface.
+
 ## Building
 
 The image builds from source rather than from a release tarball, so it can be cut from any commit -
