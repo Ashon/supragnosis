@@ -591,3 +591,78 @@ async fn every_list_result_carries_cache_hints() {
     client.cancel().await.expect("client shutdown");
     server.await.expect("server task");
 }
+
+/// A narrowed round names the hosts it skipped, and skips only the one that refused.
+///
+/// This is F21 clause 5 and it needs no transport: the routing decision comes from the negotiated
+/// map, which is ordinary state, so a context carrying two hosts - one that admits the workspace and
+/// one that answered that it does not - exercises the response shape deterministically. The admitted
+/// host is pointed at a closed port, so its own entry is an error; the assertion is about `skipped`,
+/// which is the half that turns a silent narrowing into a legible one (negotiated-surface.md N5).
+#[tokio::test]
+async fn a_narrowed_round_names_the_hosts_it_skipped() {
+    use supragnosis_core::NodeIdentity;
+    use supragnosis_sync::{NegotiatedSurface, NegotiatedSurfaces, ServerLink, SyncNode};
+
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let admits = "http://127.0.0.1:1".to_string(); // closed port: consulted, then fails fast
+    let refuses = "http://127.0.0.1:2".to_string();
+
+    let surfaces: NegotiatedSurfaces = Default::default();
+    {
+        let mut m = surfaces.write().expect("lock");
+        m.insert(
+            admits.clone(),
+            NegotiatedSurface { admits: Some(vec!["ws".into()]), negotiated_at: Some(1) },
+        );
+        m.insert(
+            refuses.clone(),
+            NegotiatedSurface { admits: Some(vec!["other".into()]), negotiated_at: Some(1) },
+        );
+    }
+    let sync = Arc::new(supragnosis_mcp::SyncContext {
+        node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
+        share_workspaces: vec!["ws".into()],
+        servers: vec![
+            ServerLink { url: admits.clone(), auth_token: "t".into() },
+            ServerLink { url: refuses.clone(), auth_token: "t".into() },
+        ],
+        surfaces,
+        insecure_tls: false,
+        origin_keys: Default::default(),
+        peer_registry: None,
+    });
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .with_sync(sync)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    for tool in ["sync_push", "sync_pull"] {
+        let res = client
+            .call_tool(
+                CallToolRequestParams::new(tool).with_arguments(args(json!({"workspace": "ws"}))),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+        let v = tool_json(&res);
+        let skipped: Vec<&str> = v["skipped"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
+            .unwrap_or_else(|| panic!("{tool} response carries no `skipped`: {v}"));
+        assert_eq!(
+            skipped,
+            [refuses.as_str()],
+            "{tool} must name the refusing host and only it - unknown and admitting hosts are consulted: {v}"
+        );
+    }
+
+    client.cancel().await.ok();
+    server.abort();
+}

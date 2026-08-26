@@ -34,3 +34,5 @@ tokio = { workspace = true, features = ["io-util"] }
 # Real-model end-to-end measurement (non-deterministic eval) lives in e2e/, not this crate.
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
+# A test context needs a node identity to build a SyncContext; nothing in the crate itself does.
+supragnosis-core.workspace = true

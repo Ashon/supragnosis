@@ -179,6 +179,12 @@ negation reading P5 forbids and the unknown-versus-empty collapse F12 names. Unk
 so the host's own `403` stays reachable. An empty grant set, by contrast, IS an answer ("admitted,
 may read nothing", 6a) and does narrow.
 
+The wiring is checked over the real protocol, not by reading it. A context carrying two hosts - one
+that admits the workspace, one that answered that it does not - drives `sync_push` and `sync_pull`
+through an in-process MCP client, and the response both names the refusing host in `skipped` and
+omits it from the per-server results. No transport is needed for that, because the routing decision
+comes from the negotiated map, which is ordinary state.
+
 **The CLI's one-shot round deliberately does not narrow**, which is a departure from this document's
 first plan. `supragnosis sync --workspace X` is an explicit request for one workspace, and narrowing
 it would turn that request into a silent no-op. Worse, the CLI holds no map - there is no health loop
