@@ -285,10 +285,8 @@ pub struct SyncContext {
     pub node: Arc<supragnosis_sync::SyncNode>,
     /// Outbound share whitelist (P17/F9) - what may leave this node.
     pub share_workspaces: Vec<String>,
-    /// Sync server base URLs (hubs) this node talks to.
-    pub servers: Vec<String>,
-    /// Bearer token presented to those servers.
-    pub auth_token: String,
+    /// The sync servers (hubs) this node talks to, each with the credential presented to it.
+    pub servers: Vec<supragnosis_sync::ServerLink>,
     /// Accept a self-signed hub certificate (internal VMs; content authenticity stays with F6).
     pub insecure_tls: bool,
     /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
@@ -425,10 +423,11 @@ impl SupragnosisServer {
                         .workspace
                         .clone()
                         .unwrap_or_else(|| self.engine.default_workspace().to_string());
-                    for server in &ctx.servers {
+                    for link in &ctx.servers {
+                        let server = &link.url;
                         let client = match supragnosis_sync::http::SyncClient::new(
                             server,
-                            &ctx.auth_token,
+                            &link.auth_token,
                             ctx.insecure_tls,
                         ) {
                             Ok(c) => c,
@@ -837,7 +836,7 @@ impl SupragnosisServer {
             "public_key": ctx.node.public_key_hex(),
             "workspace": ws,
             "share_workspaces": ctx.share_workspaces,
-            "servers": ctx.servers,
+            "servers": ctx.servers.iter().map(|l| &l.url).collect::<Vec<_>>(),
             "version_vector": vv,
         });
         // Hub role: the runtime known-peer registry (who checked in, when, how much - resets with
@@ -857,10 +856,11 @@ impl SupragnosisServer {
         };
         let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
         let mut results = Vec::new();
-        for server in &ctx.servers {
+        for link in &ctx.servers {
+            let server = &link.url;
             let client = match supragnosis_sync::http::SyncClient::new(
                 server,
-                &ctx.auth_token,
+                &link.auth_token,
                 ctx.insecure_tls,
             ) {
                 Ok(c) => c,
@@ -960,10 +960,11 @@ impl SupragnosisServer {
             }
         }
         let mut results = Vec::new();
-        for server in &ctx.servers {
+        for link in &ctx.servers {
+            let server = &link.url;
             let client = match supragnosis_sync::http::SyncClient::new(
                 server,
-                &ctx.auth_token,
+                &link.auth_token,
                 ctx.insecure_tls,
             ) {
                 Ok(c) => c,

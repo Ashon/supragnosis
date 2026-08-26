@@ -33,6 +33,19 @@ pub enum SyncError {
     Store(#[from] StoreError),
 }
 
+/// One configured sync server and the credential this node presents to it.
+///
+/// Per server rather than one token for all of them. A shared bearer hands every configured host the
+/// credential that also authorizes at the others, so any one of them could present it elsewhere as
+/// this node. That is tolerable while the token only fetches knowledge, and stops being tolerable
+/// once a host's own answer decides where knowledge goes - an answer is worth no more than the
+/// identification of the caller it was given to (negotiated-surface.md Section 5).
+#[derive(Debug, Clone)]
+pub struct ServerLink {
+    pub url: String,
+    pub auth_token: String,
+}
+
 /// Why an inbound event was rejected (F6). Rejections are reported, never silently dropped (P5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RejectReason {

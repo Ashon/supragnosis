@@ -686,10 +686,10 @@ input, not nondeterminism - F16).
   `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys`,
   `[server] listen / tls_cert / tls_key / allowlist` (entries: `node_id -> public key, bearer hash,
   shared workspaces`). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
-  deferred - Section 11), `anchor_key` (the Phase 5 policy anchor, 6a), and the per-server sync entries
-  the Phase 7 prerequisite needs (`[[sync.server]]` carrying `url` / `auth_token` / `share_workspaces`,
-  mirroring the per-peer shape `[[server.allowlist]]` already has - today `servers` and `auth_token` are
-  flat and global, so one credential and one share list apply to every host) are rejected loudly today
+  deferred - Section 11), `anchor_key` (the Phase 5 policy anchor, 6a), and a per-server
+  `share_workspaces` on a `[[sync.server]]` entry (the entries themselves carry `url` and `auth_token`
+  and are honored; a per-server share list arrives with the routing step that obeys it, since a share
+  list parsed and not obeyed reports a narrowing the system did not perform) are rejected loudly today
   (deny-unknown), and so is an unknown key **inside** an allowlist entry - `AllowEntry` denies unknown
   fields like every other section, closing the gap this spec used to record. An entry is where a typo
   is most expensive, since it decides who may connect and what they may read (P17/P18). `[node] role` was superseded: roles are implied by which sections are present

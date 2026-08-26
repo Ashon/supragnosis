@@ -223,10 +223,14 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["node_id_derives_from_public_key_and_is_stable"]),
         ),
         c(
-            "the sync role refuses to start on an empty, default or allowlist-colliding node_id",
-            Evidence::Deferred(
-                "no such refusal exists: the identity is always generated, so empty and `localhost`                  are unreachable by construction, but a node whose own id sits in its own allowlist                  starts without complaint. Revisit alongside the M4 Phase 5 allowlist work",
+            "an empty or default node_id cannot occur: the identity is generated, never configured",
+            Evidence::Structural(
+                "there is no configuration key for `node_id` - it is derived from a keypair the node generates once, so `localhost` and the empty string are not values the field can take rather than values something checks for",
             ),
+        ),
+        c(
+            "the sync role refuses to start when its own id sits in its own allowlist",
+            Evidence::Scenario(&["a_node_that_admits_itself_is_refused"]),
         ),
     ]),
     (15, &[c(
@@ -313,7 +317,10 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed on the day it was written rather than the day it grows a guard, like the three above.
     // It carries one difference: the invariant it implements, F21, is already a registry row, so the
     // first test it names has somewhere to be cited FROM as well as checked against.
-    ("docs/negotiated-surface.md", include_str!("../../../docs/negotiated-surface.md")),
+    (
+        "docs/negotiated-surface.md",
+        include_str!("../../../docs/negotiated-surface.md"),
+    ),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
@@ -1148,9 +1155,8 @@ fn sentence_of<'a>(paragraph: &'a str, name: &str) -> &'a str {
         while bytes.get(j).is_some_and(u8::is_ascii_whitespace) {
             j += 1;
         }
-        let starts_sentence = bytes
-            .get(j)
-            .is_some_and(|c| c.is_ascii_uppercase() || *c == b'`' || *c == b'*');
+        let starts_sentence =
+            bytes.get(j).is_some_and(|c| c.is_ascii_uppercase() || *c == b'`' || *c == b'*');
         if j > k + 1 && starts_sentence && paragraph.is_char_boundary(j) {
             bounds.push(j);
         }
@@ -1399,7 +1405,10 @@ fn report_principle_coverage() {
          {f_pinned} pinned-but-unmet / {f_unguarded} unmet-and-unpinned",
         FEDERATION_REGISTRY.len()
     );
-    println!("\nWhat federation promises and this build does not enforce yet ({}):", f_owed.len());
+    println!(
+        "\nWhat federation promises and this build does not enforce yet ({}):",
+        f_owed.len()
+    );
     for o in &f_owed {
         println!("  {o}");
     }
