@@ -748,7 +748,8 @@ input, not nondeterminism - F16).
   register a client, verify end-to-end convergence. May go live after Phase 4 **restricted to
   single-principal workspaces** (the P23 solo exception - one principal across many machines); onboarding a
   second principal requires Phase 5.
-- **Phase 7** - **negotiated surface and surface-aware routing** (6e, F21): consume the `ping`
+- **Phase 7** - **negotiated surface and surface-aware routing** (6e, F21; concrete design and step
+  order in [negotiated-surface.md](negotiated-surface.md)): consume the `ping`
   authorization answer instead of discarding it, hold it per server as link-local state, and expose it
   through `sync_status` and the viewer's federation blob as the three-bucket difference (both /
   local-only / peer-only) with the negotiation time attached (F21.6). Then filter fan-out - `sync_push`, `sync_pull`, federated `search` - on the
