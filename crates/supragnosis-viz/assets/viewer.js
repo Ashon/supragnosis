@@ -77,6 +77,21 @@ let flowPhase = 0;   // per-frame counter driving the marching-dash flow animati
 let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
 let showFootprint = true, showPulses = true, showSuperseded = true, showMini = true;
+// Workspace boundaries: a DASHED outline per workspace, drawn only in the all-workspaces view.
+//
+// A separate layer from the hyperedge hulls above, and deliberately a different shape language -
+// those are filled regions saying "these were asserted together" (Principle 11's second-order
+// structure), this is an outline saying "these are the same sharing unit". Sharing one visual would
+// merge two meanings.
+//
+// It can be an outline rather than an overlapping region because the workspace is an exact
+// partition: `Entity::make_id` hashes the workspace with the name, so no entity straddles two.
+// `origins` cannot be drawn this way - a host set unions across nodes (F4), so those regions would
+// overlap and an outline would imply a boundary that is not there.
+//
+// Render-only, with no force of its own. The hyperedge hulls are the layout organizer (hullForce);
+// a second set of attractors would put two meanings in competition over one set of positions.
+let showWsHulls = true;
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
 const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
@@ -1967,6 +1982,65 @@ function hullGeom(ms) {
 // one path gives the same rounded blob a thick round-join stroke would - but with no stroke, so there is
 // no fill/stroke overlap (no seam) and no offscreen compositing is needed; the caller just fills it once
 // at the hull's opacity, directly on the canvas, and overlapping hulls blend naturally.
+// The workspace outlines. Drawn once per workspace present, and only when more than one is - a
+// single boundary around the whole graph states nothing the view does not already say.
+//
+// Groups of one or two nodes are skipped for the same reason `hullGeom` needs three: a hull around
+// two points is a line, which reads as an edge rather than a region.
+function drawWsHulls(ctx, hullLabels) {
+  if (!showWsHulls) return;
+  const groups = new Map();
+  for (const n of nodes) {
+    if (!n.workspace) continue;
+    if (!groups.has(n.workspace)) groups.set(n.workspace, []);
+    groups.get(n.workspace).push(n);
+  }
+  if (groups.size < 2) return;
+  ctx.save();
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1.2;
+  // Sorted, so the colour a workspace gets does not depend on map iteration order (P16's
+  // reproducibility, applied to the render: the same state must draw the same picture).
+  for (const ws of [...groups.keys()].sort()) {
+    const ms = groups.get(ws);
+    const col = hyperColor("ws:" + ws);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.55;
+    let g;
+    if (ms.length >= 3) {
+      g = hullGeom(ms);
+      if (!g) continue;
+      roundedHullPath(ctx, g);
+      ctx.stroke();
+    } else {
+      // One or two nodes cannot have a convex hull - two points are a line, which would read as an
+      // edge. They still get a boundary, because drawing some workspaces and silently omitting
+      // others says the omitted nodes belong to none. A rounded box around their extent carries the
+      // same "same sharing unit" claim without pretending to be a hull.
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, pad = 0;
+      for (const m of ms) {
+        x0 = Math.min(x0, m.x); y0 = Math.min(y0, m.y);
+        x1 = Math.max(x1, m.x); y1 = Math.max(y1, m.y);
+        pad = Math.max(pad, nodeRadius(m) + nodeStrokeW(m) / 2);
+      }
+      pad += HULL_NODE_GAP;
+      const rr = Math.min(14, pad);
+      ctx.beginPath();
+      ctx.roundRect(x0 - pad, y0 - pad, (x1 - x0) + pad * 2, (y1 - y0) + pad * 2, rr);
+      ctx.stroke();
+      g = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, r: pad, hull: [{ x: (x0 + x1) / 2, y: y0 - pad }] };
+    }
+    // Above the outline's highest point, not above the centroid: `hullGeom.r` is the node-glyph gap,
+    // so a centroid offset would land the name inside the region on top of its own nodes. `size` is
+    // held at 1 because the label renderer scales the font by it, and a workspace is not a context
+    // whose importance grows with membership - it is a boundary, and boundaries are named quietly.
+    const top = g.hull.reduce((a, q) => (q.y < a.y ? q : a), g.hull[0]);
+    hullLabels.push({ cx: top.x, cy: top.y - g.r - 10, text: ws, col: hyperColor("ws:" + ws), hot: false, lgHit: false, size: 1 });
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
 function roundedHullPath(c, g) {
   const hull = g.hull, n = hull.length, r = g.r, cx = g.cx, cy = g.cy;
   const nrm = [];   // outward unit normal per edge i (edge hull[i]->hull[i+1])
@@ -2259,6 +2333,7 @@ function draw() {
     for (const it of items) if (!it.hot) paint(it);   // active hulls painted last so they sit on top
     for (const it of items) if (it.hot) paint(it);
     ctx.globalAlpha = 1;
+    drawWsHulls(ctx, hullLabels);
     // Group labels: their own layer, right after the hulls (below edges/nodes). Greedy placement -
     // active first, then larger contexts - skips any label whose box overlaps one already placed, so
     // the map reads as spaced region names instead of a wall of overlapping text. A soft pill keeps
