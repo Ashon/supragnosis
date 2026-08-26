@@ -22,7 +22,8 @@
 //!   a nicer label.
 //! - [`Evidence::Characterized`] - the clause does **not** hold; these running tests pin the
 //!   current behavior so that repaying it must rewrite them. Must also name the milestone.
-//! - [`Evidence::Deferred`] - the clause does not hold and nothing pins it. Must name the milestone
+//! - [`Evidence::Deferred`] - the clause is not GUARANTEED: either it does not hold, or it holds
+//!   only incidentally and nothing checks it. Must name the milestone
 //!   that repays it, so this file and architecture.md Section 14 cannot drift into disagreeing
 //!   about what is owed.
 //!
@@ -73,14 +74,22 @@ enum Evidence {
     /// the repayment milestone. This is the state that keeps an unmet clause from being filed as
     /// `Scenario` merely because a test mentions it.
     Characterized(&'static [&'static str], &'static str),
-    /// **Not enforced**, and nothing pins it. Must name the repayment milestone
-    /// (architecture.md Section 14).
+    /// **Not guaranteed.** Either the clause does not hold, or it holds only incidentally - no code
+    /// violates it today - and nothing checks either way. Both are the same debt here, which is why
+    /// there is still no fifth state: an unchecked guarantee is a guarantee on paper, and
+    /// [`Evidence::holds`] answers what is assured rather than what happens to be true this week.
+    /// Must name the repayment milestone (architecture.md Section 14).
     Deferred(&'static str),
 }
 
 impl Evidence {
-    /// Whether the clause is actually met today. The coverage report exists to keep this
-    /// distinction visible, since it is the one a reader is most likely to assume.
+    /// Whether the clause is **assured** - held by a running test or by construction.
+    ///
+    /// Not the same as "true today", and the difference is deliberate. A `Deferred` clause may
+    /// happen to hold because nothing violates it yet; it is still reported as owed, because what
+    /// the registry answers is what the system guarantees rather than what it currently gets away
+    /// with. The coverage report exists to keep that distinction visible, since it is the one a
+    /// reader is most likely to collapse.
     fn holds(&self) -> bool {
         matches!(self, Evidence::Scenario(_) | Evidence::Structural(_))
     }
