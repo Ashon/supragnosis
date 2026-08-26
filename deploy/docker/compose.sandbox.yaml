@@ -101,6 +101,13 @@ services:
     <<: *node
     container_name: supragnosis-sandbox-hub
     hostname: hub
+    # A readable name for the acting host, so the origin legend has something to print. NOT identity:
+    # `SUPRAGNOSIS_HOST` sets the self-declared `host` field, which P2 says cannot be verified, and
+    # the origin layer keys on the keypair-derived `origin_node` instead. Without this both nodes
+    # report "localhost" and a legend can only offer two hex prefixes.
+    environment:
+      RUST_LOG: info
+      SUPRAGNOSIS_HOST: sandbox-hub
     depends_on:
       keygen: {condition: service_completed_successfully}
     volumes:
@@ -123,6 +130,9 @@ services:
     <<: *node
     container_name: supragnosis-sandbox-spoke
     hostname: spoke
+    environment:
+      RUST_LOG: info
+      SUPRAGNOSIS_HOST: sandbox-spoke
     depends_on:
       keygen: {condition: service_completed_successfully}
       hub: {condition: service_healthy}

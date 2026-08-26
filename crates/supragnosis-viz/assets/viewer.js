@@ -91,7 +91,13 @@ let showFootprint = true, showPulses = true, showSuperseded = true, showMini = t
 //
 // Render-only, with no force of its own. The hyperedge hulls are the layout organizer (hullForce);
 // a second set of attractors would put two meanings in competition over one set of positions.
-let showWsHulls = true;
+// One layer, three states, cycled with "b": workspace boundaries, origin boundaries, off.
+//
+// A mode rather than two layers. They answer different questions - "same sharing unit" and "who
+// signed for this" - and stacking two boundary systems over the hyperedge fills leaves a picture
+// nobody can read. Switching also makes the difference between them legible: the same graph under
+// the two groupings is the comparison worth seeing.
+let boundaryMode = "workspace";   // "workspace" | "origin" | "off"
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
 const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
@@ -648,6 +654,7 @@ async function poll() {
             hyperedges = hg.hyperedges || [];
             const drawn = hyperedges.filter(h => h.size >= 3).length;
             document.getElementById("stats").textContent += ` / hyperedges ${hyperedges.length} (hull ${drawn})`;
+            renderBoundaryMode();
           }
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
@@ -1988,12 +1995,22 @@ function hullGeom(ms) {
 // Groups of one or two nodes are skipped for the same reason `hullGeom` needs three: a hull around
 // two points is a line, which reads as an edge rather than a region.
 function drawWsHulls(ctx, hullLabels) {
-  if (!showWsHulls) return;
+  if (boundaryMode === "off") return;
   const groups = new Map();
-  for (const n of nodes) {
-    if (!n.workspace) continue;
-    if (!groups.has(n.workspace)) groups.set(n.workspace, []);
-    groups.get(n.workspace).push(n);
+  const push = (key, n) => {
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  };
+  if (boundaryMode === "workspace") {
+    // Exactly one key per node: the workspace is a partition (the entity id hashes it).
+    for (const n of nodes) if (n.workspace) push(n.workspace, n);
+  } else {
+    // Several keys per node, on purpose. Attestations union across nodes (F4), so an entity both
+    // sides asserted belongs to both regions and the outlines overlap - which is the fact worth
+    // seeing, not a defect to design away. Labelled by id prefix: `origins` is the self-declared
+    // host and pairing the two would need a stamp-level join the graph does not carry, so a hex
+    // prefix is the honest name here (P2 - the verifiable id is the one that may attribute).
+    for (const n of nodes) for (const o of (n.origin_nodes || [])) push(o, n);
   }
   if (groups.size < 2) return;
   ctx.save();
@@ -2003,7 +2020,7 @@ function drawWsHulls(ctx, hullLabels) {
   // reproducibility, applied to the render: the same state must draw the same picture).
   for (const ws of [...groups.keys()].sort()) {
     const ms = groups.get(ws);
-    const col = hyperColor("ws:" + ws);
+    const col = hyperColor(boundaryMode + ":" + ws);
     ctx.strokeStyle = col;
     ctx.globalAlpha = 0.55;
     let g;
@@ -2035,10 +2052,19 @@ function drawWsHulls(ctx, hullLabels) {
     // held at 1 because the label renderer scales the font by it, and a workspace is not a context
     // whose importance grows with membership - it is a boundary, and boundaries are named quietly.
     const top = g.hull.reduce((a, q) => (q.y < a.y ? q : a), g.hull[0]);
-    hullLabels.push({ cx: top.x, cy: top.y - g.r - 10, text: ws, col: hyperColor("ws:" + ws), hot: false, lgHit: false, size: 1 });
+    const label = boundaryMode === "origin" ? ws.slice(0, 8) : ws;
+    hullLabels.push({ cx: top.x, cy: top.y - g.r - 10, text: label, col, hot: false, lgHit: false, size: 1 });
   }
   ctx.restore();
   ctx.globalAlpha = 1;
+}
+
+// Append the boundary mode to the stats line, replacing any previous mention. Called on toggle and
+// after a graph load, since that load rewrites the line from scratch.
+function renderBoundaryMode() {
+  const el = document.getElementById("stats");
+  if (!el) return;
+  el.textContent = el.textContent.replace(/ \/ boundaries [a-z]+$/, "") + " / boundaries " + boundaryMode;
 }
 
 function roundedHullPath(c, g) {
@@ -2769,6 +2795,14 @@ window.addEventListener("keydown", e => {
     e.preventDefault();
     searchEl.focus();
     searchEl.select();
+  }
+  else if (e.key === "b") {
+    boundaryMode = boundaryMode === "workspace" ? "origin" : boundaryMode === "origin" ? "off" : "workspace";
+    // The mode belongs in the stats line, which is durable, and not in `statusEl`, which the render
+    // loop rewrites every frame - the first version put it there and the feedback was gone before it
+    // could be read, so the toggle looked like it had done nothing.
+    renderBoundaryMode();
+    requestFrame();
   }
   else if (e.key === "Escape") { if (obscardEl.classList.contains("on")) hideObsCard(); else setViewPop(false); }
 });

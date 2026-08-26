@@ -756,6 +756,26 @@ pub struct GraphNode {
     /// from, e.g. ["ashon-mac", "knowledge-vm"] on a hub after a sync (federation observability).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origins: Vec<String>,
+    /// The key-derived node ids that signed for this entity (sorted), from the attestations' sync
+    /// stamps - who attested it, as opposed to `origins`, which is what they called themselves.
+    ///
+    /// Two fields rather than one because the two answer different questions and only one of them
+    /// can be checked. `host` is a string the writer chose, and P2 is explicit that a self-declared
+    /// identity cannot be verified; `origin_node` is bound to a keypair (F14) and is what a
+    /// signature verifies against (F6). Anything that attributes knowledge to a peer has to rest on
+    /// the second, with the first as a label - collapsing them would promote an unverifiable claim
+    /// into structure, which is the mistake F13 exists to prevent on the trust axis.
+    ///
+    /// Unions across nodes like `origins` does (F4), so this is a set and not an owner.
+    ///
+    /// Empty has **two** readings and neither is "origin unknown" (P5). Either no attestation is
+    /// stamped - stamping happens at the export boundary, so a workspace never offered to a peer has
+    /// none - or the log is stamped and this projection has not caught up. The second is real and
+    /// was measured: a sync round stamps via `backfill` before it advertises, so a round that fails
+    /// at the door leaves the log stamped and the entity rows holding their pre-stamp provenance
+    /// until the next re-materialization (F5's transient window, Prop C). `reproject` closes it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origin_nodes: Vec<String>,
     /// The workspace this entity belongs to - single-valued, unlike `origins`.
     ///
     /// `Entity::make_id` hashes the workspace with the canonical name, so the same name in two
@@ -4137,6 +4157,16 @@ impl Engine {
                     degree: degree.get(cid).copied().unwrap_or(0),
                     sources,
                     origins,
+                    origin_nodes: {
+                        let mut o: Vec<String> = members
+                            .iter()
+                            .flat_map(|m| m.provenance.iter())
+                            .filter_map(|p| p.sync.as_ref().map(|s| s.origin_node.clone()))
+                            .collect();
+                        o.sort();
+                        o.dedup();
+                        o
+                    },
                     workspace: members
                         .iter()
                         .flat_map(|m| m.provenance.iter())
@@ -4266,6 +4296,16 @@ impl Engine {
                     origins: {
                         let mut o: Vec<String> =
                             e.provenance.iter().map(|p| p.host.clone()).collect();
+                        o.sort();
+                        o.dedup();
+                        o
+                    },
+                    origin_nodes: {
+                        let mut o: Vec<String> = e
+                            .provenance
+                            .iter()
+                            .filter_map(|p| p.sync.as_ref().map(|s| s.origin_node.clone()))
+                            .collect();
                         o.sort();
                         o.dedup();
                         o

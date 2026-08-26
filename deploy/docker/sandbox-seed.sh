@@ -22,9 +22,12 @@ dc() { docker compose -f "$CF" "$@"; }
 #   shared      - the spoke shares it, the hub admits it   -> pushes and pulls
 #   spoke-only  - the spoke shares it, the hub does NOT    -> refused at the door, loudly
 #   hub-only    - the hub admits it, the spoke does not share it -> pulls, pushes nothing
-seed() { # seed <volume> ; JSON-RPC lines on stdin
-  docker run --rm -i -v "$1:/var/lib/supragnosis/.supragnosis" "$IMG" serve 2>/dev/null \
-    | grep -c observation_id || true
+seed() { # seed <volume> <host-label> ; JSON-RPC lines on stdin
+  # The host label has to match the daemon's, or the observations this writes report `localhost`
+  # while the same node's daemon reports its own name - one node speaking under two labels. `host` is
+  # self-declared either way (P2); this only keeps the label consistent.
+  docker run --rm -i -e "SUPRAGNOSIS_HOST=$2" -v "$1:/var/lib/supragnosis/.supragnosis" "$IMG" \
+    serve 2>/dev/null | grep -c observation_id || true
 }
 
 hello() {
@@ -44,14 +47,20 @@ echo "seeding the spoke"
   call 2 '{"workspace":"shared","content":"redb replaced the Datalog store in v0.2.0 and the knowledge model did not move","entities":[{"name":"redb","type":"Tool","description":"embedded pure-Rust B-tree store"},{"name":"KnowledgeStore port","type":"Concept","description":"the trait every adapter implements"}],"relations":[{"from":"redb","type":"implements","to":"KnowledgeStore port"}],"confidence":0.9}'
   call 3 '{"workspace":"shared","content":"the negotiated surface is what a host says this node may reach","entities":[{"name":"negotiated surface","type":"Concept","description":"a peer entitlement, per link"},{"name":"ping","type":"Tool","description":"the sync health check that carries it"}],"relations":[{"from":"ping","type":"carries","to":"negotiated surface"}],"confidence":0.95}'
   call 4 '{"workspace":"spoke-only","content":"this spoke keeps a note the hub never admits","entities":[{"name":"local note","type":"Concept","description":"deliberately unshared"}],"confidence":0.5}'
-} | seed supragnosis-sandbox-spoke
+  call 5 '{"workspace":"shared","content":"the spoke reads the sync protocol as three idempotent calls","entities":[{"name":"sync protocol","type":"Concept","description":"advertise, pull, push"},{"name":"version vector","type":"Concept","description":"per (origin, workspace) high-water marks"}],"relations":[{"from":"sync protocol","type":"uses","to":"version vector"}],"confidence":0.8}'
+} | seed supragnosis-sandbox-spoke sandbox-spoke
 
 echo "seeding the hub"
 {
   hello
   call 2 '{"workspace":"shared","content":"federation replicates the observation log, never a projection","entities":[{"name":"observation log","type":"Concept","description":"the single source of truth"},{"name":"federation","type":"Concept","description":"log replication across hosts"}],"relations":[{"from":"federation","type":"replicates","to":"observation log"}],"confidence":0.95}'
   call 3 '{"workspace":"hub-only","content":"the hub tracks a certificate rotation no spoke shares","entities":[{"name":"TLS certificate","type":"Concept","description":"the hub self-signed cert"}],"confidence":0.6}'
-} | seed supragnosis-sandbox-hub
+  # The same two entities the spoke asserted, from the hub's side. Co-assertion is the case the
+  # origin layer exists for: after a round both nodes have attested them, so those entities sit
+  # inside BOTH origin outlines and the overlap is the fact on screen (F4). Without a co-asserted
+  # entity the layer draws two disjoint regions and demonstrates nothing it was built for.
+  call 4 '{"workspace":"shared","content":"the hub serves the sync protocol and holds the authoritative version vector","entities":[{"name":"sync protocol","type":"Concept","description":"advertise, pull, push"},{"name":"version vector","type":"Concept","description":"per (origin, workspace) high-water marks"}],"relations":[{"from":"sync protocol","type":"uses","to":"version vector"}],"confidence":0.85}'
+} | seed supragnosis-sandbox-hub sandbox-hub
 
 echo "starting the hub so it can serve the sync API"
 dc start hub >/dev/null 2>&1
@@ -65,6 +74,13 @@ for ws in shared spoke-only hub-only; do
   docker run --rm --network "$NET" -v supragnosis-sandbox-spoke:/var/lib/supragnosis/.supragnosis \
     "$IMG" sync --workspace "$ws" 2>&1 | grep -vE "INFO|federation identity" | head -3 || true
 done
+
+# A round that fails at the door (spoke-only, by design) stamps the log via `backfill` and never
+# reaches its `reproject`, so the entity rows keep pre-stamp provenance and the graph reports no
+# origin for knowledge the log attributes fine. Catch the projection up, or the sandbox displays a
+# staleness as if it were a fact (F5's transient window, Prop C).
+docker run --rm -v supragnosis-sandbox-spoke:/var/lib/supragnosis/.supragnosis \
+  "$IMG" reproject --workspace spoke-only 2>&1 | grep -E "reprojected" || true
 
 dc start spoke >/dev/null 2>&1
 echo
