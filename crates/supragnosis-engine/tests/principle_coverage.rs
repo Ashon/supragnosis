@@ -885,6 +885,40 @@ struct DocClaim {
 /// identifier with at least three underscores - measured against every document in [`DESIGN_DOCS`],
 /// that shape has no false positives (field names like `origin_host_id` and type names like
 /// `HumanConfirmed` fall outside it) and catches all 27 real claims, in prose and tables alike.
+/// The sentence a name sits in, inside a paragraph already joined from its wrapped lines.
+///
+/// A boundary is a period followed by whitespace and then a capital, a backtick or a bold marker.
+/// That leaves the two shapes this corpus is full of intact: a version (`v0.2.0`) has no whitespace
+/// after its internal periods, and `e.g.` is followed by a lowercase word. A sentence ending in a
+/// version still splits, because the period before the space is followed by the next capital.
+/// Where the rule guesses wrong it splits too eagerly, which narrows the window - the safe
+/// direction for an escape hatch.
+fn sentence_of<'a>(paragraph: &'a str, name: &str) -> &'a str {
+    let bytes = paragraph.as_bytes();
+    let mut bounds = vec![0usize];
+    for k in 0..bytes.len() {
+        if bytes[k] != b'.' {
+            continue;
+        }
+        let mut j = k + 1;
+        while bytes.get(j).is_some_and(u8::is_ascii_whitespace) {
+            j += 1;
+        }
+        let starts_sentence = bytes
+            .get(j)
+            .is_some_and(|c| c.is_ascii_uppercase() || *c == b'`' || *c == b'*');
+        if j > k + 1 && starts_sentence && paragraph.is_char_boundary(j) {
+            bounds.push(j);
+        }
+    }
+    bounds.push(paragraph.len());
+    bounds
+        .windows(2)
+        .map(|w| &paragraph[w[0]..w[1]])
+        .find(|s| s.contains(name))
+        .unwrap_or(paragraph)
+}
+
 fn doc_claims() -> Vec<DocClaim> {
     let mut out = Vec::new();
     for (doc, text) in DESIGN_DOCS {
@@ -902,17 +936,19 @@ fn doc_claims() -> Vec<DocClaim> {
         };
         for (i, line) in lines.iter().enumerate() {
             // A document may claim a test that does not exist yet, but only by saying where it
-            // comes from. In a table that means the Status column specifically - the last non-empty
-            // cell - so a milestone mentioned in the Pins prose cannot excuse a `landed` row. In
-            // running prose there is no such column, so the paragraph is read instead; that is
-            // looser, and it is the price of letting the document write "the M5 test `x` lands
-            // there" without contorting the sentence.
+            // comes from, and the scope of that excuse is the unit that can actually qualify the
+            // name. In a table that is the Status column - the last non-empty cell - so a milestone
+            // mentioned in the Pins prose cannot excuse a `landed` row. In running prose it is the
+            // **sentence** the name sits in, which is what "the M5 test `x` lands there" was always
+            // meant to allow. Paragraph scope allowed more than that: any milestone anywhere in the
+            // block excused every name in it, and three dead guards deleted by one breaking change
+            // sat behind that for 24 days, each in a `Guarded by <test>` sentence of its own under a
+            // heading that happened to say M3b.
             let milestoned = |s: &str| ["M3", "M4", "M5", "M6"].iter().any(|m| s.contains(m));
-            let planned = if line.trim_start().starts_with('|') {
-                line.rsplit('|').map(str::trim).find(|c| !c.is_empty()).is_some_and(milestoned)
-            } else {
-                milestoned(&paragraph(i))
-            };
+            let is_row = line.trim_start().starts_with('|');
+            let row_planned = is_row
+                && line.rsplit('|').map(str::trim).find(|c| !c.is_empty()).is_some_and(milestoned);
+            let para = if is_row { String::new() } else { paragraph(i) };
             for piece in line.split('`').skip(1).step_by(2) {
                 let underscores = piece.bytes().filter(|b| *b == b'_').count();
                 let shaped = underscores >= 3
@@ -921,6 +957,8 @@ fn doc_claims() -> Vec<DocClaim> {
                         .bytes()
                         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
                 if shaped {
+                    let planned =
+                        if is_row { row_planned } else { milestoned(sentence_of(&para, piece)) };
                     out.push(DocClaim { doc, line_no: i + 1, name: piece, planned });
                 }
             }
@@ -956,8 +994,9 @@ fn design_docs_name_tests_that_run() {
                 c.name,
                 match state {
                     Declared::NotFound =>
-                        "no such test (renamed or deleted). Fix the name, or put the milestone \
-                         that will deliver it in the row's Status column",
+                        "no such test (renamed or deleted). Fix the name, or say where it comes \
+                         from: the milestone belongs in the row's Status column, or in the same \
+                         sentence as the name when the claim is prose",
                     Declared::NotATest => "exists but has no #[test] attribute, so it never runs",
                     Declared::Ignored => "is #[ignore]d, so a plain `cargo test` skips it",
                     Declared::Running => unreachable!(),
