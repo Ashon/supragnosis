@@ -357,6 +357,25 @@ fn refuse_unmigrated_store(cfg: &Config) -> Result<()> {
     )
 }
 
+/// F14's other half: a node whose own id sits in its own allowlist admits itself as a peer.
+///
+/// It would answer its own pulls, and once the negotiated surface routes on a host's answer
+/// (negotiated-surface.md N9) it would negotiate with itself. Nothing consumed such an entry before,
+/// so nothing ever complained - the invariant claimed a refusal the code did not perform. An entry
+/// naming this node is either a copied template or a mistyped id, and both are cheaper to fail on
+/// than to run with.
+fn refuse_self_admission(node_id: &str, server: Option<&fed::ServerSection>) -> Result<()> {
+    let Some(srv) = server else {
+        return Ok(());
+    };
+    anyhow::ensure!(
+        !srv.allowlist.iter().any(|e| e.node_id == node_id),
+        "[server] allowlist admits this node's own id {node_id} - a node cannot be its own peer. \
+         The entry is either a copied template or a mistyped id; remove it (F14)."
+    );
+    Ok(())
+}
+
 /// Assembles the store/embedder/engine from the configuration. If `events` is present, attaches a UI event sink (the viewer).
 fn build_engine(
     cfg: &Config,
@@ -470,6 +489,8 @@ fn build_sync_context(
     let identity = fed::load_or_create_identity()?;
     let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
+    let links = fc.sync.links()?;
+    refuse_self_admission(node.node_id(), fc.server.as_ref())?;
     // Runtime peer observability (hub role): who actually checked in, when, how much.
     // Set on a hub: the live admission directory, published so the console can show who is in.
     let mut admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>> = None;
@@ -530,15 +551,16 @@ fn build_sync_context(
     // authorization in one round trip), computes per-workspace diffs vs each hub, snapshots the
     // known-peer registry (hub role), and publishes it all to the viewer's /api/federation.
     if let Some(fs) = fed_status.clone() {
-        spawn_fed_status(
-            engine.clone(),
-            fs,
-            node.node_id().to_string(),
-            fc.server.is_some(),
-            fc.sync.clone(),
-            peer_registry.clone(),
-            admitted.clone(),
-        );
+        spawn_fed_status(FedStatusTask {
+            engine: engine.clone(),
+            fed: fs,
+            node_id: node.node_id().to_string(),
+            is_hub: fc.server.is_some(),
+            sync: fc.sync.clone(),
+            links: links.clone(),
+            registry: peer_registry.clone(),
+            admitted: admitted.clone(),
+        });
     }
     // The console's narrowing act, built here because this is where the config and the live
     // admission directory both are - the viewer only routes it (P20: the viz crate knows nothing
@@ -583,8 +605,7 @@ fn build_sync_context(
         Some(Arc::new(supragnosis_mcp::SyncContext {
             node,
             share_workspaces: fc.sync.share_workspaces.clone(),
-            servers: fc.sync.servers.clone(),
-            auth_token: fc.sync.auth_token.clone().unwrap_or_default(),
+            servers: links,
             insecure_tls: fc.sync.insecure_tls,
             origin_keys,
             // Only a hub (server role) observes peers; a client-only node reports none.
@@ -614,31 +635,40 @@ fn admitted_json(dir: &supragnosis_sync::http::PeerDirectory) -> Vec<serde_json:
         .collect()
 }
 
-fn spawn_fed_status(
+/// Inputs to the federation status loop, as a struct rather than positional arguments - the list
+/// crossed clippy's threshold when the resolved server links joined it, and a loop that reads eight
+/// unrelated things is easier to call wrongly than to read.
+struct FedStatusTask {
     engine: Arc<Engine>,
     fed: supragnosis_viz::FedStatus,
     node_id: String,
     is_hub: bool,
     sync: fed::SyncSection,
+    links: Vec<supragnosis_sync::ServerLink>,
     registry: Arc<supragnosis_sync::http::PeerRegistry>,
     admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>>,
-) {
+}
+
+fn spawn_fed_status(task: FedStatusTask) {
+    let FedStatusTask { engine, fed, node_id, is_hub, sync, links, registry, admitted } = task;
     /// Events `a` holds that `b` lacks, approximated by per-(origin, workspace) seq gaps.
     fn vv_ahead(a: &VersionVector, b: &VersionVector) -> u64 {
         a.0.iter().map(|(k, sa)| sa.saturating_sub(*b.0.get(k).unwrap_or(&0))).sum()
     }
     tokio::spawn(async move {
-        let token = sync.auth_token.clone().unwrap_or_default();
         let mut last: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
         loop {
             let mut servers_json = Vec::new();
-            for server in &sync.servers {
+            for link in &links {
+                let server = &link.url;
                 let mut healthy = false;
                 let mut version = None;
                 let mut ws_json = Vec::new();
-                if let Ok(client) =
-                    supragnosis_sync::http::SyncClient::new(server, &token, sync.insecure_tls)
-                {
+                if let Ok(client) = supragnosis_sync::http::SyncClient::new(
+                    server,
+                    &link.auth_token,
+                    sync.insecure_tls,
+                ) {
                     match client.ping().await {
                         Ok(p) => {
                             healthy = true;
@@ -852,14 +882,12 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
             fed::config_path().display()
         )
     })?;
-    if fc.sync.servers.is_empty() {
-        anyhow::bail!("[sync] servers is empty - nothing to sync against");
-    }
-    let token = fc
-        .sync
-        .auth_token
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("[sync] auth_token is not set"))?;
+    let links = fc.sync.links()?;
+    anyhow::ensure!(
+        !links.is_empty(),
+        "[sync] names no server - nothing to sync against. Add [[sync.server]] entries with a url \
+         and an auth_token each"
+    );
     let identity = fed::load_or_create_identity()?;
     let node = supragnosis_sync::SyncNode::new(identity);
     let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
@@ -869,9 +897,13 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
         let store = engine.store();
         let mut keys = fc.sync.origin_keys.clone();
         keys.insert(node.node_id().to_string(), node.public_key_hex());
-        for server in &fc.sync.servers {
-            let client =
-                supragnosis_sync::http::SyncClient::new(server, &token, fc.sync.insecure_tls)?;
+        for link in &links {
+            let server = &link.url;
+            let client = supragnosis_sync::http::SyncClient::new(
+                server,
+                &link.auth_token,
+                fc.sync.insecure_tls,
+            )?;
             let s = client
                 .sync_workspace(&store, &node, &ws, &fc.sync.share_workspaces, &keys)
                 .await?;
@@ -1748,8 +1780,13 @@ mod fed {
         /// Sync server (hub) base URLs, e.g. "https://10.60.16.75:7420".
         #[serde(default)]
         pub servers: Vec<String>,
-        /// Bearer token presented to those servers.
+        /// Bearer token presented to those servers. The older flat shape: one credential for every
+        /// host in `servers`. Superseded by `[[sync.server]]`, which carries one each.
         pub auth_token: Option<String>,
+        /// Per-server entries, each with its own credential. Named `server` so the file reads
+        /// `[[sync.server]]`, mirroring the per-peer `[[server.allowlist]]` shape.
+        #[serde(default)]
+        pub server: Vec<ServerEntry>,
         /// Accept a self-signed hub certificate (internal VM) - content authenticity stays with the
         /// event signatures (F6), this only affects transport privacy against an active MITM.
         #[serde(default)]
@@ -1758,6 +1795,62 @@ mod fed {
         /// Superseded by the log-borne canon-policy binding in Phase 5.
         #[serde(default)]
         pub origin_keys: std::collections::BTreeMap<String, String>,
+    }
+
+    /// One sync server and the credential this node presents to it. Denies unknown keys for the
+    /// reason every other section does: a typo in the place that decides who this node authenticates
+    /// to is where being wrong is most expensive (P5/P18).
+    #[derive(Debug, Clone, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ServerEntry {
+        pub url: String,
+        pub auth_token: String,
+    }
+
+    impl SyncSection {
+        /// The servers to talk to, each with its own credential.
+        ///
+        /// Two shapes are accepted and never blended. Both present at once is refused rather than
+        /// resolved by precedence: a precedence rule here is a silent degrade wearing a
+        /// specification, and P5 asks explicit configuration to work or fail
+        /// (negotiated-surface.md N8).
+        pub fn links(&self) -> Result<Vec<supragnosis_sync::ServerLink>> {
+            let flat_present = !self.servers.is_empty() || self.auth_token.is_some();
+            anyhow::ensure!(
+                self.server.is_empty() || !flat_present,
+                "supragnosis.toml sets both [[sync.server]] entries and the flat [sync] \
+                 servers/auth_token keys. Which one applies is not a question this build answers by \
+                 precedence - remove one shape. The per-server entries are the current one; the flat \
+                 keys present a single token to every host, which is what they are being replaced for."
+            );
+            if !self.server.is_empty() {
+                return Ok(self
+                    .server
+                    .iter()
+                    .map(|e| supragnosis_sync::ServerLink {
+                        url: e.url.clone(),
+                        auth_token: e.auth_token.clone(),
+                    })
+                    .collect());
+            }
+            if self.servers.is_empty() {
+                return Ok(Vec::new());
+            }
+            let token = self.auth_token.clone().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "[sync] servers is set but auth_token is not - every hub refuses an \
+                     unauthenticated caller, so this configuration cannot sync with any of them"
+                )
+            })?;
+            Ok(self
+                .servers
+                .iter()
+                .map(|url| supragnosis_sync::ServerLink {
+                    url: url.clone(),
+                    auth_token: token.clone(),
+                })
+                .collect())
+        }
     }
 
     #[derive(Debug, Clone, serde::Deserialize)]
@@ -1917,6 +2010,59 @@ mod fed {
             assert_eq!(srv.allowlist.len(), 1);
             assert_eq!(cfg.sync.origin_keys.get("abc").map(String::as_str), Some("deadbeef"));
 
+            // The per-server shape, which carries a credential each rather than one for all.
+            let per_server = r#"
+                [sync]
+                share_workspaces = ["supragnosis"]
+                [[sync.server]]
+                url = "https://hub-cloud.internal:7420"
+                auth_token = "tok-cloud"
+                [[sync.server]]
+                url = "https://hub-net.internal:7420"
+                auth_token = "tok-net"
+            "#;
+            let cfg: FileConfig = toml::from_str(per_server).expect("per-server shape must parse");
+            let links = cfg.sync.links().expect("two independent links");
+            assert_eq!(links.len(), 2);
+            assert_eq!(links[0].auth_token, "tok-cloud");
+            assert_eq!(links[1].auth_token, "tok-net", "each host gets its own credential");
+
+            // The flat shape still resolves, to the same token repeated - which is what the
+            // per-server shape exists to replace, not something to break on the way there.
+            let flat = r#"
+                [sync]
+                servers = ["https://a:7420", "https://b:7420"]
+                auth_token = "shared"
+            "#;
+            let cfg: FileConfig = toml::from_str(flat).expect("the flat shape still parses");
+            let links = cfg.sync.links().expect("flat resolves");
+            assert_eq!(links.len(), 2);
+            assert!(links.iter().all(|l| l.auth_token == "shared"));
+
+            // Both shapes at once is refused, not resolved by precedence. A precedence rule here
+            // would decide silently which credential a host is given, which is exactly the class of
+            // configuration failure P5 asks to be loud (negotiated-surface.md N8).
+            let both = r#"
+                [sync]
+                servers = ["https://a:7420"]
+                auth_token = "shared"
+                [[sync.server]]
+                url = "https://a:7420"
+                auth_token = "own"
+            "#;
+            let cfg: FileConfig = toml::from_str(both).expect("both shapes parse individually");
+            let err = cfg.sync.links().expect_err("coexistence must be refused");
+            assert!(
+                err.to_string().contains("remove one shape"),
+                "the error must say what to do: {err}"
+            );
+
+            // `servers` with no token cannot reach any hub, so it fails at load rather than at the
+            // first round - every hub refuses an unauthenticated caller (F6).
+            let tokenless = "[sync]\nservers = [\"https://a:7420\"]\n";
+            let cfg: FileConfig = toml::from_str(tokenless).expect("parses");
+            assert!(cfg.sync.links().is_err(), "servers without auth_token must fail loudly");
+
             // A typo must fail loudly, not silently disable a role (P5).
             let typo = "share_workspace = [\"x\"]\n";
             assert!(toml::from_str::<FileConfig>(typo).is_err());
@@ -2040,6 +2186,34 @@ mod legacy_store_guard_tests {
         ));
         std::fs::create_dir_all(&d).expect("temp dir");
         d
+    }
+
+    /// F14: an allowlist entry naming this node admits it as its own peer. The invariant claimed a
+    /// refusal for years and nothing performed it, which the coverage registry now records - this is
+    /// the half being repaid.
+    #[test]
+    fn a_node_that_admits_itself_is_refused() {
+        let entry = |id: &str| supragnosis_sync::http::AllowEntry {
+            node_id: id.into(),
+            public_key_hex: "deadbeef".into(),
+            bearer_hash: "hash".into(),
+            shared_workspaces: vec!["ws".into()],
+        };
+        let section = |ids: &[&str]| fed::ServerSection {
+            listen: "127.0.0.1:7420".into(),
+            tls_cert: None,
+            tls_key: None,
+            allowlist: ids.iter().map(|i| entry(i)).collect(),
+        };
+
+        // No server role at all: nothing to check, and a client-only node must still start.
+        assert!(refuse_self_admission("self", None).is_ok());
+        // Other peers only.
+        assert!(refuse_self_admission("self", Some(&section(&["peer-a", "peer-b"]))).is_ok());
+        // Its own id among them.
+        let err = refuse_self_admission("self", Some(&section(&["peer-a", "self"])))
+            .expect_err("a node cannot be its own peer");
+        assert!(err.to_string().contains("own id self"), "names what it found: {err}");
     }
 
     /// A RocksDB directory is recognised by `CURRENT`, which redb never writes. A directory that

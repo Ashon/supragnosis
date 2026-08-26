@@ -75,8 +75,12 @@ The config gains per-server entries mirroring the per-peer shape `[[server.allow
 [[sync.server]]
 url = "https://hub-cloud.internal:7420"
 auth_token = "..."
-share_workspaces = ["cloud"]
 ```
+
+A per-server `share_workspaces` belongs on the same entry and is deliberately **not** accepted yet. A
+share list that parses and is not obeyed reports a narrowing the system did not perform, so it
+arrives with Step 3, the step that obeys it. Adding a field later is the open direction of P10;
+accepting one before its consumer exists is a silent degrade.
 
 Two rules come out of P5 rather than convenience. Both shapes present is a **startup failure**, not a
 precedence rule - a precedence rule is a silent degrade wearing a specification. And the same
@@ -89,10 +93,15 @@ Three steps. Each is useful alone, each lands on a green tree, and only the thir
 The sequence is not the order the work was first imagined in - filtering was the interesting part and
 came first, until the review put two constraints on it.
 
-**Step 1 - per-server credentials, and F14's refusal.** Config shape, validation, the coexistence
-failure, the self-collision refusal. No behaviour depends on it yet. It is first because Step 3 rests
-on an identification that a shared credential does not support (Section 5), so doing it later means
-shipping a routing decision on a premise known to be weak.
+**Step 1 - per-server credentials, and F14's refusal. [done]** `[[sync.server]]` entries carrying a
+url and a credential each, honored everywhere a client is opened: the health loop, the one-shot CLI
+round, and the three MCP fan-out sites. Both configuration shapes present at once fails at load. A
+node whose own id sits in its own allowlist is refused. It is first because Step 3 rests on an
+identification a shared credential does not support (Section 5), so doing it later would ship a
+routing decision on a premise already known to be weak.
+
+The step landed narrower than this document first described it: the shape it showed included a
+per-server share list, and Step 1 has no consumer for one (Section 5).
 
 **Step 2 - keep the answer, report the difference.** The health loop stops discarding
 `shared_workspaces` and writes the typed map; the drift view becomes the three buckets with their
