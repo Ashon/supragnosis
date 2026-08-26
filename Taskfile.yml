@@ -134,6 +134,11 @@ tasks:
     cmds:
       - docker compose -f deploy/docker/compose.sandbox.yaml down -v --remove-orphans
 
+  sandbox:seed:
+    desc: Put knowledge in both sandbox nodes and sync it - idempotent, re-runnable
+    cmds:
+      - sh deploy/docker/sandbox-seed.sh
+
   sandbox:logs:
     desc: Follow the sandbox daemons (both nodes)
     cmds:

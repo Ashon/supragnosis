@@ -82,6 +82,7 @@ was no way to see federation end to end without two machines.
 task sandbox:up                  # builds the working tree, brings up hub + spoke
 open http://127.0.0.1:7531       # the spoke's viewer - the negotiated surface is in Federation
 open http://127.0.0.1:7521       # the hub's viewer - known peers, served activity
+task sandbox:seed                # knowledge in both nodes, then a sync round per workspace
 task sandbox:surface             # the same data as JSON
 task sandbox:down                # containers and volumes, both gone
 ```
@@ -98,6 +99,27 @@ spoke shares `shared` and `spoke-only`. That is what makes all three buckets app
 
 Symmetric configuration would show one bucket and demonstrate nothing, which is why the mismatch is
 in `sandbox-init.sh` rather than left to whoever runs it.
+
+`task sandbox:seed` then puts knowledge in both nodes and runs a sync round per workspace, so the
+three buckets stop being a configuration display and become an outcome. Measured on a fresh sandbox:
+
+| workspace | spoke shares | hub admits | round |
+|---|---|---|---|
+| `shared` | yes | yes | `pushed 3 pulled 1` - both sides end at 6 entities, 3 relations |
+| `spoke-only` | yes | **no** | `403: workspace "spoke-only" is not shared with node ...` |
+| `hub-only` | **no** | yes | `pushed 0 pulled 1` - nothing left the node, knowledge arrived |
+
+The last row is the one worth sitting with: a workspace this node does not share still **pulls**,
+because `share_workspaces` governs what leaves and the hub's allowlist governs what may be read.
+That is exactly what `peer_only` was telling the operator, and the round proves it rather than
+implying it.
+
+Seeding goes over **stdio**, not the http MCP surface. The daemon's streamable-http transport keeps
+its session on the connection, so `curl` cannot hold one across initialize and a tool call - the
+second POST is answered "expect initialize request". stdio is the transport built for one-shot use,
+so each node is stopped for the length of its own seeding and a throwaway container becomes the
+store's single writer. Re-running adds nothing: identical content resolves to the same id and dedups
+(F2), which was checked rather than assumed - a second run left the observation count where it was.
 
 ### It is isolated from an installed release, by construction
 
