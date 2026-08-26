@@ -287,6 +287,12 @@ pub struct SyncContext {
     pub share_workspaces: Vec<String>,
     /// The sync servers (hubs) this node talks to, each with the credential presented to it.
     pub servers: Vec<supragnosis_sync::ServerLink>,
+    /// Federation configuration that was worked around rather than obeyed, one line each.
+    ///
+    /// A degrade that only ever reached a startup log is a silent degrade a week later. P5 asks
+    /// explicit configuration to work or fail and never to slide quietly; carrying the reason onto
+    /// the surface an operator actually reads is what keeps the second half true.
+    pub config_notes: Vec<String>,
     /// What each host last said this node may reach. Written by the daemon's background health
     /// loop; read here under a lock. A handler never negotiates - that would add a round trip per
     /// host to a call that already blocks (F11, negotiated-surface.md N1).
@@ -826,7 +832,7 @@ impl SupragnosisServer {
     // with setup guidance (P5: an unconfigured capability is explained, never a silent failure).
 
     #[tool(
-        description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, the workspace's version vector (what this node holds per origin), and `negotiated` - what each host last said this node may reach, as a three-way difference against the share whitelist (`both` / `local_only` = listed here but not admitted there, a setup error / `peer_only` = admitted there but not shared here). A host with state `unknown` has not answered yet; that is not an empty grant set. Read-only."
+        description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, the workspace's version vector (what this node holds per origin), `config_notes` (federation configuration this build worked around rather than obeyed - read these, they are the reason something is not syncing), and `negotiated` - what each host last said this node may reach, as a three-way difference against the share whitelist (`both` / `local_only` = listed here but not admitted there, a setup error / `peer_only` = admitted there but not shared here). A host with state `unknown` has not answered yet; that is not an empty grant set. Read-only."
     )]
     async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
         let Some(ctx) = &self.sync else {
@@ -879,6 +885,7 @@ impl SupragnosisServer {
                 .collect()
         };
         let mut status = serde_json::json!({
+            "config_notes": ctx.config_notes,
             "negotiated": negotiated,
             "node_id": ctx.node.node_id(),
             "public_key": ctx.node.public_key_hex(),

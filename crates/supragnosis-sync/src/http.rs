@@ -206,7 +206,17 @@ impl PeerDirectory {
 }
 
 impl Admitted {
+    /// Both construction paths funnel through here, which is why the self-admission filter lives in
+    /// it rather than in a caller: an entry naming this node would otherwise slip back in through
+    /// `replace` the moment a console narrowed some other peer.
+    ///
+    /// A node cannot be its own peer - it would answer its own pulls, and once routing consults a
+    /// host's answer it would negotiate with itself (F14). The entry is dropped rather than refused
+    /// because admission authenticates by bearer hash, so such an entry is a live credential and
+    /// ignoring it can only share LESS: the one direction 6a lets a mistake move without asking.
     fn derive(allowlist: Vec<AllowEntry>, self_node_id: &str, self_public_key_hex: &str) -> Self {
+        let allowlist: Vec<AllowEntry> =
+            allowlist.into_iter().filter(|e| e.node_id != self_node_id).collect();
         let mut origin_keys: BTreeMap<String, String> = allowlist
             .iter()
             .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
@@ -782,6 +792,32 @@ mod tests {
     /// it. A peer removed from the allowlist has to stop being verifiable too: if `origin_keys` kept
     /// its entry, the peer would be turned away at the door and then have its relayed events accepted
     /// anyway, which is the drift `PeerDirectory` exists to make unrepresentable.
+    /// A node's own id in its own allowlist is dropped, through BOTH construction paths.
+    ///
+    /// The entry is a live credential - admission matches a bearer hash, not a node id - so dropping
+    /// it narrows, which is why it can happen without asking (F14, 6a). It is filtered in `derive`
+    /// rather than at the call site precisely so `replace` cannot let it back in.
+    #[test]
+    fn a_node_is_never_its_own_peer_through_either_path() {
+        let me = SyncNode::new(NodeIdentity::from_secret_bytes([5u8; 32]));
+        let peer = SyncNode::new(NodeIdentity::from_secret_bytes([6u8; 32]));
+        let mine = entry(&me, "self-token", &["ws"]);
+        let theirs = entry(&peer, "peer-token", &["ws"]);
+
+        let dir = PeerDirectory::new(
+            vec![mine.clone(), theirs.clone()],
+            me.node_id(),
+            &me.public_key_hex(),
+        );
+        let ids: Vec<String> = dir.admitted().allowlist.iter().map(|e| e.node_id.clone()).collect();
+        assert_eq!(ids, [peer.node_id().to_string()], "the self entry is not admitted at startup");
+
+        // ...and a later replace cannot smuggle it back in.
+        dir.replace(vec![mine, theirs]);
+        let ids: Vec<String> = dir.admitted().allowlist.iter().map(|e| e.node_id.clone()).collect();
+        assert_eq!(ids, [peer.node_id().to_string()], "nor through a runtime replace");
+    }
+
     #[tokio::test]
     async fn admission_changes_take_effect_without_a_restart() {
         let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
