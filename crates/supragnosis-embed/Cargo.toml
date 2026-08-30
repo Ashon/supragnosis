@@ -21,4 +21,4 @@ fastembed = ["dep:fastembed"]
 
 [dependencies]
 supragnosis-core.workspace = true
-fastembed = { version = "4", optional = true }
+fastembed = { version = "6", optional = true }
