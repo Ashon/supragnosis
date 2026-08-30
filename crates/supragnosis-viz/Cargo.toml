@@ -34,4 +34,4 @@ tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thre
 [build-dependencies]
 lightningcss = "1.0.0-alpha.72"
 minify-html = "0.18.1"
-oxc = { version = "0.143.0", features = ["codegen"] }
+oxc = { version = "0.147.0", features = ["codegen"] }
