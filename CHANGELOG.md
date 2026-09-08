@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.1](docs/releases/v0.4.1.md) | Upgrade if you read resources. Every one of them is unreadable on an MCP client that validates the |
 | [v0.4.0](docs/releases/v0.4.0.md) | Nothing to do on upgrade. A node can now see the surface each peer grants it, route rounds on it, |
 | [v0.3.1](docs/releases/v0.3.1.md) | Upgrade from v0.3.0: its tool list is invisible to any MCP client new enough to validate the |
 | [v0.3.0](docs/releases/v0.3.0.md) | The HTTP daemon requires a bearer token now, which breaks every client already connected. Loopback |
