@@ -1272,6 +1272,22 @@ impl ServerHandler for SupragnosisServer {
 
     /// Resource read: parse the workspace from the URI and return the graph projection JSON.
     /// An unknown URI returns resource_not_found (absence is unknown, Principle 5) with a self-correction hint.
+    ///
+    /// Carries the same SEP-2549 cache hints as the three list methods, and for the same reason:
+    /// `ttl_ms`/`cache_scope` are `Option` with `skip_serializing_if`, so leaving them unset omits
+    /// them from the wire, and a client that validates them rejects the entire response. The
+    /// failure is not a narrowed surface but a deleted one - the read returns a schema error
+    /// instead of the resource, so every resource becomes unreadable at once and the cause reads
+    /// as a malformed server rather than as a version disagreement.
+    ///
+    /// `ttl_ms = 0` on every branch, including `supragnosis://observation/{id}`. The tempting
+    /// exception is that one: an observation is immutable (Principle 3), so its *content* could
+    /// carry a long TTL. Its *payload* cannot. `Observation::provenance` is a monotonic union that
+    /// absorbs a new attestation whenever the same content re-arrives from another host, and the
+    /// trust tier inside it moves under `claim_promotion`/`claim_demotion`. A cached observation
+    /// read would therefore pin a provenance list and a tier that the node has since revised,
+    /// which is exactly the basis a caller consults this resource to check. The graph, hypergraph,
+    /// types and workspace-list branches need no such argument - they change on every `observe`.
     fn read_resource(
         &self,
         request: ReadResourceRequestParams,
@@ -1348,7 +1364,12 @@ impl ServerHandler for SupragnosisServer {
         // rmcp 3 wraps the read result in ReadResourceResponse so a server can answer a read with
         // "I need input first" instead of content. This server never does - every branch above
         // either has the bytes or has an error - so every Ok is the Complete arm.
-        std::future::ready(result.map(Into::into))
+        //
+        // The hints are applied here rather than in each branch so that a new resource URI cannot
+        // be added without them: there is one place that turns a read into a response.
+        std::future::ready(
+            result.map(|read| read.with_ttl_ms(0).with_cache_scope(CacheScope::Private).into()),
+        )
     }
 }
 

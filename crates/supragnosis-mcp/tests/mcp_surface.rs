@@ -17,7 +17,7 @@ use rmcp::ServiceExt;
 use serde_json::{json, Map, Value};
 
 use supragnosis_embed::HashingEmbedder;
-use supragnosis_engine::Engine;
+use supragnosis_engine::{Engine, ObserveInput};
 use supragnosis_mcp::SupragnosisServer;
 use supragnosis_store::InMemoryStore;
 
@@ -587,6 +587,70 @@ async fn every_list_result_carries_cache_hints() {
     let templates = client.list_resource_templates(None).await.expect("list resource templates");
     assert_eq!(templates.ttl_ms, Some(0));
     assert_eq!(templates.cache_scope, Some(CacheScope::Private));
+
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
+}
+
+/// Every `resources/read` answer carries the cache hints too, on every URI form.
+///
+/// The list methods above were made to emit these because a validating client rejects a response
+/// that omits them. `read_resource` was left out and broke the same way once a client started
+/// validating it: the read returned a schema error naming `ttlMs`/`cacheScope` instead of the
+/// resource, so no resource could be read at all. This walks all five URI forms so that adding a
+/// sixth without hints is a red test rather than a resource nobody can fetch.
+///
+/// The observation branch is asserted at `ttl_ms = 0` on purpose - see `read_resource` for why an
+/// immutable observation still refuses to be cached (its provenance list and trust tier move).
+#[tokio::test]
+async fn every_resource_read_carries_cache_hints() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    // Seed one observation so the observation branch has a real id to read back.
+    let observed = engine
+        .observe(ObserveInput {
+            content: "cache hints apply to the observation back-reference as well".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .expect("seed observation");
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    for uri in [
+        "supragnosis://workspaces".to_string(),
+        "supragnosis://workspace/ws/graph".to_string(),
+        "supragnosis://workspace/ws/hypergraph".to_string(),
+        "supragnosis://workspace/ws/types".to_string(),
+        format!("supragnosis://observation/{}", observed.observation_id),
+    ] {
+        let read = client
+            .read_resource(ReadResourceRequestParams::new(uri.clone()))
+            .await
+            .unwrap_or_else(|e| panic!("read {uri} should succeed: {e}"));
+        assert_eq!(
+            read.ttl_ms,
+            Some(0),
+            "resources/read on {uri} must declare a freshness window, and it is none - omitting \
+             the field makes a validating client reject the whole response"
+        );
+        assert_eq!(
+            read.cache_scope,
+            Some(CacheScope::Private),
+            "a response reachable only with this node's bearer token is not shareable across \
+             authorization contexts (Principle 17)"
+        );
+    }
 
     client.cancel().await.expect("client shutdown");
     server.await.expect("server task");
