@@ -4,8 +4,10 @@ This directory is the template set copied into the tap repo. Contents:
 
 - `Formula/supragnosis-server.rb` - the server/CLI (the installed binary is still named
   `supragnosis`; only the brew token carries `-server`). Installs the release's per-platform
-  tar.gz as-is, and `brew services start supragnosis-server` registers the always-on daemon
-  (launchd). `serve --http` also opens the viewer socket (`~/.supragnosis/viz.sock`) by default.
+  tar.gz as-is. It deliberately has no `service do` block: the always-on daemon has one manager,
+  the canonical LaunchAgent that `supragnosis service install` (or the app's Start at Login)
+  generates - a brew services job beside it would be a second owner of a single-writer store
+  (docs/daemon-lifecycle.md). The formula's caveats say how to install it and how to migrate.
 - `Casks/supragnosis.rb` - the desktop shell. It owns the plain token, so
   `brew install supragnosis` resolves to this cask (no formula shares the name). Installs the
   release's signed/notarized universal `.app.zip`. The cask depends on the `supragnosis-server`
@@ -34,7 +36,8 @@ git commit -am "supragnosis v0.1.11" && git push
 brew tap ashon/tap
 brew install supragnosis                # desktop app (macOS, pulls the server formula)
 brew install supragnosis-server         # server/CLI only (macOS / Linux)
-brew services start supragnosis-server  # always-on daemon (MCP :7373 + viewer socket)
+supragnosis service install             # always-on daemon (MCP :7373 + viewer socket), now and at login
+                                        # - or Start at Login in the app's tray menu
 ```
 
 ## Dev-channel install (--HEAD server + supragnosis-dev cask)
@@ -47,12 +50,12 @@ HEAD server's viewer unchanged - the server swap alone is usually the whole dev 
 ```sh
 # With stable installed, swap only the formula (pass the cask dependency warning
 # with --ignore-dependencies)
-brew services stop supragnosis-server
+supragnosis stop
 brew uninstall --ignore-dependencies supragnosis-server
 brew install --HEAD supragnosis-server
-brew services start supragnosis-server
+supragnosis restart        # reloads the login job; it names the opt link, so it runs the new keg
 
-brew upgrade --fetch-HEAD supragnosis-server   # whenever main moves
+brew upgrade --fetch-HEAD supragnosis-server && supragnosis restart   # whenever main moves
 ```
 
 **Desktop app**: casks cannot build from source (no `--HEAD`), so the dev channel is the
@@ -77,17 +80,25 @@ notes' migrate guidance before returning to stable (`~/.supragnosis/redb` is sha
 ## Upgrades
 
 An upgrade is complete only after `brew upgrade` plus a daemon restart - brew upgrade does not
-restart a running service (the formula caveats print the same reminder), and without the restart
-the old daemon keeps running from the deleted keg path:
+restart a running daemon (the formula caveats print the same reminder), and without the restart the
+old daemon keeps running from the deleted keg path. `supragnosis status` and the app's tray line say
+so when it happens ("running 0.4.0, this binary 0.4.2"):
 
 ```sh
 brew upgrade
-brew services restart supragnosis-server
+supragnosis restart     # restarts whichever single manager runs it (login job, brew services, start)
+```
+
+Coming from `brew services start supragnosis-server` (before the formula dropped its service
+block): the old job keeps running and `supragnosis status` names it. Move to the login job once:
+
+```sh
+supragnosis service install --take-over   # retires the brew services job, installs the login job
 ```
 
 If you installed under the old tokens (formula `supragnosis`, cask `supragnosis-app`),
-reinstall. Stopping the service comes before uninstall - brew uninstall does not clean up a
-running service/launchd plist:
+reinstall. Stopping the old service comes before uninstall - brew uninstall does not clean up a
+running service/launchd plist (`supragnosis status` names the old job if one is still loaded):
 
 ```sh
 brew services stop supragnosis 2>/dev/null

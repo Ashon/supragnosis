@@ -1,6 +1,7 @@
 # Running supragnosis on Linux (systemd user service)
 
-The Linux counterpart to `deploy/launchd`. Written while standing up the first federation hub
+The Linux counterpart to the macOS LaunchAgent that `supragnosis service install` generates
+(docs/daemon-lifecycle.md). Written while standing up the first federation hub
 (`docs/federation.md` Phase 6), so the gotchas below are the ones actually hit, not anticipated.
 
 A **user** unit, not a system one: the store, the node key, and the config all live under

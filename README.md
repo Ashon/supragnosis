@@ -49,7 +49,7 @@ to resolve conflicts means recomputing, not rewriting.
 ```bash
 brew tap ashon/tap
 brew install supragnosis-server
-brew services start supragnosis-server     # MCP on :7373 + local viewer
+supragnosis service install     # MCP on :7373 + local viewer, now and at every login
 
 claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp \
   --header "Authorization: Bearer $(cat ~/.supragnosis/mcp.token)"
@@ -58,6 +58,10 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp \
 The daemon speaks HTTP on loopback, and loopback confines it to the *host*, not to one user - so
 a bearer token is what makes it yours. It is generated on first start at `~/.supragnosis/mcp.token`
 (mode 0600); `supragnosis status` prints the command above with the token filled in.
+
+With the desktop app (`brew install --cask supragnosis`), Start at Login in its tray menu does the
+same as `supragnosis service install`. After `brew upgrade`, `supragnosis restart` loads the new
+binary - until then `supragnosis status` and the tray say the daemon is running the old one.
 
 Not on Homebrew:
 

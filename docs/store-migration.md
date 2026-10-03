@@ -54,7 +54,7 @@ embeddings are copied as-is.
 **Both stores are single-process.** A running daemon holds the lock. Stop it first:
 
 ```bash
-supragnosis stop                        # or: brew services stop supragnosis-server
+supragnosis stop                        # whichever manager runs it - launchd, brew services, start
 ```
 
 **Restart a stale daemon before you compare anything.** `brew upgrade` swaps the binary on disk but
