@@ -1,8 +1,9 @@
 # supragnosis server/CLI formula (prebuilt release binaries; keyword + hashing search -
 # build from source with --features fastembed for local semantic search).
-# Lives in the tap repo as Formula/supragnosis-server.rb; update-tap.sh rewrites version/sha256
-# per release from this template. Installs the plain `supragnosis` binary - only the brew token
-# carries the -server suffix (the desktop-app cask owns the plain `supragnosis` token).
+# The tap's Formula/supragnosis-server.rb is rendered from this template by update-tap.sh on every
+# release (version and sha256 filled in), so edit it here, never in the tap. Installs the plain
+# `supragnosis` binary - only the brew token carries the -server suffix (the desktop-app cask owns
+# the plain `supragnosis` token).
 class SupragnosisServer < Formula
   desc "Embedded MCP server that grows an ontology from working knowledge"
   homepage "https://supragnosis.dev/"

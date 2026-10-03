@@ -1,6 +1,8 @@
 # Homebrew distribution (formula + cask, no DMG)
 
-This directory is the template set copied into the tap repo. Contents:
+This directory is the source of the tap repo's formula and casks. The tap holds rendered output:
+every release overwrites its copies from these templates, so a change is made here, never in the
+tap. Contents:
 
 - `Formula/supragnosis-server.rb` - the server/CLI (the installed binary is still named
   `supragnosis`; only the brew token carries `-server`). Installs the release's per-platform
@@ -13,13 +15,15 @@ This directory is the template set copied into the tap repo. Contents:
   release's signed/notarized universal `.app.zip`. The cask depends on the `supragnosis-server`
   formula, so the app finds the brew daemon binary on PATH (no bundled sidecar). The app is
   tray-resident, so the cask's `uninstall quit:` quits the old instance on upgrade and reopens it.
-- `update-tap.sh` - after a release, updates the tap's version/sha256 from the release assets'
-  .sha256 sidecar files.
+- `Casks/supragnosis-dev.rb` - the rolling dev-channel cask (`version :latest`), copied as-is.
+- `update-tap.sh` - after a release, renders the formula and casks into the tap: copies the
+  templates, fills in the version and the sha256 sums from the release assets' .sha256 sidecar
+  files, and fails if a placeholder or the template's own version survives.
 
 ## One-time setup
 
-1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub and commit this directory's
-   `Formula/`, `Casks/`, and `update-tap.sh` into it.
+1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release's tap job
+   (or a manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
 2. Register repo secrets (Settings > Secrets and variables > Actions) - the release.yml app job
    uses them for signing/notarization. If any is missing (precisely: no APPLE_SIGNING_IDENTITY),
    the job only verifies the build without signing.
@@ -39,13 +43,14 @@ This directory is the template set copied into the tap repo. Contents:
 ## Per release
 
 Automatic: pushing a `v*` tag makes the release.yml tap job run update-tap.sh after the assets
-are attached, updating the tap's version/sha256 and pushing. If the job fails or
-`TAP_PUSH_TOKEN` is missing, run it by hand:
+are attached, rendering the formula and casks from the tag's templates and pushing. If the job
+fails or `TAP_PUSH_TOKEN` is missing, run it by hand from a checkout of the same tag, so the
+templates match the release:
 
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
 ../supragnosis/deploy/homebrew/update-tap.sh v0.1.11 .
-git commit -am "supragnosis v0.1.11" && git push
+git add Formula Casks && git commit -m "supragnosis v0.1.11" && git push
 ```
 
 ## User install
