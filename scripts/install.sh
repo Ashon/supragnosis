@@ -114,6 +114,20 @@ case ":${PATH}:" in
      echo "  export PATH=\"${BIN_DIR}:\$PATH\"" ;;
 esac
 
+# Keeping the daemon running has one path on macOS: the login job `service install` generates
+# (docs/daemon-lifecycle.md). It also owns restarts, so a later re-run of this script is followed by
+# `supragnosis restart`. On Linux that command declines and points at the systemd user unit.
+if [ "${os}" = "Darwin" ]; then
+  daemon_hint="       \"${BIN_DIR}/supragnosis\" service install
+       # starts it now and at every login. MCP: http://127.0.0.1:7373/mcp
+       # Viewer: HTTP over unix socket ~/.supragnosis/viz.sock (the desktop app attaches to it)
+       # After re-running this installer to upgrade: supragnosis restart"
+else
+  daemon_hint="       SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373 SUPRAGNOSIS_VIZ_SOCK=~/.supragnosis/viz.sock \"${BIN_DIR}/supragnosis\" serve
+       # MCP: http://127.0.0.1:7373/mcp   Viewer: HTTP over unix socket ~/.supragnosis/viz.sock
+       # To keep it running, see the systemd user unit in the repository's deploy/systemd/."
+fi
+
 cat <<EOF
 
 Install complete. Onboarding:
@@ -122,9 +136,7 @@ Install complete. Onboarding:
        claude mcp add supragnosis -- "${BIN_DIR}/supragnosis"
 
   2) (Optional) Run as an always-on daemon + live viewer
-       SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373 SUPRAGNOSIS_VIZ_SOCK=~/.supragnosis/viz.sock "${BIN_DIR}/supragnosis"
-       # MCP: http://127.0.0.1:7373/mcp   Viewer: HTTP over unix socket ~/.supragnosis/viz.sock
-       # For auto-start at login (launchd), see the repository's deploy/README.md.
+${daemon_hint}
 
   - Search: the prebuilt uses keyword/hashing. For semantic search, build from source with --features fastembed.
   - Help: sh install.sh --help   |   Docs/issues: https://github.com/${REPO}
