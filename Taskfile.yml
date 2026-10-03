@@ -154,6 +154,7 @@ tasks:
     cmds:
       - task: fmt
       - task: lint
+      - task: lint:fastembed
       - task: lint:web
       - task: test
 
@@ -176,6 +177,11 @@ tasks:
     # Workspace lints deny clippy::all, but rustc lints stay at warn - dead_code among them, which
     # is what a guard that lost its #[test] becomes. Keep this identical to rust.yml.
     cmds: [cargo clippy --all-targets -- -D warnings]
+
+  lint:fastembed:
+    desc: clippy with the opt-in fastembed feature on (matches the rust.yml fastembed job)
+    # The default build never compiles the ONNX adapter, so this is the only local check that does.
+    cmds: [cargo clippy -p supragnosis-cli --features fastembed --all-targets -- -D warnings]
 
   deny:
     desc: cargo-deny over both workspaces - advisories, licences, bans, sources (mirrors rust.yml)
