@@ -57,7 +57,8 @@ claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp \
 
 The daemon speaks HTTP on loopback, and loopback confines it to the *host*, not to one user - so
 a bearer token is what makes it yours. It is generated on first start at `~/.supragnosis/mcp.token`
-(mode 0600); `supragnosis status` prints the command above with the token filled in.
+(mode 0600); `supragnosis status` prints the command above, reading the token from that file rather
+than printing it.
 
 With the desktop app (`brew install --cask supragnosis`), Start at Login in its tray menu does the
 same as `supragnosis service install`. After `brew upgrade`, `supragnosis restart` loads the new

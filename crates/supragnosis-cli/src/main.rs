@@ -1652,19 +1652,54 @@ fn launchd_jobs() -> Vec<lifecycle::Job> {
 /// that act, never by `status`.
 #[cfg(unix)]
 fn observe() -> lifecycle::Observed {
+    observe_with(daemon_store_path(|k| std::env::var(k).ok()).as_deref())
+}
+
+/// What the lifecycle commands observe, with the store probed at `store` - the path the daemon in
+/// question would open, which for `service install` comes from the job's environment rather than
+/// this process's.
+fn observe_with(store: Option<&std::path::Path>) -> lifecycle::Observed {
     lifecycle::Observed {
-        pidfile: read_pid().filter(|p| pid_alive(*p)).and_then(|p| u32::try_from(p).ok()),
+        pidfile: live_pidfile().and_then(|p| u32::try_from(p).ok()),
         jobs: launchd_jobs(),
         answering: port_open(&status_http_addr()),
+        store_held: store.is_some_and(supragnosis_store::redb_in_use),
     }
+}
+
+/// The redb file a daemon running with this environment opens, resolved the way `serve` resolves
+/// it. `None` for the in-memory store, which nothing else can hold.
+fn daemon_store_path(env: impl Fn(&str) -> Option<String>) -> Option<std::path::PathBuf> {
+    let get = |k: &str| env(k).filter(|v| !v.trim().is_empty());
+    let kind = get("SUPRAGNOSIS_STORE").unwrap_or_else(|| "redb".to_string());
+    if matches!(kind.as_str(), "mem" | "memory") {
+        return None;
+    }
+    let dir = get("SUPRAGNOSIS_DATA_DIR").unwrap_or_else(|| default_data_dir_for(&kind));
+    Some(redb_path(&dir))
+}
+
+/// The pidfile's process, only when it is alive AND is supragnosis (L9). A pid outlives the process
+/// it named, and acting on a reused one would signal an unrelated program.
+fn live_pidfile() -> Option<i32> {
+    read_pid().filter(|p| pid_alive(*p) && pid_is_supragnosis(*p))
+}
+
+fn pid_is_supragnosis(pid: i32) -> bool {
+    std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .map(|o| {
+            o.status.success()
+                && lifecycle::is_supragnosis_command(&String::from_utf8_lossy(&o.stdout))
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(unix)]
 fn clear_stale_pidfile() {
-    if let Some(pid) = read_pid() {
-        if !pid_alive(pid) {
-            let _ = std::fs::remove_file(pid_path());
-        }
+    if read_pid().is_some() && live_pidfile().is_none() {
+        let _ = std::fs::remove_file(pid_path());
     }
 }
 
@@ -1676,10 +1711,12 @@ fn running_version() -> Option<String> {
 }
 
 /// The running daemon's store health - the owed-projection ledger and the last recovery
-/// (crash-recovery.md K5). `None` when the viewer socket does not answer, which is unknown, not
-/// healthy (Principle 5).
+/// (crash-recovery.md K5). `None` when the viewer socket does not answer, or answers without the
+/// route (a daemon older than this binary): both are unknown, not healthy (Principle 5).
 fn store_health() -> Option<serde_json::Value> {
-    serde_json::from_str(&viz_get("/api/health")?).ok()
+    serde_json::from_str::<serde_json::Value>(&viz_get("/api/health")?)
+        .ok()
+        .filter(|v| v.get("owed_projections").is_some())
 }
 
 /// One GET over the viewer's unix socket, returning the body. Short timeouts: `status` must answer
@@ -1764,8 +1801,7 @@ fn launchd_bootstrap_canonical() -> Result<()> {
         anyhow::bail!("launchctl bootstrap gui/{uid} {} failed", plist.display());
     }
     println!("loaded launchd job {} (MCP server + viewer).", lifecycle::CANONICAL_LABEL);
-    report_after_restart();
-    Ok(())
+    await_daemon(lifecycle::CANONICAL_LABEL)
 }
 #[cfg(all(unix, not(target_os = "macos")))]
 fn launchd_bootstrap_canonical() -> Result<()> {
@@ -1787,10 +1823,13 @@ fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
 /// `claude mcp add --transport http` entry starts getting 401 on upgrade. A security fix whose
 /// recovery path is "read the release notes" mostly produces people turning it off, so the way back
 /// is printed where the break is noticed - on `start`, and again on `status`.
-fn print_client_command(http: &str, token: &str) {
-    println!("  token   {} (0600)", mcp_token_path().display());
+/// The connect line, reading the token from its file rather than printing it (Section 11). Agents
+/// run `status`, and a printed token lands in their transcripts.
+fn print_client_command(http: &str) {
+    let path = mcp_token_path();
+    println!("  token   {} (0600 - read from the file, never printed)", path.display());
     println!("  connect claude mcp add supragnosis --transport http http://{http}/mcp \\");
-    println!("            --header \"Authorization: Bearer {token}\"");
+    println!("            --header \"Authorization: Bearer $(cat {})\"", path.display());
 }
 
 /// Resolved MCP http address for status/lifecycle checks (env var or default).
@@ -1805,10 +1844,8 @@ fn status_http_addr() -> String {
 #[cfg(unix)]
 fn start(cfg: Config) -> Result<()> {
     let http = cfg.http.clone().unwrap_or_else(|| "127.0.0.1:7373".to_string());
-    if let Some(pid) = read_pid() {
-        if pid_alive(pid) {
-            anyhow::bail!("already running (pid {pid}). Run 'supragnosis stop' and try again.");
-        }
+    if let Some(pid) = live_pidfile() {
+        anyhow::bail!("already running (pid {pid}). Run 'supragnosis stop' and try again.");
     }
     if port_open(&http) {
         anyhow::bail!(
@@ -1828,8 +1865,8 @@ fn start(cfg: Config) -> Result<()> {
     // Generated here rather than in the child, so the connect line can be printed to the terminal
     // the operator is actually looking at. It is the same file the daemon then loads.
     if cfg.mcp_auth {
-        let token = load_or_create_mcp_token()?;
-        print_client_command(&http, &token);
+        load_or_create_mcp_token()?;
+        print_client_command(&http);
     }
     // fork/setsid/pidfile/stdio redirect. The code after this runs only in the daemonized child.
     daemonize::Daemonize::new()
@@ -1900,13 +1937,13 @@ fn restart(cfg: Config) -> Result<()> {
         }
         Situation::One(Manager::Launchd(job)) => {
             launchd_kickstart(&job)?;
-            report_after_restart();
-            Ok(())
+            await_daemon(job.label)
         }
         Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
         Situation::Unrecognized => anyhow::bail!(
-            "a daemon is responding on {} but no known manager runs it (no pidfile, no known launchd label) - cannot restart it from here.",
-            status_http_addr()
+            "something no known manager runs is serving {} or holding the store (no pidfile, no known launchd label) - cannot restart it from here.\n{}",
+            status_http_addr(),
+            lifecycle::UNRECOGNIZED_HOLDER
         ),
     }
 }
@@ -1914,22 +1951,47 @@ fn restart(cfg: Config) -> Result<()> {
 /// After a launchd restart, wait briefly for the new process and say which version it serves - a
 /// restart's whole point after an upgrade is the version, and "restarted" alone does not show it.
 #[cfg(unix)]
-fn report_after_restart() {
+/// L4: after loading or restarting a launchd job, the job counts as up only when the daemon answers.
+/// It counts as failed when launchd shows it failing - no process and a non-zero last exit - for
+/// three seconds running: a KeepAlive job crash-looping on the store lock sits like that between
+/// respawns, while one being restarted shows its previous exit only for a moment. A slow start that
+/// is still running is reported as slow, not failed: a daemon repaying owed projections before it
+/// binds (crash-recovery.md K3) can take a while.
+#[cfg(target_os = "macos")]
+fn await_daemon(label: &str) -> Result<()> {
     let here = env!("CARGO_PKG_VERSION");
-    for _ in 0..25 {
-        std::thread::sleep(std::time::Duration::from_millis(200));
+    let tick = std::time::Duration::from_millis(250);
+    let mut failing_for = 0u32;
+    for _ in 0..120 {
+        std::thread::sleep(tick);
         if let Some(v) = running_version() {
             match lifecycle::drift(Some(&v), here) {
-                lifecycle::Drift::Same(v) => println!("  now serving {v}"),
                 lifecycle::Drift::Differs { running, here } => println!(
                     "  now serving {running}, but this binary is {here} - the job runs a different binary than this one"
                 ),
-                lifecycle::Drift::Unknown => {}
+                _ => println!("  now serving {v}"),
             }
-            return;
+            return Ok(());
+        }
+        let job = launchd_jobs().into_iter().find(|j| j.label == label);
+        let failing = job
+            .as_ref()
+            .is_some_and(|j| j.pid.is_none() && j.last_exit.is_some_and(|c| c != 0));
+        failing_for = if failing { failing_for + 1 } else { 0 };
+        if failing_for >= 12 {
+            let code = job.and_then(|j| j.last_exit).unwrap_or_default();
+            anyhow::bail!(
+                "{label} is loaded but not running - it exited with status {code} and launchd is retrying it. The reason is in {}",
+                log_dir().join("supragnosis.err.log").display()
+            );
         }
     }
-    println!("  the viewer socket has not answered yet - `supragnosis status` shows the version once it does");
+    println!("  still starting - `supragnosis status` shows the version once the daemon answers");
+    Ok(())
+}
+#[cfg(not(target_os = "macos"))]
+fn await_daemon(_label: &str) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1972,6 +2034,7 @@ fn status(json: bool) -> Result<()> {
             },
             "managers": managers.iter().map(|m| manager_json(m)).collect::<Vec<_>>(),
             "answering": observed.answering,
+            "store_held": observed.store_held,
             "mcp": format!("http://{http}/mcp"),
             "version": { "here": here, "running": running },
             "store": health,
@@ -2003,8 +2066,13 @@ fn status(json: bool) -> Result<()> {
         Situation::Conflict(ms) => {
             println!("CONFLICT: {}", lifecycle::conflict_message(ms));
         }
-        Situation::Unrecognized => {
+        Situation::Unrecognized if observed.answering => {
             println!("running (unrecognized manager - no pidfile, no known launchd label)");
+        }
+        Situation::Unrecognized => {
+            println!(
+                "store held by a process no manager runs - an MCP client's stdio server, or a `supragnosis serve` in a terminal"
+            );
         }
     }
     println!(
@@ -2050,7 +2118,7 @@ fn status(json: bool) -> Result<()> {
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty());
         match token {
-            Some(t) => print_client_command(&http, &t),
+            Some(_) => print_client_command(&http),
             None => println!(
                 "  auth    none - every local OS account on this host can reach the tool surface"
             ),
@@ -2149,12 +2217,13 @@ fn launchctl_quiet(args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-/// Wait for the MCP port to close after a job is booted out, so the next owner does not race the
-/// last one for the store lock. False when it still answers after ten seconds.
+/// Wait for the MCP port to close and the store to be released after a job is booted out, so the
+/// next owner does not race the last one for the store lock. False when either is still held after
+/// ten seconds.
 #[cfg(target_os = "macos")]
-fn wait_until_released() -> bool {
+fn wait_until_released(store: Option<&std::path::Path>) -> bool {
     for _ in 0..100 {
-        if !port_open(&status_http_addr()) {
+        if !port_open(&status_http_addr()) && !store.is_some_and(supragnosis_store::redb_in_use) {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -2191,14 +2260,7 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     let home = std::env::var("HOME").context("HOME is not set")?;
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
     let plist = canonical_plist_path();
-    let observed = observe();
-    let canonical_loaded = observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical);
     let state = canonical_plist_state();
-
-    // L1 and L5: refuse to share, refuse a holder nothing names, and refuse to overwrite a person's
-    // file - the first and last unless told to take over.
-    let others = lifecycle::plan_install(&observed, args.take_over, state == "hand_written")
-        .map_err(|e| anyhow::anyhow!(e))?;
 
     // The job's environment: whatever the plist being replaced set, verbatim, then --env on top.
     let mut env = if state == "absent" { Default::default() } else { plist_env(&plist)? };
@@ -2208,6 +2270,20 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     }
     env.entry("SUPRAGNOSIS_HTTP_ADDR".to_string())
         .or_insert_with(|| "127.0.0.1:7373".to_string());
+    // L7, before anything is touched: the job adds no exposure, whichever source a setting came from.
+    lifecycle::refuse_exposure(&env, |a| parse_loopback_addr(a).is_ok())
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    // The store the JOB will open - from its own environment, since launchd does not hand it this
+    // shell's - is what a second writer would contend for.
+    let store = daemon_store_path(|k| env.get(k).cloned());
+    let observed = observe_with(store.as_deref());
+    let canonical_loaded = observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical);
+
+    // L1 and L5: refuse to share, refuse a holder nothing names, and refuse to overwrite a person's
+    // file - the first and last unless told to take over.
+    let others = lifecycle::plan_install(&observed, args.take_over, state == "hand_written")
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     let exe = std::env::current_exe()?.canonicalize()?;
     let program = lifecycle::stable_program(&exe, |p| p.exists());
@@ -2252,9 +2328,9 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     // The plan saw a manager for whatever answered; this checks that retiring them freed the store.
     // A holder that outlives them (an app-spawned daemon beside a failing job) is the one the plan
     // could not see, and installing now would start the crash loop all the same.
-    if !wait_until_released() {
+    if !wait_until_released(store.as_deref()) {
         anyhow::bail!(
-            "{} still answers after retiring the managers above, so something else holds the store - not installing beside it.\n{}",
+            "{} still answers, or the store is still held, after retiring the managers above - something else holds it, so not installing beside it.\n{}",
             status_http_addr(),
             lifecycle::UNRECOGNIZED_HOLDER
         );
@@ -2283,8 +2359,7 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
         println!("  env     {k}={v}");
     }
     println!("  the daemon starts now and at every login (supragnosis service uninstall to undo)");
-    report_after_restart();
-    Ok(())
+    await_daemon(lifecycle::CANONICAL_LABEL)
 }
 
 #[cfg(target_os = "macos")]
@@ -2296,7 +2371,7 @@ fn service_uninstall() -> Result<()> {
     let observed = observe();
     if observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical) {
         launchctl_quiet(&["bootout", &format!("gui/{uid}/{}", lifecycle::CANONICAL_LABEL)]);
-        wait_until_released();
+        wait_until_released(daemon_store_path(|k| std::env::var(k).ok()).as_deref());
         println!("stopped {}", lifecycle::CANONICAL_LABEL);
     }
     match state {

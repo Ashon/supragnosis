@@ -84,6 +84,9 @@ pub struct Observed {
     pub jobs: Vec<Job>,
     /// Whether the MCP address accepts a connection.
     pub answering: bool,
+    /// Whether a process holds the store open for writing (Section 11). A stdio server binds no
+    /// port, so this is the only trace it leaves.
+    pub store_held: bool,
 }
 
 /// The one question every lifecycle command asks first (Section 3).
@@ -97,8 +100,8 @@ pub enum Situation {
     /// them can be serving; acting on either is a guess, and guessing is how a crash loop gets a
     /// second wind (L1).
     Conflict(Vec<Manager>),
-    /// Something answers that is none of the known managers. Reported as such, never as stopped
-    /// (P5: unknown is not absent).
+    /// Something answers, or holds the store, that is none of the known managers. Reported as such,
+    /// never as stopped (P5: unknown is not absent).
     Unrecognized,
 }
 
@@ -109,7 +112,7 @@ pub fn classify(o: &Observed) -> Situation {
     }
     managers.extend(o.jobs.iter().cloned().map(Manager::Launchd));
     match managers.len() {
-        0 if o.answering => Situation::Unrecognized,
+        0 if o.answering || o.store_held => Situation::Unrecognized,
         0 => Situation::Stopped,
         1 => Situation::One(managers.remove(0)),
         _ => Situation::Conflict(managers),
@@ -117,7 +120,49 @@ pub fn classify(o: &Observed) -> Situation {
 }
 
 /// Why `service install` will not start a job beside a holder it cannot name, take-over or not.
-pub const UNRECOGNIZED_HOLDER: &str = "something this CLI does not manage is serving the daemon's address - most likely a daemon the desktop app started for its session, or a `supragnosis serve` in a terminal. Nothing names it, so nothing can retire it, and a login job started beside it would fail on the store lock and be retried forever. Turn on Start at Login in the app instead (it stops its own daemon first), or quit the app or stop that process, then run this again";
+pub const UNRECOGNIZED_HOLDER: &str = "something this CLI does not manage is serving the daemon's address or holding its store - most likely a daemon the desktop app started for its session, a stdio server an MCP client launched (`claude mcp add supragnosis -- supragnosis` starts one per session), or a `supragnosis serve` in a terminal. Nothing names it, so nothing can retire it, and a login job started beside it would fail on the store lock and be retried forever. Turn on Start at Login in the app instead (it stops its own daemon first), or quit the app, register MCP clients over HTTP rather than stdio, or stop that process - then run this again";
+
+/// Whether `ps -o comm=` output names this program (L9). macOS prints the executable's path, Linux
+/// its name; either way the last component is `supragnosis` - not `supragnosis-app`, the desktop
+/// shell, and not whatever process inherited a pid the pidfile still names.
+pub fn is_supragnosis_command(comm: &str) -> bool {
+    let comm = comm.trim();
+    !comm.is_empty() && comm.rsplit('/').next() == Some("supragnosis")
+}
+
+/// L7: the environment a generated job would run with must not widen what the daemon exposes or
+/// switch off a defence. Each refusal names the key, because it came either from `--env` or from the
+/// plist being replaced, and the operator has to know which line to change (L5: their file is not
+/// edited for them). `loopback` is the daemon's own address check, so the two cannot disagree.
+pub fn refuse_exposure(
+    env: &std::collections::BTreeMap<String, String>,
+    loopback: impl Fn(&str) -> bool,
+) -> Result<(), String> {
+    let get = |k: &str| env.get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let mut refused = Vec::new();
+    // The daemon's own reading: only an explicit "off" disables auth, case-insensitively.
+    if get("SUPRAGNOSIS_MCP_AUTH").is_some_and(|v| v.eq_ignore_ascii_case("off")) {
+        refused.push("SUPRAGNOSIS_MCP_AUTH=off turns off the bearer token".to_string());
+    }
+    if get("SUPRAGNOSIS_SCAN_SECRETS").is_some_and(|v| matches!(v.as_str(), "0" | "off" | "false"))
+    {
+        refused.push("SUPRAGNOSIS_SCAN_SECRETS turns off the ingest secret scan".to_string());
+    }
+    if let Some(addr) = get("SUPRAGNOSIS_HTTP_ADDR") {
+        if !loopback(&addr) {
+            refused.push(format!(
+                "SUPRAGNOSIS_HTTP_ADDR={addr} is not a loopback address - the daemon refuses it, so the job would exit on every start"
+            ));
+        }
+    }
+    if refused.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "the generated job would run with:\n  {}\nA login job adds no exposure (daemon-lifecycle.md L7). Remove the setting from --env, or from the plist being replaced, and install again; a daemon that needs it can be run by hand",
+        refused.join("\n  ")
+    ))
+}
 
 /// What `service install` retires before installing the canonical job, or why it refuses (Section 4,
 /// L1, L5). `hand_written` is whether the canonical plist exists without the generator's marker.
@@ -375,7 +420,12 @@ mod tests {
             ),
             (
                 "pidfile beside a launchd job",
-                Observed { pidfile: Some(7), jobs: vec![canonical.clone()], answering: true },
+                Observed {
+                    pidfile: Some(7),
+                    jobs: vec![canonical.clone()],
+                    answering: true,
+                    store_held: true,
+                },
                 Situation::Conflict(vec![Manager::Pidfile { pid: 7 }, Manager::Launchd(canonical)]),
             ),
         ];
@@ -420,6 +470,69 @@ mod tests {
         // A person's plist is not overwritten without --take-over, which moves it aside (L5).
         assert!(plan_install(&Observed::default(), false, true).unwrap_err().contains("by hand"));
         assert_eq!(plan_install(&Observed::default(), true, true), Ok(vec![]));
+    }
+
+    /// Section 11: a stdio server holds the store and answers nothing. Held with no manager is
+    /// unrecognized - and install refuses it, take-over or not - while held with a manager is just
+    /// that manager's daemon running.
+    #[test]
+    fn a_store_held_by_no_manager_is_unrecognized() {
+        let stdio = Observed { store_held: true, ..Default::default() };
+        assert_eq!(classify(&stdio), Situation::Unrecognized);
+        assert_eq!(plan_install(&stdio, true, false), Err(UNRECOGNIZED_HOLDER.to_string()));
+        let ours = job(CANONICAL_LABEL, LabelKind::Canonical, Some(1), None);
+        let running = Observed {
+            jobs: vec![ours.clone()],
+            answering: true,
+            store_held: true,
+            ..Default::default()
+        };
+        assert_eq!(classify(&running), Situation::One(Manager::Launchd(ours)));
+    }
+
+    /// L9: only this program's executable counts - by its last path component, so neither the
+    /// desktop shell nor whatever inherited a reused pid passes.
+    #[test]
+    fn a_pid_counts_only_when_it_is_supragnosis() {
+        assert!(is_supragnosis_command(
+            "/opt/homebrew/Cellar/supragnosis-server/0.4.3/bin/supragnosis"
+        ));
+        assert!(is_supragnosis_command("supragnosis\n"));
+        assert!(!is_supragnosis_command("/bin/sleep"));
+        assert!(!is_supragnosis_command(
+            "/Applications/Supragnosis.app/Contents/MacOS/supragnosis-app"
+        ));
+        assert!(!is_supragnosis_command(""));
+    }
+
+    /// L7: the generated job refuses an environment that disables auth or the secret scan, or names
+    /// an address the daemon would refuse - whether it came from --env or from a replaced plist.
+    #[test]
+    fn the_generated_job_refuses_an_environment_that_adds_exposure() {
+        let loopback = |a: &str| a.starts_with("127.") || a.starts_with("[::1]");
+        let env = |pairs: &[(&str, &str)]| -> std::collections::BTreeMap<String, String> {
+            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        };
+        assert_eq!(
+            refuse_exposure(
+                &env(&[("SUPRAGNOSIS_HTTP_ADDR", "127.0.0.1:7373"), ("SUPRAGNOSIS_STORE", "redb")]),
+                loopback
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            refuse_exposure(&env(&[("SUPRAGNOSIS_MCP_AUTH", "on")]), loopback),
+            Ok(()),
+            "only an explicit off disables auth"
+        );
+        for bad in [
+            ("SUPRAGNOSIS_MCP_AUTH", "OFF"),
+            ("SUPRAGNOSIS_SCAN_SECRETS", "false"),
+            ("SUPRAGNOSIS_HTTP_ADDR", "0.0.0.0:7373"),
+        ] {
+            let err = refuse_exposure(&env(&[bad]), loopback).unwrap_err();
+            assert!(err.contains(bad.0), "{bad:?} must be named: {err}");
+        }
     }
 
     #[test]

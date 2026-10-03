@@ -100,6 +100,24 @@ pub struct RedbStore {
     db: Database,
 }
 
+/// Whether some process holds the redb store at `path` open for writing (daemon-lifecycle.md
+/// Section 11). A stdio server binds no port, so the lock is the only trace it leaves, and a
+/// lifecycle command that looked only at the port would start a second writer beside it.
+///
+/// Probed with a read-only open, which redb refuses while a writer holds the file - its own lock
+/// rules, not a reimplementation of them. Nothing is created or repaired: an absent file is not
+/// held, and an open that fails for any other reason (a file that needs repair, say) is reported
+/// as not held, because the question is only whether a writer is present.
+pub fn redb_in_use(path: impl AsRef<Path>) -> bool {
+    if !path.as_ref().exists() {
+        return false;
+    }
+    matches!(
+        redb::ReadOnlyDatabase::open(path),
+        Err(redb::DatabaseError::DatabaseAlreadyOpen)
+    )
+}
+
 impl RedbStore {
     /// Opens (creating if absent) the database at `path`. Every table is created up front in one
     /// transaction: redb reports a never-written table as a missing-table error on read, and a store
@@ -757,6 +775,20 @@ mod tests {
         assert_eq!(store.all_entities(Some("ws1")).expect("scoped").len(), 1);
         assert!(store.all_entities(Some("ws2")).expect("other").is_empty());
 
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// The probe sees a writer and nothing else: held while a store is open, free once it is dropped,
+    /// and an absent file is not held (and is not created by asking).
+    #[test]
+    fn redb_in_use_sees_a_writer_and_only_a_writer() {
+        let path = tmp_path();
+        assert!(!redb_in_use(&path), "absent");
+        assert!(!path.exists(), "asking does not create the store");
+        let store = RedbStore::open(&path).expect("open");
+        assert!(redb_in_use(&path), "a writer holds it");
+        drop(store);
+        assert!(!redb_in_use(&path), "released when the writer closes");
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
     }
 
