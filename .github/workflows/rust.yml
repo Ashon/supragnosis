@@ -109,7 +109,7 @@ jobs:
   # The declared floor, tested instead of asserted. `rust-version` read 1.87 for a day and was wrong
   # when it was written: clippy's incompatible_msrv lints this workspace's own code and never the
   # dependency graph, and the gate above only ever ran stable. What actually sets the floor is `oxc`
-  # (1.95), a build-dependency of supragnosis-viz, and `darling` (1.88) through rmcp-macros.
+  # (1.96 since 0.152), a build-dependency of supragnosis-viz, and `darling` (1.88) through rmcp-macros.
   #
   # The toolchain comes from the manifest rather than a literal here, so there is one number to
   # change and this job fails when it is optimistic.
@@ -144,6 +144,31 @@ jobs:
       # target. --locked because the shipped lockfile is the graph being claimed.
       - name: check
         run: cargo check --locked --all-targets
+
+  # The `fastembed` feature is opt-in, and nothing else here builds it: not clippy, not the tests,
+  # not the msrv check, not the release binaries. So the one adapter that talks to a real model
+  # compiled only when someone built it by hand - fastembed 7 went green in every job above and did
+  # not compile (#54). This compiles and lints the feature through the CLI, which is how a user
+  # turns it on. It does not run the model: the real-model tests stay #[ignore]d because they
+  # download weights, so this holds the API boundary, not the embeddings themselves.
+  fastembed:
+    name: fastembed feature builds
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-fastembed
+
+      - name: clippy (fastembed)
+        run: cargo clippy --locked -p supragnosis-cli --features fastembed --all-targets -- -D warnings
 
   # SECURITY.md states a threat model in detail; a project that does that and gates nothing on what
   # its dependencies carry is asymmetric. deny.toml carries the reasoning, including why an
