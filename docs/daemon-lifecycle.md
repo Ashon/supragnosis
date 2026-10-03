@@ -4,7 +4,8 @@
 > one thing believes it is responsible. This document fixes the answer to the first two so that the
 > third cannot arise unnoticed.
 >
-> Status: **specification**. Nothing here is built.
+> Status: **specification, with Section 8 steps 1-4 built.** Sections 4 and 6 carry corrections
+> building them forced; they are recorded in place rather than edited away.
 
 ## 1. Why this exists
 
@@ -69,7 +70,9 @@ code does not know about is how today's incident stayed invisible.
 has loaded (and which of them has a live pid), whether the pidfile names a live process, and whether
 the MCP port and viewer socket answer. From that it classifies:
 
-- **none** - nothing loaded, nothing answering: stopped.
+- **none** - nothing loaded, nothing answering: stopped. If the canonical plist is installed (a
+  `stop` unloaded its job), `restart` loads that job again rather than starting a pidfile daemon
+  beside the login item - which would be two owners again at the next login.
 - **one** - act on it. `restart` kickstarts a launchd job of any recognized label, or stops and
   starts the pidfile daemon. `stop` boots out or signals the same.
 - **more than one** - a conflict. `status` lists every manager it found and which one holds the live
@@ -80,7 +83,8 @@ the MCP port and viewer socket answer. From that it classifies:
   such, never as "stopped" (P5: unknown is not absent).
 
 Only observing and acting shell out (`launchctl`, a socket connect). The classification is a
-function from observations to an outcome, tested as a table.
+function from observations to an outcome, tested as a table in
+`classification_counts_managers_not_processes`, whose rows include the incident of Section 1.
 
 ## 4. The canonical manager and `supragnosis service`
 
@@ -90,21 +94,29 @@ domain. The CLI gains one subcommand that owns it:
 - **`supragnosis service install`** generates the plist and bootstraps it.
 - **`supragnosis service uninstall`** boots the job out and retires the plist (below).
 
-The plist is **generated, not templated**. The template in `deploy/launchd/` carries absolute paths
-for one user, so every other user was told to hand-edit it - which is how hand-written plists with
-divergent environments came to exist. Generated, it contains: the program, `serve --http
-127.0.0.1:7373` (loopback, and the viewer socket at its default), `RunAtLoad`, `KeepAlive`, stdout
-and stderr in `~/.supragnosis/log/`, and a marker comment saying it was generated and by which
-version. No environment variables: configuration belongs to `supragnosis.toml` and the defaults, and
-a plist that pins `SUPRAGNOSIS_EMBED` or a data directory is a second configuration file nobody
-remembers exists.
+The plist is **generated, not templated**. The template that lived in `deploy/launchd/` carried
+absolute paths for one user, so every other user was told to hand-edit it - which is how
+hand-written plists with divergent environments came to exist; it is deleted. Generated, the plist
+contains: the program and `serve`, `RunAtLoad`, `KeepAlive`, stdout and stderr in
+`~/.supragnosis/log/`, an `EnvironmentVariables` dict whose one variable of its own is
+`SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373`, and a marker comment saying it was generated and by which
+version. Guarded by `the_generated_plist_is_marked_escaped_and_carries_env_verbatim`.
+
+> **Correction, from building it.** This section first said the generated plist carries no
+> environment, configuration belonging to `supragnosis.toml`. But `SUPRAGNOSIS_HOST`, `_WORKSPACE`,
+> `_EMBED` and `_DATA_DIR` are settings that exist only as environment variables, and the host is
+> recorded in the provenance of every new observation. Dropping a hand-written plist's environment
+> on take-over would change who the daemon says it is, without a word - P24's "the operator's file
+> is theirs" applied to its contents, not only to the file. So the job's environment is carried
+> forward verbatim from the plist being replaced (generated or hand-written), `--env KEY=VALUE` adds
+> `SUPRAGNOSIS_*` keys and nothing else, and `install` prints what the job carries.
 
 **The program path survives upgrades.** The running binary resolves to a versioned keg
 (`<prefix>/Cellar/supragnosis-server/<version>/bin/supragnosis`), and pinning that path would pin
 the version. When the executable lives in a keg and
 `<prefix>/opt/supragnosis-server/bin/supragnosis` exists, the plist names the `opt` link, which
 Homebrew repoints on upgrade. Otherwise (a source build, `~/.local/bin`) it names the executable as
-found.
+found. Guarded by `a_keg_path_becomes_the_opt_link_that_upgrades_repoint`.
 
 **Install refuses to share.** If another recognized manager is loaded, `install` stops and prints
 which one and the command that retires it. With `--take-over` it retires it itself: a Homebrew job
@@ -120,9 +132,10 @@ plist is removed outright; there is nothing in it the generator cannot write aga
 ## 5. Version drift is reported where it is read
 
 The daemon answers `/api/about` with its version over the viewer socket, and the CLI knows its own.
-When they differ, `status` says so in a line of its own - running, installed, and the command that
-reconciles them - and the tray status line carries the same fact. If the socket does not answer, the
-running version is reported as unknown, not as the installed one.
+When they differ, `status` says so in a line of its own (guarded by
+`drift_never_assumes_the_running_version`) - running, installed, and the command that reconciles
+them - and the tray status line carries the same fact. If the socket does not answer, the running
+version is reported as unknown, not as the installed one.
 
 This is P24's demand applied to upgrades: a binary replaced on disk under a process that keeps the
 old image is a degrade, and a degrade nobody can see has become a silent one. Today it surfaced as a
@@ -146,6 +159,13 @@ classify managers itself - one implementation, in the workspace where it is test
   refused restart (a conflict) says why instead of re-attaching to the process it failed to replace.
 - A CLI too old to know `service` leaves the item disabled with "update supragnosis-server" rather
   than failing on click.
+
+> **Correction, from building it.** Turning the switch on cannot just call the CLI. A daemon this
+> app spawned holds the store, and the CLI cannot see it - it has no pidfile and no launchd job - so
+> install would start the canonical job beside it, the job would fail on the lock, and KeepAlive
+> would retry it forever: the crash loop of Section 1, produced by the switch meant to prevent it.
+> The shell stops its own child first, and after install waits for the socket before attaching, so a
+> job launchd is still starting is attached to rather than raced by a second spawn.
 
 Quitting the app still never stops a launchd-managed daemon. Its MCP clients outlive the window,
 which is the reason the shell attaches rather than owns.
