@@ -18,10 +18,11 @@
 //! works without launchd (for OS service registration such as auto-start on login,
 //! see deploy/README.md).
 //!
-//! stop/restart/status are supervisor-aware: if the running daemon is managed by
-//! launchd (the macOS deploy) rather than this CLI's pidfile, they detect it and
-//! drive it via launchctl (restart = kickstart -k, stop = bootout). So a single
-//! `supragnosis restart` restarts the MCP server + viewer regardless of who started it.
+//! stop/restart/status are supervisor-aware: they recognize every manager the product has
+//! installed - the pidfile, the canonical LaunchAgent, Homebrew's `brew services` job and the
+//! retired labels - and act on whichever single one is present (restart = kickstart -k, stop =
+//! bootout for launchd). More than one is a conflict they report and refuse, rather than guess
+//! (docs/daemon-lifecycle.md; the decisions live in `lifecycle.rs`).
 
 use std::sync::Arc;
 
@@ -57,8 +58,8 @@ enum Cmd {
     Stop,
     /// Restart the daemon (stop then start)
     Restart(RunArgs),
-    /// Query daemon status
-    Status,
+    /// Query daemon status: who manages it, whether it answers, and which version it runs
+    Status(StatusArgs),
     /// Show this node's federation identity (node id + public key); --hash-token hashes a bearer token for an allowlist entry
     Identity(IdentityArgs),
     /// One-shot federation sync round against the configured servers (requires supragnosis.toml; stop the daemon first - the store is single-process)
@@ -82,6 +83,13 @@ struct RekeyArgs {
     /// Report what would move and write nothing.
     #[arg(long)]
     dry_run: bool,
+}
+
+#[derive(Args, Clone, Default)]
+struct StatusArgs {
+    /// Machine-readable output (the desktop shell reads this).
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Clone, Default)]
@@ -131,13 +139,18 @@ struct RunArgs {
     mcp_auth: Option<String>,
 }
 
+// The launchd half of the lifecycle is macOS-only. Elsewhere its parsing and plist generation stay
+// compiled and tested (CI runs on Linux) but are never called, which is not dead code to fix.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod lifecycle;
+
 fn main() -> Result<()> {
     match Cli::parse().cmd.unwrap_or(Cmd::Serve(RunArgs::default())) {
         Cmd::Serve(a) => run_blocking(resolve(a, false)),
         Cmd::Start(a) => start(resolve(a, true)),
         Cmd::Stop => stop(),
         Cmd::Restart(a) => restart(resolve(a, true)),
-        Cmd::Status => status(),
+        Cmd::Status(a) => status(a.json),
         Cmd::Identity(a) => identity_cmd(a),
         Cmd::Sync(a) => sync_cmd(a),
         Cmd::Reproject(a) => reproject_cmd(a),
@@ -1553,14 +1566,9 @@ fn port_open(addr: &str) -> bool {
         .unwrap_or(false)
 }
 
-// --- launchd (macOS) awareness -------------------------------------------------------
-// The deploy LaunchAgent supervises the daemon out-of-band (no pidfile). These helpers let
-// the lifecycle commands detect and drive it, so `supragnosis restart/stop` control the
-// actual running instance instead of a separate self-managed daemon.
-
-/// launchd label used by the deploy LaunchAgent (deploy/launchd/<label>.plist).
-#[cfg(target_os = "macos")]
-const LAUNCHD_LABEL: &str = "com.supragnosis.daemon";
+// --- Observing and acting on the daemon's managers (docs/daemon-lifecycle.md) -----------------
+// The decisions are pure and live in `lifecycle.rs`; what is here only looks (launchctl, the pidfile,
+// the sockets) and acts (kickstart, bootout, a signal).
 
 /// User id for the `gui/<uid>` launchd domain target (via `id -u` - no libc/unsafe).
 #[cfg(target_os = "macos")]
@@ -1573,25 +1581,75 @@ fn launchd_uid() -> Option<String> {
     (!uid.is_empty()).then_some(uid)
 }
 
-/// Whether a launchd job with our label is currently loaded for this user.
+/// Every loaded launchd job under a label the product has ever installed (L2). A job that is
+/// loaded but has no process is included - a KeepAlive job failing on start is still a manager.
 #[cfg(target_os = "macos")]
-fn launchd_loaded() -> bool {
-    std::process::Command::new("launchctl")
-        .arg("list")
-        .arg(LAUNCHD_LABEL)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+fn launchd_jobs() -> Vec<lifecycle::Job> {
+    lifecycle::KNOWN_LABELS
+        .iter()
+        .filter_map(|&(label, kind)| {
+            let out =
+                std::process::Command::new("launchctl").arg("list").arg(label).output().ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            let (pid, last_exit) =
+                lifecycle::parse_launchctl_list(&String::from_utf8_lossy(&out.stdout));
+            Some(lifecycle::Job { label, kind, pid, last_exit })
+        })
+        .collect()
+}
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launchd_jobs() -> Vec<lifecycle::Job> {
+    Vec::new()
 }
 
-/// Restart the launchd daemon in place (`kickstart -k`). The plist environment
-/// (including SUPRAGNOSIS_VIZ_SOCK) is re-applied, so the viewer comes back too.
+/// What the lifecycle commands decide from. Reads only - a stale pidfile is cleared by the commands
+/// that act, never by `status`.
+#[cfg(unix)]
+fn observe() -> lifecycle::Observed {
+    lifecycle::Observed {
+        pidfile: read_pid().filter(|p| pid_alive(*p)).and_then(|p| u32::try_from(p).ok()),
+        jobs: launchd_jobs(),
+        answering: port_open(&status_http_addr()),
+    }
+}
+
+#[cfg(unix)]
+fn clear_stale_pidfile() {
+    if let Some(pid) = read_pid() {
+        if !pid_alive(pid) {
+            let _ = std::fs::remove_file(pid_path());
+        }
+    }
+}
+
+/// The running daemon's version, from the viewer's `/api/about` over its unix socket. `None` when
+/// the socket does not answer - and then the version is unknown, never assumed (Section 5).
+#[cfg(unix)]
+fn running_version() -> Option<String> {
+    use std::io::{Read, Write};
+    let sock = std::env::var("SUPRAGNOSIS_VIZ_SOCK")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(default_viz_sock);
+    let mut s = std::os::unix::net::UnixStream::connect(sock).ok()?;
+    let limit = Some(std::time::Duration::from_millis(800));
+    s.set_read_timeout(limit).ok()?;
+    s.set_write_timeout(limit).ok()?;
+    s.write_all(b"GET /api/about HTTP/1.1\r\nConnection: close\r\n\r\n").ok()?;
+    let mut raw = String::new();
+    s.read_to_string(&mut raw).ok()?;
+    let (_, body) = raw.split_once("\r\n\r\n")?;
+    lifecycle::parse_about_version(body)
+}
+
+/// Restart a launchd job in place (`kickstart -k`), whichever known label it runs under. The plist's
+/// environment is re-applied, so the viewer comes back with the server.
 #[cfg(target_os = "macos")]
-fn launchd_kickstart() -> Result<()> {
+fn launchd_kickstart(job: &lifecycle::Job) -> Result<()> {
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
-    let target = format!("gui/{uid}/{LAUNCHD_LABEL}");
+    let target = format!("gui/{uid}/{}", job.label);
     let st = std::process::Command::new("launchctl")
         .arg("kickstart")
         .arg("-k")
@@ -1601,16 +1659,17 @@ fn launchd_kickstart() -> Result<()> {
     if !st.success() {
         anyhow::bail!("launchctl kickstart {target} failed");
     }
-    println!("restarted launchd daemon {LAUNCHD_LABEL} (MCP server + viewer).");
+    println!("restarted launchd job {} (MCP server + viewer).", job.label);
     Ok(())
 }
 
-/// Stop the launchd daemon (`bootout`). It stays down until reloaded (so KeepAlive
-/// does not respawn it - unlike a bare SIGTERM).
+/// Stop a launchd job (`bootout`), so KeepAlive does not respawn it. A Homebrew job's plist stays
+/// where Homebrew put it and loads again at the next login - said here, because "stopped" alone
+/// would be true only until then.
 #[cfg(target_os = "macos")]
-fn launchd_bootout() -> Result<()> {
+fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
-    let target = format!("gui/{uid}/{LAUNCHD_LABEL}");
+    let target = format!("gui/{uid}/{}", job.label);
     let st = std::process::Command::new("launchctl")
         .arg("bootout")
         .arg(&target)
@@ -1619,8 +1678,26 @@ fn launchd_bootout() -> Result<()> {
     if !st.success() {
         anyhow::bail!("launchctl bootout {target} failed (already stopped?).");
     }
-    println!("stopped launchd daemon {LAUNCHD_LABEL}. It stays down until reloaded (deploy/install.sh or launchctl bootstrap).");
+    match job.kind {
+        lifecycle::LabelKind::Homebrew(token) => println!(
+            "stopped launchd job {}. It is Homebrew's and loads again at the next login - retire it with `brew services stop {token}`.",
+            job.label
+        ),
+        _ => println!(
+            "stopped launchd job {}. It stays down until reloaded (supragnosis service install, or launchctl bootstrap).",
+            job.label
+        ),
+    }
     Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launchd_kickstart(job: &lifecycle::Job) -> Result<()> {
+    anyhow::bail!("launchd job {} reported on a system without launchd", job.label)
+}
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
+    anyhow::bail!("launchd job {} reported on a system without launchd", job.label)
 }
 
 /// Prints the exact command that connects an MCP client to this daemon.
@@ -1707,102 +1784,168 @@ fn stop_pidfile(pid: i32) -> Result<()> {
 
 #[cfg(unix)]
 fn stop() -> Result<()> {
-    // (1) Self-managed (pidfile) daemon takes priority.
-    if let Some(pid) = read_pid() {
-        if pid_alive(pid) {
-            return stop_pidfile(pid);
+    use lifecycle::{Manager, Situation};
+    clear_stale_pidfile();
+    match lifecycle::classify(&observe()) {
+        Situation::Stopped => {
+            println!("not running.");
+            Ok(())
         }
-        let _ = std::fs::remove_file(pid_path()); // stale - fall through to the supervisor check
+        Situation::One(Manager::Pidfile { pid }) => stop_pidfile(pid as i32),
+        Situation::One(Manager::Launchd(job)) => launchd_bootout(&job),
+        Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
+        Situation::Unrecognized => anyhow::bail!(
+            "a daemon is responding on {} but no known manager runs it (no pidfile, no known launchd label) - stop it via its own supervisor.",
+            status_http_addr()
+        ),
     }
-    // (2) launchd-managed daemon (macOS): stop via bootout so KeepAlive does not respawn it.
-    #[cfg(target_os = "macos")]
-    if launchd_loaded() {
-        return launchd_bootout();
-    }
-    // (3) Something else is responding but is not under our control.
-    let http = status_http_addr();
-    if port_open(&http) {
-        anyhow::bail!("a daemon is responding on {http} but is not managed by this CLI or launchd - stop it via its own supervisor.");
-    }
-    println!("not running.");
-    Ok(())
 }
 
 #[cfg(unix)]
 fn restart(cfg: Config) -> Result<()> {
-    // (1) Self-managed daemon: stop then start.
-    if let Some(pid) = read_pid() {
-        if pid_alive(pid) {
-            stop_pidfile(pid)?;
+    use lifecycle::{Manager, Situation};
+    clear_stale_pidfile();
+    match lifecycle::classify(&observe()) {
+        // Nothing to restart - start a fresh self-managed daemon.
+        Situation::Stopped => start(cfg),
+        Situation::One(Manager::Pidfile { pid }) => {
+            stop_pidfile(pid as i32)?;
             std::thread::sleep(std::time::Duration::from_millis(400)); // wait for the port to release
-            return start(cfg);
+            start(cfg)
         }
-        let _ = std::fs::remove_file(pid_path());
+        Situation::One(Manager::Launchd(job)) => {
+            launchd_kickstart(&job)?;
+            report_after_restart();
+            Ok(())
+        }
+        Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
+        Situation::Unrecognized => anyhow::bail!(
+            "a daemon is responding on {} but no known manager runs it (no pidfile, no known launchd label) - cannot restart it from here.",
+            status_http_addr()
+        ),
     }
-    // (2) launchd-managed daemon (macOS): restart in place - the viewer returns via the plist env.
-    #[cfg(target_os = "macos")]
-    if launchd_loaded() {
-        return launchd_kickstart();
+}
+
+/// After a launchd restart, wait briefly for the new process and say which version it serves - a
+/// restart's whole point after an upgrade is the version, and "restarted" alone does not show it.
+#[cfg(unix)]
+fn report_after_restart() {
+    let here = env!("CARGO_PKG_VERSION");
+    for _ in 0..25 {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        if let Some(v) = running_version() {
+            match lifecycle::drift(Some(&v), here) {
+                lifecycle::Drift::Same(v) => println!("  now serving {v}"),
+                lifecycle::Drift::Differs { running, here } => println!(
+                    "  now serving {running}, but this binary is {here} - the job runs a different binary than this one"
+                ),
+                lifecycle::Drift::Unknown => {}
+            }
+            return;
+        }
     }
-    // (3) Nothing under our control - start a fresh self-managed daemon (unless a stranger holds the port).
-    let http = cfg.http.clone().unwrap_or_else(|| "127.0.0.1:7373".to_string());
-    if port_open(&http) {
-        anyhow::bail!("a daemon is responding on {http} but is not managed by this CLI or launchd - cannot restart it from here.");
-    }
-    start(cfg)
+    println!("  the viewer socket has not answered yet - `supragnosis status` shows the version once it does");
 }
 
 #[cfg(unix)]
-fn status() -> Result<()> {
+fn status(json: bool) -> Result<()> {
+    use lifecycle::{Drift, Manager, Situation};
     let http = status_http_addr();
-    let up = port_open(&http);
-    // The connect line is reported for a RUNNING daemon whose token file exists. Read, never
-    // generated: `status` must not create state, and a missing file here is the honest report that
-    // this daemon is running without auth rather than an invitation to mint a token it is not using.
-    let token = std::fs::read_to_string(mcp_token_path())
-        .ok()
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty());
-    let report_client = |http: &str| match &token {
-        Some(t) => print_client_command(http, t),
-        None => println!(
-            "  auth    none - every local OS account on this host can reach the tool surface"
-        ),
+    let observed = observe();
+    let situation = lifecycle::classify(&observed);
+    let here = env!("CARGO_PKG_VERSION");
+    let running = if observed.answering { running_version() } else { None };
+    let drift = lifecycle::drift(running.as_deref(), here);
+
+    let managers: Vec<&Manager> = match &situation {
+        Situation::One(m) => vec![m],
+        Situation::Conflict(ms) => ms.iter().collect(),
+        Situation::Stopped | Situation::Unrecognized => vec![],
     };
-    // (1) Self-managed (pidfile) daemon.
-    if let Some(pid) = read_pid() {
-        if pid_alive(pid) {
-            println!("running (self-managed, pid {pid})");
-            println!(
-                "  MCP http://{http}/mcp  ({})",
-                if up { "responding" } else { "port not responding" }
-            );
-            report_client(&http);
+    if json {
+        let manager_json = |m: &Manager| match m {
+            Manager::Pidfile { pid } => serde_json::json!({ "type": "pidfile", "pid": pid }),
+            Manager::Launchd(j) => {
+                let (source, formula) = match j.kind {
+                    lifecycle::LabelKind::Canonical => ("canonical", None),
+                    lifecycle::LabelKind::Homebrew(t) => ("homebrew", Some(t)),
+                    lifecycle::LabelKind::Retired => ("retired", None),
+                };
+                serde_json::json!({
+                    "type": "launchd", "label": j.label, "source": source, "formula": formula,
+                    "pid": j.pid, "last_exit": j.last_exit,
+                })
+            }
+        };
+        let out = serde_json::json!({
+            "situation": match situation {
+                Situation::Stopped => "stopped",
+                Situation::One(_) => "one",
+                Situation::Conflict(_) => "conflict",
+                Situation::Unrecognized => "unrecognized",
+            },
+            "managers": managers.iter().map(|m| manager_json(m)).collect::<Vec<_>>(),
+            "answering": observed.answering,
+            "mcp": format!("http://{http}/mcp"),
+            "version": { "here": here, "running": running },
+        });
+        println!("{out}");
+        return Ok(());
+    }
+
+    match &situation {
+        Situation::Stopped => {
+            match read_pid() {
+                Some(pid) => println!("stopped (stale pidfile, pid {pid})"),
+                None => println!("stopped"),
+            }
             return Ok(());
         }
+        Situation::One(m) => {
+            println!(
+                "{} ({})",
+                if observed.answering { "running" } else { "not responding" },
+                m.describe()
+            );
+        }
+        Situation::Conflict(ms) => {
+            println!("CONFLICT: {}", lifecycle::conflict_message(ms));
+        }
+        Situation::Unrecognized => {
+            println!("running (unrecognized manager - no pidfile, no known launchd label)");
+        }
     }
-    // (2) launchd-managed daemon (macOS) - controllable via supragnosis restart/stop.
-    #[cfg(target_os = "macos")]
-    if launchd_loaded() {
-        println!("running (launchd: {LAUNCHD_LABEL})");
-        println!(
-            "  MCP http://{http}/mcp  ({})",
-            if up { "responding" } else { "not responding" }
-        );
-        report_client(&http);
-        println!("  control: supragnosis restart | supragnosis stop");
-        return Ok(());
+    println!(
+        "  MCP     http://{http}/mcp  ({})",
+        if observed.answering { "responding" } else { "not responding" }
+    );
+    match &drift {
+        Drift::Same(v) => println!("  version {v}"),
+        Drift::Differs { running, here } => println!(
+            "  version RUNNING {running}, this binary {here} - the daemon still runs the old image; `supragnosis restart` loads this one"
+        ),
+        Drift::Unknown if observed.answering => {
+            println!("  version unknown (the viewer socket did not answer)")
+        }
+        Drift::Unknown => {}
     }
-    // (3) External/unknown supervisor, or stopped.
-    if up {
-        println!("running (external; no pidfile, not launchd)");
-        println!("  MCP http://{http}/mcp  (responding)");
-        report_client(&http);
-        return Ok(());
+    if observed.answering {
+        // The connect line is reported for a RUNNING daemon whose token file exists. Read, never
+        // generated: `status` must not create state, and a missing file here is the honest report
+        // that this daemon is running without auth rather than an invitation to mint a token.
+        let token = std::fs::read_to_string(mcp_token_path())
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty());
+        match token {
+            Some(t) => print_client_command(&http, &t),
+            None => println!(
+                "  auth    none - every local OS account on this host can reach the tool surface"
+            ),
+        }
     }
-    match read_pid() {
-        Some(pid) => println!("stopped (stale pidfile, pid {pid})"),
-        None => println!("stopped"),
+    if matches!(situation, Situation::One(_)) {
+        println!("  control supragnosis restart | supragnosis stop");
     }
     Ok(())
 }
@@ -1821,7 +1964,7 @@ fn restart(_cfg: Config) -> Result<()> {
     anyhow::bail!("the background daemon is unix-only.")
 }
 #[cfg(not(unix))]
-fn status() -> Result<()> {
+fn status(_json: bool) -> Result<()> {
     anyhow::bail!("the background daemon is unix-only.")
 }
 
