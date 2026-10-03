@@ -40,6 +40,16 @@ on:
       # principles.md, and the doc-claim sweep reads the rest), so editing one can fail the Rust
       # gate - the gate has to run when they change, or the coupling is one-way again.
       - "docs/*.md"
+  # The gate can go red with no change to the tree: a locked crate is yanked, an advisory is
+  # published against one, or `stable` moves and a new lint fires. All three happened between
+  # v0.4.1 and v0.4.2. The deny job had been red on main since the v0.4.1 release commit itself, and
+  # RUSTSEC-2026-0285 (rustls, under the sync transport) went unreported for three weeks, because
+  # the paths above only run the gate when something touches them. A weekly run on the default
+  # branch reports drift when it arrives, instead of on whichever unrelated pull request trips it.
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC
+  # The same check on demand, e.g. right before cutting a release.
+  workflow_dispatch:
 
 # A gate reads the code and reports; it never writes to the repository. Declaring that explicitly
 # means the token this job hands to third-party actions (the toolchain installer, the cache) cannot
