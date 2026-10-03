@@ -131,6 +131,14 @@ impl RedbStore {
         }
         let db = Database::create(path).map_err(backend)?;
         let txn = db.begin_write().map_err(backend)?;
+        // A store the ledger has never seen - written by a build before it, or by none - has no
+        // record of which of its appends were projected. Nothing vouches for them, so the first open
+        // by a ledger-aware build owes every log row (crash-recovery.md Section 4): one reproject of
+        // each workspace, once, which repairs whatever an older build's crash left behind.
+        let ledger_is_new = !txn
+            .list_tables()
+            .map_err(backend)?
+            .any(|t| redb::TableHandle::name(&t) == "owed_projection");
         {
             txn.open_table(OBSERVATIONS).map_err(backend)?;
             txn.open_table(ENTITIES).map_err(backend)?;
@@ -144,6 +152,17 @@ impl RedbStore {
             txn.open_multimap_table(REL_BY_WS).map_err(backend)?;
             txn.open_multimap_table(REL_BY_SRC).map_err(backend)?;
             txn.open_multimap_table(REL_BY_DST).map_err(backend)?;
+        }
+        if ledger_is_new {
+            use redb::ReadableMultimapTable;
+            let by_ws = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
+            let mut owed = txn.open_table(OWED).map_err(backend)?;
+            for entry in by_ws.iter().map_err(backend)? {
+                let (ws, ids) = entry.map_err(backend)?;
+                for id in ids {
+                    owed.insert(id.map_err(backend)?.value(), ws.value()).map_err(backend)?;
+                }
+            }
         }
         txn.commit().map_err(backend)?;
         Ok(Self { db })
@@ -775,6 +794,37 @@ mod tests {
         assert_eq!(store.all_entities(Some("ws1")).expect("scoped").len(), 1);
         assert!(store.all_entities(Some("ws2")).expect("other").is_empty());
 
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// A store written before the ledger existed has no record of which appends were projected, so
+    /// its first ledger-aware open owes every log row - and only that open: once the table exists,
+    /// an empty ledger means nothing is owed.
+    #[test]
+    fn a_store_from_before_the_ledger_is_owed_in_full_once() {
+        let path = tmp_path();
+        let obs = Observation::new("written by an older build".into(), prov_in("ws1"));
+        let id = obs.id.clone();
+        {
+            let store = RedbStore::open(&path).expect("open");
+            store.add_observation(obs).expect("append");
+            // What an older build leaves behind: the log, and no ledger table at all.
+            let txn = store.db.begin_write().expect("txn");
+            txn.delete_table(OWED).expect("drop the ledger");
+            txn.commit().expect("commit");
+        }
+        let store = RedbStore::open(&path).expect("first ledger-aware open");
+        assert_eq!(
+            store.owed_projections().expect("ledger"),
+            vec![(id.clone(), "ws1".to_string())]
+        );
+        store.clear_owed(std::slice::from_ref(&id)).expect("repaid");
+        drop(store);
+        let store = RedbStore::open(&path).expect("a later open");
+        assert!(
+            store.owed_projections().expect("ledger").is_empty(),
+            "seeded once, not every open"
+        );
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
     }
 
