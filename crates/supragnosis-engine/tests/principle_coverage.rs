@@ -359,6 +359,10 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
         "docs/negotiated-surface.md",
         include_str!("../../../docs/negotiated-surface.md"),
     ),
+    // Listed on the day it was written, like the documents above. The guard it promises is of a
+    // different kind: it checks the viewer's source, the way the escaping guard in the viz crate
+    // does, so the first test it names will live there rather than beside the engine.
+    ("docs/inspector.md", include_str!("../../../docs/inspector.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
