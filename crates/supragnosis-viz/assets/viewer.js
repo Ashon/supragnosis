@@ -2206,6 +2206,69 @@ function hullsShareMember(a, b) {
   return false;
 }
 
+// --- Haloed labels: text and its halo rasterized together, then blitted on the device pixel grid ---
+// A label used to be strokeText (the halo) then fillText (the name) at the same point, and the two did
+// not land together. Measured in this engine (WebKit/CoreText): fillText snaps glyphs to the device
+// pixel grid while strokeText draws the outline at the exact fractional coordinate, so at 1x the halo
+// sat up to 0.26px off horizontally and 0.15-0.5px vertically - and the vertical part depends on the
+// glyph, so no coordinate snapping or fixed offset can cancel it. A translucent label also let the
+// halo's inner half show through its own glyphs. So the halo is built FROM the fill: the same glyphs
+// drawn in the background color at whole-device-pixel offsets inside a disc (a dilation - every copy
+// is the identical raster, shifted), the name on top, baked once into a sprite. Registration then
+// holds by construction, globalAlpha fades the label as one unit, and a frame costs one drawImage per
+// label instead of two text layouts. Sprites are cached by everything that shapes them, LRU-bounded.
+const LABEL_FAMILY = "'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
+// The cap bounds memory (a 12px name is ~50KB at 2x) and sits above what label thinning leaves on screen;
+// the node pass culls off-screen labels so a large graph cannot cycle the cache every frame.
+const LABEL_SPRITES = new Map(), LABEL_SPRITE_CAP = 300;
+const haloDiscs = new Map();   // "radius|dpr" -> [[dx, dy], ...] in device px, centre excluded
+function haloDisc(radius, dpr) {
+  const key = radius + "|" + dpr;
+  let d = haloDiscs.get(key);
+  if (!d) {
+    const r = radius * dpr, R = Math.ceil(r);
+    d = [];
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++)
+      if ((dx || dy) && dx * dx + dy * dy <= r * r + 1e-6) d.push([dx, dy]);
+    haloDiscs.set(key, d);
+  }
+  return d;
+}
+function labelSprite(text, weight, size, color, spacing, halo) {
+  const key = [DPR, weight, size, color, spacing, halo, text].join("|");
+  let s = LABEL_SPRITES.get(key);
+  if (s) { LABEL_SPRITES.delete(key); LABEL_SPRITES.set(key, s); return s; }   // LRU touch
+  const font = weight + " " + size + "px " + LABEL_FAMILY;
+  const scratch = labelSprite.ctx || (labelSprite.ctx = document.createElement("canvas").getContext("2d"));
+  scratch.font = font;
+  if ("letterSpacing" in scratch) scratch.letterSpacing = spacing;
+  const tw = scratch.measureText(text).width;
+  // Whole CSS px of padding, so the text origin sits on the device grid inside the sprite too.
+  const pad = Math.ceil(halo) + 2, w = Math.ceil(tw) + 2 * pad, h = Math.ceil(size * 1.6) + 2 * pad;
+  const c = document.createElement("canvas");
+  c.width = Math.ceil(w * DPR); c.height = Math.ceil(h * DPR);
+  const o = c.getContext("2d");
+  o.setTransform(DPR, 0, 0, DPR, 0, 0);
+  o.font = font; o.textBaseline = "middle"; o.textAlign = "left";
+  if ("letterSpacing" in o) o.letterSpacing = spacing;
+  const ax = pad, ay = Math.round(h / 2 * DPR) / DPR;
+  o.fillStyle = SURFACE;
+  for (const [dx, dy] of haloDisc(halo, DPR)) o.fillText(text, ax + dx / DPR, ay + dy / DPR);
+  o.fillStyle = color; o.fillText(text, ax, ay);
+  s = { c, w: c.width / DPR, h: c.height / DPR, ax, ay, tw };
+  LABEL_SPRITES.set(key, s);
+  if (LABEL_SPRITES.size > LABEL_SPRITE_CAP) LABEL_SPRITES.delete(LABEL_SPRITES.keys().next().value);
+  return s;
+}
+// Draw a haloed label in screen space (the DPR transform must be current). `y` is the label's middle,
+// as textBaseline "middle" would place it; `align` is "left" or "center". The sprite lands on whole
+// device pixels so the blit stays 1:1 - a fractional destination would resample it soft.
+function drawLabel(text, weight, size, color, spacing, halo, x, y, align) {
+  const s = labelSprite(text, weight, size, color, spacing, halo);
+  const left = align === "center" ? x - s.tw / 2 : x;
+  ctx.drawImage(s.c, Math.round((left - s.ax) * DPR) / DPR, Math.round((y - s.ay) * DPR) / DPR, s.w, s.h);
+}
+
 function stepSim() {
   simMotion = 0;
   const N = nodes.length;
@@ -2470,17 +2533,16 @@ function draw() {
       const placed = [];
       for (const o of cand) {
         const l = o.l;
-        ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
+        ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px " + LABEL_FAMILY;   // measures the placement box
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
         if (placed.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
         placed.push({ x, y, w, h });
-        // Blend into the map without a chip: a crisp background-color stroke (a cutout that matches the
+        // Blend into the map without a chip: a crisp background-color halo (a cutout that matches the
         // canvas) keeps the group-color name sharp over the hull fills; lower idle opacity lets it recede.
-        const a = lgActive ? (l.lgHit ? 0.75 : HULL_LABEL_HOVER_FADE)
+        // The label fades as one unit (drawLabel), so the halo no longer darkens its own glyphs.
+        ctx.globalAlpha = lgActive ? (l.lgHit ? 0.75 : HULL_LABEL_HOVER_FADE)
           : hlAnchor ? (l.hot ? 1 : HULL_LABEL_HOVER_FADE) : 0.6;
-        ctx.globalAlpha = a;
-        ctx.lineWidth = Math.max(3, o.fs * 0.16); ctx.strokeStyle = SURFACE; ctx.strokeText(l.text, o.px, o.py);
-        ctx.fillStyle = l.col; ctx.fillText(l.text, o.px, o.py);
+        drawLabel(l.text, l.hot ? "600" : "500", o.fs, l.col, "0.3px", Math.max(1.5, o.fs * 0.08), o.px, o.py, "center");
       }
       if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
       ctx.globalAlpha = 1; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
@@ -2688,8 +2750,6 @@ function draw() {
   // Labels (nodes + hulls) - turned on/off by the labels toggle. In screen coordinates (DPR), so constant size regardless of zoom.
   if (showLabels) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.font = "12px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
-    ctx.textBaseline = "middle";
     // Label thinning: everything when small (<=40) or zoomed in enough (cam.s>1.4); on a large graph,
     // only hubs (high degree >= cut) + hover/focus/active. Removes the hairball's wall of labels.
     const cut = (nodes.length <= 40 || cam.s > 1.4) ? 0 : Math.max(4, Math.round(nodes.length / 25));
@@ -2702,9 +2762,9 @@ function draw() {
       const show = on && (lg === true || n === hover || n === focus || (act && act.ns.has(n.id)) || (n.degree || 0) >= cut);
       if (!show) continue;
       const px = n.x*cam.s + cam.x, py = n.y*cam.s + cam.y, r = nodeRadius(n)*cam.s;
+      if (px + r + 5 > innerWidth || px + r + 5 + 600 < 0 || py < -20 || py > innerHeight + 20) continue;   // off screen
       ctx.globalAlpha = on ? 1 : 0.25;
-      ctx.lineWidth = 3; ctx.strokeStyle = SURFACE; ctx.strokeText(n.name, px + r + 5, py);
-      ctx.fillStyle = (n === focus || n === hover) ? INK : INK2; ctx.fillText(n.name, px + r + 5, py);
+      drawLabel(n.name, "400", 12, (n === focus || n === hover) ? INK : INK2, "0px", 1.5, px + r + 5, py, "left");
     }
     ctx.globalAlpha = 1;
     // (Group / hull labels are drawn in their own pass right after the hulls - see drawHullLabels below.)
@@ -2714,7 +2774,10 @@ function draw() {
       edgeLabels.sort((p, q) => p.len - q.len);
       const shown = Math.min(edgeLabels.length, EDGE_LABEL_MAX);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "10.5px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
+      ctx.font = "10.5px " + LABEL_FAMILY;
+      // Pill and text on whole device pixels: fillText snaps to the grid and the pill path does not, so
+      // at a fractional point the text sits off-centre in its pill by a different amount every frame.
+      const snap = v => Math.round(v * DPR) / DPR;
       const pill = (px, py, w) => {
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(px - w/2 - 5, py - 8, w + 10, 16, 4);
@@ -2723,14 +2786,14 @@ function draw() {
       };
       for (let k = 0; k < shown; k++) {
         const L = edgeLabels[k];
-        const px = L.mx*cam.s + cam.x, py = L.my*cam.s + cam.y, w = ctx.measureText(L.text).width;
+        const px = snap(L.mx*cam.s + cam.x), py = snap(L.my*cam.s + cam.y), w = ctx.measureText(L.text).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = L.col; ctx.fillText(L.text, px, py);
       }
       const omitted = edgeLabels.length - shown, an = focus || hover;
       if (omitted > 0 && an) {
-        ctx.font = "10px 'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
-        const t = "+" + omitted + " more", px = an.x*cam.s + cam.x, py = an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15, w = ctx.measureText(t).width;
+        ctx.font = "10px " + LABEL_FAMILY;
+        const t = "+" + omitted + " more", px = snap(an.x*cam.s + cam.x), py = snap(an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15), w = ctx.measureText(t).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);
       }
