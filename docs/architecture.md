@@ -23,7 +23,7 @@
   [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built),
   [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 built,
   Section 11 specified),
-  [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, specified).
+  [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built).
 
 ---
 
@@ -1043,4 +1043,7 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
   re-projects the touched entities from the log through the same fold `reproject` uses, so there is
   no field-wise interim to lose under concurrency, and the section stays serialized by the engine
   `write_guard`. A store-level atomic upsert would still be a refinement, but the divergence this
-  condition guarded against no longer exists.
+  condition guarded against no longer exists. The same boundary under a crash rather than under
+  concurrency - append committed, projection not - was unguarded until 2026-10: it is now repaid by
+  the owed-projection ledger at the next open ([crash-recovery.md](crash-recovery.md)), and one
+  transaction for the append and its projection is that document's named follow-up.
