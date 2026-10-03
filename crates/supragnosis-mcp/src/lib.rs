@@ -1008,14 +1008,36 @@ impl SupragnosisServer {
             ));
         }
         // Stamp before export (export-boundary stamping, Phase 2).
+        let mut reprojected = serde_json::Value::Null;
         {
             let store = self.engine.store();
             let node = ctx.node.clone();
             let ws2 = ws.clone();
-            if let Ok(Err(e)) =
-                tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await
-            {
-                return err_json(&format!("backfill stamping failed: {e}"));
+            match tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await {
+                Ok(Err(e)) => return err_json(&format!("backfill stamping failed: {e}")),
+                // Stamping rewrites log rows the projection carries, so the graph is behind the log
+                // until re-materialized (crash-recovery.md K2). A failure here is not the push's -
+                // the rows stay owed and the next open repays them.
+                Ok(Ok(stamped)) if stamped > 0 => {
+                    let engine = self.engine.clone();
+                    let ws3 = ws.clone();
+                    reprojected = match tokio::task::spawn_blocking(move || {
+                        engine.reproject(Some(&ws3))
+                    })
+                    .await
+                    {
+                        Ok(Ok(r)) => {
+                            serde_json::json!({"stamped": stamped, "entities": r.entities, "relations": r.relations})
+                        }
+                        Ok(Err(e)) => {
+                            serde_json::json!({"stamped": stamped, "error": e.to_string()})
+                        }
+                        Err(e) => {
+                            serde_json::json!({"stamped": stamped, "error": format!("join: {e}")})
+                        }
+                    };
+                }
+                _ => {}
             }
         }
         // Narrow the round to hosts that admit this workspace, and say which were left out. The two
@@ -1078,7 +1100,9 @@ impl SupragnosisServer {
                 }
             }
         }
-        to_json(&serde_json::json!({"workspace": ws, "pushed": results, "skipped": routed.skipped}))
+        to_json(
+            &serde_json::json!({"workspace": ws, "pushed": results, "skipped": routed.skipped, "reprojected": reprojected}),
+        )
     }
 }
 

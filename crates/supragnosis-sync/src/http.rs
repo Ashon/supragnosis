@@ -454,15 +454,25 @@ async fn pull_handler(
     let store = state.store.clone();
     let node = state.node.clone();
     let ws = req.workspace.clone();
-    let events = tokio::task::spawn_blocking(move || {
+    let (stamped, events) = tokio::task::spawn_blocking(move || {
         // Stamp anything still unstamped before exporting (export-boundary stamping, Phase 2), then
         // serve the delta. The per-node share list is the allowlist entry's workspaces (6c).
-        node.backfill(store.as_ref(), &req.workspace)?;
+        let stamped = node.backfill(store.as_ref(), &req.workspace)?;
         export_delta(store.as_ref(), &req.workspace, &req.since, &entry.shared_workspaces)
+            .map(|events| (stamped, events))
     })
     .await
     .map_err(internal)?
     .map_err(internal)?;
+    // Stamping rewrites log rows, and the projection carries their attestations, so a backfill that
+    // stamped anything leaves the graph behind the log until it is re-materialized - the same debt
+    // an inbound push leaves, paid the same way (crash-recovery.md K2).
+    if stamped > 0 {
+        if let Some(hook) = state.on_applied.clone() {
+            let ws = ws.clone();
+            let _ = tokio::task::spawn_blocking(move || hook(&ws)).await;
+        }
+    }
     state.seen(&entry.node_id, "pull");
     state.activity("pull-served", &entry.node_id, &ws, events.len());
     Ok(Json(PullResp { events }))
@@ -1024,6 +1034,39 @@ mod tests {
         }
         // Right token, shared workspace -> OK.
         assert!(good.advertise("ws").await.is_ok());
+    }
+
+    /// A pull stamps the hub's own unstamped rows before exporting them, and stamping rewrites rows
+    /// the projection carries - so the hub re-materializes after a pull that stamped anything, the
+    /// way it does after a push (crash-recovery.md K2). A pull that stamped nothing costs nothing.
+    #[tokio::test]
+    async fn a_pull_that_stamps_rows_re_materializes_them() {
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        hub_store
+            .add_observation(Observation::new("hub fact".into(), prov("ws", 5)))
+            .unwrap();
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let client_node = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
+        let allow = vec![entry(&client_node, "token", &["ws"])];
+        let calls = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = calls.clone();
+        let hook: OnApplied = Arc::new(move |ws: &str| seen.lock().unwrap().push(ws.to_string()));
+        let state = Arc::new(ServerState::new(hub_store, hub, allow).with_on_applied(hook));
+        let keys = state.peers.admitted().origin_keys;
+        let addr = spawn_server(state).await;
+        let client = SyncClient::new(format!("http://{addr}"), "token", false).unwrap();
+        let mine: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let share = vec!["ws".to_string()];
+
+        let first = client.sync_workspace(&mine, &client_node, "ws", &share, &keys).await.unwrap();
+        assert_eq!(first.pulled, 1);
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec!["ws".to_string()],
+            "the stamping pull re-materialized"
+        );
+        client.sync_workspace(&mine, &client_node, "ws", &share, &keys).await.unwrap();
+        assert_eq!(calls.lock().unwrap().len(), 1, "a pull with nothing left to stamp does not");
     }
 
     /// End to end over HTTP: client A pushes its knowledge to the hub, client B pulls it through the

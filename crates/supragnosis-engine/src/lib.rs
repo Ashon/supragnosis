@@ -176,6 +176,18 @@ pub struct ReprojectReport {
     pub relations: usize,
 }
 
+/// What [`Engine::repay_owed`] found owed and repaid (crash-recovery.md K3/K5) - kept so the
+/// operator's surfaces can say a recovery happened, instead of leaving it in a startup log.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Recovery {
+    /// When the repayment finished, in the node's transaction time (ms).
+    pub at: supragnosis_core::Timestamp,
+    /// The workspaces re-projected, in name order.
+    pub workspaces: Vec<String>,
+    /// How many log rows the ledger named as owed.
+    pub observations: usize,
+}
+
 /// What a workspace re-key moved, skipped, and why.
 #[derive(Serialize, Debug, Default)]
 pub struct RekeyReport {
@@ -1222,6 +1234,8 @@ pub struct Engine {
     clock: Arc<dyn Clock>,
     host: String,
     default_workspace: String,
+    /// The last repayment of owed projections this engine ran, if any (crash-recovery.md K5).
+    last_recovery: std::sync::Mutex<Option<Recovery>>,
 }
 
 impl Engine {
@@ -1242,6 +1256,7 @@ impl Engine {
             scan_secrets: true,
             host: host.into(),
             default_workspace: default_workspace.into(),
+            last_recovery: std::sync::Mutex::new(None),
         }
     }
 
@@ -1491,6 +1506,9 @@ impl Engine {
             .collect();
         let touched_edges: HashSet<String> = relations.iter().cloned().collect();
         self.project_relations(&workspace, Some(&touched_edges))?;
+        // K2: the projection this append owed is written. Not before - an error above returns with
+        // the entry still in the ledger, which is what lets the next open repay it.
+        self.repaid(&observation_id);
 
         Ok(ObserveOutput { observation_id, entities: entity_ids, relations })
     }
@@ -1562,6 +1580,9 @@ impl Engine {
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // The glossary is a read-time fold; nothing materialized depends on this row, so the append
+        // owes no projection beyond itself (K2).
+        self.repaid(&observation_id);
         Ok(observation_id)
     }
 
@@ -2156,6 +2177,8 @@ impl Engine {
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
+        self.repaid(&id);
         Ok(id)
     }
 
@@ -2220,6 +2243,8 @@ impl Engine {
         self.refuse_secrets(&obs)?;
         self.store.add_observation(obs)?;
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
+        self.repaid(&id);
         Ok(id)
     }
 
@@ -3574,15 +3599,75 @@ impl Engine {
         Ok(report)
     }
 
+    /// Repays the owed-projection ledger (crash-recovery.md K3): re-projects every workspace it
+    /// names. A writer process runs this right after opening the store and before it serves, so no
+    /// read is answered from a graph known to be behind its log. Recovery is a reproject, so it
+    /// produces what the interrupted writes would have (IR3) and running it twice changes nothing.
+    ///
+    /// `Ok(None)` when nothing was owed - the normal case, one ledger read.
+    pub fn repay_owed(&self) -> Result<Option<Recovery>, StoreError> {
+        let owed = self.store.owed_projections()?;
+        if owed.is_empty() {
+            return Ok(None);
+        }
+        let workspaces: std::collections::BTreeSet<String> =
+            owed.iter().map(|(_, w)| w.clone()).collect();
+        for ws in &workspaces {
+            self.reproject(Some(ws))?;
+        }
+        let recovery = Recovery {
+            at: self.clock.now_millis(),
+            workspaces: workspaces.into_iter().collect(),
+            observations: owed.len(),
+        };
+        *self.last_recovery.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(recovery.clone());
+        Ok(Some(recovery))
+    }
+
+    /// The last repayment this engine ran (K5), for the operator's surfaces.
+    pub fn last_recovery(&self) -> Option<Recovery> {
+        self.last_recovery
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// How many log rows still owe their projection right now. Non-zero on a running node means a
+    /// projection failed after its append: the fact is in the log, and the next open repays it.
+    pub fn owed_count(&self) -> Result<usize, StoreError> {
+        Ok(self.store.owed_projections()?.len())
+    }
+
+    /// Clears this writer's own ledger entry once its projection is written (K2). A failed clear
+    /// is not the caller's failure - the write and its projection both landed - so it is logged and
+    /// left for the next open, whose only cost is a needless reproject.
+    fn repaid(&self, observation_id: &str) {
+        if let Err(e) = self.store.clear_owed(&[observation_id.to_string()]) {
+            tracing::warn!(observation_id, error = %e, "could not clear the owed-projection entry - the next open re-projects its workspace");
+        }
+    }
+
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
-        let cx = &ReadCtx::default();
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
+        // K2: what this reproject repays is what the ledger held BEFORE it read the log. An append
+        // landing while it runs may be missing from the snapshot it projects, so its entry stays
+        // for its own writer (or the next reproject) to clear. Read before the context below exists.
+        let owed: Vec<String> = self
+            .store
+            .owed_projections()?
+            .into_iter()
+            .filter(|(_, w)| *w == ws)
+            .map(|(id, _)| id)
+            .collect();
+        let cx = &ReadCtx::default();
         // Entities: the same resolution write path the incremental observe uses, over ALL entities
         // (only = None) - so a reproject and an incremental write agree row-for-row (IR3).
         let entities = self.project_entities(&ws, None, cx)?;
 
         // The same fold the incremental write runs, over every edge rather than one observe's.
         let relations = self.project_relations(&ws, None)?;
+        self.store.clear_owed(&owed)?;
         Ok(ReprojectReport {
             observations: self.observations(Some(&ws))?.len(),
             entities,
