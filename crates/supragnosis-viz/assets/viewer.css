@@ -178,23 +178,39 @@
             padding:11px 15px 13px; font-size:12px; color:var(--ink2);
             box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
   #detail.on { display:flex; flex-direction:column; }
-  #detail h2 { font:600 14.5px/1.4 var(--sans); margin:0 22px 2px 0; color:var(--gold-bright); }
+  #detail h2 { font:600 14.5px/1.4 var(--sans); margin:0 52px 2px 0; color:var(--gold-bright); }
   #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; display:flex; align-items:center;
                   gap:6px; flex-wrap:wrap; }
   /* The values the whole scope shares, stated once instead of on every node (docs/inspector.md D3).
      Quiet and pushed right: it qualifies the line rather than competing with the node's own fields. */
   #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:10.5px; }
   #detail .desc { color:var(--ink); font:13px/1.45 var(--sans); margin:2px 0 6px; opacity:.9; }
-  #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
-  #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
+  /* Two regions (docs/inspector.md Section 6): relations, grouped by kind, and the evidence log. The
+     relation side gets the larger share - its chips wrap, so width is what it turns into rows saved. */
+  #detail .rels { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:20px;
+                  flex:1 1 auto; min-height:0; overflow:hidden; }
+  #detail .relcol { min-width:0; overflow-y:auto; }
+  /* The taller panel: trades graph room for detail room, on request (the grow control). */
+  #detail.tall { max-height:72vh; }
   /* No own background: the panel is translucent glass, so any child fill reads as a dark box
      (the old sticky-header mask). Headers scroll with their list instead. */
   #detail .sec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
                  margin:0 0 4px; padding-bottom:3px; }
-  #detail .row { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:5px; cursor:pointer; }
-  #detail .row:hover { background:var(--gold-glass); }
-  #detail .row .rel { color:var(--muted); font-size:10.5px; white-space:nowrap; }
-  #detail .row .nm { color:var(--ink); font-family:var(--sans); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* A relation group: the kind said once (mono - it is an identifier), then its members as chips
+     (sans - they are names). A superseded edge stays listed, dashed and dimmed, never dropped (P4). */
+  #detail .rgroup { margin:0 0 7px; }
+  #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:10.5px; color:var(--muted); margin:0 0 3px; }
+  #detail .rghead .rkind { color:var(--ink2); }
+  #detail .rghead .rct { color:var(--faint); }
+  #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
+  #detail .rchip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                   font:11.5px/1.55 var(--sans); color:var(--ink); background:var(--panel);
+                   border:1px solid var(--line-soft); border-radius:5px; padding:0 7px; cursor:pointer; }
+  #detail .rchip:hover { color:var(--gold-bright); border-color:var(--gold-dim); }
+  #detail .rchip.past { opacity:.55; border-style:dashed; }
+  #detail .rchip .dot { width:7px; height:7px; border-radius:2px; margin-right:5px; vertical-align:0; }
+  #detail .rmore { font:10.5px/1.55 var(--mono); color:var(--muted); background:none;
+                   border:1px dashed var(--line); border-radius:5px; padding:0 7px; }
   #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
   /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
      asterisk). A square hit target with a soft hover fill, not a bare text glyph. */
@@ -204,6 +220,13 @@
                    transition:color 0.15s ease, background 0.15s ease; }
   #detail .close:hover { color:var(--gold-bright); background:var(--gold-glass); }
   #detail .close svg { display:block; }
+  /* The grow control sits beside close and borrows its whole look. */
+  #detail .grow { position:absolute; top:8px; right:32px; cursor:pointer; color:var(--muted);
+                  border:none; background:none; border-radius:5px; padding:0;
+                  width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+                  transition:color 0.15s ease, background 0.15s ease; }
+  #detail .grow:hover { color:var(--gold-bright); background:var(--gold-glass); }
+  #detail .grow svg { display:block; }
   #detail .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); padding:2px 5px; }
   /* Control dock (left) - collapsible sections for layers/legend/glossary. detail panel stays on the
      right, so the two never collide. Toggled open/closed by the header 'panels' button. */
