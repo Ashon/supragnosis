@@ -4,7 +4,8 @@
 > every field they receive, every time. This document fixes which fields may go quiet, under what
 > rule, and what no rule may touch.
 >
-> Status: **specification**. Nothing here is built.
+> Status: **specification, with Section 8 step 1 built** - the silence rule, the scope line and
+> the D1 guard. Steps 2-4 are not.
 
 ## 1. Why this exists
 
@@ -165,9 +166,10 @@ an evidence-heavy entity, an isolated one, and a contested one. The author's sto
 entity, so the last needs a seeded store (`task server:mem`). It is the case D1 exists for, and judging
 the change without it would test everything except the invariant that matters most.
 
-D1 gets a source-level guard in `crates/supragnosis-viz/tests/http.rs`, in the style of the escaping
-guard there: the contested block must be rendered outside any condition the silence rule introduces.
-This document names it once it exists.
+D1 is guarded by `inspector_never_folds_a_contested_belief`, a source-level tripwire in
+`crates/supragnosis-viz/tests/http.rs` written in the style of the escaping guard beside it: the
+contested branch is the first decision the block makes and returns before any fold is built, the
+silence rule never reaches it, and the panel renders it outside any condition of its own.
 
 ## 9. Invariants
 
