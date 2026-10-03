@@ -301,6 +301,9 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/propose_split" => propose_split_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         "/api/about" => about_response(),
+        // What this node's store owes and last repaid (crash-recovery.md K5) - runtime state, kept
+        // apart from /api/about, which describes the build.
+        "/api/health" => health_response(engine),
         // The observation log (source of truth, Principle 1), newest-first; `entity=<id>` narrows to
         // the evidence set behind one node. A read-only projection (Principle 5: failure != empty).
         "/api/observations" => observations_response(engine, query),
@@ -991,6 +994,26 @@ fn about_response() -> Response {
         "repository": env!("CARGO_PKG_REPOSITORY"),
     });
     Response { status: "200 OK", content_type: "application/json", body: body.to_string() }
+}
+
+/// `/api/health` - the owed-projection ledger's size and the last recovery this process ran
+/// (crash-recovery.md K5). Read by `supragnosis status`, which is where an operator looks; a
+/// recovery reported only in a startup log would have scrolled away (Principle 24).
+fn health_response(engine: &Engine) -> Response {
+    match engine.owed_count() {
+        Ok(owed) => {
+            let body = serde_json::json!({
+                "owed_projections": owed,
+                "last_recovery": engine.last_recovery(),
+            });
+            Response { status: "200 OK", content_type: "application/json", body: body.to_string() }
+        }
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: err_body(&e.to_string()),
+        },
+    }
 }
 
 fn workspaces_response(engine: &Engine) -> Response {

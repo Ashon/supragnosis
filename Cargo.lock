@@ -4752,6 +4752,7 @@ dependencies = [
  "minify-html",
  "oxc",
  "serde_json",
+ "supragnosis-core",
  "supragnosis-embed",
  "supragnosis-engine",
  "supragnosis-store",
