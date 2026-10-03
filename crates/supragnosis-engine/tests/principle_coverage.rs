@@ -369,6 +369,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // different kind: it checks the viewer's source, the way the escaping guard in the viz crate
     // does, so the first test it names will live there rather than beside the engine.
     ("docs/inspector.md", include_str!("../../../docs/inspector.md")),
+    // Listed the day it was written. Its guards will live in the CLI crate, where the lifecycle
+    // decision is a pure function over what launchctl and the socket report.
+    ("docs/daemon-lifecycle.md", include_str!("../../../docs/daemon-lifecycle.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
