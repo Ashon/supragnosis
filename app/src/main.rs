@@ -549,7 +549,7 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
         "main",
         WebviewUrl::External("viz://localhost/".parse().expect("static url")),
     )
-    .title("supragnosis")
+    .title(&app.package_info().name)
     .inner_size(1280.0, 860.0)
     .initialization_script(include_str!("../assets/shell-init.js"));
     // Merge the title bar into the viewer header: the macOS title bar becomes a transparent
@@ -707,7 +707,10 @@ fn main() {
             let restart = MenuItem::with_id(app, "restart", "Restart Daemon", true, None::<&str>)?;
             let login =
                 CheckMenuItem::with_id(app, "login", "Start at Login", false, false, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit supragnosis", true, None::<&str>)?;
+            // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
+            // the macOS app menu; lowercase `supragnosis` is the CLI and the daemon binary.
+            let name = app.package_info().name.clone();
+            let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
                 &[
@@ -728,7 +731,7 @@ fn main() {
                 // Template image (bare mark, alpha-only): macOS recolors it for light/dark menu bars.
                 .icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?)
                 .icon_as_template(true)
-                .tooltip("supragnosis")
+                .tooltip(&name)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
