@@ -2930,3 +2930,89 @@ fn p7_observations_written_at_one_instant_share_one_frontier_position() {
     );
     assert_eq!(burst[0], 0.0, "the oldest instant is the start of the span");
 }
+
+// --- crash-recovery.md: the projection catches up with the log after any crash ----------------
+
+/// guard (crash-recovery.md K3/K4; P1, P5): a write interrupted between its append and its
+/// projection leaves the log ahead of the graph - "not found" for a fact the log holds. The
+/// interruption is simulated the way the sync crate appends: through the `AssertionStore` handle,
+/// with nothing projected afterwards. The next engine to open the store repays it before anything
+/// reads, repays exactly the workspaces owed, and repaying again changes nothing.
+#[test]
+fn an_append_whose_projection_never_ran_is_projected_at_the_next_open() {
+    let store = Arc::new(InMemoryStore::new());
+    let alpha = Entity::make_id(WS, "alpha");
+    {
+        let crashed = Engine::new(store.clone(), "host-a", WS);
+        crashed
+            .store()
+            .add_observation(kind_obs("alpha", "Service", 100))
+            .expect("append");
+        // Gone before projecting anything - what SIGKILL, a panic or power loss leaves behind.
+    }
+    assert!(
+        store.get_entity(&alpha).expect("read").is_none(),
+        "the log is ahead of the graph"
+    );
+
+    let reopened = Engine::new(store.clone(), "host-a", WS);
+    assert_eq!(reopened.owed_count().expect("ledger"), 1);
+    let recovery = reopened.repay_owed().expect("repay").expect("something was owed");
+    assert_eq!(recovery.workspaces, vec![WS.to_string()]);
+    assert_eq!(recovery.observations, 1);
+    let view = reopened.get_entity(&alpha).expect("read").expect("projected by the recovery");
+    assert_eq!(view.entity.canonical_name, "alpha");
+    assert_eq!(reopened.owed_count().expect("ledger"), 0, "the recovery cleared what it repaid");
+    assert_eq!(reopened.repay_owed().expect("repay again"), None, "a second open owes nothing");
+    assert_eq!(reopened.last_recovery(), Some(recovery), "the recovery stays reportable (K5)");
+}
+
+/// guard (crash-recovery.md K2): every engine write that completes leaves nothing owed - observe
+/// once its projection is written, define_type, propose and review at once, since nothing
+/// materialized waits on them. That is what makes a non-zero ledger on a running node mean one
+/// thing: a projection that failed after its append.
+#[test]
+fn a_completed_write_owes_nothing() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    engine
+        .define_type(DefineTypeInput {
+            workspace: None,
+            defs: vec![TypeDefInput {
+                target: TypeTarget::Entity,
+                name: "Service".into(),
+                description: "a process that answers requests".into(),
+            }],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("define_type");
+    let proposal = propose_merge(&engine, &[&x, &y], &x, "alice");
+    review(&engine, &proposal, "comment", "bob");
+    assert_eq!(engine.owed_count().expect("ledger"), 0);
+}
+
+/// guard (crash-recovery.md K2): a reproject repays the workspace it projected and no other - an
+/// entry in a workspace it never read is still owed afterwards.
+#[test]
+fn a_reproject_repays_only_its_own_workspace() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS);
+    engine
+        .store()
+        .add_observation(kind_obs("alpha", "Service", 100))
+        .expect("append here");
+    let mut elsewhere = kind_obs("beta", "Service", 101);
+    elsewhere.provenance[0].workspace = "other".into();
+    let elsewhere = Observation::with_assertions(
+        elsewhere.content.clone(),
+        elsewhere.provenance[0].clone(),
+        elsewhere.assertions.clone(),
+    );
+    engine.store().add_observation(elsewhere).expect("append elsewhere");
+
+    engine.reproject(Some(WS)).expect("reproject ws");
+    let owed = store.owed_projections().expect("ledger");
+    assert_eq!(owed.len(), 1);
+    assert_eq!(owed[0].1, "other");
+}
