@@ -166,6 +166,14 @@ impl KnowledgeStore for CountingStore {
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
         self.inner.add_relation(rel)
     }
+
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.inner.owed_projections()
+    }
+
+    fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
+        self.inner.clear_owed(ids)
+    }
 }
 
 /// A workspace with entities, relations, a merged entity_merge and a merged claim_promotion - so
@@ -565,6 +573,12 @@ impl KnowledgeStore for ReversedStore {
     }
     fn add_relation(&self, r: Relation) -> Result<(), StoreError> {
         self.0.add_relation(r)
+    }
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.0.owed_projections()
+    }
+    fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
+        self.0.clear_owed(ids)
     }
 }
 
