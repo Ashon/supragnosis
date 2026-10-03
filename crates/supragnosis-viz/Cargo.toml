@@ -29,6 +29,9 @@ tokio = { workspace = true, features = ["net", "io-util", "sync"] }
 # lexical hashing), speaking raw HTTP/1.1 over UnixStream - no HTTP client dependency needed.
 supragnosis-store.workspace = true
 supragnosis-embed.workspace = true
+# To append a log row the way the sync crate does - through the log handle, unprojected - which is how
+# the health surface's owed count is exercised.
+supragnosis-core.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros"] }
 
 [build-dependencies]

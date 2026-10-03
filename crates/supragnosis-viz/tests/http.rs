@@ -363,6 +363,41 @@ async fn viz_lists_workspaces_sorted_distinct() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// `/api/health` reports what the store owes and what the last open repaid (crash-recovery.md K5) -
+/// the surface `supragnosis status` reads, so a recovery is visible after its startup log scrolled
+/// away. A row appended through the log handle and never projected is owed until repaid.
+#[tokio::test]
+async fn health_reports_owed_projections_and_the_last_recovery() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "ws"));
+    engine
+        .store()
+        .add_observation(supragnosis_core::Observation::new(
+            "appended, never projected".into(),
+            supragnosis_core::Provenance {
+                host: "h".into(),
+                on_behalf_of: None,
+                workspace: "ws".into(),
+                source_ref: None,
+                observed_at: 1,
+                confidence: None,
+                trust_tier: Default::default(),
+                sync: None,
+            },
+        ))
+        .unwrap();
+    let sock = serve_uds("health", engine.clone(), ev_channel()).await;
+
+    let before = json_get(&uds_get(&sock, "/api/health").await);
+    assert_eq!(before, serde_json::json!({"owed_projections": 1, "last_recovery": null}));
+    engine.repay_owed().unwrap();
+    let after = json_get(&uds_get(&sock, "/api/health").await);
+    assert_eq!(after["owed_projections"], 0);
+    assert_eq!(after["last_recovery"]["workspaces"], serde_json::json!(["ws"]));
+    assert_eq!(after["last_recovery"]["observations"], 1);
+    let _ = std::fs::remove_file(&sock);
+}
+
 /// SSE: whether engine events stream to /api/events - attach a BroadcastSink to the engine, give
 /// the same channel to serve, then verify connect -> emit -> receiving a data: frame.
 #[tokio::test]
