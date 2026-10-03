@@ -25,6 +25,7 @@
 const ROOT_MANIFEST: &str = include_str!("../../../Cargo.toml");
 const APP_MANIFEST: &str = include_str!("../../../app/Cargo.toml");
 const SERVER_JSON: &str = include_str!("../../../server.json");
+const DOCKERFILE: &str = include_str!("../../../deploy/docker/Dockerfile");
 
 /// The internal crates whose `[workspace.dependencies]` entry carries a hand-written version.
 /// Listed rather than discovered, so deleting an entry is as visible as letting one drift.
@@ -133,5 +134,31 @@ fn the_registry_entry_names_the_version_this_workspace_builds() {
         "\nserver.json points the registry at {image}:{tag} but this workspace builds {want:?}.\nA \
          registry entry naming an image nobody published is not a broken build - it is an install \
          that fails for everyone who finds it."
+    );
+}
+
+/// The container builder runs the toolchain the workspace declares as its floor.
+///
+/// The `msrv` job in rust.yml tests `rust-version` and never reads the Dockerfile, and the Dockerfile
+/// builds only at release, so a floor raised in Cargo.toml left the image pinned below it with every
+/// check green. That is how v0.4.3 shipped binaries, an app and a tap, and no image: `rust:1.95`
+/// against crates that require 1.96. Equal rather than at-least, because the pin's own comment says
+/// it is the floor, and the floor is the build the msrv job proves.
+#[test]
+fn the_container_builds_with_the_declared_floor() {
+    let root = root();
+    let want = root["workspace"]["package"]["rust-version"]
+        .as_str()
+        .expect("[workspace.package].rust-version is a string");
+    let pin = DOCKERFILE
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("FROM rust:"))
+        .expect("deploy/docker/Dockerfile builds FROM a rust: image");
+    let got = pin.split(['-', ' ']).next().unwrap_or(pin);
+    assert_eq!(
+        got, want,
+        "\ndeploy/docker/Dockerfile builds with rust:{got} but Cargo.toml declares rust-version \
+         {want:?}.\nThe image is built only by the release workflow, so nothing else would notice \
+         before a tag. Fix: FROM rust:{want}-bookworm."
     );
 }
