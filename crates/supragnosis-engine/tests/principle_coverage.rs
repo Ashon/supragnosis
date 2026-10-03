@@ -372,6 +372,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards will live in the CLI crate, where the lifecycle
     // decision is a pure function over what launchctl and the socket report.
     ("docs/daemon-lifecycle.md", include_str!("../../../docs/daemon-lifecycle.md")),
+    // Listed the day it was written. Its guards span two crates - the ledger is the store's, the
+    // repayment the engine's - so the store and engine tests join SOURCES as they are named.
+    ("docs/crash-recovery.md", include_str!("../../../docs/crash-recovery.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
