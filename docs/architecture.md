@@ -425,7 +425,9 @@ sections are present, and `peers` awaits the P2P phase.
   multi-user host any local OS account reached the full tool surface, writes and `sync_push`
   included. That was an overdue M4 entry condition (Section 14). **Repaid**: the daemon now requires
   `Authorization: Bearer <token>` against `~/.supragnosis/mcp.token` (32 bytes of entropy, hex, mode
-  0600, in the 0700 `~/.supragnosis` dir), generated once on first start. It is the viewer's repair
+  0600, in the 0700 `~/.supragnosis` dir - a description until 2026-10, when the directory was found
+  0755 and the store file 0644; every writer now closes the directory on start and secrets are
+  created 0600 rather than chmodded after), generated once on first start. It is the viewer's repair
   applied to the surface that could not take it - the viewer moved to a unix socket and let the
   file's 0600 mode be the access control, and a daemon MCP clients reach as
   `http://127.0.0.1:7373/mcp` cannot follow, so the confinement moves from the socket to a secret

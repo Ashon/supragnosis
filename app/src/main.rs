@@ -154,7 +154,19 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
         "supragnosis server binary not found - set SUPRAGNOSIS_BIN, or install it to ~/.local/bin \
          (scripts/install.sh)",
     )?;
-    let logs = home().join(".supragnosis/log");
+    let base = home().join(".supragnosis");
+    // Created closed to other accounts when this is the first thing to create it - the store and the
+    // token will live here. An existing directory is the daemon's to correct, which it does on start.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&base)
+            .context("failed to create ~/.supragnosis")?;
+    }
+    let logs = base.join("log");
     std::fs::create_dir_all(&logs).context("failed to create the daemon log dir")?;
     let out = std::fs::File::create(logs.join("app-daemon.out.log"))?;
     let err = std::fs::File::create(logs.join("app-daemon.err.log"))?;
