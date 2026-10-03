@@ -196,7 +196,13 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (10, &[c(
         "the sync surface binds non-loopback only with TLS and a non-empty allowlist",
-        Evidence::Scenario(&["bind_guard_enforces_f10", "parse_loopback_addr_accepts_loopback_rejects_public"]),
+        Evidence::Scenario(&[
+            "bind_guard_enforces_f10",
+            "parse_loopback_addr_accepts_loopback_rejects_public",
+            // The "TLS enabled" half: the refusal above says nothing about whether the listener
+            // that does start actually speaks TLS.
+            "tls_listener_serves_https_and_refuses_plaintext",
+        ]),
     )]),
     (11, &[c(
         "sync is a non-blocking pollable task that never blocks a tool handler",

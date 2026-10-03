@@ -35,3 +35,4 @@ rustls = { workspace = true, optional = true }
 [dev-dependencies]
 supragnosis-store.workspace = true
 tokio.workspace = true
+rcgen.workspace = true
