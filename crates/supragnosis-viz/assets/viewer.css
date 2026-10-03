@@ -155,7 +155,11 @@
             box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
   #detail.on { display:flex; flex-direction:column; }
   #detail h2 { font:600 14px/1.4 var(--mono); margin:0 22px 2px 0; color:var(--gold-bright); word-break:break-word; }
-  #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; }
+  #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; display:flex; align-items:center;
+                  gap:6px; flex-wrap:wrap; }
+  /* The values the whole scope shares, stated once instead of on every node (docs/inspector.md D3).
+     Quiet and pushed right: it qualifies the line rather than competing with the node's own fields. */
+  #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:10.5px; }
   #detail .desc { color:var(--ink); font:13px/1.45 var(--prose); margin:2px 0 6px; opacity:.9; word-break:break-word; }
   #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
   #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
@@ -299,6 +303,14 @@
      informational (the conflict was resolved by trust but stays queryable). */
   .contested { border:1px dashed var(--gold-dim); border-radius:7px; padding:4px 7px; margin:4px 0; }
   .contested.hot { background:var(--gold-glass); }
+  /* A conflict trust already resolved folds to one line that still says it exists (inspector.md D2);
+     a contested one never gets this class (D1). */
+  .contested.folded { padding:2px 7px; }
+  .contested.folded .cbody { display:none; padding-top:2px; }
+  .contested.folded.open .cbody { display:block; }
+  .contested .cfold { width:100%; text-align:left; padding:2px 0; font-size:10.5px; letter-spacing:.04em;
+                      color:var(--muted); background:none; border:none; cursor:pointer; }
+  .contested .cfold:hover { color:var(--gold-bright); }
   .contested .chead { color:var(--accent); font-size:10px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:2px; }
   .contested .crow { display:flex; align-items:center; gap:6px; padding:1.5px 0; font-size:11.5px; color:var(--ink2); }
   .contested .crow.cur .cv { color:var(--ink); font-weight:600; }
