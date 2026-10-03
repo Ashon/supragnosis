@@ -39,6 +39,9 @@ Environment=RUST_LOG=info
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30
+; Everything the daemon writes - the store, the token, the logs - is this user's alone. The daemon
+; also closes ~/.supragnosis to 0700 on start; this covers the files it creates inside it.
+UMask=0077
 
 ; Hardening, limited to what an unprivileged user manager can actually enforce. ProtectKernel*
 ; and ProtectControlGroups= imply a CapabilityBoundingSet the user manager holds no privilege to

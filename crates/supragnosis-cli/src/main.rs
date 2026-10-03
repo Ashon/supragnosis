@@ -450,6 +450,8 @@ fn build_engine(
     events: Option<&tokio::sync::broadcast::Sender<String>>,
 ) -> Result<Arc<Engine>> {
     refuse_unmigrated_store(cfg)?;
+    // Every writer passes here, so this is where the state directory is closed if it was found open.
+    private_dir(&fed::fed_base_dir())?;
     let embedder = build_embedder(&cfg.embed_kind);
     let embed_dim = embedder.as_ref().map(|e| e.dimensions());
     let store: Arc<dyn KnowledgeStore> = match cfg.store_kind.as_str() {
@@ -1306,6 +1308,50 @@ fn mcp_token_path() -> std::path::PathBuf {
     fed::fed_base_dir().join("mcp.token")
 }
 
+/// Creates `dir` closed to other accounts, and closes it if it was found open. architecture.md puts
+/// the token, the node key and the store "in the 0700 ~/.supragnosis dir", and until 2026-10 that
+/// was a description of intent: the directory was made with the default mode (0755 here), its store
+/// file 0644, so any other local account could copy the whole store and never need the token.
+/// Closing the directory closes everything under it at once, whatever mode a file was written with.
+fn private_dir(dir: &std::path::Path) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(dir)?.permissions().mode();
+        if mode & 0o077 != 0 {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+                .with_context(|| format!("chmod 0700 {}", dir.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Writes a secret so that it is never readable by anyone else, not even for a moment: a new file
+/// created 0600, filled, then renamed over the old one. Writing in place and chmodding afterwards -
+/// what this replaced - leaves the secret readable at the default mode between the two calls.
+fn write_secret(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let dir = path.parent().context("a secret needs a parent directory")?;
+    private_dir(dir)?;
+    let tmp = path.with_file_name(format!(
+        ".{}.new",
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("secret")
+    ));
+    let _ = std::fs::remove_file(&tmp);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut f = options.open(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    std::fs::rename(&tmp, path).with_context(|| format!("installing {}", path.display()))
+}
+
 /// Loads (or generates exactly once) the daemon's bearer token.
 ///
 /// **Why a token and not a unix socket.** The viewer repaid this by moving off TCP entirely, and its
@@ -1338,16 +1384,7 @@ fn load_or_create_mcp_token() -> Result<String> {
         let _ = write!(s, "{b:02x}");
         s
     });
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(&path, &tok).with_context(|| format!("writing {}", path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("chmod {}", path.display()))?;
-    }
+    write_secret(&path, tok.as_bytes())?;
     tracing::info!(path = %path.display(), "generated the MCP daemon token (0600)");
     Ok(tok)
 }
@@ -2669,15 +2706,7 @@ mod fed {
         }
         let mut secret = [0u8; 32];
         getrandom::fill(&mut secret).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        std::fs::write(&path, secret)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-        }
+        super::write_secret(&path, &secret)?;
         tracing::info!(path = %path.display(), "generated the node keypair (once - the node_id is immutable, F14)");
         Ok(supragnosis_core::NodeIdentity::from_secret_bytes(secret))
     }
@@ -2905,6 +2934,31 @@ mod legacy_store_guard_tests {
         ));
         std::fs::create_dir_all(&d).expect("temp dir");
         d
+    }
+
+    /// architecture.md's "0700 ~/.supragnosis" as behavior rather than description: a directory found
+    /// open is closed, and a secret is written 0600 without ever existing at another mode - which is
+    /// also why a rewrite leaves no temp file behind.
+    #[cfg(unix)]
+    #[test]
+    fn the_state_directory_and_its_secrets_are_closed_to_other_accounts() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let dir = tmp("private");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        private_dir(&dir).expect("close");
+        assert_eq!(mode(&dir), 0o700);
+
+        let token = dir.join("mcp.token");
+        write_secret(&token, b"first").expect("write");
+        assert_eq!(mode(&token), 0o600);
+        write_secret(&token, b"second").expect("rewrite");
+        assert_eq!(std::fs::read(&token).unwrap(), b"second");
+        assert_eq!(mode(&token), 0o600);
+        let leftovers: Vec<_> =
+            std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(leftovers, vec![std::ffi::OsString::from("mcp.token")]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// F14: an allowlist entry naming this node is reported and ignored, not fatal.
