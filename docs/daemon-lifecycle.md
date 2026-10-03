@@ -4,8 +4,8 @@
 > one thing believes it is responsible. This document fixes the answer to the first two so that the
 > third cannot arise unnoticed.
 >
-> Status: **specification, with Section 8 steps 1-4 built.** Sections 4 and 6 carry corrections
-> building them forced; they are recorded in place rather than edited away.
+> Status: **specification, with Section 8 steps 1-4 built.** Sections 4, 6 and 7 carry corrections
+> that building and releasing them forced; they are recorded in place rather than edited away.
 
 ## 1. Why this exists
 
@@ -122,6 +122,17 @@ found. Guarded by `a_keg_path_becomes_the_opt_link_that_upgrades_repoint`.
 which one and the command that retires it. With `--take-over` it retires it itself: a Homebrew job
 by `brew services stop <token>` when `brew` is on the path (the file is Homebrew's, so Homebrew
 removes it), and by a printed instruction when it is not; a running pidfile daemon by stopping it.
+A holder it cannot name is refused with or without `--take-over`: take-over retires managers by
+name, and something answering with no manager has none to retire it by. Guarded by
+`install_refuses_a_holder_it_cannot_name`.
+
+> **Correction, before release.** This section first covered only recognized managers, so a daemon
+> the desktop app spawned for its session - no pidfile, no launchd job - left `install` free to start
+> the canonical job beside it, which is Section 1's crash loop reached by the command the caveats
+> recommend. Section 6's switch already stopped its own child first; the CLI did not. `install` now
+> refuses while something unrecognized answers, says it is most likely the app's daemon and that the
+> app's switch handles it, and checks again after retiring the others that the address actually
+> went quiet before it writes anything.
 
 **The operator's file is theirs** (P24). A canonical-label plist without the marker was written by a
 person. `install` will not overwrite it, and `--take-over` moves it aside to
@@ -200,7 +211,7 @@ which is the reason the shell attaches rather than owns.
 
 | | Invariant |
 |---|---|
-| **L1** | At most one manager owns the daemon. `install` refuses while another is loaded unless told to take over; `restart` and `stop` refuse on a conflict and name the managers. |
+| **L1** | At most one manager owns the daemon. `install` refuses while another is loaded unless told to take over, and while something it cannot name answers even then; `restart` and `stop` refuse on a conflict and name the managers. |
 | **L2** | Every manager the product has installed is recognized by `status`, `restart` and `stop`, including retired labels. |
 | **L3** | Version drift is visible: `status` and the tray show running and installed versions when they differ, and an unanswering daemon's version is unknown, not assumed. |
 | **L4** | Lifecycle failures are loud: every CLI lifecycle command exits non-zero on failure with the reason, and the app never discards that exit status. |
