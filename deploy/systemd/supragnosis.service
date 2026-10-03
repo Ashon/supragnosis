@@ -1,4 +1,5 @@
-; supragnosis as a systemd **user** service (Linux). Counterpart to deploy/launchd on macOS.
+; supragnosis as a systemd **user** service (Linux). Counterpart to the LaunchAgent that
+; `supragnosis service install` generates on macOS.
 ;
 ; Deliberately a user unit, not a system one: the store, the node key, and the config all live
 ; under ~/.supragnosis, and a user unit needs no root to install or restart. It does need lingering

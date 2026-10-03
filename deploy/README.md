@@ -22,7 +22,12 @@ bash deploy/install.sh
 ```
 
 This script: builds the release -> copies the binary to `~/.local/bin/supragnosis` ->
-installs and loads the LaunchAgent -> re-registers Claude Code with the http transport.
+`supragnosis service install --take-over` (generates and loads the LaunchAgent, retiring any other
+manager) -> re-registers Claude Code with the http transport.
+
+With Homebrew there is nothing to build: `brew install supragnosis-server`, then
+`supragnosis service install` - or Start at Login in the desktop app's tray menu, which runs the
+same command.
 
 ## Manual install
 
@@ -35,9 +40,10 @@ cp target/release/supragnosis ~/.local/bin/supragnosis
 # 2) Clean up any existing stdio server that is holding the db lock
 pkill -f "target/release/supragnosis" || true
 
-# 3) Install + load the LaunchAgent (auto-start on login + restart if it dies)
-cp deploy/launchd/com.supragnosis.daemon.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.supragnosis.daemon.plist
+# 3) Generate + load the LaunchAgent (auto-start on login + restart if it dies). It names this
+#    binary, logs to ~/.supragnosis/log, and carries forward the EnvironmentVariables of a plist it
+#    replaces; --env SUPRAGNOSIS_X=... adds more. --take-over retires any other manager first.
+~/.local/bin/supragnosis service install --take-over
 
 # 4) Register Claude Code with the http transport (no more spawning per chat)
 claude mcp remove supragnosis -s user 2>/dev/null || true
@@ -51,14 +57,16 @@ graphical client).
 
 ## Operations
 
-The daemon uses the canonical launchd label `com.supragnosis.daemon`, so the `supragnosis`
-CLI drives it directly (it detects the launchd job and delegates to launchctl). This restarts
-the MCP server **and** the viewer in one command:
+The daemon has one manager, the canonical LaunchAgent `com.supragnosis.daemon`
+(docs/daemon-lifecycle.md). The CLI recognizes it and every other manager the product has ever
+installed - a brew services job, a `supragnosis start` pidfile daemon, retired labels - acts on
+whichever single one is present, and refuses to guess when there is more than one:
 
 ```sh
-supragnosis status    # server + viewer state (self-managed or launchd)
-supragnosis restart   # restart both (launchctl kickstart -k under the hood)
-supragnosis stop      # stop both (launchctl bootout; stays down until reloaded)
+supragnosis status              # who manages it, whether it answers, which version it runs
+supragnosis restart             # restart it (launchctl kickstart -k), or reload the job after a stop
+supragnosis stop                # stop it (launchctl bootout; down until restart or the next login)
+supragnosis service uninstall   # no longer start at login (a hand-written plist is moved aside)
 ```
 
 Underlying launchctl (equivalent to the above), plus logs:
@@ -74,21 +82,24 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.supragnosis.daemon.p
 launchctl kickstart -k gui/$(id -u)/com.supragnosis.daemon   # restart in place
 
 # full removal
-launchctl bootout gui/$(id -u)/com.supragnosis.daemon 2>/dev/null || true
-rm ~/Library/LaunchAgents/com.supragnosis.daemon.plist
+supragnosis service uninstall
 claude mcp remove supragnosis -s user
 ```
 
 ## Notes / cautions
 
 - After updating code, just redo `cargo build --release` + `cp target/release/supragnosis ~/.local/bin/` +
-  a daemon restart (above) (re-running `install.sh` is simplest).
-- The paths in the plist are absolute paths based on the user `ashon.lee`. Other users should adjust
-  the `/Users/...` paths and `Label` inside the plist, and the paths in `deploy/install.sh`.
-- The embedder is `hashing` (zero downloads, deterministic). To use real semantic embeddings, build
-  with `--features fastembed` and switch the plist to `SUPRAGNOSIS_EMBED=fastembed` + a **new `SUPRAGNOSIS_DATA_DIR`**
-  (the existing db is indexed with hashing-256, so swapping the embedder is rejected).
-- Only one daemon should run (single ownership of the db + ports). Do not use stdio registration and http registration at the same time.
+  `supragnosis restart` (re-running `install.sh` is simplest). `supragnosis status` says when the
+  running daemon is older than the binary on disk.
+- The plist is generated per user (no hand-edited paths). Settings that exist only as environment
+  variables - `SUPRAGNOSIS_HOST` (recorded in provenance), `_WORKSPACE`, `_EMBED`, `_DATA_DIR` - go
+  in with `supragnosis service install --env KEY=VALUE` and are carried forward on reinstall.
+- To use real semantic embeddings, build with `--features fastembed` and install with
+  `--env SUPRAGNOSIS_EMBED=fastembed --env SUPRAGNOSIS_DATA_DIR=<a new dir>` (an existing db is
+  indexed with hashing-256, so swapping the embedder on it is rejected).
+- Only one daemon should run (single ownership of the db + ports), and only one manager should
+  run it - `supragnosis status` reports a conflict, and `service install --take-over` resolves it.
+  Do not use stdio registration and http registration at the same time.
 
 ## Cutting a release
 

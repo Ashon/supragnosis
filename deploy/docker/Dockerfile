@@ -1,6 +1,6 @@
-# supragnosis as a federation hub in a container. Counterpart to deploy/systemd (Linux) and
-# deploy/launchd (macOS); see deploy/docker/README.md for what a container changes and what it
-# must not.
+# supragnosis as a federation hub in a container. Counterpart to deploy/systemd (Linux) and the
+# LaunchAgent `supragnosis service install` generates (macOS); see deploy/docker/README.md for what
+# a container changes and what it must not.
 #
 # Built from source rather than from a release tarball. The tarball would be faster, but this image
 # is the thing a hub runs for months, and a Dockerfile that curls a binary at build time cannot be
