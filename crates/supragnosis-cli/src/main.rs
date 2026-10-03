@@ -503,8 +503,9 @@ fn build_engine(
         tracing::warn!(
             workspaces = ?r.workspaces,
             observations = r.observations,
-            "the last process to write this store stopped between an append and its projection - \
-             re-projected before serving (crash-recovery.md); `supragnosis status` reports it"
+            "log rows were owed a projection - an interrupted write, or the first open by a build \
+             that keeps the ledger - so their workspaces were re-projected before serving \
+             (crash-recovery.md); `supragnosis status` reports it"
         );
     }
     Ok(Arc::new(engine))
@@ -2140,7 +2141,7 @@ fn status(json: bool) -> Result<()> {
                 .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                 .unwrap_or_default();
             println!(
-                "  store   recovered at start: the last process stopped mid-write, so {} was re-projected ({} owed observation(s))",
+                "  store   recovered at start: {1} observation(s) were owed a projection (an interrupted write, or this store's first open by a build that keeps the ledger), so {0} was re-projected",
                 wss.join(", "),
                 r.get("observations").and_then(|v| v.as_u64()).unwrap_or(0)
             );

@@ -94,9 +94,17 @@ have produced, and running it twice changes nothing.
   reported by the viewer's `/api/health` and by `supragnosis status`. A non-zero ledger on a running
   daemon means a projection failed after its append. The fact is in the log, and the graph will show
   it after the next open.
+- **A store the ledger has never seen is owed in full, once.** Appends made before the ledger
+  existed carry no record of whether they were projected, and a store that ran earlier builds may
+  already hold the gap Section 1 describes. So the first open by a ledger-aware build - the one that
+  creates the table - records every log row as owed, and that open re-projects each workspace. After
+  that an empty ledger means nothing is owed. An upgrade therefore repairs history without an
+  operator step, at the cost of one reproject per workspace on the first start.
 - **The ledger is invisible to older builds.** It is a new table. A build without it neither writes
   nor clears entries, so after a downgrade and an upgrade the ledger can hold entries that were
-  repaid long ago. Their cost is one unnecessary reproject. Nothing is lost.
+  repaid long ago, or miss appends the older build made. The first costs one unnecessary reproject;
+  the second is the gap this document exists for, back for as long as the older build ran. Running
+  `supragnosis reproject` per workspace after such a round trip closes it.
 
 ## 5. Invariants
 
@@ -129,6 +137,7 @@ Guarded by:
 - `every_append_owes_its_projection_until_cleared` - K1 on every adapter, in the port conformance
   suite.
 - `redb_owed_projections_survive_a_reopen` - the ledger outlives the process that wrote it.
+- `a_store_from_before_the_ledger_is_owed_in_full_once` - an upgraded store repays its history once.
 - `an_append_whose_projection_never_ran_is_projected_at_the_next_open` - K3 and K4.
 - `a_completed_write_owes_nothing` and `a_reproject_repays_only_its_own_workspace` - K2.
 - `a_pull_that_stamps_rows_re_materializes_them` - the hub repays what stamping owes.
