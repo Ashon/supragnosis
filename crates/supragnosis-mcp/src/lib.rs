@@ -1096,11 +1096,11 @@ fn sync_unconfigured() -> String {
 // tools/call - and leaves the field dead, which is how the change would announce itself.
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SupragnosisServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         // Built through the constructor rather than a struct literal: rmcp marks this
         // #[non_exhaustive], so a literal - even one ending in `..Default::default()` - does not
         // compile from outside the crate. `new` already fills server_info from the build env.
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::from_build_env())
             .with_instructions(
                 "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
