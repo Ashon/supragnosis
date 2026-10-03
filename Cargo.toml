@@ -63,6 +63,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Pin the process-level rustls CryptoProvider (axum-server pulls aws-lc-rs, reqwest pulls ring -
 # with both features present rustls refuses to auto-select; we install ring explicitly).
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# Test-only: mints a self-signed certificate so the sync listener's TLS termination can be driven
+# end to end in a test, instead of only its bind rule. The ring backend, already in the graph.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 
 # Internal (cross-crate). The `version` is dead weight for a path build and load-bearing only for a
 # crates.io publish, which is exactly why it rots: nothing in a normal build reads it, so a stale one
