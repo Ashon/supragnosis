@@ -6,6 +6,7 @@
 >
 > Status: **specification, with Section 8 steps 1-4 built.** Sections 4, 6 and 7 carry corrections
 > that building and releasing them forced; they are recorded in place rather than edited away.
+> Section 11 (the 2026-10 review's corrections) is specified, not yet built.
 
 ## 1. Why this exists
 
@@ -211,14 +212,15 @@ which is the reason the shell attaches rather than owns.
 
 | | Invariant |
 |---|---|
-| **L1** | At most one manager owns the daemon. `install` refuses while another is loaded unless told to take over, and while something it cannot name answers even then; `restart` and `stop` refuse on a conflict and name the managers. |
+| **L1** | At most one manager owns the daemon. `install` refuses while another is loaded unless told to take over, and while something it cannot name answers or holds the store even then; `restart` and `stop` refuse on a conflict and name the managers. |
 | **L2** | Every manager the product has installed is recognized by `status`, `restart` and `stop`, including retired labels. |
 | **L3** | Version drift is visible: `status` and the tray show running and installed versions when they differ, and an unanswering daemon's version is unknown, not assumed. |
-| **L4** | Lifecycle failures are loud: every CLI lifecycle command exits non-zero on failure with the reason, and the app never discards that exit status. |
+| **L4** | Lifecycle failures are loud: every CLI lifecycle command exits non-zero on failure with the reason - including a job it loaded that does not come up - and the app never discards that exit status. |
 | **L5** | The operator's file is theirs: `install` never overwrites a plist it did not generate, and nothing deletes one - it is moved aside. |
 | **L6** | The daemon's lifetime is not the app's. Quitting the app never stops a launchd-managed daemon; turning Start at Login off is the only way the app stops one it did not spawn. |
-| **L7** | The generated job adds no exposure: loopback MCP, the viewer's unix socket, the bearer token unchanged. Nothing in the plist widens a bind or disables auth. |
+| **L7** | The generated job adds no exposure: loopback MCP, the viewer's unix socket, the bearer token unchanged. Nothing in the plist widens a bind or disables auth, and `install` refuses an environment that would. |
 | **L8** | No new privilege: a user LaunchAgent in the `gui/<uid>` domain, no administrator rights, no helper tool. |
+| **L9** | A signal goes only to a supragnosis process. A pidfile naming any other process is stale, and is cleared rather than acted on. |
 
 ## 10. Closure map
 
@@ -230,3 +232,40 @@ which is the reason the shell attaches rather than owns.
 | P5 - unknown is not absent | Sections 3, 5 (an unrecognized holder, an unanswering daemon); L3 |
 | P17 - local surfaces stay local and authenticated | Section 4; L7 |
 | P21 - the agent surface stays narrow | Section 2 (lifecycle is not a tool) |
+
+## 11. Corrections from the 2026-10 review
+
+An adversarial review after v0.4.3 tested these sections against running processes rather than
+against their text. Five places where the built behavior fell short of an invariant, each with the
+rule that now closes it. Recorded here rather than edited into the sections above, because what the
+first version missed is the part worth keeping.
+
+- **A stdio server holds the store and answers nothing (L1).** Section 3's "answering but
+  unrecognized" looked only at the MCP port. A `supragnosis` stdio server - what `claude mcp add
+  supragnosis -- supragnosis` starts in every session - holds the redb lock and binds no port. So
+  `install` saw nothing, loaded the canonical job beside it, and the job failed on the lock under
+  KeepAlive: Section 1's crash loop again, from a third direction. The observation now includes
+  whether the store is held, probed with a read-only open that fails while a writer holds it. Held
+  by no manager counts as unrecognized, both before `install` acts and after it retires the others.
+- **`install` reported success for a job that never came up (L4).** After loading the job it printed
+  "the socket has not answered yet" and exited 0, whatever the job was doing. It now waits for the
+  daemon to answer. If launchd shows the job with no process and a non-zero last exit, `install`
+  exits non-zero and names the error log. A slow start that is still running is reported as slow,
+  not as failed.
+- **The plist could disable auth (L7).** `--env` admitted any `SUPRAGNOSIS_*` key, so
+  `--env SUPRAGNOSIS_MCP_AUTH=off` produced a generated job without authentication, and the
+  environment carried forward from a replaced plist was never checked. `install` now refuses an
+  environment - given or carried - that turns off authentication or the ingest secret scan, or names
+  an HTTP address the daemon would refuse as non-loopback. The last one would also have been a
+  KeepAlive crash loop, since `serve` exits on it. The carried case refuses rather than drops: the
+  operator's file is theirs (L5), and silently removing a setting they wrote would change the
+  daemon without a word.
+- **A stale pidfile could aim SIGTERM at an unrelated process (L9).** The pidfile's process counted as
+  a manager when `kill -0` succeeded, which any process holding a reused pid passes. `stop`,
+  `restart` and `install --take-over` - which the app's switch runs - would then signal it. Before
+  acting, the CLI now confirms the pid belongs to a supragnosis executable. A pidfile that names
+  anything else is stale and is cleared.
+- **`status` printed the bearer token.** Agents run `status`, so the token landed in their
+  transcripts. `status` and `start` now print where the token is and a command line that reads it
+  (`$(cat ~/.supragnosis/mcp.token)`), never the value.
+
