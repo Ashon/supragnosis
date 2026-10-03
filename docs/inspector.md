@@ -4,8 +4,8 @@
 > every field they receive, every time. This document fixes which fields may go quiet, under what
 > rule, and what no rule may touch.
 >
-> Status: **specification, with Section 8 step 1 built** - the silence rule, the scope line and
-> the D1 guard. Steps 2-4 are not.
+> Status: **specification, with Section 8 steps 1-2 built** - the silence rule, the scope line, the
+> D1 guard, and relations grouped by kind in a two-region panel. Steps 3-4 are not.
 
 ## 1. Why this exists
 

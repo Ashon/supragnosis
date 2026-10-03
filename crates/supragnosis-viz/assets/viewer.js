@@ -1735,19 +1735,52 @@ function fillWhy(whyBody, ex) {
   }
 }
 
+// Relations grouped by what they say (docs/inspector.md Section 6). A hub's seventeen incoming
+// edges were fifteen rows of the same relation name; grouped by (direction, kind), the name is said
+// once and its members follow as chips, folded past RELATION_CHIPS behind a +N that expands in place.
+const RELATION_CHIPS = 6;
+let relOpen = { id: null, keys: new Set() };   // groups expanded on the focused node - survive the poll re-render
+let detailTall = false;   // the panel's taller height: a viewer preference, so it carries across nodes
+function relationGroups(node) {
+  const byKey = new Map();
+  for (const e of edges) {
+    const out = e.a === node, other = out ? e.b : (e.b === node ? e.a : null);
+    if (!other || typeOff.has(other.type)) continue;
+    const key = (out ? "out" : "in") + "|" + e.type;
+    let g = byKey.get(key);
+    if (!g) byKey.set(key, g = { key, out, kind: e.type, items: [] });
+    g.items.push({ other, e });
+  }
+  const groups = [...byKey.values()];
+  // The inspector is rebuilt on every graph poll, so the order must not depend on arrival: groups by
+  // size, then kind, outgoing first; members live before superseded (valid_to set - muted, never
+  // dropped, P4), then by name.
+  for (const g of groups)
+    g.items.sort((p, q) => (!!p.e.valid_to - !!q.e.valid_to) || p.other.name.localeCompare(q.other.name));
+  groups.sort((p, q) => (q.items.length - p.items.length) || p.kind.localeCompare(q.kind) || (q.out - p.out));
+  return groups;
+}
+function relationGroupHtml(g, open) {
+  const shown = open ? g.items : g.items.slice(0, RELATION_CHIPS);
+  const rest = g.items.length - shown.length;
+  // The edge's description stays one hover away, as it was on the row; a superseded edge says so.
+  const chip = ({ other, e }) =>
+    `<span class="rchip${e.valid_to ? " past" : ""}" data-id="${esc(other.id)}" `
+    + `title="${esc(e.description || ((e.valid_to ? "superseded - " : "") + "focus " + other.name))}">`
+    + `<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${esc(other.name)}</span>`;
+  return `<div class="rgroup"><div class="rghead"><span class="rdir">${g.out ? "-&gt;" : "&lt;-"}</span>`
+    + `<span class="rkind">${esc(g.kind)}</span><span class="rct">${g.items.length}</span></div>`
+    + `<div class="rchips">${shown.map(chip).join("")}`
+    + (rest > 0 ? `<button class="rmore" type="button" data-key="${esc(g.key)}" title="show the other ${rest}">+${rest}</button>` : "")
+    + `</div></div>`;
+}
+
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
 function renderDetail(node) {
   if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
-  const outs = edges.filter(e => e.a === node && !typeOff.has(e.b.type));
-  const ins = edges.filter(e => e.b === node && !typeOff.has(e.a.type));
-  const rowHtml = (rel, other, dir, desc) =>
-    `<div class="row" data-id="${esc(other.id)}" title="${desc ? esc(desc) : "focus " + esc(other.name)}">`
-    + `<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>`
-    + `<span class="rel">${dir} ${esc(rel)}</span>`
-    + `<span class="nm">${esc(other.name)}</span></div>`;
-  const list = (arr, dir) => arr.length
-    ? arr.map(e => rowHtml(e.type, dir === "->" ? e.b : e.a, dir, e.description)).join("")
-    : `<div class="empty">none</div>`;
+  const groups = relationGroups(node);
+  if (relOpen.id !== node.id) relOpen = { id: node.id, keys: new Set() };
+  const nrel = groups.reduce((n, g) => n + g.items.length, 0);
   // The silence rule (docs/inspector.md Section 5): a field the whole scope agrees on is not repeated
   // on every node - it is stated once, in `scopeSaid`, on this same panel, so a missing row never
   // reads as a missing value (D3, P5). The tier keeps its dot either way.
@@ -1771,6 +1804,11 @@ function renderDetail(node) {
       + `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
       + `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`
       + `</svg></button>`
+    // Taller / shorter: the height cap keeps the graph visible by default; this trades it for room.
+    + `<button class="grow" title="${detailTall ? "shorter panel" : "taller panel"}" aria-label="${detailTall ? "shorter panel" : "taller panel"}">`
+      + `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
+      + `<path d="${detailTall ? "M3 4.5 L6 7.5 L9 4.5" : "M3 7.5 L6 4.5 L9 7.5"}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`
+      + `</svg></button>`
     + `<h2>${esc(node.name)}</h2>`
     + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`
     +   `<span>${esc(node.type)}</span>${tierDot(tier)}${base.tier === null ? `<span>${esc(tier)}</span>` : ""}`
@@ -1783,20 +1821,25 @@ function renderDetail(node) {
     // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
     // only when opened - the graph poll stays light). The evidence itself is the column below.
     + (disputed ? `<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>` : "")
-    // Bottom columns: the node's edges (outgoing / incoming) and its observation log (the evidence
+    // Two regions: the node's relations, grouped by kind, and its observation log (the evidence
     // behind its belief), side by side.
     + `<div class="rels">`
-    +   `<div class="relcol"><div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}</div>`
-    +   `<div class="relcol"><div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}</div>`
+    +   `<div class="relcol"><div class="sec">relations (${nrel})</div>`
+    +     (groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))).join("") : `<div class="empty">none</div>`)
+    +   `</div>`
     +   `<div class="relcol"><div class="sec">evidence</div><div class="logcol"></div></div>`
     + `</div>`;
-  detailEl.className = "on";
+  detailEl.className = "on" + (detailTall ? " tall" : "");
   detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
-  detailEl.querySelectorAll(".row").forEach(r => {
+  detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
+  detailEl.querySelectorAll(".rchip").forEach(r => {
     r.onclick = () => {
       const n = nodeById(r.dataset.id);
       if (n) { focus = n; renderDetail(n); focusView(n); }
     };
+  });
+  detailEl.querySelectorAll(".rmore").forEach(b => {
+    b.onclick = () => { relOpen.keys.add(b.dataset.key); renderDetail(node); };
   });
   detailEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
