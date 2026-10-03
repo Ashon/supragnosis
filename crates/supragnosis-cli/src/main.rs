@@ -60,6 +60,11 @@ enum Cmd {
     Restart(RunArgs),
     /// Query daemon status: who manages it, whether it answers, and which version it runs
     Status(StatusArgs),
+    /// The always-on daemon as a login item (macOS LaunchAgent com.supragnosis.daemon)
+    Service {
+        #[command(subcommand)]
+        cmd: ServiceCmd,
+    },
     /// Show this node's federation identity (node id + public key); --hash-token hashes a bearer token for an allowlist entry
     Identity(IdentityArgs),
     /// One-shot federation sync round against the configured servers (requires supragnosis.toml; stop the daemon first - the store is single-process)
@@ -83,6 +88,28 @@ struct RekeyArgs {
     /// Report what would move and write nothing.
     #[arg(long)]
     dry_run: bool,
+}
+
+#[derive(Subcommand)]
+enum ServiceCmd {
+    /// Generate the LaunchAgent and load it: the daemon starts now and at every login
+    Install(ServiceInstallArgs),
+    /// Unload the LaunchAgent and retire its plist: the daemon stops and no longer starts at login
+    Uninstall,
+}
+
+// Read only by the macOS implementation; elsewhere `service` refuses before looking at them.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Args, Clone, Default)]
+struct ServiceInstallArgs {
+    /// Retire every other manager first (a brew services job, a pidfile daemon, a retired label) and
+    /// move a hand-written plist aside instead of refusing.
+    #[arg(long)]
+    take_over: bool,
+    /// Set a SUPRAGNOSIS_* variable in the job's environment (repeatable). Variables a replaced plist
+    /// set are carried forward on their own.
+    #[arg(long = "env", value_name = "KEY=VALUE")]
+    env: Vec<String>,
 }
 
 #[derive(Args, Clone, Default)]
@@ -151,6 +178,8 @@ fn main() -> Result<()> {
         Cmd::Stop => stop(),
         Cmd::Restart(a) => restart(resolve(a, true)),
         Cmd::Status(a) => status(a.json),
+        Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
+        Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
         Cmd::Identity(a) => identity_cmd(a),
         Cmd::Sync(a) => sync_cmd(a),
         Cmd::Reproject(a) => reproject_cmd(a),
@@ -1888,6 +1917,11 @@ fn status(json: bool) -> Result<()> {
             "answering": observed.answering,
             "mcp": format!("http://{http}/mcp"),
             "version": { "here": here, "running": running },
+            "service": {
+                "label": lifecycle::CANONICAL_LABEL,
+                "plist": canonical_plist_path(),
+                "state": canonical_plist_state(),
+            },
         });
         println!("{out}");
         return Ok(());
@@ -1944,10 +1978,297 @@ fn status(json: bool) -> Result<()> {
             ),
         }
     }
+    match canonical_plist_state() {
+        "generated" => println!("  login   starts at login ({})", lifecycle::CANONICAL_LABEL),
+        "hand_written" => println!(
+            "  login   starts at login ({}, hand-written plist)",
+            lifecycle::CANONICAL_LABEL
+        ),
+        _ => println!("  login   not installed - supragnosis service install"),
+    }
     if matches!(situation, Situation::One(_)) {
         println!("  control supragnosis restart | supragnosis stop");
     }
     Ok(())
+}
+
+// --- The canonical LaunchAgent (docs/daemon-lifecycle.md Section 4) --------------------------
+
+/// Where the canonical plist lives, and what kind of file is there now.
+#[cfg(unix)]
+fn canonical_plist_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+        .join("Library/LaunchAgents")
+        .join(format!("{}.plist", lifecycle::CANONICAL_LABEL))
+}
+
+/// absent | generated | hand_written - the state the app's Start at Login item reflects.
+#[cfg(unix)]
+fn canonical_plist_state() -> &'static str {
+    match std::fs::read_to_string(canonical_plist_path()) {
+        Err(_) => "absent",
+        Ok(text) if lifecycle::is_generated(&text) => "generated",
+        Ok(_) => "hand_written",
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// The EnvironmentVariables of an existing plist, read through plutil (launchd's own reader) rather
+/// than a hand-rolled XML parse - a hand-written plist can be in any of the forms launchd accepts.
+#[cfg(target_os = "macos")]
+fn plist_env(path: &std::path::Path) -> Result<std::collections::BTreeMap<String, String>> {
+    let out = std::process::Command::new("plutil")
+        .args(["-convert", "json", "-o", "-"])
+        .arg(path)
+        .output()
+        .context("failed to run plutil")?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "plutil could not read {} - fix or remove it by hand: {}",
+            path.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout)?;
+    Ok(v.get("EnvironmentVariables")
+        .and_then(|e| e.as_object())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Move a plist the product did not write out of LaunchAgents, keeping it (L5).
+#[cfg(target_os = "macos")]
+fn move_aside(path: &std::path::Path, label: &str) -> Result<std::path::PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dst = lifecycle::moved_aside_path(&home, label, unix_secs());
+    if let Some(dir) = dst.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::rename(path, &dst)
+        .with_context(|| format!("failed to move {} aside to {}", path.display(), dst.display()))?;
+    Ok(dst)
+}
+
+#[cfg(target_os = "macos")]
+fn launchctl_quiet(args: &[&str]) -> bool {
+    std::process::Command::new("launchctl")
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Wait for the MCP port to close after a job is booted out, so the next owner does not race the
+/// last one for the store lock.
+#[cfg(target_os = "macos")]
+fn wait_until_released() {
+    for _ in 0..50 {
+        if !port_open(&status_http_addr()) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// A Homebrew job is retired by Homebrew: the plist is its file, and only `brew services stop`
+/// removes it from LaunchAgents (a bootout alone would let it load again at the next login).
+#[cfg(target_os = "macos")]
+fn brew_services_stop(token: &str) -> Result<()> {
+    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists());
+    let Some(brew) = brew else {
+        anyhow::bail!(
+            "a brew services job ({token}) owns the daemon but brew was not found - run `brew services stop {token}` and install again"
+        );
+    };
+    let st = std::process::Command::new(&brew)
+        .args(["services", "stop", token])
+        .status()
+        .context("failed to run brew services stop")?;
+    if !st.success() {
+        anyhow::bail!("`brew services stop {token}` failed - run it by hand, then install again");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn service_install(args: ServiceInstallArgs) -> Result<()> {
+    use lifecycle::{LabelKind, Manager};
+    let home = std::env::var("HOME").context("HOME is not set")?;
+    let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
+    let plist = canonical_plist_path();
+    let observed = observe();
+    let canonical_loaded = observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical);
+    let mut others: Vec<Manager> = Vec::new();
+    if let Some(pid) = observed.pidfile {
+        others.push(Manager::Pidfile { pid });
+    }
+    others.extend(
+        observed
+            .jobs
+            .iter()
+            .filter(|j| j.kind != LabelKind::Canonical)
+            .cloned()
+            .map(Manager::Launchd),
+    );
+    let state = canonical_plist_state();
+
+    // L1 and L5: refuse to share, and refuse to overwrite a person's file - unless told to take over.
+    if !args.take_over {
+        if !others.is_empty() {
+            let list: Vec<String> = others.iter().map(|m| format!("  {}", m.describe())).collect();
+            anyhow::bail!(
+                "another manager already runs the daemon, and the store admits one writer:\n{}\nre-run with --take-over to retire it and install the canonical job",
+                list.join("\n")
+            );
+        }
+        if state == "hand_written" {
+            anyhow::bail!(
+                "{} was written by hand. --take-over moves it aside (to ~/.supragnosis/launchd/) and carries its EnvironmentVariables into the generated job",
+                plist.display()
+            );
+        }
+    }
+
+    // The job's environment: whatever the plist being replaced set, verbatim, then --env on top.
+    let mut env = if state == "absent" { Default::default() } else { plist_env(&plist)? };
+    for a in &args.env {
+        let (k, v) = lifecycle::parse_env_arg(a).map_err(|e| anyhow::anyhow!(e))?;
+        env.insert(k, v);
+    }
+    env.entry("SUPRAGNOSIS_HTTP_ADDR".to_string())
+        .or_insert_with(|| "127.0.0.1:7373".to_string());
+
+    let exe = std::env::current_exe()?.canonicalize()?;
+    let program = lifecycle::stable_program(&exe, |p| p.exists());
+    let program_str = program.to_string_lossy().to_string();
+    if program_str.contains("/target/debug/") || program_str.contains("/target/release/") {
+        println!(
+            "note: the job will run a build-tree binary ({program_str}); `cargo clean` removes it"
+        );
+    }
+
+    // Retire the others (take-over).
+    for m in &others {
+        match m {
+            Manager::Pidfile { pid } => stop_pidfile(*pid as i32)?,
+            Manager::Launchd(job) => match job.kind {
+                LabelKind::Homebrew(token) => {
+                    brew_services_stop(token)?;
+                    println!(
+                        "retired brew services job {} (brew services stop {token})",
+                        job.label
+                    );
+                }
+                LabelKind::Retired => {
+                    launchctl_quiet(&["bootout", &format!("gui/{uid}/{}", job.label)]);
+                    let old = std::path::PathBuf::from(&home)
+                        .join("Library/LaunchAgents")
+                        .join(format!("{}.plist", job.label));
+                    if old.exists() {
+                        let to = move_aside(&old, job.label)?;
+                        println!("retired {} - its plist is now {}", job.label, to.display());
+                    } else {
+                        println!("retired {}", job.label);
+                    }
+                }
+                LabelKind::Canonical => {}
+            },
+        }
+    }
+    if canonical_loaded {
+        launchctl_quiet(&["bootout", &format!("gui/{uid}/{}", lifecycle::CANONICAL_LABEL)]);
+    }
+    wait_until_released();
+    if state == "hand_written" {
+        let to = move_aside(&plist, lifecycle::CANONICAL_LABEL)?;
+        println!("moved the hand-written plist aside: {}", to.display());
+    }
+
+    std::fs::create_dir_all(plist.parent().context("LaunchAgents path has no parent")?)?;
+    std::fs::create_dir_all(log_dir())?;
+    let text = lifecycle::render_plist(&program_str, &home, &env, env!("CARGO_PKG_VERSION"));
+    std::fs::write(&plist, text).with_context(|| format!("failed to write {}", plist.display()))?;
+    let st = std::process::Command::new("launchctl")
+        .arg("bootstrap")
+        .arg(format!("gui/{uid}"))
+        .arg(&plist)
+        .status()
+        .context("failed to run launchctl bootstrap")?;
+    if !st.success() {
+        anyhow::bail!("launchctl bootstrap gui/{uid} {} failed", plist.display());
+    }
+    println!("installed {} -> {}", lifecycle::CANONICAL_LABEL, plist.display());
+    println!("  program {program_str} serve");
+    for (k, v) in &env {
+        println!("  env     {k}={v}");
+    }
+    println!("  the daemon starts now and at every login (supragnosis service uninstall to undo)");
+    report_after_restart();
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn service_uninstall() -> Result<()> {
+    use lifecycle::LabelKind;
+    let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
+    let plist = canonical_plist_path();
+    let state = canonical_plist_state();
+    let observed = observe();
+    if observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical) {
+        launchctl_quiet(&["bootout", &format!("gui/{uid}/{}", lifecycle::CANONICAL_LABEL)]);
+        wait_until_released();
+        println!("stopped {}", lifecycle::CANONICAL_LABEL);
+    }
+    match state {
+        "generated" => {
+            std::fs::remove_file(&plist)
+                .with_context(|| format!("failed to remove {}", plist.display()))?;
+            println!("removed {} - the daemon no longer starts at login", plist.display());
+        }
+        "hand_written" => {
+            let to = move_aside(&plist, lifecycle::CANONICAL_LABEL)?;
+            println!(
+                "moved the hand-written plist aside ({}) - the daemon no longer starts at login",
+                to.display()
+            );
+        }
+        _ => println!("no canonical job is installed"),
+    }
+    let rest: Vec<String> = observed
+        .jobs
+        .iter()
+        .filter(|j| j.kind != LabelKind::Canonical)
+        .map(|j| format!("  launchd {}", j.label))
+        .collect();
+    if !rest.is_empty() {
+        println!("other managers are still loaded (not touched):\n{}", rest.join("\n"));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn service_install(_args: ServiceInstallArgs) -> Result<()> {
+    anyhow::bail!("service install manages a macOS LaunchAgent; on Linux use the systemd user unit in deploy/systemd/")
+}
+#[cfg(not(target_os = "macos"))]
+fn service_uninstall() -> Result<()> {
+    anyhow::bail!("service uninstall manages a macOS LaunchAgent; on Linux use the systemd user unit in deploy/systemd/")
 }
 
 // Non-unix: daemon lifecycle unsupported - point to serve --http.
