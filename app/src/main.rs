@@ -15,6 +15,10 @@
 //! 3. **SSE bridge** - the webview custom protocol cannot stream, so the shell holds the
 //!    /api/events connection in Rust and re-emits frames as "viz-event" Tauri events; an init
 //!    script swaps EventSource for a listener facade (assets/eventsource-shim.js).
+//! 4. **Start at Login** - a tray switch over the one always-on path, the canonical LaunchAgent
+//!    (docs/daemon-lifecycle.md). The shell decides nothing here: it asks the CLI it found
+//!    (`supragnosis status --json`, `service install|uninstall`, `restart`) and shows the answer,
+//!    so the lifecycle rules live once, in the workspace where they are tested.
 
 // Tauri on macOS/Windows expects a windowed (non-console) binary in release bundles.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -26,7 +30,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     http, Emitter, Listener, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
@@ -59,6 +63,13 @@ struct DaemonGuard(Mutex<Daemon>);
 
 /// The tray's status menu item - kept as managed state so the daemon tasks can rewrite its text.
 struct TrayStatus(MenuItem<tauri::Wry>);
+
+/// The tray's Start at Login switch - managed so the lifecycle tasks can set its check and label.
+struct TrayLogin(CheckMenuItem<tauri::Wry>);
+
+/// The last lifecycle outcome worth showing beside the daemon state - a take-over, a refused
+/// restart. docs/daemon-lifecycle.md L4: the CLI's result reaches the tray, never discarded.
+struct TrayNote(Mutex<Option<String>>);
 
 fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
@@ -338,37 +349,186 @@ async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
         }
     };
     *app.state::<DaemonGuard>().0.lock().unwrap() = state;
-    refresh_status(&app);
+    refresh_status(&app).await;
 }
 
-fn refresh_status(app: &tauri::AppHandle) {
-    let text = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
-    if let Some(status) = app.try_state::<TrayStatus>() {
-        let _ = status.0.set_text(text);
+/// Runs the CLI the shell found, blocking. `None` when there is no CLI to run.
+fn run_cli(args: &[&str]) -> Option<std::process::Output> {
+    let bin = find_server_bin()?;
+    Command::new(bin).args(args).stdin(Stdio::null()).output().ok()
+}
+
+/// `supragnosis status --json`. `None` when the CLI predates it - the tray then falls back to what
+/// the shell itself knows and disables the switch rather than failing on click.
+fn cli_status() -> Option<serde_json::Value> {
+    let out = run_cli(&["status", "--json"])?;
+    if !out.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&out.stdout).ok()
+}
+
+/// The one line the CLI said that matters: its error on failure, its first line on success.
+fn cli_outcome(out: &std::process::Output) -> (bool, String) {
+    let text = if out.status.success() { &out.stdout } else { &out.stderr };
+    let line = String::from_utf8_lossy(text)
+        .lines()
+        .map(|l| l.trim().trim_start_matches("Error:").trim().to_string())
+        .find(|l| !l.is_empty())
+        .unwrap_or_default();
+    (out.status.success(), line)
+}
+
+/// The tray's status line, from what the CLI observed plus the shell's own relationship to the
+/// daemon (a child it spawned is invisible to the CLI - no pidfile, no launchd job).
+fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&str>) -> String {
+    let base = match (daemon, st) {
+        (Daemon::Starting | Daemon::Failed(_), _) | (_, None) => daemon.status_line(),
+        (_, Some(st)) => {
+            let situation = st["situation"].as_str().unwrap_or("");
+            let running = st["version"]["running"].as_str();
+            let here = st["version"]["here"].as_str().unwrap_or("?");
+            if situation == "conflict" {
+                let n = st["managers"].as_array().map_or(0, Vec::len);
+                format!("daemon: CONFLICT - {n} managers claim it (see `supragnosis status`)")
+            } else {
+                let who = match (daemon, st["managers"].get(0)) {
+                    (Daemon::Spawned(_), _) => "run by this app, not at login".to_string(),
+                    (_, Some(m)) => match (m["type"].as_str(), m["source"].as_str()) {
+                        (Some("launchd"), Some("canonical")) => "login item".to_string(),
+                        (Some("launchd"), Some("homebrew")) => "brew services".to_string(),
+                        (Some("launchd"), _) => {
+                            format!("launchd {}", m["label"].as_str().unwrap_or("?"))
+                        }
+                        (Some("pidfile"), _) => "supragnosis start".to_string(),
+                        _ => "externally managed".to_string(),
+                    },
+                    (_, None) => "externally managed".to_string(),
+                };
+                match running {
+                    Some(r) if r != here => {
+                        format!("daemon {r} running, {here} installed - Restart Daemon to update")
+                    }
+                    Some(r) => format!("daemon {r} - {who}"),
+                    None => format!("daemon - {who}"),
+                }
+            }
+        }
+    };
+    match note {
+        Some(n) if !n.is_empty() => format!("{base} | {n}"),
+        _ => base,
     }
 }
 
+/// Re-reads the CLI's view and republishes the status line and the Start at Login switch.
+async fn refresh_status(app: &tauri::AppHandle) {
+    let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+    let note = app.state::<TrayNote>().0.lock().unwrap().clone();
+    let text =
+        status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), st.as_ref(), note.as_deref());
+    if let Some(status) = app.try_state::<TrayStatus>() {
+        let _ = status.0.set_text(text);
+    }
+    if let Some(login) = app.try_state::<TrayLogin>() {
+        match st.as_ref().and_then(|v| v["service"]["state"].as_str()) {
+            Some(state) => {
+                let _ = login.0.set_text("Start at Login");
+                let _ = login.0.set_checked(state != "absent");
+                let _ = login.0.set_enabled(true);
+            }
+            None => {
+                let _ = login.0.set_text("Start at Login (update supragnosis-server)");
+                let _ = login.0.set_checked(false);
+                let _ = login.0.set_enabled(false);
+            }
+        }
+    }
+}
+
+fn set_note(app: &tauri::AppHandle, note: Option<String>) {
+    *app.state::<TrayNote>().0.lock().unwrap() = note;
+}
+
 /// Tray "Restart Daemon": bounce whatever we manage, then attach-or-spawn again. A spawned child
-/// is killed directly; an external daemon is bounced through the CLI (`supragnosis restart`
-/// knows pidfile and launchd daemons); a foreign daemon the CLI cannot control is left alone and
-/// bring_up simply re-attaches to it.
+/// is killed directly; an external daemon is bounced through the CLI (`supragnosis restart` knows
+/// every manager the product installs). The CLI's answer reaches the status line - a refused
+/// restart (a conflict, an unrecognized holder) says why, instead of the shell quietly
+/// re-attaching to the process it failed to replace (L4).
 async fn restart_daemon(app: tauri::AppHandle, sock: PathBuf) {
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
-    refresh_status(&app);
+    set_note(&app, None);
+    refresh_status(&app).await;
     match prev {
         Daemon::Spawned(mut child) => {
             let _ = child.kill();
             let _ = child.wait();
         }
         Daemon::External => {
-            if let Some(bin) = find_server_bin() {
-                let _ =
-                    tokio::task::spawn_blocking(move || Command::new(bin).arg("restart").status())
-                        .await;
+            let out = tokio::task::spawn_blocking(|| run_cli(&["restart"])).await.ok().flatten();
+            match out.as_ref().map(cli_outcome) {
+                Some((true, _)) => {}
+                Some((false, why)) => set_note(&app, Some(format!("restart refused: {why}"))),
+                None => set_note(&app, Some("restart: supragnosis CLI not found".to_string())),
             }
         }
         Daemon::Starting | Daemon::Failed(_) => {}
+    }
+    bring_up(app, sock).await;
+}
+
+/// Waits for the viewer socket to answer, so a daemon launchd is still starting is attached to
+/// rather than raced: attach-or-spawn would otherwise spawn a second daemon into the store lock.
+async fn wait_for_socket(sock: &Path, limit: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + limit;
+    while tokio::time::Instant::now() < deadline {
+        if UnixStream::connect(sock).await.is_ok() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    false
+}
+
+/// Tray "Start at Login": install or uninstall the canonical LaunchAgent through the CLI
+/// (docs/daemon-lifecycle.md Section 6). The click is the consent to take over from another manager;
+/// the status line then says what happened.
+async fn toggle_login(app: tauri::AppHandle, sock: PathBuf) {
+    if let Some(login) = app.try_state::<TrayLogin>() {
+        let _ = login.0.set_enabled(false); // one operation at a time
+    }
+    let installed = tokio::task::spawn_blocking(cli_status)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|v| v["service"]["state"].as_str().map(|s| s != "absent"))
+        .unwrap_or(false);
+    let prev =
+        std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
+    refresh_status(&app).await;
+    let args: &'static [&'static str] = if installed {
+        &["service", "uninstall"]
+    } else {
+        // A daemon this app spawned holds the store, and the CLI cannot see it (no pidfile, no
+        // launchd job) - so it goes first, or the new job fails on the lock and KeepAlive retries
+        // it forever. The same crash loop docs/daemon-lifecycle.md Section 1 records.
+        if let Daemon::Spawned(mut child) = prev {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        &["service", "install", "--take-over"]
+    };
+    let out = tokio::task::spawn_blocking(move || run_cli(args)).await.ok().flatten();
+    let note = match out.as_ref().map(cli_outcome) {
+        Some((true, _)) if installed => "no longer starts at login".to_string(),
+        Some((true, _)) => "starts at login".to_string(),
+        Some((false, why)) => format!("Start at Login failed: {why}"),
+        None => "Start at Login: supragnosis CLI not found".to_string(),
+    };
+    set_note(&app, Some(note));
+    if !installed {
+        wait_for_socket(&sock, Duration::from_secs(10)).await;
     }
     bring_up(app, sock).await;
 }
@@ -545,6 +705,8 @@ fn main() {
             let open = MenuItem::with_id(app, "open", "Open Viewer", true, None::<&str>)?;
             let status = MenuItem::with_id(app, "status", "daemon: starting...", false, None::<&str>)?;
             let restart = MenuItem::with_id(app, "restart", "Restart Daemon", true, None::<&str>)?;
+            let login =
+                CheckMenuItem::with_id(app, "login", "Start at Login", false, false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit supragnosis", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
@@ -553,11 +715,14 @@ fn main() {
                     &PredefinedMenuItem::separator(app)?,
                     &status,
                     &restart,
+                    &login,
                     &PredefinedMenuItem::separator(app)?,
                     &quit,
                 ],
             )?;
             app.manage(TrayStatus(status));
+            app.manage(TrayLogin(login));
+            app.manage(TrayNote(Mutex::new(None)));
             let tray_sock = sock.clone();
             TrayIconBuilder::with_id("supragnosis")
                 // Template image (bare mark, alpha-only): macOS recolors it for light/dark menu bars.
@@ -575,12 +740,25 @@ fn main() {
                     "restart" => {
                         tauri::async_runtime::spawn(restart_daemon(app.clone(), tray_sock.clone()));
                     }
+                    "login" => {
+                        tauri::async_runtime::spawn(toggle_login(app.clone(), tray_sock.clone()));
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
 
             tauri::async_runtime::spawn(bring_up(app.handle().clone(), sock.clone()));
+            // An upgrade replaces the binary under a running daemon without telling anyone; the
+            // status line is where that becomes visible (docs/daemon-lifecycle.md Section 5), so it
+            // is re-read on a slow beat rather than only when the shell itself acts.
+            let beat = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    refresh_status(&beat).await;
+                }
+            });
             tauri::async_runtime::spawn(sse_bridge(app.handle().clone(), sock.clone()));
             // Startup health signal from the init script: which page the webview actually loaded
             // (the daemon-served viewer vs the starting splash) - the shell's only observable for
@@ -680,5 +858,68 @@ mod csp_tests {
     fn an_absent_policy_is_not_invented() {
         assert_eq!(with_ipc_sources(""), "");
         assert_eq!(with_ipc_sources("   "), "");
+    }
+}
+
+#[cfg(test)]
+mod status_text_tests {
+    use super::{status_text, Daemon};
+
+    fn st(
+        situation: &str,
+        running: Option<&str>,
+        here: &str,
+        manager: serde_json::Value,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "situation": situation,
+            "managers": if manager.is_null() { serde_json::json!([]) } else { serde_json::json!([manager]) },
+            "version": { "here": here, "running": running },
+            "service": { "state": "generated" },
+        })
+    }
+
+    /// The line names who runs the daemon - including a child of this app, which the CLI cannot see.
+    #[test]
+    fn the_line_names_the_manager() {
+        let canonical = serde_json::json!({ "type": "launchd", "source": "canonical", "label": "com.supragnosis.daemon" });
+        let brew = serde_json::json!({ "type": "launchd", "source": "homebrew", "label": "sh.brew.supragnosis-server" });
+        let s = st("one", Some("0.4.2"), "0.4.2", canonical);
+        assert_eq!(status_text(&Daemon::External, Some(&s), None), "daemon 0.4.2 - login item");
+        let s = st("one", Some("0.4.2"), "0.4.2", brew);
+        assert_eq!(status_text(&Daemon::External, Some(&s), None), "daemon 0.4.2 - brew services");
+        let s = st("unrecognized", Some("0.4.2"), "0.4.2", serde_json::Value::Null);
+        assert_eq!(
+            status_text(&Daemon::External, Some(&s), Some("no longer starts at login")),
+            "daemon 0.4.2 - externally managed | no longer starts at login"
+        );
+    }
+
+    /// The 2026-10-03 symptom, said where it is read: an upgraded binary under an old process.
+    #[test]
+    fn drift_and_conflict_are_said_outright() {
+        let canonical = serde_json::json!({ "type": "launchd", "source": "canonical", "label": "com.supragnosis.daemon" });
+        let s = st("one", Some("0.4.0"), "0.4.2", canonical);
+        assert_eq!(
+            status_text(&Daemon::External, Some(&s), None),
+            "daemon 0.4.0 running, 0.4.2 installed - Restart Daemon to update"
+        );
+        let conflict = serde_json::json!({
+            "situation": "conflict",
+            "managers": [{ "type": "launchd" }, { "type": "launchd" }],
+            "version": { "here": "0.4.2", "running": "0.4.0" },
+        });
+        assert!(status_text(&Daemon::External, Some(&conflict), None)
+            .starts_with("daemon: CONFLICT - 2 managers"));
+    }
+
+    /// Without a CLI that answers `status --json`, the shell says only what it knows itself.
+    #[test]
+    fn an_old_cli_falls_back_to_the_shells_own_view() {
+        assert_eq!(
+            status_text(&Daemon::External, None, None),
+            "daemon: attached (externally managed)"
+        );
+        assert_eq!(status_text(&Daemon::Starting, None, None), "daemon: starting...");
     }
 }
