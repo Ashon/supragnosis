@@ -21,7 +21,9 @@
   [`consolidation.md`](consolidation.md) (M6, specified - Section 8 step 1 landed),
   [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, specified - nothing built),
   [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built),
-  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 built).
+  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 built,
+  Section 11 specified),
+  [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, specified).
 
 ---
 
