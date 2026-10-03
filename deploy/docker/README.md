@@ -157,11 +157,12 @@ The image builds from source rather than from a release tarball, so it can be cu
 which is what running a hub ahead of a release requires - and so it cannot drift if a published
 asset is ever replaced.
 
-The builder is pinned to the workspace's declared floor, `rust:1.95`. That floor is set by
+The builder is pinned to the workspace's declared floor, `rust:1.96`. That floor is set by
 dependencies rather than by this code: `supragnosis-viz` takes `oxc` as a build-dependency to minify
 the viewer assets in release builds, and `rmcp-macros` brings `darling`. The `msrv` job in rust.yml
-builds at the declared version, so the number here and the number in `Cargo.toml` cannot quietly
-disagree.
+builds at the declared version, and `manifest_consistency.rs` holds the Dockerfile's pin equal to
+it. The second check exists because the first never read this file: the floor moved to 1.96 and
+the v0.4.3 image was the first thing to notice.
 
 Runtime is `debian:bookworm-slim`, not Alpine: the binary is dynamically linked against glibc and
 this workspace neither builds nor tests a musl target. The image is around 120MB.
