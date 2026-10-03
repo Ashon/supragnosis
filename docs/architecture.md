@@ -20,7 +20,8 @@
   [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6),
   [`consolidation.md`](consolidation.md) (M6, specified - Section 8 step 1 landed),
   [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, specified - nothing built),
-  [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built).
+  [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built),
+  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - nothing built).
 
 ---
 
