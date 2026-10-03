@@ -15,7 +15,7 @@ use supragnosis_core::{
 };
 
 mod redb_store;
-pub use redb_store::RedbStore;
+pub use redb_store::{redb_in_use, RedbStore};
 
 /// In-memory knowledge store. For test/development/non-persistent runs.
 #[derive(Default)]

@@ -6,7 +6,7 @@
 >
 > Status: **specification, with Section 8 steps 1-4 built.** Sections 4, 6 and 7 carry corrections
 > that building and releasing them forced; they are recorded in place rather than edited away.
-> Section 11 (the 2026-10 review's corrections) is specified, not yet built.
+> Section 11 (the 2026-10 review's corrections) is built.
 
 ## 1. Why this exists
 
@@ -268,4 +268,21 @@ first version missed is the part worth keeping.
 - **`status` printed the bearer token.** Agents run `status`, so the token landed in their
   transcripts. `status` and `start` now print where the token is and a command line that reads it
   (`$(cat ~/.supragnosis/mcp.token)`), never the value.
+
+Guarded by:
+
+- `a_store_held_by_no_manager_is_unrecognized` and `redb_in_use_sees_a_writer_and_only_a_writer` -
+  L1 for a holder that binds no port.
+- `a_pid_counts_only_when_it_is_supragnosis` - L9.
+- `the_generated_job_refuses_an_environment_that_adds_exposure` - L7.
+
+Checked on this machine without changing it:
+- With a scratch stdio server holding a scratch store, `status --json` reported `store_held: true`,
+  and `false` once it exited.
+- Probing the live store reported it held while the daemon kept its pid and kept serving.
+- `status` prints the token's path and a `$(cat ...)` connect line.
+
+L4's wait for the job was not exercised against a failing job here, because that would mean
+breaking the daemon this machine runs on. Its rule - three seconds with no process and a non-zero
+last exit - is stated in `await_daemon`.
 
