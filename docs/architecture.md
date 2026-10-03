@@ -19,7 +19,8 @@
   [`resolution.md`](resolution.md) (M3a, implemented),
   [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6),
   [`consolidation.md`](consolidation.md) (M6, specified - Section 8 step 1 landed),
-  [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, specified - nothing built).
+  [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, specified - nothing built),
+  [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - nothing built).
 
 ---
 
