@@ -7,8 +7,9 @@
 //! the system degrades to keyword search (Principle 19).
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use supragnosis_core::{EmbedError, EmbeddingProvider};
 
 /// BGE-small-en-v1.5 embedding dimensions.
@@ -26,8 +27,14 @@ fn model_cache_dir() -> PathBuf {
 }
 
 /// fastembed local ONNX embedder.
+///
+/// The model sits behind a mutex because fastembed 7 made `TextEmbedding::embed` take `&mut self`,
+/// while the port is `&self` and `Send + Sync` (the engine shares one provider across tool calls).
+/// That serializes embedding calls, which earlier versions ran concurrently on one session. The cost
+/// is bounded: an embed is one short ONNX run, observe embeds outside the write guard, and the
+/// daemon serves one principal - a queue of two is the realistic worst case, not a throughput wall.
 pub struct FastEmbedProvider {
-    model: TextEmbedding,
+    model: Mutex<TextEmbedding>,
     dims: usize,
 }
 
@@ -35,12 +42,12 @@ impl FastEmbedProvider {
     /// Initializes with the default model (BGE-small-en-v1.5). Downloads the model if it is not in the cache.
     pub fn try_default() -> Result<Self, EmbedError> {
         let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::BGESmallENV15)
+            TextInitOptions::new(EmbeddingModel::BGESmallENV15)
                 .with_show_download_progress(false)
                 .with_cache_dir(model_cache_dir()),
         )
         .map_err(|e| EmbedError::Provider(e.to_string()))?;
-        Ok(Self { model, dims: BGE_SMALL_EN_V15_DIMS })
+        Ok(Self { model: Mutex::new(model), dims: BGE_SMALL_EN_V15_DIMS })
     }
 }
 
@@ -55,7 +62,11 @@ impl EmbeddingProvider for FastEmbedProvider {
 
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         let docs: Vec<&str> = texts.to_vec();
-        self.model.embed(docs, None).map_err(|e| EmbedError::Provider(e.to_string()))
+        // A poisoned lock means an earlier embed panicked mid-run. The session itself holds no
+        // per-call state, so the model is still usable - recover it rather than turning one panic
+        // into every later embed failing (which would degrade the node to keyword search for good).
+        let mut model = self.model.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        model.embed(docs, None).map_err(|e| EmbedError::Provider(e.to_string()))
     }
 }
 
