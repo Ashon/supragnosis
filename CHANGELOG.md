@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.4](docs/releases/v0.4.4.md) | Upgrade, then restart the daemon once. The first start of v0.4.4 re-projects every workspace before |
 | [v0.4.3](docs/releases/v0.4.3.md) | On macOS, give the daemon one manager after upgrading. `supragnosis service install` now generates |
 | [v0.4.2](docs/releases/v0.4.2.md) | Upgrade if you run a hub or sync to one. rustls moves to 0.23.45 for RUSTSEC-2026-0285: earlier |
 | [v0.4.1](docs/releases/v0.4.1.md) | Upgrade if you read resources. Every one of them is unreadable on an MCP client that validates the |
