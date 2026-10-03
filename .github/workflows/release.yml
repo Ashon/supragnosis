@@ -253,8 +253,10 @@ jobs:
             dist/*.app.zip
             dist/*.app.zip.sha256
 
-  # Once every release asset is attached, updates the formula and cask in the tap repository
-  # (Ashon/homebrew-tap) to the new version and sha256, and pushes. update-tap.sh curls the .sha256
+  # Once every release asset is attached, renders the formula and casks into the tap repository
+  # (Ashon/homebrew-tap) from this tag's templates in deploy/homebrew, and pushes. The templates are
+  # the source, so a change to one reaches `brew upgrade` with the release that carries it, not only
+  # a new version and sha256 on the tap's old copy. update-tap.sh curls the .sha256
   # sidecars from the release, so this runs only after the build and app jobs have all finished. If
   # this job fails the release assets are already published - the manual fallback is the per-release
   # section of deploy/homebrew/README.md. Without the TAP_PUSH_TOKEN secret (a fine-grained PAT with
@@ -356,5 +358,6 @@ jobs:
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "supragnosis ${GITHUB_REF_NAME}"
+          git add Formula Casks
+          git commit -m "supragnosis ${GITHUB_REF_NAME}"
           git push
