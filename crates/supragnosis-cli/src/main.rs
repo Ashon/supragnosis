@@ -490,6 +490,21 @@ fn build_engine(
     if let Some(tx) = events {
         engine = engine.with_events(Arc::new(supragnosis_viz::BroadcastSink::new(tx.clone())));
     }
+    // crash-recovery.md K3: every caller of this function writes, so it repays the owed-projection
+    // ledger here - before the caller binds a socket or accepts a request. A failure refuses to
+    // start rather than serve a graph known to be behind its log (Principle 24).
+    let recovery = engine.repay_owed().context(
+        "repaying owed projections failed - the log holds writes the graph does not show, and \
+         serving would answer \"not found\" for them",
+    )?;
+    if let Some(r) = recovery {
+        tracing::warn!(
+            workspaces = ?r.workspaces,
+            observations = r.observations,
+            "the last process to write this store stopped between an append and its projection - \
+             re-projected before serving (crash-recovery.md); `supragnosis status` reports it"
+        );
+    }
     Ok(Arc::new(engine))
 }
 
@@ -1657,6 +1672,19 @@ fn clear_stale_pidfile() {
 /// the socket does not answer - and then the version is unknown, never assumed (Section 5).
 #[cfg(unix)]
 fn running_version() -> Option<String> {
+    lifecycle::parse_about_version(&viz_get("/api/about")?)
+}
+
+/// The running daemon's store health - the owed-projection ledger and the last recovery
+/// (crash-recovery.md K5). `None` when the viewer socket does not answer, which is unknown, not
+/// healthy (Principle 5).
+fn store_health() -> Option<serde_json::Value> {
+    serde_json::from_str(&viz_get("/api/health")?).ok()
+}
+
+/// One GET over the viewer's unix socket, returning the body. Short timeouts: `status` must answer
+/// even when the daemon is wedged.
+fn viz_get(path: &str) -> Option<String> {
     use std::io::{Read, Write};
     let sock = std::env::var("SUPRAGNOSIS_VIZ_SOCK")
         .ok()
@@ -1666,11 +1694,12 @@ fn running_version() -> Option<String> {
     let limit = Some(std::time::Duration::from_millis(800));
     s.set_read_timeout(limit).ok()?;
     s.set_write_timeout(limit).ok()?;
-    s.write_all(b"GET /api/about HTTP/1.1\r\nConnection: close\r\n\r\n").ok()?;
+    s.write_all(format!("GET {path} HTTP/1.1\r\nConnection: close\r\n\r\n").as_bytes())
+        .ok()?;
     let mut raw = String::new();
     s.read_to_string(&mut raw).ok()?;
     let (_, body) = raw.split_once("\r\n\r\n")?;
-    lifecycle::parse_about_version(body)
+    Some(body.to_string())
 }
 
 /// Restart a launchd job in place (`kickstart -k`), whichever known label it runs under. The plist's
@@ -1912,6 +1941,7 @@ fn status(json: bool) -> Result<()> {
     let here = env!("CARGO_PKG_VERSION");
     let running = if observed.answering { running_version() } else { None };
     let drift = lifecycle::drift(running.as_deref(), here);
+    let health = if observed.answering { store_health() } else { None };
 
     let managers: Vec<&Manager> = match &situation {
         Situation::One(m) => vec![m],
@@ -1944,6 +1974,7 @@ fn status(json: bool) -> Result<()> {
             "answering": observed.answering,
             "mcp": format!("http://{http}/mcp"),
             "version": { "here": here, "running": running },
+            "store": health,
             "service": {
                 "label": lifecycle::CANONICAL_LABEL,
                 "plist": canonical_plist_path(),
@@ -1989,6 +2020,26 @@ fn status(json: bool) -> Result<()> {
             println!("  version unknown (the viewer socket did not answer)")
         }
         Drift::Unknown => {}
+    }
+    if let Some(h) = &health {
+        let owed = h["owed_projections"].as_u64().unwrap_or(0);
+        if owed > 0 {
+            println!(
+                "  store   {owed} observation(s) not yet projected - a write failed after its append; the log has them, and `supragnosis restart` re-projects them"
+            );
+        }
+        if let Some(r) = h["last_recovery"].as_object() {
+            let wss: Vec<&str> = r
+                .get("workspaces")
+                .and_then(|w| w.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            println!(
+                "  store   recovered at start: the last process stopped mid-write, so {} was re-projected ({} owed observation(s))",
+                wss.join(", "),
+                r.get("observations").and_then(|v| v.as_u64()).unwrap_or(0)
+            );
+        }
     }
     if observed.answering {
         // The connect line is reported for a RUNNING daemon whose token file exists. Read, never
