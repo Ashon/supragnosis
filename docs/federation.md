@@ -222,6 +222,9 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
   relaxed - and the viewer does not bind TCP at all (it serves over a local unix socket); federation
   adds a separately-guarded surface.
 - TLS: terminated in-process with `rustls`. A cert/key path is required to bind non-loopback (F10).
+  Guarded end to end by `tls_listener_serves_https_and_refuses_plaintext`, which mints a certificate
+  and drives the listener: an admitted peer is answered over HTTPS, a plaintext request on the same
+  port gets no HTTP answer, and the bearer check still runs behind TLS.
 - AuthN: every request carries a per-node bearer token; every event is ed25519-signed by its `origin_node`.
 - AuthZ (wire): the server holds an **allowlist** of `{node_id -> public_key, bearer_token_hash,
   shared_workspaces}`. An event signed by a key not on the allowlist, or a token that does not match, is
