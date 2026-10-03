@@ -4,7 +4,7 @@
 > it. Companion to [architecture.md](architecture.md) (the write path) and
 > [daemon-lifecycle.md](daemon-lifecycle.md) (who starts and stops the process).
 >
-> Status: **specification**.
+> Status: **built** (Section 7 steps 1-3). Two things building it changed are recorded in Section 8.
 
 ## 1. Why this exists
 
@@ -91,7 +91,7 @@ have produced, and running it twice changes nothing.
   launchd job or the desktop shell waiting a few seconds longer for the socket is the cheaper cost.
 - **Loud where it is read** (Principle 24). A startup log line scrolls away. The last recovery -
   when, which workspaces, how many observations it repaid - and the ledger's current size are
-  reported by the viewer's `/api/about` and by `supragnosis status`. A non-zero ledger on a running
+  reported by the viewer's `/api/health` and by `supragnosis status`. A non-zero ledger on a running
   daemon means a projection failed after its append. The fact is in the log, and the graph will show
   it after the next open.
 - **The ledger is invisible to older builds.** It is a new table. A build without it neither writes
@@ -106,7 +106,7 @@ have produced, and running it twice changes nothing.
 | **K2** | An owed entry is cleared only after the projection that repays it is written: the appending writer's own projection, or a reproject that read the entry before it began. |
 | **K3** | A writer process that opens a store with owed entries re-projects those workspaces before it serves a read or accepts a write. |
 | **K4** | Correctness does not depend on how a process ends. SIGKILL, panic, power loss, a failed projection write: each leaves entries the next open repays. |
-| **K5** | Recovery is reported where it is read: `/api/about` and `supragnosis status` carry the last recovery and the ledger's current size. |
+| **K5** | Recovery is reported where it is read: `/api/health` and `supragnosis status` carry the last recovery and the ledger's current size. |
 
 ## 6. Closure map
 
@@ -123,3 +123,37 @@ have produced, and running it twice changes nothing.
    cleared through `KnowledgeStore`, which only the engine holds. In-memory and redb adapters.
 2. **Clearing** in the engine's writers and in `reproject`.
 3. **Recovery on open** for every writer process, with the report on `/api/about` and `status`.
+
+Guarded by:
+
+- `every_append_owes_its_projection_until_cleared` - K1 on every adapter, in the port conformance
+  suite.
+- `redb_owed_projections_survive_a_reopen` - the ledger outlives the process that wrote it.
+- `an_append_whose_projection_never_ran_is_projected_at_the_next_open` - K3 and K4.
+- `a_completed_write_owes_nothing` and `a_reproject_repays_only_its_own_workspace` - K2.
+- `a_pull_that_stamps_rows_re_materializes_them` - the hub repays what stamping owes.
+- `health_reports_owed_projections_and_the_last_recovery` - K5.
+
+Checked end to end: a stdio server killed with SIGKILL during a burst of 60 `observe` calls on a
+scratch store left one owed observation. The daemon then opened the store, re-projected the
+workspace before it bound, and `status` reported "recovered at start".
+
+## 8. What building it changed
+
+- **The surface is `/api/health`, not `/api/about`.** About describes the build - name, version,
+  licence - and a settings dialog reads it as such. The ledger and the last recovery are the node's
+  runtime state, so they got their own route rather than a field that would make "about" mean two
+  things.
+- **The projection already lagged the log in one place nothing reported.** Backfill stamps
+  unstamped rows before an export, and stamping rewrites rows whose attestations the projection
+  carries. The hub's pull handler stamped and exported but never re-materialized; only pushes did.
+  With the ledger in place, that showed up as entries left owed after every pull that stamped
+  anything - correctly, since the graph was behind. The pull handler now runs the hub's
+  re-materialize hook after a stamping backfill, and `sync_push` re-projects and reports it.
+- **A clear names an id, so one edge is accepted rather than closed.** If a sync `apply` delivers a
+  re-arrival of the very observation an `observe` is still projecting, the observe's clear removes
+  the entry for both. The apply's own re-materialization still runs. The debt is lost only if the
+  process dies between that clear and that re-materialization, and only for the same content
+  arriving from two directions at once. Closing it needs a per-append sequence in the ledger, which
+  the atomic-write follow-up makes unnecessary.
+
