@@ -13,7 +13,7 @@ edition = "2021"
 # The floor the DEPENDENCIES set, which is higher than anything this code needs. Our own two are
 # trait upcasting (1.86), which makes the store port narrowable - `Arc<dyn KnowledgeStore>` ->
 # `Arc<dyn AssertionStore>`, and with it Principle 1's "no API writes an unasserted fact" - and
-# `int::is_multiple_of` (1.87) in core. What actually decides it is `oxc` (1.95), which
+# `int::is_multiple_of` (1.87) in core. What actually decides it is `oxc` (1.96 since 0.152), which
 # supragnosis-viz takes as a build-dependency to minify the viewer assets in release builds, and
 # `darling` (1.88) through rmcp-macros.
 #
@@ -21,7 +21,7 @@ edition = "2021"
 # checks this workspace's code, never the graph, and CI only ever ran stable. The `msrv` job in
 # rust.yml is what makes this line testable instead of aspirational - raise the number there and
 # here together, and only after measuring.
-rust-version = "1.95"
+rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Ashon/supragnosis"
 homepage = "https://supragnosis.dev"
