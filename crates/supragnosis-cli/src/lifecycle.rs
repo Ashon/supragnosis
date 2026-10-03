@@ -116,6 +116,50 @@ pub fn classify(o: &Observed) -> Situation {
     }
 }
 
+/// Why `service install` will not start a job beside a holder it cannot name, take-over or not.
+pub const UNRECOGNIZED_HOLDER: &str = "something this CLI does not manage is serving the daemon's address - most likely a daemon the desktop app started for its session, or a `supragnosis serve` in a terminal. Nothing names it, so nothing can retire it, and a login job started beside it would fail on the store lock and be retried forever. Turn on Start at Login in the app instead (it stops its own daemon first), or quit the app or stop that process, then run this again";
+
+/// What `service install` retires before installing the canonical job, or why it refuses (Section 4,
+/// L1, L5). `hand_written` is whether the canonical plist exists without the generator's marker.
+///
+/// An unrecognized holder is refused even under --take-over. Take-over retires managers by name, and
+/// this one has none: the likeliest is a daemon the desktop app spawned, which has no pidfile and no
+/// launchd job. Installing beside it reproduces Section 1's crash loop from the command meant to end
+/// it. The canonical job itself is never in the list - it is replaced, not retired.
+pub fn plan_install(
+    o: &Observed,
+    take_over: bool,
+    hand_written: bool,
+) -> Result<Vec<Manager>, String> {
+    if classify(o) == Situation::Unrecognized {
+        return Err(UNRECOGNIZED_HOLDER.to_string());
+    }
+    let mut others: Vec<Manager> =
+        o.pidfile.map(|pid| Manager::Pidfile { pid }).into_iter().collect();
+    others.extend(
+        o.jobs
+            .iter()
+            .filter(|j| j.kind != LabelKind::Canonical)
+            .cloned()
+            .map(Manager::Launchd),
+    );
+    if !take_over {
+        if !others.is_empty() {
+            let list: Vec<String> = others.iter().map(|m| format!("  {}", m.describe())).collect();
+            return Err(format!(
+                "another manager already runs the daemon, and the store admits one writer:\n{}\nre-run with --take-over to retire it and install the canonical job",
+                list.join("\n")
+            ));
+        }
+        if hand_written {
+            return Err(format!(
+                "~/Library/LaunchAgents/{CANONICAL_LABEL}.plist was written by hand. --take-over moves it aside (to ~/.supragnosis/launchd/) and carries its EnvironmentVariables into the generated job"
+            ));
+        }
+    }
+    Ok(others)
+}
+
 /// The refusal a lifecycle command gives on a conflict: every manager, which one is serving, and the
 /// command that resolves it.
 pub fn conflict_message(managers: &[Manager]) -> String {
@@ -338,6 +382,44 @@ mod tests {
         for (name, observed, want) in cases {
             assert_eq!(classify(&observed), want, "{name}");
         }
+    }
+
+    /// Section 4's refusals as a table. The first row is the one found before v0.4.3 shipped: the
+    /// desktop app's own daemon answering, invisible to the CLI, with `--take-over` given.
+    #[test]
+    fn install_refuses_a_holder_it_cannot_name() {
+        let canonical = job(CANONICAL_LABEL, LabelKind::Canonical, Some(2292), None);
+        let brew = job(
+            "sh.brew.supragnosis-server",
+            LabelKind::Homebrew("supragnosis-server"),
+            Some(9),
+            None,
+        );
+        let app_child = Observed { answering: true, ..Default::default() };
+        for take_over in [false, true] {
+            let refused = plan_install(&app_child, take_over, false).unwrap_err();
+            assert_eq!(refused, UNRECOGNIZED_HOLDER, "take_over={take_over}");
+        }
+
+        // Nothing there: install, retiring nothing.
+        assert_eq!(plan_install(&Observed::default(), false, false), Ok(vec![]));
+        // The canonical job is replaced, never listed as something to retire.
+        let ours =
+            Observed { jobs: vec![canonical.clone()], answering: true, ..Default::default() };
+        assert_eq!(plan_install(&ours, false, false), Ok(vec![]));
+
+        // Another manager: refused by name without --take-over, retired with it (L1).
+        let theirs =
+            Observed { jobs: vec![canonical, brew.clone()], answering: true, ..Default::default() };
+        let refused = plan_install(&theirs, false, false).unwrap_err();
+        assert!(refused.contains("sh.brew.supragnosis-server") && refused.contains("--take-over"));
+        assert_eq!(plan_install(&theirs, true, false), Ok(vec![Manager::Launchd(brew)]));
+        let pidfile = Observed { pidfile: Some(7), answering: true, ..Default::default() };
+        assert_eq!(plan_install(&pidfile, true, false), Ok(vec![Manager::Pidfile { pid: 7 }]));
+
+        // A person's plist is not overwritten without --take-over, which moves it aside (L5).
+        assert!(plan_install(&Observed::default(), false, true).unwrap_err().contains("by hand"));
+        assert_eq!(plan_install(&Observed::default(), true, true), Ok(vec![]));
     }
 
     #[test]

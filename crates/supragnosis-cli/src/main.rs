@@ -2099,15 +2099,16 @@ fn launchctl_quiet(args: &[&str]) -> bool {
 }
 
 /// Wait for the MCP port to close after a job is booted out, so the next owner does not race the
-/// last one for the store lock.
+/// last one for the store lock. False when it still answers after ten seconds.
 #[cfg(target_os = "macos")]
-fn wait_until_released() {
-    for _ in 0..50 {
+fn wait_until_released() -> bool {
+    for _ in 0..100 {
         if !port_open(&status_http_addr()) {
-            return;
+            return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
+    false
 }
 
 /// A Homebrew job is retired by Homebrew: the plist is its file, and only `brew services stop`
@@ -2141,36 +2142,12 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     let plist = canonical_plist_path();
     let observed = observe();
     let canonical_loaded = observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical);
-    let mut others: Vec<Manager> = Vec::new();
-    if let Some(pid) = observed.pidfile {
-        others.push(Manager::Pidfile { pid });
-    }
-    others.extend(
-        observed
-            .jobs
-            .iter()
-            .filter(|j| j.kind != LabelKind::Canonical)
-            .cloned()
-            .map(Manager::Launchd),
-    );
     let state = canonical_plist_state();
 
-    // L1 and L5: refuse to share, and refuse to overwrite a person's file - unless told to take over.
-    if !args.take_over {
-        if !others.is_empty() {
-            let list: Vec<String> = others.iter().map(|m| format!("  {}", m.describe())).collect();
-            anyhow::bail!(
-                "another manager already runs the daemon, and the store admits one writer:\n{}\nre-run with --take-over to retire it and install the canonical job",
-                list.join("\n")
-            );
-        }
-        if state == "hand_written" {
-            anyhow::bail!(
-                "{} was written by hand. --take-over moves it aside (to ~/.supragnosis/launchd/) and carries its EnvironmentVariables into the generated job",
-                plist.display()
-            );
-        }
-    }
+    // L1 and L5: refuse to share, refuse a holder nothing names, and refuse to overwrite a person's
+    // file - the first and last unless told to take over.
+    let others = lifecycle::plan_install(&observed, args.take_over, state == "hand_written")
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     // The job's environment: whatever the plist being replaced set, verbatim, then --env on top.
     let mut env = if state == "absent" { Default::default() } else { plist_env(&plist)? };
@@ -2221,7 +2198,16 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     if canonical_loaded {
         launchctl_quiet(&["bootout", &format!("gui/{uid}/{}", lifecycle::CANONICAL_LABEL)]);
     }
-    wait_until_released();
+    // The plan saw a manager for whatever answered; this checks that retiring them freed the store.
+    // A holder that outlives them (an app-spawned daemon beside a failing job) is the one the plan
+    // could not see, and installing now would start the crash loop all the same.
+    if !wait_until_released() {
+        anyhow::bail!(
+            "{} still answers after retiring the managers above, so something else holds the store - not installing beside it.\n{}",
+            status_http_addr(),
+            lifecycle::UNRECOGNIZED_HOLDER
+        );
+    }
     if state == "hand_written" {
         let to = move_aside(&plist, lifecycle::CANONICAL_LABEL)?;
         println!("moved the hand-written plist aside: {}", to.display());
