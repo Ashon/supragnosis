@@ -1916,7 +1916,7 @@ impl Engine {
                 members: members
                     .iter()
                     .map(|id| {
-                        all_entities.iter().find(|e| &e.id == id).map(&node).unwrap_or_else(|| {
+                        all_entities.iter().find(|e| &e.id == id).map(node).unwrap_or_else(|| {
                             CurationNode {
                                 id: id.clone(),
                                 name: format!("({}...)", &id[..id.len().min(8)]),
