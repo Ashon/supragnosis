@@ -874,6 +874,84 @@ mod tests {
 
     /// Spawns the sync API on an ephemeral loopback port (plain HTTP - the local trust surface;
     /// TLS material is exercised in production paths, the F10 guard below pins the policy).
+    /// F10's "only with TLS enabled", driven end to end rather than read off a flag.
+    ///
+    /// `bind_guard_enforces_f10` proves the refusal: a non-loopback bind with no TLS material does
+    /// not start. Nothing proved the other half - that with material, the listener actually speaks
+    /// TLS - and every other test here serves plain axum on loopback, so `bind_rustls`,
+    /// `RustlsConfig::from_pem_file` and the CryptoProvider pin ran in no test at all. An axum-server
+    /// major bump passed this suite while that path went unexercised; it was checked by hand.
+    ///
+    /// Loopback, because binding a public address in a test is not something a test should do. The
+    /// branch is the same one a non-loopback bind takes: `serve` matches on `tls`, not on the address.
+    #[tokio::test]
+    async fn tls_listener_serves_https_and_refuses_plaintext() {
+        let minted =
+            rcgen::generate_simple_self_signed(vec!["localhost".into(), "127.0.0.1".into()])
+                .expect("mint a self-signed certificate");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("supragnosis-tls-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tls = TlsPaths { cert_pem: dir.join("cert.pem"), key_pem: dir.join("key.pem") };
+        std::fs::write(&tls.cert_pem, minted.cert.pem()).unwrap();
+        std::fs::write(&tls.key_pem, minted.signing_key.serialize_pem()).unwrap();
+
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let spoke = SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]));
+        let peers = Arc::new(PeerDirectory::new(
+            vec![entry(&spoke, "tok", &["w"])],
+            hub.node_id(),
+            &hub.public_key_hex(),
+        ));
+        let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        // `serve` binds the address itself, so reserve a free port and hand it over.
+        let addr = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+        let server =
+            tokio::spawn(serve(store, hub.clone(), addr, Some(tls), peers, Hooks::default()));
+
+        // HTTPS with an admitted bearer: answered, by this hub, with the caller's grant.
+        let client = SyncClient::new(format!("https://{addr}"), "tok", true).unwrap();
+        let mut ping = client.ping().await;
+        for _ in 0..50 {
+            if ping.is_ok() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            ping = client.ping().await;
+        }
+        let ping = ping.expect("an admitted peer is answered over TLS");
+        assert_eq!(ping.node_id, hub.node_id());
+        assert_eq!(ping.shared_workspaces, vec!["w".to_string()]);
+
+        // TLS is a transport, not an authorization: the bearer check still runs behind it.
+        let stranger = SyncClient::new(format!("https://{addr}"), "nope", true).unwrap();
+        assert!(
+            matches!(stranger.ping().await, Err(TransportError::Remote { status: 401, .. })),
+            "an unknown bearer is refused over TLS too"
+        );
+
+        // The port speaks TLS only - a plaintext request gets no HTTP answer at all.
+        let plain = SyncClient::new(format!("http://{addr}"), "tok", true).unwrap();
+        assert!(
+            matches!(plain.ping().await, Err(TransportError::Http(_))),
+            "plaintext must not be served on the TLS port"
+        );
+
+        // And the client only skips verification when told to: a strict one refuses this hub.
+        let strict = SyncClient::new(format!("https://{addr}"), "tok", false).unwrap();
+        assert!(
+            matches!(strict.ping().await, Err(TransportError::Http(_))),
+            "a verifying client must refuse a self-signed hub"
+        );
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     async fn spawn_server(state: Arc<ServerState>) -> SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
