@@ -392,6 +392,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
+    include_str!("../../supragnosis-cli/src/lifecycle.rs"),
 ];
 
 /// One row per principle in `docs/principles.md`, in order, each carrying the clauses that
