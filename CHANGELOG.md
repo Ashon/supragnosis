@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.3](docs/releases/v0.4.3.md) | On macOS, give the daemon one manager after upgrading. `supragnosis service install` now generates |
 | [v0.4.2](docs/releases/v0.4.2.md) | Upgrade if you run a hub or sync to one. rustls moves to 0.23.45 for RUSTSEC-2026-0285: earlier |
 | [v0.4.1](docs/releases/v0.4.1.md) | Upgrade if you read resources. Every one of them is unreadable on an MCP client that validates the |
 | [v0.4.0](docs/releases/v0.4.0.md) | Nothing to do on upgrade. A node can now see the surface each peer grants it, route rounds on it, |
