@@ -1067,6 +1067,11 @@ pub struct AttestationEvent {
 ///   promised. Naming the order is what makes the promise checkable
 ///   (`crates/supragnosis-store/tests/port_conformance.rs`).
 pub trait AssertionStore: Send + Sync {
+    /// Appends (or absorbs a re-arrival into) one log row. **Contract (crash-recovery.md K1):** the
+    /// same store transaction that writes the row records it in the owed-projection ledger, so the
+    /// append and the record that its projection is still owed commit together or not at all. The
+    /// adapter does it rather than the caller because the sync crate appends through this handle and
+    /// never sees the engine that would otherwise have to remember.
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
     /// Restores an observation by id from the observation log - the back-reference path for search hits / derivation
     /// lineage (Principle 2/14: whoever knows the id can reach the entity and its provenance) and the reference read for
@@ -1195,6 +1200,14 @@ pub trait KnowledgeStore: AssertionStore {
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError>;
     /// Upsert keyed on relation.id. Reachable only where the projection is computed.
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError>;
+    /// The owed-projection ledger (crash-recovery.md Section 3): every observation whose append
+    /// committed and whose projection has not been confirmed since, as `(observation id, workspace)`
+    /// in id order. Empty is the normal state. Projection-side, so it lives on the handle only the
+    /// engine holds.
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError>;
+    /// Removes ledger entries once the projection that repays them is written (K2). Ids not in the
+    /// ledger are ignored, so clearing is idempotent.
+    fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError>;
 }
 
 #[derive(Debug, thiserror::Error)]

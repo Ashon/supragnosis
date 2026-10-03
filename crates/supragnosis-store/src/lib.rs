@@ -23,6 +23,10 @@ pub struct InMemoryStore {
     observations: RwLock<HashMap<String, Observation>>,
     entities: RwLock<HashMap<String, Entity>>,
     relations: RwLock<HashMap<String, Relation>>,
+    /// The owed-projection ledger (crash-recovery.md): id -> workspace. Kept here too, although
+    /// nothing survives this store's process, so the engine's repayment logic runs against the same
+    /// contract in every test that uses it.
+    owed: RwLock<std::collections::BTreeMap<String, String>>,
 }
 
 impl InMemoryStore {
@@ -37,9 +41,12 @@ impl AssertionStore for InMemoryStore {
     }
 
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
+        // Under the log's write lock, so the row and its ledger entry appear together (K1).
+        let mut log = self.observations.write().unwrap();
+        self.owed.write().unwrap().insert(obs.id.clone(), obs.workspace().to_string());
         // A re-arrival at the same content address is absorbed as a monotonic union, not an overwrite
         // (Principle 3: log immutability - provenance/lineage is not destroyed).
-        match self.observations.write().unwrap().entry(obs.id.clone()) {
+        match log.entry(obs.id.clone()) {
             Entry::Occupied(mut e) => e.get_mut().absorb(obs),
             Entry::Vacant(v) => {
                 v.insert(obs);
@@ -300,6 +307,18 @@ impl KnowledgeStore for InMemoryStore {
 
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError> {
         self.relations.write().unwrap().insert(rel.id.clone(), rel);
+        Ok(())
+    }
+
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError> {
+        Ok(self.owed.read().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+    }
+
+    fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
+        let mut owed = self.owed.write().unwrap();
+        for id in ids {
+            owed.remove(id);
+        }
         Ok(())
     }
 }
