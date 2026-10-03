@@ -25,7 +25,23 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
   body { background:var(--surface); color:var(--ink2); overflow:hidden;
-         font:12.5px/1.5 var(--mono); }
+         font:12.5px/1.5 var(--mono);
+         /* Light text on near-black. macOS's default smoothing dilates glyph stems, which on a dark
+            ground reads as bold and soft - most visibly at 1x, under the 10-13px this panel lives at.
+            Grayscale antialiasing draws them at their designed weight. The same two lines the landing
+            (site/style.css) already sets on its body, which this theme claims to share. */
+         -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+         text-rendering:optimizeLegibility; }
+  /* Korean wraps at spaces, not between any two syllables. The default treats Hangul like CJK
+     ideographs and splits a word across lines ("공포 / 최고조는"); keep-all breaks where the writer put
+     a space, and overflow-wrap:anywhere still breaks a long unspaced token (an identifier, a path)
+     rather than letting it overflow - and, unlike break-word, lets a flex column shrink past it.
+     One cost, measured in WebKit: keep-all also opens a break after a period inside a dotted
+     identifier ("opportunity." / "min_dry_powder_pct"), which normal wrapping did not. Accepted: a
+     split identifier still reads, and a split Korean word is on nearly every wrapped line. Applied to
+     what a person reads (--sans). */
+  #tip .tdef, #detail h2, #detail .desc, #glossaryBody .def, .obs .otext, .oc-content,
+  #proposalsBody .prat { word-break:keep-all; overflow-wrap:anywhere; }
   /* Atmosphere: candlelight glow beneath the (transparent) canvas, grain above it. Chrome (header,
      rails, z>=5) sits above both, so panels stay crisp while the graph floats in the atmosphere. */
   body::before { content:""; position:fixed; inset:0; pointer-events:none;
@@ -100,7 +116,7 @@
   #tip b { color:var(--ink); font-family:var(--sans); }
   #tip .k { color:var(--faint); }
   /* Type-definition tooltip (legend chips): the definition reads as prose, like the glossary. */
-  #tip .tdef { font:12.5px/1.45 var(--sans); color:var(--ink); margin:3px 0 2px; word-break:break-word; }
+  #tip .tdef { font:12.5px/1.45 var(--sans); color:var(--ink); margin:3px 0 2px; }
   #tip .tdef.none { font-style:italic; color:var(--muted); }
   /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
      above the statusbar. The right island grows downward from the top and the detail panel stops
@@ -162,13 +178,13 @@
             padding:11px 15px 13px; font-size:12px; color:var(--ink2);
             box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
   #detail.on { display:flex; flex-direction:column; }
-  #detail h2 { font:600 14.5px/1.4 var(--sans); margin:0 22px 2px 0; color:var(--gold-bright); word-break:break-word; }
+  #detail h2 { font:600 14.5px/1.4 var(--sans); margin:0 22px 2px 0; color:var(--gold-bright); }
   #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; display:flex; align-items:center;
                   gap:6px; flex-wrap:wrap; }
   /* The values the whole scope shares, stated once instead of on every node (docs/inspector.md D3).
      Quiet and pushed right: it qualifies the line rather than competing with the node's own fields. */
   #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:10.5px; }
-  #detail .desc { color:var(--ink); font:13px/1.45 var(--sans); margin:2px 0 6px; opacity:.9; word-break:break-word; }
+  #detail .desc { color:var(--ink); font:13px/1.45 var(--sans); margin:2px 0 6px; opacity:.9; }
   #detail .rels { display:flex; gap:20px; flex:1 1 auto; min-height:0; overflow:hidden; }
   #detail .relcol { flex:1 1 0; min-width:0; overflow-y:auto; }
   /* No own background: the panel is translucent glass, so any child fill reads as a dark box
@@ -280,7 +296,7 @@
   #glossaryBody .gsec:first-child { margin-top:0; }
   #glossaryBody .nm { color:var(--gold-bright); font-weight:600; font-size:11.5px; }
   #glossaryBody .src { color:var(--faint); font-size:10px; margin-left:5px; }
-  #glossaryBody .def { color:var(--ink2); font:12.5px/1.45 var(--sans); margin-top:1px; opacity:.95; word-break:break-word; }
+  #glossaryBody .def { color:var(--ink2); font:12.5px/1.45 var(--sans); margin-top:1px; opacity:.95; }
   #glossaryBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); padding:2px 0; }
   /* Curation (read-only signals). */
   #curationBody .csec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:8px 0 3px; }
@@ -347,7 +363,7 @@
   .tdot.t-agent_extracted { background:var(--ink2); }
   .tdot.t-host_signed { background:var(--teal); }
   .tdot.t-human_confirmed { background:var(--gold-bright); }
-  .obs .otext { color:var(--ink); font:12px/1.45 var(--sans); opacity:.92; word-break:break-word;
+  .obs .otext { color:var(--ink); font:12px/1.45 var(--sans); opacity:.92;
                 overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; }
   .osec { color:var(--accent); font-size:9px; letter-spacing:.12em; text-transform:uppercase; margin:6px 0 3px; }
   .prow { display:flex; gap:6px; align-items:center; font-size:10.5px; color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
@@ -376,7 +392,7 @@
   .oc-meta { display:flex; align-items:center; gap:7px; margin:0 22px 8px 0; font-size:11px; color:var(--faint); }
   .oc-meta .octier { color:var(--ink2); }
   .oc-meta .ocwhen { margin-left:auto; }
-  .oc-content { color:var(--ink); font:13px/1.5 var(--sans); white-space:pre-wrap; word-break:break-word; }
+  .oc-content { color:var(--ink); font:13px/1.5 var(--sans); white-space:pre-wrap; }
   .ocrel { font:11.5px/1.45 var(--sans); color:var(--ink2); padding:1px 0; }
   .ocrel .rk { color:var(--muted); font:10.5px var(--mono); }
   .prow .poid { color:var(--muted); font:9px var(--mono); }
@@ -411,7 +427,7 @@
                            border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:auto; }
   #proposalsBody .pstate.open { color:var(--gold-bright); border-color:var(--gold-dim); }
   #proposalsBody .pstate.merged { color:var(--teal); border-color:rgba(86,179,162,0.4); }
-  #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--sans); margin:2px 0; opacity:.9; word-break:break-word; }
+  #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--sans); margin:2px 0; opacity:.9; }
   #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
   #proposalsBody .atypes { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0 1px; }
   #proposalsBody .atype { font:10px var(--mono); color:var(--gold-bright); border:1px solid var(--gold-dim);
