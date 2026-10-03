@@ -17,8 +17,9 @@ unmaintained = "workspace"
 ignore = [
     # `daemonize`, used by `supragnosis start` to background the process. No vulnerability; the
     # crate is small and stable. Closes when the daemonizing moves behind the supervisor
-    # (deploy/systemd, deploy/launchd, deploy/docker all run `serve` in the foreground already,
-    # which is the direction that removes this dependency entirely).
+    # (deploy/systemd, the `supragnosis service install` LaunchAgent and deploy/docker all run
+    # `serve` in the foreground already, which is the direction that removes this dependency
+    # entirely).
     "RUSTSEC-2025-0069",
     # `rkyv` 0.7.46, reached only as lightningcss -> parcel_sourcemap -> rkyv. lightningcss and
     # minify-html are build-dependencies of supragnosis-viz: they minify this repository's own CSS

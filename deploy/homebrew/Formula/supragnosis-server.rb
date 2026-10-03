@@ -40,14 +40,24 @@ class SupragnosisServer < Formula
     end
   end
 
-  # brew services start supragnosis-server
-  # `serve --http` also brings up the viewer unix socket at ~/.supragnosis/viz.sock by
-  # default, which is what the desktop app (cask supragnosis) attaches to.
-  service do
-    run [opt_bin/"supragnosis", "serve", "--http", "127.0.0.1:7373"]
-    keep_alive true
-    log_path var/"log/supragnosis.log"
-    error_log_path var/"log/supragnosis.err.log"
+  # No `service do` block, deliberately. The always-on daemon has ONE manager - the canonical
+  # LaunchAgent com.supragnosis.daemon, installed by `supragnosis service install` or the desktop
+  # app's Start at Login (docs/daemon-lifecycle.md). A brew services job beside it is a second owner
+  # of a single-writer store: it fails on the lock and KeepAlive retries it forever, unreported.
+  # An existing brew services job keeps running after this upgrade; `supragnosis status` reports
+  # it and `supragnosis service install --take-over` migrates it.
+  def caveats
+    <<~EOS
+      Run the daemon now and at every login (MCP on 127.0.0.1:7373 + the viewer socket):
+        supragnosis service install
+      or turn on Start at Login in the Supragnosis app (brew install --cask supragnosis).
+
+      Coming from `brew services start supragnosis-server`:
+        supragnosis service install --take-over
+
+      After an upgrade, load the new binary into the running daemon:
+        supragnosis restart
+    EOS
   end
 
   test do

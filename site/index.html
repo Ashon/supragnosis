@@ -359,9 +359,10 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
           <p>
             <code>start</code> / <code>stop</code> / <code>status</code> /
             <code>restart</code> with pidfile and logs under
-            <code>~/.supragnosis</code> - or let Homebrew keep it running with
-            <code>brew services</code>. stdio for MCP-client children,
-            loopback streamable HTTP for everything else.
+            <code>~/.supragnosis</code> - or <code>service install</code> to run it
+            at every login, which the desktop app's Start at Login does too.
+            stdio for MCP-client children, loopback streamable HTTP for
+            everything else.
           </p>
         </article>
       </div>
@@ -536,9 +537,9 @@ claude mcp add supragnosis \
 brew tap ashon/tap
 brew install supragnosis
 
-<span class="c"># server / CLI only, kept running as a service</span>
+<span class="c"># server / CLI only, running at every login</span>
 brew install supragnosis-server
-brew services start supragnosis-server
+supragnosis service install
 
 <span class="c"># no homebrew? the one-line script installs</span>
 <span class="c"># to ~/.local/bin (arm64 / x86_64)</span>
@@ -550,7 +551,9 @@ curl -fsSL https://supragnosis.dev/install.sh | sh
 <span class="c"># or homebrew (server formula)</span>
 brew tap ashon/tap
 brew install supragnosis-server
-brew services start supragnosis-server</code></pre>
+
+<span class="c"># keep it running: the systemd user unit</span>
+<span class="c"># in deploy/systemd of the repo</span></code></pre>
         <pre id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
 cd supragnosis
 
