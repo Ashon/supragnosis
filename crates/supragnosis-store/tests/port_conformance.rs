@@ -281,6 +281,46 @@ fn reobservation_absorbs_attestations_and_lineage() {
     });
 }
 
+/// crash-recovery.md K1/K2 as the port states them: an append owes its projection until the engine
+/// clears it, and nothing but a clear removes the debt. The atomicity half of K1 (row and entry in
+/// one transaction) is structural in each adapter; what every adapter must show here is that the
+/// ledger is written by the append itself, so a caller holding only an `AssertionStore` - the sync
+/// crate - cannot append without it.
+#[test]
+fn every_append_owes_its_projection_until_cleared() {
+    for_each_adapter(|store| {
+        assert!(store.owed_projections().expect("ledger").is_empty(), "a new store owes nothing");
+
+        let a = obs_in("ws-a", "a fact in one workspace");
+        let b = obs_in("ws-b", "a fact in another");
+        let (ida, idb) = (a.id.clone(), b.id.clone());
+        store.add_observation(a.clone()).expect("append a");
+        store.add_observation(b).expect("append b");
+        let mut want = vec![(ida.clone(), "ws-a".to_string()), (idb.clone(), "ws-b".to_string())];
+        want.sort();
+        assert_eq!(store.owed_projections().expect("ledger"), want, "one entry per row, by id");
+
+        store.add_observation(a.clone()).expect("re-arrival");
+        assert_eq!(store.owed_projections().expect("ledger").len(), 2, "a re-arrival is one row");
+
+        store.clear_owed(std::slice::from_ref(&ida)).expect("clear a");
+        store
+            .clear_owed(&["never-appended".to_string()])
+            .expect("clearing an unknown id is a no-op");
+        store.clear_owed(&[]).expect("clearing nothing is a no-op");
+        assert_eq!(
+            store.owed_projections().expect("ledger"),
+            vec![(idb.clone(), "ws-b".to_string())],
+            "a clear removes exactly what it names"
+        );
+
+        // A later attestation of a projected row changes what the projection must show, so it owes
+        // again.
+        store.add_observation(a).expect("re-arrival after the clear");
+        assert_eq!(store.owed_projections().expect("ledger").len(), 2);
+    });
+}
+
 /// The same union, reached from the opposite arrival order. Convergence is the property that
 /// makes replication topology-independent (Principle 16), so it is checked as a difference
 /// between two stores rather than as a state of one.

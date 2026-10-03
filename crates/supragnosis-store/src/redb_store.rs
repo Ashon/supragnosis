@@ -38,6 +38,11 @@ const OBSERVATIONS: TableDefinition<&str, &[u8]> = TableDefinition::new("observa
 const ENTITIES: TableDefinition<&str, &[u8]> = TableDefinition::new("entities");
 const RELATIONS: TableDefinition<&str, &[u8]> = TableDefinition::new("relations");
 const META: TableDefinition<&str, &str> = TableDefinition::new("meta");
+/// The owed-projection ledger (crash-recovery.md): observation id -> workspace, written in the same
+/// transaction as the log row and removed once the engine has projected it. An older build never
+/// opens this table, so after a downgrade and an upgrade it can name rows that were since projected;
+/// that costs one needless reproject and loses nothing.
+const OWED: TableDefinition<&str, &str> = TableDefinition::new("owed_projection");
 
 /// Embeddings, in their own tables under the same id.
 ///
@@ -113,6 +118,7 @@ impl RedbStore {
             txn.open_table(ENTITIES).map_err(backend)?;
             txn.open_table(RELATIONS).map_err(backend)?;
             txn.open_table(META).map_err(backend)?;
+            txn.open_table(OWED).map_err(backend)?;
             txn.open_table(OBS_VEC).map_err(backend)?;
             txn.open_table(ENT_VEC).map_err(backend)?;
             txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
@@ -270,6 +276,10 @@ impl AssertionStore for RedbStore {
             }
             let mut idx = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
             idx.insert(ws.as_str(), merged.id.as_str()).map_err(backend)?;
+            // K1: in this transaction, not beside it - the row and the record that its projection
+            // is owed commit together, so no crash can leave one without the other.
+            let mut owed = txn.open_table(OWED).map_err(backend)?;
+            owed.insert(merged.id.as_str(), ws.as_str()).map_err(backend)?;
         }
         txn.commit().map_err(backend)
     }
@@ -546,6 +556,31 @@ impl AssertionStore for RedbStore {
 }
 
 impl KnowledgeStore for RedbStore {
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError> {
+        let txn = self.db.begin_read().map_err(backend)?;
+        let t = txn.open_table(OWED).map_err(backend)?;
+        let mut out = Vec::new();
+        for row in t.iter().map_err(backend)? {
+            let (k, v) = row.map_err(backend)?;
+            out.push((k.value().to_string(), v.value().to_string()));
+        }
+        Ok(out)
+    }
+
+    fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let txn = self.db.begin_write().map_err(backend)?;
+        {
+            let mut t = txn.open_table(OWED).map_err(backend)?;
+            for id in ids {
+                t.remove(id.as_str()).map_err(backend)?;
+            }
+        }
+        txn.commit().map_err(backend)
+    }
+
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError> {
         let txn = self.db.begin_write().map_err(backend)?;
         {
@@ -722,6 +757,28 @@ mod tests {
         assert_eq!(store.all_entities(Some("ws1")).expect("scoped").len(), 1);
         assert!(store.all_entities(Some("ws2")).expect("other").is_empty());
 
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// The ledger is only worth anything if it outlives the process that wrote it - recovery reads
+    /// it in the NEXT process (crash-recovery.md K3). An entry written and never cleared is there
+    /// after a reopen; a cleared one is not.
+    #[test]
+    fn redb_owed_projections_survive_a_reopen() {
+        let path = tmp_path();
+        let (kept, cleared);
+        {
+            let store = RedbStore::open(&path).expect("open");
+            let a = Observation::new("projected before the crash".into(), prov_in("ws1"));
+            let b = Observation::new("appended, never projected".into(), prov_in("ws1"));
+            cleared = a.id.clone();
+            kept = b.id.clone();
+            store.add_observation(a).expect("append a");
+            store.add_observation(b).expect("append b");
+            store.clear_owed(std::slice::from_ref(&cleared)).expect("clear a");
+        }
+        let store = RedbStore::open(&path).expect("reopen");
+        assert_eq!(store.owed_projections().expect("ledger"), vec![(kept, "ws1".to_string())]);
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
     }
 
