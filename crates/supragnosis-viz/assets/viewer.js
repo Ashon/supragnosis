@@ -1346,14 +1346,20 @@ async function refreshLog() {
   renderLog();
 }
 
-// The node inspector's "log" column: this node's supporting observations (the evidence behind its
+// The node inspector's evidence column: this node's supporting observations (the evidence behind its
 // belief), always visible beside the edge columns. Cached per node so it survives the inspector's
 // poll-driven re-render, and it stays live (re-fetched, re-rendered only when the set changes).
 let nodeLogCache = { id: null, list: [] };
 async function fillNodeLog(node, colEl, secEl) {
   const sameNode = nodeLogCache.id === node.id;
   if (!sameNode) nodeLogCache = { id: node.id, list: [] };
-  const setCount = n => { if (secEl) secEl.textContent = "log (" + n + ")"; };
+  // `sources` counts attestations and this list counts observations; a re-observation by another
+  // host adds the first without the second. Equal is the common case, so the second number appears
+  // only when they part - which is when it says something (docs/inspector.md Section 5).
+  const setCount = n => {
+    if (secEl) secEl.textContent = "evidence (" + n + ")"
+      + (node.sources !== n ? " / " + node.sources + " attestations" : "");
+  };
   if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list); setCount(nodeLogCache.list.length); }
   else colEl.textContent = "loading...";
   const ws = wsInput.value.trim();
@@ -1663,6 +1669,40 @@ function contestedRows(current, tier, curObs, competitors, contested) {
     + competitors.map(c => row(c.value, c.trust_tier, c.observation, false)).join("");
 }
 
+// The inspector's silence rule (docs/inspector.md Sections 3-4): a field is silent when it has ONE
+// value across the loaded scope, and shown otherwise. The scope is the whole /api/graph response -
+// `nodes`, never the legend-filtered subset, so toggling a type chip cannot make a row appear on an
+// unrelated node (D4). Uniform rather than majority: silence then states a fact about everything
+// here, which the panel can say in one line (D3), instead of a proportion that flips as nodes arrive.
+// The tier compared is `trust_tier`, the effective tier - never a claimed one (D4).
+function scopeBaseline() {
+  const tiers = new Set(), origins = new Set(), workspaces = new Set();
+  for (const n of nodes) {
+    tiers.add(String(n.trust_tier));
+    origins.add((n.origins || []).join(", "));
+    workspaces.add(n.workspace || "");   // "" = sits in more than one workspace (a cross-workspace merge)
+  }
+  const only = s => (s.size === 1 ? [...s][0] : null);
+  return { tier: only(tiers), origin: only(origins), workspace: only(workspaces) || null };
+}
+
+// The contested-belief block of the inspector. D1 lives here, first and unconditional: a contested
+// belief is never silenced or folded, whatever the silence rule decides about the fields around it.
+// Only a conflict that trust already resolved (resolution.md 4.1 - informational) folds, and it folds
+// to a line that still says it exists, so it stays one act away (D2, P6 keeps it queryable).
+// `inspector_never_folds_a_contested_belief` pins this shape.
+let foldOpen = null;   // node id whose resolved-by-trust block is expanded - survives the poll re-render
+function contestedBlock(node) {
+  if (node.contested) return `<div class="contested hot">`
+    + contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors || [], true) + `</div>`;
+  const cmp = node.competitors || [];
+  if (!cmp.length) return "";
+  const settled = String(node.trust_tier) === "human_confirmed" ? "confirmed by a human" : "resolved by trust";
+  return `<div class="contested folded${foldOpen === node.id ? " open" : ""}">`
+    + `<button class="cfold" type="button">${settled} - ${cmp.length} other kind${cmp.length > 1 ? "s" : ""} asserted</button>`
+    + `<div class="cbody">${contestedRows(node.type, node.trust_tier, node.kind_source, cmp, false)}</div></div>`;
+}
+
 // The inspector "why (evidence & decision)" body from /api/explain: per-field belief resolution
 // (each single-valued field's ranked candidates - winner / alias / competitor) plus the supporting
 // observation log. An explanation OF the projection - the winner IS what the graph shows.
@@ -1708,6 +1748,23 @@ function renderDetail(node) {
   const list = (arr, dir) => arr.length
     ? arr.map(e => rowHtml(e.type, dir === "->" ? e.b : e.a, dir, e.description)).join("")
     : `<div class="empty">none</div>`;
+  // The silence rule (docs/inspector.md Section 5): a field the whole scope agrees on is not repeated
+  // on every node - it is stated once, in `scopeSaid`, on this same panel, so a missing row never
+  // reads as a missing value (D3, P5). The tier keeps its dot either way.
+  const base = scopeBaseline();
+  const tier = String(node.trust_tier);
+  const scopeSaid = [];
+  if (base.tier !== null) scopeSaid.push(base.tier);
+  if (base.origin) scopeSaid.push("from " + base.origin);
+  const origin = base.origin === null && node.origins && node.origins.length
+    ? `<div class="meta">from: ${esc(node.origins.join(", "))}</div>` : "";
+  // An empty workspace is an entity a merge carried across a workspace boundary - said, not left blank.
+  const workspace = base.workspace === null
+    ? `<div class="meta">workspace: ${node.workspace ? esc(node.workspace) : "more than one (merged across workspaces)"}</div>` : "";
+  // With a single candidate per field the disclosure can only answer "nobody said otherwise", and the
+  // asserting observation is already a row of the evidence column - so it appears only when some
+  // field has a second candidate: an alias spelling or a competing kind (Section 5).
+  const disputed = (node.aliases || []).length > 0 || (node.competitors || []).length > 0;
   // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
   detailEl.innerHTML =
     `<button class="close" title="close" aria-label="close">`
@@ -1715,25 +1772,23 @@ function renderDetail(node) {
       + `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`
       + `</svg></button>`
     + `<h2>${esc(node.name)}</h2>`
-    + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span> `
-    + `${esc(node.type)} / deg ${node.degree || 0} / src ${node.sources} / ${esc(String(node.trust_tier))}</div>`
-    + (node.aliases && node.aliases.length ? `<div class="meta">merged: ${esc(node.aliases.join(", "))}</div>` : "")
-    + (node.origins && node.origins.length ? `<div class="meta">from: ${esc(node.origins.join(", "))}</div>` : "")
+    + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`
+    +   `<span>${esc(node.type)}</span>${tierDot(tier)}${base.tier === null ? `<span>${esc(tier)}</span>` : ""}`
+    +   (scopeSaid.length ? `<span class="scopeline" title="these values are the same for every node in this view, so they are not repeated per node">same across this scope: ${esc(scopeSaid.join(" / "))}</span>` : "")
+    + `</div>`
+    + (node.aliases && node.aliases.length ? `<div class="meta">aliases: ${esc(node.aliases.join(", "))}</div>` : "")
+    + origin + workspace
     + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
-    + (node.competitors && node.competitors.length
-        ? `<div class="contested${node.contested ? " hot" : ""}">`
-          + contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors, node.contested)
-          + `</div>`
-        : "")
+    + contestedBlock(node)
     // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
-    // only when opened - the graph poll stays light). The evidence itself is the "log" column below.
-    + `<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>`
+    // only when opened - the graph poll stays light). The evidence itself is the column below.
+    + (disputed ? `<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>` : "")
     // Bottom columns: the node's edges (outgoing / incoming) and its observation log (the evidence
     // behind its belief), side by side.
     + `<div class="rels">`
     +   `<div class="relcol"><div class="sec">outgoing (${outs.length})</div>${list(outs, "->")}</div>`
     +   `<div class="relcol"><div class="sec">incoming (${ins.length})</div>${list(ins, "<-")}</div>`
-    +   `<div class="relcol"><div class="sec">log</div><div class="logcol"></div></div>`
+    +   `<div class="relcol"><div class="sec">evidence</div><div class="logcol"></div></div>`
     + `</div>`;
   detailEl.className = "on";
   detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
@@ -1746,10 +1801,20 @@ function renderDetail(node) {
   detailEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
   });
+  const fold = detailEl.querySelector(".contested.folded");
+  if (fold) fold.querySelector(".cfold").onclick = () => {
+    foldOpen = fold.classList.toggle("open") ? node.id : null;
+  };
+  // The "log" column: this node's supporting observations (the evidence behind its belief), always
+  // visible beside the edge columns. Cached + an expanded-row set, so it survives the poll re-render.
+  const logcol = detailEl.querySelector(".logcol");
+  fillNodeLog(node, logcol, logcol.previousElementSibling);
   // "Belief decision" disclosure: fetch /api/explain on first open, render the per-field decision.
   // The result and open state are cached per node so it survives the inspector's poll-driven
   // re-render (and reopening a fetched node is instant, no re-fetch).
-  const why = detailEl.querySelector(".why"), whyBody = why.querySelector(".whybody");
+  const why = detailEl.querySelector(".why");
+  if (!why) return;
+  const whyBody = why.querySelector(".whybody");
   if (whyCache && whyCache.id === node.id && whyCache.open) {
     why.classList.add("open");
     if (whyCache.ex) fillWhy(whyBody, whyCache.ex);
@@ -1770,10 +1835,6 @@ function renderDetail(node) {
       whyBody.textContent = "explain failed - is the server up?";
     }
   };
-  // The "log" column: this node's supporting observations (the evidence behind its belief), always
-  // visible beside the edge columns. Cached + an expanded-row set, so it survives the poll re-render.
-  const logcol = detailEl.querySelector(".logcol");
-  fillNodeLog(node, logcol, logcol.previousElementSibling);
 }
 
 // Supersampling (HiDPI): scale the backing store by DPR and fix the CSS size to the viewport -> sharp.

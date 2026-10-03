@@ -184,6 +184,57 @@ fn viz_source_escapes_untrusted_names() {
     );
 }
 
+/// docs/inspector.md D1 (Principle 6): a contested belief is never silenced or folded. The silence
+/// rule only ever REMOVES rows, so the way D1 breaks is not a deleted block but a contested one that
+/// ends up behind one of the rule's conditions, or inside the fold that resolved conflicts get.
+///
+/// Asserted against the source, like the escaping guard above, and with the same honesty: this is
+/// a tripwire on the shape, not a proof about every render. It pins three things - the contested
+/// branch is the first decision `contestedBlock` makes and returns before any fold is built; the
+/// function never consults the scope baseline; and `renderDetail` concatenates the block outside
+/// any condition of its own.
+#[test]
+fn inspector_never_folds_a_contested_belief() {
+    let js = include_str!("../assets/viewer.js");
+    let body = |name: &str| -> &str {
+        let start = js
+            .find(&format!("\nfunction {name}("))
+            .unwrap_or_else(|| panic!("viewer.js no longer defines {name}"));
+        let rest = &js[start + 1..];
+        let end = rest.find("\n}\n").unwrap_or_else(|| panic!("{name} has no closing brace"));
+        &rest[..end]
+    };
+
+    let block = body("contestedBlock");
+    let first_decision = block.find("if (").expect("contestedBlock makes no decision");
+    assert!(
+        block[first_decision..].starts_with("if (node.contested) return"),
+        "contestedBlock must decide `contested` first and return before building anything else - \
+         a contested belief must never reach the fold below it"
+    );
+    assert!(
+        !block.contains("scopeBaseline"),
+        "the silence rule must not reach the contested block (D1)"
+    );
+    let branch = &block[first_decision..];
+    let branch = &branch[..branch.find(';').expect("the contested branch is one statement")];
+    assert!(
+        !branch.contains("folded"),
+        "the contested branch must not render the folded form"
+    );
+
+    let detail = body("renderDetail");
+    let call = detail
+        .find("+ contestedBlock(node)")
+        .expect("renderDetail must render the contested block");
+    let line_start = detail[..call].rfind('\n').map_or(0, |i| i + 1);
+    assert_eq!(
+        detail[line_start..call].trim(),
+        "",
+        "contestedBlock(node) must be its own term of the panel, not a branch of a condition"
+    );
+}
+
 /// Every response carries a Content-Security-Policy, and the script half of it stays strict.
 ///
 /// Escaping is the first defence and it is guarded by the test above; this is the one that survives
