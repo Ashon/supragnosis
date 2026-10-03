@@ -1713,11 +1713,34 @@ fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
             job.label
         ),
         _ => println!(
-            "stopped launchd job {}. It stays down until reloaded (supragnosis service install, or launchctl bootstrap).",
+            "stopped launchd job {}. It stays down until `supragnosis restart` (or the next login) loads it again.",
             job.label
         ),
     }
     Ok(())
+}
+
+/// Load the installed canonical job (`bootstrap`) - `restart` after a `stop`.
+#[cfg(target_os = "macos")]
+fn launchd_bootstrap_canonical() -> Result<()> {
+    let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
+    let plist = canonical_plist_path();
+    let st = std::process::Command::new("launchctl")
+        .arg("bootstrap")
+        .arg(format!("gui/{uid}"))
+        .arg(&plist)
+        .status()
+        .context("failed to run launchctl bootstrap")?;
+    if !st.success() {
+        anyhow::bail!("launchctl bootstrap gui/{uid} {} failed", plist.display());
+    }
+    println!("loaded launchd job {} (MCP server + viewer).", lifecycle::CANONICAL_LABEL);
+    report_after_restart();
+    Ok(())
+}
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launchd_bootstrap_canonical() -> Result<()> {
+    anyhow::bail!("a LaunchAgent plist was found on a system without launchd")
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -1835,7 +1858,11 @@ fn restart(cfg: Config) -> Result<()> {
     use lifecycle::{Manager, Situation};
     clear_stale_pidfile();
     match lifecycle::classify(&observe()) {
-        // Nothing to restart - start a fresh self-managed daemon.
+        // Stopped, but the canonical job is installed (a `stop` unloaded it): reload THAT job. Starting
+        // a pidfile daemon here would leave the login item installed beside it - two owners again
+        // at the next login (L1).
+        Situation::Stopped if canonical_plist_state() != "absent" => launchd_bootstrap_canonical(),
+        // Nothing installed and nothing running - start a fresh self-managed daemon.
         Situation::Stopped => start(cfg),
         Situation::One(Manager::Pidfile { pid }) => {
             stop_pidfile(pid as i32)?;
