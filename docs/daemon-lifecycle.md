@@ -175,6 +175,9 @@ which is the reason the shell attaches rather than owns.
 - The formula drops its `service do` block. Its caveats point to the app's Start at Login and to
   `supragnosis service install`. An existing `brew services` job keeps running after the upgrade and
   is now visible to `status`; `service install --take-over` migrates it.
+  **Correction:** this reaches users only because the release renders the tap's formula from
+  `deploy/homebrew/` (`update-tap.sh`). The script had edited the tap's own copy, version and
+  sha256 only, so the block would have stayed in the tap under the new binary.
 - `deploy/launchd/com.supragnosis.daemon.plist` is deleted - the generator replaces it - and
   `deploy/install.sh` calls `supragnosis service install --take-over` after copying the binary.
 - README's quick start and the Homebrew upgrade section say `brew upgrade` then `supragnosis

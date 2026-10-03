@@ -1,6 +1,8 @@
 # Homebrew distribution (formula + cask, no DMG)
 
-This directory is the template set copied into the tap repo. Contents:
+This directory is the source of the tap repo's formula and casks. The tap holds rendered output:
+every release overwrites its copies from these templates, so a change is made here, never in the
+tap. Contents:
 
 - `Formula/supragnosis-server.rb` - the server/CLI (the installed binary is still named
   `supragnosis`; only the brew token carries `-server`). Installs the release's per-platform
@@ -13,13 +15,15 @@ This directory is the template set copied into the tap repo. Contents:
   release's signed/notarized universal `.app.zip`. The cask depends on the `supragnosis-server`
   formula, so the app finds the brew daemon binary on PATH (no bundled sidecar). The app is
   tray-resident, so the cask's `uninstall quit:` quits the old instance on upgrade and reopens it.
-- `update-tap.sh` - after a release, updates the tap's version/sha256 from the release assets'
-  .sha256 sidecar files.
+- `Casks/supragnosis-dev.rb` - the rolling dev-channel cask (`version :latest`), copied as-is.
+- `update-tap.sh` - after a release, renders the formula and casks into the tap: copies the
+  templates, fills in the version and the sha256 sums from the release assets' .sha256 sidecar
+  files, and fails if a placeholder or the template's own version survives.
 
 ## One-time setup
 
-1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub and commit this directory's
-   `Formula/`, `Casks/`, and `update-tap.sh` into it.
+1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release's tap job
+   (or a manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
 2. From the next `v*` tag on, the release carries `Supragnosis-v<ver>-macos-universal.app.zip`.
 
 ## Per release
@@ -27,7 +31,7 @@ This directory is the template set copied into the tap repo. Contents:
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
 ../supragnosis/deploy/homebrew/update-tap.sh v0.1.11 .
-git commit -am "supragnosis v0.1.11" && git push
+git add Formula Casks && git commit -m "supragnosis v0.1.11" && git push
 ```
 
 ## User install
