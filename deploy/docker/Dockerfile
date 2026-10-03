@@ -8,10 +8,11 @@
 # means the image can be cut from any commit, which is what an operator running a hub ahead of a
 # release needs.
 
-# Pinned to the workspace's declared floor. That declaration is now tested by the `msrv` job in
-# rust.yml, so this line and Cargo.toml move together or CI says so - which is the only thing that
-# keeps a pin like this from drifting into a number nobody checked.
-FROM rust:1.95-bookworm AS build
+# Pinned to the workspace's declared floor (`rust-version` in Cargo.toml). The `msrv` job in
+# rust.yml tests that number and never reads this file, so this line drifted: Cargo.toml moved to
+# 1.96 and the v0.4.3 image failed to build at release, the one place this Dockerfile runs.
+# manifest_consistency.rs (supragnosis-cli) now holds the two equal on every push.
+FROM rust:1.96-bookworm AS build
 WORKDIR /src
 
 # Manifests first, so the dependency build is cached against everything but a dependency change.
