@@ -661,6 +661,8 @@ fn build_sync_context(
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     let (links, mut config_notes) = fc.sync.links();
     config_notes.extend(drop_self_admission(node.node_id(), fc.server.as_ref()));
+    let (serve_workspaces, serve_notes) = fc.sync.serve_set();
+    config_notes.extend(serve_notes);
     for n in &config_notes {
         tracing::error!("federation configuration: {n}");
     }
@@ -717,13 +719,19 @@ fn build_sync_context(
         // The agent surface (docs/remote-server.md Section 4): MCP for principals on this listener.
         // Mounted whenever there is a listener - principals added later are admitted without a
         // restart - and counted toward the bind rule. Knowledge another node originated is served
-        // only with its consent, and no consent is recorded yet, so only this hub's own is (R5).
-        let no_consent: principal::Consented = Arc::new(|_| std::collections::BTreeSet::new());
+        // only with its consent (R5), which nodes give on their sync rounds and the book keeps.
+        let book =
+            Arc::new(principal::ConsentBook::open(fed::fed_base_dir().join("served-consent.json")));
+        let reader = book.clone();
+        let consented: principal::Consented = Arc::new(move |ws| reader.consented(ws));
+        let recorder = book.clone();
+        let on_consent: supragnosis_sync::http::OnConsent =
+            Arc::new(move |node, ws, serve| recorder.record(node, ws, serve));
         let extra = supragnosis_sync::http::ExtraSurface {
             router: principal::router(
                 engine.clone(),
                 Arc::new(principal::Directory::new(fed::config_path())),
-                principal::servable(engine.clone(), node.node_id().to_string(), no_consent),
+                principal::servable(engine.clone(), node.node_id().to_string(), consented),
             ),
             admitted: srv.principals.len(),
         };
@@ -739,6 +747,7 @@ fn build_sync_context(
             on_search: Some(on_search),
             peer_registry: Some(peer_registry.clone()),
             extra: Some(extra),
+            on_consent: Some(on_consent),
         };
         admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?);
     }
@@ -803,6 +812,7 @@ fn build_sync_context(
         Some(Arc::new(supragnosis_mcp::SyncContext {
             node,
             share_workspaces: fc.sync.share_workspaces.clone(),
+            serve_workspaces,
             servers: links,
             config_notes,
             surfaces: surfaces.clone(),
@@ -872,7 +882,9 @@ fn spawn_fed_status(task: FedStatusTask) {
                     server,
                     &link.auth_token,
                     sync.insecure_tls,
-                ) {
+                )
+                .map(|c| c.with_serve(sync.serve_set().0))
+                {
                     match client.ping().await {
                         Ok(p) => {
                             healthy = true;
@@ -1141,7 +1153,8 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
                 server,
                 &link.auth_token,
                 fc.sync.insecure_tls,
-            )?;
+            )?
+            .with_serve(fc.sync.serve_set().0);
             let s = client
                 .sync_workspace(&store, &node, &ws, &fc.sync.share_workspaces, &keys)
                 .await?;
@@ -3141,6 +3154,35 @@ mod fed {
         /// Superseded by the log-borne canon-policy binding in Phase 5.
         #[serde(default)]
         pub origin_keys: std::collections::BTreeMap<String, String>,
+        /// The shared workspaces a hub may serve to its principals (docs/remote-server.md Section
+        /// 4.5). Sharing replicates; serving discloses to people this node never heard of, so it is
+        /// asked for separately. Must be a subset of `share_workspaces`.
+        #[serde(default)]
+        pub serve_workspaces: Vec<String>,
+    }
+
+    impl SyncSection {
+        /// `serve_workspaces` narrowed to what is shared, and a note for each entry dropped - a
+        /// workspace that does not leave this node cannot be served by a hub, and dropping it only
+        /// ever discloses less (P24's permitted direction).
+        pub fn serve_set(&self) -> (Vec<String>, Vec<String>) {
+            let mut notes = Vec::new();
+            let serve = self
+                .serve_workspaces
+                .iter()
+                .filter(|w| {
+                    let shared = self.share_workspaces.contains(w);
+                    if !shared {
+                        notes.push(format!(
+                            "[sync] serve_workspaces names {w:?}, which is not in share_workspaces - ignored: a workspace that is not shared cannot be served"
+                        ));
+                    }
+                    shared
+                })
+                .cloned()
+                .collect();
+            (serve, notes)
+        }
     }
 
     /// One sync server and the credential this node presents to it. Denies unknown keys for the
@@ -3363,6 +3405,20 @@ mod fed {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// docs/remote-server.md Section 4.5: a node can let a hub serve only what it shares - an
+        /// entry naming an unshared workspace is dropped with a note, never honored.
+        #[test]
+        fn serving_is_narrowed_to_what_is_shared() {
+            let cfg: FileConfig = toml::from_str(
+                "[sync]\nshare_workspaces = [\"team\", \"docs\"]\nserve_workspaces = [\"team\", \"private\"]\n",
+            )
+            .unwrap();
+            let (serve, notes) = cfg.sync.serve_set();
+            assert_eq!(serve, vec!["team".to_string()]);
+            assert_eq!(notes.len(), 1);
+            assert!(notes[0].contains("private"));
+        }
 
         /// The documented supragnosis.toml shape parses; unknown keys are rejected loudly (P5).
         #[test]
