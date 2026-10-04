@@ -58,7 +58,9 @@ pub enum TransportError {
 }
 
 /// F10 bind guard: loopback is always fine (local trust surface); a non-loopback bind demands both
-/// in-process TLS and a non-empty allowlist. This mirrors, and never relaxes, the MCP/viz guard.
+/// in-process TLS and someone admitted - a node on the allowlist, or a principal of the agent
+/// surface the wiring layer mounts beside the sync API (docs/remote-server.md Section 4.1). The
+/// local MCP daemon's own guard is separate and unchanged.
 pub fn validate_bind(
     addr: &SocketAddr,
     tls: bool,
@@ -71,7 +73,10 @@ pub fn validate_bind(
         return Err(TransportError::Bind { addr: *addr, reason: "TLS is not enabled".into() });
     }
     if allowlist_len == 0 {
-        return Err(TransportError::Bind { addr: *addr, reason: "the allowlist is empty".into() });
+        return Err(TransportError::Bind {
+            addr: *addr,
+            reason: "nothing is admitted (no allowlisted node, no principal)".into(),
+        });
     }
     Ok(())
 }
@@ -147,6 +152,17 @@ pub struct Hooks {
     pub on_search: Option<OnSearch>,
     /// Shared known-peer registry - the wiring layer keeps a clone so the MCP surface can report it.
     pub peer_registry: Option<Arc<PeerRegistry>>,
+    /// A further surface served on this listener - the hub's agent surface for principals
+    /// (docs/remote-server.md Section 4.1). It authenticates its own requests; `admitted` counts
+    /// toward the bind rule.
+    pub extra: Option<ExtraSurface>,
+}
+
+/// Routes the wiring layer serves beside the sync API, on the same TLS listener.
+pub struct ExtraSurface {
+    pub router: Router,
+    /// How many principals it admits at startup - the bind rule needs someone admitted.
+    pub admitted: usize,
 }
 
 /// The admitted peers, consulted per request instead of captured when the server was spawned.
@@ -600,7 +616,8 @@ pub async fn serve(
     // The bind rule is about STARTING an unauthenticated surface, so it is checked against admission
     // as it stands now (F10). Admission may shrink later, including to empty - that rejects every
     // request rather than admitting anyone, which serves the same end (see [`PeerDirectory`]).
-    validate_bind(&listen, tls.is_some(), peers.admitted().allowlist.len())?;
+    let extra_admitted = hooks.extra.as_ref().map_or(0, |x| x.admitted);
+    validate_bind(&listen, tls.is_some(), peers.admitted().allowlist.len() + extra_admitted)?;
     let mut state = ServerState::with_directory(store, node, peers);
     if let Some(hook) = hooks.on_applied {
         state = state.with_on_applied(hook);
@@ -615,7 +632,10 @@ pub async fn serve(
         state = state.with_peers(r);
     }
     let state = Arc::new(state);
-    let app = router(state);
+    let app = match hooks.extra {
+        Some(extra) => router(state).merge(extra.router),
+        None => router(state),
+    };
     tracing::info!(%listen, tls = tls.is_some(), "sync API listening");
     match tls {
         Some(paths) => {
