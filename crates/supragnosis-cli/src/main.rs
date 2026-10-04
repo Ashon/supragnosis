@@ -60,6 +60,9 @@ enum Cmd {
     Restart(RunArgs),
     /// Query daemon status: who manages it, whether it answers, and which version it runs
     Status(StatusArgs),
+    /// Stdio MCP server that relays to the running daemon - what an AI app launches. Opens no store
+    /// and holds no token in the app's config (docs/client-connect.md)
+    Bridge,
     /// The always-on daemon as a login item (macOS LaunchAgent com.supragnosis.daemon)
     Service {
         #[command(subcommand)]
@@ -168,6 +171,7 @@ struct RunArgs {
 
 // The launchd half of the lifecycle is macOS-only. Elsewhere its parsing and plist generation stay
 // compiled and tested (CI runs on Linux) but are never called, which is not dead code to fix.
+mod bridge;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
 
@@ -178,6 +182,7 @@ fn main() -> Result<()> {
         Cmd::Stop => stop(),
         Cmd::Restart(a) => restart(resolve(a, true)),
         Cmd::Status(a) => status(a.json),
+        Cmd::Bridge => bridge_cmd(),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
         Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
         Cmd::Identity(a) => identity_cmd(a),
@@ -1056,6 +1061,28 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
 }
 
 /// Initializes the stderr log subscriber (idempotent). stdout is the MCP stdio channel, so logs must go to stderr.
+/// `supragnosis bridge`: stdout carries JSON-RPC and nothing else, so nothing here logs to it.
+fn bridge_cmd() -> Result<()> {
+    let addr = std::env::var("SUPRAGNOSIS_HTTP_ADDR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    let addr = parse_loopback_addr(&addr)?; // loopback only, as `serve` binds (P17)
+    let cfg = bridge::Config {
+        url: format!("http://{addr}/mcp"),
+        // Read on every request, never copied anywhere (client-connect.md C2).
+        token: Arc::new(|| {
+            std::fs::read_to_string(mcp_token_path())
+                .ok()
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+        }),
+        wait: std::time::Duration::from_secs(10),
+    };
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    rt.block_on(bridge::run(cfg, tokio::io::stdin(), tokio::io::stdout()))
+}
+
 fn init_tracing() {
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -1132,6 +1159,39 @@ async fn serve_http_daemon(
     session: &str,
 ) -> Result<()> {
     let addr = parse_loopback_addr(http_addr)?; // reject non-local binds (Principle 17)
+    let token = match auth {
+        true => {
+            let token = load_or_create_mcp_token()?;
+            tracing::info!(path = %mcp_token_path().display(), "MCP daemon requires a bearer token");
+            Some(token)
+        }
+        false => {
+            // Loud, every start, and naming what is exposed rather than that a setting is off. An
+            // operator who chose this on a single-user box should see it confirmed; one who inherited
+            // it from a stale environment variable should see what it costs.
+            tracing::warn!(
+                "MCP daemon authentication is DISABLED (SUPRAGNOSIS_MCP_AUTH=off) - every local OS \
+                 account on this host can observe, review and sync_push through {addr}"
+            );
+            None
+        }
+    };
+    let router = mcp_router(engine, sync_ctx, token);
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
+    tracing::info!(%host, %workspace, %session, %addr, auth, "supragnosis / MCP streamable-http daemon: http://{addr}/mcp");
+    axum::serve(listener, router).await?;
+    Ok(())
+}
+
+/// The daemon's MCP router: the streamable-HTTP service behind its guards. Separate from the bind
+/// so the bridge's tests can serve exactly what the daemon serves (client-connect.md C4).
+fn mcp_router(
+    engine: Arc<Engine>,
+    sync_ctx: Option<Arc<supragnosis_mcp::SyncContext>>,
+    token: Option<String>,
+) -> axum::Router {
     let service = StreamableHttpService::new(
         move || {
             let mut server = SupragnosisServer::new(engine.clone());
@@ -1159,31 +1219,15 @@ async fn serve_http_daemon(
         .layer(axum::middleware::from_fn(guard_local_origin));
     // Outermost, so an unauthenticated request is refused before any other layer reads it - including
     // the session bookkeeping, which would otherwise let an unauthenticated caller allocate state.
-    let router = match auth {
-        true => {
-            let token = Arc::new(load_or_create_mcp_token()?);
-            tracing::info!(path = %mcp_token_path().display(), "MCP daemon requires a bearer token");
+    match token {
+        Some(token) => {
+            let token = Arc::new(token);
             router.layer(axum::middleware::from_fn(move |req, next| {
                 require_token(token.clone(), req, next)
             }))
         }
-        false => {
-            // Loud, every start, and naming what is exposed rather than that a setting is off. An
-            // operator who chose this on a single-user box should see it confirmed; one who inherited
-            // it from a stale environment variable should see what it costs.
-            tracing::warn!(
-                "MCP daemon authentication is DISABLED (SUPRAGNOSIS_MCP_AUTH=off) - every local OS \
-                 account on this host can observe, review and sync_push through {addr}"
-            );
-            router
-        }
-    };
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
-    tracing::info!(%host, %workspace, %session, %addr, auth, "supragnosis / MCP streamable-http daemon: http://{addr}/mcp");
-    axum::serve(listener, router).await?;
-    Ok(())
+        None => router,
+    }
 }
 
 /// DNS-rebinding guard for the loopback MCP daemon (MCP spec: validate Origin/Host). A non-browser
