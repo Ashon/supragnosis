@@ -4631,6 +4631,7 @@ dependencies = [
  "clap",
  "daemonize",
  "getrandom 0.4.3",
+ "reqwest",
  "rmcp",
  "serde",
  "serde_json",
