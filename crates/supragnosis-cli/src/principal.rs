@@ -70,6 +70,58 @@ impl Directory {
     }
 }
 
+/// Which nodes have consented to this hub serving which of their workspaces (Section 4.5). Kept in
+/// a file, so a restart does not forget a consent and quietly start refusing - or, worse, a
+/// withdrawal and quietly keep serving.
+pub struct ConsentBook {
+    path: PathBuf,
+    map: Mutex<std::collections::BTreeMap<String, BTreeSet<String>>>,
+}
+
+impl ConsentBook {
+    /// Loads the book. One that cannot be read starts empty - consent then has to be given again,
+    /// which is the direction that discloses less.
+    pub fn open(path: PathBuf) -> ConsentBook {
+        let map = match std::fs::read_to_string(&path) {
+            Ok(t) => serde_json::from_str(&t).unwrap_or_else(|e| {
+                tracing::error!(path = %path.display(), error = %e, "the consent record does not parse - starting with no consent");
+                Default::default()
+            }),
+            Err(_) => Default::default(),
+        };
+        ConsentBook { path, map: Mutex::new(map) }
+    }
+
+    /// Records what a node said on its latest round: yes adds it, no withdraws it.
+    pub fn record(&self, node: &str, workspace: &str, serve: bool) {
+        let mut map = self.map.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let set = map.entry(workspace.to_string()).or_default();
+        let changed = if serve { set.insert(node.to_string()) } else { set.remove(node) };
+        if !changed {
+            return;
+        }
+        tracing::info!(
+            node,
+            workspace,
+            serve,
+            "a node changed its consent to this hub serving its workspace"
+        );
+        let text = serde_json::to_string_pretty(&*map).unwrap_or_default();
+        if let Err(e) = crate::connect::write_replacing(&self.path, &text) {
+            tracing::error!(path = %self.path.display(), error = %e, "could not persist the consent record");
+        }
+    }
+
+    pub fn consented(&self, workspace: &str) -> BTreeSet<String> {
+        self.map
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(workspace)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
 /// The nodes that have consented to this hub serving a workspace (Section 4.5).
 pub type Consented = Arc<dyn Fn(&str) -> BTreeSet<String> + Send + Sync>;
 
@@ -281,6 +333,30 @@ mod tests {
         std::fs::write(&path, "[server\nbroken").unwrap();
         assert!(d.admit(&cred).is_none(), "a config that does not parse admits no one");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Consent survives a restart, a later "no" withdraws it, and an unreadable record starts empty.
+    #[test]
+    fn consent_is_kept_and_can_be_withdrawn() {
+        let path =
+            std::env::temp_dir().join(format!("supragnosis-consent-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let book = ConsentBook::open(path.clone());
+        book.record("spoke-a", "team", true);
+        book.record("spoke-b", "team", true);
+        assert_eq!(
+            ConsentBook::open(path.clone()).consented("team").len(),
+            2,
+            "kept across a restart"
+        );
+        book.record("spoke-a", "team", false);
+        assert_eq!(
+            ConsentBook::open(path.clone()).consented("team"),
+            ["spoke-b".to_string()].into()
+        );
+        std::fs::write(&path, "not json").unwrap();
+        assert!(ConsentBook::open(path.clone()).consented("team").is_empty());
+        let _ = std::fs::remove_file(&path);
     }
 
     fn observe(engine: &Engine, ws: &str, content: &str, name: &str) {

@@ -687,6 +687,7 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
             ServerLink { url: admits.clone(), auth_token: "t".into() },
@@ -763,6 +764,7 @@ async fn routing_on_the_negotiated_map_records_nothing() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
             ServerLink { url: "http://127.0.0.1:1".into(), auth_token: "t".into() },
@@ -847,6 +849,7 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([4u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        serve_workspaces: Vec::new(),
         config_notes: vec![note.clone()],
         servers: Vec::new(),
         surfaces: Default::default(),

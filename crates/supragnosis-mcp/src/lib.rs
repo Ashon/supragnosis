@@ -296,6 +296,9 @@ pub struct SyncContext {
     pub node: Arc<supragnosis_sync::SyncNode>,
     /// Outbound share whitelist (P17/F9) - what may leave this node.
     pub share_workspaces: Vec<String>,
+    /// The shared workspaces this node lets a hub serve to its principals (docs/remote-server.md
+    /// Section 4.5), said to the hub on every round.
+    pub serve_workspaces: Vec<String>,
     /// The sync servers (hubs) this node talks to, each with the credential presented to it.
     pub servers: Vec<supragnosis_sync::ServerLink>,
     /// Federation configuration that was worked around rather than obeyed, one line each.
@@ -1071,7 +1074,7 @@ impl SupragnosisServer {
                 &link.auth_token,
                 ctx.insecure_tls,
             ) {
-                Ok(c) => c,
+                Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}));
                     continue;
@@ -1201,7 +1204,7 @@ impl SupragnosisServer {
                 &link.auth_token,
                 ctx.insecure_tls,
             ) {
-                Ok(c) => c,
+                Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}));
                     continue;
