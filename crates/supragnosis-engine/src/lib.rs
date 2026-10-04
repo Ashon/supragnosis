@@ -3648,6 +3648,23 @@ impl Engine {
         }
     }
 
+    /// The nodes whose attestations a workspace's log holds, by origin id (docs/remote-server.md
+    /// R5). An unstamped attestation is this node's own and names no origin.
+    pub fn origins(
+        &self,
+        workspace: &str,
+    ) -> Result<std::collections::BTreeSet<String>, StoreError> {
+        let mut out = std::collections::BTreeSet::new();
+        for obs in self.store.all_observations(Some(workspace))? {
+            for p in &obs.provenance {
+                if let Some(s) = &p.sync {
+                    out.insert(s.origin_node.clone());
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
         // K2: what this reproject repays is what the ledger held BEFORE it read the log. An append

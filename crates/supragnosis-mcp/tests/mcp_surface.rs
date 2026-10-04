@@ -880,3 +880,16 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
     client.cancel().await.ok();
     server.abort();
 }
+
+/// docs/remote-server.md R3: every tool the server declares has a remote policy, and the policy
+/// table names nothing the server does not declare. A tool added without deciding what principals
+/// may do with it fails here - it never arrives open on the hub's listener.
+#[test]
+fn every_tool_has_a_remote_policy() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+    let declared: BTreeSet<String> =
+        SupragnosisServer::new(engine).tool_names().into_iter().collect();
+    let classified: BTreeSet<String> =
+        supragnosis_mcp::remote::POLICY.iter().map(|(n, _)| n.to_string()).collect();
+    assert_eq!(declared, classified, "the remote policy table and the tool list disagree");
+}

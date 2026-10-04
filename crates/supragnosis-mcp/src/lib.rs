@@ -8,6 +8,8 @@
 use std::future::Future;
 use std::sync::Arc;
 
+pub mod remote;
+
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
@@ -277,6 +279,15 @@ pub struct WorkspaceMapRequest {
 
 // --- Server ------------------------------------------------------------------
 
+/// The principal the remote listener authenticated for this request (docs/remote-server.md R2). It
+/// rides the HTTP request's extensions, which rmcp hands every handler as `http::request::Parts`.
+fn principal_of(context: &RequestContext<RoleServer>) -> Option<remote::Principal> {
+    context
+        .extensions
+        .get::<http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<remote::Principal>().cloned())
+}
+
 #[derive(Clone)]
 /// Federation wiring handed to the MCP surface (M4 Phase 4, docs/federation.md Section 9).
 /// Present only when the node is configured for sync (supragnosis.toml); without it the `sync_*`
@@ -310,12 +321,77 @@ pub struct SyncContext {
 pub struct SupragnosisServer {
     engine: Arc<Engine>,
     sync: Option<Arc<SyncContext>>,
+    /// Set when this server serves principals over the network (docs/remote-server.md Section 4):
+    /// every call is then admitted per principal, and one with no principal is refused (R2).
+    remote: Option<remote::Surface>,
     tool_router: ToolRouter<SupragnosisServer>,
 }
 
 impl SupragnosisServer {
     pub fn new(engine: Arc<Engine>) -> Self {
-        Self { engine, sync: None, tool_router: Self::tool_router() }
+        Self { engine, sync: None, remote: None, tool_router: Self::tool_router() }
+    }
+
+    /// Serves principals instead of this machine (docs/remote-server.md). The listener in front
+    /// authenticates each request and attaches its [`remote::Principal`]; this server admits each
+    /// call against that principal's grants and refuses any call that arrives without one.
+    pub fn with_remote(mut self, surface: remote::Surface) -> Self {
+        self.remote = Some(surface);
+        self
+    }
+
+    /// The tool names this server declares, for the test that holds the remote policy table to
+    /// them (R3).
+    pub fn tool_names(&self) -> Vec<String> {
+        self.tool_router.list_all().into_iter().map(|t| t.name.to_string()).collect()
+    }
+
+    /// The remote checks for a resource read: an authenticated principal (R2), a granted workspace
+    /// (R3) that may be served (R5). A refusal reads as "not found for you", never as absence.
+    fn remote_resource_ok(
+        &self,
+        surface: &remote::Surface,
+        context: &RequestContext<RoleServer>,
+        uri: &str,
+    ) -> Result<(), ErrorData> {
+        let Some(p) = principal_of(context) else {
+            return Err(ErrorData::invalid_request(
+                "this surface serves authenticated principals only",
+                None,
+            ));
+        };
+        let ws = match parse_resource_uri(uri) {
+            Some(ResourceUri::Graph(ws))
+            | Some(ResourceUri::Hypergraph(ws))
+            | Some(ResourceUri::Types(ws)) => ws.to_string(),
+            Some(ResourceUri::Observation(id)) => match self.engine.get_observation(id) {
+                Ok(Some(obs)) => obs.workspace().to_string(),
+                _ => return Ok(()), // absent or unreadable: the normal path answers that
+            },
+            _ => return Ok(()),
+        };
+        if !p.can_read(&ws) {
+            return Err(ErrorData::resource_not_found(
+                format!("{uri} is not in a workspace granted to {}", p.name),
+                None,
+            ));
+        }
+        (surface.servable)(&ws).map_err(|why| ErrorData::resource_not_found(why, None))
+    }
+
+    /// For a remote call: may its principal read `ws`, and may `ws` be served at all (R3, R5)?
+    /// Always `Ok` on the local surface.
+    fn remote_read_ok(&self, ws: &str) -> Result<(), String> {
+        let Some(p) = remote::current() else {
+            return Ok(());
+        };
+        if !p.can_read(ws) {
+            return Err(format!("not in a workspace granted to {}", p.name));
+        }
+        match &self.remote {
+            Some(surface) => (surface.servable)(ws),
+            None => Ok(()),
+        }
     }
 
     /// Attaches the federation sync wiring (M4 Phase 4) - enables the `sync_*` tools.
@@ -390,6 +466,13 @@ impl SupragnosisServer {
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.get_entity(&id)).await {
             Ok(Ok(Some(view))) => {
+                // A remote principal sees an entity only in a workspace it holds (R3, R5). The
+                // refusal does not claim absence (P5) - only that this caller may not see it.
+                let ws =
+                    view.entity.provenance.first().map(|p| p.workspace.clone()).unwrap_or_default();
+                if let Err(why) = self.remote_read_ok(&ws) {
+                    return err_json(&why);
+                }
                 self.engine.emit(Event::GetEntity {
                     id: req.id.clone(),
                     name: Some(view.entity.canonical_name.clone()),
@@ -485,6 +568,42 @@ impl SupragnosisServer {
         if scope == "remote" {
             return to_json(&serde_json::json!({ "scope": "remote", "remote": remote_results }));
         }
+        // A remote principal's `*` is the union of its grants, searched one workspace at a time and
+        // merged by score - never the node-wide search, which would rank across workspaces it may
+        // not read (R3). Ties break on id so the merge is deterministic (P16).
+        if let (Some(p), Some("*")) = (remote::current(), req.workspace.as_deref()) {
+            let limit = req.limit.unwrap_or(20);
+            let mut hits = Vec::new();
+            let mut mode = None;
+            for ws in p.readable() {
+                let (engine, query) = (self.engine.clone(), req.query.clone());
+                match tokio::task::spawn_blocking(move || engine.search(&query, Some(&ws), limit))
+                    .await
+                {
+                    Ok(Ok(out)) => {
+                        mode = Some(out.mode);
+                        hits.extend(out.hits);
+                    }
+                    Ok(Err(e)) => return store_failure_json(&e),
+                    Err(e) => return err_json(&format!("task join error: {e}")),
+                }
+            }
+            hits.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+            hits.truncate(limit);
+            let mut resp =
+                serde_json::json!({ "mode": mode, "hits": hits, "workspaces": p.readable() });
+            if hits.is_empty() {
+                resp["note"] =
+                    "no hits in the workspaces granted to you - absence is unknown, not a negation"
+                        .into();
+            }
+            return resp.to_string();
+        }
         let query = req.query.clone();
         let ws = req.workspace.clone();
         let limit = req.limit.unwrap_or(20);
@@ -541,6 +660,36 @@ impl SupragnosisServer {
         description = "Traverse the graph from an entity, following relation direction (from->to). Returns the entities reachable within the maximum hops (max_depth), along with their shortest distance. Reachability runs THROUGH a relation endpoint that no entity row describes yet (partial ingest), but such an endpoint is not listed - so a hit can sit deeper than any listed neighbor. That gap is unknown, not a missing edge."
     )]
     async fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
+        // A remote walk starts only from an entity the principal may read. Relations never cross a
+        // workspace - both endpoints are minted in the observing workspace - so a granted start
+        // keeps the whole walk inside the grant.
+        if remote::current().is_some() {
+            let id2 = req.id.clone();
+            let engine2 = self.engine.clone();
+            match tokio::task::spawn_blocking(move || engine2.get_entity(&id2)).await {
+                Ok(Ok(Some(view))) => {
+                    let ws = view
+                        .entity
+                        .provenance
+                        .first()
+                        .map(|p| p.workspace.clone())
+                        .unwrap_or_default();
+                    if let Err(why) = self.remote_read_ok(&ws) {
+                        return err_json(&why);
+                    }
+                }
+                Ok(Ok(None)) => {
+                    return serde_json::json!({
+                        "hits": [],
+                        "note": "start entity id not found in a workspace you may read - unknown, \
+                                 not a negation. Find the id via search_knowledge first"
+                    })
+                    .to_string()
+                }
+                Ok(Err(e)) => return store_failure_json(&e),
+                Err(e) => return err_json(&format!("task join error: {e}")),
+            }
+        }
         let id = req.id.clone();
         let max_depth = req.max_depth.unwrap_or(3);
         let limit = req.limit.unwrap_or(100);
@@ -1146,6 +1295,57 @@ impl ServerHandler for SupragnosisServer {
             )
     }
 
+    /// Tool calls, hand-written so the remote surface admits each one first (docs/remote-server.md
+    /// Section 4.3). On the local surface this is exactly what `#[tool_handler]` would generate.
+    ///
+    /// Remotely: no principal on the request is a refusal (R2); [`remote::admit`] rewrites or refuses
+    /// the arguments (R3, R4); every workspace the call will read must be servable (R5); and the call
+    /// then runs as its principal, so tools that resolve a workspace from an id can check it too.
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let Some(surface) = &self.remote else {
+            let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+            return self.tool_router.call(tcc).await;
+        };
+        let refuse = |why: String| -> Result<CallToolResponse, ErrorData> {
+            Ok(CallToolResult::error(vec![ContentBlock::text(
+                serde_json::json!({ "error": why }).to_string(),
+            )])
+            .into())
+        };
+        let Some(p) = principal_of(&context) else {
+            return refuse("this surface serves authenticated principals only".into());
+        };
+        let mut request = request;
+        let mut args = request.arguments.take().unwrap_or_default();
+        if let Err(why) = remote::admit(&p, &request.name, &mut args) {
+            tracing::info!(principal = %p.name, tool = %request.name, admitted = false, "remote call");
+            return refuse(why);
+        }
+        let ws = args.get("workspace").and_then(|v| v.as_str()).map(str::to_string);
+        // R5: the workspaces this call reads must be servable. `propose` too - its answer can
+        // describe what the workspace already holds.
+        let reads: Vec<String> = match (&ws, remote::policy(&request.name)) {
+            (Some(w), Some(remote::Policy::Read)) if remote::is_all(w) => p.readable(),
+            (Some(w), Some(remote::Policy::Read)) => vec![w.clone()],
+            (Some(w), _) if request.name == "propose" => vec![w.clone()],
+            _ => Vec::new(),
+        };
+        for w in &reads {
+            if let Err(why) = (surface.servable)(w) {
+                tracing::info!(principal = %p.name, tool = %request.name, workspace = %w, admitted = false, "remote call");
+                return refuse(why);
+            }
+        }
+        tracing::info!(principal = %p.name, tool = %request.name, workspace = ?ws, admitted = true, "remote call");
+        request.arguments = Some(args);
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        remote::as_principal(p, self.tool_router.call(tcc)).await
+    }
+
     /// Tool listing, hand-written so that the SEP-2549 cache hints are always present.
     ///
     /// `#[tool_handler]` generates this method only when the impl does not define one, and the
@@ -1187,8 +1387,27 @@ impl ServerHandler for SupragnosisServer {
     fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
+        // Remotely the concrete resources are the principal's own workspaces, never the node's
+        // default - which may not be granted, and whose name alone would be a disclosure (R3).
+        if self.remote.is_some() {
+            let items: Vec<Resource> = principal_of(&context)
+                .map(|p| p.readable())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|ws| {
+                    Resource::new(
+                        format!("supragnosis://workspace/{ws}/graph"),
+                        format!("{ws} ontology graph"),
+                    )
+                    .with_mime_type("application/json")
+                })
+                .collect();
+            return std::future::ready(Ok(ListResourcesResult::with_all_items(items)
+                .with_ttl_ms(0)
+                .with_cache_scope(CacheScope::Private)));
+        }
         // Workspace discovery entry point - let the client see which workspaces exist first.
         let ws_list = Resource::new("supragnosis://workspaces", "Workspace list")
             .with_description(
@@ -1315,13 +1534,25 @@ impl ServerHandler for SupragnosisServer {
     fn read_resource(
         &self,
         request: ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + Send + '_ {
         let uri = request.uri;
+        if let Some(surface) = &self.remote {
+            if let Err(e) = self.remote_resource_ok(surface, &context, &uri) {
+                return std::future::ready(Err(e));
+            }
+        }
         let result = match parse_resource_uri(&uri) {
             // Workspace list (for discovery) - array of workspace names that hold knowledge.
             Some(ResourceUri::Workspaces) => match self.engine.workspaces() {
                 Ok(list) => {
+                    // Remotely, enumeration is filtered to the grants (R3).
+                    let list: Vec<String> = match principal_of(&context) {
+                        Some(p) if self.remote.is_some() => {
+                            list.into_iter().filter(|w| p.can_read(w)).collect()
+                        }
+                        _ => list,
+                    };
                     Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&list), uri)]))
                 }
                 Err(e) => Err(ErrorData::internal_error(
