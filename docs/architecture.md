@@ -25,7 +25,8 @@
   Section 11 specified),
   [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built),
   [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, built),
-  [`remote-server.md`](remote-server.md) (server profiles and the hub's agent surface, specified).
+  [`remote-server.md`](remote-server.md) (server profiles and the hub's agent surface, built -
+  Section 10 steps 1-3).
 
 ---
 
