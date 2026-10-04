@@ -63,6 +63,9 @@ enum Cmd {
     /// Stdio MCP server that relays to the running daemon - what an AI app launches. Opens no store
     /// and holds no token in the app's config (docs/client-connect.md)
     Bridge,
+    /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini) to this
+    /// node through the bridge; with no app, list them and how each is connected
+    Connect(ConnectArgs),
     /// The always-on daemon as a login item (macOS LaunchAgent com.supragnosis.daemon)
     Service {
         #[command(subcommand)]
@@ -113,6 +116,22 @@ struct ServiceInstallArgs {
     /// set are carried forward on their own.
     #[arg(long = "env", value_name = "KEY=VALUE")]
     env: Vec<String>,
+}
+
+#[derive(Args, Clone, Default)]
+struct ConnectArgs {
+    /// The AI app: claude-desktop, claude-code, cursor, vscode, codex or gemini. Omit to list them.
+    client: Option<String>,
+    /// Remove the supragnosis entry from the app instead of adding it.
+    #[arg(long)]
+    remove: bool,
+    /// Replace a supragnosis entry that is not the bridge - an HTTP entry holding a copy of the
+    /// token, or the store-opening stdio server.
+    #[arg(long)]
+    replace: bool,
+    /// Machine-readable listing (the desktop app reads this).
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Clone, Default)]
@@ -172,6 +191,7 @@ struct RunArgs {
 // The launchd half of the lifecycle is macOS-only. Elsewhere its parsing and plist generation stay
 // compiled and tested (CI runs on Linux) but are never called, which is not dead code to fix.
 mod bridge;
+mod connect;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
 
@@ -183,6 +203,7 @@ fn main() -> Result<()> {
         Cmd::Restart(a) => restart(resolve(a, true)),
         Cmd::Status(a) => status(a.json),
         Cmd::Bridge => bridge_cmd(),
+        Cmd::Connect(a) => connect_cmd(a),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
         Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
         Cmd::Identity(a) => identity_cmd(a),
@@ -1061,6 +1082,195 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
 }
 
 /// Initializes the stderr log subscriber (idempotent). stdout is the MCP stdio channel, so logs must go to stderr.
+/// The program an AI app launches as `<program> bridge`: the stable path, so a Homebrew upgrade does
+/// not leave the app pointing at a removed keg (client-connect.md Section 4).
+fn bridge_program() -> Result<String> {
+    let exe = std::env::current_exe()?.canonicalize()?;
+    Ok(lifecycle::stable_program(&exe, |p| p.exists()).to_string_lossy().to_string())
+}
+
+/// `supragnosis connect [app]` (docs/client-connect.md Section 4).
+fn connect_cmd(a: ConnectArgs) -> Result<()> {
+    use connect::{Client, Entry, CLIENTS};
+    let env = connect::Env::from_process();
+    let program = bridge_program()?;
+    let Some(id) = a.client else {
+        return connect_list(&env, &program, a.json);
+    };
+    let client = Client::parse(&id).with_context(|| {
+        let ids: Vec<&str> = CLIENTS.iter().map(|c| c.id()).collect();
+        format!("unknown app {id:?} - one of: {}", ids.join(", "))
+    })?;
+    if !client.installed(&env) {
+        anyhow::bail!("{} is not installed on this machine", client.name());
+    }
+    let (config, _) = client.config(&env);
+    let before = client.entry(&env);
+    if a.remove {
+        if before == Entry::None {
+            println!("{} has no supragnosis entry - nothing to remove", client.name());
+            return Ok(());
+        }
+        connect_remove(client, &env)?;
+        println!("removed the supragnosis entry from {}", client.name());
+        return Ok(());
+    }
+    match before {
+        Entry::Bridge => {
+            println!("{} is already connected through the bridge", client.name());
+            return Ok(());
+        }
+        Entry::Unknown => anyhow::bail!(
+            "{} could not be read - not touching a file this cannot parse (client-connect.md C3)",
+            config.display()
+        ),
+        Entry::None => {}
+        other if !a.replace => anyhow::bail!(
+            "{} already has a supragnosis entry ({}){} - re-run with --replace to switch it to the bridge",
+            client.name(),
+            other.as_str(),
+            if other == Entry::Http { ", which holds a copy of the token" } else { "" }
+        ),
+        other => {
+            connect_remove(client, &env)?;
+            println!("removed the previous supragnosis entry ({})", other.as_str());
+            if other == Entry::Http {
+                println!("  the copy of the token it held is gone with it");
+            }
+        }
+    }
+    if program.contains("/target/debug/") || program.contains("/target/release/") {
+        println!(
+            "note: the app will launch a build-tree binary ({program}); `cargo clean` removes it"
+        );
+    }
+    match connect::add_argv(client, &program) {
+        Some(argv) => run_client_cli(client, &env, &argv)?,
+        None => {
+            let (path, section) = client.config(&env);
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let edited =
+                connect::upsert(&text, section, connect::NAME, &connect::bridge_entry(&program))
+                    .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+            if let Some(b) = connect::back_up(&path, client.id(), &env.home, unix_now())? {
+                println!("  backup  {}", b.display());
+            }
+            connect::write_replacing(&path, &edited)
+                .with_context(|| format!("writing {}", path.display()))?;
+        }
+    }
+    let after = client.entry(&env);
+    if after != Entry::Bridge {
+        anyhow::bail!(
+            "{} did not take the entry - it reads as {} in {}",
+            client.name(),
+            after.as_str(),
+            config.display()
+        );
+    }
+    println!("connected {} -> {program} bridge", client.name());
+    println!("  next    {}", client.next_step());
+    Ok(())
+}
+
+fn connect_remove(client: connect::Client, env: &connect::Env) -> Result<()> {
+    match connect::remove_argv(client) {
+        Some(argv) => run_client_cli(client, env, &argv),
+        None => {
+            let (path, section) = client.config(env);
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let Some(edited) = connect::remove(&text, section, connect::NAME)
+                .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?
+            else {
+                return Ok(());
+            };
+            if let Some(b) = connect::back_up(&path, client.id(), &env.home, unix_now())? {
+                println!("  backup  {}", b.display());
+            }
+            connect::write_replacing(&path, &edited)
+                .with_context(|| format!("writing {}", path.display()))
+        }
+    }
+}
+
+fn run_client_cli(client: connect::Client, env: &connect::Env, argv: &[String]) -> Result<()> {
+    let cli = client
+        .cli(env)
+        .with_context(|| format!("{}'s command-line tool was not found", client.name()))?;
+    let out = std::process::Command::new(&cli)
+        .args(argv)
+        .env("PATH", env.path_var())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .with_context(|| format!("running {}", cli.display()))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let msg = String::from_utf8_lossy(&out.stdout);
+        anyhow::bail!(
+            "{} {} failed: {}",
+            cli.display(),
+            argv.first().map(String::as_str).unwrap_or(""),
+            if err.trim().is_empty() {
+                msg.trim().to_string()
+            } else {
+                err.trim().to_string()
+            }
+        );
+    }
+    Ok(())
+}
+
+fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
+    use connect::{Entry, CLIENTS};
+    let rows: Vec<_> = CLIENTS
+        .iter()
+        .map(|c| (*c, c.installed(env), if c.installed(env) { c.entry(env) } else { Entry::None }))
+        .collect();
+    if json {
+        let clients: Vec<_> = rows
+            .iter()
+            .map(|(c, installed, entry)| {
+                serde_json::json!({
+                    "id": c.id(), "name": c.name(), "installed": installed,
+                    "entry": entry.as_str(), "config": c.config(env).0,
+                    "via": match c.via() { connect::Via::Cli => "cli", connect::Via::File => "file" },
+                })
+            })
+            .collect();
+        println!("{}", serde_json::json!({ "program": program, "clients": clients }));
+        return Ok(());
+    }
+    println!(
+        "AI apps - connect one with `supragnosis connect <app>`, or from the Supragnosis menu"
+    );
+    for (c, installed, entry) in rows {
+        let state = match (installed, entry) {
+            (false, _) => "not installed".to_string(),
+            (true, Entry::None) => "not connected".to_string(),
+            (true, Entry::Bridge) => "connected (bridge)".to_string(),
+            (true, Entry::Http) => format!(
+                "connected over HTTP, holding a copy of the token - `supragnosis connect {} --replace` moves it to the bridge",
+                c.id()
+            ),
+            (true, Entry::Stdio) => format!(
+                "connected to the store-opening stdio server, which cannot run beside the daemon - `supragnosis connect {} --replace`",
+                c.id()
+            ),
+            (true, Entry::Other) => "has another entry named supragnosis".to_string(),
+            (true, Entry::Unknown) => format!("its config could not be read ({})", c.config(env).0.display()),
+        };
+        println!("  {:<15} {:<15} {state}", c.id(), c.name());
+    }
+    Ok(())
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// `supragnosis bridge`: stdout carries JSON-RPC and nothing else, so nothing here logs to it.
 fn bridge_cmd() -> Result<()> {
     let addr = std::env::var("SUPRAGNOSIS_HTTP_ADDR")
