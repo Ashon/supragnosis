@@ -33,8 +33,12 @@ supragnosis-mcp.workspace = true
 supragnosis-viz.workspace = true
 # transport-streamable-http-server: MCP HTTP service of the standalone daemon (SUPRAGNOSIS_HTTP_ADDR).
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
-# net: viewer/daemon TcpListener bind. Not in the workspace-wide set, so added locally.
-tokio = { workspace = true, features = ["net"] }
+# net: viewer/daemon TcpListener bind. io-util/sync/time: the stdio bridge's line relay, single
+# writer and retry wait (docs/client-connect.md). Not in the workspace-wide set, so added locally.
+tokio = { workspace = true, features = ["net", "io-util", "sync", "time"] }
+# The stdio bridge's HTTP client to the local daemon. Already in the tree through the sync
+# transport, so a direct dependency rather than a new compilation unit.
+reqwest.workspace = true
 # HTTP server that mounts the MCP streamable-http service (daemon mode).
 axum.workspace = true
 anyhow.workspace = true
