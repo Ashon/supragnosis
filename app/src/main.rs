@@ -77,6 +77,26 @@ struct TrayApps {
     hint: Mutex<Option<String>>,
 }
 
+/// The Server submenu (docs/remote-server.md Section 5): one check item per server profile, rebuilt
+/// when the list changes, and the active remote profile - when there is one, this machine's daemon
+/// is not what the AI apps use, and the shell says so instead of showing local knowledge.
+struct TrayServers {
+    menu: Submenu<tauri::Wry>,
+    items: Mutex<Vec<(String, CheckMenuItem<tauri::Wry>)>>,
+    remote: Mutex<Option<RemoteServer>>,
+}
+
+#[derive(Clone)]
+struct RemoteServer {
+    name: String,
+    url: String,
+    answering: bool,
+    credential_refused: bool,
+}
+
+/// Restart Daemon, kept so it can be disabled while a remote server is active.
+struct TrayRestart(MenuItem<tauri::Wry>);
+
 /// The apps `supragnosis connect` knows, by id and display name. Listed here only to build the menu
 /// before the CLI has answered; what each one's state is comes from `connect --json`, and an id the
 /// CLI does not report is shown as needing a newer CLI.
@@ -361,6 +381,23 @@ fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Ve
 /// the user is looking at). Palette mirrors the viewer's candlelight theme.
 // data-tauri-drag-region: with the overlay title bar there is no other chrome to drag the
 // window by while the splash is up.
+/// What the viewer shows while a remote profile is active: which server the AI apps use, and that
+/// browsing it arrives with the network read tier (remote-server.md Section 5). Not an empty graph,
+/// which would read as "no knowledge" (P5).
+fn remote_html(r: &RemoteServer) -> String {
+    let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let state = match (r.answering, r.credential_refused) {
+        (true, true) => "it answers, but refused this machine's credential",
+        (true, false) => "it answers",
+        (false, _) => "it does not answer right now",
+    };
+    format!(
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#5c6472;margin-top:14px;font-size:11px">browsing a remote server's knowledge here arrives with a later release / tray: Server &gt; This Mac to switch back</div></div></body>"#,
+        name = esc(&r.name),
+        url = esc(&r.url),
+    )
+}
+
 fn starting_html(status: &str) -> String {
     let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     format!(
@@ -370,6 +407,12 @@ fn starting_html(status: &str) -> String {
 
 /// Runs attach-or-spawn and publishes the outcome (state + tray status line).
 async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
+    // A remote profile means this machine's daemon is not what the AI apps use - so the shell does
+    // not start one for them (remote-server.md Section 5).
+    refresh_status(&app).await;
+    if active_remote(&app).is_some() {
+        return;
+    }
     let state = match ensure_daemon(&sock).await {
         Ok(Some(child)) => Daemon::Spawned(child),
         Ok(None) => Daemon::External,
@@ -452,8 +495,140 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
 }
 
 /// Re-reads the CLI's view and republishes the status line and the Start at Login switch.
+fn active_remote(app: &tauri::AppHandle) -> Option<RemoteServer> {
+    app.try_state::<TrayServers>().and_then(|s| s.remote.lock().unwrap().clone())
+}
+
+/// `supragnosis server --json`. `None` when the CLI predates profiles.
+fn cli_server_list() -> Option<serde_json::Value> {
+    let out = run_cli(&["server", "--json"])?;
+    if !out.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&out.stdout).ok()
+}
+
+/// Re-reads the server profiles: rebuilds the submenu when the list changed, checks the active one,
+/// and records whether a remote server is active.
+async fn refresh_servers(app: &tauri::AppHandle) {
+    let Some(servers) = app.try_state::<TrayServers>() else {
+        return;
+    };
+    let list = tokio::task::spawn_blocking(cli_server_list).await.ok().flatten();
+    let Some(list) = list else {
+        *servers.remote.lock().unwrap() = None;
+        return;
+    };
+    let active = list["active"].as_str().unwrap_or("local").to_string();
+    let rows: Vec<(String, String, bool)> = list["servers"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|r| {
+                    (
+                        r["name"].as_str().unwrap_or("?").to_string(),
+                        r["url"].as_str().unwrap_or("").to_string(),
+                        r["remote"].as_bool().unwrap_or(false),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    {
+        let mut items = servers.items.lock().unwrap();
+        let names: Vec<&String> = items.iter().map(|(n, _)| n).collect();
+        let wanted: Vec<&String> = rows.iter().map(|(n, _, _)| n).collect();
+        if names != wanted {
+            for (_, item) in items.drain(..) {
+                let _ = servers.menu.remove(&item);
+            }
+            for (name, url, remote) in &rows {
+                let label = if *remote {
+                    let host =
+                        url.split("//").nth(1).and_then(|h| h.split('/').next()).unwrap_or(url);
+                    format!("{name} - {host}")
+                } else {
+                    "This Mac".to_string()
+                };
+                if let Ok(item) = CheckMenuItem::with_id(
+                    app,
+                    format!("server:{name}"),
+                    label,
+                    true,
+                    false,
+                    None::<&str>,
+                ) {
+                    let _ = servers.menu.append(&item);
+                    items.push((name.clone(), item));
+                }
+            }
+        }
+        for (name, item) in items.iter() {
+            let _ = item.set_checked(*name == active);
+        }
+    }
+    let remote = rows.iter().find(|(n, _, r)| *r && *n == active).map(|(n, u, _)| RemoteServer {
+        name: n.clone(),
+        url: u.clone(),
+        answering: list["check"]["answering"].as_bool().unwrap_or(false),
+        credential_refused: list["check"]["credential"].as_bool() == Some(false),
+    });
+    *servers.remote.lock().unwrap() = remote;
+}
+
+/// A Server item was clicked: make that profile the one AI apps here use. Switching to a remote
+/// server leaves any local daemon running (it is not this app's to stop); switching back to this Mac
+/// brings the local daemon up the usual way.
+async fn use_server(app: tauri::AppHandle, sock: PathBuf, name: String) {
+    let n = name.clone();
+    let out = tokio::task::spawn_blocking(move || run_cli(&["server", "use", &n]))
+        .await
+        .ok()
+        .flatten();
+    let label = if name == "local" { "this Mac".to_string() } else { name.clone() };
+    let note = match out {
+        Some(o) if o.status.success() => {
+            format!("AI apps here use {label} from their next session")
+        }
+        Some(o) => format!("switching to {label} failed: {}", cli_outcome(&o).1),
+        None => "supragnosis CLI not found".to_string(),
+    };
+    set_note(&app, Some(note));
+    bring_up(app.clone(), sock).await;
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval("location.reload()");
+    }
+}
+
 async fn refresh_status(app: &tauri::AppHandle) {
+    refresh_servers(app).await;
     refresh_apps(app).await;
+    if let Some(r) = active_remote(app) {
+        // The daemon controls are about this machine's daemon, which is not what the AI apps use.
+        if let Some(restart) = app.try_state::<TrayRestart>() {
+            let _ = restart.0.set_enabled(false);
+        }
+        if let Some(login) = app.try_state::<TrayLogin>() {
+            let _ = login.0.set_enabled(false);
+        }
+        let state = match (r.answering, r.credential_refused) {
+            (true, true) => "credential refused",
+            (true, false) => "answering",
+            (false, _) => "not answering",
+        };
+        let note = app.state::<TrayNote>().0.lock().unwrap().clone();
+        let text = match note {
+            Some(n) if !n.is_empty() => format!("server {} - {state} | {n}", r.name),
+            _ => format!("server {} - {state}", r.name),
+        };
+        if let Some(status) = app.try_state::<TrayStatus>() {
+            let _ = status.0.set_text(text);
+        }
+        return;
+    }
+    if let Some(restart) = app.try_state::<TrayRestart>() {
+        let _ = restart.0.set_enabled(true);
+    }
     let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
     let note = app
         .state::<TrayNote>()
@@ -780,6 +955,18 @@ fn main() {
                         SHELL_CSP,
                         br#"{"error":"SSE rides the Tauri event bridge (viz-event), not the proxy"}"#.to_vec(),
                     )
+                } else if let Some(r) = active_remote(&app) {
+                    // A remote profile: the local socket is not the knowledge the AI apps use.
+                    if target == "/" {
+                        resp(200, "text/html; charset=utf-8", SHELL_CSP, remote_html(&r).into_bytes())
+                    } else {
+                        resp(
+                            502,
+                            "application/json",
+                            SHELL_CSP,
+                            br#"{"error":"a remote server is active - this window does not browse it yet"}"#.to_vec(),
+                        )
+                    }
                 } else {
                     match tokio::time::timeout(Duration::from_secs(15), uds_fetch(&sock, &target)).await {
                         // The daemon's own policy governs the daemon's own page. An answer with no
@@ -860,6 +1047,7 @@ fn main() {
             let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
                 app_items.iter().map(|(_, _, i)| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
             let ai_apps = Submenu::with_items(app, "AI Apps", true, &refs)?;
+            let servers = Submenu::with_items(app, "Server", true, &[])?;
             // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
             // the macOS app menu; lowercase `supragnosis` is the CLI and the daemon binary.
             let name = app.package_info().name.clone();
@@ -872,6 +1060,7 @@ fn main() {
                     &status,
                     &restart,
                     &login,
+                    &servers,
                     &ai_apps,
                     &PredefinedMenuItem::separator(app)?,
                     &quit,
@@ -881,6 +1070,12 @@ fn main() {
             app.manage(TrayLogin(login));
             app.manage(TrayNote(Mutex::new(None)));
             app.manage(TrayApps { items: app_items, hint: Mutex::new(None) });
+            app.manage(TrayServers {
+                menu: servers.clone(),
+                items: Mutex::new(Vec::new()),
+                remote: Mutex::new(None),
+            });
+            app.manage(TrayRestart(restart.clone()));
             let tray_sock = sock.clone();
             TrayIconBuilder::with_id("supragnosis")
                 // Template image (bare mark, alpha-only): macOS recolors it for light/dark menu bars.
@@ -905,6 +1100,12 @@ fn main() {
                     other => {
                         if let Some(id) = other.strip_prefix("app:") {
                             tauri::async_runtime::spawn(toggle_app(app.clone(), id.to_string()));
+                        } else if let Some(name) = other.strip_prefix("server:") {
+                            tauri::async_runtime::spawn(use_server(
+                                app.clone(),
+                                tray_sock.clone(),
+                                name.to_string(),
+                            ));
                         }
                     }
                 })
