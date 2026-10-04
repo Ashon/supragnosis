@@ -36,18 +36,11 @@ echo "[4/5] Health check ($MCP_URL)"
 # A GET without initialize returns 405/event, but this only checks whether the port is open.
 if curl -s -o /dev/null -m 3 "http://127.0.0.1:7373/mcp" ; then echo "  MCP port responds OK"; else echo "  (may still be starting up - check the logs)"; fi
 
-echo "[5/5] Register Claude Code with the http transport"
-claude mcp remove supragnosis -s user 2>/dev/null || true
-# The daemon requires its bearer token: loopback confines the surface to this host, and on a
-# multi-user box that is every local account. Generated on first start, mode 0600.
-MCP_TOKEN="$(cat "$HOME/.supragnosis/mcp.token" 2>/dev/null || true)"
-if [ -n "$MCP_TOKEN" ]; then
-  claude mcp add --transport http supragnosis "$MCP_URL" --scope user \
-    --header "Authorization: Bearer $MCP_TOKEN"
-else
-  echo "  no token at ~/.supragnosis/mcp.token yet - run 'supragnosis status' once the daemon is up"
-  echo "  and register with the command it prints."
-fi
+echo "[5/5] Connect Claude Code through the bridge"
+# `connect` registers `supragnosis bridge`, which reads the bearer token from its 0600 file itself,
+# so Claude Code's settings hold no copy of it (docs/client-connect.md). --replace switches an
+# earlier http entry, the one that did hold a copy, over to the bridge.
+"$BIN_DST" connect claude-code --replace || echo "  Claude Code not found - 'supragnosis connect' lists the apps it can connect"
 
 echo ""
 echo "Done. Viewer socket: ~/.supragnosis/viz.sock (HTTP over UDS) | Logs: ~/.supragnosis/log/"

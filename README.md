@@ -49,26 +49,28 @@ to resolve conflicts means recomputing, not rewriting.
 ```bash
 brew tap ashon/tap
 brew install supragnosis-server
-supragnosis service install     # MCP on :7373 + local viewer, now and at every login
-
-claude mcp add supragnosis --transport http http://127.0.0.1:7373/mcp \
-  --header "Authorization: Bearer $(cat ~/.supragnosis/mcp.token)"
+supragnosis service install         # MCP on :7373 + local viewer, now and at every login
+supragnosis connect claude-code     # or claude-desktop, cursor, vscode, codex, gemini
 ```
 
-The daemon speaks HTTP on loopback, and loopback confines it to the *host*, not to one user - so
-a bearer token is what makes it yours. It is generated on first start at `~/.supragnosis/mcp.token`
-(mode 0600); `supragnosis status` prints the command above, reading the token from that file rather
-than printing it.
+`supragnosis connect` with no app lists them and says how each one is connected. It registers
+`supragnosis bridge` with the app: a stdio server that relays to the daemon and reads the daemon's
+bearer token from `~/.supragnosis/mcp.token` (mode 0600) itself, so no app's settings hold a copy.
+That also reaches Claude Desktop, which takes local servers over stdio only. A client that wants a
+URL instead can use `http://127.0.0.1:7373/mcp` with that token; `supragnosis status` prints the
+command, reading the token from its file rather than printing it.
 
-With the desktop app (`brew install --cask supragnosis`), Start at Login in its tray menu does the
-same as `supragnosis service install`. After `brew upgrade`, `supragnosis restart` loads the new
-binary - until then `supragnosis status` and the tray say the daemon is running the old one.
+With the desktop app (`brew install --cask supragnosis`), its tray menu does both without a
+terminal: Start at Login keeps the daemon running, and AI Apps connects Claude Desktop, Claude Code
+and the others with a click. After `brew upgrade`, `supragnosis restart` loads the new binary -
+until then `supragnosis status` and the tray say the daemon is running the old one.
 
 Not on Homebrew:
 
 ```bash
 curl -fsSL https://supragnosis.dev/install.sh | sh    # ~/.local/bin, checksum-verified
-claude mcp add supragnosis -- $(command -v supragnosis)
+supragnosis service install                           # macOS; Linux: deploy/systemd
+supragnosis connect claude-code
 ```
 
 Prebuilt binaries are keyword search only. For local semantic recall (ONNX, no API calls),
