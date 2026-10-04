@@ -4,7 +4,7 @@
 > one. Companion to [daemon-lifecycle.md](daemon-lifecycle.md) (who runs the daemon) and
 > [architecture.md](architecture.md) Section 10 (the local surfaces).
 >
-> Status: **specification**.
+> Status: **built** (Section 9 steps 1-4). What building it changed is recorded in Section 11.
 
 ## 1. Why this exists
 
@@ -188,3 +188,43 @@ steps.
 | P24 - the operator's file is theirs | Section 4 (backup, merge, refuse what does not parse, `--replace` to take over); C3 |
 | P5 - unknown is not absent | Section 4's listing distinguishes not installed, not connected, and connected some other way |
 | daemon-lifecycle.md L1 - one owner | C1: the bridge is never a second writer |
+
+Guarded by:
+
+- `the_bridge_relays_the_daemons_surface_unchanged` - C4. The tool list, and a tool call that lands
+  in the daemon's store.
+- `a_daemon_restart_is_invisible_through_the_bridge` - the replayed handshake.
+- `the_bridge_says_what_to_do_when_no_daemon_answers` and
+  `a_refused_token_is_reported_with_its_file` - errors a person can act on.
+- `registrations_run_the_bridge_and_carry_no_secret` - C2.
+- `an_edit_changes_one_member_and_nothing_else`, `a_file_that_does_not_parse_is_refused` and
+  `a_backup_never_replaces_an_earlier_one` - C3.
+- `an_app_item_says_what_a_click_will_do` - the tray's AI Apps items.
+
+Checked end to end:
+- **Bridge, against the live daemon**, with reads only: initialize, tools/list (13 tools),
+  search_knowledge, then a clean exit when stdin closed.
+- **`connect` under a temporary HOME:**
+  - Claude Desktop by file edit: add, then "already connected", then remove back to the original
+    bytes.
+  - Codex, Gemini and Claude Code through their real CLIs, each read back as the bridge.
+  - An HTTP entry with a fake token: refused without `--replace`, and with it replaced and the
+    token gone.
+- **The tray**, in a development build on this machine: the AI Apps submenu showed Claude Code as
+  "connected over HTTP - click to switch" and Cursor as not installed. No item was clicked.
+- **Not run live**: VS Code's `code --add-mcp`, which would have changed this machine's real
+  profile. Its arguments are covered by the unit test.
+
+## 11. What building it changed
+
+- **The bridge opens a new connection for every request.** A pooled connection outlives a daemon
+  restart. A request sent on it then fails in a way that cannot tell "never delivered" apart from
+  "delivered, then the daemon died", and retrying the second would run a write twice. A refused
+  connection is unambiguous, so that is the only failure the bridge retries. On loopback a fresh
+  connection costs nothing worth saving.
+- **Backups never overwrite each other.** The first version named a backup by the second it was
+  taken. `connect` followed by `--remove` within one second then replaced the copy of the original
+  with a copy of the first edit. Names now count up instead.
+- **VS Code keeps its settings in a different place on Linux** (`~/.config/Code/User`). The table in
+  Section 4 gives the macOS path.
+

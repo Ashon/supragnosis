@@ -400,6 +400,11 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
     include_str!("../../supragnosis-cli/src/lifecycle.rs"),
+    include_str!("../../supragnosis-cli/src/bridge.rs"),
+    include_str!("../../supragnosis-cli/src/connect.rs"),
+    // The desktop shell is its own workspace, but its tests are named by client-connect.md and
+    // daemon-lifecycle.md like any other guard, so its source is scanned too.
+    include_str!("../../../app/src/main.rs"),
 ];
 
 /// One row per principle in `docs/principles.md`, in order, each carrying the clauses that
