@@ -378,6 +378,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards will live in the CLI crate, beside the lifecycle's,
     // since the bridge and `connect` are CLI subcommands the desktop app calls.
     ("docs/client-connect.md", include_str!("../../../docs/client-connect.md")),
+    // Listed the day it was written. Its guards will split between the CLI (profiles, principals)
+    // and the MCP crate, where the remote policy table and its every-tool-is-classified test live.
+    ("docs/remote-server.md", include_str!("../../../docs/remote-server.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
