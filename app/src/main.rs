@@ -30,7 +30,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     http, Emitter, Listener, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
@@ -70,6 +70,24 @@ struct TrayLogin(CheckMenuItem<tauri::Wry>);
 /// The last lifecycle outcome worth showing beside the daemon state - a take-over, a refused
 /// restart. docs/daemon-lifecycle.md L4: the CLI's result reaches the tray, never discarded.
 struct TrayNote(Mutex<Option<String>>);
+/// The AI Apps submenu (docs/client-connect.md Section 5): one check item per app the CLI's
+/// `connect` knows, and the hint the status line shows while none is connected.
+struct TrayApps {
+    items: Vec<(&'static str, &'static str, CheckMenuItem<tauri::Wry>)>,
+    hint: Mutex<Option<String>>,
+}
+
+/// The apps `supragnosis connect` knows, by id and display name. Listed here only to build the menu
+/// before the CLI has answered; what each one's state is comes from `connect --json`, and an id the
+/// CLI does not report is shown as needing a newer CLI.
+const AI_APPS: &[(&str, &str)] = &[
+    ("claude-desktop", "Claude Desktop"),
+    ("claude-code", "Claude Code"),
+    ("cursor", "Cursor"),
+    ("vscode", "VS Code"),
+    ("codex", "Codex"),
+    ("gemini", "Gemini CLI"),
+];
 
 fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
@@ -435,8 +453,15 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
 
 /// Re-reads the CLI's view and republishes the status line and the Start at Login switch.
 async fn refresh_status(app: &tauri::AppHandle) {
+    refresh_apps(app).await;
     let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-    let note = app.state::<TrayNote>().0.lock().unwrap().clone();
+    let note = app
+        .state::<TrayNote>()
+        .0
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| app.try_state::<TrayApps>().and_then(|a| a.hint.lock().unwrap().clone()));
     let text =
         status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), st.as_ref(), note.as_deref());
     if let Some(status) = app.try_state::<TrayStatus>() {
@@ -456,6 +481,107 @@ async fn refresh_status(app: &tauri::AppHandle) {
             }
         }
     }
+}
+
+/// `supragnosis connect --json`. `None` when the CLI predates it.
+fn cli_connect_list() -> Option<serde_json::Value> {
+    let out = run_cli(&["connect", "--json"])?;
+    if !out.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&out.stdout).ok()
+}
+
+/// One AI Apps item's label and state, from the CLI's report on that app: (text, checked, enabled).
+/// Checked means connected through the bridge; any other entry is named, because the person
+/// clicking it is about to replace it.
+fn app_item_state(name: &str, report: Option<&serde_json::Value>) -> (String, bool, bool) {
+    let Some(r) = report else {
+        return (format!("{name} (update supragnosis-server)"), false, false);
+    };
+    if !r["installed"].as_bool().unwrap_or(false) {
+        return (format!("{name} - not installed"), false, false);
+    }
+    match r["entry"].as_str().unwrap_or("none") {
+        "bridge" => (name.to_string(), true, true),
+        "http" => (format!("{name} (connected over HTTP - click to switch)"), false, true),
+        "stdio" => (format!("{name} (old stdio entry - click to switch)"), false, true),
+        "other" => (format!("{name} (another supragnosis entry - click to replace)"), false, true),
+        "unknown" => (format!("{name} (its settings file could not be read)"), false, false),
+        _ => (name.to_string(), false, true),
+    }
+}
+
+/// Re-reads which AI apps are connected and republishes the submenu, and the status-line hint for
+/// the state a new user is in - nothing connected yet.
+async fn refresh_apps(app: &tauri::AppHandle) {
+    let Some(apps) = app.try_state::<TrayApps>() else {
+        return;
+    };
+    let list = tokio::task::spawn_blocking(cli_connect_list).await.ok().flatten();
+    let reports = list.as_ref().and_then(|l| l["clients"].as_array());
+    let mut any = false;
+    for (id, name, item) in &apps.items {
+        let report = reports.and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)));
+        let (text, checked, enabled) = app_item_state(name, report);
+        any |= report.is_some_and(|r| r["entry"].as_str().is_some_and(|e| e != "none"));
+        let _ = item.set_text(text);
+        let _ = item.set_checked(checked);
+        let _ = item.set_enabled(enabled);
+    }
+    *apps.hint.lock().unwrap() =
+        (list.is_some() && !any).then(|| "no AI app connected yet - see AI Apps".to_string());
+}
+
+/// An AI Apps item was clicked: connect it through the bridge, or disconnect it if it already is.
+/// The click is the consent to replace another supragnosis entry, as Start at Login's is to take
+/// over (client-connect.md Section 5). The CLI decides and does; the shell reports what it said.
+async fn toggle_app(app: tauri::AppHandle, id: String) {
+    let Some(apps) = app.try_state::<TrayApps>() else {
+        return;
+    };
+    let Some((_, name, item)) = apps.items.iter().find(|(i, _, _)| *i == id) else {
+        return;
+    };
+    let name = *name;
+    let _ = item.set_enabled(false); // one operation at a time
+    let connected = tokio::task::spawn_blocking(cli_connect_list)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|l| {
+            l["clients"].as_array()?.iter().find(|r| r["id"].as_str() == Some(&id)).cloned()
+        })
+        .is_some_and(|r| r["entry"].as_str() == Some("bridge"));
+    let args: Vec<String> = if connected {
+        vec!["connect".into(), id.clone(), "--remove".into()]
+    } else {
+        vec!["connect".into(), id.clone(), "--replace".into()]
+    };
+    let out = tokio::task::spawn_blocking(move || {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_cli(&args)
+    })
+    .await
+    .ok()
+    .flatten();
+    let note = match out {
+        None => format!("{name}: supragnosis CLI not found"),
+        Some(o) if o.status.success() && connected => format!("{name} disconnected"),
+        Some(o) if o.status.success() => {
+            // The CLI's "next" line is the one thing the person still has to do.
+            let next = String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("next").map(|n| n.trim().to_string()));
+            match next {
+                Some(n) => format!("{name} connected - {n}"),
+                None => format!("{name} connected"),
+            }
+        }
+        Some(o) => format!("connecting {name} failed: {}", cli_outcome(&o).1),
+    };
+    set_note(&app, Some(note));
+    refresh_status(&app).await;
 }
 
 fn set_note(app: &tauri::AppHandle, note: Option<String>) {
@@ -719,6 +845,21 @@ fn main() {
             let restart = MenuItem::with_id(app, "restart", "Restart Daemon", true, None::<&str>)?;
             let login =
                 CheckMenuItem::with_id(app, "login", "Start at Login", false, false, None::<&str>)?;
+            let mut app_items = Vec::new();
+            for (id, label) in AI_APPS {
+                let item = CheckMenuItem::with_id(
+                    app,
+                    format!("app:{id}"),
+                    *label,
+                    false,
+                    false,
+                    None::<&str>,
+                )?;
+                app_items.push((*id, *label, item));
+            }
+            let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+                app_items.iter().map(|(_, _, i)| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+            let ai_apps = Submenu::with_items(app, "AI Apps", true, &refs)?;
             // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
             // the macOS app menu; lowercase `supragnosis` is the CLI and the daemon binary.
             let name = app.package_info().name.clone();
@@ -731,6 +872,7 @@ fn main() {
                     &status,
                     &restart,
                     &login,
+                    &ai_apps,
                     &PredefinedMenuItem::separator(app)?,
                     &quit,
                 ],
@@ -738,6 +880,7 @@ fn main() {
             app.manage(TrayStatus(status));
             app.manage(TrayLogin(login));
             app.manage(TrayNote(Mutex::new(None)));
+            app.manage(TrayApps { items: app_items, hint: Mutex::new(None) });
             let tray_sock = sock.clone();
             TrayIconBuilder::with_id("supragnosis")
                 // Template image (bare mark, alpha-only): macOS recolors it for light/dark menu bars.
@@ -759,7 +902,11 @@ fn main() {
                         tauri::async_runtime::spawn(toggle_login(app.clone(), tray_sock.clone()));
                     }
                     "quit" => app.exit(0),
-                    _ => {}
+                    other => {
+                        if let Some(id) = other.strip_prefix("app:") {
+                            tauri::async_runtime::spawn(toggle_app(app.clone(), id.to_string()));
+                        }
+                    }
                 })
                 .build(app)?;
 
@@ -878,7 +1025,28 @@ mod csp_tests {
 
 #[cfg(test)]
 mod status_text_tests {
-    use super::{status_text, Daemon};
+    use super::{app_item_state, status_text, Daemon};
+
+    /// An AI Apps item is checked only for the bridge, names any other entry a click would replace,
+    /// and is disabled where a click could do nothing - the app is not installed, its settings could
+    /// not be read, or the CLI is too old to know `connect`.
+    #[test]
+    fn an_app_item_says_what_a_click_will_do() {
+        let r = |installed: bool, entry: &str| serde_json::json!({"installed": installed, "entry": entry});
+        assert_eq!(
+            app_item_state("Claude Code", Some(&r(true, "bridge"))),
+            ("Claude Code".into(), true, true)
+        );
+        let (text, checked, enabled) = app_item_state("Claude Code", Some(&r(true, "http")));
+        assert!(text.contains("HTTP") && !checked && enabled, "{text}");
+        assert_eq!(
+            app_item_state("Cursor", Some(&r(false, "none"))),
+            ("Cursor - not installed".into(), false, false)
+        );
+        assert!(!app_item_state("VS Code", Some(&r(true, "unknown"))).2);
+        assert!(!app_item_state("Codex", None).2, "an old CLI cannot connect anything");
+        assert_eq!(app_item_state("Codex", Some(&r(true, "none"))), ("Codex".into(), false, true));
+    }
 
     fn st(
         situation: &str,
