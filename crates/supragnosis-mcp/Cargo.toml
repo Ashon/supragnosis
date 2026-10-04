@@ -24,6 +24,10 @@ serde_json.workspace = true
 # Tool handlers offload blocking store calls via spawn_blocking (HTTP concurrency).
 # rt(-multi-thread) is a workspace-wide feature, so spawn_blocking is available.
 tokio.workspace = true
+# The remote surface (docs/remote-server.md): the principal rides the HTTP request's extensions,
+# which rmcp hands a handler as `http::request::Parts`, and every remote call leaves an audit line.
+http = "1"
+tracing.workspace = true
 
 [dev-dependencies]
 # For integration tests that drive the MCP tool surface over the real protocol.
