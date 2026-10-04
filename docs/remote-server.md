@@ -5,7 +5,8 @@
 > Companion to [client-connect.md](client-connect.md) (the bridge every AI app launches) and
 > [federation.md](federation.md) (nodes that replicate; Section 6 is the trust model this extends).
 >
-> Status: **specification**.
+> Status: **built** (Section 10 steps 1-3); steps 4-5 are specified. What building it changed is
+> in Section 12.
 
 ## 1. Why this exists
 
@@ -250,3 +251,46 @@ Owed beyond these: per-principal rate limits, and credential rotation without re
 | P23 - gate to canon, I17 | R7: verdicts stay off the remote surface until they can be a principal's own act |
 | P24 - refuse when the configuration did not authorize | Section 4.1's bind rule; R1, R8 |
 | F19 - no unauthenticated write surface | R2 |
+
+Guarded by:
+
+- **Client profiles**: `a_remote_server_is_reached_over_verified_tls_or_loopback`,
+  `the_environment_names_a_server_only_with_a_credential_file`.
+- **The remote policy (R3, R4, R7)**: `every_tool_has_a_remote_policy`,
+  `a_principal_reads_only_its_grants`, `a_remote_write_is_the_principals_own`,
+  `governance_and_node_operations_are_refused_remotely`.
+- **The hub, end to end over HTTP through the bridge (R2-R4)**:
+  `principals_are_admitted_and_revoked_through_the_file`,
+  `a_principal_sees_and_writes_only_what_it_was_granted`.
+- **Consent (R5)**: `another_nodes_knowledge_needs_its_consent`,
+  `consent_rides_a_header_and_an_older_node_sends_none`, `consent_is_kept_and_can_be_withdrawn`,
+  `serving_is_narrowed_to_what_is_shared`.
+
+Checked end to end with two scratch homes - a hub on loopback with one principal, and a client
+whose active profile points at it:
+- `server` reported the hub answering.
+- Through the bridge, an observe that claimed `on_behalf_of: "mallory"` landed in the hub's log as
+  `alice`, at `agent_extracted`.
+- Search answered inside the grant and was refused outside it, and `review` was refused.
+- Every call left an audit line.
+- `principal remove` on the running hub made the next request fail with the credential file named,
+  without a restart.
+
+## 12. What building it changed
+
+- **Consent travels in a header, not a request field.** An older hub ignores a header it does not
+  know. A new field in the sync request body could fail its strict request parsing. An older node,
+  in turn, sends no header, which the hub reads as no change rather than as a withdrawal.
+- **Only `search_knowledge` takes `*` remotely.** `workspace_map`, `list_proposals` and
+  `get_proposal` answer a `*` with the principal's grants, so the refusal lists the choices. A
+  remote `*` search runs once per granted workspace and merges by score. It is never the node-wide
+  search filtered afterwards, because a search hit does not carry its workspace.
+- **Origins are read per call, not cached.** The engine's log epoch does not move when sync applies
+  events (a known gap). A cache keyed on it could keep serving a workspace after another node's
+  unconsented knowledge arrived. The scan is linear in the workspace's log; caching it is owed along
+  with that gap.
+- **rmcp's Host allowlist is off on the remote router.** It guards a loopback server against DNS
+  rebinding. This surface is reached by whatever name the operator gives the hub, and every request
+  carries a bearer credential that a rebinding page cannot attach.
+- **Only POSTs are timed out (60 s).** A GET is the event stream a client keeps open on purpose.
+

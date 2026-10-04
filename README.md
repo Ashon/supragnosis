@@ -205,7 +205,33 @@ HTTP.
 
 The viewer has no TCP port at all: it serves over a unix socket whose 0600 mode is the access
 control, and every response carries a Content-Security-Policy. A non-loopback federation bind
-requires TLS and a non-empty allowlist, and refuses to start without both.
+requires TLS and someone admitted (a node or a principal), and refuses to start otherwise.
+
+### Using a server from another machine
+
+A node with a `[server]` listener - usually the hub - can serve MCP to people and agents on other
+machines ([docs/remote-server.md](docs/remote-server.md)). On the server, the operator admits each
+one with the workspaces it may read and write. Its credential is shown once and stored only as a
+hash:
+
+```bash
+supragnosis principal add alice --read docs --write team
+```
+
+On the other machine, a server profile points every AI app at it. The apps stay configured with
+`supragnosis bridge` and never see the credential:
+
+```bash
+supragnosis server add home https://hub.example:7420/mcp   # paste the credential when asked
+supragnosis server use home                                # `server use local` to go back
+```
+
+An agent with its own HTTP MCP client sends the credential as `Authorization: Bearer ...` to
+`https://<hub>/mcp`.
+
+The remote surface reads and ingests within the grants. Verdicts, type definitions and sync are
+refused there until principals can sign their own acts. Knowledge another node shared with the hub
+is served only if that node lists the workspace in `[sync] serve_workspaces`.
 
 ## Upgrading from a pre-0.2 store
 

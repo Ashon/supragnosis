@@ -702,9 +702,10 @@ input, not nondeterminism - F16).
 - Transport: `axum` server + `reqwest` client, `rustls` for TLS, `ed25519-dalek` for signing.
 - Config `supragnosis.toml` (via `toml` + serde, unknown keys rejected loudly): `host_label` (display
   only - `node_id` derives from the keypair, Section 2, and is never configured),
-  `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys`,
-  `[server] listen / tls_cert / tls_key / allowlist` (entries: `node_id -> public key, bearer hash,
-  shared workspaces`). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
+  `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys / serve_workspaces`,
+  `[server] listen / tls_cert / tls_key / allowlist / principals` (allowlist entries: `node_id ->
+  public key, bearer hash, shared workspaces`; `serve_workspaces` and `principals` are the
+  agent surface's, [remote-server.md](remote-server.md) Section 4). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
   deferred - Section 11), `anchor_key` (the Phase 5 policy anchor, 6a), and a per-server
   `share_workspaces` on a `[[sync.server]]` entry (the entries themselves carry `url` and `auth_token`
   and are honored; a per-server share list arrives with the routing step that obeys it, since a share
