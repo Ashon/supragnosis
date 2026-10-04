@@ -375,17 +375,14 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
       <div class="mcp-wrap">
         <div class="terminal">
           <div class="terminal-bar"><span class="terminal-title">register with your MCP client</span></div>
-          <pre><code><span class="c"># stdio: the client launches supragnosis</span>
-<span class="c"># as a child process</span>
-claude mcp add supragnosis \
-  -- $(command -v supragnosis)
+          <pre><code><span class="c"># keep the daemon running (or Start at Login</span>
+<span class="c"># in the desktop app's menu)</span>
+supragnosis service install
 
-<span class="c"># or point at the background daemon over HTTP</span>
-supragnosis start
-claude mcp add supragnosis \
-  --transport http http://127.0.0.1:7373/mcp \
-  --header "Authorization: Bearer $(cat \
-    ~/.supragnosis/mcp.token)"</code></pre>
+<span class="c"># connect an AI app - no token to copy</span>
+supragnosis connect claude-desktop
+<span class="c"># or claude-code, cursor, vscode, codex, gemini;</span>
+<span class="c"># the app's AI Apps menu does the same</span></code></pre>
         </div>
         <dl class="tools">
           <div><dt>observe</dt><dd>load knowledge: entities, relations, and text become observation events</dd></div>
@@ -563,8 +560,9 @@ cargo build -p supragnosis-cli --features fastembed
 cargo test</code></pre>
       </div>
       <p class="section-note">
-        Whichever route you take, <code>supragnosis start</code> brings up the
-        daemon: MCP on <code>127.0.0.1:7373</code> plus the viewer unix socket.
+        Whichever route you take, <code>supragnosis service install</code> (or
+        Start at Login in the app) keeps the daemon running: MCP on
+        <code>127.0.0.1:7373</code> plus the viewer unix socket.
         Prebuilt binaries ship keyword recall; the fastembed build adds local
         semantic search. Curious how it is built? The design principles and the
         hexagonal Rust workspace behind all of this live in
