@@ -220,7 +220,10 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 - Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the sync surface ONLY, and ONLY when all of
   {TLS enabled, allowlist non-empty} hold. The MCP loopback bind guard is unchanged - it is NOT
   relaxed - and the viewer does not bind TCP at all (it serves over a local unix socket); federation
-  adds a separately-guarded surface.
+  adds a separately-guarded surface. **Revision (specified in [remote-server.md](remote-server.md)):**
+  the local daemon's guard stays exactly as stated, and this listener gains a second, governed door -
+  MCP for principals the hub admits, under the same TLS and a bind rule generalized to "an admitted
+  node or principal".
 - TLS: terminated in-process with `rustls`. A cert/key path is required to bind non-loopback (F10).
   Guarded end to end by `tls_listener_serves_https_and_refuses_plaintext`, which mints a certificate
   and drives the listener: an admitted peer is answered over HTTPS, a plaintext request on the same

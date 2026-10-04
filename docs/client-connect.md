@@ -52,6 +52,8 @@ permissions, sync and backup habits, and nothing tells the operator where the co
   daemon belongs to the lifecycle (daemon-lifecycle.md L1): the app, Start at Login, or
   `supragnosis service install`. When nothing answers, the bridge says what to do.
 - **Not remote access.** The bridge reaches only the local daemon, on loopback (Principle 17).
+  **Revised by [remote-server.md](remote-server.md):** the bridge reaches the server its active
+  profile names, and the local daemon is the default profile. C1 is unchanged.
 - **Not packaging.** Installing without Homebrew is Section 7, a separate decision.
 
 ## 3. The bridge: `supragnosis bridge`
