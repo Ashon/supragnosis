@@ -23,7 +23,8 @@
   [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built),
   [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 built,
   Section 11 specified),
-  [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built).
+  [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built),
+  [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, specified).
 
 ---
 
