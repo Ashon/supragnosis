@@ -132,11 +132,12 @@ cat <<EOF
 
 Install complete. Onboarding:
 
-  1) Register with an MCP client (Claude Code, etc.) over stdio
-       claude mcp add supragnosis -- "${BIN_DIR}/supragnosis"
-
-  2) (Optional) Run as an always-on daemon + live viewer
+  1) Run the always-on daemon + live viewer
 ${daemon_hint}
+
+  2) Connect an AI app (it talks to the daemon; no token to copy)
+       "${BIN_DIR}/supragnosis" connect claude-code
+       # or claude-desktop, cursor, vscode, codex, gemini - \`supragnosis connect\` lists them
 
   - Search: the prebuilt uses keyword/hashing. For semantic search, build from source with --features fastembed.
   - Help: sh install.sh --help   |   Docs/issues: https://github.com/${REPO}

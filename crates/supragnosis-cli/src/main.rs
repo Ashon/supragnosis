@@ -2109,19 +2109,20 @@ fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
     anyhow::bail!("launchd job {} reported on a system without launchd", job.label)
 }
 
-/// Prints the exact command that connects an MCP client to this daemon.
+/// Prints how to connect an AI app, on `start` and `status` - where a person looking for it looks.
 ///
-/// This exists because the token is a **breaking change for anyone already connected**: an existing
-/// `claude mcp add --transport http` entry starts getting 401 on upgrade. A security fix whose
-/// recovery path is "read the release notes" mostly produces people turning it off, so the way back
-/// is printed where the break is noticed - on `start`, and again on `status`.
-/// The connect line, reading the token from its file rather than printing it (Section 11). Agents
-/// run `status`, and a printed token lands in their transcripts.
+/// `supragnosis connect` comes first: it registers the bridge, which reads the token from its file,
+/// so no client holds a copy (docs/client-connect.md). The HTTP form follows for a client that takes
+/// only a URL, with the token read by the shell rather than printed - agents run `status`, and a
+/// printed token lands in their transcripts (daemon-lifecycle.md Section 11).
 fn print_client_command(http: &str) {
     let path = mcp_token_path();
     println!("  token   {} (0600 - read from the file, never printed)", path.display());
-    println!("  connect claude mcp add supragnosis --transport http http://{http}/mcp \\");
-    println!("            --header \"Authorization: Bearer $(cat {})\"", path.display());
+    println!("  connect supragnosis connect claude-code   (`supragnosis connect` lists every app)");
+    println!(
+        "  http    http://{http}/mcp with --header \"Authorization: Bearer $(cat {})\"",
+        path.display()
+    );
 }
 
 /// Resolved MCP http address for status/lifecycle checks (env var or default).
