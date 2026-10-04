@@ -66,6 +66,9 @@ enum Cmd {
     /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini) to this
     /// node through the bridge; with no app, list them and how each is connected
     Connect(ConnectArgs),
+    /// Which supragnosis server this machine's AI apps use - this machine's daemon, or a remote one
+    /// (docs/remote-server.md); with no subcommand, list the profiles and check the active one
+    Server(ServerArgs),
     /// The always-on daemon as a login item (macOS LaunchAgent com.supragnosis.daemon)
     Service {
         #[command(subcommand)]
@@ -94,6 +97,33 @@ struct RekeyArgs {
     /// Report what would move and write nothing.
     #[arg(long)]
     dry_run: bool,
+}
+
+#[derive(Args)]
+struct ServerArgs {
+    #[command(subcommand)]
+    cmd: Option<ServerCmd>,
+    /// Machine-readable listing (the desktop app reads this).
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum ServerCmd {
+    /// Add a remote server profile. The credential is read from stdin, never from the command line
+    Add {
+        /// Profile name (letters, digits, '-', '_')
+        name: String,
+        /// The server's MCP URL, e.g. https://hub.example:7420/mcp
+        url: String,
+        /// PEM bundle of a private CA that issued the server's certificate
+        #[arg(long)]
+        ca: Option<String>,
+    },
+    /// Make a profile - or `local`, this machine's daemon - the one AI apps here use
+    Use { name: String },
+    /// Remove a remote profile and its credential file
+    Remove { name: String },
 }
 
 #[derive(Subcommand)]
@@ -194,6 +224,7 @@ mod bridge;
 mod connect;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
+mod profile;
 
 fn main() -> Result<()> {
     match Cli::parse().cmd.unwrap_or(Cmd::Serve(RunArgs::default())) {
@@ -204,6 +235,7 @@ fn main() -> Result<()> {
         Cmd::Status(a) => status(a.json),
         Cmd::Bridge => bridge_cmd(),
         Cmd::Connect(a) => connect_cmd(a),
+        Cmd::Server(a) => server_cmd(a),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
         Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
         Cmd::Identity(a) => identity_cmd(a),
@@ -1272,25 +1304,244 @@ fn unix_now() -> u64 {
 }
 
 /// `supragnosis bridge`: stdout carries JSON-RPC and nothing else, so nothing here logs to it.
+///
+/// The target is the active server profile (remote-server.md Section 3): the loopback daemon by
+/// default, or the remote server a profile names. Every AI app launches this same command either
+/// way, which is what lets a change of server leave all of them untouched.
 fn bridge_cmd() -> Result<()> {
-    let addr = std::env::var("SUPRAGNOSIS_HTTP_ADDR")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "127.0.0.1:7373".to_string());
-    let addr = parse_loopback_addr(&addr)?; // loopback only, as `serve` binds (P17)
-    let cfg = bridge::Config {
-        url: format!("http://{addr}/mcp"),
-        // Read on every request, never copied anywhere (client-connect.md C2).
-        token: Arc::new(|| {
-            std::fs::read_to_string(mcp_token_path())
+    let home = connect::Env::from_process().home;
+    let target =
+        profile::active(&home, |k| std::env::var(k).ok()).map_err(|e| anyhow::anyhow!(e))?;
+    let cfg = match target {
+        profile::Target::Local => {
+            let addr = std::env::var("SUPRAGNOSIS_HTTP_ADDR")
                 .ok()
-                .map(|t| t.trim().to_string())
-                .filter(|t| !t.is_empty())
-        }),
-        wait: std::time::Duration::from_secs(10),
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "127.0.0.1:7373".to_string());
+            let addr = parse_loopback_addr(&addr)?; // loopback only, as `serve` binds (P17)
+            bridge::Config {
+                url: format!("http://{addr}/mcp"),
+                // Read on every request, never copied anywhere (client-connect.md C2).
+                token: Arc::new(|| read_secret(&mcp_token_path())),
+                wait: std::time::Duration::from_secs(10),
+                ca_pem: None,
+                unreachable_hint: bridge::NOT_RUNNING.to_string(),
+                token_source: mcp_token_path().display().to_string(),
+            }
+        }
+        profile::Target::Remote { name, url, ca, token_file } => {
+            let ca_pem = match &ca {
+                Some(p) => {
+                    Some(std::fs::read(p).with_context(|| format!("reading CA {}", p.display()))?)
+                }
+                None => None,
+            };
+            let source = token_file.display().to_string();
+            bridge::Config {
+                url: url.clone(),
+                token: Arc::new(move || read_secret(&token_file)),
+                wait: std::time::Duration::from_secs(10),
+                ca_pem,
+                unreachable_hint: format!(
+                    "the server of profile {name:?} does not answer - check the network, or switch \
+                     this machine back with `supragnosis server use local`"
+                ),
+                token_source: source,
+            }
+        }
     };
     let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
     rt.block_on(bridge::run(cfg, tokio::io::stdin(), tokio::io::stdout()))
+}
+
+/// `supragnosis server` (docs/remote-server.md Section 3).
+fn server_cmd(a: ServerArgs) -> Result<()> {
+    let home = connect::Env::from_process().home;
+    let mut file = profile::load(&home).map_err(|e| anyhow::anyhow!(e))?;
+    let save = |file: &profile::ClientFile| -> Result<()> {
+        private_dir(&home.join(".supragnosis"))?;
+        connect::write_replacing(&profile::client_path(&home), &profile::render(file))
+            .context("writing the server profiles")
+    };
+    match a.cmd {
+        None => server_list(&home, &file, a.json),
+        Some(ServerCmd::Add { name, url, ca }) => {
+            profile::valid_name(&name).map_err(|e| anyhow::anyhow!(e))?;
+            if file.servers.contains_key(&name) {
+                anyhow::bail!(
+                    "a profile named {name:?} exists - `supragnosis server remove {name}` first"
+                );
+            }
+            let url = profile::normalize_url(&url).map_err(|e| anyhow::anyhow!(e))?;
+            let ca = match ca {
+                Some(p) => Some(
+                    std::fs::canonicalize(&p)
+                        .with_context(|| format!("CA bundle {p}"))?
+                        .display()
+                        .to_string(),
+                ),
+                None => None,
+            };
+            use std::io::IsTerminal;
+            if std::io::stdin().is_terminal() {
+                eprintln!("paste the credential the server's operator gave you, then press Enter:");
+            }
+            let mut token = String::new();
+            std::io::stdin()
+                .read_line(&mut token)
+                .context("reading the credential from stdin")?;
+            let token = token.trim();
+            if token.is_empty() {
+                anyhow::bail!("no credential on stdin - pipe it in, e.g. `supragnosis server add {name} {url} < token-file`");
+            }
+            let token_file = profile::token_path(&home, &name);
+            write_secret(&token_file, token.as_bytes())?;
+            file.servers.insert(
+                name.clone(),
+                profile::ServerEntry {
+                    url: url.clone(),
+                    ca,
+                    token_file: token_file.display().to_string(),
+                },
+            );
+            save(&file)?;
+            println!("added server profile {name} -> {url}");
+            println!("  credential {} (0600)", token_file.display());
+            println!("  use it with `supragnosis server use {name}`");
+            Ok(())
+        }
+        Some(ServerCmd::Use { name }) => {
+            if name != profile::LOCAL && !file.servers.contains_key(&name) {
+                anyhow::bail!("no server profile named {name:?} - `supragnosis server` lists them");
+            }
+            file.active = (name != profile::LOCAL).then(|| name.clone());
+            save(&file)?;
+            println!("AI apps on this machine now use {name} - from their next session; a running session keeps the server it started with");
+            Ok(())
+        }
+        Some(ServerCmd::Remove { name }) => {
+            let Some(entry) = file.servers.remove(&name) else {
+                anyhow::bail!("no server profile named {name:?}");
+            };
+            let was_active = file.active.as_deref() == Some(name.as_str());
+            if was_active {
+                file.active = None;
+            }
+            save(&file)?;
+            let _ = std::fs::remove_file(&entry.token_file);
+            println!("removed server profile {name} and its credential");
+            if was_active {
+                println!("  it was active - AI apps on this machine use local again");
+            }
+            Ok(())
+        }
+    }
+}
+
+/// What a check of the active server found: whether it answered, and whether it took the credential.
+struct ServerCheck {
+    answering: bool,
+    credential: Option<bool>,
+    detail: Option<String>,
+}
+
+fn check_server(target: &profile::Target) -> ServerCheck {
+    match target {
+        profile::Target::Local => ServerCheck {
+            answering: port_open(&status_http_addr()),
+            credential: None,
+            detail: None,
+        },
+        profile::Target::Remote { url, ca, token_file, .. } => {
+            let probe = async {
+                let mut b = reqwest::Client::builder().timeout(std::time::Duration::from_secs(4));
+                if let Some(p) = ca {
+                    let pem = std::fs::read(p).map_err(|e| e.to_string())?;
+                    for c in
+                        reqwest::Certificate::from_pem_bundle(&pem).map_err(|e| e.to_string())?
+                    {
+                        b = b.add_root_certificate(c);
+                    }
+                }
+                let client = b.build().map_err(|e| e.to_string())?;
+                let mut req = client.get(url).header("Accept", "text/event-stream");
+                if let Some(t) = read_secret(token_file) {
+                    req = req.bearer_auth(t);
+                }
+                req.send().await.map(|r| r.status().as_u16()).map_err(|e| e.to_string())
+            };
+            let status = tokio::runtime::Runtime::new()
+                .map_err(|e| e.to_string())
+                .and_then(|rt| rt.block_on(probe));
+            match status {
+                Ok(401 | 403) => ServerCheck {
+                    answering: true,
+                    credential: Some(false),
+                    detail: Some(format!(
+                        "the server refused the credential in {}",
+                        token_file.display()
+                    )),
+                },
+                Ok(_) => ServerCheck { answering: true, credential: Some(true), detail: None },
+                Err(e) => ServerCheck { answering: false, credential: None, detail: Some(e) },
+            }
+        }
+    }
+}
+
+fn server_list(home: &std::path::Path, file: &profile::ClientFile, json: bool) -> Result<()> {
+    let target =
+        profile::active(home, |k| std::env::var(k).ok()).map_err(|e| anyhow::anyhow!(e))?;
+    let local_url = format!("http://{}/mcp", status_http_addr());
+    let mut rows = vec![(profile::LOCAL.to_string(), local_url, false)];
+    rows.extend(file.servers.iter().map(|(n, e)| (n.clone(), e.url.clone(), true)));
+    if let profile::Target::Remote { name, url, .. } = &target {
+        if name == "env" {
+            rows.push((name.clone(), url.clone(), true));
+        }
+    }
+    let check = check_server(&target);
+    if json {
+        let servers: Vec<_> = rows
+            .iter()
+            .map(|(n, u, remote)| {
+                serde_json::json!({"name": n, "url": u, "remote": remote, "active": n == target.name()})
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "active": target.name(),
+                "servers": servers,
+                "check": {"answering": check.answering, "credential": check.credential, "detail": check.detail},
+            })
+        );
+        return Ok(());
+    }
+    println!("servers - the bridge sends this machine's AI apps to the active one (*)");
+    for (n, u, remote) in &rows {
+        let mark = if n == target.name() { "*" } else { " " };
+        let what = if *remote { "" } else { "  this machine's daemon" };
+        println!("{mark} {n:<12} {u}{what}");
+    }
+    let verdict = match (check.answering, check.credential) {
+        (true, Some(false)) => "answers, but refused the credential".to_string(),
+        (true, _) => "answers".to_string(),
+        (false, _) => "does not answer".to_string(),
+    };
+    println!("active server {}: {verdict}", target.name());
+    if let Some(d) = check.detail {
+        println!("  {d}");
+    }
+    Ok(())
+}
+
+/// A credential file's content, trimmed; `None` when absent or empty.
+fn read_secret(path: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
 }
 
 fn init_tracing() {
@@ -2297,6 +2548,16 @@ fn status(json: bool) -> Result<()> {
     let running = if observed.answering { running_version() } else { None };
     let drift = lifecycle::drift(running.as_deref(), here);
     let health = if observed.answering { store_health() } else { None };
+    // The server this machine's AI apps use (remote-server.md): this daemon, or a remote one. An
+    // unreadable profile file is reported, not read as "local" (P5).
+    let server =
+        match profile::active(&connect::Env::from_process().home, |k| std::env::var(k).ok()) {
+            Ok(profile::Target::Local) => serde_json::json!({"name": "local", "remote": false}),
+            Ok(profile::Target::Remote { name, url, .. }) => {
+                serde_json::json!({"name": name, "url": url, "remote": true})
+            }
+            Err(e) => serde_json::json!({"error": e}),
+        };
 
     let managers: Vec<&Manager> = match &situation {
         Situation::One(m) => vec![m],
@@ -2331,6 +2592,7 @@ fn status(json: bool) -> Result<()> {
             "mcp": format!("http://{http}/mcp"),
             "version": { "here": here, "running": running },
             "store": health,
+            "server": server,
             "service": {
                 "label": lifecycle::CANONICAL_LABEL,
                 "plist": canonical_plist_path(),
@@ -2381,6 +2643,15 @@ fn status(json: bool) -> Result<()> {
             println!("  version unknown (the viewer socket did not answer)")
         }
         Drift::Unknown => {}
+    }
+    if server["remote"].as_bool() == Some(true) {
+        println!(
+            "  server  AI apps here use {} ({}), not this daemon - `supragnosis server` checks it",
+            server["name"].as_str().unwrap_or("?"),
+            server["url"].as_str().unwrap_or("?")
+        );
+    } else if let Some(e) = server["error"].as_str() {
+        println!("  server  the server profile could not be read: {e}");
     }
     if let Some(h) = &health {
         let owed = h["owed_projections"].as_u64().unwrap_or(0);

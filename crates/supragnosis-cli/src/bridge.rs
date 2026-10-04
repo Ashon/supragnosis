@@ -29,11 +29,19 @@ pub struct Config {
     /// How long one request keeps retrying an unreachable daemon before answering with an error.
     /// A login job starting, or a restart repaying owed projections, takes seconds.
     pub wait: Duration,
+    /// A private CA's PEM bundle, for a remote server whose certificate it issued (remote-server.md
+    /// Section 3). The system roots are trusted either way; nothing turns verification off.
+    pub ca_pem: Option<Vec<u8>>,
+    /// What a person can do when nothing answers - start the local daemon, or check the network.
+    pub unreachable_hint: String,
+    /// Where the credential is read from, named when the server refuses it.
+    pub token_source: String,
 }
 
-/// The fix a person can act on, named in every error the bridge has to give instead of an answer.
-const NOT_RUNNING: &str = "the supragnosis daemon is not running - open the Supragnosis app, or \
-     turn on Start at Login in its menu (or run `supragnosis service install`)";
+/// The fix for an unreachable local daemon, named in every error the bridge gives instead of an
+/// answer.
+pub const NOT_RUNNING: &str = "the supragnosis daemon is not running - open the Supragnosis app, \
+     or turn on Start at Login in its menu (or run `supragnosis service install`)";
 
 /// The session the bridge holds with the daemon on the client's behalf, and the client's own
 /// handshake, kept so a new session can be opened when the daemon restarts.
@@ -72,7 +80,13 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    let http = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder();
+    if let Some(pem) = &cfg.ca_pem {
+        for cert in reqwest::Certificate::from_pem_bundle(pem)? {
+            builder = builder.add_root_certificate(cert);
+        }
+    }
+    let http = builder
         .connect_timeout(Duration::from_secs(2))
         // Loopback only, and a proxy configured for the person's browsing must not see this.
         .no_proxy()
@@ -151,11 +165,11 @@ async fn relay(bridge: &Bridge, msg: Value, tx: &mpsc::UnboundedSender<String>) 
         }
         Err(f) if is_request => {
             let id = id.unwrap_or(Value::Null);
-            let _ = tx.send(error_reply(&id, -32000, &describe(&f, &bridge.cfg.url)));
+            let _ = tx.send(error_reply(&id, -32000, &describe(&f, &bridge.cfg)));
         }
         // A notification or a response has nowhere to carry an error back; stderr is the client's
         // log for its stdio server.
-        Err(f) => eprintln!("supragnosis bridge: {}", describe(&f, &bridge.cfg.url)),
+        Err(f) => eprintln!("supragnosis bridge: {}", describe(&f, &bridge.cfg)),
     }
 }
 
@@ -340,18 +354,19 @@ fn error_reply(id: &Value, code: i64, message: &str) -> String {
         .to_string()
 }
 
-fn describe(f: &Failure, url: &str) -> String {
+fn describe(f: &Failure, cfg: &Config) -> String {
+    let url = &cfg.url;
     match f {
-        Failure::Unreachable => format!("nothing answers at {url}: {NOT_RUNNING}"),
-        Failure::SessionGone => "the daemon restarted before this client initialized".into(),
+        Failure::Unreachable => format!("nothing answers at {url}: {}", cfg.unreachable_hint),
+        Failure::SessionGone => "the server restarted before this client initialized".into(),
         Failure::Unauthorized => format!(
-            "the daemon at {url} refused the token in {} - it is read from that file on every \
-             request, so a daemon started under another account, or with a different HOME, is the \
-             likely cause",
-            crate::mcp_token_path().display()
+            "{url} refused the credential in {} - it is read from that file on every request, so \
+             a server started under another account, a replaced credential, or a revoked one is \
+             the likely cause",
+            cfg.token_source
         ),
-        Failure::Http(0, e) => format!("could not reach the daemon at {url}: {e}"),
-        Failure::Http(code, body) => format!("the daemon at {url} answered {code}: {body}"),
+        Failure::Http(0, e) => format!("could not reach {url}: {e}"),
+        Failure::Http(code, body) => format!("{url} answered {code}: {body}"),
     }
 }
 
@@ -402,7 +417,14 @@ mod tests {
         fn start(url: String, wait: Duration, token: &'static str) -> Client {
             let (to_bridge, bridge_in) = tokio::io::duplex(1 << 16);
             let (bridge_out, from_bridge) = tokio::io::duplex(1 << 16);
-            let cfg = Config { url, token: Arc::new(move || Some(token.to_string())), wait };
+            let cfg = Config {
+                url,
+                token: Arc::new(move || Some(token.to_string())),
+                wait,
+                ca_pem: None,
+                unreachable_hint: NOT_RUNNING.to_string(),
+                token_source: "~/.supragnosis/mcp.token".to_string(),
+            };
             tokio::spawn(run(cfg, bridge_in, bridge_out));
             Client { to_bridge, from_bridge: BufReader::new(from_bridge).lines() }
         }
