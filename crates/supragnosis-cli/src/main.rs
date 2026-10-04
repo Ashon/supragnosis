@@ -69,6 +69,11 @@ enum Cmd {
     /// Which supragnosis server this machine's AI apps use - this machine's daemon, or a remote one
     /// (docs/remote-server.md); with no subcommand, list the profiles and check the active one
     Server(ServerArgs),
+    /// The people and agents this hub admits to MCP on its [server] listener (docs/remote-server.md)
+    Principal {
+        #[command(subcommand)]
+        cmd: PrincipalCmd,
+    },
     /// The always-on daemon as a login item (macOS LaunchAgent com.supragnosis.daemon)
     Service {
         #[command(subcommand)]
@@ -124,6 +129,25 @@ enum ServerCmd {
     Use { name: String },
     /// Remove a remote profile and its credential file
     Remove { name: String },
+}
+
+#[derive(Subcommand)]
+enum PrincipalCmd {
+    /// Admit a person or agent to this hub's agent surface; prints its credential once
+    Add {
+        /// Principal name (letters, digits, '-', '_')
+        name: String,
+        /// Workspaces it may read, comma-separated
+        #[arg(long)]
+        read: Option<String>,
+        /// Workspaces it may write (and read), comma-separated
+        #[arg(long)]
+        write: Option<String>,
+    },
+    /// Revoke a principal - its credential stops working at its next request
+    Remove { name: String },
+    /// List the principals and their grants (never their credentials)
+    List,
 }
 
 #[derive(Subcommand)]
@@ -224,6 +248,7 @@ mod bridge;
 mod connect;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
+mod principal;
 mod profile;
 
 fn main() -> Result<()> {
@@ -236,6 +261,7 @@ fn main() -> Result<()> {
         Cmd::Bridge => bridge_cmd(),
         Cmd::Connect(a) => connect_cmd(a),
         Cmd::Server(a) => server_cmd(a),
+        Cmd::Principal { cmd } => principal_cmd(cmd),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
         Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
         Cmd::Identity(a) => identity_cmd(a),
@@ -688,11 +714,31 @@ fn build_sync_context(
                 })
                 .map_err(|e| e.to_string())
         });
+        // The agent surface (docs/remote-server.md Section 4): MCP for principals on this listener.
+        // Mounted whenever there is a listener - principals added later are admitted without a
+        // restart - and counted toward the bind rule. Knowledge another node originated is served
+        // only with its consent, and no consent is recorded yet, so only this hub's own is (R5).
+        let no_consent: principal::Consented = Arc::new(|_| std::collections::BTreeSet::new());
+        let extra = supragnosis_sync::http::ExtraSurface {
+            router: principal::router(
+                engine.clone(),
+                Arc::new(principal::Directory::new(fed::config_path())),
+                principal::servable(engine.clone(), node.node_id().to_string(), no_consent),
+            ),
+            admitted: srv.principals.len(),
+        };
+        if !srv.principals.is_empty() {
+            tracing::info!(
+                principals = srv.principals.len(),
+                "agent surface: MCP for principals at /mcp on the sync listener"
+            );
+        }
         let hooks = supragnosis_sync::http::Hooks {
             on_applied: Some(on_applied),
             on_activity: Some(on_activity),
             on_search: Some(on_search),
             peer_registry: Some(peer_registry.clone()),
+            extra: Some(extra),
         };
         admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?);
     }
@@ -1432,6 +1478,65 @@ fn server_cmd(a: ServerArgs) -> Result<()> {
             println!("removed server profile {name} and its credential");
             if was_active {
                 println!("  it was active - AI apps on this machine use local again");
+            }
+            Ok(())
+        }
+    }
+}
+
+/// `supragnosis principal` (docs/remote-server.md Section 4.2). Edits `[server]` in supragnosis.toml
+/// in place - comments and layout survive - and the running hub follows the edit on its next request.
+fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
+    let path = fed::config_path();
+    let text = std::fs::read_to_string(&path).with_context(|| {
+        format!("{} - principals belong to a hub's [server] section", path.display())
+    })?;
+    match cmd {
+        PrincipalCmd::Add { name, read, write } => {
+            let (edited, credential) = principal::add(&text, &name, &read, &write)?;
+            connect::write_replacing(&path, &edited)
+                .with_context(|| format!("writing {}", path.display()))?;
+            let listen = toml::from_str::<fed::FileConfig>(&edited)
+                .ok()
+                .and_then(|c| c.server)
+                .map(|s| (s.listen, s.tls_cert.is_some()))
+                .unwrap_or_default();
+            println!("admitted {name}. Its credential, shown this once and stored only as a hash:");
+            println!();
+            println!("  {credential}");
+            println!();
+            println!("hand it over privately. On their machine:");
+            println!(
+                "  supragnosis server add <profile> {}://<this hub's name>:{}/mcp   (paste the credential when asked)",
+                if listen.1 { "https" } else { "http" },
+                listen.0.rsplit(':').next().unwrap_or("7420")
+            );
+            println!("or, for an agent's own MCP client: Authorization: Bearer <credential>");
+            Ok(())
+        }
+        PrincipalCmd::Remove { name } => {
+            let edited = principal::remove(&text, &name)?;
+            connect::write_replacing(&path, &edited)
+                .with_context(|| format!("writing {}", path.display()))?;
+            println!("revoked {name} - its credential stops working at its next request");
+            Ok(())
+        }
+        PrincipalCmd::List => {
+            let cfg: fed::FileConfig =
+                toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+            let list = cfg.server.map(|s| s.principals).unwrap_or_default();
+            if list.is_empty() {
+                println!(
+                    "no principals - `supragnosis principal add <name> --read <ws> --write <ws>`"
+                );
+            }
+            for p in list {
+                println!(
+                    "  {:<16} read: {:<30} write: {}",
+                    p.name,
+                    p.read.join(","),
+                    p.write.join(",")
+                );
             }
             Ok(())
         }
@@ -3131,6 +3236,23 @@ mod fed {
         pub tls_key: Option<String>,
         #[serde(default)]
         pub allowlist: Vec<supragnosis_sync::http::AllowEntry>,
+        /// The hub's agent surface (docs/remote-server.md Section 4.2): people and agents admitted to
+        /// MCP on this listener, each with a credential hash and per-workspace grants.
+        #[serde(default)]
+        pub principals: Vec<PrincipalEntry>,
+    }
+
+    /// One principal: a name, the blake3 hash of its bearer credential, and its grants. Unknown keys
+    /// are refused, as in an allowlist entry - this decides who may read and write what.
+    #[derive(Debug, Clone, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct PrincipalEntry {
+        pub name: String,
+        pub token_hash: String,
+        #[serde(default)]
+        pub read: Vec<String>,
+        #[serde(default)]
+        pub write: Vec<String>,
     }
 
     /// `~/.supragnosis` - where the node key, the config and the daemon token live. Public because
@@ -3505,6 +3627,7 @@ mod legacy_store_guard_tests {
             tls_cert: None,
             tls_key: None,
             allowlist: ids.iter().map(|i| entry(i)).collect(),
+            principals: Vec::new(),
         };
 
         assert!(
