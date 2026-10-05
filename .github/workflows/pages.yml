@@ -15,7 +15,9 @@ on:
   # rule, and one this repo learned by shipping v0.2.0 with the landing page still naming v0.1.21.
   # `workflow_run` is the supported way to chain, and it fires because the upstream run came from a
   # real tag push. The `release` trigger stays for a release published by hand, where it does work.
-  workflow_run:
+  # workflow_run is dangerous when the upstream runs untrusted code and this run consumes its output;
+  # release.yml runs only on a tag push or by hand, and this job reads nothing from that run.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [release]
     types: [completed]
   release:
@@ -41,7 +43,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Publish the install bootstrap at https://supragnosis.dev/install.sh from its single source
       # (scripts/install.sh) - copied into the artifact so there is no duplicate file in the repo.
       - name: stage the install bootstrap into the site
@@ -64,9 +68,9 @@ jobs:
           test "$before" -eq 1 || { echo "expected exactly one version-badge, found $before" >&2; exit 1; }
           sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">${version}</li>|" site/index.html
           grep -o '<li id="version-badge">[^<]*</li>' site/index.html
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

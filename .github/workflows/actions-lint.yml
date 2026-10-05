@@ -1,0 +1,38 @@
+# Supply-chain lint for the workflows themselves: zizmor over .github (workflows and Dependabot).
+# What a workflow may run is held by a check rather than by review alone:
+#   - every action pinned to a full commit, and that commit really in the action's repository;
+#   - no checkout leaving the job token in .git/config;
+#   - no attacker-controllable value expanded into a script;
+#   - no cache restored into what is published;
+#   - a cooldown on every Dependabot ecosystem.
+# A finding that was reviewed and accepted carries an inline `zizmor: ignore[...]` with the reason.
+name: actions-lint
+
+on:
+  push:
+    paths:
+      - ".github/**"
+  pull_request:
+    paths:
+      - ".github/**"
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `latest` is the newest zizmor this action release knows, pulled by the image digest the
+      # action carries, so it moves only when Dependabot moves the pin above. Findings fail the job
+      # and annotate the diff, rather than going to the Security tab behind a green check.
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: latest
+          min-severity: low
+          advanced-security: false
+          annotations: true

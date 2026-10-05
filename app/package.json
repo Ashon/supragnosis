@@ -1,0 +1,8 @@
+{
+  "name": "supragnosis-app-tooling",
+  "private": true,
+  "description": "Build tooling for the desktop shell, pinned. The release builds the app with this exact tauri CLI, and package-lock.json holds its integrity hash.",
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

@@ -12,9 +12,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Read-only by default; each job that publishes asks for exactly what it writes. A workflow-wide
+# write grant handed every job's actions a token that could push, tag and release, including the
+# ones that only check a version or render a formula. Every checkout also drops the token it would
+# leave in .git/config: no job pushes to this repository with git, so no later step needs it there.
 permissions:
-  contents: write   # create the Release, upload assets
-  packages: write   # push the container image to ghcr.io
+  contents: read
 
 jobs:
   # The tree agrees with itself already: manifest_consistency.rs (the rust gate) holds the workspace
@@ -30,7 +33,9 @@ jobs:
     name: manifest agrees with the tag
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: the workspace version is the tag
         run: |
           set -euo pipefail
@@ -51,6 +56,8 @@ jobs:
 
   build:
     name: build ${{ matrix.target }}
+    permissions:
+      contents: write   # attach the binaries to the Release
     needs: manifest
     runs-on: ${{ matrix.os }}
     strategy:
@@ -72,17 +79,20 @@ jobs:
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
+      # rustup, which the runner image already has, rather than dtolnay/rust-toolchain: that action
+      # publishes no version tags, only branches (stable, master), so a SHA pin would freeze it and
+      # Dependabot could not move it.
       - name: install rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+        run: rustup toolchain install stable --profile minimal --target "${{ matrix.target }}" && rustup default stable
 
-      - name: cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
+      # No cargo cache in this workflow: what it publishes is built from the tagged tree alone. A cache
+      # a tag run saves is scoped to that tag, so these per-target ones never hit; the one that did
+      # (the app's) was written by dev-app.yml on main, which put whatever any step there left in
+      # target/ into the signed, notarized app.
 
       - name: build
         run: cargo build --release --locked --bin supragnosis --target ${{ matrix.target }}
@@ -107,7 +117,7 @@ jobs:
 
       # Uploaded on non-tag runs too (workflow_dispatch), so a build can be verified without a tag.
       - name: upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: supragnosis-${{ matrix.target }}
           path: dist/*.tar.gz*
@@ -125,7 +135,7 @@ jobs:
       # Assets attach only on a tag push; several jobs accumulate onto the same Release.
       - name: publish to release (committed notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path != ''
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           body_path: ${{ steps.notes.outputs.path }}
           files: |
@@ -134,7 +144,7 @@ jobs:
 
       - name: publish to release (auto notes)
         if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.path == ''
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
           files: |
@@ -156,6 +166,8 @@ jobs:
   # not a reason to hold the release back.
   bottle:
     name: homebrew bottle (${{ matrix.os }})
+    permissions:
+      contents: write   # attach the bottle to the Release
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
@@ -164,7 +176,9 @@ jobs:
         os: [macos-14, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: bottle the formula, and prove the bottle pours
         shell: bash
@@ -180,7 +194,7 @@ jobs:
         run: gh release upload "${GITHUB_REF_NAME}" bottle/*.bottle.tar.gz --clobber
 
       - name: upload the bottle's description for the tap job
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bottle-${{ matrix.os }}
           path: bottle/*.bottle.json
@@ -194,16 +208,21 @@ jobs:
   # client on Apple silicon should not emulate.
   image:
     name: publish container image
+    permissions:
+      contents: read
+      packages: write   # push the container image to ghcr.io
     needs: manifest
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: log in to ghcr
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -222,7 +241,7 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: deploy/docker/Dockerfile
