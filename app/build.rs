@@ -10,6 +10,7 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "app_toggle",
     "login_set",
     "daemon_restart",
+    "peer_narrow",
 ];
 
 fn main() {

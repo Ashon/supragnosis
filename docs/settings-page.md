@@ -40,24 +40,27 @@ the main window, in place of the graph.
 
 ### 3.0 Moving between the graph and the settings
 
-The main window has two pages, and both carry the same title bar.
+Settings are not something a person visits often, so the way in is small and where it has always
+been, and the graph keeps its title bar to itself.
 
-- **The title bar is the viewer's.** Same row height, glass, rule and mark, with the window's
-  traffic lights over it in the same place.
-- **Two icons at the right end of the title bar** - the graph and the settings - say which page is
-  showing and move between them, where a toolbar's view switch sits. They name themselves, with
-  their shortcuts, on hover. They sit in the same place on both pages, so moving changes the
-  content, not the chrome. The settings page also says its name after the app's:
-  `supragnosis / settings`.
-- **The keyboard does the same.** Cmd+1 shows the graph, from the View menu. Cmd+, shows the
-  settings, from the app menu where macOS users look for it. The tray's Open Viewer shows the graph,
-  and Settings... shows the settings.
+- **The graph's gear opens Settings.** The viewer's status bar has had a gear at its right end since
+  the viewer had settings. In the app, that gear opens this page. The shell's init script takes the
+  click before the viewer's own handler, so the viewer needs to know nothing of the app.
+- **The page closes back to the graph** with a quiet x at the right end of its title bar, or with
+  Esc when no dialog is open.
+- **The keyboard does the same.** Cmd+, opens Settings from the app menu, where macOS users look for
+  it, and Cmd+1 shows the graph from the View menu. The tray's Open Graph shows the graph, and
+  Settings... shows the settings.
 - **The tray opens Settings where the attention is.** A refused credential or an unanswering server
   opens the Server section; no AI app connected opens AI apps; version drift opens This Mac.
-- **One stylesheet draws the chrome on both pages** (`assets/shell.css`), so the two cannot drift
-  apart.
-  - The settings page links it from the app's own origin.
-  - The viewer is the daemon's page, so the shell serves the same file on the viewer's origin, at
+- **One place called Settings.** The viewer's own dialog held its build information and, on a hub,
+  its peers. Both are on this page - About and Sync - so in the app the gear leads to one place, not
+  two.
+- **The title bar is the viewer's on both pages.** Same row height, glass, rule and mark, with the
+  traffic lights over it in the same place. The settings page says its name after the app's:
+  `supragnosis / settings`. One stylesheet draws that chrome on both pages (`assets/shell.css`):
+  - the settings page links it from the app's own origin;
+  - the viewer is the daemon's page, so the shell serves the same file on the viewer's origin, at
     `/__shell/`, and its init script links it there. The shell answers that path itself and never
     passes it to a daemon or a hub.
 
@@ -120,6 +123,27 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
 - **While a remote profile is active** these controls are disabled, with the reason: this Mac's
   daemon is not what the AI apps use (remote-server.md Section 5).
 
+### 3.4 Sync
+
+How this Mac's knowledge travels between supragnosis nodes (federation.md). It is what the viewer's
+Peers tab showed, read from this Mac's daemon, and not shown while a remote profile is active.
+
+- **This node:** its id and its role - a spoke that syncs to hubs, or a hub that serves peers.
+- **Hubs this Mac syncs to:** each one's address, version and reachability, and per workspace
+  whether this Mac or the hub is ahead.
+- **On a hub, each admitted peer and what it may read.** Each workspace is a chip with one act: stop
+  sharing it.
+  - The act asks first. It takes effect at once, and the daemon writes it to supragnosis.toml.
+  - It is the viewer console's narrowing act (`POST /api/peer/share`), narrow-only as the daemon
+    enforces, and the shell makes the request on the daemon's socket.
+  - Granting a workspace, and admitting or removing a peer, stay in the file.
+- **Without a supragnosis.toml** the section says that sync is not set up and where it would be.
+
+### 3.5 About
+
+The app's, the CLI's and the daemon's versions, where the CLI and the data live, the license and the
+source. It is the viewer dialog's About, with the app's own facts added.
+
 ## 4. Who may change a setting
 
 The commands behind the page change where this Mac's knowledge goes: which server receives what the
@@ -169,10 +193,10 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **The CLI stays the implementation.** The page is a form over the commands the tray already
   called, and the tray's handlers became the page's commands. Nothing about connecting an app or
   installing a login item is decided twice.
-- **Navigation is chrome, not a link on the page.** A quiet control in the title bar that is the
-  same on both pages, plus the keyboard, rather than a button the settings page alone carries. The viewer
-  does not know the shell exists, so the shell adds the control to the viewer's title bar, as it
-  already adds the drag region.
+- **Settings are entered where they always were.** The graph's gear, which a person already knows,
+  rather than a new control in a title bar whose left side is the app's name and the search. The
+  viewer does not know the shell exists, so the shell takes the gear's click, as it already makes
+  the title bar the drag region.
 - **The tray loses its submenus rather than mirroring the page.** Two places to switch a server
   would be two places to keep consistent. The tray's job is to say what state this Mac is in and to
   open the page that changes it.
@@ -226,12 +250,18 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the
   init script that builds the navigation on every page, a policy in the page's head, no inline
   script.
+- **Sync's one act**: `a_narrowing_is_encoded_into_its_own_parameters` - a workspace or node name
+  cannot break out of its query parameter on the way to the daemon. The narrowing itself is the
+  daemon's, tested there.
 - **The page's rows**: `an_app_item_says_what_a_click_will_do`, which once tested the tray's AI Apps
   items, now tests the page's app rows: the state, and the button's label or its absence.
 
 Checked in a development build attached to this Mac's running daemon:
-- **Navigation.** The two icons at the right of the title bar moved between the pages, the current
-  one highlighted. Cmd+, and Cmd+1 did the same from the keyboard.
+- **Navigation.**
+  - The graph's gear opened Settings, and the x closed it back to the graph. Cmd+, and Cmd+1 did the
+    same from the keyboard.
+  - Sync showed that sync is not set up on this Mac, and About gained the license and source. The
+    peers list and its stop-sharing act were not exercised: this Mac is not a hub.
 - **The page matched the CLI.**
   - Server: This Mac in use and answering.
   - AI apps: Claude Desktop and Claude Code connected, Cursor not installed, the rest with Connect.
@@ -260,14 +290,21 @@ No setting was changed while checking.
   - The second version had a "back to the viewer" button on the settings page alone. A labelled
     Graph | Settings control beside the name replaced it, the same on both pages.
   - That control read as a large menu in a title bar whose left side is the app's name and the
-    search, so it shrank to two icons at the bar's right end, which was empty (Section 3.0).
+    search. It shrank to two icons at the bar's right end, and those still read as tabs.
+  - So the title bar lost the control altogether. Settings opens from the graph's gear, where it
+    always has, and closes back with an x (Section 3.0).
+- **The viewer's dialog folded into the page.** The gear used to open the viewer's own dialog: its
+  build and, on a hub, its peers. Taking the gear for Settings would have left that dialog
+  unreachable in the app, and a link to it would have meant two places called settings. Its About and
+  Peers became About and Sync here instead (Sections 3.4, 3.5), so in the app the gear leads to one
+  place.
 - **The icons are a set, not drawings.** They are Lucide's (ISC), copied unmodified into
   `assets/icons/` with the license, because the pages load nothing remote (icons/README.md). CSS
   draws them as masks over `currentColor`, so an icon takes its text's color.
 - **The chrome moved into one stylesheet.**
   - The init script used to inject the viewer's chrome rules as an inline style element, which the
     settings page's policy refused. Those rules now live in `shell.css` with the page navigation.
-  - The shell serves `shell.css`, and the two icons it draws, on the viewer's origin at `/__shell/`.
+  - The shell serves `shell.css` on the viewer's origin at `/__shell/`.
   - The init script builds the navigation on both pages, so its markup has one source too, and it
     is held to the no-markup rule with the page's script.
 - **Hidden means hidden.** A class that sets `display` overrides the `hidden` attribute, and the Add

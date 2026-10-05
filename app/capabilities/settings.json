@@ -9,6 +9,7 @@
     "allow-server-remove",
     "allow-app-toggle",
     "allow-login-set",
-    "allow-daemon-restart"
+    "allow-daemon-restart",
+    "allow-peer-narrow"
   ]
 }

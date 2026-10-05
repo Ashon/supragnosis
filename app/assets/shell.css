@@ -16,28 +16,10 @@ input, textarea { -webkit-user-select: auto; user-select: auto; cursor: text; }
 header { transition: padding-left 0.15s ease; }
 html:not(.shell-fullscreen) header { padding-left: 84px; }
 
-/* The control that moves between the graph and the settings: two icons at the right end of the
-   title bar, where a toolbar's view switch sits. Quiet by design - the page below is the content,
-   so the control names itself only on hover (title attribute, with its shortcut). */
-.shell-nav {
-  display: inline-flex; align-items: center; gap: 1px; padding: 2px; margin-left: auto;
-  border: 1px solid #1e2431; border-radius: 7px; background: rgba(19,23,34,0.7);
-}
-.shell-nav a {
-  display: grid; place-items: center; width: 26px; height: 22px; border-radius: 5px;
-  color: #8e96a5; text-decoration: none; cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-.shell-nav a:hover { color: #e9e4d6; background: rgba(255,255,255,0.05); }
-.shell-nav a[aria-current="page"] { color: #f0c469; background: rgba(217,165,68,0.14); }
-.shell-nav a:focus-visible { outline: 2px solid rgba(217,165,68,0.6); outline-offset: 1px; }
 /* Icons: Lucide files (icons/README.md) drawn as masks over currentColor, so each takes the color
-   of its text. Paths are relative to this file, which both origins serve beside an icons/ folder. */
+   of its text. Each icon's class names its file, relative to the stylesheet that declares it. */
 .i {
   display: inline-block; width: 14px; height: 14px; flex: none; pointer-events: none;
   background-color: currentColor;
   -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat;
 }
-.shell-nav .i { width: 14px; height: 14px; }
-.i-graph { --i: url(icons/waypoints.svg); }
-.i-settings { --i: url(icons/settings.svg); }

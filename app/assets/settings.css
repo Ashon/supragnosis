@@ -39,6 +39,14 @@ header h1 {
 header h1 svg { color: var(--accent); flex: none; pointer-events: none; }
 header h1 .crumb { color: var(--muted); font-weight: 500; pointer-events: none; }
 header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint); }
+/* The way back to the graph: a quiet close at the right end of the title bar. */
+.hclose {
+  margin-left: auto; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px;
+  color: var(--muted); transition: background-color 0.12s ease, color 0.12s ease;
+}
+.hclose:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
+.hclose:focus-visible { outline: 2px solid var(--gold-ring); outline-offset: 1px; }
+.hclose .i { width: 15px; height: 15px; }
 
 /* ---- Layout: a section sidebar beside one content pane, as the platform's own settings are laid out. */
 .layout { flex: 1; display: flex; min-height: 0; }
@@ -47,6 +55,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   background: var(--panel); overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
 }
 .sidebar .group { margin: 4px 10px 8px; color: var(--faint); font: 600 10.5px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.sidebar .navitem + .group { margin-top: 20px; }
 .navitem {
   display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px;
   color: var(--ink2); text-decoration: none; cursor: pointer;
@@ -185,6 +194,20 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 .kv .k { color: var(--muted); }
 .kv .v { color: var(--ink); font: 12px/1.5 var(--mono); overflow-wrap: anywhere; }
 
+/* A peer's readable workspaces: chips, each with the one act - stop sharing it. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px 3px 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); font: 12px/1.6 var(--mono);
+}
+.chip-x {
+  width: 20px; height: 20px; display: grid; place-items: center; border: none; border-radius: 50%;
+  background: transparent; color: var(--faint); cursor: pointer; padding: 0;
+}
+.chip-x:hover:not(:disabled) { color: var(--bad); background: var(--bad-glass); }
+.chip-x .i { width: 12px; height: 12px; }
+.row .title.mono { font: 12px/1.5 var(--mono); }
+
 /* Loading: the page's shape before its state arrives. */
 .skeleton { border-radius: 6px; background: linear-gradient(90deg, var(--panel-2) 0%, var(--panel-3) 50%, var(--panel-2) 100%); background-size: 200% 100%; animation: shimmer 1.3s ease-in-out infinite; }
 .sk-line { height: 11px; margin: 6px 0; }
@@ -261,6 +284,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 .i-plug { --i: url(icons/plug.svg); }
 .i-unplug { --i: url(icons/unplug.svg); }
 .i-link { --i: url(icons/link-2.svg); }
+.i-network { --i: url(icons/network.svg); }
 .i-desktop { --i: url(icons/app-window.svg); }
 .i-editor { --i: url(icons/code.svg); }
 .i-terminal { --i: url(icons/square-terminal.svg); }
