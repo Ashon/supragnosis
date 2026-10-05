@@ -10,6 +10,11 @@ class SupragnosisServer < Formula
   version "0.1.9"
   license any_of: ["MIT", "Apache-2.0"]
 
+  # Bottles, rendered here by update-tap.sh from the ones the release built (deploy/homebrew/README.md).
+  # This formula only copies a prebuilt binary, but without a bottle Homebrew treats any formula as a
+  # source build and refuses to install it without an up-to-date Xcode or Command Line Tools.
+  # BOTTLE_BLOCK
+
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-aarch64-apple-darwin.tar.gz"
