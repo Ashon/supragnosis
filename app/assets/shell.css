@@ -16,23 +16,20 @@ input, textarea { -webkit-user-select: auto; user-select: auto; cursor: text; }
 header { transition: padding-left 0.15s ease; }
 html:not(.shell-fullscreen) header { padding-left: 84px; }
 
-/* The segmented control that moves between the graph and the settings. It sits right after the
-   app's name on both pages. */
+/* The control that moves between the graph and the settings: two icons at the right end of the
+   title bar, where a toolbar's view switch sits. Quiet by design - the page below is the content,
+   so the control names itself only on hover (title attribute, with its shortcut). */
 .shell-nav {
-  display: inline-flex; align-items: center; gap: 2px; padding: 2px; margin: 0 4px 0 2px;
-  border: 1px solid #222836; border-radius: 8px; background: rgba(19,23,34,0.9);
-  font: 500 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.01em;
+  display: inline-flex; align-items: center; gap: 1px; padding: 2px; margin-left: auto;
+  border: 1px solid #1e2431; border-radius: 7px; background: rgba(19,23,34,0.7);
 }
 .shell-nav a {
-  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 6px;
+  display: grid; place-items: center; width: 26px; height: 22px; border-radius: 5px;
   color: #8e96a5; text-decoration: none; cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
-.shell-nav a:hover { color: #e9e4d6; background: rgba(255,255,255,0.04); }
-.shell-nav a[aria-current="page"] {
-  color: #f0c469; background: rgba(217,165,68,0.14);
-  box-shadow: inset 0 0 0 1px rgba(217,165,68,0.28);
-}
+.shell-nav a:hover { color: #e9e4d6; background: rgba(255,255,255,0.05); }
+.shell-nav a[aria-current="page"] { color: #f0c469; background: rgba(217,165,68,0.14); }
 .shell-nav a:focus-visible { outline: 2px solid rgba(217,165,68,0.6); outline-offset: 1px; }
 /* Icons: Lucide files (icons/README.md) drawn as masks over currentColor, so each takes the color
    of its text. Paths are relative to this file, which both origins serve beside an icons/ folder. */
@@ -41,11 +38,6 @@ html:not(.shell-fullscreen) header { padding-left: 84px; }
   background-color: currentColor;
   -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat;
 }
-.shell-nav .i { width: 13px; height: 13px; }
+.shell-nav .i { width: 14px; height: 14px; }
 .i-graph { --i: url(icons/waypoints.svg); }
 .i-settings { --i: url(icons/settings.svg); }
-.shell-nav kbd {
-  margin-left: 2px; padding: 0 4px; border-radius: 3px; border: 1px solid #222836;
-  color: #5c6472; font: 600 9.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-}
-.shell-nav a[aria-current="page"] kbd { border-color: rgba(217,165,68,0.3); color: rgba(240,196,105,0.7); }

@@ -44,9 +44,11 @@ The main window has two pages, and both carry the same title bar.
 
 - **The title bar is the viewer's.** Same row height, glass, rule and mark, with the window's
   traffic lights over it in the same place.
-- **A segmented control beside the name** - Graph | Settings - says which page is showing and moves
-  between them. It sits in the same place on both pages, so moving changes the content, not the
-  chrome.
+- **Two icons at the right end of the title bar** - the graph and the settings - say which page is
+  showing and move between them, where a toolbar's view switch sits. They name themselves, with
+  their shortcuts, on hover. They sit in the same place on both pages, so moving changes the
+  content, not the chrome. The settings page also says its name after the app's:
+  `supragnosis / settings`.
 - **The keyboard does the same.** Cmd+1 shows the graph, from the View menu. Cmd+, shows the
   settings, from the app menu where macOS users look for it. The tray's Open Viewer shows the graph,
   and Settings... shows the settings.
@@ -167,8 +169,8 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **The CLI stays the implementation.** The page is a form over the commands the tray already
   called, and the tray's handlers became the page's commands. Nothing about connecting an app or
   installing a login item is decided twice.
-- **Navigation is chrome, not a link on the page.** A control in the title bar that is the same on
-  both pages, plus the keyboard, rather than a button the settings page alone carries. The viewer
+- **Navigation is chrome, not a link on the page.** A quiet control in the title bar that is the
+  same on both pages, plus the keyboard, rather than a button the settings page alone carries. The viewer
   does not know the shell exists, so the shell adds the control to the viewer's title bar, as it
   already adds the drag region.
 - **The tray loses its submenus rather than mirroring the page.** Two places to switch a server
@@ -228,8 +230,8 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   items, now tests the page's app rows: the state, and the button's label or its absence.
 
 Checked in a development build attached to this Mac's running daemon:
-- **Navigation.** The Graph | Settings control sat beside the name on both pages and moved between
-  them. Cmd+, and Cmd+1 did the same from the keyboard.
+- **Navigation.** The two icons at the right of the title bar moved between the pages, the current
+  one highlighted. Cmd+, and Cmd+1 did the same from the keyboard.
 - **The page matched the CLI.**
   - Server: This Mac in use and answering.
   - AI apps: Claude Desktop and Claude Code connected, Cursor not installed, the rest with Connect.
@@ -254,9 +256,11 @@ No setting was changed while checking.
   default menu keeps Edit as the platform defines it.
 - **Placeholders are dimmed.** At full brightness the example values in the Add a server form read
   as values already entered.
-- **Navigation became chrome.** The second version had a "back to the viewer" button on the settings
-  page alone. It is replaced by the Graph | Settings control, the same on both pages, and the
-  keyboard (Section 3.0).
+- **Navigation became chrome, then got quieter.**
+  - The second version had a "back to the viewer" button on the settings page alone. A labelled
+    Graph | Settings control beside the name replaced it, the same on both pages.
+  - That control read as a large menu in a title bar whose left side is the app's name and the
+    search, so it shrank to two icons at the bar's right end, which was empty (Section 3.0).
 - **The icons are a set, not drawings.** They are Lucide's (ISC), copied unmodified into
   `assets/icons/` with the license, because the pages load nothing remote (icons/README.md). CSS
   draws them as masks over `currentColor`, so an icon takes its text's color.
