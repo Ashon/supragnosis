@@ -52,11 +52,9 @@ pub struct ServerLink {
     pub url: String,
     pub auth_token: String,
     /// PEM of the CA, or of the self-signed certificate, to trust for this host, read with the
-    /// configuration. `None` trusts the system's roots (sync-correctness.md Section 10).
+    /// configuration. `None` trusts the system's roots (sync-correctness.md Section 10). There is no
+    /// way to trust any certificate: a link either verifies its host or does not connect.
     pub ca_pem: Option<Vec<u8>>,
-    /// Accept any certificate. Set only for a loopback host: anywhere else it would send the bearer
-    /// to whoever answers, so the configuration ignores it there and says to name a `ca`.
-    pub insecure_tls: bool,
 }
 
 /// What a host said this node may reach, and when it said it (federation.md 6e).

@@ -955,27 +955,24 @@ pub struct SyncClient {
 }
 
 impl SyncClient {
-    /// `insecure_tls` accepts any server certificate. Configuration sets it only for a loopback
-    /// host (sync-correctness.md Section 10); the signature layer (F6) still authenticates content
-    /// end to end, but not the bearer this client presents.
+    /// A client that verifies the host against the system's roots. Every client verifies: there is
+    /// no setting that accepts any certificate (sync-correctness.md Section 10).
     pub fn new(
         base_url: impl Into<String>,
         token: impl Into<String>,
-        insecure_tls: bool,
     ) -> Result<Self, TransportError> {
-        Self::build(base_url, token, None, insecure_tls)
+        Self::build(base_url, token, None)
     }
 
     /// The client for one configured host: its credential, and the certificate it trusts for it.
     pub fn for_link(link: &crate::ServerLink) -> Result<Self, TransportError> {
-        Self::build(&link.url, &link.auth_token, link.ca_pem.as_deref(), link.insecure_tls)
+        Self::build(&link.url, &link.auth_token, link.ca_pem.as_deref())
     }
 
     fn build(
         base_url: impl Into<String>,
         token: impl Into<String>,
         ca_pem: Option<&[u8]>,
-        insecure_tls: bool,
     ) -> Result<Self, TransportError> {
         // Same CryptoProvider pin as the server side (idempotent) - the client dials HTTPS hubs.
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -983,8 +980,6 @@ impl SyncClient {
         // A named certificate is how a self-signed hub is trusted without trusting every hub.
         if let Some(pem) = ca_pem {
             builder = builder.use_preconfigured_tls(tls_trusting(pem)?);
-        } else {
-            builder = builder.danger_accept_invalid_certs(insecure_tls);
         }
         let http = builder.timeout(CALL_TIMEOUT).build()?;
         Ok(Self {
@@ -1292,7 +1287,7 @@ mod tests {
         );
 
         let addr = spawn_server(state).await;
-        let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
+        let client = SyncClient::new(format!("http://{addr}"), "token-p").unwrap();
         assert_eq!(
             client
                 .pull("ws", &VersionVector::default(), PAGE_EVENTS)
@@ -1387,8 +1382,17 @@ mod tests {
         let server =
             tokio::spawn(serve(store, hub.clone(), addr, Some(tls), peers, Hooks::default()));
 
+        // The hub's own certificate, named: how a self-signed hub is trusted without trusting every
+        // certificate (sync-correctness.md Section 10). There is no client that skips verification.
+        let link = |token: &str, pem: String| crate::ServerLink {
+            url: format!("https://{addr}"),
+            auth_token: token.into(),
+            ca_pem: Some(pem.into_bytes()),
+        };
+        let named = |token: &str| SyncClient::for_link(&link(token, minted.cert.pem())).unwrap();
+
         // HTTPS with an admitted bearer: answered, by this hub, with the caller's grant.
-        let client = SyncClient::new(format!("https://{addr}"), "tok", true).unwrap();
+        let client = named("tok");
         let mut ping = client.ping().await;
         for _ in 0..50 {
             if ping.is_ok() {
@@ -1402,43 +1406,30 @@ mod tests {
         assert_eq!(ping.shared_workspaces, vec!["w".to_string()]);
 
         // TLS is a transport, not an authorization: the bearer check still runs behind it.
-        let stranger = SyncClient::new(format!("https://{addr}"), "nope", true).unwrap();
         assert!(
-            matches!(stranger.ping().await, Err(TransportError::Remote { status: 401, .. })),
+            matches!(named("nope").ping().await, Err(TransportError::Remote { status: 401, .. })),
             "an unknown bearer is refused over TLS too"
         );
 
         // The port speaks TLS only - a plaintext request gets no HTTP answer at all.
-        let plain = SyncClient::new(format!("http://{addr}"), "tok", true).unwrap();
+        let plain = SyncClient::new(format!("http://{addr}"), "tok").unwrap();
         assert!(
             matches!(plain.ping().await, Err(TransportError::Http(_))),
             "plaintext must not be served on the TLS port"
         );
 
-        // And the client only skips verification when told to: a strict one refuses this hub.
-        let strict = SyncClient::new(format!("https://{addr}"), "tok", false).unwrap();
+        // Without the hub's certificate named, the system roots do not know this hub: refused.
+        let strict = SyncClient::new(format!("https://{addr}"), "tok").unwrap();
         assert!(
             matches!(strict.ping().await, Err(TransportError::Http(_))),
-            "a verifying client must refuse a self-signed hub"
+            "a verifying client must refuse a self-signed hub it was not told about"
         );
 
-        // Naming the hub's certificate is how a self-signed hub is trusted without trusting every
-        // certificate (sync-correctness.md Section 10): it is answered, and verification still runs.
-        let named = crate::ServerLink {
-            url: format!("https://{addr}"),
-            auth_token: "tok".into(),
-            ca_pem: Some(minted.cert.pem().into_bytes()),
-            insecure_tls: false,
-        };
-        let ping = SyncClient::for_link(&named).unwrap().ping().await;
-        assert_eq!(ping.expect("the named certificate is trusted").node_id, hub.node_id());
+        // And a different certificate is not this hub's.
         let other = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-        let wrong = crate::ServerLink { ca_pem: Some(other.cert.pem().into_bytes()), ..named };
+        let wrong = SyncClient::for_link(&link("tok", other.cert.pem())).unwrap();
         assert!(
-            matches!(
-                SyncClient::for_link(&wrong).unwrap().ping().await,
-                Err(TransportError::Http(_))
-            ),
+            matches!(wrong.ping().await, Err(TransportError::Http(_))),
             "a different certificate is not this hub's"
         );
 
@@ -1484,10 +1475,10 @@ mod tests {
         let addr = spawn_server(Arc::new(ServerState::new(hub_store, hub, allow))).await;
         let base = format!("http://{addr}");
 
-        let pa = SyncClient::new(&base, "tok-a", false).unwrap().ping().await.unwrap();
+        let pa = SyncClient::new(&base, "tok-a").unwrap().ping().await.unwrap();
         assert_eq!(pa.shared_workspaces, ["ws-a"], "A learns only its own grant");
 
-        let pb = SyncClient::new(&base, "tok-b", false).unwrap().ping().await.unwrap();
+        let pb = SyncClient::new(&base, "tok-b").unwrap().ping().await.unwrap();
         assert_eq!(pb.shared_workspaces, ["ws-b", "ws-shared"], "B learns only its own");
 
         // Neither answer leaks the other's workspaces, which is the whole disclosure question.
@@ -1505,13 +1496,13 @@ mod tests {
         let base = format!("http://{addr}");
 
         // Wrong token -> 401 (F6 wire layer).
-        let bad = SyncClient::new(&base, "wrong-token", false).unwrap();
+        let bad = SyncClient::new(&base, "wrong-token").unwrap();
         match bad.advertise("ws").await {
             Err(TransportError::Remote { status: 401, .. }) => {}
             other => panic!("expected 401, got {other:?}"),
         }
         // Right token, unshared workspace -> 403 (per-node authorization, 6c).
-        let good = SyncClient::new(&base, "secret-token", false).unwrap();
+        let good = SyncClient::new(&base, "secret-token").unwrap();
         match good.advertise("private-ws").await {
             Err(TransportError::Remote { status: 403, .. }) => {}
             other => panic!("expected 403, got {other:?}"),
@@ -1538,11 +1529,10 @@ mod tests {
         let addr = spawn_server(state).await;
         let base = format!("http://{addr}");
 
-        let serving =
-            SyncClient::new(&base, "token", false).unwrap().with_serve(["team".to_string()]);
+        let serving = SyncClient::new(&base, "token").unwrap().with_serve(["team".to_string()]);
         serving.advertise("team").await.unwrap();
         serving.advertise("private").await.unwrap();
-        let older = SyncClient::new(&base, "token", false).unwrap();
+        let older = SyncClient::new(&base, "token").unwrap();
         older.advertise("team").await.unwrap();
 
         let id = spoke.node_id().to_string();
@@ -1571,7 +1561,7 @@ mod tests {
         let state = Arc::new(ServerState::new(hub_store, hub, allow).with_on_applied(hook));
         let keys = state.peers.admitted().origin_keys;
         let addr = spawn_server(state).await;
-        let client = SyncClient::new(format!("http://{addr}"), "token", false).unwrap();
+        let client = SyncClient::new(format!("http://{addr}"), "token").unwrap();
         let mine: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let share = vec!["ws".to_string()];
 
@@ -1608,13 +1598,13 @@ mod tests {
                 .add_observation(Observation::new(format!("{i} {filler}"), prov("ws", i)))
                 .unwrap();
         }
-        let ca = SyncClient::new(format!("http://{addr}"), "token-a", false).unwrap();
+        let ca = SyncClient::new(format!("http://{addr}"), "token-a").unwrap();
         let pushed = ca.sync_workspace(&a_store, &a, "ws", &share, &keys).await.unwrap();
         assert_eq!(pushed.pushed, 1_500, "every batch landed");
         assert_eq!(hub_store.all_observations(Some("ws")).unwrap().len(), 1_500);
 
         let b_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
-        let cb = SyncClient::new(format!("http://{addr}"), "token-b", false).unwrap();
+        let cb = SyncClient::new(format!("http://{addr}"), "token-b").unwrap();
         let pulled = cb.sync_workspace(&b_store, &b, "ws", &share, &keys).await.unwrap();
         assert_eq!(pulled.pulled, 1_500, "every page applied");
     }
@@ -1667,7 +1657,7 @@ mod tests {
             .map(|n| (n.node_id().to_string(), n.public_key_hex()))
             .collect();
         let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
-        let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
+        let client = SyncClient::new(format!("http://{addr}"), "token-p").unwrap();
         let summary = client
             .sync_workspace(&store, &puller, "ws", &["ws".to_string()], &keys)
             .await
@@ -1696,7 +1686,7 @@ mod tests {
         let hooks = Hooks { peer_registry: Some(registry.clone()), ..Hooks::default() };
         let server = tokio::spawn(serve(store, hub.clone(), addr, None, peers, hooks));
 
-        let client = SyncClient::new(format!("http://{addr}"), "tok", false).unwrap();
+        let client = SyncClient::new(format!("http://{addr}"), "tok").unwrap();
         let mut ping = client.ping().await;
         for _ in 0..50 {
             if ping.is_ok() {
@@ -1760,7 +1750,7 @@ mod tests {
         let mut events = p_store.attestations_since("a", &VersionVector::default()).unwrap();
         events.extend(q_store.attestations_since("a", &VersionVector::default()).unwrap());
 
-        let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
+        let client = SyncClient::new(format!("http://{addr}"), "token-p").unwrap();
         let resp = client.push("a", events).await.unwrap();
         assert_eq!(resp.accepted, 1, "p's own event lands");
         assert_eq!(resp.rejected.len(), 1);
@@ -1799,8 +1789,8 @@ mod tests {
         let base = format!("http://{addr}");
         let share = vec!["ws".to_string()];
 
-        let ca = SyncClient::new(&base, "token-a", false).unwrap();
-        let cb = SyncClient::new(&base, "token-b", false).unwrap();
+        let ca = SyncClient::new(&base, "token-a").unwrap();
+        let cb = SyncClient::new(&base, "token-b").unwrap();
         // A: push alpha, pull hub fact. B: push beta, pull hub fact + alpha (relayed). A again: pull beta.
         let s1 = ca.sync_workspace(&a_store, &a_node, "ws", &share, &keys).await.unwrap();
         assert_eq!((s1.pushed, s1.pulled), (1, 1));
