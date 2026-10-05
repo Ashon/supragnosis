@@ -114,6 +114,11 @@ One command registers the bridge with a client, using whatever mechanism that cl
 
 ## 5. The app: AI Apps in the tray
 
+> **Revised ([settings-page.md](settings-page.md)).** The AI Apps submenu became the AI apps section
+> of the app's settings page: one row per app with its state, and one button that says what a click
+> will do. The rules below carry over - the click is the consent, the next step is shown beside the
+> app, and the status line still says when no app is connected.
+
 The tray gains an **AI Apps** submenu built from `connect --json`:
 
 - A connected client shows a check, a client that is not installed is disabled, and the rest are
@@ -201,7 +206,8 @@ Guarded by:
 - `registrations_run_the_bridge_and_carry_no_secret` - C2.
 - `an_edit_changes_one_member_and_nothing_else`, `a_file_that_does_not_parse_is_refused` and
   `a_backup_never_replaces_an_earlier_one` - C3.
-- `an_app_item_says_what_a_click_will_do` - the tray's AI Apps items.
+- `an_app_item_says_what_a_click_will_do` - the settings page's app rows (the tray's AI Apps items
+  until settings-page.md).
 
 Checked end to end:
 - **Bridge, against the live daemon**, with reads only: initialize, tools/list (13 tools),

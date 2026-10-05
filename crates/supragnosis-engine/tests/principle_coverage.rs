@@ -386,7 +386,7 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     ("docs/remote-viewer.md", include_str!("../../../docs/remote-viewer.md")),
     // Listed the day it was written. Its guards live in the app workspace, which this test cannot
     // reach; the shell's source joins SOURCES so the test names it cites are still checked.
-    ("docs/settings-window.md", include_str!("../../../docs/settings-window.md")),
+    ("docs/settings-page.md", include_str!("../../../docs/settings-page.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no

@@ -154,6 +154,10 @@ sync surface.
 
 ## 5. The desktop app as a client
 
+> **Revised ([settings-page.md](settings-page.md)).** The Server submenu became the Server section of
+> the app's settings page, which can also add a profile - credential included, handed to the CLI on
+> stdin - and remove one. The tray keeps the status line naming the server and its state.
+
 The tray gains a **Server** submenu listing the profiles, with the active one checked:
 
 - **The status line names the server and whether it answers**, so a person can tell at a glance
