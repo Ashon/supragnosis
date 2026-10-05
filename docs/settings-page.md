@@ -36,16 +36,47 @@ and an AI Apps submenu. A menu can switch and toggle. It cannot take input, and 
 ## 3. The page
 
 The settings page is the app's own page, bundled with the app (`assets/settings.html`). It opens in
-the main window, in place of the viewer, from the tray's **Settings...** item and from the app menu
-(Cmd+,).
+the main window, in place of the graph.
+
+### 3.0 Moving between the graph and the settings
+
+The main window has two pages, and both carry the same title bar.
 
 - **The title bar is the viewer's.** Same row height, glass, rule and mark, with the window's
-  traffic lights over it in the same place. A crumb after the name says which page this is:
-  `supragnosis / settings`.
-- **"back to the viewer"** sits where the viewer's header controls are, and returns the window to
-  the viewer.
+  traffic lights over it in the same place.
+- **A segmented control beside the name** - Graph | Settings - says which page is showing and moves
+  between them. It sits in the same place on both pages, so moving changes the content, not the
+  chrome.
+- **The keyboard does the same.** Cmd+1 shows the graph, from the View menu. Cmd+, shows the
+  settings, from the app menu where macOS users look for it. The tray's Open Viewer shows the graph,
+  and Settings... shows the settings.
+- **The tray opens Settings where the attention is.** A refused credential or an unanswering server
+  opens the Server section; no AI app connected opens AI apps; version drift opens This Mac.
+- **One stylesheet draws the chrome on both pages** (`assets/shell.css`), so the two cannot drift
+  apart.
+  - The settings page links it from the app's own origin.
+  - The viewer is the daemon's page, so the shell serves the same file on the viewer's origin, at
+    `/__shell/`, and its init script links it there. The shell answers that path itself and never
+    passes it to a daemon or a hub.
 
-The page has three sections.
+### 3.0.1 The layout
+
+The page follows the shape of the platform's own settings:
+
+- **A sidebar of sections** - Server, AI apps, This Mac, About - each with a status dot, so the
+  state of everything is visible before anything is opened.
+- **A content pane** with the selected section: a title, one sentence on what it is for, and
+  grouped cards of rows. Each row has a name, a line of state, and its control on the right - a
+  switch, a button, a status pill.
+- **Dialogs for what needs input or consent.**
+  - Adding a server is a sheet with labelled fields and help text. It checks the shape of what was
+    typed before the CLI does.
+  - Removing a server asks first.
+- **Feedback where the action was.** A button shows progress while its CLI call runs, and only that
+  button waits. The outcome arrives as a notice that a success dismisses on its own and an error
+  keeps until it is read. The first load shows the shape of the page rather than a blank.
+
+The sections follow.
 
 ### 3.1 Server
 
@@ -126,7 +157,7 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 
 ## 6. Decisions
 
-- **A page in the main window, not a window of its own.** One window, with the viewer a click away.
+- **A page in the main window, not a window of its own.** One window, with the graph a click away.
   This was asked for after the first version, which used a separate window (Section 12). What it
   costs is that the capability can no longer separate the settings page from the viewer, so the
   caller check carries S1 alone.
@@ -136,6 +167,10 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **The CLI stays the implementation.** The page is a form over the commands the tray already
   called, and the tray's handlers became the page's commands. Nothing about connecting an app or
   installing a login item is decided twice.
+- **Navigation is chrome, not a link on the page.** A control in the title bar that is the same on
+  both pages, plus the keyboard, rather than a button the settings page alone carries. The viewer
+  does not know the shell exists, so the shell adds the control to the viewer's title bar, as it
+  already adds the drag region.
 - **The tray loses its submenus rather than mirroring the page.** Two places to switch a server
   would be two places to keep consistent. The tray's job is to say what state this Mac is in and to
   open the page that changes it.
@@ -186,19 +221,22 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   command list, and keeps the viewer's capability free of them.
 - **S2**: `a_credential_never_becomes_an_argument` - the arguments of `server add` are built without
   it.
-- **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script, a policy
-  in its head, no inline script.
+- **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the
+  init script that builds the navigation on every page, a policy in the page's head, no inline
+  script.
 - **The page's rows**: `an_app_item_says_what_a_click_will_do`, which once tested the tray's AI Apps
   items, now tests the page's app rows: the state, and the button's label or its absence.
 
 Checked in a development build attached to this Mac's running daemon:
-- Cmd+, turned the main window to the page, and its rows matched the CLI:
-  "This Mac" in use and answering, Claude Desktop and Claude Code connected, Cursor not installed,
-  and the daemon at 0.4.6 as a login item with nothing owed.
-- "back to the viewer" returned to the graph.
-- The two title bars put the traffic lights, the mark and the name in the same place.
-- The tray showed the status line, Open Viewer, Settings... and Quit. Its Settings... item calls the
-  same function as Cmd+, and was not clicked separately.
+- **Navigation.** The Graph | Settings control sat beside the name on both pages and moved between
+  them. Cmd+, and Cmd+1 did the same from the keyboard.
+- **The page matched the CLI.**
+  - Server: This Mac in use and answering.
+  - AI apps: Claude Desktop and Claude Code connected, Cursor not installed, the rest with Connect.
+  - This Mac: running 0.4.6 as a login item, Start at Login on, nothing owed.
+  - About: the versions and paths.
+- **The Add server sheet** opened, refused an empty submission field by field without calling the
+  CLI, and closed on Escape.
 
 No setting was changed while checking.
 
@@ -216,3 +254,17 @@ No setting was changed while checking.
   default menu keeps Edit as the platform defines it.
 - **Placeholders are dimmed.** At full brightness the example values in the Add a server form read
   as values already entered.
+- **Navigation became chrome.** The second version had a "back to the viewer" button on the settings
+  page alone. It is replaced by the Graph | Settings control, the same on both pages, and the
+  keyboard (Section 3.0).
+- **The icons are a set, not drawings.** They are Lucide's (ISC), copied unmodified into
+  `assets/icons/` with the license, because the pages load nothing remote (icons/README.md). CSS
+  draws them as masks over `currentColor`, so an icon takes its text's color.
+- **The chrome moved into one stylesheet.**
+  - The init script used to inject the viewer's chrome rules as an inline style element, which the
+    settings page's policy refused. Those rules now live in `shell.css` with the page navigation.
+  - The shell serves `shell.css`, and the two icons it draws, on the viewer's origin at `/__shell/`.
+  - The init script builds the navigation on both pages, so its markup has one source too, and it
+    is held to the no-markup rule with the page's script.
+- **Hidden means hidden.** A class that sets `display` overrides the `hidden` attribute, and the Add
+  server sheet showed an empty error box until the page said `[hidden]` wins.
