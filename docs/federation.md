@@ -724,7 +724,9 @@ input, not nondeterminism - F16).
 - Transport: `axum` server + `reqwest` client, `rustls` for TLS, `ed25519-dalek` for signing.
 - Config `supragnosis.toml` (via `toml` + serde, unknown keys rejected loudly): `host_label` (display
   only - `node_id` derives from the keypair, Section 2, and is never configured),
-  `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys / serve_workspaces`,
+  `[sync] share_workspaces / servers / auth_token / insecure_tls / origin_keys / serve_workspaces` and
+  `[[sync.server]] url / auth_token / ca` (insecure_tls for loopback hosts only, sync-correctness.md
+  Section 10),
   `[server] listen / tls_cert / tls_key / allowlist / principals` (allowlist entries: `node_id ->
   public key, bearer hash, shared workspaces`; `serve_workspaces` and `principals` are the
   agent surface's, [remote-server.md](remote-server.md) Section 4). Keys this spec anticipates but the config does not have yet: `peers` (P2P,

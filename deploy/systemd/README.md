@@ -107,13 +107,21 @@ And on the **spoke**:
 host_label = "laptop"
 
 [sync]
-servers          = ["https://10.0.0.2:7420"]
-auth_token       = "TOKEN"          # the hub stores only blake3(TOKEN)
 share_workspaces = ["your-workspace"]
-insecure_tls     = true             # self-signed hub
+
+[[sync.server]]
+url        = "https://10.0.0.2:7420"
+auth_token = "TOKEN"                     # the hub stores only blake3(TOKEN)
+ca         = "/etc/supragnosis/hub.pem"  # a copy of the hub's tls_cert, when it is self-signed
+
 [sync.origin_keys]
 "<hub node_id>" = "<hub public key>"
 ```
+
+A self-signed hub is trusted by naming its certificate: copy the hub's `tls_cert` file to the spoke
+and point `ca` at it. The spoke then trusts that certificate and no other. `insecure_tls` accepts any
+certificate, so it applies to a hub on the same machine only; for any other host it is ignored and
+the round fails verification, rather than hand the bearer to whoever answers.
 
 Prefer a literal IP over an mDNS `.local` name in `servers` - it keeps name resolution out of the
 sync path entirely.
