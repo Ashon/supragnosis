@@ -90,19 +90,22 @@ fi
 
 # --- spoke config -----------------------------------------------------------
 # The per-server shape, which is the point of Step 1: one credential per host rather than one token
-# presented to all of them. `insecure_tls` because the hub's certificate is self-signed here -
-# content authenticity stays with the event signatures either way (F6).
+# presented to all of them. The hub's certificate is self-signed here, so the spoke is handed a copy
+# and trusts exactly that one (`ca`), never any certificate: `insecure_tls` applies to loopback
+# hubs only (docs/sync-correctness.md Section 10). The certificate names `hub`, the URL's host.
+cp "$HUB_STATE/tls/cert.pem" "$SPOKE_STATE/hub-ca.pem"
+chmod 644 "$SPOKE_STATE/hub-ca.pem"
 if [ ! -f "$SPOKE_STATE/supragnosis.toml" ]; then
   cat > "$SPOKE_STATE/supragnosis.toml" <<EOF
 host_label = "sandbox-spoke"
 
 [sync]
 share_workspaces = [$SPOKE_SHARES]
-insecure_tls = true
 
 [[sync.server]]
 url = "https://hub:7420"
 auth_token = "$SPOKE_TOKEN"
+ca = "/var/lib/supragnosis/.supragnosis/hub-ca.pem"
 
 [sync.origin_keys]
 $HUB_ID = "$HUB_KEY"

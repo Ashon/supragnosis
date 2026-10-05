@@ -468,9 +468,14 @@ fn authenticate(headers: &HeaderMap, allowlist: &[AllowEntry]) -> Result<AllowEn
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or((StatusCode::UNAUTHORIZED, "missing bearer token".to_string()))?;
     let hash = blake3::hash(token.as_bytes()).to_hex().to_string();
+    // Compared in constant time, as the principal surface does: an early-exit string compare tells
+    // a caller, by how long a refusal takes, how much of a hash it has right.
+    let same = |a: &str, b: &str| {
+        a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    };
     allowlist
         .iter()
-        .find(|e| e.bearer_hash == hash)
+        .find(|e| same(&e.bearer_hash, &hash))
         .cloned()
         .ok_or((StatusCode::UNAUTHORIZED, "unknown bearer token".to_string()))
 }
@@ -744,16 +749,40 @@ pub struct SyncClient {
 }
 
 impl SyncClient {
-    /// `insecure_tls` accepts a self-signed server certificate (an internal-VM hub before a real CA);
-    /// the signature layer (F6) still authenticates content end-to-end even then.
+    /// `insecure_tls` accepts any server certificate. Configuration sets it only for a loopback
+    /// host (sync-correctness.md Section 10); the signature layer (F6) still authenticates content
+    /// end to end, but not the bearer this client presents.
     pub fn new(
         base_url: impl Into<String>,
         token: impl Into<String>,
         insecure_tls: bool,
     ) -> Result<Self, TransportError> {
+        Self::build(base_url, token, None, insecure_tls)
+    }
+
+    /// The client for one configured host: its credential, and the certificate it trusts for it.
+    pub fn for_link(link: &crate::ServerLink) -> Result<Self, TransportError> {
+        Self::build(&link.url, &link.auth_token, link.ca_pem.as_deref(), link.insecure_tls)
+    }
+
+    fn build(
+        base_url: impl Into<String>,
+        token: impl Into<String>,
+        ca_pem: Option<&[u8]>,
+        insecure_tls: bool,
+    ) -> Result<Self, TransportError> {
         // Same CryptoProvider pin as the server side (idempotent) - the client dials HTTPS hubs.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let http = reqwest::Client::builder().danger_accept_invalid_certs(insecure_tls).build()?;
+        let mut builder = reqwest::Client::builder();
+        // A named certificate is how a self-signed hub is trusted without trusting every hub.
+        for cert in ca_pem
+            .map(reqwest::Certificate::from_pem_bundle)
+            .transpose()?
+            .unwrap_or_default()
+        {
+            builder = builder.add_root_certificate(cert);
+        }
+        let http = builder.danger_accept_invalid_certs(insecure_tls).build()?;
         Ok(Self {
             base: base_url.into().trim_end_matches('/').to_string(),
             token: token.into(),
@@ -1087,6 +1116,26 @@ mod tests {
         assert!(
             matches!(strict.ping().await, Err(TransportError::Http(_))),
             "a verifying client must refuse a self-signed hub"
+        );
+
+        // Naming the hub's certificate is how a self-signed hub is trusted without trusting every
+        // certificate (sync-correctness.md Section 10): it is answered, and verification still runs.
+        let named = crate::ServerLink {
+            url: format!("https://{addr}"),
+            auth_token: "tok".into(),
+            ca_pem: Some(minted.cert.pem().into_bytes()),
+            insecure_tls: false,
+        };
+        let ping = SyncClient::for_link(&named).unwrap().ping().await;
+        assert_eq!(ping.expect("the named certificate is trusted").node_id, hub.node_id());
+        let other = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let wrong = crate::ServerLink { ca_pem: Some(other.cert.pem().into_bytes()), ..named };
+        assert!(
+            matches!(
+                SyncClient::for_link(&wrong).unwrap().ping().await,
+                Err(TransportError::Http(_))
+            ),
+            "a different certificate is not this hub's"
         );
 
         server.abort();

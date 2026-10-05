@@ -755,11 +755,10 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
-            ServerLink { url: admits.clone(), auth_token: "t".into() },
-            ServerLink { url: refuses.clone(), auth_token: "t".into() },
+            ServerLink { url: admits.clone(), auth_token: "t".into(), ..Default::default() },
+            ServerLink { url: refuses.clone(), auth_token: "t".into(), ..Default::default() },
         ],
         surfaces,
-        insecure_tls: false,
         origin_keys: Default::default(),
         peer_registry: None,
     });
@@ -813,9 +812,12 @@ async fn a_remote_search_does_not_leave_for_an_unshared_workspace() {
         share_workspaces: vec!["ws".into()],
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
-        servers: vec![ServerLink { url: host.clone(), auth_token: "t".into() }],
+        servers: vec![ServerLink {
+            url: host.clone(),
+            auth_token: "t".into(),
+            ..Default::default()
+        }],
         surfaces: Default::default(),
-        insecure_tls: false,
         origin_keys: Default::default(),
         peer_registry: None,
     });
@@ -884,11 +886,18 @@ async fn routing_on_the_negotiated_map_records_nothing() {
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
-            ServerLink { url: "http://127.0.0.1:1".into(), auth_token: "t".into() },
-            ServerLink { url: "http://127.0.0.1:2".into(), auth_token: "t".into() },
+            ServerLink {
+                url: "http://127.0.0.1:1".into(),
+                auth_token: "t".into(),
+                ..Default::default()
+            },
+            ServerLink {
+                url: "http://127.0.0.1:2".into(),
+                auth_token: "t".into(),
+                ..Default::default()
+            },
         ],
         surfaces,
-        insecure_tls: false,
         origin_keys: Default::default(),
         peer_registry: None,
     });
@@ -970,7 +979,6 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
         config_notes: vec![note.clone()],
         servers: Vec::new(),
         surfaces: Default::default(),
-        insecure_tls: false,
         origin_keys: Default::default(),
         peer_registry: None,
     });

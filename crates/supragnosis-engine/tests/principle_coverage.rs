@@ -1015,6 +1015,9 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
               "a_node_is_never_its_own_peer_through_either_path",
               "a_key_in_another_spelling_is_named_and_ignored",
+              // insecure_tls off loopback and plain HTTP to another machine are ignored, which can
+              // only make a link fail, never send the bearer unverified (sync-correctness.md 10).
+              "the_bearer_only_crosses_the_network_encrypted_to_a_verified_host",
           ])),
         c("refusal is reserved for proceeding being worse: a wrong answer, or an unauthorized surface",
           Evidence::Scenario(&[

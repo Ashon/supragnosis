@@ -405,7 +405,8 @@ silently disable a role.
 share_workspaces = ["supragnosis"]         # whitelist of workspaces to export outward (P17, default: none)
 servers = ["https://hub.example:7420"]     # hub(s) this node syncs with
 auth_token = "..."                         # bearer presented to the hub
-insecure_tls = false                       # true only for a self-signed hub cert
+insecure_tls = false                       # loopback hubs only; a self-signed remote hub is
+                                           # trusted by `ca` in its [[sync.server]] entry
 origin_keys = { }                          # node_id -> public key directory (manual until Phase 5)
 
 [server]                                   # present only when this node runs a hub
