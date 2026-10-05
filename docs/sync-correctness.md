@@ -198,10 +198,16 @@ as usual.
 
 - **A hub's certificate can be named.** `[[sync.server]]` gains `ca`, a PEM file of the CA or
   self-signed certificate to trust for that hub, the same option a remote MCP profile already has.
-  This is what the deployment guides and the sandbox use in place of `insecure_tls`.
-- **`insecure_tls` applies to loopback hubs only.** For any other host it is ignored, and a
-  configuration note says to name the certificate with `ca`. Ignoring it makes a link fail rather
-  than send the bearer unverified, so it errs toward sharing less (P24).
+  A server presenting one of the named certificates exactly is trusted as it, which is what a
+  self-signed hub needs: `openssl req -x509` marks its certificate as a CA by default, and a
+  chain-only verifier refuses a CA presented as the server's own. Any other certificate must chain
+  to one of them, so the file also works as a CA bundle. The remote MCP profile's `ca` trusts the
+  same way. This is what the deployment guides and the sandbox use.
+- **`insecure_tls` is retired.** With `ca`, nothing needs to accept any certificate: a hub on this
+  machine is reached over `http://`, and a self-signed one anywhere is named. The key is still
+  parsed, so a file that sets it keeps working, but it is never read, and a configuration note says
+  to name the certificate instead. Ignoring it makes a link fail rather than send the bearer
+  unverified, so it errs toward sharing less (P24). No client can skip verification.
 - **No bearer over plain HTTP off loopback.** A `http://` URL to a non-loopback host disables that
   link, with a configuration note. This is the rule `normalize_url` already applies to remote
   profiles.
@@ -261,7 +267,7 @@ Each step is independent and lands with its tests. Order is by what each loses i
    - a rejected event is offered again and fills its gap once accepted;
    - an export after a peer's newer edit does not win.
 2. **Admission** (Sections 7-9): canonical hex, the origin rule, the outbound share check.
-3. **Transport** (Section 10): `ca`, `insecure_tls` and plain HTTP limited to loopback,
+3. **Transport** (Section 10): `ca`, `insecure_tls` retired, plain HTTP limited to loopback,
    constant-time compare. The sandbox and the deployment guides move to `ca` in the same change.
 4. **Bounds** (Section 11): the ingest cap, the declared limit, push batches, pull pages, timeouts.
 5. **The wire's version** (Section 12): the headers, `PingResp.protocol`, both sides' displays.
