@@ -31,7 +31,12 @@
   // button, so the viewer needs to know nothing of this.
   function takeOverGear() {
     var gear = document.getElementById("settingsBtn");
-    if (!gear) return;
+    if (!gear) {
+      // A daemon whose page no longer has the gear (docs/compatibility.md Section 8): its settings
+      // stay the viewer's own, and the page is left as the daemon drew it.
+      console.warn("shell: the viewer has no #settingsBtn - Settings opens from the menu (Cmd+,) only");
+      return;
+    }
     gear.title = "Settings (\u2318,)";
     gear.setAttribute("aria-label", "Settings");
     document.addEventListener("click", function (e) {

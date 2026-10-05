@@ -443,14 +443,44 @@ fn run_cli(args: &[&str]) -> Option<std::process::Output> {
     Command::new(bin).args(args).stdin(Stdio::null()).output().ok()
 }
 
-/// `supragnosis status --json`. `None` when the CLI predates it - the tray then falls back to what
-/// the shell itself knows and disables the switch rather than failing on click.
-fn cli_status() -> Option<serde_json::Value> {
-    let out = run_cli(&["status", "--json"])?;
+/// The highest schema of the CLI's machine-read answers this app reads (docs/compatibility.md
+/// Section 6). An answer without one is from a CLI before the contract: its fields are the ones
+/// this app already reads, and degrades on when they are missing.
+const CLI_SCHEMA: u64 = 1;
+
+/// Whether the last machine-read answer carried a schema newer than [`CLI_SCHEMA`]. The tray line
+/// and the Settings page then say to update the app, instead of reading a payload whose meaning
+/// moved.
+static CLI_NEWER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// One machine-read CLI answer, by its schema. `Err` carries a schema newer than this app reads,
+/// whose payload is not read at all; `Ok(None)` is output that is not JSON.
+fn cli_json(stdout: &[u8]) -> Result<Option<serde_json::Value>, u64> {
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(stdout) else {
+        return Ok(None);
+    };
+    match v["schema"].as_u64() {
+        Some(s) if s > CLI_SCHEMA => Err(s),
+        _ => Ok(Some(v)),
+    }
+}
+
+/// Runs a `--json` command. `None` when there is no answer to read: no CLI, a CLI that does not
+/// know the command, or one newer than this app (which [`CLI_NEWER`] records).
+fn run_cli_json(args: &[&str]) -> Option<serde_json::Value> {
+    let out = run_cli(args)?;
     if !out.status.success() {
         return None;
     }
-    serde_json::from_slice(&out.stdout).ok()
+    let read = cli_json(&out.stdout);
+    CLI_NEWER.store(read.is_err(), std::sync::atomic::Ordering::Relaxed);
+    read.ok().flatten()
+}
+
+/// `supragnosis status --json`. `None` when the CLI predates it - the tray then falls back to what
+/// the shell itself knows and disables the switch rather than failing on click.
+fn cli_status() -> Option<serde_json::Value> {
+    run_cli_json(&["status", "--json"])
 }
 
 /// The one line the CLI said that matters: its error on failure, its first line on success.
@@ -517,11 +547,7 @@ fn active_remote(app: &tauri::AppHandle) -> Option<RemoteServer> {
 
 /// `supragnosis server --json`. `None` when the CLI predates profiles.
 fn cli_server_list() -> Option<serde_json::Value> {
-    let out = run_cli(&["server", "--json"])?;
-    if !out.status.success() {
-        return None;
-    }
-    serde_json::from_slice(&out.stdout).ok()
+    run_cli_json(&["server", "--json"])
 }
 
 /// Re-reads the server profiles and records whether a remote one is active. Returns what the CLI
@@ -555,6 +581,9 @@ fn remote_line(r: &RemoteServer) -> String {
     }
 }
 
+/// The tray's line when the CLI answers in a schema this app does not read.
+const CLI_NEWER_LINE: &str = "supragnosis-server is newer than this app - update the app";
+
 /// Re-reads the CLI's view and republishes the tray's one line (docs/settings-page.md Section 5).
 async fn refresh_status(app: &tauri::AppHandle) {
     refresh_servers(app).await;
@@ -568,17 +597,21 @@ async fn refresh_status(app: &tauri::AppHandle) {
         }
         None => {
             let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-            let drift = st.as_ref().is_some_and(|v| {
-                let running = v["version"]["running"].as_str();
-                running.is_some() && running != v["version"]["here"].as_str()
-            });
-            let text = status_text(
-                &app.state::<DaemonGuard>().0.lock().unwrap(),
-                st.as_ref(),
-                hint.as_deref(),
-            );
-            let attention = if drift { Some("daemon") } else { hint.as_ref().map(|_| "apps") };
-            (text, attention)
+            if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
+                (CLI_NEWER_LINE.to_string(), Some("daemon"))
+            } else {
+                let drift = st.as_ref().is_some_and(|v| {
+                    let running = v["version"]["running"].as_str();
+                    running.is_some() && running != v["version"]["here"].as_str()
+                });
+                let text = status_text(
+                    &app.state::<DaemonGuard>().0.lock().unwrap(),
+                    st.as_ref(),
+                    hint.as_deref(),
+                );
+                let attention = if drift { Some("daemon") } else { hint.as_ref().map(|_| "apps") };
+                (text, attention)
+            }
         }
     };
     if let Some(status) = app.try_state::<TrayStatus>() {
@@ -591,11 +624,7 @@ async fn refresh_status(app: &tauri::AppHandle) {
 
 /// `supragnosis connect --json`. `None` when the CLI predates it.
 fn cli_connect_list() -> Option<serde_json::Value> {
-    let out = run_cli(&["connect", "--json"])?;
-    if !out.status.success() {
-        return None;
-    }
-    serde_json::from_slice(&out.stdout).ok()
+    run_cli_json(&["connect", "--json"])
 }
 
 /// One AI app's row on the settings page, from the CLI's report on it: what state it is in, the
@@ -992,6 +1021,7 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
         .map(|s| s != "absent");
     serde_json::json!({
         "cli": find_server_bin().is_some(),
+        "cli_newer": CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed),
         "server": {
             "known": servers.is_some(),
             "active": servers.as_ref().map(|l| l["active"].clone()),
@@ -1762,5 +1792,101 @@ mod settings_tests {
         let html = include_str!("../assets/settings.html");
         assert!(html.contains("Content-Security-Policy"), "the page carries its own policy");
         assert!(!html.contains("<script>"), "no inline script");
+    }
+}
+
+/// docs/compatibility.md Section 6, the app's side. The CLI's own tests hold its `--json` output
+/// to one example document per command; these hold this app's readers to the same documents, so a
+/// field read here that the CLI never sends fails here, and a field the CLI renames fails there.
+#[cfg(test)]
+mod cli_contract_tests {
+    use super::{app_row, cli_json, status_text, who_runs, Daemon, CLI_SCHEMA};
+
+    const STATUS: &str =
+        include_str!("../../crates/supragnosis-cli/tests/fixtures/json/status.json");
+    const CONNECT: &str =
+        include_str!("../../crates/supragnosis-cli/tests/fixtures/json/connect.json");
+    const SERVERS: &str =
+        include_str!("../../crates/supragnosis-cli/tests/fixtures/json/servers.json");
+
+    fn read(doc: &str) -> serde_json::Value {
+        cli_json(doc.as_bytes()).expect("a schema this app reads").expect("JSON")
+    }
+
+    /// Every field this app reads from a CLI answer, by JSON pointer. A reader that starts using
+    /// another field adds it here, and the example has to carry it.
+    #[test]
+    fn every_field_the_app_reads_is_in_the_clis_examples() {
+        let reads: [(&str, &[&str]); 3] = [
+            (
+                STATUS,
+                &[
+                    "/situation",
+                    "/managers/1/type",
+                    "/managers/1/source",
+                    "/managers/1/label",
+                    "/answering",
+                    "/version/here",
+                    "/version/running",
+                    "/store/owed_projections",
+                    "/store/last_recovery",
+                    "/service/state",
+                ],
+            ),
+            (CONNECT, &["/clients/0/id", "/clients/0/installed", "/clients/0/entry"]),
+            (
+                SERVERS,
+                &[
+                    "/active",
+                    "/servers/0/name",
+                    "/servers/0/url",
+                    "/servers/0/remote",
+                    "/servers/0/active",
+                    "/check/answering",
+                    "/check/credential",
+                    "/check/detail",
+                ],
+            ),
+        ];
+        for (doc, pointers) in reads {
+            let v = read(doc);
+            for p in pointers {
+                assert!(v.pointer(p).is_some(), "the app reads {p}, which the example lacks");
+            }
+        }
+    }
+
+    /// The examples go through the same readers a live answer does, and read as they should.
+    #[test]
+    fn the_examples_read_through_the_apps_own_readers() {
+        let st = read(STATUS);
+        assert!(status_text(&Daemon::External, Some(&st), None).contains("CONFLICT"));
+        let mut one = st.clone();
+        one["situation"] = "one".into();
+        one["managers"] = serde_json::json!([st["managers"][1].clone()]);
+        assert_eq!(who_runs(&Daemon::External, &one), "login item");
+        let line = status_text(&Daemon::External, Some(&one), None);
+        assert!(line.contains("0.4.7 running, 0.4.8 installed"), "{line}");
+
+        let apps = read(CONNECT);
+        let kinds: Vec<_> = apps["clients"]
+            .as_array()
+            .expect("clients")
+            .iter()
+            .map(|r| app_row(Some(r)).2)
+            .collect();
+        for kind in ["connected", "attention", "off", "absent"] {
+            assert!(kinds.contains(&kind), "{kind} in {kinds:?}");
+        }
+    }
+
+    /// A schema newer than this app reads is not read at all; an answer without one is a CLI from
+    /// before the contract, and is read as before.
+    #[test]
+    fn a_newer_schema_is_not_read_and_an_older_cli_still_is() {
+        let newer = format!(r#"{{"schema": {}, "situation": "one"}}"#, CLI_SCHEMA + 1);
+        assert_eq!(cli_json(newer.as_bytes()), Err(CLI_SCHEMA + 1));
+        assert!(cli_json(br#"{"situation": "one"}"#).expect("read").is_some());
+        assert_eq!(cli_json(b"not json"), Ok(None));
     }
 }

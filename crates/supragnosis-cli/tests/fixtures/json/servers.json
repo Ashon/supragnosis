@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "active": "lab",
+  "servers": [
+    {
+      "name": "local",
+      "url": "http://127.0.0.1:7373/mcp",
+      "remote": false,
+      "active": false
+    },
+    {
+      "name": "lab",
+      "url": "https://lab.example:7420/mcp",
+      "remote": true,
+      "active": true
+    }
+  ],
+  "check": {
+    "answering": true,
+    "credential": true,
+    "detail": null
+  }
+}
