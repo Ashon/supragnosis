@@ -60,9 +60,10 @@ That also reaches Claude Desktop, which takes local servers over stdio only. A c
 URL instead can use `http://127.0.0.1:7373/mcp` with that token; `supragnosis status` prints the
 command, reading the token from its file rather than printing it.
 
-With the desktop app (`brew install --cask supragnosis`), its tray menu does both without a
-terminal: Start at Login keeps the daemon running, and AI Apps connects Claude Desktop, Claude Code
-and the others with a click. After `brew upgrade`, `supragnosis restart` loads the new binary -
+With the desktop app (`brew install --cask supragnosis`), its Settings page (Settings... in the tray,
+or Cmd+,) does both without a terminal: Start at Login keeps the daemon running, and AI apps connects
+Claude Desktop, Claude Code and the others with a click. A server on another machine is added there
+too. After `brew upgrade`, `supragnosis restart` loads the new binary -
 until then `supragnosis status` and the tray say the daemon is running the old one.
 
 Not on Homebrew:

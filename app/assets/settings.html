@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- The desktop app's settings page (docs/settings-page.md). The app's own page, shown in the main
+     window in place of the viewer - nothing here is served by a daemon or a hub - and the only page
+     the settings commands answer. The policy below allows this page's own script and style, and
+     Tauri's IPC, and nothing else. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings</title>
+<link rel="stylesheet" href="settings.css">
+</head>
+<body>
+<!-- The title bar is the viewer's, mark and all: same row height, so the window's overlaid traffic
+     lights sit in it the same way, and the shell's init script makes it the drag region as it does
+     the viewer's. Only the crumb after the name says which page this is. -->
+<header>
+  <h1><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg>supragnosis<span class="crumb">settings</span></h1>
+  <a id="back" class="button" href="viz://localhost/">back to the viewer</a>
+</header>
+<main>
+  <p class="sub">This Mac's connection to supragnosis.</p>
+
+  <section id="server">
+    <h2>Server</h2>
+    <p class="explain">Which supragnosis server this Mac's AI apps use. Switching takes effect from each app's next session.</p>
+    <div id="profiles" class="rows"></div>
+    <details id="addServer">
+      <summary>Add a server</summary>
+      <form id="addForm" autocomplete="off">
+        <label>Name <input id="addName" required pattern="[A-Za-z0-9_-]{1,64}" placeholder="home" spellcheck="false"></label>
+        <label>URL <input id="addUrl" required placeholder="https://hub.example:7420" spellcheck="false"></label>
+        <label>Credential <input id="addCred" type="password" required placeholder="the credential the server's operator gave you" spellcheck="false"></label>
+        <label>CA bundle <span class="opt">optional</span> <input id="addCa" placeholder="/path/to/ca.pem - only for a server with a private CA" spellcheck="false"></label>
+        <label class="check"><input id="addUse" type="checkbox" checked> Use it now</label>
+        <div class="actions"><button type="submit" id="addBtn" class="primary">Add server</button></div>
+      </form>
+    </details>
+  </section>
+
+  <section id="apps">
+    <h2>AI apps</h2>
+    <p class="explain">Each app reaches supragnosis through the bridge, which holds no copy of the token and follows the server above.</p>
+    <div id="appRows" class="rows"></div>
+  </section>
+
+  <section id="daemon">
+    <h2>This Mac's daemon</h2>
+    <p id="daemonLine" class="line"></p>
+    <p id="daemonNote" class="explain"></p>
+    <div class="rows">
+      <div class="row">
+        <div class="what"><div class="name">Start at Login</div><div class="state">Keeps the daemon running whenever you are logged in.</div></div>
+        <label class="switch"><input id="login" type="checkbox"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="what"><div class="name">Restart</div><div class="state" id="storeLine"></div></div>
+        <button id="restart">Restart Daemon</button>
+      </div>
+    </div>
+  </section>
+
+  <footer id="message" role="status" aria-live="polite"></footer>
+</main>
+<script src="settings.js"></script>
+</body>
+</html>
