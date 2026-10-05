@@ -424,6 +424,11 @@ function render() {
   } else if (!state.cli) {
     body = [h("div", { class: "callout warn" }, icon("warn"),
       h("div", { class: "grow", text: "The supragnosis CLI was not found. Install supragnosis-server (brew install supragnosis-server) and reopen Settings." }))];
+  } else if (state.cli_newer && (id === "server" || id === "apps" || id === "daemon")) {
+    // docs/compatibility.md Section 6: the CLI answered in a schema this app does not read, so these
+    // sections are not drawn from a payload whose meaning moved.
+    body = [h("div", { class: "callout warn" }, icon("warn"),
+      h("div", { class: "grow", text: "This supragnosis-server is newer than the app. Update the app (brew upgrade --cask supragnosis) and reopen Settings." }))];
   } else {
     // An explicit switch rather than a lookup by name: the id comes from the URL's hash, and a
     // property lookup would also find what every object has (constructor, __proto__).

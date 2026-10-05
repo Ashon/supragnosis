@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "program": "/opt/homebrew/bin/supragnosis",
+  "clients": [
+    {
+      "id": "claude-desktop",
+      "name": "Claude Desktop",
+      "installed": true,
+      "entry": "bridge",
+      "config": "/Users/you/Library/Application Support/Claude/claude_desktop_config.json",
+      "via": "file"
+    },
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "installed": true,
+      "entry": "http",
+      "config": "/Users/you/.claude.json",
+      "via": "cli"
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "installed": true,
+      "entry": "none",
+      "config": "/Users/you/.cursor/mcp.json",
+      "via": "file"
+    },
+    {
+      "id": "vscode",
+      "name": "VS Code",
+      "installed": false,
+      "entry": "none",
+      "config": "/Users/you/Library/Application Support/Code/User/mcp.json",
+      "via": "cli"
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "installed": false,
+      "entry": "none",
+      "config": "/Users/you/.codex/config.toml",
+      "via": "cli"
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "installed": false,
+      "entry": "none",
+      "config": "/Users/you/.gemini/settings.json",
+      "via": "cli"
+    }
+  ]
+}
