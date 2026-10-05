@@ -5,8 +5,8 @@
 > Companion to [client-connect.md](client-connect.md) (the bridge every AI app launches) and
 > [federation.md](federation.md) (nodes that replicate; Section 6 is the trust model this extends).
 >
-> Status: **built** (Section 10 steps 1-3); steps 4-5 are specified. What building it changed is
-> in Section 12.
+> Status: **built** (Section 10 steps 1-3); step 4 is specified in [remote-viewer.md](remote-viewer.md),
+> and step 5 here. What building it changed is in Section 12.
 
 ## 1. Why this exists
 
@@ -165,9 +165,9 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
 - **The viewer cannot show a remote server yet.** It reads the local daemon over a unix socket.
   Showing a remote server needs federation's network read tier (Phase 3.5): TLS, per-principal
   grants filtering every read, no state-changing request, and the web hardening federation.md 6d
-  lists. That is Section 10's step 4. Until it lands, the viewer window on a remote profile says
-  which server the AI apps use and that browsing it needs a newer release - not an empty graph,
-  which would read as "no knowledge" (P5).
+  lists. That is Section 10's step 4, specified in [remote-viewer.md](remote-viewer.md). Until it
+  lands, the viewer window on a remote profile says which server the AI apps use and that browsing
+  it needs a newer release - not an empty graph, which would read as "no knowledge" (P5).
 
 ## 6. The three cases, end to end
 
@@ -234,7 +234,7 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
    it serves only workspaces whose content the hub itself originated (R5, failing closed).
 3. **Consent**: `serve_workspaces` on spokes, recorded by the hub, checked per workspace.
 4. **The remote viewer**: federation's Phase 3.5 network read tier, and the desktop app browsing a
-   remote server.
+   remote server ([remote-viewer.md](remote-viewer.md)).
 5. **Signed acts**: principal keys held by the bridge, and with them remote verdicts and T-Box
    changes (federation.md 6d level ii).
 
