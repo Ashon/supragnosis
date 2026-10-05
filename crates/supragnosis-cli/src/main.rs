@@ -502,6 +502,43 @@ fn refuse_unmigrated_store(cfg: &Config) -> Result<()> {
     )
 }
 
+/// A key not in the one spelling this software writes could never verify an event
+/// (sync-correctness.md Section 7), so the entry carrying it is IGNORED for the run, and the file is
+/// left alone for the operator to correct. Ignoring an allowlist entry drops a live credential and
+/// ignoring an origin key drops what that origin's events would land as: both share less (P24).
+fn noncanonical_key_notes(fc: &fed::FileConfig) -> Vec<String> {
+    let bad = |k: &str| !supragnosis_core::is_canonical_public_key_hex(k);
+    let mut notes = Vec::new();
+    for e in fc.server.iter().flat_map(|s| &s.allowlist) {
+        if bad(&e.public_key_hex) {
+            notes.push(format!(
+                "[[server.allowlist]] {}: public_key_hex is not 64 lowercase hex digits, so no event \
+                 it signs could verify. The entry is IGNORED for this run. Copy the key exactly as \
+                 `supragnosis identity` prints it on that node.",
+                e.node_id
+            ));
+        }
+    }
+    for (id, k) in &fc.sync.origin_keys {
+        if bad(k) {
+            notes.push(format!(
+                "[sync.origin_keys] {id}: the key is not 64 lowercase hex digits, so no event it \
+                 signs could verify. It is IGNORED for this run. Copy the key exactly as \
+                 `supragnosis identity` prints it on that node."
+            ));
+        }
+    }
+    notes
+}
+
+/// The origin keys this node verifies pulled events against: `[sync.origin_keys]` without the
+/// entries [`noncanonical_key_notes`] names.
+fn trusted_origin_keys(sync: &fed::SyncSection) -> std::collections::BTreeMap<String, String> {
+    let mut keys = sync.origin_keys.clone();
+    keys.retain(|_, k| supragnosis_core::is_canonical_public_key_hex(k));
+    keys
+}
+
 /// F14's other half: a node whose own id sits in its own allowlist admits itself as a peer.
 ///
 /// It would answer its own pulls, and once routing consults a host's answer it would negotiate with
@@ -672,6 +709,7 @@ fn build_sync_context(
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     let (links, mut config_notes) = fc.sync.links();
     config_notes.extend(drop_self_admission(node.node_id(), fc.server.as_ref()));
+    config_notes.extend(noncanonical_key_notes(&fc));
     let (serve_workspaces, serve_notes) = fc.sync.serve_set();
     config_notes.extend(serve_notes);
     for n in &config_notes {
@@ -763,7 +801,7 @@ fn build_sync_context(
         };
         admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?);
     }
-    let mut origin_keys = fc.sync.origin_keys.clone();
+    let mut origin_keys = trusted_origin_keys(&fc.sync);
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
     // Federation status task: health-checks the configured hubs (connectivity + auth +
     // authorization in one round trip), computes per-workspace diffs vs each hub, snapshots the
@@ -1158,7 +1196,7 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
     rt.block_on(async {
         let engine = build_engine(&cfg, None)?;
         let store = engine.store();
-        let mut keys = fc.sync.origin_keys.clone();
+        let mut keys = trusted_origin_keys(&fc.sync);
         keys.insert(node.node_id().to_string(), node.public_key_hex());
         for link in &links {
             let server = &link.url;
@@ -4021,5 +4059,41 @@ mod json_contract {
         assert!(same_shape(&e, &serde_json::json!({"a": {"b": 2}, "c": "y"}), "t").is_ok());
         assert!(same_shape(&e, &serde_json::json!({"a": {"bb": 1}, "c": "x"}), "t").is_err());
         assert!(same_shape(&e, &serde_json::json!({"a": {"b": "1"}, "c": "x"}), "t").is_err());
+    }
+}
+
+/// sync-correctness.md Section 7: a key in another spelling is named and ignored, in both places a
+/// configuration holds keys, and the canonical entries beside it are kept.
+#[cfg(test)]
+mod key_spelling {
+    use super::*;
+
+    #[test]
+    fn a_key_in_another_spelling_is_named_and_ignored() {
+        let good = "ab".repeat(32);
+        let toml = format!(
+            r#"
+            [sync]
+            share_workspaces = ["ws"]
+            [sync.origin_keys]
+            hub = "{good}"
+            loud = "{upper}"
+
+            [server]
+            listen = "127.0.0.1:7420"
+            [[server.allowlist]]
+            node_id = "peer"
+            public_key_hex = "{upper}"
+            bearer_hash = "{good}"
+            shared_workspaces = ["ws"]
+            "#,
+            upper = good.to_uppercase()
+        );
+        let fc: fed::FileConfig = toml::from_str(&toml).expect("parses");
+        let notes = noncanonical_key_notes(&fc);
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes[0].contains("peer") && notes[1].contains("loud"));
+        let keys = trusted_origin_keys(&fc.sync);
+        assert_eq!(keys.keys().collect::<Vec<_>>(), vec!["hub"]);
     }
 }

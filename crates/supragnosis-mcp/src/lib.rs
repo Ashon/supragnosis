@@ -533,50 +533,63 @@ impl SupragnosisServer {
                         .workspace
                         .clone()
                         .unwrap_or_else(|| self.engine.default_workspace().to_string());
-                    // Ask only hosts that admit this workspace, and name the ones left out. Without
-                    // the naming a narrowed recall is indistinguishable from an empty world, which is
-                    // the reading P5 exists to prevent (N5); without the narrowing every non-
-                    // admitting host answers 403 and the misses drown in denials.
-                    let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws_name);
-                    if !routed.skipped.is_empty() {
+                    // A query names what it is about, so it leaves only for a workspace this node
+                    // shares, as a push does (sync-correctness.md Section 9). The local half below
+                    // still answers.
+                    if !ctx.share_workspaces.iter().any(|w| w == &ws_name) {
                         remote_results.push(serde_json::json!({
-                            "skipped": routed.skipped,
-                            "why": "these hosts do not admit this workspace - not consulted, not empty",
+                            "skipped_workspace": ws_name,
+                            "why": "not in [sync] share_workspaces - a query does not leave for a \
+                                    workspace this node does not share. Add it there to search \
+                                    hosts for it",
                         }));
-                    }
-                    for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
-                        let server = &link.url;
-                        let client = match supragnosis_sync::http::SyncClient::new(
-                            server,
-                            &link.auth_token,
-                            ctx.insecure_tls,
-                        ) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                remote_results.push(
+                    } else {
+                        // Ask only hosts that admit this workspace, and name the ones left out. Without
+                        // the naming a narrowed recall is indistinguishable from an empty world, which is
+                        // the reading P5 exists to prevent (N5); without the narrowing every non-
+                        // admitting host answers 403 and the misses drown in denials.
+                        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws_name);
+                        if !routed.skipped.is_empty() {
+                            remote_results.push(serde_json::json!({
+                                "skipped": routed.skipped,
+                                "why": "these hosts do not admit this workspace - not consulted, not empty",
+                            }));
+                        }
+                        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
+                            let server = &link.url;
+                            let client = match supragnosis_sync::http::SyncClient::new(
+                                server,
+                                &link.auth_token,
+                                ctx.insecure_tls,
+                            ) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    remote_results.push(
+                                        serde_json::json!({"server": server, "error": e.to_string()}),
+                                    );
+                                    continue;
+                                }
+                            };
+                            match client.search(&ws_name, &req.query, req.limit.unwrap_or(20)).await
+                            {
+                                Ok(resp) => {
+                                    self.engine.emit(Event::Sync {
+                                        direction: "search".into(),
+                                        peer: server.clone(),
+                                        workspace: ws_name.clone(),
+                                        count: resp.hits.len(),
+                                    });
+                                    remote_results.push(serde_json::json!({
+                                        "server": server,
+                                        "mode": resp.mode,
+                                        "hits": resp.hits,
+                                        "note": "remote recall surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
+                                    }));
+                                }
+                                Err(e) => remote_results.push(
                                     serde_json::json!({"server": server, "error": e.to_string()}),
-                                );
-                                continue;
+                                ),
                             }
-                        };
-                        match client.search(&ws_name, &req.query, req.limit.unwrap_or(20)).await {
-                            Ok(resp) => {
-                                self.engine.emit(Event::Sync {
-                                    direction: "search".into(),
-                                    peer: server.clone(),
-                                    workspace: ws_name.clone(),
-                                    count: resp.hits.len(),
-                                });
-                                remote_results.push(serde_json::json!({
-                                    "server": server,
-                                    "mode": resp.mode,
-                                    "hits": resp.hits,
-                                    "note": "remote recall surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
-                                }));
-                            }
-                            Err(e) => remote_results.push(
-                                serde_json::json!({"server": server, "error": e.to_string()}),
-                            ),
                         }
                     }
                 }
@@ -1126,7 +1139,7 @@ impl SupragnosisServer {
                     let ws2 = ws.clone();
                     let mut vv = mine;
                     match tokio::task::spawn_blocking(move || {
-                        node.apply_wire(store.as_ref(), &ws2, events, &keys, &mut vv)
+                        node.apply_wire(store.as_ref(), &ws2, events, &keys, None, &mut vv)
                     })
                     .await
                     {

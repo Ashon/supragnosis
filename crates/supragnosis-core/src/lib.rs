@@ -200,6 +200,13 @@ impl NodeIdentity {
     }
 }
 
+/// Whether `s` is an ed25519 public key in the one spelling this software writes: 64 lowercase hex
+/// digits. Configuration is checked with it when read, so a key that would never verify is named
+/// rather than silently failing every event it was meant to admit (sync-correctness.md Section 7).
+pub fn is_canonical_public_key_hex(s: &str) -> bool {
+    s.len() == 64 && hex_decode(s).is_some()
+}
+
 /// Derives the immutable node_id from raw public-key bytes (federation.md Section 2).
 pub fn node_id_from_public_key(pubkey: &[u8]) -> String {
     blake3::hash(pubkey).to_hex().to_string()[..32].to_string()
@@ -315,8 +322,12 @@ fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
+/// Decodes the one spelling [`hex_encode`] writes: lowercase digits, in pairs (sync-correctness.md
+/// Section 7). `u8::from_str_radix` alone also takes uppercase and a leading `+`, so one signature
+/// had several spellings that all verified, and absorb, comparing them as strings, kept each as one
+/// more attestation of the same act.
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) {
+    if !s.len().is_multiple_of(2) || !s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
         return None;
     }
     (0..s.len())
@@ -2007,6 +2018,35 @@ mod tests {
             "04108b003e3b7eaa6cd65a08a4a1362e262fe48e9d64ef66f3016d2f2aadfe7f836055de7a5369a7f0705f11bbafc5c61faf615b6ae871675d6a5624429aaf05",
             "a signature over the full encoding"
         );
+    }
+
+    /// sync-correctness.md Section 7 (D5): a signature has one spelling. The uppercase and
+    /// `+`-prefixed forms of the same bytes used to verify too, and absorb kept each as another
+    /// attestation of one act.
+    #[test]
+    fn a_signature_verifies_in_one_spelling_only() {
+        let identity = NodeIdentity::from_secret_bytes([42u8; 32]);
+        let obs = Observation::new("signed fact".into(), prov());
+        let p =
+            stamped(&identity, &obs.id, 1, Hlc { wall: 7, counter: 0, node: identity.node_id() });
+        let meta = p.sync.clone().expect("stamped");
+        let key = identity.public_key_hex();
+        assert!(verify_attestation(&key, &obs.id, &p, &meta));
+        let upper = SyncMeta { signature: meta.signature.to_uppercase(), ..meta.clone() };
+        assert!(!verify_attestation(&key, &obs.id, &p, &upper), "uppercase is another spelling");
+        // `+a` reads as the byte `0a`, so a byte below 0x10 had a second spelling.
+        let i = (0..meta.signature.len())
+            .step_by(2)
+            .find(|&i| meta.signature.as_bytes()[i] == b'0')
+            .expect("this signature has a byte below 0x10");
+        let mut respelled = meta.signature.clone();
+        respelled.replace_range(i..=i, "+");
+        let plus = SyncMeta { signature: respelled, ..meta.clone() };
+        assert!(!verify_attestation(&key, &obs.id, &p, &plus), "a leading + is another spelling");
+        assert!(!verify_attestation(&key.to_uppercase(), &obs.id, &p, &meta));
+        assert!(is_canonical_public_key_hex(&key));
+        assert!(!is_canonical_public_key_hex(&key.to_uppercase()));
+        assert!(!is_canonical_public_key_hex(&key[..62]));
     }
 
     #[test]

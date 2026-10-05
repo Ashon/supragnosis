@@ -181,6 +181,10 @@ pub enum RejectReason {
     /// version vector then stays below the rejected event, which is offered again every round until
     /// it is accepted - a held stream, never a permanent hole.
     Held(u64),
+    /// Pushed to a hub for an origin that is not granted this workspace there
+    /// (sync-correctness.md Section 8): what a node could not push in its own name, another node
+    /// cannot push for it.
+    OriginNotAdmitted,
 }
 
 /// One rejected event: enough identity to audit without trusting the event's own claims.
@@ -446,22 +450,28 @@ impl SyncNode {
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
         let inbound = events.into_iter().map(|e| Inbound::Decoded(Box::new(e))).collect();
-        self.apply_inbound(store, workspace, inbound, origin_keys, vv)
+        self.apply_inbound(store, workspace, inbound, origin_keys, None, vv)
     }
 
     /// [`Self::apply`] over events as they came off the wire. Each is decoded on its own, so one
     /// this release cannot read - an enum value from a newer one - is rejected as `Undecodable` and
     /// holds only its own stream, where decoding the batch whole would fail every event in it.
+    ///
+    /// `admit`, when given, is the set of origins that may write into `workspace` through this
+    /// call - a hub's push (sync-correctness.md Section 8). An event signed by any other known origin
+    /// is rejected as `OriginNotAdmitted`. A pull passes `None`: what it accepts is decided by the
+    /// keys the puller trusts.
     pub fn apply_wire(
         &self,
         store: &dyn AssertionStore,
         workspace: &str,
         events: Vec<serde_json::Value>,
         origin_keys: &BTreeMap<String, String>,
+        admit: Option<&std::collections::BTreeSet<String>>,
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
         let inbound = events.into_iter().map(Inbound::decode).collect();
-        self.apply_inbound(store, workspace, inbound, origin_keys, vv)
+        self.apply_inbound(store, workspace, inbound, origin_keys, admit, vv)
     }
 
     fn apply_inbound(
@@ -470,6 +480,7 @@ impl SyncNode {
         workspace: &str,
         mut inbound: Vec<Inbound>,
         origin_keys: &BTreeMap<String, String>,
+        admit: Option<&std::collections::BTreeSet<String>>,
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
         inbound.sort_by_cached_key(Inbound::stream);
@@ -482,7 +493,11 @@ impl SyncNode {
                 report.rejected.push(Rejection { origin_node, origin_seq, reason });
                 continue;
             }
+            let not_admitted = admit.is_some_and(|a| {
+                origin_keys.contains_key(&origin_node) && !a.contains(&origin_node)
+            });
             let checked = match item {
+                Inbound::Decoded(_) if not_admitted => Err(RejectReason::OriginNotAdmitted),
                 Inbound::Decoded(ev) => check_event(&ev, workspace, origin_keys).map(|o| (o, *ev)),
                 Inbound::Undecodable { error, .. } => Err(RejectReason::Undecodable(error)),
             };
@@ -894,7 +909,7 @@ mod tests {
         later["attestation"]["trust_tier"] = "a_tier_from_a_later_release".into();
 
         let report = r
-            .apply_wire(&store_r, "ws", wire, &keys(&[&o, &p]), &mut VersionVector::default())
+            .apply_wire(&store_r, "ws", wire, &keys(&[&o, &p]), None, &mut VersionVector::default())
             .unwrap();
         assert_eq!(report.accepted, 1, "the readable event lands");
         assert_eq!(report.rejected.len(), 1);

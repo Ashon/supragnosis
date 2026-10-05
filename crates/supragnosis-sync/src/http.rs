@@ -248,9 +248,16 @@ impl Admitted {
     /// host's answer it would negotiate with itself (F14). The entry is dropped rather than refused
     /// because admission authenticates by bearer hash, so such an entry is a live credential and
     /// ignoring it can only share LESS: the one direction 6a lets a mistake move without asking.
+    ///
+    /// An entry whose key is not in the one spelling this software writes is dropped here too, for
+    /// the same reason and in the same direction (sync-correctness.md Section 7): it could never
+    /// verify an event, and admitting its bearer anyway would let a peer in whose writes all fail.
     fn derive(allowlist: Vec<AllowEntry>, self_node_id: &str, self_public_key_hex: &str) -> Self {
-        let allowlist: Vec<AllowEntry> =
-            allowlist.into_iter().filter(|e| e.node_id != self_node_id).collect();
+        let allowlist: Vec<AllowEntry> = allowlist
+            .into_iter()
+            .filter(|e| e.node_id != self_node_id)
+            .filter(|e| supragnosis_core::is_canonical_public_key_hex(&e.public_key_hex))
+            .collect();
         let mut origin_keys: BTreeMap<String, String> = allowlist
             .iter()
             .map(|e| (e.node_id.clone(), e.public_key_hex.clone()))
@@ -554,9 +561,19 @@ async fn push_handler(
     let node = state.node.clone();
     let keys = admitted.origin_keys;
     let ws = req.workspace.clone();
+    // Who may write into this workspace through this push (sync-correctness.md Section 8): the
+    // pusher, every node granted the workspace here, and this hub. A peer granted A cannot bring in
+    // events of an origin this hub admits only to B.
+    let admit: std::collections::BTreeSet<String> = admitted
+        .allowlist
+        .iter()
+        .filter(|e| e.node_id == entry.node_id || e.shared_workspaces.contains(&req.workspace))
+        .map(|e| e.node_id.clone())
+        .chain([state.node.node_id().to_string()])
+        .collect();
     let report = tokio::task::spawn_blocking(move || {
         let mut vv = VersionVector::default();
-        node.apply_wire(store.as_ref(), &req.workspace, req.events, &keys, &mut vv)
+        node.apply_wire(store.as_ref(), &req.workspace, req.events, &keys, Some(&admit), &mut vv)
     })
     .await
     .map_err(internal)?
@@ -874,7 +891,7 @@ impl SyncClient {
         if !deficit.is_empty() {
             let mut vv = mine;
             let report =
-                node.apply_wire(store.as_ref(), workspace, deficit, origin_keys, &mut vv)?;
+                node.apply_wire(store.as_ref(), workspace, deficit, origin_keys, None, &mut vv)?;
             summary.pulled = report.accepted;
             summary.rejected_locally = report.rejected.len();
         }
@@ -1214,6 +1231,40 @@ mod tests {
         );
         client.sync_workspace(&mine, &client_node, "ws", &share, &keys).await.unwrap();
         assert_eq!(calls.lock().unwrap().len(), 1, "a pull with nothing left to stamp does not");
+    }
+
+    #[tokio::test]
+    async fn a_peer_cannot_push_for_an_origin_not_granted_the_workspace() {
+        // sync-correctness.md Section 8 (D6): P is granted `a`, Q only `b`. Q's event in `a` is
+        // genuinely signed, and P has a copy. Pushed by P, it is refused - Q could not push it into
+        // `a` itself - while P's own event in the same body lands.
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let p = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
+        let q = SyncNode::new(NodeIdentity::from_secret_bytes([2u8; 32]));
+        let allow = vec![entry(&p, "token-p", &["a"]), entry(&q, "token-q", &["b"])];
+        let state = Arc::new(ServerState::new(hub_store.clone(), hub_node, allow));
+        let addr = spawn_server(state).await;
+
+        let (p_store, q_store) = (InMemoryStore::new(), InMemoryStore::new());
+        p_store
+            .add_observation(Observation::new("p's own".into(), prov("a", 1)))
+            .unwrap();
+        q_store
+            .add_observation(Observation::new("q's, in a".into(), prov("a", 2)))
+            .unwrap();
+        p.backfill(&p_store, "a").unwrap();
+        q.backfill(&q_store, "a").unwrap();
+        let mut events = p_store.attestations_since("a", &VersionVector::default()).unwrap();
+        events.extend(q_store.attestations_since("a", &VersionVector::default()).unwrap());
+
+        let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
+        let resp = client.push("a", events).await.unwrap();
+        assert_eq!(resp.accepted, 1, "p's own event lands");
+        assert_eq!(resp.rejected.len(), 1);
+        assert_eq!(resp.rejected[0].0, q.node_id());
+        assert_eq!(resp.rejected[0].2, "OriginNotAdmitted");
+        assert_eq!(hub_store.all_observations(Some("a")).unwrap().len(), 1);
     }
 
     /// End to end over HTTP: client A pushes its knowledge to the hub, client B pulls it through the
