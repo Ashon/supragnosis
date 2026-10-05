@@ -440,6 +440,20 @@ mod tests {
                 .unwrap();
             serde_json::from_str(&line).unwrap()
         }
+        /// A resource read; returns what the server answered - the error, or the result.
+        async fn read(&mut self, uri: &str) -> String {
+            let id = self.next;
+            self.next += 1;
+            self.send(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"resources/read",
+                "params":{"uri":uri}}))
+                .await;
+            let r = self.recv().await;
+            if r["error"].is_null() {
+                r["result"].to_string()
+            } else {
+                r["error"].to_string()
+            }
+        }
         /// A tool call; returns (is_error, the text the tool answered with).
         async fn call(&mut self, tool: &str, args: serde_json::Value) -> (bool, String) {
             let id = self.next;
@@ -482,9 +496,9 @@ mod tests {
 
         let secret_id = supragnosis_core::Entity::make_id("secret", "launch");
         let (_, text) = c.call("get_entity", serde_json::json!({"id": secret_id})).await;
-        assert!(text.contains("not in a workspace granted"), "{text}");
+        assert!(text.contains("\"found\":false") && !text.contains("launch"), "{text}");
         let (_, text) = c.call("traverse", serde_json::json!({"id": secret_id})).await;
-        assert!(text.contains("error") || text.contains("not found"), "{text}");
+        assert!(text.contains("not found in a workspace you may read"), "{text}");
 
         let (err, text) = c
             .call(
@@ -508,6 +522,57 @@ mod tests {
         assert!(err && text.contains("signing key"), "{text}");
         let (err, _) = c.call("sync_status", serde_json::json!({})).await;
         assert!(err);
+    }
+
+    /// remote-viewer.md Section 3.4: an entity id is computable from a workspace and a name, and an
+    /// observation id from a workspace and a content. So every door an id opens answers an id
+    /// outside the grants exactly as it answers one that does not exist - otherwise a principal
+    /// could test what was recorded in a workspace it was never granted.
+    #[tokio::test]
+    async fn an_id_outside_the_grants_reads_as_an_unknown_one() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "hub", "default"));
+        observe(&engine, "team", "the team uses rust", "rust");
+        observe(&engine, "secret", "the launch date is friday", "launch");
+        let secret_obs = engine.store().all_observations(Some("secret")).unwrap()[0].id.clone();
+        let team_obs = engine.store().all_observations(Some("team")).unwrap()[0].id.clone();
+        let nothing = "0".repeat(64);
+        let (url, cred) = hub(engine.clone(), BTreeSet::new()).await;
+        let mut c = Client::start(url, cred).await;
+
+        let hidden = supragnosis_core::Entity::make_id("secret", "launch");
+        let unknown = supragnosis_core::Entity::make_id("secret", "no such thing");
+        for tool in ["get_entity", "traverse"] {
+            let (e1, t1) = c.call(tool, serde_json::json!({"id": hidden})).await;
+            let (e2, t2) = c.call(tool, serde_json::json!({"id": unknown})).await;
+            assert_eq!(
+                (e1, t1.replace(&hidden, "ID")),
+                (e2, t2.replace(&unknown, "ID")),
+                "{tool}: an entity outside the grants reads as an unknown one"
+            );
+        }
+
+        let a = c.read(&format!("supragnosis://observation/{secret_obs}")).await;
+        let b = c.read(&format!("supragnosis://observation/{nothing}")).await;
+        assert!(!a.contains("friday"), "{a}");
+        assert_eq!(a.replace(&secret_obs, "ID"), b.replace(&nothing, "ID"), "observation resource");
+
+        let promote = |target: &str| {
+            serde_json::json!({"kind": "claim_promotion", "targets": [target],
+                "tier": "agent_extracted", "workspace": "team"})
+        };
+        let (e1, t1) = c.call("propose", promote(&secret_obs)).await;
+        let (e2, t2) = c.call("propose", promote(&nothing)).await;
+        assert!(
+            t1.contains("\"error\""),
+            "a gate proposal outside its workspace is refused: {t1}"
+        );
+        assert_eq!(
+            (e1, t1.replace(&secret_obs, "ID")),
+            (e2, t2.replace(&nothing, "ID")),
+            "propose"
+        );
+        let (err, text) = c.call("propose", promote(&team_obs)).await;
+        assert!(!err && text.contains("proposal_id"), "its own workspace's observation: {text}");
     }
 
     /// R5: knowledge another node originated is served only with its consent, and without it the

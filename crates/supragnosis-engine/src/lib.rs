@@ -537,8 +537,9 @@ fn carries_merge_verdict(state: &str) -> bool {
     matches!(state, "merged" | "blocked")
 }
 
-/// The two gate kinds with a tier commit effect (resolution.md Section 5).
-const GATE_KINDS: [&str; 2] = ["claim_promotion", "claim_demotion"];
+/// The two gate kinds with a tier commit effect (resolution.md Section 5). Their targets are
+/// observation ids, which the remote surface checks against the proposal's own workspace.
+pub const GATE_KINDS: [&str; 2] = ["claim_promotion", "claim_demotion"];
 
 /// Which surface cast a verdict (resolution.md Section 6) - decided by the CALLER CRATE per
 /// call-site, never by the remote client (the review surfaces accept no source_ref of their own).
