@@ -360,7 +360,12 @@ jobs:
         run: |
           set -euo pipefail
           repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          version="${GITHUB_REF_NAME#v}"
+          # A run by hand pushes nothing, but buildx still parses the tag, and a branch name such
+          # as fix/x is not a valid one - so off a tag the version is a fixed placeholder.
+          case "$GITHUB_REF_NAME" in
+            v*) version="${GITHUB_REF_NAME#v}" ;;
+            *) version="dry-run" ;;
+          esac
           echo "image=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
