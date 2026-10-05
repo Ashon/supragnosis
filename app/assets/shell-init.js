@@ -10,8 +10,8 @@
 // 2. Window-chrome integration - the macOS title bar is a transparent overlay (see show_viewer),
 //    so a page's header doubles as the title bar: it becomes the drag region, and the shared
 //    chrome stylesheet (shell.css) pads it clear of the traffic lights.
-// 3. Navigation - the graph and settings icons at the right of the title bar (docs/settings-page.md
-//    Section 3.0). Built here, once, for both pages, so its markup has one source as its style does.
+// 3. Navigation (docs/settings-page.md Section 3.0) - on the graph, the status bar's gear opens the
+//    app's Settings page, which holds what the viewer's own dialog did (its build, a hub's peers).
 // 4. Startup health signal - report which page actually loaded (the daemon-served viewer vs the
 //    shell's starting splash); the shell's only observable for "the proxy + webview path works".
 //
@@ -25,30 +25,21 @@
   var onSettings = /settings\.html$/.test(location.pathname) &&
     (location.protocol === "tauri:" || location.hostname === "tauri.localhost");
 
-  // An icon-only link: the icon is a Lucide file drawn by shell.css (.i-graph, .i-settings), and the
-  // name and shortcut are its tooltip and accessible name.
-  function tab(label, href, iconName, key, current) {
-    var a = document.createElement("a");
-    a.href = href;
-    a.title = label + " (" + key + ")";
-    a.setAttribute("aria-label", label);
-    if (current) a.setAttribute("aria-current", "page");
-    var i = document.createElement("span");
-    i.className = "i i-" + iconName;
-    i.setAttribute("aria-hidden", "true");
-    a.appendChild(i);
-    return a;
-  }
-
-  function addNav(header) {
-    if (header.querySelector(".shell-nav")) return;
-    var nav = document.createElement("nav");
-    nav.className = "shell-nav";
-    nav.setAttribute("aria-label", "Pages");
-    nav.appendChild(tab("Graph", GRAPH, "graph", "\u23181", !onSettings));
-    nav.appendChild(tab("Settings", SETTINGS, "settings", "\u2318,", onSettings));
-    // At the right end of the title bar, after whatever the page put there.
-    header.appendChild(nav);
+  // The graph's gear - the viewer's settings button, in its status bar - is where settings have
+  // always been opened. In the app it opens the app's Settings page, which holds what the viewer's
+  // own dialog did. A capturing listener on the document runs before the viewer's own handler on the
+  // button, so the viewer needs to know nothing of this.
+  function takeOverGear() {
+    var gear = document.getElementById("settingsBtn");
+    if (!gear) return;
+    gear.title = "Settings (\u2318,)";
+    gear.setAttribute("aria-label", "Settings");
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest || !e.target.closest("#settingsBtn")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      location.href = SETTINGS;
+    }, true);
   }
 
   window.addEventListener("DOMContentLoaded", function () {
@@ -85,7 +76,7 @@
     header.setAttribute("data-tauri-drag-region", "");
     var h1 = header.querySelector("h1");
     if (h1) h1.setAttribute("data-tauri-drag-region", "");
-    addNav(header);
+    if (!onSettings) takeOverGear();
   });
 
   const Native = window.EventSource;

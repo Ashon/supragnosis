@@ -13,10 +13,12 @@
 <link rel="stylesheet" href="settings.css">
 </head>
 <body>
-<!-- The title bar, as the viewer draws it: the mark and the name - with the page's name after it -
-     and, at the right, the graph and settings icons the shell's init script adds to both pages. -->
+<!-- The title bar, as the viewer draws it: the mark and the name, with the page's name after it. At
+     the right end, the way back to the graph - the page is opened from the graph's gear, and closes
+     back to it. -->
 <header>
   <h1><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg>supragnosis<span class="crumb">settings</span></h1>
+  <a id="close" class="hclose" href="viz://localhost/" title="Back to the graph (Esc)" aria-label="Back to the graph"><span class="i i-x" aria-hidden="true"></span></a>
 </header>
 <div class="layout">
   <nav id="sidebar" class="sidebar" aria-label="Settings sections"></nav>

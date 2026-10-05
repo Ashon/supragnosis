@@ -8,6 +8,10 @@
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
+// The graph's address: the shell serves the viewer on its own scheme (viz://localhost), which
+// Windows' webview reaches as http://viz.localhost.
+const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
+
 // ---- DOM helpers ---------------------------------------------------------------------------
 
 // h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.
@@ -38,6 +42,7 @@ const SECTIONS = [
   { id: "server", label: "Server", icon: "server", blurb: "The supragnosis server this Mac's AI apps use. A switch applies from each app's next session." },
   { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches supragnosis. Every app goes through the bridge, which keeps no copy of the token and follows the server above." },
   { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The supragnosis daemon on this Mac: the store your AI apps use when This Mac is the server." },
+  { id: "sync", label: "Sync", icon: "network", blurb: "How this Mac's knowledge travels between supragnosis nodes: the hubs it syncs to and, when it is a hub, what each peer may read." },
   { id: "about", label: "About", icon: "info", blurb: "Versions and where things live." },
 ];
 
@@ -81,6 +86,11 @@ function sectionDot(id) {
     return connected ? "ok" : "warn";
   }
   if (id === "daemon") return daemonStatus(state.daemon).kind;
+  if (id === "sync") {
+    const f = state.federation;
+    if (!f || f.configured === false) return null;
+    return (f.servers || []).some((h) => !h.healthy) ? "bad" : "ok";
+  }
   return null;
 }
 
@@ -90,8 +100,12 @@ function renderSidebar() {
   const host = document.getElementById("sidebar");
   const now = current();
   host.replaceChildren(
-    h("div", { class: "group", text: "This Mac" }),
-    ...SECTIONS.map((s) => {
+    h("div", { class: "group", text: "General" }),
+    ...sectionItems(now));
+}
+
+function sectionItems(now) {
+  return SECTIONS.map((s) => {
       const dot = sectionDot(s.id);
       let meta = null;
       if (s.id === "apps" && state) meta = h("span", { class: "meta", text: state.apps.filter((a) => a.kind === "connected").length });
@@ -100,7 +114,7 @@ function renderSidebar() {
         h("span", { class: "label", text: s.label }),
         meta,
         dot ? h("span", { class: "dot " + dot, "aria-hidden": "true" }) : null);
-    }));
+  });
 }
 
 function sectionHead(id) {
@@ -280,6 +294,97 @@ function renderDaemon() {
   return out;
 }
 
+// Sync (docs/settings-page.md Section 3.4): what the viewer's Peers tab showed, and its one act -
+// narrowing what an admitted peer may read. Read from this Mac's daemon; a remote profile has none.
+function renderSync() {
+  const f = state.federation;
+  if (state.daemon && state.daemon.remote) {
+    return [h("div", { class: "callout info" }, icon("info"),
+      h("div", { class: "grow", text: "Sync is this Mac's daemon's. It shows here again once This Mac is the server." }))];
+  }
+  if (!f) {
+    return [h("div", { class: "callout warn" }, icon("warn"),
+      h("div", { class: "grow", text: "Sync status is unavailable - this Mac's daemon did not answer." }))];
+  }
+  if (f.configured === false) {
+    return [h("div", { class: "card" },
+      h("div", { class: "row" },
+        h("span", { class: "lead" }, icon("network")),
+        h("div", { class: "body" },
+          h("div", { class: "title", text: "Sync is not set up on this Mac" }),
+          h("div", { class: "sub", text: "This Mac keeps its knowledge to itself. To join a hub or host one, describe it in ~/.supragnosis/supragnosis.toml." }))))];
+  }
+  const out = [];
+  const role = f.role === "hub" ? "Hub" : "Spoke";
+  out.push(h("div", { class: "group-title", text: "This node" }),
+    h("div", { class: "card" },
+      h("div", { class: "row" },
+        h("span", { class: "lead" }, icon("network")),
+        h("div", { class: "body" },
+          h("div", { class: "title" }, role, h("span", { class: "pill gold", text: f.role === "hub" ? "Serves peers" : "Syncs to hubs" })),
+          h("div", { class: "sub mono selectable", text: f.node_id || "" })))));
+
+  const hubs = f.servers || [];
+  if (hubs.length) {
+    out.push(h("div", { class: "group-title", text: "Hubs this Mac syncs to" }),
+      h("div", { class: "card" }, hubs.map((hub) => {
+        const ws = (hub.workspaces || []).map((w) => {
+          const ahead = (w.local_ahead | 0) || (w.hub_ahead | 0);
+          return w.workspace + ": " + (ahead ? "this Mac +" + (w.local_ahead | 0) + ", hub +" + (w.hub_ahead | 0) : "in sync");
+        });
+        return h("div", { class: "row" },
+          h("div", { class: "body" },
+            h("div", { class: "title" }, String(hub.url || "").replace(/^https?:\/\//, ""),
+              hub.healthy
+                ? h("span", { class: "pill ok" }, h("span", { class: "dot" }), "Reachable")
+                : h("span", { class: "pill bad" }, h("span", { class: "dot" }), "Unreachable")),
+            hub.version ? h("div", { class: "sub mono", text: "v" + hub.version }) : null,
+            ws.map((line) => h("div", { class: "sub", text: line }))));
+      })));
+  }
+
+  if (f.role === "hub") {
+    const admitted = f.admitted || [];
+    out.push(h("div", { class: "group-title", text: "Peers, and what each may read" }));
+    if (!admitted.length) {
+      out.push(h("div", { class: "card" }, h("div", { class: "row" },
+        h("div", { class: "body" }, h("div", { class: "sub", text: "No peer is admitted. Admitting one stays in supragnosis.toml." })))));
+    } else {
+      out.push(h("div", { class: "card" }, admitted.map((peer) => {
+        const shared = peer.shared_workspaces || [];
+        const chips = shared.length
+          ? shared.map((w) => h("span", { class: "chip" }, w,
+              h("button", {
+                class: "chip-x", title: "Stop sharing " + w + " with this peer", "aria-label": "Stop sharing " + w,
+                disabled: pending.size > 0, on: { click: () => confirmNarrow(peer, w) },
+              }, icon("x"))))
+          : [h("span", { class: "sub", text: "admitted, may read nothing" })];
+        return h("div", { class: "row" },
+          h("div", { class: "body" },
+            h("div", { class: "title mono selectable", text: peer.node_id }),
+            h("div", { class: "chips" }, chips)));
+      })));
+    }
+    out.push(h("p", { class: "hint", text: "Removing a grant takes effect at once and is written to supragnosis.toml. It stops future reads; it does not recall what has already synced. Granting a workspace, and admitting or removing a peer, stay in the file." }));
+  }
+  return out;
+}
+
+function confirmNarrow(peer, ws) {
+  const keep = (peer.shared_workspaces || []).filter((w) => w !== ws);
+  const stop = h("button", { class: "btn danger solid" }, "Stop sharing");
+  stop.addEventListener("click", async () => {
+    closeDialog();
+    await act("narrow:" + peer.node_id, "peer_narrow", { node: peer.node_id, keep }, { title: "Stopped sharing " + ws });
+  });
+  openDialog([
+    h("div", { class: "d-head" },
+      h("h3", { id: "d-title", text: "Stop sharing \"" + ws + "\" with this peer?" }),
+      h("p", { text: "It takes effect at once and is written to supragnosis.toml. The peer keeps what it has already synced; it reads nothing new from this workspace." })),
+    h("div", { class: "d-foot" }, h("button", { class: "btn", on: { click: closeDialog } }, "Cancel"), stop),
+  ], "d-title");
+}
+
 function renderAbout() {
   const a = state.about || {};
   const d = state.daemon || {};
@@ -289,10 +394,12 @@ function renderAbout() {
     ["Daemon", d.running || (d.remote ? "not in use" : "not running")],
     ["CLI location", a.cli || "not found"],
     ["Data", a.data],
+    ["License", a.license],
+    ["Source", a.source],
   ];
   return [
     h("div", { class: "card kv selectable" }, pairs.flatMap(([k, v]) => [h("div", { class: "k", text: k }), h("div", { class: "v", text: v || "-" })])),
-    h("p", { class: "hint", text: "Icons by Lucide (ISC)." }),
+    h("p", { class: "hint", text: "Dependency licences are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
   ];
 }
 
@@ -318,7 +425,15 @@ function render() {
     body = [h("div", { class: "callout warn" }, icon("warn"),
       h("div", { class: "grow", text: "The supragnosis CLI was not found. Install supragnosis-server (brew install supragnosis-server) and reopen Settings." }))];
   } else {
-    body = { server: renderServer, apps: renderApps, daemon: renderDaemon, about: renderAbout }[id]();
+    // An explicit switch rather than a lookup by name: the id comes from the URL's hash, and a
+    // property lookup would also find what every object has (constructor, __proto__).
+    switch (id) {
+      case "apps": body = renderApps(); break;
+      case "daemon": body = renderDaemon(); break;
+      case "sync": body = renderSync(); break;
+      case "about": body = renderAbout(); break;
+      default: body = renderServer();
+    }
   }
   pane.replaceChildren(h("section", { class: "section", "aria-labelledby": "h-" + id }, sectionHead(id), body));
   const h2 = pane.querySelector("h2");
@@ -487,9 +602,13 @@ async function load() {
 
 window.addEventListener("hashchange", () => { render(); document.getElementById("pane").scrollTop = 0; });
 window.addEventListener("focus", () => { if (!pending.size && !document.getElementById("dialogHost").firstChild) load(); });
+// Esc closes a dialog if one is open, and otherwise closes Settings back to the graph.
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && document.getElementById("dialogHost").firstChild) closeDialog();
+  if (e.key !== "Escape") return;
+  if (document.getElementById("dialogHost").firstChild) closeDialog();
+  else location.href = GRAPH;
 });
+document.getElementById("close").href = GRAPH;
 
 render();
 load();
