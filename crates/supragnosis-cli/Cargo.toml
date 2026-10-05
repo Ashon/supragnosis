@@ -66,3 +66,8 @@ getrandom = "0.4"
 # implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern). unix only.
 [target.'cfg(unix)'.dependencies]
 daemonize = "0.5"
+
+[dev-dependencies]
+# Golden stores are checked in gzipped (a 1 MB redb file is about 6 KB); tests/golden_stores.rs
+# unpacks them. Already in the tree through the HTTP stack, so not a new compilation unit.
+flate2 = "1"
