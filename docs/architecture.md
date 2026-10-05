@@ -276,7 +276,9 @@ log and replays it. This build refuses to start when it finds an un-migrated sto
 up empty beside one (`refuse_unmigrated_store`), which is also what keeps Principle 3's "every
 encoding the log has ever used stays readable" honest: the older encodings remain reachable through
 the release that wrote them, and skipping it fails loudly. Procedure:
-[store-migration.md](store-migration.md).
+[store-migration.md](store-migration.md). For the redb era the claim is carried differently: a store
+records its format, a release refuses one a later release changed past it, and a store each format's
+last release wrote is read back by every build ([compatibility.md](compatibility.md)).
 
 > **Alternative condition**: if strict RDF/OWL standards compliance/SPARQL interoperability ever
 > becomes a hard requirement, Oxigraph remains the documented alternative. Because of the
@@ -716,7 +718,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   start beside an un-migrated store instead of coming up empty next to it, which forces the read
   through the release that can still do it. Guarded by
   `a_legacy_store_is_recognised_by_its_rocksdb_marker` and
-  `an_unmigrated_store_is_refused_with_the_way_out`.
+  `an_unmigrated_store_is_refused_with_the_way_out`. Within redb, the encodings a release wrote are
+  held by a golden store per format and by known answers for the content id and the signing bytes
+  ([compatibility.md](compatibility.md) Sections 4-5).
   Note what this does NOT change, since the blast radius was easy to overstate: keyword and semantic
   search read the observation table's columns directly and never reconstruct, so those rows were always
   recallable. What was broken is everything downstream of reconstruction - the folds, the log browser,

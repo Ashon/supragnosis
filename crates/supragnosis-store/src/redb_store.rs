@@ -73,6 +73,137 @@ fn backend(e: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(e.to_string())
 }
 
+/// The store format this build writes (docs/compatibility.md Section 3). Section 3.7 says what
+/// raises it; a raise adds its step to [`upgrade_to`], its row to Section 3.2 and a golden store.
+pub const FORMAT: u32 = 2;
+
+/// The lowest format a binary must implement to share a store this build has written. Raised when
+/// a binary of an earlier format, writing here, would lose or contradict something (Section 3.7).
+pub const MIN_READER: u32 = 2;
+
+/// The release that writes `format_by` when this build raises a store's numbers.
+const RELEASE: &str = env!("CARGO_PKG_VERSION");
+
+/// A store's era: what its `meta` table records, or what its structure implies when it predates the
+/// record (compatibility.md Section 3.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreFormat {
+    /// The highest format any writer of this store has used.
+    pub format: u32,
+    /// The lowest format a binary must implement to open it safely.
+    pub min_reader: u32,
+    /// The release that last raised either number. `None` for a store from before the record.
+    pub format_by: Option<String>,
+}
+
+/// Reads a store's era before anything writes to it. `None` is a file with no tables at all - a
+/// store being created now, which takes this build's format with no upgrade to run.
+fn read_format(db: &Database) -> Result<Option<StoreFormat>, StoreError> {
+    let txn = db.begin_read().map_err(backend)?;
+    let tables: Vec<String> = txn
+        .list_tables()
+        .map_err(backend)?
+        .map(|t| redb::TableHandle::name(&t).to_string())
+        .collect();
+    let multimaps = txn.list_multimap_tables().map_err(backend)?.count();
+    if tables.is_empty() && multimaps == 0 {
+        return Ok(None);
+    }
+    let has = |name: &str| tables.iter().any(|t| t == name);
+    let mut recorded = (None, None, None);
+    if has("meta") {
+        let meta = txn.open_table(META).map_err(backend)?;
+        let get = |k: &str| -> Result<Option<String>, StoreError> {
+            Ok(meta.get(k).map_err(backend)?.map(|v| v.value().to_string()))
+        };
+        recorded = (get("format")?, get("min_reader")?, get("format_by")?);
+    }
+    let number = |key: &str, v: String| {
+        v.parse::<u32>().map_err(|_| {
+            StoreError::Backend(format!(
+                "the store's {key} is '{v}', not a number. A later release may have changed what \
+                 it means, and this build will not guess - nothing was opened or changed \
+                 (docs/compatibility.md Section 3)"
+            ))
+        })
+    };
+    Ok(Some(match recorded {
+        (Some(format), min_reader, format_by) => {
+            let format = number("format", format)?;
+            let min_reader = match min_reader {
+                Some(m) => number("min_reader", m)?,
+                None => format,
+            };
+            StoreFormat { format, min_reader, format_by }
+        }
+        // Before the record, the ledger table is the one structural mark of an era.
+        (None, ..) => {
+            let format = if has("owed_projection") { 2 } else { 1 };
+            StoreFormat { format, min_reader: format, format_by: None }
+        }
+    }))
+}
+
+/// The refusal for a store a later release has changed in a way this build cannot handle safely.
+fn too_new(path: &Path, found: &StoreFormat) -> StoreError {
+    let by = found.format_by.as_deref().unwrap_or("a later release");
+    StoreError::Backend(format!(
+        "the store at {} was raised to format {} by supragnosis {by}, and opening it needs a build \
+         that implements format {} or later. This build ({RELEASE}) implements format {FORMAT}.\n\n\
+         Opening it here would hide rows this build cannot parse, and strip the fields it does not \
+         know the next time it rewrote a row, so nothing was opened and nothing was changed. \
+         Install supragnosis {by} or later (docs/compatibility.md Section 3.3).",
+        path.display(),
+        found.format,
+        found.min_reader,
+    ))
+}
+
+/// redb's own refusal of a file format newer than it reads arrives as "Corrupted", which is what an
+/// operator would believe and act on. It is the same case as [`too_new`] one layer down - a later
+/// release's redb wrote the file - so it is reported as one, minus the release, which the meta
+/// table would have named and cannot be read.
+fn open_error(path: &Path, e: redb::DatabaseError) -> StoreError {
+    match &e {
+        redb::DatabaseError::Storage(redb::StorageError::Corrupted(msg))
+            if msg.contains("file format version") =>
+        {
+            StoreError::Backend(format!(
+                "the store at {} was written by a newer storage engine than this build's ({msg}). \
+                 A later supragnosis release wrote it; this build ({RELEASE}) cannot read it, and \
+                 nothing was opened or changed. Install the release that wrote it, or a later one \
+                 (docs/compatibility.md Section 3.7).",
+                path.display()
+            ))
+        }
+        _ => backend(e),
+    }
+}
+
+/// The upgrade from the format before `to` (compatibility.md Section 3.3), run in the transaction
+/// that records the new format.
+fn upgrade_to(txn: &redb::WriteTransaction, to: u32) -> Result<(), StoreError> {
+    match to {
+        // Format 2 is the owed-projection ledger. A store from before it has no record of which
+        // appends were projected, and nothing vouches for them, so every log row is owed once: one
+        // reproject of each workspace, which repairs whatever an older build's crash left behind
+        // (crash-recovery.md Section 4).
+        2 => {
+            use redb::ReadableMultimapTable;
+            let by_ws = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
+            let mut owed = txn.open_table(OWED).map_err(backend)?;
+            for entry in by_ws.iter().map_err(backend)? {
+                let (ws, ids) = entry.map_err(backend)?;
+                for id in ids {
+                    owed.insert(id.map_err(backend)?.value(), ws.value()).map_err(backend)?;
+                }
+            }
+            Ok(())
+        }
+        _ => Err(StoreError::Backend(format!("no upgrade step to store format {to}"))),
+    }
+}
+
 fn encode_vector(v: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(v.len() * 4);
     for x in v {
@@ -119,26 +250,48 @@ pub fn redb_in_use(path: impl AsRef<Path>) -> bool {
 }
 
 impl RedbStore {
-    /// Opens (creating if absent) the database at `path`. Every table is created up front in one
-    /// transaction: redb reports a never-written table as a missing-table error on read, and a store
-    /// that answers "no observations yet" with an error would break the absence-is-not-failure
-    /// contract (Principle 5) for the entire first run.
+    /// Opens (creating if absent) the database at `path`.
+    ///
+    /// The store's era is read first, before anything writes (compatibility.md Section 3.3). A
+    /// store a later release raised past this build is refused unchanged; an earlier one is upgraded
+    /// in place and its new format recorded in the same transaction as the last step. Every table is
+    /// then created up front: redb reports a never-written table as a missing-table error on read,
+    /// and a store that answers "no observations yet" with an error would break the
+    /// absence-is-not-failure contract (Principle 5) for the entire first run.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
-        if let Some(parent) = path.as_ref().parent() {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent).map_err(backend)?;
             }
         }
-        let db = Database::create(path).map_err(backend)?;
+        let mut db = Database::create(path).map_err(|e| open_error(path, e))?;
+        let found = read_format(&db)?;
+        if let Some(f) = &found {
+            if f.min_reader > FORMAT {
+                return Err(too_new(path, f));
+            }
+        }
+        // Raising min_reader is what stops earlier releases opening this store, so the store as they
+        // knew it is kept first: the one way back (compatibility.md Section 3.5).
+        if let Some(f) = found.as_ref().filter(|f| f.min_reader < MIN_READER) {
+            drop(db);
+            let copy = path.with_file_name(format!(
+                "{}.format-{}",
+                path.file_name().and_then(|n| n.to_str()).unwrap_or("knowledge.redb"),
+                f.format
+            ));
+            std::fs::copy(path, &copy).map_err(backend)?;
+            tracing::warn!(
+                copy = %copy.display(),
+                from = f.format,
+                to = FORMAT,
+                "store upgraded past what earlier releases can open - the store as they knew it is \
+                 kept beside it (docs/compatibility.md Section 3.5)"
+            );
+            db = Database::create(path).map_err(|e| open_error(path, e))?;
+        }
         let txn = db.begin_write().map_err(backend)?;
-        // A store the ledger has never seen - written by a build before it, or by none - has no
-        // record of which of its appends were projected. Nothing vouches for them, so the first open
-        // by a ledger-aware build owes every log row (crash-recovery.md Section 4): one reproject of
-        // each workspace, once, which repairs whatever an older build's crash left behind.
-        let ledger_is_new = !txn
-            .list_tables()
-            .map_err(backend)?
-            .any(|t| redb::TableHandle::name(&t) == "owed_projection");
         {
             txn.open_table(OBSERVATIONS).map_err(backend)?;
             txn.open_table(ENTITIES).map_err(backend)?;
@@ -153,19 +306,32 @@ impl RedbStore {
             txn.open_multimap_table(REL_BY_SRC).map_err(backend)?;
             txn.open_multimap_table(REL_BY_DST).map_err(backend)?;
         }
-        if ledger_is_new {
-            use redb::ReadableMultimapTable;
-            let by_ws = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
-            let mut owed = txn.open_table(OWED).map_err(backend)?;
-            for entry in by_ws.iter().map_err(backend)? {
-                let (ws, ids) = entry.map_err(backend)?;
-                for id in ids {
-                    owed.insert(id.map_err(backend)?.value(), ws.value()).map_err(backend)?;
-                }
-            }
+        let from = found.as_ref().map_or(FORMAT, |f| f.format);
+        for to in from + 1..=FORMAT {
+            upgrade_to(&txn, to)?;
+        }
+        let next = StoreFormat {
+            format: from.max(FORMAT),
+            min_reader: found.as_ref().map_or(MIN_READER, |f| f.min_reader.max(MIN_READER)),
+            format_by: None,
+        };
+        let raised = found.as_ref().is_none_or(|f| {
+            f.format_by.is_none() || (f.format, f.min_reader) != (next.format, next.min_reader)
+        });
+        if raised {
+            let mut meta = txn.open_table(META).map_err(backend)?;
+            meta.insert("format", next.format.to_string().as_str()).map_err(backend)?;
+            meta.insert("min_reader", next.min_reader.to_string().as_str())
+                .map_err(backend)?;
+            meta.insert("format_by", RELEASE).map_err(backend)?;
         }
         txn.commit().map_err(backend)?;
         Ok(Self { db })
+    }
+
+    /// The era this store records (compatibility.md Section 3.1).
+    pub fn format(&self) -> Result<StoreFormat, StoreError> {
+        read_format(&self.db)?.ok_or_else(|| StoreError::Backend("store has no tables".into()))
     }
 
     /// Records the embedder identity, so reopening under a different model can be refused before its
@@ -808,9 +974,10 @@ mod tests {
         {
             let store = RedbStore::open(&path).expect("open");
             store.add_observation(obs).expect("append");
-            // What an older build leaves behind: the log, and no ledger table at all.
+            // What an older build leaves behind: the log, no ledger table, and no format record.
             let txn = store.db.begin_write().expect("txn");
             txn.delete_table(OWED).expect("drop the ledger");
+            unstamp(&txn);
             txn.commit().expect("commit");
         }
         let store = RedbStore::open(&path).expect("first ledger-aware open");
@@ -826,6 +993,191 @@ mod tests {
             "seeded once, not every open"
         );
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// Removes the format record, leaving a store as a release from before it wrote one.
+    fn unstamp(txn: &redb::WriteTransaction) {
+        let mut meta = txn.open_table(META).expect("meta");
+        for key in ["format", "min_reader", "format_by"] {
+            meta.remove(key).expect("remove");
+        }
+    }
+
+    /// Writes a format record directly, as a later release would have.
+    fn stamp(path: &Path, format: &str, min_reader: &str, by: &str) {
+        let db = Database::create(path).expect("raw open");
+        let txn = db.begin_write().expect("txn");
+        {
+            let mut meta = txn.open_table(META).expect("meta");
+            meta.insert("format", format).expect("format");
+            meta.insert("min_reader", min_reader).expect("min_reader");
+            meta.insert("format_by", by).expect("format_by");
+        }
+        txn.commit().expect("commit");
+    }
+
+    fn copy_beside(path: &Path, format: u32) -> std::path::PathBuf {
+        path.with_file_name(format!("knowledge.redb.format-{format}"))
+    }
+
+    /// compatibility.md Section 3.1: a store created now records this build's format, and the
+    /// release that recorded it.
+    #[test]
+    fn a_new_store_records_this_builds_format() {
+        let path = tmp_path();
+        let store = RedbStore::open(&path).expect("open");
+        assert_eq!(
+            store.format().expect("format"),
+            StoreFormat {
+                format: FORMAT,
+                min_reader: MIN_READER,
+                format_by: Some(RELEASE.to_string())
+            }
+        );
+        drop(store);
+        assert!(!copy_beside(&path, FORMAT).exists(), "a new store keeps no copy");
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// Section 3.3, the refusal: a store a later release raised past this build is not opened, and
+    /// nothing in it changes - not even the tables an ordinary open would create.
+    #[test]
+    fn a_store_a_later_release_raised_is_refused_unchanged() {
+        let path = tmp_path();
+        let obs = Observation::new("written by a later release".into(), prov_in("ws1"));
+        {
+            let store = RedbStore::open(&path).expect("open");
+            store.add_observation(obs).expect("append");
+            let txn = store.db.begin_write().expect("txn");
+            txn.delete_table(OWED).expect("a table this build would create");
+            txn.commit().expect("commit");
+        }
+        let later = (FORMAT + 1).to_string();
+        stamp(&path, &later, &later, "9.9.9");
+        let Err(e) = RedbStore::open(&path) else {
+            panic!("a store raised past this build must be refused");
+        };
+        let msg = e.to_string();
+        assert!(msg.contains("9.9.9"), "names the release that raised it: {msg}");
+        assert!(msg.contains("nothing was changed"), "says it changed nothing: {msg}");
+
+        let db = Database::create(&path).expect("raw open");
+        let txn = db.begin_read().expect("txn");
+        assert!(
+            !txn.list_tables()
+                .expect("tables")
+                .any(|t| redb::TableHandle::name(&t) == "owed_projection"),
+            "the refused open created nothing"
+        );
+        let meta = txn.open_table(META).expect("meta");
+        assert_eq!(
+            meta.get("format_by").expect("get").map(|v| v.value().to_string()),
+            Some("9.9.9".into())
+        );
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// Section 3.3, the additive case: a later format this build can still share opens as usual,
+    /// and the record is not lowered to this build's number.
+    #[test]
+    fn a_later_additive_format_opens_and_is_not_lowered() {
+        let path = tmp_path();
+        drop(RedbStore::open(&path).expect("create"));
+        stamp(&path, &(FORMAT + 1).to_string(), &MIN_READER.to_string(), "9.9.9");
+        let store = RedbStore::open(&path).expect("an additive later format opens");
+        assert_eq!(
+            store.format().expect("format"),
+            StoreFormat {
+                format: FORMAT + 1,
+                min_reader: MIN_READER,
+                format_by: Some("9.9.9".into())
+            }
+        );
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// Section 3.4: a store from before the record is dated by its structure. With the ledger it is
+    /// format 2, which this build shares as it is - so it is recorded, and nothing is copied.
+    #[test]
+    fn a_store_from_before_the_record_with_a_ledger_is_format_2() {
+        let path = tmp_path();
+        {
+            let store = RedbStore::open(&path).expect("open");
+            let txn = store.db.begin_write().expect("txn");
+            unstamp(&txn);
+            txn.commit().expect("commit");
+            assert_eq!(
+                store.format().expect("format"),
+                StoreFormat { format: 2, min_reader: 2, format_by: None }
+            );
+        }
+        let store = RedbStore::open(&path).expect("reopen");
+        assert_eq!(store.format().expect("format").format_by.as_deref(), Some(RELEASE));
+        drop(store);
+        assert!(!copy_beside(&path, 2).exists(), "min_reader did not move, so no copy");
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// Sections 3.4 and 3.5: without the ledger a store is format 1. Upgrading it raises min_reader
+    /// past what v0.4.3 and earlier can share, so the store as they knew it is copied aside first -
+    /// and the copy is a format 1 store, with no ledger in it.
+    #[test]
+    fn a_format_1_store_is_upgraded_and_kept_beside() {
+        let path = tmp_path();
+        {
+            let store = RedbStore::open(&path).expect("open");
+            store
+                .add_observation(Observation::new("from v0.4.3".into(), prov_in("ws1")))
+                .expect("append");
+            let txn = store.db.begin_write().expect("txn");
+            txn.delete_table(OWED).expect("drop the ledger");
+            unstamp(&txn);
+            txn.commit().expect("commit");
+        }
+        let store = RedbStore::open(&path).expect("upgrade");
+        assert_eq!(
+            store.format().expect("format"),
+            StoreFormat { format: 2, min_reader: 2, format_by: Some(RELEASE.to_string()) }
+        );
+        assert_eq!(store.owed_projections().expect("ledger").len(), 1, "the step from 1 to 2 ran");
+        drop(store);
+        let copy = copy_beside(&path, 1);
+        let kept = Database::create(&copy).expect("the copy opens");
+        let txn = kept.begin_read().expect("txn");
+        assert!(
+            !txn.list_tables()
+                .expect("tables")
+                .any(|t| redb::TableHandle::name(&t) == "owed_projection"),
+            "the copy is the store before the upgrade"
+        );
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// A record this build cannot parse is a meaning it does not know: refused, not guessed.
+    #[test]
+    fn a_format_record_that_is_not_a_number_is_refused() {
+        let path = tmp_path();
+        drop(RedbStore::open(&path).expect("create"));
+        stamp(&path, "3-beta", "2", "9.9.9");
+        let Err(e) = RedbStore::open(&path) else {
+            panic!("an unparseable format must be refused");
+        };
+        assert!(e.to_string().contains("3-beta"), "{e}");
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// Section 3.7: redb's refusal of a newer file format reads as corruption, and is reported as
+    /// what it is - a later release's file.
+    #[test]
+    fn a_newer_redb_file_format_is_reported_as_a_later_release() {
+        let e = redb::DatabaseError::Storage(redb::StorageError::Corrupted(
+            "Expected file format version <= 3, found 4".into(),
+        ));
+        let msg = open_error(Path::new("/x/knowledge.redb"), e).to_string();
+        assert!(msg.contains("newer storage engine"), "{msg}");
+        assert!(msg.contains("nothing was opened or changed"), "{msg}");
+        let other = redb::DatabaseError::Storage(redb::StorageError::Corrupted("bad page".into()));
+        assert!(!open_error(Path::new("/x"), other).to_string().contains("newer"));
     }
 
     /// The probe sees a writer and nothing else: held while a store is open, free once it is dropped,

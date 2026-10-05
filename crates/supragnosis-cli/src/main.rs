@@ -433,9 +433,10 @@ fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
 /// start accumulating a second, divergent log.
 ///
 /// So this is a refusal with an instruction, and it is also what carries Principle 3's demand that
-/// every encoding the log has ever used stays readable: the encodings this build dropped are still
-/// reachable, through the release that wrote them, and skipping that step is made impossible rather
-/// than merely discouraged.
+/// every encoding the log has ever used stays readable, for the encodings before redb: they are
+/// still reachable, through the release that wrote them, and skipping that step is made impossible
+/// rather than merely discouraged. Within redb the store records its format and a golden store per
+/// format is read back by every build (docs/compatibility.md).
 ///
 /// Detection is `CURRENT`, the file RocksDB always writes and redb never does. A bare directory is
 /// not enough - an empty `~/.supragnosis/db` left behind by a completed migration must not block a
