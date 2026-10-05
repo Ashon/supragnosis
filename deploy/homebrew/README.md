@@ -18,7 +18,37 @@ tap. Contents:
 - `Casks/supragnosis-dev.rb` - the rolling dev-channel cask (`version :latest`), copied as-is.
 - `update-tap.sh` - after a release, renders the formula and casks into the tap: copies the
   templates, fills in the version and the sha256 sums from the release assets' .sha256 sidecar
-  files, and fails if a placeholder or the template's own version survives.
+  files, writes the formula's bottle block from the release's bottles, and fails if a placeholder
+  or the template's own version survives.
+- `bottle.sh` - bottles the formula for a released tag and proves the bottle pours (Bottles,
+  below).
+
+## Bottles
+
+The formula only copies the release's prebuilt binary, but Homebrew treats a formula without a
+bottle as a source build. Before installing one it requires an up-to-date Xcode or Command Line
+Tools, and fails without them, even though nothing is compiled. That is how installing the desktop
+app, whose cask depends on the formula, came to ask for Xcode. A bottle is poured instead, with no
+such check.
+
+- **The release builds them.** The release.yml bottle job runs `bottle.sh` on macos-14 and
+  ubuntu-22.04:
+  - it installs the rendered formula from a local tap with `--build-bottle`;
+  - `brew bottle` makes the bottle;
+  - it reinstalls from that bottle and requires that Homebrew poured it.
+  The job attaches the bottle to the release and hands its JSON to the tap job, where
+  `update-tap.sh` writes the `bottle do` block. A bottle that fails to build is left out, and that
+  platform keeps the source-build path it has without one.
+- **Which machines pour one:**
+  - Apple silicon on macOS 14 or later (`arm64_sonoma`). Homebrew pours a bottle built for an older
+    macOS on every newer one, which is why it is built on the oldest arm64 runner.
+  - x86_64 Linux (`x86_64_linux`).
+  - Intel Macs do not: there is no Intel runner to build on, since the release cross-compiles the
+    Intel binary. They keep the source-build path, so an outdated Command Line Tools still stops the
+    install there (`xcode-select --install`, or Software Update).
+- **Pull requests check it.** `.github/workflows/homebrew.yml` runs `bottle.sh` against the latest
+  release whenever this directory changes, and weekly, so a change to the formula or to Homebrew
+  that breaks bottling shows up before a release depends on it.
 
 ## One-time setup
 
@@ -30,9 +60,12 @@ tap. Contents:
 
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
-../supragnosis/deploy/homebrew/update-tap.sh v0.1.11 .
+../supragnosis/deploy/homebrew/update-tap.sh v0.1.11 . [dir-with-the-release's-*.bottle.json]
 git add Formula Casks && git commit -m "supragnosis v0.1.11" && git push
 ```
+
+Without the bottle JSONs (the bottle job's artifacts) the formula is rendered without a bottle
+block, which installs, but only where Xcode or the Command Line Tools are current.
 
 ## User install
 

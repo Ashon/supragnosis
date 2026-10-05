@@ -141,6 +141,50 @@ jobs:
             dist/*.tar.gz
             dist/*.tar.gz.sha256
 
+  # Homebrew bottles for the server formula. The formula only copies the prebuilt binary, but
+  # Homebrew treats a formula without a bottle as a source build: before installing it, it insists on
+  # an up-to-date Xcode or Command Line Tools, and fails without them - which is how installing the
+  # desktop app (whose cask depends on the formula) came to ask for Xcode. A bottle is poured
+  # instead, with no such check (deploy/homebrew/README.md).
+  #
+  # Built the standard way - install from a local tap with --build-bottle, then `brew bottle` - and
+  # proven by reinstalling from it and requiring that Homebrew poured it (deploy/homebrew/bottle.sh,
+  # which homebrew.yml also runs on pull requests). macos-14 gives arm64_sonoma, which Homebrew also
+  # pours on every later macOS;
+  # ubuntu gives x86_64_linux. There is no Intel macOS runner (the Intel binary is cross-compiled),
+  # so Intel Macs keep the source-build path. A bottle that fails to build is left out of the tap,
+  # not a reason to hold the release back.
+  bottle:
+    name: homebrew bottle (${{ matrix.os }})
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: bottle the formula, and prove the bottle pours
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Linux ]; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
+          ./deploy/homebrew/bottle.sh "${GITHUB_REF_NAME}" bottle
+
+      - name: attach the bottle to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" bottle/*.bottle.tar.gz --clobber
+
+      - name: upload the bottle's description for the tap job
+        uses: actions/upload-artifact@v7
+        with:
+          name: bottle-${{ matrix.os }}
+          path: bottle/*.bottle.json
+
   # The container image, published so the MCP Registry has something to point at. Its ownership
   # proof is the io.modelcontextprotocol.server.name label baked into the image (deploy/docker),
   # which has to equal the `name` in server.json - a mismatch is not a broken build, it is a

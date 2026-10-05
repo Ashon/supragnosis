@@ -1,0 +1,39 @@
+name: homebrew
+
+# The server formula bottles, and the bottle pours (deploy/homebrew/bottle.sh), checked against the
+# latest release whenever the formula, its renderer or this workflow changes - and weekly, because
+# Homebrew moves under a formula that does not. The release builds the real bottles the same way
+# (release.yml, bottle job); this keeps nothing and uploads nothing.
+on:
+  pull_request:
+    paths: ["deploy/homebrew/**", ".github/workflows/homebrew.yml"]
+  push:
+    branches: [main]
+    paths: ["deploy/homebrew/**", ".github/workflows/homebrew.yml"]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bottle:
+    name: the formula bottles and pours (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: bottle the latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Linux ]; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          ./deploy/homebrew/bottle.sh "$tag" bottle
