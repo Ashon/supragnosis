@@ -1,0 +1,51 @@
+/* The desktop shell's chrome, shared by every page the main window shows (docs/settings-page.md
+   Section 3.0): the app's own settings page links it from the app's origin, and the shell serves the
+   same file on the viewer's origin at /__shell/shell.css, linked by shell-init.js. One file, so the
+   title bar cannot look different on the two pages.
+
+   Nothing here styles a page's content - only what the shell adds to it. */
+
+/* App feel: UI chrome is not selectable text (this is an app, not a document). Selection stays where
+   copying matters - text inputs, the viewer's detail inspector and event log. */
+html { -webkit-user-select: none; user-select: none; cursor: default; }
+input, textarea { -webkit-user-select: auto; user-select: auto; cursor: text; }
+#detail, #log, .selectable { -webkit-user-select: text; user-select: text; }
+
+/* The header is the window's title bar: its left edge clears the overlaid traffic lights, except in
+   fullscreen, where macOS hides them (shell-init.js toggles .shell-fullscreen on transitions). */
+header { transition: padding-left 0.15s ease; }
+html:not(.shell-fullscreen) header { padding-left: 84px; }
+
+/* The segmented control that moves between the graph and the settings. It sits right after the
+   app's name on both pages. */
+.shell-nav {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px; margin: 0 4px 0 2px;
+  border: 1px solid #222836; border-radius: 8px; background: rgba(19,23,34,0.9);
+  font: 500 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.01em;
+}
+.shell-nav a {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 6px;
+  color: #8e96a5; text-decoration: none; cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.shell-nav a:hover { color: #e9e4d6; background: rgba(255,255,255,0.04); }
+.shell-nav a[aria-current="page"] {
+  color: #f0c469; background: rgba(217,165,68,0.14);
+  box-shadow: inset 0 0 0 1px rgba(217,165,68,0.28);
+}
+.shell-nav a:focus-visible { outline: 2px solid rgba(217,165,68,0.6); outline-offset: 1px; }
+/* Icons: Lucide files (icons/README.md) drawn as masks over currentColor, so each takes the color
+   of its text. Paths are relative to this file, which both origins serve beside an icons/ folder. */
+.i {
+  display: inline-block; width: 14px; height: 14px; flex: none; pointer-events: none;
+  background-color: currentColor;
+  -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat;
+}
+.shell-nav .i { width: 13px; height: 13px; }
+.i-graph { --i: url(icons/waypoints.svg); }
+.i-settings { --i: url(icons/settings.svg); }
+.shell-nav kbd {
+  margin-left: 2px; padding: 0 4px; border-radius: 3px; border: 1px solid #222836;
+  color: #5c6472; font: 600 9.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.shell-nav a[aria-current="page"] kbd { border-color: rgba(217,165,68,0.3); color: rgba(240,196,105,0.7); }

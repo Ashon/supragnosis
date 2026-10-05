@@ -74,6 +74,10 @@ struct ActiveRemote(Mutex<Option<RemoteServer>>);
 /// a new user is in (docs/client-connect.md Section 5).
 struct AppsHint(Mutex<Option<String>>);
 
+/// The settings section the tray's Settings... opens: the one whose state the status line is
+/// pointing at, if any (docs/settings-page.md Section 3.0).
+struct Attention(Mutex<Option<&'static str>>);
+
 #[derive(Clone)]
 struct RemoteServer {
     name: String,
@@ -341,6 +345,27 @@ fn with_ipc_sources(csp: &str) -> String {
     out.join("; ")
 }
 
+/// The shell's own files on the viewer's origin (docs/settings-page.md Section 3.0): the chrome
+/// stylesheet both pages share. The viewer is the daemon's page and its policy allows styles from
+/// its own origin only, so the shell answers this path itself - never passing it to a daemon or a
+/// hub - and the stylesheet is the same bytes the settings page links from the app's origin.
+fn shell_asset(target: &str) -> Option<(&'static str, &'static [u8])> {
+    let path = target.split('?').next().unwrap_or(target);
+    match path {
+        "/__shell/shell.css" => {
+            Some(("text/css; charset=utf-8", include_bytes!("../assets/shell.css")))
+        }
+        // The icons shell.css itself draws - the Graph | Settings control (assets/icons/README.md).
+        "/__shell/icons/waypoints.svg" => {
+            Some(("image/svg+xml", include_bytes!("../assets/icons/waypoints.svg")))
+        }
+        "/__shell/icons/settings.svg" => {
+            Some(("image/svg+xml", include_bytes!("../assets/icons/settings.svg")))
+        }
+        _ => None,
+    }
+}
+
 fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Vec<u8>> {
     http::Response::builder()
         .status(status)
@@ -439,6 +464,22 @@ fn cli_outcome(out: &std::process::Output) -> (bool, String) {
 
 /// The tray's status line, from what the CLI observed plus the shell's own relationship to the
 /// daemon (a child it spawned is invisible to the CLI - no pidfile, no launchd job).
+/// Who runs the daemon, in the words the status line and the settings page use - including a child
+/// of this app, which the CLI cannot see (no pidfile, no launchd job).
+fn who_runs(daemon: &Daemon, st: &serde_json::Value) -> String {
+    match (daemon, st["managers"].get(0)) {
+        (Daemon::Spawned(_), _) => "run by this app, not at login".to_string(),
+        (_, Some(m)) => match (m["type"].as_str(), m["source"].as_str()) {
+            (Some("launchd"), Some("canonical")) => "login item".to_string(),
+            (Some("launchd"), Some("homebrew")) => "brew services".to_string(),
+            (Some("launchd"), _) => format!("launchd {}", m["label"].as_str().unwrap_or("?")),
+            (Some("pidfile"), _) => "supragnosis start".to_string(),
+            _ => "externally managed".to_string(),
+        },
+        (_, None) => "externally managed".to_string(),
+    }
+}
+
 fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&str>) -> String {
     let base = match (daemon, st) {
         (Daemon::Starting | Daemon::Failed(_), _) | (_, None) => daemon.status_line(),
@@ -450,19 +491,7 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
                 let n = st["managers"].as_array().map_or(0, Vec::len);
                 format!("daemon: CONFLICT - {n} managers claim it (see `supragnosis status`)")
             } else {
-                let who = match (daemon, st["managers"].get(0)) {
-                    (Daemon::Spawned(_), _) => "run by this app, not at login".to_string(),
-                    (_, Some(m)) => match (m["type"].as_str(), m["source"].as_str()) {
-                        (Some("launchd"), Some("canonical")) => "login item".to_string(),
-                        (Some("launchd"), Some("homebrew")) => "brew services".to_string(),
-                        (Some("launchd"), _) => {
-                            format!("launchd {}", m["label"].as_str().unwrap_or("?"))
-                        }
-                        (Some("pidfile"), _) => "supragnosis start".to_string(),
-                        _ => "externally managed".to_string(),
-                    },
-                    (_, None) => "externally managed".to_string(),
-                };
+                let who = who_runs(daemon, st);
                 match running {
                     Some(r) if r != here => {
                         format!("daemon {r} running, {here} installed - restart it in Settings")
@@ -528,16 +557,33 @@ fn remote_line(r: &RemoteServer) -> String {
 async fn refresh_status(app: &tauri::AppHandle) {
     refresh_servers(app).await;
     refresh_apps(app).await;
-    let text = match active_remote(app) {
-        Some(r) => remote_line(&r),
+    let hint = app.try_state::<AppsHint>().and_then(|h| h.0.lock().unwrap().clone());
+    let (text, attention) = match active_remote(app) {
+        Some(r) => {
+            let trouble = !r.answering || r.credential_refused;
+            let attention = if trouble { Some("server") } else { hint.as_ref().map(|_| "apps") };
+            (remote_line(&r), attention)
+        }
         None => {
             let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-            let hint = app.try_state::<AppsHint>().and_then(|h| h.0.lock().unwrap().clone());
-            status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), st.as_ref(), hint.as_deref())
+            let drift = st.as_ref().is_some_and(|v| {
+                let running = v["version"]["running"].as_str();
+                running.is_some() && running != v["version"]["here"].as_str()
+            });
+            let text = status_text(
+                &app.state::<DaemonGuard>().0.lock().unwrap(),
+                st.as_ref(),
+                hint.as_deref(),
+            );
+            let attention = if drift { Some("daemon") } else { hint.as_ref().map(|_| "apps") };
+            (text, attention)
         }
     };
     if let Some(status) = app.try_state::<TrayStatus>() {
         let _ = status.0.set_text(text);
+    }
+    if let Some(a) = app.try_state::<Attention>() {
+        *a.0.lock().unwrap() = attention;
     }
 }
 
@@ -550,27 +596,33 @@ fn cli_connect_list() -> Option<serde_json::Value> {
     serde_json::from_slice(&out.stdout).ok()
 }
 
-/// One AI app's row in the settings window, from the CLI's report on it: what state it is in, and
-/// the label of the one button - `None` where a click could do nothing (not installed, settings
-/// unreadable, a CLI too old to know `connect`). Any entry other than the bridge is named, because
-/// the person clicking is about to replace it.
-fn app_row(report: Option<&serde_json::Value>) -> (String, Option<&'static str>) {
+/// One AI app's row on the settings page, from the CLI's report on it: what state it is in, the
+/// label of its one button - `None` where a click could do nothing (not installed, settings
+/// unreadable, a CLI too old to know `connect`) - and the kind of state, which picks the row's pill:
+/// `connected`, `attention` (connected some other way, which a click replaces), `off` or `absent`.
+/// Any entry other than the bridge is named, because the person clicking is about to replace it.
+fn app_row(report: Option<&serde_json::Value>) -> (String, Option<&'static str>, &'static str) {
     let Some(r) = report else {
-        return ("needs a newer supragnosis-server".into(), None);
+        return ("needs a newer supragnosis-server".into(), None, "absent");
     };
     if !r["installed"].as_bool().unwrap_or(false) {
-        return ("not installed".into(), None);
+        return ("not installed".into(), None, "absent");
     }
     match r["entry"].as_str().unwrap_or("none") {
-        "bridge" => ("connected".into(), Some("Disconnect")),
+        "bridge" => ("connected through the bridge".into(), Some("Disconnect"), "connected"),
         "http" => (
-            "connected over HTTP, with a copy of the token".into(),
+            "connected over HTTP, with a copy of the token in its settings".into(),
             Some("Switch to the bridge"),
+            "attention",
         ),
-        "stdio" => ("connected by an old stdio entry".into(), Some("Switch to the bridge")),
-        "other" => ("another supragnosis entry is configured".into(), Some("Replace")),
-        "unknown" => ("its settings file could not be read".into(), None),
-        _ => ("not connected".into(), Some("Connect")),
+        "stdio" => (
+            "connected by an old stdio entry".into(),
+            Some("Switch to the bridge"),
+            "attention",
+        ),
+        "other" => ("another supragnosis entry is configured".into(), Some("Replace"), "attention"),
+        "unknown" => ("its settings file could not be read".into(), None, "absent"),
+        _ => ("not connected".into(), Some("Connect"), "off"),
     }
 }
 
@@ -905,12 +957,17 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             let report = reports
                 .as_ref()
                 .and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)).cloned());
-            let (state, action) = app_row(report.as_ref());
-            serde_json::json!({ "id": id, "name": name, "state": state, "action": action })
+            let (state, action, kind) = app_row(report.as_ref());
+            serde_json::json!({ "id": id, "name": name, "state": state, "action": action, "kind": kind })
         })
         .collect();
 
-    let line = status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), status.as_ref(), None);
+    let guard = app.state::<DaemonGuard>();
+    let (line, who) = {
+        let daemon = guard.0.lock().unwrap();
+        let who = status.as_ref().map(|st| who_runs(&daemon, st));
+        (status_text(&daemon, status.as_ref(), None), who)
+    };
     let login = status
         .as_ref()
         .and_then(|v| v["service"]["state"].as_str())
@@ -926,11 +983,19 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
         "apps": apps,
         "daemon": {
             "line": line,
+            "who": who,
+            "situation": status.as_ref().map(|v| v["situation"].clone()),
+            "answering": status.as_ref().map(|v| v["answering"].clone()),
             "running": status.as_ref().map(|v| v["version"]["running"].clone()),
             "installed": status.as_ref().map(|v| v["version"]["here"].clone()),
             "store": status.as_ref().map(|v| v["store"].clone()),
             "login": login,
             "remote": remote.map(|r| r.name),
+        },
+        "about": {
+            "app": env!("CARGO_PKG_VERSION"),
+            "cli": find_server_bin().map(|p| p.display().to_string()),
+            "data": home().join(".supragnosis").display().to_string(),
         },
     })
 }
@@ -1025,13 +1090,34 @@ async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Resul
     Ok(restart_daemon(&app, sock).await)
 }
 
-/// Shows the settings page in the main window (docs/settings-page.md Section 3), creating the window
-/// first if the app has retreated to the tray.
-fn show_settings(app: &tauri::AppHandle) -> tauri::Result<()> {
+/// The graph's address: the viewer, which the shell's `viz://` proxy serves.
+fn graph_url() -> tauri::Url {
+    let url = if cfg!(windows) { "http://viz.localhost/" } else { "viz://localhost/" };
+    url.parse().expect("static url")
+}
+
+/// Turns the main window to the settings page (docs/settings-page.md Section 3.0), creating the
+/// window first if the app has retreated to the tray. With a section, opens that section; without
+/// one, a window already on the settings page stays where it is.
+fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        if !w.url().is_ok_and(|u| settings_caller_ok("main", &u)) {
-            w.navigate(settings_url())?;
+        let there = w.url().is_ok_and(|u| settings_caller_ok("main", &u));
+        if !there || section.is_some() {
+            let mut url = settings_url();
+            url.set_fragment(section);
+            w.navigate(url)?;
+        }
+    }
+    Ok(())
+}
+
+/// Turns the main window to the graph, creating it first if needed.
+fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
+    show_viewer(app)?;
+    if let Some(w) = app.get_webview_window("main") {
+        if w.url().is_ok_and(|u| settings_caller_ok("main", &u)) {
+            w.navigate(graph_url())?;
         }
     }
     Ok(())
@@ -1155,6 +1241,10 @@ fn main() {
                         SHELL_CSP,
                         br#"{"error":"SSE rides the Tauri event bridge (viz-event), not the proxy"}"#.to_vec(),
                     )
+                } else if let Some((ctype, bytes)) = shell_asset(&target) {
+                    resp(200, ctype, SHELL_CSP, bytes.to_vec())
+                } else if target.starts_with("/__shell/") {
+                    resp(404, "text/plain", SHELL_CSP, b"not a shell asset".to_vec())
                 } else if let Some(r) = active_remote(&app) {
                     // A remote profile: the local socket is not the knowledge the AI apps use.
                     if target == "/" {
@@ -1229,7 +1319,7 @@ fn main() {
             // Tray: says what state this Mac is in and opens the windows that change it
             // (docs/settings-page.md Section 5). The settings themselves live on that page.
             let status = MenuItem::with_id(app, "status", "daemon: starting...", false, None::<&str>)?;
-            let open = MenuItem::with_id(app, "open", "Open Viewer", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open Graph", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
             // the macOS app menu; lowercase `supragnosis` is the CLI and the daemon binary.
@@ -1249,28 +1339,40 @@ fn main() {
             app.manage(TrayStatus(status));
             app.manage(ActiveRemote(Mutex::new(None)));
             app.manage(AppsHint(Mutex::new(None)));
+            app.manage(Attention(Mutex::new(None)));
             app.manage(VizSock(sock.clone()));
 
             // The app menu keeps the platform's own items - Edit above all, without which a
-            // credential cannot be pasted into the settings window - and gains Settings... (Cmd+,)
-            // in the place macOS users look for it.
+            // credential cannot be pasted into the settings page - and gains the two pages:
+            // Settings... (Cmd+,) where macOS users look for it, and Graph (Cmd+1) in View.
             let app_menu = Menu::default(app.handle())?;
-            if let Some(first) = app_menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
-                let item = MenuItem::with_id(
-                    app,
-                    "settings",
-                    "Settings...",
-                    true,
-                    Some("CmdOrCtrl+,"),
-                )?;
-                first.insert(&item, 1)?;
+            for sub in app_menu.items()?.iter().filter_map(|i| i.as_submenu().cloned()) {
+                let text = sub.text()?;
+                if text == "View" {
+                    let graph =
+                        MenuItem::with_id(app, "graph", "Graph", true, Some("CmdOrCtrl+1"))?;
+                    sub.insert(&graph, 0)?;
+                    sub.insert(&PredefinedMenuItem::separator(app)?, 1)?;
+                } else if text == name {
+                    let item = MenuItem::with_id(
+                        app,
+                        "settings",
+                        "Settings...",
+                        true,
+                        Some("CmdOrCtrl+,"),
+                    )?;
+                    sub.insert(&item, 1)?;
+                }
             }
             app.set_menu(app_menu)?;
             app.on_menu_event(|app, event| {
-                if event.id().as_ref() == "settings" {
-                    if let Err(e) = show_settings(app) {
-                        tracing::error!(error = %e, "failed to open the settings window");
-                    }
+                let shown = match event.id().as_ref() {
+                    "settings" => show_settings(app, None),
+                    "graph" => show_graph(app),
+                    _ => Ok(()),
+                };
+                if let Err(e) = shown {
+                    tracing::error!(error = %e, "failed to turn the main window");
                 }
             });
 
@@ -1283,13 +1385,16 @@ fn main() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => {
-                        if let Err(e) = show_viewer(app) {
-                            tracing::error!(error = %e, "failed to open the viewer window");
+                        if let Err(e) = show_graph(app) {
+                            tracing::error!(error = %e, "failed to open the graph");
                         }
                     }
                     "settings" => {
-                        if let Err(e) = show_settings(app) {
-                            tracing::error!(error = %e, "failed to open the settings window");
+                        // Straight to the section the status line is pointing at, if any.
+                        let section =
+                            app.try_state::<Attention>().and_then(|a| *a.0.lock().unwrap());
+                        if let Err(e) = show_settings(app, section) {
+                            tracing::error!(error = %e, "failed to open the settings");
                         }
                     }
                     "quit" => app.exit(0),
@@ -1421,14 +1526,19 @@ mod status_text_tests {
     #[test]
     fn an_app_item_says_what_a_click_will_do() {
         let r = |installed: bool, entry: &str| serde_json::json!({"installed": installed, "entry": entry});
-        assert_eq!(app_row(Some(&r(true, "bridge"))), ("connected".into(), Some("Disconnect")));
-        let (state, action) = app_row(Some(&r(true, "http")));
+        let (state, action, kind) = app_row(Some(&r(true, "bridge")));
+        assert!(state.contains("bridge") && action == Some("Disconnect") && kind == "connected");
+        let (state, action, kind) = app_row(Some(&r(true, "http")));
         assert!(state.contains("HTTP") && action == Some("Switch to the bridge"), "{state}");
+        assert_eq!(kind, "attention", "a copy of the token is something to fix");
         assert_eq!(app_row(Some(&r(true, "other"))).1, Some("Replace"));
-        assert_eq!(app_row(Some(&r(false, "none"))), ("not installed".into(), None));
+        assert_eq!(app_row(Some(&r(false, "none"))), ("not installed".into(), None, "absent"));
         assert_eq!(app_row(Some(&r(true, "unknown"))).1, None);
         assert_eq!(app_row(None).1, None, "an old CLI cannot connect anything");
-        assert_eq!(app_row(Some(&r(true, "none"))), ("not connected".into(), Some("Connect")));
+        assert_eq!(
+            app_row(Some(&r(true, "none"))),
+            ("not connected".into(), Some("Connect"), "off")
+        );
     }
 
     fn st(
@@ -1552,9 +1662,16 @@ mod settings_tests {
     /// quote a server's answer, so no markup sink may appear in its script at all.
     #[test]
     fn the_settings_page_never_renders_markup() {
-        let js = include_str!("../assets/settings.js");
-        for sink in ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("] {
-            assert!(!js.contains(sink), "settings.js must not use {sink}");
+        // The init script runs in every page the main window shows - the viewer included - and builds
+        // the page navigation there, so it is held to the same rule.
+        for (file, js) in [
+            ("settings.js", include_str!("../assets/settings.js")),
+            ("shell-init.js", include_str!("../assets/shell-init.js")),
+        ] {
+            for sink in ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("]
+            {
+                assert!(!js.contains(sink), "{file} must not use {sink}");
+            }
         }
         let html = include_str!("../assets/settings.html");
         assert!(html.contains("Content-Security-Policy"), "the page carries its own policy");
