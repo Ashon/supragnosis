@@ -82,9 +82,9 @@ where
 {
     let mut builder = reqwest::Client::builder();
     if let Some(pem) = &cfg.ca_pem {
-        for cert in reqwest::Certificate::from_pem_bundle(pem)? {
-            builder = builder.add_root_certificate(cert);
-        }
+        // Trusted as itself or as a root, so a self-signed hub certificate made with openssl's
+        // defaults (marked as a CA) works too (docs/sync-correctness.md Section 10).
+        builder = builder.use_preconfigured_tls(supragnosis_sync::http::tls_trusting(pem)?);
     }
     let http = builder
         .connect_timeout(Duration::from_secs(2))

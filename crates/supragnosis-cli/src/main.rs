@@ -1638,11 +1638,9 @@ fn check_server(target: &profile::Target) -> ServerCheck {
                 let mut b = reqwest::Client::builder().timeout(std::time::Duration::from_secs(4));
                 if let Some(p) = ca {
                     let pem = std::fs::read(p).map_err(|e| e.to_string())?;
-                    for c in
-                        reqwest::Certificate::from_pem_bundle(&pem).map_err(|e| e.to_string())?
-                    {
-                        b = b.add_root_certificate(c);
-                    }
+                    let tls =
+                        supragnosis_sync::http::tls_trusting(&pem).map_err(|e| e.to_string())?;
+                    b = b.use_preconfigured_tls(tls);
                 }
                 let client = b.build().map_err(|e| e.to_string())?;
                 let mut req = client.get(url).header("Accept", "text/event-stream");
