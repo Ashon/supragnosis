@@ -91,8 +91,8 @@ fi
 # --- spoke config -----------------------------------------------------------
 # The per-server shape, which is the point of Step 1: one credential per host rather than one token
 # presented to all of them. The hub's certificate is self-signed here, so the spoke is handed a copy
-# and trusts exactly that one (`ca`), never any certificate: `insecure_tls` applies to loopback
-# hubs only (docs/sync-correctness.md Section 10). The certificate names `hub`, the URL's host.
+# and trusts exactly that one (`ca`), never any certificate - there is no setting that accepts any
+# certificate any more (docs/sync-correctness.md Section 10). The certificate names `hub`.
 cp "$HUB_STATE/tls/cert.pem" "$SPOKE_STATE/hub-ca.pem"
 chmod 644 "$SPOKE_STATE/hub-ca.pem"
 if [ ! -f "$SPOKE_STATE/supragnosis.toml" ]; then

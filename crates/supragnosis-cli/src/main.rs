@@ -3249,8 +3249,10 @@ mod fed {
         /// `[[sync.server]]`, mirroring the per-peer `[[server.allowlist]]` shape.
         #[serde(default)]
         pub server: Vec<ServerEntry>,
-        /// Accept a self-signed hub certificate (internal VM) - content authenticity stays with the
-        /// event signatures (F6), this only affects transport privacy against an active MITM.
+        /// Retired (sync-correctness.md Section 10). It accepted any certificate, so every round
+        /// handed the bearer to whoever answered. Still parsed, so a file that sets it keeps working,
+        /// but never read: setting it only earns a note saying to name the hub's certificate with
+        /// `ca` instead.
         #[serde(default)]
         pub insecure_tls: bool,
         /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
@@ -3324,6 +3326,16 @@ mod fed {
         /// sits on the surface an operator reads rather than in a log they scrolled past once.
         pub fn links(&self) -> (Vec<supragnosis_sync::ServerLink>, Vec<String>) {
             let mut notes = Vec::new();
+            if self.insecure_tls {
+                notes.push(
+                    "[sync] insecure_tls is no longer read: it accepted any certificate, so the \
+                     bearer went to whoever answered. Every link now verifies its hub. For a \
+                     self-signed hub, copy its tls_cert and name it with `ca = \"<pem file>\"` in \
+                     its [[sync.server]] entry; for a hub on this machine, http:// needs no \
+                     certificate. Remove insecure_tls once that is done."
+                        .to_string(),
+                );
+            }
             let flat_present = !self.servers.is_empty() || self.auth_token.is_some();
 
             if !self.server.is_empty() {
@@ -3371,9 +3383,9 @@ mod fed {
 
         /// One host as this node will reach it (sync-correctness.md Section 10). The bearer is
         /// never sent where it could be read in transit: a plain `http://` URL to another machine
-        /// disables the link, and `insecure_tls` - which accepts any certificate - applies to a
-        /// loopback host only. Both are ignored rather than refused, because ignoring them can only
-        /// make a link fail, never send more (P24), and each says what to change.
+        /// disables the link, and every link verifies its host - by the system's roots, or by the
+        /// certificate `ca` names. These are ignored rather than refused, because ignoring them can
+        /// only make a link fail, never send more (P24), and each says what to change.
         fn link(
             &self,
             url: &str,
@@ -3394,13 +3406,6 @@ mod fed {
                 ));
                 return None;
             }
-            if self.insecure_tls && !loopback {
-                notes.push(format!(
-                    "[sync] insecure_tls is IGNORED for {url}: it accepts any certificate, so the \
-                     bearer would go to whoever answers. Name the hub's certificate with `ca = \
-                     \"<pem file>\"` in its [[sync.server]] entry instead."
-                ));
-            }
             let ca_pem = match ca {
                 None => None,
                 Some(path) => match std::fs::read(path) {
@@ -3420,7 +3425,6 @@ mod fed {
                 url: url.to_string(),
                 auth_token: token.to_string(),
                 ca_pem,
-                insecure_tls: self.insecure_tls && loopback,
             })
         }
     }
@@ -4138,9 +4142,6 @@ mod link_transport {
             url = "http://127.0.0.1:7420"
             auth_token = "c"
             [[sync.server]]
-            url = "https://localhost:7420"
-            auth_token = "d"
-            [[sync.server]]
             url = "https://named.example:7420"
             auth_token = "e"
             ca = "{}"
@@ -4152,21 +4153,15 @@ mod link_transport {
             ca.display()
         ));
         let by_url = |u: &str| links.iter().find(|l| l.url == u);
-        let remote = by_url("https://hub.example:7420").expect("kept, but verified");
-        assert!(!remote.insecure_tls, "insecure_tls does not reach another machine");
+        assert!(by_url("https://hub.example:7420").is_some(), "kept, and verified by the system");
         assert!(by_url("http://hub.example:7420").is_none(), "plain HTTP off loopback is off");
         assert!(by_url("http://127.0.0.1:7420").is_some(), "plain HTTP on loopback stays");
-        assert!(by_url("https://localhost:7420").expect("loopback").insecure_tls);
         assert!(by_url("https://named.example:7420").expect("named").ca_pem.is_some());
         assert!(by_url("https://missing.example:7420").is_none(), "an unreadable ca disables it");
         let said = |needle: &str| notes.iter().any(|n| n.contains(needle));
-        assert!(said("insecure_tls is IGNORED for https://hub.example:7420"), "{notes:?}");
+        assert!(said("insecure_tls is no longer read"), "{notes:?}");
         assert!(said("http://hub.example:7420 is plain HTTP"), "{notes:?}");
         assert!(said("/nonexistent/ca.pem"), "{notes:?}");
-        assert!(
-            !said("https://localhost:7420"),
-            "nothing to say about a loopback host: {notes:?}"
-        );
         let _ = std::fs::remove_file(ca);
     }
 }
