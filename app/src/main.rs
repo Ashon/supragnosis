@@ -266,9 +266,18 @@ struct Fetched {
 /// /api/events must never come through here (an endless stream) - the protocol handler
 /// short-circuits it.
 async fn uds_fetch(sock: &Path, target: &str) -> anyhow::Result<Fetched> {
+    uds_request(sock, "GET", target).await
+}
+
+/// One request over the socket, with no body - the viewer takes its parameters in the query string,
+/// POST included (its one POST is the console's narrowing act, `/api/peer/share`).
+async fn uds_request(sock: &Path, method: &str, target: &str) -> anyhow::Result<Fetched> {
     let mut s = UnixStream::connect(sock).await?;
-    s.write_all(format!("GET {target} HTTP/1.1\r\nConnection: close\r\n\r\n").as_bytes())
-        .await?;
+    s.write_all(
+        format!("{method} {target} HTTP/1.1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .as_bytes(),
+    )
+    .await?;
     let mut raw = Vec::new();
     s.read_to_end(&mut raw).await?;
     let split = raw
@@ -354,13 +363,6 @@ fn shell_asset(target: &str) -> Option<(&'static str, &'static [u8])> {
     match path {
         "/__shell/shell.css" => {
             Some(("text/css; charset=utf-8", include_bytes!("../assets/shell.css")))
-        }
-        // The icons shell.css itself draws - the graph and settings links (assets/icons/README.md).
-        "/__shell/icons/waypoints.svg" => {
-            Some(("image/svg+xml", include_bytes!("../assets/icons/waypoints.svg")))
-        }
-        "/__shell/icons/settings.svg" => {
-            Some(("image/svg+xml", include_bytes!("../assets/icons/settings.svg")))
         }
         _ => None,
     }
@@ -869,6 +871,7 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "app_toggle",
     "login_set",
     "daemon_restart",
+    "peer_narrow",
 ];
 
 /// The settings page's address: the app's own page, bundled with it - never one a daemon or a hub
@@ -962,6 +965,21 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
         })
         .collect();
 
+    // Sync is this Mac's daemon's (docs/settings-page.md Section 3.4): read from its viewer socket,
+    // and not at all while a remote profile is active.
+    let federation = if remote.is_none() {
+        let sock = app.state::<VizSock>().0.clone();
+        match tokio::time::timeout(Duration::from_secs(5), uds_fetch(&sock, "/api/federation"))
+            .await
+        {
+            Ok(Ok(f)) if f.status == 200 => {
+                serde_json::from_slice::<serde_json::Value>(&f.body).ok()
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
     let guard = app.state::<DaemonGuard>();
     let (line, who) = {
         let daemon = guard.0.lock().unwrap();
@@ -992,8 +1010,11 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             "login": login,
             "remote": remote.map(|r| r.name),
         },
+        "federation": federation,
         "about": {
             "app": env!("CARGO_PKG_VERSION"),
+            "license": env!("CARGO_PKG_LICENSE"),
+            "source": env!("CARGO_PKG_REPOSITORY"),
             "cli": find_server_bin().map(|p| p.display().to_string()),
             "data": home().join(".supragnosis").display().to_string(),
         },
@@ -1076,6 +1097,61 @@ async fn login_set(
     }
     let sock = app.state::<VizSock>().0.clone();
     Ok(set_login(&app, sock, on).await)
+}
+
+/// Percent-encodes a query value: everything but the unreserved characters.
+fn query_value(v: &str) -> String {
+    v.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Narrows what one admitted peer may read - the viewer's console act (`POST /api/peer/share`),
+/// moved onto the settings page (docs/settings-page.md Section 3.4). Narrow-only, as the daemon
+/// enforces: `keep` must be a subset of what the peer holds, and an empty `keep` means "admitted, may
+/// read nothing". The daemon writes supragnosis.toml and answers what the peer now holds.
+#[tauri::command]
+async fn peer_narrow(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    node: String,
+    keep: Vec<String>,
+) -> Result<String, String> {
+    settings_caller(&webview)?;
+    if active_remote(&app).is_some() {
+        return Err("a remote server is active - sync settings are this Mac's daemon's".into());
+    }
+    if node.trim().is_empty() {
+        return Err("no peer named".into());
+    }
+    let target = format!(
+        "/api/peer/share?node_id={}&workspaces={}",
+        query_value(&node),
+        query_value(&keep.join(","))
+    );
+    let sock = app.state::<VizSock>().0.clone();
+    let answer = tokio::time::timeout(Duration::from_secs(15), uds_request(&sock, "POST", &target))
+        .await
+        .map_err(|_| "the daemon did not answer within 15 seconds".to_string())?
+        .map_err(|e| format!("the daemon could not be reached: {e}"))?;
+    let body: serde_json::Value = serde_json::from_slice(&answer.body).unwrap_or_default();
+    if answer.status != 200 {
+        return Err(body["error"].as_str().unwrap_or("the daemon refused the change").to_string());
+    }
+    let now: Vec<&str> = body["shared_workspaces"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|w| w.as_str()).collect())
+        .unwrap_or_default();
+    Ok(if now.is_empty() {
+        "it may read nothing now".to_string()
+    } else {
+        format!("it may read {}", now.join(", "))
+    })
 }
 
 #[tauri::command]
@@ -1222,7 +1298,8 @@ fn main() {
             server_remove,
             app_toggle,
             login_set,
-            daemon_restart
+            daemon_restart,
+            peer_narrow
         ])
         .register_asynchronous_uri_scheme_protocol("viz", move |ctx, request, responder| {
             let sock = proxy_sock.clone();
@@ -1642,6 +1719,15 @@ mod settings_tests {
             assert!(granted(&settings, &perm), "the settings capability needs {perm}");
             assert!(!granted(&viewer, &perm), "{perm} belongs to the settings capability alone");
         }
+    }
+
+    /// The narrowing act reaches the daemon as a query string, so a workspace or node name cannot
+    /// break out of its parameter: everything but the unreserved characters is encoded.
+    #[test]
+    fn a_narrowing_is_encoded_into_its_own_parameters() {
+        assert_eq!(super::query_value("team-docs_1.x~"), "team-docs_1.x~");
+        assert_eq!(super::query_value("a b,c&workspaces=*"), "a%20b%2Cc%26workspaces%3D%2A");
+        assert_eq!(super::query_value(""), "");
     }
 
     /// S2 by construction: the arguments of `server add` are built without the credential, which
