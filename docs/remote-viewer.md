@@ -5,7 +5,7 @@
 > shows when it cannot. Step 4 of [remote-server.md](remote-server.md) Section 10, and federation's
 > Phase 3.5 read tier ([federation.md](federation.md) 6d).
 >
-> Status: **specified**, not built.
+> Status: **specified**. Step 0 of Section 10 is built (v0.4.6); steps 1-4 are not.
 
 ## 1. Why this exists
 
@@ -117,9 +117,15 @@ cases. It does not call the entity absent (P5), and it does not say where else i
 The same holds for an observation id. A granted workspace that the hub may not serve is different:
 the principal was granted it, so the refusal can say so and name the missing consent (R5).
 
-The agent surface shipped in v0.4.5 does not do this. `get_entity`, `traverse` and the observation
-resource refuse an id outside the grants in words that differ from their answer for an unknown id.
-Section 10 closes that first.
+A gate proposal (`claim_promotion`, `claim_demotion`) has the same problem from the other side: the
+engine checks that its target observations exist anywhere in the log, so a refusal for an absent
+target would confirm a guessed one recorded elsewhere. On the agent surface such a proposal names
+only observations its own workspace holds, with one refusal for "absent" and "elsewhere".
+
+The agent surface shipped in v0.4.5 did not do this. `get_entity`, `traverse` and the observation
+resource answered an id outside the grants in words that differed from their answer for an unknown
+id, and a gate proposal took a target from any workspace. v0.4.6 closes all four (Section 10, step
+0), guarded by `an_id_outside_the_grants_reads_as_an_unknown_one`.
 
 ### 3.5 `/api/surface`
 
@@ -304,8 +310,9 @@ On a remote profile, the window shows the server instead of saying it cannot:
 - **remote-server.md Section 5** says the viewer cannot show a remote server yet. It can, through
   this tier.
 - **remote-server.md Section 4.3**, the `get_entity` row. "Not in a workspace you are granted"
-  becomes the unknown-id answer, for `traverse`'s start and the observation resource too (Section
-  3.4).
+  becomes the unknown-id answer, for `traverse`'s start and the observation resource too, and a gate
+  proposal names only observations in its own workspace (Section 3.4). Applied in v0.4.6, with the
+  correction recorded in remote-server.md Section 12.
 - **architecture.md Section 14, overdue item 4, and the P17 registry row.** The guard owed "the
   moment federation Phase 3.5 opens" is Section 3.3 and V3. The row moves from deferred to
   evidenced when its test exists.
@@ -315,8 +322,8 @@ On a remote profile, the window shows the server instead of saying it cannot:
 
 ## 10. Ordering
 
-0. **Close the existence oracle on the agent surface** (Section 3.4). It ships in v0.4.5 and needs
-   none of the rest, so it goes first and can be released on its own.
+0. **Close the existence oracle on the agent surface** (Section 3.4). It shipped in v0.4.5 and
+   needs none of the rest, so it went first and was released on its own, in v0.4.6. [built]
 1. **The hub's read tier.**
    - In the viz crate, a remote router beside the local one: the path policy table, workspace
      resolution over a reader's grants, the filtered event stream and `/api/surface`.
