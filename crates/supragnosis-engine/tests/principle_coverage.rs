@@ -414,6 +414,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/connect.rs"),
     include_str!("../../supragnosis-cli/src/profile.rs"),
     include_str!("../../supragnosis-cli/src/principal.rs"),
+    include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
     include_str!("../../supragnosis-mcp/src/remote.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
     // daemon-lifecycle.md like any other guard, so its source is scanned too.
@@ -525,6 +526,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // only way the old rows could actually be lost.
             "a_legacy_store_is_recognised_by_its_rocksdb_marker",
             "an_unmigrated_store_is_refused_with_the_way_out",
+            // The redb era: a store a real release wrote, read back whole by this build
+            // (compatibility.md Section 5). Before it, every format test built its rows with the
+            // structs under test, so an encoding change passed them all.
+            "the_format_2_store_v0_4_7_wrote_reads_whole",
         ])),
         c("a relation accumulates attestations the way an entity and an observation do",
           Evidence::Deferred(
@@ -695,6 +700,13 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // applied by hand or the folds report one act as two.
             "p14_migration_rekeys_an_act_without_duplicating_it",
             "legacy_id_rows_stay_local_and_migrate",
+        ])),
+        c("an identity or a signature, once made, verifies under every later build",
+          Evidence::Scenario(&[
+            // compatibility.md Section 4: pinned for inputs no release wrote (every optional field
+            // absent, and every one present), and re-verified on rows a release did write.
+            "encodings_that_cross_versions_keep_their_known_answers",
+            "the_format_2_store_v0_4_7_wrote_reads_whole",
         ])),
         c("every identifier the system hands out is dereferenceable",
           Evidence::Deferred(
@@ -978,6 +990,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
               "bind_guard_enforces_f10",
               "an_unmigrated_store_is_refused_with_the_way_out",
+              // A store a later release changed is "a store this build cannot read" in the newest
+              // direction: refused unchanged rather than served with rows dropped and fields
+              // stripped (compatibility.md Section 3.3).
+              "a_store_a_later_release_raised_is_refused_unchanged",
           ])),
     ]),
 ];
