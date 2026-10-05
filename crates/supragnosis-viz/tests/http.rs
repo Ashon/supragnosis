@@ -173,13 +173,19 @@ fn viz_source_escapes_untrusted_names() {
         js.contains("&quot;") && js.contains("&#39;"),
         "esc() map must translate double and single quotes"
     );
-    // The node hover tooltip must route the name/type through esc(), never raw interpolation.
+    // Markup is written only through the `html` tag, which sends every interpolation that is not
+    // itself `html`-built markup through esc().
     assert!(
-        js.contains("<b>${esc(n.name)}</b>"),
-        "showTip must escape the node name (stored-XSS vector)"
+        js.contains("return esc(String(v));"),
+        "the html tag must fall back to esc() for every value that is not markup"
     );
-    assert!(
-        !js.contains("<b>${n.name}</b>"),
+    // The node hover tooltip must build the name/type with the html tag. The same text in a plain
+    // template literal would interpolate the raw name into innerHTML.
+    let tagged = "html`<b>${n.name}</b>";
+    assert!(js.contains(tagged), "showTip must escape the node name (stored-XSS vector)");
+    assert_eq!(
+        js.matches("<b>${n.name}</b>").count(),
+        js.matches(tagged).count(),
         "showTip must not interpolate the raw node name into innerHTML"
     );
 }
@@ -191,8 +197,8 @@ fn viz_source_escapes_untrusted_names() {
 /// Asserted against the source, like the escaping guard above, and with the same honesty: this is
 /// a tripwire on the shape, not a proof about every render. It pins three things - the contested
 /// branch is the first decision `contestedBlock` makes and returns before any fold is built; the
-/// function never consults the scope baseline; and `renderDetail` concatenates the block outside
-/// any condition of its own.
+/// function never consults the scope baseline; and `renderDetail` lists the block as an item of its
+/// own, outside any condition.
 #[test]
 fn inspector_never_folds_a_contested_belief() {
     let js = include_str!("../assets/viewer.js");
@@ -225,13 +231,14 @@ fn inspector_never_folds_a_contested_belief() {
 
     let detail = body("renderDetail");
     let call = detail
-        .find("+ contestedBlock(node)")
+        .find("contestedBlock(node)")
         .expect("renderDetail must render the contested block");
     let line_start = detail[..call].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = detail[call..].find('\n').map_or(detail.len(), |i| call + i);
     assert_eq!(
-        detail[line_start..call].trim(),
-        "",
-        "contestedBlock(node) must be its own term of the panel, not a branch of a condition"
+        detail[line_start..line_end].trim(),
+        "contestedBlock(node),",
+        "contestedBlock(node) must be its own item of the panel, not a branch of a condition"
     );
 }
 

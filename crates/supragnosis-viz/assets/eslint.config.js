@@ -1,6 +1,10 @@
 // Security lint for the viewer script. no-unsanitized flags any innerHTML / insertAdjacentHTML /
 // document.write sink whose value is not a plain literal, catching the exact XSS class that once lived
 // in the inline HTML string (an entity/type name from an untrusted observe reaching innerHTML raw).
+// The only escape the rule accepts is the `html` tagged template (viewer.js, next to esc), which
+// escapes every interpolation by default and passes through only fragments that were themselves built
+// with `html`. So a sink is either a literal or an `html` template, and there is no disable comment
+// and no "trust this string" helper to vouch for anything else.
 // The build does not use this - the crate embeds viewer.js via include_str!; this is dev/CI tooling.
 import nounsanitized from "eslint-plugin-no-unsanitized";
 
@@ -24,8 +28,8 @@ export default [
       },
     },
     rules: {
-      "no-unsanitized/method": "error",
-      "no-unsanitized/property": "error",
+      "no-unsanitized/method": ["error", { escape: { taggedTemplates: ["html"] } }],
+      "no-unsanitized/property": ["error", { escape: { taggedTemplates: ["html"] } }],
       // A canvas render function that throws takes the whole frame with it: the graph vanishes and
       // only whatever drew before the throw remains on screen. That happened - a new hull layer
       // reached for `hullLabels`, a local of `draw()`, and nodes, edges and labels all stopped

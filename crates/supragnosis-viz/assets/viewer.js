@@ -344,56 +344,57 @@ async function refreshPeers() {
       ct.textContent = "";
       return;
     }
-    let html = `<div class="hint">this node: ${esc(String(f.node_id || "").slice(0, 16))} (${esc(f.role || "client")})</div>`;
+    const parts = [html`<div class="hint">this node: ${String(f.node_id || "").slice(0, 16)} (${f.role || "client"})</div>`];
     const hubs = f.servers || [];
     if (hubs.length) {
-      html += `<div class="fsec">Hubs</div>`;
+      parts.push(html`<div class="fsec">Hubs</div>`);
       for (const s of hubs) {
         const dot = s.healthy ? TEAL : "#d96a5f";
-        html += `<div class="fed"><span class="dot" style="background:${dot}"></span>`
-          + `<span class="furl" title="${esc(s.url)}">${esc(s.url.replace(/^https?:\/\//, ""))}</span>`
-          + (s.version ? `<span class="hint">v${esc(s.version)}`
-            + (s.protocol != null ? ` - sync ${esc(String(s.protocol))}` : "") + `</span>` : "") + `</div>`;
+        parts.push(html`<div class="fed"><span class="dot" style="background:${dot}"></span>`,
+          html`<span class="furl" title="${s.url}">${s.url.replace(/^https?:\/\//, "")}</span>`,
+          s.version
+            ? html`<span class="hint">v${s.version}${s.protocol != null ? ` - sync ${s.protocol}` : ""}</span>`
+            : "",
+          html`</div>`);
         for (const w of (s.workspaces || [])) {
           const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
-          html += `<div class="fws">${esc(w.workspace)}: ` + (insync
-            ? `<span style="color:${TEAL}">in sync</span>`
-            : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`) + `</div>`;
+          parts.push(html`<div class="fws">${w.workspace}: ${insync
+            ? html`<span style="color:${TEAL}">in sync</span>`
+            : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`}</div>`);
         }
         // The two buckets the old view had no way to state. Listed here but not admitted there is a
         // setup error that used to just vanish from this panel; admitted there but not shared here
         // is knowledge left on the table. Intersecting the two lists would have hidden both.
         for (const w of (s.local_only || [])) {
-          html += `<div class="fws">${esc(w)}: <span style="color:#d96a5f">not admitted</span></div>`;
+          parts.push(html`<div class="fws">${w}: <span style="color:#d96a5f">not admitted</span></div>`);
         }
         for (const w of (s.peer_only || [])) {
-          html += `<div class="fws">${esc(w)}: <span class="hint">admitted, not shared</span></div>`;
+          parts.push(html`<div class="fws">${w}: <span class="hint">admitted, not shared</span></div>`);
         }
         // Unknown is not an empty grant set: a host that has not answered must not read as one that
         // revoked everything.
         if (!s.negotiated_at) {
-          html += `<div class="fws"><span class="hint">surface unknown - no answer yet</span></div>`;
+          parts.push(html`<div class="fws"><span class="hint">surface unknown - no answer yet</span></div>`);
         } else if (f.updated_ms) {
           const age = Math.max(0, Math.round((f.updated_ms - s.negotiated_at) / 1000));
-          html += `<div class="fws"><span class="hint">surface negotiated ${age}s ago</span></div>`;
+          parts.push(html`<div class="fws"><span class="hint">surface negotiated ${age}s ago</span></div>`);
         }
       }
     }
     const peers = f.known_peers || [];
     if (peers.length) {
-      html += `<div class="fsec">Known peers</div>`;
+      parts.push(html`<div class="fsec">Known peers</div>`);
       for (const p of peers) {
         const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
-        html += `<div class="fed"><span class="dot" style="background:${GOLD}"></span>`
-          + `<span class="furl" title="${esc(p.node_id)}">${esc(p.node_id.slice(0, 16))}</span>`
-          + `<span class="hint">${esc(p.last_action)}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})`
-          + ` - ${p.release ? "v" + esc(p.release) : "release not known"}, sync ${esc(String(p.protocol | 0))}</span></div>`;
+        parts.push(html`<div class="fed"><span class="dot" style="background:${GOLD}"></span>`,
+          html`<span class="furl" title="${p.node_id}">${p.node_id.slice(0, 16)}</span>`,
+          html`<span class="hint">${p.last_action}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})`,
+          html` - ${p.release ? "v" + p.release : "release not known"}, sync ${p.protocol | 0}</span></div>`);
       }
     } else if (f.role === "hub") {
-      html += `<div class="fsec">Known peers</div><div class="empty">no peer has checked in yet</div>`;
+      parts.push(html`<div class="fsec">Known peers</div><div class="empty">no peer has checked in yet</div>`);
     }
-    // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-    host.innerHTML = html;
+    host.innerHTML = html`${parts}`;
     const healthy = hubs.filter(s => s.healthy).length;
     ct.textContent = hubs.length ? `${healthy}/${hubs.length}` : (peers.length || "");
   } catch (e) {
@@ -455,17 +456,15 @@ async function renderAboutSection(host) {
     return;
   }
   const repo = String(a.repository || "");
-  const row = (k, v) => `<dt>${esc(k)}</dt><dd>${v}</dd>`;
-  // eslint-disable-next-line no-unsanitized/property -- every interpolation goes through esc()
-  host.innerHTML = `<dl class="kv">`
-    + row("package", esc(String(a.name || "supragnosis")))
-    + row("version", esc(String(a.version || "")))
-    + row("licence", esc(String(a.license || "")))
-    + (repo ? row("source", `<a href="${esc(repo)}" target="_blank" rel="noreferrer noopener">${esc(repo)}</a>`) : "")
-    + `</dl>`
-    + `<div class="note">Dependency licences are not restated here - a hand-kept list is one that `
-    + `rots without saying so. They are in the manifest and lockfile at the source above, which `
-    + `cannot disagree with this build.</div>`;
+  const row = (k, v) => html`<dt>${k}</dt><dd>${v}</dd>`;
+  host.innerHTML = html`<dl class="kv">${[
+    row("package", String(a.name || "supragnosis")),
+    row("version", String(a.version || "")),
+    row("licence", String(a.license || "")),
+    repo ? row("source", html`<a href="${repo}" target="_blank" rel="noreferrer noopener">${repo}</a>`) : "",
+  ]}</dl><div class="note">Dependency licences are not restated here - a hand-kept list is one that \
+rots without saying so. They are in the manifest and lockfile at the source above, which \
+cannot disagree with this build.</div>`;
 }
 
 async function renderFedSection(host) {
@@ -482,58 +481,56 @@ async function renderFedSection(host) {
     return;
   }
 
-  let html = `<div class="fsec">This node</div>`
-    + `<div class="prow"><span class="pid">${esc(String(f.node_id || ""))}</span>`
-    + `<span class="hint"> ${esc(f.role || "client")}</span></div>`;
+  const parts = [html`<div class="fsec">This node</div>`,
+    html`<div class="prow"><span class="pid">${String(f.node_id || "")}</span>`,
+    html`<span class="hint"> ${f.role || "client"}</span></div>`];
 
   const hubs = f.servers || [];
   if (hubs.length) {
-    html += `<div class="fsec">Hubs this node syncs to</div>`;
+    parts.push(html`<div class="fsec">Hubs this node syncs to</div>`);
     for (const s of hubs) {
       const dot = s.healthy ? TEAL : "#d96a5f";
-      html += `<div class="prow"><span class="dot" style="background:${dot}"></span> `
-        + `<span class="pid">${esc(String(s.url || "").replace(/^https?:\/\//, ""))}</span>`
-        + (s.version ? `<span class="hint"> v${esc(s.version)}</span>` : "")
-        + (s.healthy ? "" : `<span class="hint"> unreachable</span>`);
+      parts.push(html`<div class="prow"><span class="dot" style="background:${dot}"></span> `,
+        html`<span class="pid">${String(s.url || "").replace(/^https?:\/\//, "")}</span>`,
+        s.version ? html`<span class="hint"> v${s.version}</span>` : "",
+        s.healthy ? "" : html`<span class="hint"> unreachable</span>`);
       for (const w of (s.workspaces || [])) {
         const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
-        html += `<div class="hint">${esc(w.workspace)}: ` + (insync
-          ? `in sync`
-          : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`) + `</div>`;
+        parts.push(html`<div class="hint">${w.workspace}: ${insync
+          ? "in sync"
+          : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`}</div>`);
       }
-      html += `</div>`;
+      parts.push(html`</div>`);
     }
   }
 
   const admitted = f.admitted || [];
   if (f.role === "hub") {
-    html += `<div class="fsec">Peers admitted here, and what each may read</div>`;
+    parts.push(html`<div class="fsec">Peers admitted here, and what each may read</div>`);
     if (!admitted.length) {
-      html += `<div class="prow none">no peer is admitted - add one in supragnosis.toml</div>`;
+      parts.push(html`<div class="prow none">no peer is admitted - add one in supragnosis.toml</div>`);
     }
     for (const a of admitted) {
       const ws = a.shared_workspaces || [];
-      html += `<div class="prow"><span class="pid">${esc(String(a.node_id || ""))}</span>`
-        + `<div class="wschips">`;
+      parts.push(html`<div class="prow"><span class="pid">${String(a.node_id || "")}</span><div class="wschips">`);
       if (!ws.length) {
-        html += `<span class="none">admitted, may read nothing</span>`;
+        parts.push(html`<span class="none">admitted, may read nothing</span>`);
       } else {
         for (const w of ws) {
           const armed = fedCfgArmed === a.node_id + "\u0000" + w;
-          html += `<span class="wsc${armed ? " armed" : ""}" data-node="${esc(a.node_id)}" `
-            + `data-ws="${esc(w)}" title="${armed ? "click again to stop sharing" : "stop sharing this workspace with this peer"}">`
-            + `${esc(w)}<span class="x">${armed ? "confirm" : "x"}</span></span>`;
+          parts.push(html`<span class="wsc${armed ? " armed" : ""}" data-node="${a.node_id}" `,
+            html`data-ws="${w}" title="${armed ? "click again to stop sharing" : "stop sharing this workspace with this peer"}">`,
+            html`${w}<span class="x">${armed ? "confirm" : "x"}</span></span>`);
         }
       }
-      html += `</div></div>`;
+      parts.push(html`</div></div>`);
     }
-    html += `<div class="note">Removing a grant takes effect at once and is written to `
-      + `supragnosis.toml. It stops FUTURE reads - it does not recall what has already synced. `
-      + `Granting a workspace, and adding or removing a peer, stay in the file.</div>`;
+    parts.push(html`<div class="note">Removing a grant takes effect at once and is written to `,
+      html`supragnosis.toml. It stops FUTURE reads - it does not recall what has already synced. `,
+      html`Granting a workspace, and adding or removing a peer, stay in the file.</div>`);
   }
 
-  // eslint-disable-next-line no-unsanitized/property -- every interpolation above goes through esc()
-  host.innerHTML = html;
+  host.innerHTML = html`${parts}`;
 
   host.querySelectorAll(".wsc").forEach(el => {
     el.onclick = async () => {
@@ -616,11 +613,9 @@ function showTypeTip(el, t, isEdge) {
   tip.style.display = "block";
   tip.style.left = Math.min(r.right + 10, innerWidth - 330) + "px";
   tip.style.top = Math.max(6, r.top - 4) + "px";
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  tip.innerHTML = `<b>${esc(t || "(none)")}</b> <span class="k">${target} type</span>`
-    + (def
-      ? `<div class="tdef">${esc(def.description)}</div><span class="k">${def.sources} src</span>`
-      : `<div class="tdef none">no definition recorded - give this type a meaning with define_type</div>`);
+  tip.innerHTML = html`<b>${t || "(none)"}</b> <span class="k">${target} type</span>${def
+    ? html`<div class="tdef">${def.description}</div><span class="k">${def.sources} src</span>`
+    : html`<div class="tdef none">no definition recorded - give this type a meaning with define_type</div>`}`;
 }
 
 // The set of nodes/edges to highlight from hover/focus/search. If none, null (everything highlighted equally).
@@ -736,6 +731,25 @@ function nodeById(id) { return nodes.find(n => n.id === id); }
 // escaping a name like `x" onmouseover=alert(1) z="` breaks out of the attribute into an event handler.
 function esc(s) { return String(s).replace(/[<&>"']/g, c => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+// Markup, the one way this file writes HTML. Every interpolated value is escaped unless it is itself
+// markup built by `html`; an array is its items in order; null, undefined and false are nothing.
+// no-unsanitized accepts an innerHTML sink only when its value is an `html` template
+// (eslint.config.js), so text that never passed through the tag cannot reach the DOM unescaped - and
+// a fragment someone forgot to build with it shows up on screen as visible tags, not as markup.
+function Markup(s) { this.s = s; }
+Markup.prototype.toString = function () { return this.s; };
+function html(strings, ...values) {
+  let out = strings[0];
+  for (let i = 0; i < values.length; i++) out += markupOf(values[i]) + strings[i + 1];
+  return new Markup(out);
+}
+function markupOf(v) {
+  if (v instanceof Markup) return v.s;
+  if (Array.isArray(v)) return v.map(markupOf).join("");
+  if (v === null || v === undefined || v === false) return "";
+  return esc(String(v));
+}
+
 // Type glossary (T-Box) section body: entity types and relation types with their define_type
 // definitions. A type whose definition is contested (distinct definitions tie at the top tier -
 // IR5) shows the competing definitions with a confirm action, the same mediation as an entity kind.
@@ -747,24 +761,22 @@ function renderGlossary() {
   // uncluttered and the label appears exactly where it carries information.
   const spansWorkspaces = new Set(glossaryTypes.map(x => x.workspace || "")).size > 1;
   const item = x => {
-    let h = `<div class="item"><span class="nm">${esc(x.name)}</span>`
-      + (spansWorkspaces ? `<span class="gws">${esc(String(x.workspace || ""))}</span>` : "")
-      + `<span class="src">${x.sources} src</span>`
-      + `<div class="def">${esc(x.description)}</div>`;
+    const parts = [html`<div class="item"><span class="nm">${x.name}</span>`,
+      spansWorkspaces ? html`<span class="gws">${String(x.workspace || "")}</span>` : "",
+      html`<span class="src">${x.sources} src</span>`,
+      html`<div class="def">${x.description}</div>`];
     // Contested definitions reuse the shared contested UI (keep / use this), so a type conflict and
     // an entity-kind conflict read identically - one mediation pattern (IR5).
     if (x.competitors && x.competitors.length) {
-      h += `<div class="contested${x.contested ? " hot" : ""}">`
-        + contestedRows(x.description, "", x.def_source, x.competitors, x.contested)
-        + `</div>`;
+      parts.push(html`<div class="contested${x.contested ? " hot" : ""}">${
+        contestedRows(x.description, "", x.def_source, x.competitors, x.contested)}</div>`);
     }
-    return h + `</div>`;
+    return html`${parts}</div>`;
   };
-  const section = (title, items) => `<div class="gsec">${title} (${items.length})</div>`
-    + (items.length ? items.map(item).join("") : `<div class="empty">none defined - use define_type</div>`);
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
+  const section = (title, items) => html`<div class="gsec">${title} (${items.length})</div>${
+    items.length ? items.map(item) : html`<div class="empty">none defined - use define_type</div>`}`;
   glossaryBodyEl.innerHTML =
-    section("entity types", group("entity")) + section("relation types", group("relation"));
+    html`${section("entity types", group("entity"))}${section("relation types", group("relation"))}`;
   glossCtEl.textContent = glossaryTypes.length || "";
   glossaryBodyEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
@@ -801,7 +813,7 @@ function bandEmptyReason(band) {
 // Clicking a node chip only focuses it - the panel commits nothing (no gate).
 function renderCuration() {
   if (!curation) { curationBodyEl.innerHTML = '<div class="empty">no signals yet</div>'; reviewCtEl.textContent = ""; return; }
-  const nchip = n => `<span class="nchip" data-id="${esc(n.id)}" title="focus ${esc(n.name)} (deg ${n.degree}, ${n.sources} src)">${esc(n.name)}<span class="ty">${esc(n.type)}</span></span>`;
+  const nchip = n => html`<span class="nchip" data-id="${n.id}" title="focus ${n.name} (deg ${n.degree}, ${n.sources} src)">${n.name}<span class="ty">${n.type}</span></span>`;
   const dup = curation.duplicates || [], gb = curation.grab_bags || [], orph = curation.orphans || [];
   const con = curation.contradictions || [];
   // Suspected secrets go above everything, and only when there are any. Every other signal here is
@@ -809,96 +821,96 @@ function renderCuration() {
   // there is no way to take it out yet (docs/excision.md). Ranking it with the housekeeping would
   // understate it, and the operator being unaware is the whole failure this signal exists to prevent.
   const sec = curation.secrets || [];
-  let html = "";
+  const parts = [];
   if (sec.length) {
-    html += `<div class="csec hot">suspected secrets (${sec.length})</div>`
-      + `<div class="hint">the log is append-only - these cannot be removed yet. Stop the leak `
-      + `spreading by narrowing what this workspace shares (settings), and rotate the credential.</div>`;
+    parts.push(html`<div class="csec hot">suspected secrets (${sec.length})</div>`,
+      html`<div class="hint">the log is append-only - these cannot be removed yet. Stop the leak `,
+      html`spreading by narrowing what this workspace shares (settings), and rotate the credential.</div>`);
     for (const f of sec) {
-      html += `<div class="grp secret"><span class="nchip" data-obs="${esc(f.observation)}" `
-        + `title="open this observation">${esc(f.observation.slice(0, 12))}</span>`
-        + `<span class="ty">${esc(f.pattern)}</span>`
-        + `<div class="hint">in ${esc(f.field)}, at byte ${f.at | 0} - not shown here on purpose</div></div>`;
+      parts.push(html`<div class="grp secret"><span class="nchip" data-obs="${f.observation}" `,
+        html`title="open this observation">${f.observation.slice(0, 12)}</span>`,
+        html`<span class="ty">${f.pattern}</span>`,
+        html`<div class="hint">in ${f.field}, at byte ${f.at | 0} - not shown here on purpose</div></div>`);
     }
   }
   // Contested beliefs (resolution.md 4.2): the signals where the system explicitly has no
   // ground to choose, so a human call is the only thing that settles them. Confirm = /api/resolve.
-  html += `<div class="csec">contested beliefs (${con.length})</div>`;
-  html += con.length
-    ? con.map(c =>
-        `<div class="grp"><span class="nchip" data-id="${esc(c.id)}" title="focus ${esc(c.name)}">${esc(c.name)}</span>`
-        + `<div class="contested${c.contested ? " hot" : ""}">`
-        + contestedRows(c.current, "", c.kind_source, c.competitors || [], c.contested)
-        + `</div></div>`).join("")
-    : `<div class="empty">none - no live kind conflicts</div>`;
+  parts.push(html`<div class="csec">contested beliefs (${con.length})</div>`);
+  parts.push(con.length
+    ? con.map(c => [
+        html`<div class="grp"><span class="nchip" data-id="${c.id}" title="focus ${c.name}">${c.name}</span>`,
+        html`<div class="contested${c.contested ? " hot" : ""}">`,
+        contestedRows(c.current, "", c.kind_source, c.competitors || [], c.contested),
+        html`</div></div>`])
+    : html`<div class="empty">none - no live kind conflicts</div>`);
   // Contradictory accepted merges (Principle 6): the projection resolves the cycle by parity, but
   // the cycle itself is surfaced - the remedy is a settling entity_merge proposal, never an edit.
   const mc = curation.merge_cycles || [];
-  html += `<div class="csec">merge cycles (${mc.length})</div>`;
-  html += mc.length
-    ? mc.map(c =>
-        `<div class="grp"><div class="chips">${(c.members || []).map(nchip).join("")}</div>`
-        + `<div class="hint">these accepted merges fold into each other - settle with a new entity_merge</div></div>`).join("")
-    : `<div class="empty">none - no contradictory merges</div>`;
+  parts.push(html`<div class="csec">merge cycles (${mc.length})</div>`);
+  parts.push(mc.length
+    ? mc.map(c => [
+        html`<div class="grp"><div class="chips">${(c.members || []).map(nchip)}</div>`,
+        html`<div class="hint">these accepted merges fold into each other - settle with a new entity_merge</div></div>`])
+    : html`<div class="empty">none - no contradictory merges</div>`);
   // Merge band (resolution-identity.md Section 3, Principle 15): embedding-near distinct-name pairs
   // the substrate proposes as merge candidates. A suggestion commits nothing (IR2); "propose"
   // opens an entity_merge through the gate, which then rides the accept flow in the Proposals tab.
   const ms = curation.merge_suggestions || [];
-  html += `<div class="csec">merge suggestions (${ms.length})</div>`;
-  html += ms.length
-    ? ms.map(m =>
-        `<div class="ms" data-a="${esc(m.a)}" data-b="${esc(m.b)}">`
-        + `<span class="nchip" data-id="${esc(m.a)}" title="focus ${esc(m.a_name)}">${esc(m.a_name)}</span>`
-        + `<span class="msx">~</span>`
-        + `<span class="nchip" data-id="${esc(m.b)}" title="focus ${esc(m.b_name)}">${esc(m.b_name)}</span>`
-        + `<span class="mssim" title="embedding similarity (recall aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`
-        + `<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`
-        + `</div>`).join("")
-    : `<div class="empty">${bandEmptyReason(curation.merge_band)}</div>`;
+  parts.push(html`<div class="csec">merge suggestions (${ms.length})</div>`);
+  parts.push(ms.length
+    ? ms.map(m => [
+        html`<div class="ms" data-a="${m.a}" data-b="${m.b}">`,
+        html`<span class="nchip" data-id="${m.a}" title="focus ${m.a_name}">${m.a_name}</span>`,
+        html`<span class="msx">~</span>`,
+        html`<span class="nchip" data-id="${m.b}" title="focus ${m.b_name}">${m.b_name}</span>`,
+        html`<span class="mssim" title="embedding similarity (recall aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`,
+        html`<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`,
+        html`</div>`])
+    : html`<div class="empty">${bandEmptyReason(curation.merge_band)}</div>`);
   // Name variants: the deterministic sibling of the merge band (Principle 15/16). Entity ids already
   // fold case/whitespace, so these are the orthographic collisions nothing else catches - and unlike
   // the band above they need no embedder, so this section is populated on every node. A pair reuses
   // the .ms row so the existing propose wiring applies unchanged; 3+ members show as chips only
   // (propose_merge takes a pair). Commits nothing either way - propose routes through the gate.
   const nv = curation.name_variants || [];
-  html += `<div class="csec">name variants (${nv.length})</div>`;
-  html += nv.length
+  parts.push(html`<div class="csec">name variants (${nv.length})</div>`);
+  parts.push(nv.length
     ? nv.map(v => {
-        const meta = `<span class="mssim" title="which normalization rung grouped them / shared neighbors (structural corroboration)">${esc(v.rung)}${v.shared_neighbors ? " / " + v.shared_neighbors + "nb" : ""}</span>`;
+        const meta = html`<span class="mssim" title="which normalization rung grouped them / shared neighbors (structural corroboration)">${v.rung}${v.shared_neighbors ? " / " + v.shared_neighbors + "nb" : ""}</span>`;
         const m = v.members || [];
         if (m.length === 2) {
           // data-src tells the server which surface produced this, so the proposal records the real
           // evidence instead of inheriting the merge band's "embedding-near" rationale.
-          return `<div class="ms" data-a="${esc(m[0].id)}" data-b="${esc(m[1].id)}" data-src="variant:${esc(v.rung)}">`
-            + `<span class="nchip" data-id="${esc(m[0].id)}" title="focus ${esc(m[0].name)}">${esc(m[0].name)}</span>`
-            + `<span class="msx">~</span>`
-            + `<span class="nchip" data-id="${esc(m[1].id)}" title="focus ${esc(m[1].name)}">${esc(m[1].name)}</span>`
-            + meta
-            + `<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`
-            + `</div>`;
+          return [html`<div class="ms" data-a="${m[0].id}" data-b="${m[1].id}" data-src="variant:${v.rung}">`,
+            html`<span class="nchip" data-id="${m[0].id}" title="focus ${m[0].name}">${m[0].name}</span>`,
+            html`<span class="msx">~</span>`,
+            html`<span class="nchip" data-id="${m[1].id}" title="focus ${m[1].name}">${m[1].name}</span>`,
+            meta,
+            html`<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`,
+            html`</div>`];
         }
-        return `<div class="grp"><span class="gk">${esc(v.key)}</span>${meta}<div class="chips">${m.map(nchip).join("")}</div></div>`;
-      }).join("")
-    : `<div class="empty">none - no orthographic variants</div>`;
-  html += `<div class="csec">cross-workspace name collisions (${dup.length})</div>`;
-  html += dup.length
-    ? dup.map(g => `<div class="grp"><span class="gk">${esc(g.key)}</span><div class="chips">${g.members.map(nchip).join("")}</div></div>`).join("")
-    : `<div class="empty">none - this signal only fires across workspaces (same-workspace variants are above)</div>`;
-  html += `<div class="csec">grab-bag contexts (${gb.length})</div>`;
-  html += gb.length
-    ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return `<div class="gb" data-hid="${esc(b.id)}"><span class="sz">${b.size}</span>${esc(nm)}<button class="reify" title="assert this context as a group entity + member_of relations (a lineage-bearing observation - the hyperedge itself stays a derived view)">reify</button></div>`; }).join("")
-    : `<div class="empty">none - no oversized clusters</div>`;
-  html += `<div class="csec">orphans (${orph.length})</div>`;
-  html += orph.length ? `<div class="chips">${orph.map(nchip).join("")}</div>` : `<div class="empty">none - all nodes linked</div>`;
+        return html`<div class="grp"><span class="gk">${v.key}</span>${meta}<div class="chips">${m.map(nchip)}</div></div>`;
+      })
+    : html`<div class="empty">none - no orthographic variants</div>`);
+  parts.push(html`<div class="csec">cross-workspace name collisions (${dup.length})</div>`);
+  parts.push(dup.length
+    ? dup.map(g => html`<div class="grp"><span class="gk">${g.key}</span><div class="chips">${g.members.map(nchip)}</div></div>`)
+    : html`<div class="empty">none - this signal only fires across workspaces (same-workspace variants are above)</div>`);
+  parts.push(html`<div class="csec">grab-bag contexts (${gb.length})</div>`);
+  parts.push(gb.length
+    ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return html`<div class="gb" data-hid="${b.id}"><span class="sz">${b.size}</span>${nm}<button class="reify" title="assert this context as a group entity + member_of relations (a lineage-bearing observation - the hyperedge itself stays a derived view)">reify</button></div>`; })
+    : html`<div class="empty">none - no oversized clusters</div>`);
+  parts.push(html`<div class="csec">orphans (${orph.length})</div>`);
+  parts.push(orph.length ? html`<div class="chips">${orph.map(nchip)}</div>` : html`<div class="empty">none - all nodes linked</div>`);
   // T-Box axis collisions (Principle 9): a name defined on both the entity and relation axes -
   // informative, usually a mistake. Mediation lives in the Types tab (per-definition confirm).
   const ax = curation.type_axis_collisions || [];
   if (ax.length) {
-    html += `<div class="csec">type axis collisions (${ax.length})</div>`;
-    html += `<div class="gb">${ax.map(n => `<span class="gk">${esc(n)}</span>`).join(", ")}<div class="hint">defined as both an entity type and a relation type - see the Types tab</div></div>`;
+    parts.push(html`<div class="csec">type axis collisions (${ax.length})</div>`);
+    // The ", " separators go in as array items: joining the chips into one string would escape them.
+    parts.push(html`<div class="gb">${ax.map((n, i) => [i ? ", " : "", html`<span class="gk">${n}</span>`])}<div class="hint">defined as both an entity type and a relation type - see the Types tab</div></div>`);
   }
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  curationBodyEl.innerHTML = html;
+  curationBodyEl.innerHTML = html`${parts}`;
   // The finding names the row without showing its text; clicking is the separate, deliberate act of
   // looking at it. The Log tab holds the loaded rows, so fall back to it when this scope has not
   // loaded the one being pointed at rather than silently doing nothing.
@@ -992,36 +1004,35 @@ function renderProposals() {
       .flatMap(p => p.targets || []));
   propCtEl.textContent = open.length || (proposals.length ? proposals.length : "");
   if (!proposals.length) { proposalsBodyEl.innerHTML = '<div class="empty">no proposals - open one with the propose tool, or from a merge candidate</div>'; return; }
-  const chip = (id, into) => `<span class="nchip${id === into ? " into" : ""}" data-id="${esc(id)}" title="focus ${esc(nameOf(id))}${id === into ? " (canonical / into)" : ""}">${esc(nameOf(id))}</span>`;
-  let html = `<div class="hint">click a proposal to preview the change on the graph; accept records a gated verdict</div>`;
+  const chip = (id, into) => html`<span class="nchip${id === into ? " into" : ""}" data-id="${id}" title="focus ${nameOf(id)}${id === into ? " (canonical / into)" : ""}">${nameOf(id)}</span>`;
+  const parts = [html`<div class="hint">click a proposal to preview the change on the graph; accept records a gated verdict</div>`];
   for (const p of proposals) {
-    const st = esc(p.state);
+    const st = p.state;
     const sel = proposalSel && proposalSel.id === p.id ? " sel" : "";
-    html += `<div class="prop${sel}" data-pid="${esc(p.id)}"><div class="phead"><span class="pkind">${esc(p.kind)}</span>`
-      + `<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></div>`;
-    if (p.rationale) html += `<div class="prat">${esc(p.rationale)}</div>`;
-    html += `<div class="ptargets">${(p.targets || []).map(id => chip(id, p.into)).join("")}</div>`;
+    parts.push(html`<div class="prop${sel}" data-pid="${p.id}"><div class="phead"><span class="pkind">${p.kind}</span>`,
+      html`<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></div>`);
+    if (p.rationale) parts.push(html`<div class="prat">${p.rationale}</div>`);
+    parts.push(html`<div class="ptargets">${(p.targets || []).map(id => chip(id, p.into))}</div>`);
     if (p.affected_types && p.affected_types.length) {   // tbox_change scope - what lights up on the graph
-      const aty = a => `<span class="atype" title="${esc(a.target)} type"><span>${esc(a.name)}</span><span class="ax">${a.target === "relation" ? "edge" : "node"}</span></span>`;
-      html += `<div class="atypes">${p.affected_types.map(aty).join("")}</div>`;
+      const aty = a => html`<span class="atype" title="${a.target} type"><span>${a.name}</span><span class="ax">${a.target === "relation" ? "edge" : "node"}</span></span>`;
+      parts.push(html`<div class="atypes">${p.affected_types.map(aty)}</div>`);
     }
     // The selected proposal shows its computed diff: what accepting would change, before accepting.
-    if (sel) html += diffHtml(proposalDiff) + checksHtml(proposalChecks);
+    if (sel) parts.push(diffHtml(proposalDiff), checksHtml(proposalChecks));
     if (p.state === "open") {
       const blocked = sel && proposalChecks && proposalChecks.some(c => c.blocking && !c.passed);
-      html += `<div class="pacts"><button data-act="merge" data-id="${esc(p.id)}"${blocked ? " disabled title=\"a blocking check fails - the fold would refuse this merge\"" : ""}>accept</button>`
-        + `<button data-act="reject" data-id="${esc(p.id)}">reject</button></div>`;
+      parts.push(html`<div class="pacts"><button data-act="merge" data-id="${p.id}"${blocked ? html` disabled title="a blocking check fails - the fold would refuse this merge"` : ""}>accept</button>`,
+        html`<button data-act="reject" data-id="${p.id}">reject</button></div>`);
     }
     // A committed merge can be taken back (unmerge.md). This only OPENS the entity_split - the
     // reversal is as gated as the merge was - and it is offered only where it means something:
     // a merge that is actually forwarding, and not one already reversed.
     if (p.kind === "entity_merge" && p.state === "merged" && !reversedMerges.has(p.id)) {
-      html += `<div class="pacts"><button data-act="split" data-id="${esc(p.id)}" title="open a proposal to reverse this merge - the folded entities separate again">un-merge</button></div>`;
+      parts.push(html`<div class="pacts"><button data-act="split" data-id="${p.id}" title="open a proposal to reverse this merge - the folded entities separate again">un-merge</button></div>`);
     }
-    html += `</div>`;
+    parts.push(html`</div>`);
   }
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  proposalsBodyEl.innerHTML = html;
+  proposalsBodyEl.innerHTML = html`${parts}`;
   // Click a proposal row -> preview the change on the graph (belief-diff visualization). Chips/buttons
   // keep their own actions (stopPropagation), so only the row body toggles the preview.
   proposalsBodyEl.querySelectorAll(".prop").forEach(row => {
@@ -1097,44 +1108,44 @@ async function fetchProposalDiff(id) {
 // Render the diff as a before -> after comparison. An uncomputable diff says so: for the three
 // proposal kinds that still enforce nothing, an empty diff would read as "changes nothing".
 function diffHtml(d) {
-  if (!d) return `<div class="dnote">computing the diff...</div>`;
-  if (!d.computable) return `<div class="dnote">no diff - ${esc(d.note || "not computable for this kind")}</div>`;
-  const tiers = (d.tier_changes || []).map(t =>
-    `<div class="drow"><span class="dk">tier</span><code>${esc(t.observation.slice(0, 10))}</code>`
-    + `<span class="dfrom">${esc(t.from)}</span><span class="darr">-&gt;</span><span class="dto">${esc(t.to)}</span></div>`).join("");
+  if (!d) return html`<div class="dnote">computing the diff...</div>`;
+  if (!d.computable) return html`<div class="dnote">no diff - ${d.note || "not computable for this kind"}</div>`;
+  const tiers = (d.tier_changes || []).map(t => [
+    html`<div class="drow"><span class="dk">tier</span><code>${t.observation.slice(0, 10)}</code>`,
+    html`<span class="dfrom">${t.from}</span><span class="darr">-&gt;</span><span class="dto">${t.to}</span></div>`]);
   const beliefs = (d.overturned || []).map(b => {
     const settled = b.contested_before && !b.contested_after;
     const created = !b.contested_before && b.contested_after;
-    const flag = settled ? `<span class="dsettled">settles a contradiction</span>`
-               : created ? `<span class="dcreated">creates a contradiction</span>` : "";
-    return `<div class="drow"><span class="dk">${esc(b.field)}</span>`
-      + `<span class="nchip" data-id="${esc(b.entity)}" title="focus ${esc(b.name)}">${esc(b.name)}</span>`
-      + `<span class="dfrom">${esc(b.from || "(none)")}</span><span class="darr">-&gt;</span>`
-      + `<span class="dto">${esc(b.to || "(none)")}</span>${flag}</div>`;
-  }).join("");
+    const flag = settled ? html`<span class="dsettled">settles a contradiction</span>`
+               : created ? html`<span class="dcreated">creates a contradiction</span>` : "";
+    return [html`<div class="drow"><span class="dk">${b.field}</span>`,
+      html`<span class="nchip" data-id="${b.entity}" title="focus ${b.name}">${b.name}</span>`,
+      html`<span class="dfrom">${b.from || "(none)"}</span><span class="darr">-&gt;</span>`,
+      html`<span class="dto">${b.to || "(none)"}</span>${flag}</div>`];
+  });
   // entity_merge: which references move onto the canonical id, and which edges stop existing.
   // A self-loop is dropped by graph(), so that edge vanishes on accept - not readable from the
   // canvas overlay, which can only accent edges incident to a target.
-  const rewires = (d.rewired || []).map(r =>
-    `<div class="drow"><span class="dk">edge</span><code>${esc(r.kind)}</code>`
-    + `<span class="dfrom">${esc(r.from_name)}</span><span class="darr">-&gt;</span>`
-    + `<span class="dto">${esc(r.to_name)}</span>`
-    + `<span class="dother">(${esc(r.other_name)})</span>`
-    + (r.becomes_self_loop ? `<span class="dcreated">becomes a self-loop, edge disappears</span>` : "")
-    + `</div>`).join("");
-  if (!tiers && !beliefs && !rewires) return `<div class="dnote">computed: this proposal overturns no current belief</div>`;
-  return `<div class="ddiff">${tiers}${beliefs}${rewires}</div>`;
+  const rewires = (d.rewired || []).map(r => [
+    html`<div class="drow"><span class="dk">edge</span><code>${r.kind}</code>`,
+    html`<span class="dfrom">${r.from_name}</span><span class="darr">-&gt;</span>`,
+    html`<span class="dto">${r.to_name}</span>`,
+    html`<span class="dother">(${r.other_name})</span>`,
+    r.becomes_self_loop ? html`<span class="dcreated">becomes a self-loop, edge disappears</span>` : "",
+    html`</div>`]);
+  if (!tiers.length && !beliefs.length && !rewires.length) return html`<div class="dnote">computed: this proposal overturns no current belief</div>`;
+  return html`<div class="ddiff">${tiers}${beliefs}${rewires}</div>`;
 }
 
 // Failing blocking checks, shown above the accept button. A blocking failure means the fold would
 // refuse the merge anyway, so surfacing it here turns a silent "nothing happened" into a reason.
 function checksHtml(cs) {
-  if (!cs || !cs.length) return "";
+  if (!cs || !cs.length) return html``;
   const bad = cs.filter(c => c.blocking && !c.passed);
-  if (!bad.length) return `<div class="dnote">checks pass</div>`;
-  return `<div class="cblock">${bad.map(c =>
-    `<div class="crow"><span class="cbad">blocked</span><span class="ck">${esc(c.name)}</span>`
-    + `<span class="cd">${esc(c.detail)}</span></div>`).join("")}</div>`;
+  if (!bad.length) return html`<div class="dnote">checks pass</div>`;
+  return html`<div class="cblock">${bad.map(c => [
+    html`<div class="crow"><span class="cbad">blocked</span><span class="ck">${c.name}</span>`,
+    html`<span class="cd">${c.detail}</span></div>`])}</div>`;
 }
 
 // Select a proposal to preview on the graph (toggle). Centers on the canonical (`into`) node when
@@ -1187,7 +1198,7 @@ function obsWhen(ms) {
 function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
 // Trust tier as a colored dot (the edge columns' dot idiom) - a quiet ramp from dim (unverified) to
 // gold (human-confirmed). The full tier text lives in the expanded provenance.
-function tierDot(t) { return `<span class="tdot t-${esc(String(t))}" title="${esc(String(t))}"></span>`; }
+function tierDot(t) { return html`<span class="tdot t-${String(t)}" title="${String(t)}"></span>`; }
 
 // Content-first row: a quiet meta line (tier dot + compact time) over the observation content (the
 // primary element, clamped to 2 lines). Host and the rest move to the expanded provenance.
@@ -1196,6 +1207,7 @@ function tierDot(t) { return `<span class="tdot t-${esc(String(t))}" title="${es
 // The server resolves the ids (it can still name a merged-away entity, which this side cannot, since
 // the graph folds those away); this only phrases the result. Falls back to the raw content whenever
 // the server had nothing to add, so an untranslatable row still says something.
+// Returns text, not markup: callers interpolate it into an html template, which escapes it once.
 function proposalLine(p) {
   const kind = p.kind || "proposal";
   const ts = p.targets || [];
@@ -1218,7 +1230,7 @@ function proposalLine(p) {
     what = ts.map(named).join(", ");
   }
   const head = p.event === "opened" ? `opened ${kind}`
-    : p.event === "verdict" ? `${p.decision === "merge" ? "accepted" : esc(p.decision || "verdict")} ${kind}`
+    : p.event === "verdict" ? `${p.decision === "merge" ? "accepted" : p.decision || "verdict"} ${kind}`
     : `${p.event} ${kind}`;
   // State is worth showing on a verdict precisely when it disagrees with the decision - a merge that
   // folded to blocked is the case a reader must not miss.
@@ -1231,12 +1243,13 @@ function obsRowHtml(o) {
   const a0 = (o.attestations || [])[0] || {};
   const text = o.proposal ? proposalLine(o.proposal) : o.content;
   const cls = o.proposal ? "otext ev" : "otext";
-  return `<div class="obs" data-id="${esc(o.id)}">`
-    + `<div class="ohead" title="open observation detail">`
-    +   `<div class="ometa">${tierDot(o.effective_tier)}`
-    +     `<span class="owhen">${esc(obsWhen(a0.observed_at))}</span></div>`
-    +   `<div class="${cls}">${esc(text)}</div>`
-    + `</div></div>`;
+  return html`${[
+    html`<div class="obs" data-id="${o.id}">`,
+    html`<div class="ohead" title="open observation detail">`,
+      html`<div class="ometa">${tierDot(o.effective_tier)}`,
+        html`<span class="owhen">${obsWhen(a0.observed_at)}</span></div>`,
+      html`<div class="${cls}">${text}</div>`,
+    html`</div></div>`]}`;
 }
 
 // The observation detail CARD: a focused, dismissable view of one observation - full content plus
@@ -1245,35 +1258,35 @@ function obsRowHtml(o) {
 // it, so the list stays a scannable list - the earlier cramped in-column expansion is gone).
 function obsCardHtml(o) {
   const a0 = (o.attestations || [])[0] || {};
-  let h = `<div class="card">`
-    + `<button class="close" title="close" aria-label="close">`
-    +   `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
-    +   `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`
-    + `<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${esc(String(o.effective_tier))}</span>`
-    +   `<span class="ocwhen">${esc(obsWhenFull(a0.observed_at))}</span></div>`
+  const parts = [html`<div class="card">`,
+    html`<button class="close" title="close" aria-label="close">`,
+      html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
+      html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`,
+    html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${String(o.effective_tier)}</span>`,
+      html`<span class="ocwhen">${obsWhenFull(a0.observed_at)}</span></div>`,
     // A proposal event leads with the readable form, but keeps the stored text underneath: this
     // card is the dereference surface an id resolves to (P2/P14), so what is literally in the log
     // has to stay inspectable here even once it is no longer what the reader is shown.
-    + `<div class="oc-content">${esc(o.proposal ? proposalLine(o.proposal) : o.content)}</div>`
-    + (o.proposal ? `<div class="ocraw" title="the text stored in the log - fixed inside the content address">${esc(o.content)}</div>` : "")
-    + `<div class="osec">provenance (${(o.attestations || []).length})</div>`;
+    html`<div class="oc-content">${o.proposal ? proposalLine(o.proposal) : o.content}</div>`,
+    o.proposal ? html`<div class="ocraw" title="the text stored in the log - fixed inside the content address">${o.content}</div>` : "",
+    html`<div class="osec">provenance (${(o.attestations || []).length})</div>`];
   for (const a of o.attestations || []) {
-    h += `<div class="prow"><span class="phost">${esc(a.host)}</span>`
-      + (a.on_behalf_of ? `<span class="pobo">for ${esc(a.on_behalf_of)}</span>` : "")
-      + `<span class="ptier">${esc(String(a.trust_tier))}${a.evaluated_tier !== a.trust_tier ? " -> " + esc(String(a.evaluated_tier)) : ""}</span>`
-      + (a.confidence != null ? `<span class="pconf">conf ${esc(String(a.confidence))}</span>` : "")
-      + (a.origin_node ? `<span class="poid">node ${esc(String(a.origin_node).slice(0, 8))}</span>` : "")
-      + `<span class="pwhen">${esc(obsWhenFull(a.observed_at))}</span></div>`;
+    parts.push(html`<div class="prow"><span class="phost">${a.host}</span>`,
+      a.on_behalf_of ? html`<span class="pobo">for ${a.on_behalf_of}</span>` : "",
+      html`<span class="ptier">${String(a.trust_tier)}${a.evaluated_tier !== a.trust_tier ? " -> " + String(a.evaluated_tier) : ""}</span>`,
+      a.confidence != null ? html`<span class="pconf">conf ${String(a.confidence)}</span>` : "",
+      a.origin_node ? html`<span class="poid">node ${String(a.origin_node).slice(0, 8)}</span>` : "",
+      html`<span class="pwhen">${obsWhenFull(a.observed_at)}</span></div>`);
   }
   if (o.derived_from && o.derived_from.length)
-    h += `<div class="osec">derived from</div><div class="oids">`
-      + o.derived_from.map(id => `<span class="oid">${esc(String(id).slice(0, 10))}</span>`).join("") + `</div>`;
+    parts.push(html`<div class="osec">derived from</div><div class="oids">${
+      o.derived_from.map(id => html`<span class="oid">${String(id).slice(0, 10)}</span>`)}</div>`);
   if (o.proposal) {
     const p = o.proposal;
-    h += `<div class="osec">proposal</div>`
-      + `<div class="ocprop"><span class="pkind">${esc(p.kind || "proposal")}</span>`
-      +   `<span class="pstate ${esc(p.state || "")}">${esc(p.state || "")}</span>`
-      +   `<span class="oid">${esc(String(p.proposal).slice(0, 10))}</span></div>`;
+    parts.push(html`<div class="osec">proposal</div>`,
+      html`<div class="ocprop"><span class="pkind">${p.kind || "proposal"}</span>`,
+        html`<span class="pstate ${p.state || ""}">${p.state || ""}</span>`,
+        html`<span class="oid">${String(p.proposal).slice(0, 10)}</span></div>`);
     const ts = p.targets || [];
     if (ts.length) {
       // A target that no longer has a node is one this merge folded away - it stays listed (the act
@@ -1281,27 +1294,26 @@ function obsCardHtml(o) {
       const chip = t => {
         const live = !!nodeById(t.id);
         const into = p.into && t.id === p.into.id;
-        const label = esc(t.name || String(t.id).slice(0, 8)) + (into ? " <span class=\"rk\">kept</span>" : "");
+        const label = html`${t.name || String(t.id).slice(0, 8)}${into ? html` <span class="rk">kept</span>` : ""}`;
         return live
-          ? `<span class="echip" data-id="${esc(t.id)}" title="focus ${esc(t.name || t.id)}">${label}</span>`
-          : `<span class="echip off" title="folded away by this merge - no node to focus">${label}</span>`;
+          ? html`<span class="echip" data-id="${t.id}" title="focus ${t.name || t.id}">${label}</span>`
+          : html`<span class="echip off" title="folded away by this merge - no node to focus">${label}</span>`;
       };
-      h += `<div class="osec">targets</div><div class="echips">${ts.map(chip).join("")}</div>`;
+      parts.push(html`<div class="osec">targets</div><div class="echips">${ts.map(chip)}</div>`);
     }
   }
   if (o.entities && o.entities.length)
-    h += `<div class="osec">entities</div><div class="echips">`
-      + o.entities.map(e => `<span class="echip" data-id="${esc(e.id)}" title="focus ${esc(e.name)}">${esc(e.name)}</span>`).join("") + `</div>`;
+    parts.push(html`<div class="osec">entities</div><div class="echips">${
+      o.entities.map(e => html`<span class="echip" data-id="${e.id}" title="focus ${e.name}">${e.name}</span>`)}</div>`);
   if (o.relations && o.relations.length)
-    h += `<div class="osec">relations</div>`
-      + o.relations.map(r => `<div class="ocrel">${esc(r.from)} <span class="rk">${esc(r.type)}</span> ${esc(r.to)}</div>`).join("");
-  h += `<div class="ocid">obs ${esc(String(o.id).slice(0, 16))}</div></div>`;
-  return h;
+    parts.push(html`<div class="osec">relations</div>`,
+      o.relations.map(r => html`<div class="ocrel">${r.from} <span class="rk">${r.type}</span> ${r.to}</div>`));
+  parts.push(html`<div class="ocid">obs ${String(o.id).slice(0, 16)}</div></div>`);
+  return html`${parts}`;
 }
 function hideObsCard() { obscardEl.className = ""; obscardEl.innerHTML = ""; }
 function showObsCard(o) {
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  obscardEl.innerHTML = obsCardHtml(o);
+  obscardEl.innerHTML = html`${obsCardHtml(o)}`;
   obscardEl.className = "on";
   obscardEl.querySelector(".close").onclick = hideObsCard;
   // An asserted entity: close the card and focus its node.
@@ -1318,8 +1330,7 @@ function showObsCard(o) {
 // Renders a list of observation summaries into a container (a scannable list) and wires each row to
 // open the observation detail card. Used by the workspace Log tab and the node inspector's log column.
 function wireObsList(container, list) {
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  container.innerHTML = list.length ? list.map(obsRowHtml).join("") : '<div class="empty">no observations</div>';
+  container.innerHTML = html`${list.length ? list.map(obsRowHtml) : html`<div class="empty">no observations</div>`}`;
   container.querySelectorAll(".obs").forEach(row => {
     const o = list.find(x => x.id === row.dataset.id);
     if (!o) return;
@@ -1380,11 +1391,10 @@ async function fillNodeLog(node, colEl, secEl) {
 }
 
 function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); requestFrame(); }
-function logRow(html) {
+function logRow(body) {
   const row = document.createElement("div");
   row.className = "row";
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  row.innerHTML = `<span class="t">${new Date().toLocaleTimeString()}</span>${html}`;
+  row.innerHTML = html`<span class="t">${new Date().toLocaleTimeString()}</span>${body}`;
   logEl.prepend(row);
   while (logEl.children.length > 8) logEl.lastChild.remove();
   setTimeout(() => row.remove(), 8000);
@@ -1405,19 +1415,19 @@ async function handleEvent(ev) {
   if (switched) { wsInput.value = ev.workspace; beginWorkspaceTransition(); renderChipsActive(); }
   let ids = [];
   if (ev.kind === "observe") {
-    logRow(`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${esc(ev.workspace)}</span>`);
+    logRow(html`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${ev.workspace}</span>`);
     await poll();                       // wait for the new nodes to enter the graph, then pulse
     ids = ev.entities || [];
   } else if (ev.kind === "search") {
-    logRow(`<b>search</b> "${esc(ev.query)}" -> ${ev.hits} hits <span class="t">${esc(ev.mode)}</span>`);
+    logRow(html`<b>search</b> "${ev.query}" -> ${ev.hits} hits <span class="t">${ev.mode}</span>`);
     if (switched) await poll();          // if the workspace switched, load that graph (so hits are visible)
     ids = ev.nodes || [];
   } else if (ev.kind === "get_entity") {
-    logRow(`<b>get_entity</b> ${esc(ev.name || ev.id.slice(0,8))} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
+    logRow(html`<b>get_entity</b> ${ev.name || ev.id.slice(0,8)} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
     ids = ev.found ? [ev.id] : [];
   } else if (ev.kind === "sync") {
     // Federation hit: who touched this store, which direction, how much - the live remote feed.
-    logRow(`<b>sync</b> ${esc(ev.direction)} ${esc(ev.workspace)} &lt;-&gt; ${esc(String(ev.peer).slice(0, 18))} (${ev.count})`);
+    logRow(html`<b>sync</b> ${ev.direction} ${ev.workspace} &lt;-&gt; ${String(ev.peer).slice(0, 18)} (${ev.count})`);
     let addedNodes = [], addedEdges = [];
     if (ev.count > 0) {
       // Knowledge landed: load it now, and re-frame once the re-layout settles (follow mode) so the
@@ -1433,7 +1443,7 @@ async function handleEvent(ev) {
     ids = [];
   } else if (ev.kind === "traverse") {
     const sn = nodeById(ev.start);
-    logRow(`<b>traverse</b> ${esc(sn ? sn.name : ev.start.slice(0,8))} -> ${(ev.reached||[]).length}`);
+    logRow(html`<b>traverse</b> ${sn ? sn.name : ev.start.slice(0,8)} -> ${(ev.reached||[]).length}`);
     ids = [ev.start, ...(ev.reached || [])];
   } else return;
   pulseNodes(ids);
@@ -1584,11 +1594,11 @@ function showPeerTip(m, id, cx, cy) {
   tip.style.left = Math.min(cx + 14, innerWidth - 330) + "px";
   tip.style.top = (cy + 14) + "px";
   const ago = m.seen ? Math.max(0, Math.round((Date.now() - m.seen) / 1000)) : null;
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  tip.innerHTML = `<b>peer ${esc(id.slice(0, 6))}</b><br>`
-    + `<span class="k">node</span> ${esc(id.slice(0, 16))}<br>`
-    + `<span class="k">last</span> ${esc(m.action || "-")}${ago !== null ? " " + ago + "s ago" : ""} `
-    + `&nbsp; <span class="k">hits</span> ${m.count | 0}`;
+  tip.innerHTML = html`${[
+    html`<b>peer ${id.slice(0, 6)}</b><br>`,
+    html`<span class="k">node</span> ${id.slice(0, 16)}<br>`,
+    html`<span class="k">last</span> ${m.action || "-"}${ago !== null ? " " + ago + "s ago" : ""} `,
+    html`&nbsp; <span class="k">hits</span> ${m.count | 0}`]}`;
 }
 // Seed/refresh markers from the peer roster so idle peers (that only advertise, which is not a live
 // event) still appear and stay lit. Only metadata + `seen` are touched - a marker's glide target/flare
@@ -1650,15 +1660,15 @@ function contestedRows(current, tier, curObs, competitors, contested) {
   // stay: "keep" locks in the value shown now (so recency cannot flip it), "use this" switches to a
   // competing value - both promote that value's observation to human_confirmed (a gated console verdict).
   const committed = String(tier) === "human_confirmed";
-  const row = (v, t, obs, cur) =>
-    `<div class="crow${cur ? " cur" : ""}"><span class="cv">${esc(v)}</span>`
-    + (cur
-        ? `<span class="curtag${committed ? " confirmed" : ""}">${committed ? "confirmed" : "current"}</span>`
-        : `<span class="ctier">${esc(String(t))}</span>`)
-    + (obs && !committed
-      ? `<button class="confirm" data-obs="${esc(obs)}" title="${cur ? "lock in the current value (mark it human-confirmed so recency cannot flip it)" : "make this the confirmed value instead (mark it human-confirmed)"}">${cur ? "keep" : "use this"}</button>`
-      : "")
-    + `</div>`;
+  const row = (v, t, obs, cur) => html`${[
+    html`<div class="crow${cur ? " cur" : ""}"><span class="cv">${v}</span>`,
+    cur
+      ? html`<span class="curtag${committed ? " confirmed" : ""}">${committed ? "confirmed" : "current"}</span>`
+      : html`<span class="ctier">${String(t)}</span>`,
+    obs && !committed
+      ? html`<button class="confirm" data-obs="${obs}" title="${cur ? "lock in the current value (mark it human-confirmed so recency cannot flip it)" : "make this the confirmed value instead (mark it human-confirmed)"}">${cur ? "keep" : "use this"}</button>`
+      : "",
+    html`</div>`]}`;
   const head = committed
     ? (contested
         ? "human-confirmed - competing values still tie (both confirmed)"
@@ -1666,9 +1676,8 @@ function contestedRows(current, tier, curObs, competitors, contested) {
     : (contested
         ? "these values tie on trust - confirm which is correct"
         : "resolved by trust - other asserted values shown for reference");
-  return `<div class="chead">${head}</div>`
-    + row(current, tier, curObs, true)
-    + competitors.map(c => row(c.value, c.trust_tier, c.observation, false)).join("");
+  return html`<div class="chead">${head}</div>${row(current, tier, curObs, true)}${
+    competitors.map(c => row(c.value, c.trust_tier, c.observation, false))}`;
 }
 
 // The inspector's silence rule (docs/inspector.md Sections 3-4): a field is silent when it has ONE
@@ -1695,43 +1704,45 @@ function scopeBaseline() {
 // `inspector_never_folds_a_contested_belief` pins this shape.
 let foldOpen = null;   // node id whose resolved-by-trust block is expanded - survives the poll re-render
 function contestedBlock(node) {
-  if (node.contested) return `<div class="contested hot">`
-    + contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors || [], true) + `</div>`;
+  if (node.contested) return html`<div class="contested hot">${
+    contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors || [], true)}</div>`;
   const cmp = node.competitors || [];
-  if (!cmp.length) return "";
+  if (!cmp.length) return html``;
   const settled = String(node.trust_tier) === "human_confirmed" ? "confirmed by a human" : "resolved by trust";
-  return `<div class="contested folded${foldOpen === node.id ? " open" : ""}">`
-    + `<button class="cfold" type="button">${settled} - ${cmp.length} other kind${cmp.length > 1 ? "s" : ""} asserted</button>`
-    + `<div class="cbody">${contestedRows(node.type, node.trust_tier, node.kind_source, cmp, false)}</div></div>`;
+  return html`${[
+    html`<div class="contested folded${foldOpen === node.id ? " open" : ""}">`,
+    html`<button class="cfold" type="button">${settled} - ${cmp.length} other kind${cmp.length > 1 ? "s" : ""} asserted</button>`,
+    html`<div class="cbody">${contestedRows(node.type, node.trust_tier, node.kind_source, cmp, false)}</div></div>`]}`;
 }
 
 // The inspector "why (evidence & decision)" body from /api/explain: per-field belief resolution
 // (each single-valued field's ranked candidates - winner / alias / competitor) plus the supporting
 // observation log. An explanation OF the projection - the winner IS what the graph shows.
 function candRowHtml(c) {
-  return `<div class="cand ${esc(c.role)}"><span class="cv">${esc(c.value)}</span>`
-    + `<span class="crole">${esc(c.role)}</span>`
-    + `<span class="ctier">${esc(String(c.trust_tier))}</span>`
-    + `<span class="cobs" title="asserting observation ${esc(c.observation)}">${esc(String(c.observation).slice(0, 8))}</span></div>`;
+  return html`${[
+    html`<div class="cand ${c.role}"><span class="cv">${c.value}</span>`,
+    html`<span class="crole">${c.role}</span>`,
+    html`<span class="ctier">${String(c.trust_tier)}</span>`,
+    html`<span class="cobs" title="asserting observation ${c.observation}">${String(c.observation).slice(0, 8)}</span></div>`]}`;
 }
 function fieldHtml(f) {
-  return `<div class="wfield${f.contested ? " hot" : ""}">`
-    + `<div class="wfhead">${esc(f.field)}${f.contested ? ' <span class="wtag">contested</span>' : ""}</div>`
-    + (f.candidates || []).map(candRowHtml).join("")
-    + `</div>`;
+  return html`${[
+    html`<div class="wfield${f.contested ? " hot" : ""}">`,
+    html`<div class="wfhead">${f.field}${f.contested ? html` <span class="wtag">contested</span>` : ""}</div>`,
+    (f.candidates || []).map(candRowHtml),
+    html`</div>`]}`;
 }
 function renderExplain(ex) {
   // The supporting observations (the evidence) live in the inspector's "log" column now, so this
   // disclosure is just the per-field decision: which value won each single-valued field, and why.
-  return (ex.fields || []).map(fieldHtml).join("");
+  return html`${(ex.fields || []).map(fieldHtml)}`;
 }
 // Cache the fetched explanation + open state per node, so the disclosure survives the inspector's
 // poll-driven re-render (renderDetail rebuilds innerHTML while a node stays focused).
 let whyCache = null;   // { id, open, ex }
 function fillWhy(whyBody, ex) {
   if (ex && ex.fields) {
-    // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-    whyBody.innerHTML = renderExplain(ex);
+    whyBody.innerHTML = html`${renderExplain(ex)}`;
   } else {
     whyBody.textContent = "no explanation available";
   }
@@ -1766,15 +1777,16 @@ function relationGroupHtml(g, open) {
   const shown = open ? g.items : g.items.slice(0, RELATION_CHIPS);
   const rest = g.items.length - shown.length;
   // The edge's description stays one hover away, as it was on the row; a superseded edge says so.
-  const chip = ({ other, e }) =>
-    `<span class="rchip${e.valid_to ? " past" : ""}" data-id="${esc(other.id)}" `
-    + `title="${esc(e.description || ((e.valid_to ? "superseded - " : "") + "focus " + other.name))}">`
-    + `<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${esc(other.name)}</span>`;
-  return `<div class="rgroup"><div class="rghead"><span class="rdir">${g.out ? "-&gt;" : "&lt;-"}</span>`
-    + `<span class="rkind">${esc(g.kind)}</span><span class="rct">${g.items.length}</span></div>`
-    + `<div class="rchips">${shown.map(chip).join("")}`
-    + (rest > 0 ? `<button class="rmore" type="button" data-key="${esc(g.key)}" title="show the other ${rest}">+${rest}</button>` : "")
-    + `</div></div>`;
+  const chip = ({ other, e }) => html`${[
+    html`<span class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
+    html`title="${e.description || ((e.valid_to ? "superseded - " : "") + "focus " + other.name)}">`,
+    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}</span>`]}`;
+  return html`${[
+    html`<div class="rgroup"><div class="rghead"><span class="rdir">${g.out ? "->" : "<-"}</span>`,
+    html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
+    html`<div class="rchips">${shown.map(chip)}`,
+    rest > 0 ? html`<button class="rmore" type="button" data-key="${g.key}" title="show the other ${rest}">+${rest}</button>` : "",
+    html`</div></div>`]}`;
 }
 
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
@@ -1792,45 +1804,44 @@ function renderDetail(node) {
   if (base.tier !== null) scopeSaid.push(base.tier);
   if (base.origin) scopeSaid.push("from " + base.origin);
   const origin = base.origin === null && node.origins && node.origins.length
-    ? `<div class="meta">from: ${esc(node.origins.join(", "))}</div>` : "";
+    ? html`<div class="meta">from: ${node.origins.join(", ")}</div>` : "";
   // An empty workspace is an entity a merge carried across a workspace boundary - said, not left blank.
   const workspace = base.workspace === null
-    ? `<div class="meta">workspace: ${node.workspace ? esc(node.workspace) : "more than one (merged across workspaces)"}</div>` : "";
+    ? html`<div class="meta">workspace: ${node.workspace || "more than one (merged across workspaces)"}</div>` : "";
   // With a single candidate per field the disclosure can only answer "nobody said otherwise", and the
   // asserting observation is already a row of the evidence column - so it appears only when some
   // field has a second candidate: an alias spelling or a competing kind (Section 5).
   const disputed = (node.aliases || []).length > 0 || (node.competitors || []).length > 0;
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  detailEl.innerHTML =
-    `<button class="close" title="close" aria-label="close">`
-      + `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
-      + `<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`
-      + `</svg></button>`
+  detailEl.innerHTML = html`${[
+    html`<button class="close" title="close" aria-label="close">`,
+      html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
+      html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
+      html`</svg></button>`,
     // Taller / shorter: the height cap keeps the graph visible by default; this trades it for room.
-    + `<button class="grow" title="${detailTall ? "shorter panel" : "taller panel"}" aria-label="${detailTall ? "shorter panel" : "taller panel"}">`
-      + `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`
-      + `<path d="${detailTall ? "M3 4.5 L6 7.5 L9 4.5" : "M3 7.5 L6 4.5 L9 7.5"}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`
-      + `</svg></button>`
-    + `<h2>${esc(node.name)}</h2>`
-    + `<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`
-    +   `<span>${esc(node.type)}</span>${tierDot(tier)}${base.tier === null ? `<span>${esc(tier)}</span>` : ""}`
-    +   (scopeSaid.length ? `<span class="scopeline" title="these values are the same for every node in this view, so they are not repeated per node">same across this scope: ${esc(scopeSaid.join(" / "))}</span>` : "")
-    + `</div>`
-    + (node.aliases && node.aliases.length ? `<div class="meta">aliases: ${esc(node.aliases.join(", "))}</div>` : "")
-    + origin + workspace
-    + (node.description ? `<div class="desc">${esc(node.description)}</div>` : "")
-    + contestedBlock(node)
+    html`<button class="grow" title="${detailTall ? "shorter panel" : "taller panel"}" aria-label="${detailTall ? "shorter panel" : "taller panel"}">`,
+      html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
+      html`<path d="${detailTall ? "M3 4.5 L6 7.5 L9 4.5" : "M3 7.5 L6 4.5 L9 7.5"}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+      html`</svg></button>`,
+    html`<h2>${node.name}</h2>`,
+    html`<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`,
+      html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tier}</span>` : ""}`,
+      scopeSaid.length ? html`<span class="scopeline" title="these values are the same for every node in this view, so they are not repeated per node">same across this scope: ${scopeSaid.join(" / ")}</span>` : "",
+    html`</div>`,
+    node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
+    origin, workspace,
+    node.description ? html`<div class="desc">${node.description}</div>` : "",
+    contestedBlock(node),
     // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
     // only when opened - the graph poll stays light). The evidence itself is the column below.
-    + (disputed ? `<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>` : "")
+    disputed ? html`<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>` : "",
     // Two regions: the node's relations, grouped by kind, and its observation log (the evidence
     // behind its belief), side by side.
-    + `<div class="rels">`
-    +   `<div class="relcol"><div class="sec">relations (${nrel})</div>`
-    +     (groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))).join("") : `<div class="empty">none</div>`)
-    +   `</div>`
-    +   `<div class="relcol"><div class="sec">evidence</div><div class="logcol"></div></div>`
-    + `</div>`;
+    html`<div class="rels">`,
+      html`<div class="relcol"><div class="sec">relations (${nrel})</div>`,
+        groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">none</div>`,
+      html`</div>`,
+      html`<div class="relcol"><div class="sec">evidence</div><div class="logcol"></div></div>`,
+    html`</div>`]}`;
   detailEl.className = "on" + (detailTall ? " tall" : "");
   detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
   detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
@@ -2867,12 +2878,12 @@ function showTip(n, cx, cy) {
   tip.style.display = "block";
   tip.style.left = Math.min(cx + 14, innerWidth - 330) + "px";
   tip.style.top = (cy + 14) + "px";
-  // esc() every string field: node name/type come from untrusted observe calls and land in innerHTML
-  // here (Principle 18). Numeric fields are coerced, not escaped.
-  // eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings
-  tip.innerHTML = `<b>${esc(n.name)}</b><br>`
-    + `<span class="k">type</span> ${esc(n.type)} &nbsp; <span class="k">degree</span> ${n.degree || 0}<br>`
-    + `<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${esc(n.trust_tier)}`;
+  // Node name/type come from untrusted observe calls and land in innerHTML here (Principle 18); the
+  // html tag escapes every interpolation, the numeric fields included.
+  tip.innerHTML = html`${[
+    html`<b>${n.name}</b><br>`,
+    html`<span class="k">type</span> ${n.type} &nbsp; <span class="k">degree</span> ${n.degree || 0}<br>`,
+    html`<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${n.trust_tier}`]}`;
 }
 
 // --- Interaction ---------------------------------------------------------------------
