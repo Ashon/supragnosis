@@ -384,6 +384,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards will split between the viz crate, where the read
     // tier's path policy table and its every-path-is-classified test live, and the CLI (the relay).
     ("docs/remote-viewer.md", include_str!("../../../docs/remote-viewer.md")),
+    // Listed the day it was written. Its guards live in the app workspace, which this test cannot
+    // reach; the shell's source joins SOURCES so the test names it cites are still checked.
+    ("docs/settings-window.md", include_str!("../../../docs/settings-window.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
