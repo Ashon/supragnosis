@@ -182,9 +182,12 @@ HTTPS (JSON wire format initially; gRPC is a later optimization):
 - `advertise` -> exchange `VV` (only for the workspaces both sides may share). Each side learns where the
   other is ahead.
 - `pull(since: VV)` -> the server streams attestation events for the `(node_id, workspace, seq)` ranges
-  where the caller is behind, shared workspaces only.
-- `push(events)` -> the caller sends events for ranges where it is ahead. The receiver verifies, dedups by
-  CAS, absorbs provenance, and re-projects.
+  where the caller is behind, shared workspaces only - one page at a time, in (origin, seq) order, until
+  it says there is no more.
+- `push(events)` -> the caller sends events for ranges where it is ahead, in batches. The receiver
+  verifies, dedups by CAS, absorbs provenance, and re-projects. Every request is bounded in size and
+  time, and an observation's content in size at ingest, so every event fits (sync-correctness.md
+  Section 11).
 - `ping` -> **health check and surface negotiation**: an authenticated no-op that verifies
   connectivity, auth, and the caller's per-workspace authorization in one round trip. The response
   carries the hub identity, version, and the **caller's** shared workspaces - the peer's entitlement,

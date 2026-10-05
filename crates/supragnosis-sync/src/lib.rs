@@ -15,6 +15,9 @@
 #[cfg(feature = "http")]
 pub mod http;
 
+/// The version vector is the sync protocol's own vocabulary, so callers of this crate reach it here.
+pub use supragnosis_core::VersionVector;
+
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -22,7 +25,6 @@ use std::sync::Mutex;
 use supragnosis_core::{
     evaluated_tier, now_millis, observation_content_id, ordering_hlc, verify_attestation,
     AssertionStore, AttestationEvent, Hlc, NodeIdentity, Observation, StoreError, SyncMeta,
-    VersionVector,
 };
 
 /// Sync-layer failure. Store failures propagate (P5: a backend failure is never an empty result);

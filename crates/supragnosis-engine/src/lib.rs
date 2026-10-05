@@ -73,6 +73,9 @@ pub struct ObserveOutput {
     pub relations: Vec<String>,
 }
 
+/// The largest observation content `observe` accepts: 1 MiB.
+pub const MAX_CONTENT_BYTES: usize = 1 << 20;
+
 /// Ingest failure. Validation error messages are written so the LLM client can self-correct (Principle 21:
 /// why it failed and what to do differently).
 #[derive(Debug, thiserror::Error)]
@@ -1370,6 +1373,18 @@ impl Engine {
 
     /// Ingests a piece of knowledge: stores an immutable observation + links the provided entities/relations into the ontology.
     pub fn observe(&self, input: ObserveInput) -> Result<ObserveOutput, ObserveError> {
+        // A bound every event fits inside (sync-correctness.md Section 11): without it one
+        // observation could exceed any sync body limit on its own, and a peer's stream would be held
+        // forever behind an event that can never be delivered. Applied at local ingest only - an
+        // event already signed elsewhere is not refused for its size.
+        if input.content.len() > MAX_CONTENT_BYTES {
+            return Err(ObserveError::Invalid(format!(
+                "content is {} bytes; an observation holds at most {MAX_CONTENT_BYTES} (1 MiB). \
+                 Split it into observations that each say one thing, or keep the large text \
+                 elsewhere and observe what it says with a source_ref pointing at it",
+                input.content.len()
+            )));
+        }
         // The verdict-marker namespace is engine-controlled provenance, like trust_tier and
         // observed_at - a client-supplied "surface:*" is a forged provenance claim, not content.
         reject_reserved_source_ref(input.source_ref.as_deref())?;
@@ -4896,6 +4911,31 @@ fn fuse_rrf(lists: &[Vec<SearchHit>], limit: usize) -> Vec<SearchHit> {
 
 #[cfg(test)]
 mod tests {
+
+    /// sync-correctness.md Section 11: content past 1 MiB is refused at ingest, with the limit
+    /// named, so every event fits inside the sync bounds.
+    #[test]
+    fn an_observation_over_the_content_cap_is_refused_at_ingest() {
+        let engine = Engine::new(Arc::new(supragnosis_store::InMemoryStore::new()), "h", "ws");
+        let input = |content: String| ObserveInput {
+            content,
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: Vec::new(),
+            entities: Vec::new(),
+            relations: Vec::new(),
+        };
+        let Err(ObserveError::Invalid(msg)) =
+            engine.observe(input("x".repeat(MAX_CONTENT_BYTES + 1)))
+        else {
+            panic!("an observation over the cap must be refused");
+        };
+        assert!(msg.contains("1 MiB"), "{msg}");
+        let fits = input("x".repeat(MAX_CONTENT_BYTES));
+        assert!(engine.observe(fits).is_ok(), "the cap itself is allowed");
+    }
     use super::*;
     use supragnosis_core::{SyncMeta, TypeDefAssertion};
     use supragnosis_store::InMemoryStore;
