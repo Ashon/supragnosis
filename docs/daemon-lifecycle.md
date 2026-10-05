@@ -155,6 +155,10 @@ client showing a number nobody expected.
 
 ## 6. The app
 
+> **Revised ([settings-page.md](settings-page.md)).** Start at Login and Restart Daemon moved from the
+> tray to the app's settings page, with the behaviour below unchanged. The tray keeps the status
+> line, which now points to Settings when there is drift to repair.
+
 The shell gains one control and loses one silence. Both go through the CLI, found where it is found
 today (`find_server_bin`); the shell shares no code with the server, so it does not write plists or
 classify managers itself - one implementation, in the workspace where it is tested.

@@ -15,10 +15,11 @@
 //! 3. **SSE bridge** - the webview custom protocol cannot stream, so the shell holds the
 //!    /api/events connection in Rust and re-emits frames as "viz-event" Tauri events; an init
 //!    script swaps EventSource for a listener facade (assets/eventsource-shim.js).
-//! 4. **Start at Login** - a tray switch over the one always-on path, the canonical LaunchAgent
-//!    (docs/daemon-lifecycle.md). The shell decides nothing here: it asks the CLI it found
-//!    (`supragnosis status --json`, `service install|uninstall`, `restart`) and shows the answer,
-//!    so the lifecycle rules live once, in the workspace where they are tested.
+//! 4. **Settings** - a page of the app's own (docs/settings-page.md), in the main window: the server this Mac's AI
+//!    apps use, how each AI app is connected, and this Mac's daemon (Start at Login, Restart). The
+//!    shell decides nothing here: it asks the CLI it found (`status --json`, `server`, `connect`,
+//!    `service install|uninstall`, `restart`) and shows the answer, so those rules live once, in the
+//!    workspace where they are tested. The tray only says what state this Mac is in and opens it.
 
 // Tauri on macOS/Windows expects a windowed (non-console) binary in release bundles.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -30,7 +31,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     http, Emitter, Listener, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
@@ -64,27 +65,14 @@ struct DaemonGuard(Mutex<Daemon>);
 /// The tray's status menu item - kept as managed state so the daemon tasks can rewrite its text.
 struct TrayStatus(MenuItem<tauri::Wry>);
 
-/// The tray's Start at Login switch - managed so the lifecycle tasks can set its check and label.
-struct TrayLogin(CheckMenuItem<tauri::Wry>);
+/// The active remote server profile, when there is one (docs/remote-server.md Section 5). This
+/// machine's daemon is then not what the AI apps use, and the shell says so instead of showing local
+/// knowledge.
+struct ActiveRemote(Mutex<Option<RemoteServer>>);
 
-/// The last lifecycle outcome worth showing beside the daemon state - a take-over, a refused
-/// restart. docs/daemon-lifecycle.md L4: the CLI's result reaches the tray, never discarded.
-struct TrayNote(Mutex<Option<String>>);
-/// The AI Apps submenu (docs/client-connect.md Section 5): one check item per app the CLI's
-/// `connect` knows, and the hint the status line shows while none is connected.
-struct TrayApps {
-    items: Vec<(&'static str, &'static str, CheckMenuItem<tauri::Wry>)>,
-    hint: Mutex<Option<String>>,
-}
-
-/// The Server submenu (docs/remote-server.md Section 5): one check item per server profile, rebuilt
-/// when the list changes, and the active remote profile - when there is one, this machine's daemon
-/// is not what the AI apps use, and the shell says so instead of showing local knowledge.
-struct TrayServers {
-    menu: Submenu<tauri::Wry>,
-    items: Mutex<Vec<(String, CheckMenuItem<tauri::Wry>)>>,
-    remote: Mutex<Option<RemoteServer>>,
-}
+/// What the status line says needs doing when nothing else does: no AI app connected yet, the state
+/// a new user is in (docs/client-connect.md Section 5).
+struct AppsHint(Mutex<Option<String>>);
 
 #[derive(Clone)]
 struct RemoteServer {
@@ -93,9 +81,6 @@ struct RemoteServer {
     answering: bool,
     credential_refused: bool,
 }
-
-/// Restart Daemon, kept so it can be disabled while a remote server is active.
-struct TrayRestart(MenuItem<tauri::Wry>);
 
 /// The apps `supragnosis connect` knows, by id and display name. Listed here only to build the menu
 /// before the CLI has answered; what each one's state is comes from `connect --json`, and an id the
@@ -480,7 +465,7 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
                 };
                 match running {
                     Some(r) if r != here => {
-                        format!("daemon {r} running, {here} installed - Restart Daemon to update")
+                        format!("daemon {r} running, {here} installed - restart it in Settings")
                     }
                     Some(r) => format!("daemon {r} - {who}"),
                     None => format!("daemon - {who}"),
@@ -494,9 +479,9 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
     }
 }
 
-/// Re-reads the CLI's view and republishes the status line and the Start at Login switch.
+/// The active remote profile, when one is active.
 fn active_remote(app: &tauri::AppHandle) -> Option<RemoteServer> {
-    app.try_state::<TrayServers>().and_then(|s| s.remote.lock().unwrap().clone())
+    app.try_state::<ActiveRemote>().and_then(|s| s.0.lock().unwrap().clone())
 }
 
 /// `supragnosis server --json`. `None` when the CLI predates profiles.
@@ -508,153 +493,51 @@ fn cli_server_list() -> Option<serde_json::Value> {
     serde_json::from_slice(&out.stdout).ok()
 }
 
-/// Re-reads the server profiles: rebuilds the submenu when the list changed, checks the active one,
-/// and records whether a remote server is active.
-async fn refresh_servers(app: &tauri::AppHandle) {
-    let Some(servers) = app.try_state::<TrayServers>() else {
-        return;
-    };
+/// Re-reads the server profiles and records whether a remote one is active. Returns what the CLI
+/// said, for the settings window.
+async fn refresh_servers(app: &tauri::AppHandle) -> Option<serde_json::Value> {
     let list = tokio::task::spawn_blocking(cli_server_list).await.ok().flatten();
-    let Some(list) = list else {
-        *servers.remote.lock().unwrap() = None;
-        return;
-    };
-    let active = list["active"].as_str().unwrap_or("local").to_string();
-    let rows: Vec<(String, String, bool)> = list["servers"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .map(|r| {
-                    (
-                        r["name"].as_str().unwrap_or("?").to_string(),
-                        r["url"].as_str().unwrap_or("").to_string(),
-                        r["remote"].as_bool().unwrap_or(false),
-                    )
-                })
-                .collect()
+    let remote = list.as_ref().and_then(|list| {
+        let active = list["active"].as_str().unwrap_or("local");
+        let row = list["servers"].as_array()?.iter().find(|r| {
+            r["name"].as_str() == Some(active) && r["remote"].as_bool().unwrap_or(false)
+        })?;
+        Some(RemoteServer {
+            name: active.to_string(),
+            url: row["url"].as_str().unwrap_or("").to_string(),
+            answering: list["check"]["answering"].as_bool().unwrap_or(false),
+            credential_refused: list["check"]["credential"].as_bool() == Some(false),
         })
-        .unwrap_or_default();
-    {
-        let mut items = servers.items.lock().unwrap();
-        let names: Vec<&String> = items.iter().map(|(n, _)| n).collect();
-        let wanted: Vec<&String> = rows.iter().map(|(n, _, _)| n).collect();
-        if names != wanted {
-            for (_, item) in items.drain(..) {
-                let _ = servers.menu.remove(&item);
-            }
-            for (name, url, remote) in &rows {
-                let label = if *remote {
-                    let host =
-                        url.split("//").nth(1).and_then(|h| h.split('/').next()).unwrap_or(url);
-                    format!("{name} - {host}")
-                } else {
-                    "This Mac".to_string()
-                };
-                if let Ok(item) = CheckMenuItem::with_id(
-                    app,
-                    format!("server:{name}"),
-                    label,
-                    true,
-                    false,
-                    None::<&str>,
-                ) {
-                    let _ = servers.menu.append(&item);
-                    items.push((name.clone(), item));
-                }
-            }
-        }
-        for (name, item) in items.iter() {
-            let _ = item.set_checked(*name == active);
-        }
-    }
-    let remote = rows.iter().find(|(n, _, r)| *r && *n == active).map(|(n, u, _)| RemoteServer {
-        name: n.clone(),
-        url: u.clone(),
-        answering: list["check"]["answering"].as_bool().unwrap_or(false),
-        credential_refused: list["check"]["credential"].as_bool() == Some(false),
     });
-    *servers.remote.lock().unwrap() = remote;
+    if let Some(state) = app.try_state::<ActiveRemote>() {
+        *state.0.lock().unwrap() = remote;
+    }
+    list
 }
 
-/// A Server item was clicked: make that profile the one AI apps here use. Switching to a remote
-/// server leaves any local daemon running (it is not this app's to stop); switching back to this Mac
-/// brings the local daemon up the usual way.
-async fn use_server(app: tauri::AppHandle, sock: PathBuf, name: String) {
-    let n = name.clone();
-    let out = tokio::task::spawn_blocking(move || run_cli(&["server", "use", &n]))
-        .await
-        .ok()
-        .flatten();
-    let label = if name == "local" { "this Mac".to_string() } else { name.clone() };
-    let note = match out {
-        Some(o) if o.status.success() => {
-            format!("AI apps here use {label} from their next session")
-        }
-        Some(o) => format!("switching to {label} failed: {}", cli_outcome(&o).1),
-        None => "supragnosis CLI not found".to_string(),
-    };
-    set_note(&app, Some(note));
-    bring_up(app.clone(), sock).await;
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.eval("location.reload()");
+/// The tray's line while a remote profile is active: which server, and whether it answers.
+fn remote_line(r: &RemoteServer) -> String {
+    match (r.answering, r.credential_refused) {
+        (true, false) => format!("server {} - answering", r.name),
+        (true, true) => format!("server {} - credential refused, see Settings", r.name),
+        (false, _) => format!("server {} - not answering, see Settings", r.name),
     }
 }
 
+/// Re-reads the CLI's view and republishes the tray's one line (docs/settings-page.md Section 5).
 async fn refresh_status(app: &tauri::AppHandle) {
     refresh_servers(app).await;
     refresh_apps(app).await;
-    if let Some(r) = active_remote(app) {
-        // The daemon controls are about this machine's daemon, which is not what the AI apps use.
-        if let Some(restart) = app.try_state::<TrayRestart>() {
-            let _ = restart.0.set_enabled(false);
+    let text = match active_remote(app) {
+        Some(r) => remote_line(&r),
+        None => {
+            let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+            let hint = app.try_state::<AppsHint>().and_then(|h| h.0.lock().unwrap().clone());
+            status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), st.as_ref(), hint.as_deref())
         }
-        if let Some(login) = app.try_state::<TrayLogin>() {
-            let _ = login.0.set_enabled(false);
-        }
-        let state = match (r.answering, r.credential_refused) {
-            (true, true) => "credential refused",
-            (true, false) => "answering",
-            (false, _) => "not answering",
-        };
-        let note = app.state::<TrayNote>().0.lock().unwrap().clone();
-        let text = match note {
-            Some(n) if !n.is_empty() => format!("server {} - {state} | {n}", r.name),
-            _ => format!("server {} - {state}", r.name),
-        };
-        if let Some(status) = app.try_state::<TrayStatus>() {
-            let _ = status.0.set_text(text);
-        }
-        return;
-    }
-    if let Some(restart) = app.try_state::<TrayRestart>() {
-        let _ = restart.0.set_enabled(true);
-    }
-    let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-    let note = app
-        .state::<TrayNote>()
-        .0
-        .lock()
-        .unwrap()
-        .clone()
-        .or_else(|| app.try_state::<TrayApps>().and_then(|a| a.hint.lock().unwrap().clone()));
-    let text =
-        status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), st.as_ref(), note.as_deref());
+    };
     if let Some(status) = app.try_state::<TrayStatus>() {
         let _ = status.0.set_text(text);
-    }
-    if let Some(login) = app.try_state::<TrayLogin>() {
-        match st.as_ref().and_then(|v| v["service"]["state"].as_str()) {
-            Some(state) => {
-                let _ = login.0.set_text("Start at Login");
-                let _ = login.0.set_checked(state != "absent");
-                let _ = login.0.set_enabled(true);
-            }
-            None => {
-                let _ = login.0.set_text("Start at Login (update supragnosis-server)");
-                let _ = login.0.set_checked(false);
-                let _ = login.0.set_enabled(false);
-            }
-        }
     }
 }
 
@@ -667,72 +550,68 @@ fn cli_connect_list() -> Option<serde_json::Value> {
     serde_json::from_slice(&out.stdout).ok()
 }
 
-/// One AI Apps item's label and state, from the CLI's report on that app: (text, checked, enabled).
-/// Checked means connected through the bridge; any other entry is named, because the person
-/// clicking it is about to replace it.
-fn app_item_state(name: &str, report: Option<&serde_json::Value>) -> (String, bool, bool) {
+/// One AI app's row in the settings window, from the CLI's report on it: what state it is in, and
+/// the label of the one button - `None` where a click could do nothing (not installed, settings
+/// unreadable, a CLI too old to know `connect`). Any entry other than the bridge is named, because
+/// the person clicking is about to replace it.
+fn app_row(report: Option<&serde_json::Value>) -> (String, Option<&'static str>) {
     let Some(r) = report else {
-        return (format!("{name} (update supragnosis-server)"), false, false);
+        return ("needs a newer supragnosis-server".into(), None);
     };
     if !r["installed"].as_bool().unwrap_or(false) {
-        return (format!("{name} - not installed"), false, false);
+        return ("not installed".into(), None);
     }
     match r["entry"].as_str().unwrap_or("none") {
-        "bridge" => (name.to_string(), true, true),
-        "http" => (format!("{name} (connected over HTTP - click to switch)"), false, true),
-        "stdio" => (format!("{name} (old stdio entry - click to switch)"), false, true),
-        "other" => (format!("{name} (another supragnosis entry - click to replace)"), false, true),
-        "unknown" => (format!("{name} (its settings file could not be read)"), false, false),
-        _ => (name.to_string(), false, true),
+        "bridge" => ("connected".into(), Some("Disconnect")),
+        "http" => (
+            "connected over HTTP, with a copy of the token".into(),
+            Some("Switch to the bridge"),
+        ),
+        "stdio" => ("connected by an old stdio entry".into(), Some("Switch to the bridge")),
+        "other" => ("another supragnosis entry is configured".into(), Some("Replace")),
+        "unknown" => ("its settings file could not be read".into(), None),
+        _ => ("not connected".into(), Some("Connect")),
     }
 }
 
-/// Re-reads which AI apps are connected and republishes the submenu, and the status-line hint for
-/// the state a new user is in - nothing connected yet.
+/// Re-reads which AI apps are connected, for the status line's hint while none is.
 async fn refresh_apps(app: &tauri::AppHandle) {
-    let Some(apps) = app.try_state::<TrayApps>() else {
-        return;
-    };
     let list = tokio::task::spawn_blocking(cli_connect_list).await.ok().flatten();
-    let reports = list.as_ref().and_then(|l| l["clients"].as_array());
-    let mut any = false;
-    for (id, name, item) in &apps.items {
-        let report = reports.and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)));
-        let (text, checked, enabled) = app_item_state(name, report);
-        any |= report.is_some_and(|r| r["entry"].as_str().is_some_and(|e| e != "none"));
-        let _ = item.set_text(text);
-        let _ = item.set_checked(checked);
-        let _ = item.set_enabled(enabled);
+    let any = list
+        .as_ref()
+        .and_then(|l| l["clients"].as_array())
+        .is_some_and(|rs| rs.iter().any(|r| r["entry"].as_str().is_some_and(|e| e != "none")));
+    if let Some(hint) = app.try_state::<AppsHint>() {
+        *hint.0.lock().unwrap() =
+            (list.is_some() && !any).then(|| "no AI app connected - see Settings".to_string());
     }
-    *apps.hint.lock().unwrap() =
-        (list.is_some() && !any).then(|| "no AI app connected yet - see AI Apps".to_string());
 }
 
-/// An AI Apps item was clicked: connect it through the bridge, or disconnect it if it already is.
-/// The click is the consent to replace another supragnosis entry, as Start at Login's is to take
-/// over (client-connect.md Section 5). The CLI decides and does; the shell reports what it said.
-async fn toggle_app(app: tauri::AppHandle, id: String) {
-    let Some(apps) = app.try_state::<TrayApps>() else {
-        return;
-    };
-    let Some((_, name, item)) = apps.items.iter().find(|(i, _, _)| *i == id) else {
-        return;
-    };
-    let name = *name;
-    let _ = item.set_enabled(false); // one operation at a time
+/// Connects an AI app through the bridge, or disconnects it if it already is. The click is the
+/// consent to replace another supragnosis entry (client-connect.md Section 5). The CLI decides and
+/// does; the answer is what it said.
+async fn toggle_app(app: &tauri::AppHandle, id: &str) -> String {
+    let name = AI_APPS
+        .iter()
+        .find(|(i, _)| *i == id)
+        .map(|(_, n)| *n)
+        .unwrap_or(id)
+        .to_string();
+    let wanted = id.to_string();
     let connected = tokio::task::spawn_blocking(cli_connect_list)
         .await
         .ok()
         .flatten()
         .and_then(|l| {
-            l["clients"].as_array()?.iter().find(|r| r["id"].as_str() == Some(&id)).cloned()
+            l["clients"]
+                .as_array()?
+                .iter()
+                .find(|r| r["id"].as_str() == Some(&wanted))
+                .cloned()
         })
         .is_some_and(|r| r["entry"].as_str() == Some("bridge"));
-    let args: Vec<String> = if connected {
-        vec!["connect".into(), id.clone(), "--remove".into()]
-    } else {
-        vec!["connect".into(), id.clone(), "--replace".into()]
-    };
+    let flag = if connected { "--remove" } else { "--replace" };
+    let args = ["connect".to_string(), id.to_string(), flag.to_string()];
     let out = tokio::task::spawn_blocking(move || {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         run_cli(&args)
@@ -740,7 +619,7 @@ async fn toggle_app(app: tauri::AppHandle, id: String) {
     .await
     .ok()
     .flatten();
-    let note = match out {
+    let message = match out {
         None => format!("{name}: supragnosis CLI not found"),
         Some(o) if o.status.success() && connected => format!("{name} disconnected"),
         Some(o) if o.status.success() => {
@@ -755,40 +634,117 @@ async fn toggle_app(app: tauri::AppHandle, id: String) {
         }
         Some(o) => format!("connecting {name} failed: {}", cli_outcome(&o).1),
     };
-    set_note(&app, Some(note));
-    refresh_status(&app).await;
+    refresh_status(app).await;
+    message
 }
 
-fn set_note(app: &tauri::AppHandle, note: Option<String>) {
-    *app.state::<TrayNote>().0.lock().unwrap() = note;
+/// Makes a server profile the one AI apps here use. Switching to a remote server leaves any local
+/// daemon running (it is not this app's to stop); switching back to this Mac brings the local daemon
+/// up the usual way.
+async fn use_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> String {
+    let n = name.to_string();
+    let out = tokio::task::spawn_blocking(move || run_cli(&["server", "use", &n]))
+        .await
+        .ok()
+        .flatten();
+    let label = if name == "local" { "this Mac".to_string() } else { name.to_string() };
+    let message = match out {
+        Some(o) if o.status.success() => {
+            format!("AI apps here use {label} from their next session")
+        }
+        Some(o) => format!("switching to {label} failed: {}", cli_outcome(&o).1),
+        None => "supragnosis CLI not found".to_string(),
+    };
+    bring_up(app.clone(), sock).await;
+    reload_viewer(app);
+    message
 }
 
-/// Tray "Restart Daemon": bounce whatever we manage, then attach-or-spawn again. A spawned child
-/// is killed directly; an external daemon is bounced through the CLI (`supragnosis restart` knows
-/// every manager the product installs). The CLI's answer reaches the status line - a refused
-/// restart (a conflict, an unrecognized holder) says why, instead of the shell quietly
-/// re-attaching to the process it failed to replace (L4).
-async fn restart_daemon(app: tauri::AppHandle, sock: PathBuf) {
+/// The arguments of `server add`. The credential is not among them, and cannot be: it reaches the
+/// CLI on stdin only (docs/settings-page.md S2).
+fn server_add_args(name: &str, url: &str, ca: Option<&str>) -> Vec<String> {
+    let mut args = vec!["server".to_string(), "add".into(), name.to_string(), url.to_string()];
+    if let Some(ca) = ca.filter(|c| !c.trim().is_empty()) {
+        args.push("--ca".into());
+        args.push(ca.trim().to_string());
+    }
+    args
+}
+
+/// Adds a remote server profile through the CLI, writing the credential to its stdin.
+fn add_server(name: &str, url: &str, credential: &str, ca: Option<&str>) -> Result<String, String> {
+    use std::io::Write;
+    let bin = find_server_bin().ok_or("supragnosis CLI not found")?;
+    let mut child = Command::new(bin)
+        .args(server_add_args(name, url, ca))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("could not run the supragnosis CLI: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(format!("{}\n", credential.trim()).as_bytes())
+            .map_err(|e| format!("could not hand the credential to the CLI: {e}"))?;
+    }
+    let out = child.wait_with_output().map_err(|e| format!("the CLI did not finish: {e}"))?;
+    match cli_outcome(&out) {
+        (true, _) => Ok(format!("added {name}")),
+        (false, why) => Err(why),
+    }
+}
+
+/// Removes a remote profile and its credential. Removing the active one sends AI apps back to this
+/// Mac, which the CLI says and the app then follows.
+async fn remove_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> String {
+    let n = name.to_string();
+    let out = tokio::task::spawn_blocking(move || run_cli(&["server", "remove", &n]))
+        .await
+        .ok()
+        .flatten();
+    let message = match out {
+        Some(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            if text.contains("use local again") {
+                format!("removed {name} - AI apps here use this Mac again")
+            } else {
+                format!("removed {name}")
+            }
+        }
+        Some(o) => format!("removing {name} failed: {}", cli_outcome(&o).1),
+        None => "supragnosis CLI not found".to_string(),
+    };
+    bring_up(app.clone(), sock).await;
+    reload_viewer(app);
+    message
+}
+
+/// Restart: bounce whatever we manage, then attach-or-spawn again. A spawned child is killed
+/// directly; an external daemon is bounced through the CLI (`supragnosis restart` knows every
+/// manager the product installs). A refused restart (a conflict, an unrecognized holder) says why,
+/// instead of the shell quietly re-attaching to the process it failed to replace (L4).
+async fn restart_daemon(app: &tauri::AppHandle, sock: PathBuf) -> String {
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
-    set_note(&app, None);
-    refresh_status(&app).await;
-    match prev {
+    refresh_status(app).await;
+    let message = match prev {
         Daemon::Spawned(mut child) => {
             let _ = child.kill();
             let _ = child.wait();
+            "restarted the daemon this app runs".to_string()
         }
         Daemon::External => {
             let out = tokio::task::spawn_blocking(|| run_cli(&["restart"])).await.ok().flatten();
             match out.as_ref().map(cli_outcome) {
-                Some((true, _)) => {}
-                Some((false, why)) => set_note(&app, Some(format!("restart refused: {why}"))),
-                None => set_note(&app, Some("restart: supragnosis CLI not found".to_string())),
+                Some((true, _)) => "restarted".to_string(),
+                Some((false, why)) => format!("restart refused: {why}"),
+                None => "restart: supragnosis CLI not found".to_string(),
             }
         }
-        Daemon::Starting | Daemon::Failed(_) => {}
-    }
-    bring_up(app, sock).await;
+        Daemon::Starting | Daemon::Failed(_) => "starting the daemon".to_string(),
+    };
+    bring_up(app.clone(), sock).await;
+    message
 }
 
 /// Waits for the viewer socket to answer, so a daemon launchd is still starting is attached to
@@ -804,22 +760,22 @@ async fn wait_for_socket(sock: &Path, limit: Duration) -> bool {
     false
 }
 
-/// Tray "Start at Login": install or uninstall the canonical LaunchAgent through the CLI
-/// (docs/daemon-lifecycle.md Section 6). The click is the consent to take over from another manager;
-/// the status line then says what happened.
-async fn toggle_login(app: tauri::AppHandle, sock: PathBuf) {
-    if let Some(login) = app.try_state::<TrayLogin>() {
-        let _ = login.0.set_enabled(false); // one operation at a time
-    }
+/// Start at Login: install or uninstall the canonical LaunchAgent through the CLI
+/// (docs/daemon-lifecycle.md Section 6). Turning it on is the consent to take over from another
+/// manager; the answer says what happened.
+async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> String {
     let installed = tokio::task::spawn_blocking(cli_status)
         .await
         .ok()
         .flatten()
         .and_then(|v| v["service"]["state"].as_str().map(|s| s != "absent"))
         .unwrap_or(false);
+    if installed == on {
+        return if on { "already starts at login" } else { "already off" }.to_string();
+    }
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
-    refresh_status(&app).await;
+    refresh_status(app).await;
     let args: &'static [&'static str] = if installed {
         &["service", "uninstall"]
     } else {
@@ -833,17 +789,252 @@ async fn toggle_login(app: tauri::AppHandle, sock: PathBuf) {
         &["service", "install", "--take-over"]
     };
     let out = tokio::task::spawn_blocking(move || run_cli(args)).await.ok().flatten();
-    let note = match out.as_ref().map(cli_outcome) {
+    let message = match out.as_ref().map(cli_outcome) {
         Some((true, _)) if installed => "no longer starts at login".to_string(),
         Some((true, _)) => "starts at login".to_string(),
         Some((false, why)) => format!("Start at Login failed: {why}"),
         None => "Start at Login: supragnosis CLI not found".to_string(),
     };
-    set_note(&app, Some(note));
     if !installed {
         wait_for_socket(&sock, Duration::from_secs(10)).await;
     }
-    bring_up(app, sock).await;
+    bring_up(app.clone(), sock).await;
+    message
+}
+
+// --- The settings page (docs/settings-page.md) ---------------------------------------------
+
+/// The commands the settings page calls - the list `generate_handler!` registers below. build.rs
+/// declares the same list in the app manifest, so none of them is open to any page by default;
+/// capabilities/settings.json grants them to the main window, and each one refuses unless that
+/// window is showing the app's own settings page (S1). A test holds the lists together.
+#[cfg(test)]
+const SETTINGS_COMMANDS: &[&str] = &[
+    "settings_state",
+    "server_use",
+    "server_add",
+    "server_remove",
+    "app_toggle",
+    "login_set",
+    "daemon_restart",
+];
+
+/// The settings page's address: the app's own page, bundled with it - never one a daemon or a hub
+/// serves.
+fn settings_url() -> tauri::Url {
+    let url = if cfg!(windows) {
+        "http://tauri.localhost/settings.html"
+    } else {
+        "tauri://localhost/settings.html"
+    };
+    url.parse().expect("static url")
+}
+
+/// Whether a caller may change a setting (docs/settings-page.md S1): the main window, while its page
+/// is the app's own settings page. The capability cannot tell the pages of one window apart - the
+/// same window shows the viewer, which a daemon or a hub serves - so this check is the lock. It reads
+/// the webview's top-level address, so a viewer page that frames the settings page cannot call
+/// through the frame either.
+fn settings_caller_ok(label: &str, url: &tauri::Url) -> bool {
+    let own = settings_url();
+    label == "main"
+        && url.scheme() == own.scheme()
+        && url.host_str() == own.host_str()
+        && url.path() == own.path()
+}
+
+fn settings_caller(webview: &tauri::Webview) -> Result<(), String> {
+    let url = webview.url().map_err(|e| e.to_string())?;
+    if settings_caller_ok(webview.label(), &url) {
+        Ok(())
+    } else {
+        tracing::warn!(label = webview.label(), page = %url, "a settings command was refused: not the settings page");
+        Err(
+            "only the app's own Settings page may change a setting (docs/settings-page.md S1)"
+                .into(),
+        )
+    }
+}
+
+/// Reloads the viewer if that is what the main window shows - not the settings page, which re-reads
+/// its own state after every change.
+fn reload_viewer(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        if w.url()
+            .is_ok_and(|u| u.scheme() == "viz" || u.host_str() == Some("viz.localhost"))
+        {
+            let _ = w.eval("location.reload()");
+        }
+    }
+}
+
+/// The socket path, for the commands that bring the daemon back up.
+struct VizSock(PathBuf);
+
+/// Everything the settings window shows, gathered from the CLI in one pass.
+async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
+    let servers = refresh_servers(app).await;
+    // Both CLI calls run at once; each is a process the other need not wait for.
+    let status = tokio::task::spawn_blocking(cli_status);
+    let connect = tokio::task::spawn_blocking(cli_connect_list);
+    let (status, connect) = (status.await.ok().flatten(), connect.await.ok().flatten());
+    let remote = active_remote(app);
+
+    let profiles: Vec<serde_json::Value> = servers
+        .as_ref()
+        .and_then(|l| l["servers"].as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| {
+            let remote = r["remote"].as_bool().unwrap_or(false);
+            serde_json::json!({
+                "name": r["name"],
+                "label": if remote { r["name"].clone() } else { serde_json::json!("This Mac") },
+                "url": r["url"],
+                "remote": remote,
+                "active": r["active"],
+            })
+        })
+        .collect();
+    let check = servers.as_ref().map(|l| l["check"].clone()).unwrap_or(serde_json::Value::Null);
+
+    let reports = connect.as_ref().and_then(|l| l["clients"].as_array().cloned());
+    let apps: Vec<serde_json::Value> = AI_APPS
+        .iter()
+        .map(|(id, name)| {
+            let report = reports
+                .as_ref()
+                .and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)).cloned());
+            let (state, action) = app_row(report.as_ref());
+            serde_json::json!({ "id": id, "name": name, "state": state, "action": action })
+        })
+        .collect();
+
+    let line = status_text(&app.state::<DaemonGuard>().0.lock().unwrap(), status.as_ref(), None);
+    let login = status
+        .as_ref()
+        .and_then(|v| v["service"]["state"].as_str())
+        .map(|s| s != "absent");
+    serde_json::json!({
+        "cli": find_server_bin().is_some(),
+        "server": {
+            "known": servers.is_some(),
+            "active": servers.as_ref().map(|l| l["active"].clone()),
+            "check": check,
+            "profiles": profiles,
+        },
+        "apps": apps,
+        "daemon": {
+            "line": line,
+            "running": status.as_ref().map(|v| v["version"]["running"].clone()),
+            "installed": status.as_ref().map(|v| v["version"]["here"].clone()),
+            "store": status.as_ref().map(|v| v["store"].clone()),
+            "login": login,
+            "remote": remote.map(|r| r.name),
+        },
+    })
+}
+
+#[tauri::command]
+async fn settings_state(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    settings_caller(&webview)?;
+    Ok(settings_state_of(&app).await)
+}
+
+#[tauri::command]
+async fn server_use(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<String, String> {
+    settings_caller(&webview)?;
+    let sock = app.state::<VizSock>().0.clone();
+    Ok(use_server(&app, sock, &name).await)
+}
+
+#[tauri::command]
+async fn server_add(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    name: String,
+    url: String,
+    credential: String,
+    ca: Option<String>,
+) -> Result<String, String> {
+    settings_caller(&webview)?;
+    let result =
+        tokio::task::spawn_blocking(move || add_server(&name, &url, &credential, ca.as_deref()))
+            .await
+            .map_err(|e| e.to_string())?;
+    refresh_status(&app).await;
+    result
+}
+
+#[tauri::command]
+async fn server_remove(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<String, String> {
+    settings_caller(&webview)?;
+    let sock = app.state::<VizSock>().0.clone();
+    Ok(remove_server(&app, sock, &name).await)
+}
+
+#[tauri::command]
+async fn app_toggle(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<String, String> {
+    settings_caller(&webview)?;
+    if !AI_APPS.iter().any(|(i, _)| *i == id) {
+        return Err(format!("{id:?} is not an app supragnosis connects"));
+    }
+    Ok(toggle_app(&app, &id).await)
+}
+
+#[tauri::command]
+async fn login_set(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    on: bool,
+) -> Result<String, String> {
+    settings_caller(&webview)?;
+    if active_remote(&app).is_some() {
+        return Err(
+            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
+        );
+    }
+    let sock = app.state::<VizSock>().0.clone();
+    Ok(set_login(&app, sock, on).await)
+}
+
+#[tauri::command]
+async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
+    settings_caller(&webview)?;
+    if active_remote(&app).is_some() {
+        return Err(
+            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
+        );
+    }
+    let sock = app.state::<VizSock>().0.clone();
+    Ok(restart_daemon(&app, sock).await)
+}
+
+/// Shows the settings page in the main window (docs/settings-page.md Section 3), creating the window
+/// first if the app has retreated to the tray.
+fn show_settings(app: &tauri::AppHandle) -> tauri::Result<()> {
+    show_viewer(app)?;
+    if let Some(w) = app.get_webview_window("main") {
+        if !w.url().is_ok_and(|u| settings_caller_ok("main", &u)) {
+            w.navigate(settings_url())?;
+        }
+    }
+    Ok(())
 }
 
 /// Shows the viewer window (creating it on first use / after the app retreated to the tray) and
@@ -938,6 +1129,15 @@ fn main() {
     let proxy_sock = sock.clone();
     tauri::Builder::default()
         .manage(DaemonGuard(Mutex::new(Daemon::Starting)))
+        .invoke_handler(tauri::generate_handler![
+            settings_state,
+            server_use,
+            server_add,
+            server_remove,
+            app_toggle,
+            login_set,
+            daemon_restart
+        ])
         .register_asynchronous_uri_scheme_protocol("viz", move |ctx, request, responder| {
             let sock = proxy_sock.clone();
             let app = ctx.app_handle().clone();
@@ -1026,28 +1226,11 @@ fn main() {
             _ => {}
         })
         .setup(move |app| {
-            // Tray: the management surface for the resident shell.
-            let open = MenuItem::with_id(app, "open", "Open Viewer", true, None::<&str>)?;
+            // Tray: says what state this Mac is in and opens the windows that change it
+            // (docs/settings-page.md Section 5). The settings themselves live on that page.
             let status = MenuItem::with_id(app, "status", "daemon: starting...", false, None::<&str>)?;
-            let restart = MenuItem::with_id(app, "restart", "Restart Daemon", true, None::<&str>)?;
-            let login =
-                CheckMenuItem::with_id(app, "login", "Start at Login", false, false, None::<&str>)?;
-            let mut app_items = Vec::new();
-            for (id, label) in AI_APPS {
-                let item = CheckMenuItem::with_id(
-                    app,
-                    format!("app:{id}"),
-                    *label,
-                    false,
-                    false,
-                    None::<&str>,
-                )?;
-                app_items.push((*id, *label, item));
-            }
-            let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-                app_items.iter().map(|(_, _, i)| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
-            let ai_apps = Submenu::with_items(app, "AI Apps", true, &refs)?;
-            let servers = Submenu::with_items(app, "Server", true, &[])?;
+            let open = MenuItem::with_id(app, "open", "Open Viewer", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
             // the macOS app menu; lowercase `supragnosis` is the CLI and the daemon binary.
             let name = app.package_info().name.clone();
@@ -1055,28 +1238,42 @@ fn main() {
             let menu = Menu::with_items(
                 app,
                 &[
-                    &open,
-                    &PredefinedMenuItem::separator(app)?,
                     &status,
-                    &restart,
-                    &login,
-                    &servers,
-                    &ai_apps,
+                    &PredefinedMenuItem::separator(app)?,
+                    &open,
+                    &settings,
                     &PredefinedMenuItem::separator(app)?,
                     &quit,
                 ],
             )?;
             app.manage(TrayStatus(status));
-            app.manage(TrayLogin(login));
-            app.manage(TrayNote(Mutex::new(None)));
-            app.manage(TrayApps { items: app_items, hint: Mutex::new(None) });
-            app.manage(TrayServers {
-                menu: servers.clone(),
-                items: Mutex::new(Vec::new()),
-                remote: Mutex::new(None),
+            app.manage(ActiveRemote(Mutex::new(None)));
+            app.manage(AppsHint(Mutex::new(None)));
+            app.manage(VizSock(sock.clone()));
+
+            // The app menu keeps the platform's own items - Edit above all, without which a
+            // credential cannot be pasted into the settings window - and gains Settings... (Cmd+,)
+            // in the place macOS users look for it.
+            let app_menu = Menu::default(app.handle())?;
+            if let Some(first) = app_menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
+                let item = MenuItem::with_id(
+                    app,
+                    "settings",
+                    "Settings...",
+                    true,
+                    Some("CmdOrCtrl+,"),
+                )?;
+                first.insert(&item, 1)?;
+            }
+            app.set_menu(app_menu)?;
+            app.on_menu_event(|app, event| {
+                if event.id().as_ref() == "settings" {
+                    if let Err(e) = show_settings(app) {
+                        tracing::error!(error = %e, "failed to open the settings window");
+                    }
+                }
             });
-            app.manage(TrayRestart(restart.clone()));
-            let tray_sock = sock.clone();
+
             TrayIconBuilder::with_id("supragnosis")
                 // Template image (bare mark, alpha-only): macOS recolors it for light/dark menu bars.
                 .icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?)
@@ -1090,24 +1287,13 @@ fn main() {
                             tracing::error!(error = %e, "failed to open the viewer window");
                         }
                     }
-                    "restart" => {
-                        tauri::async_runtime::spawn(restart_daemon(app.clone(), tray_sock.clone()));
-                    }
-                    "login" => {
-                        tauri::async_runtime::spawn(toggle_login(app.clone(), tray_sock.clone()));
-                    }
-                    "quit" => app.exit(0),
-                    other => {
-                        if let Some(id) = other.strip_prefix("app:") {
-                            tauri::async_runtime::spawn(toggle_app(app.clone(), id.to_string()));
-                        } else if let Some(name) = other.strip_prefix("server:") {
-                            tauri::async_runtime::spawn(use_server(
-                                app.clone(),
-                                tray_sock.clone(),
-                                name.to_string(),
-                            ));
+                    "settings" => {
+                        if let Err(e) = show_settings(app) {
+                            tracing::error!(error = %e, "failed to open the settings window");
                         }
                     }
+                    "quit" => app.exit(0),
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -1226,27 +1412,23 @@ mod csp_tests {
 
 #[cfg(test)]
 mod status_text_tests {
-    use super::{app_item_state, status_text, Daemon};
+    use super::{app_row, status_text, Daemon};
 
-    /// An AI Apps item is checked only for the bridge, names any other entry a click would replace,
-    /// and is disabled where a click could do nothing - the app is not installed, its settings could
-    /// not be read, or the CLI is too old to know `connect`.
+    /// An AI app's row in the settings window says its state and labels its one button with what a
+    /// click will do - naming any entry other than the bridge, since the click replaces it - and has
+    /// no button where a click could do nothing: the app is not installed, its settings could not be
+    /// read, or the CLI is too old to know `connect`.
     #[test]
     fn an_app_item_says_what_a_click_will_do() {
         let r = |installed: bool, entry: &str| serde_json::json!({"installed": installed, "entry": entry});
-        assert_eq!(
-            app_item_state("Claude Code", Some(&r(true, "bridge"))),
-            ("Claude Code".into(), true, true)
-        );
-        let (text, checked, enabled) = app_item_state("Claude Code", Some(&r(true, "http")));
-        assert!(text.contains("HTTP") && !checked && enabled, "{text}");
-        assert_eq!(
-            app_item_state("Cursor", Some(&r(false, "none"))),
-            ("Cursor - not installed".into(), false, false)
-        );
-        assert!(!app_item_state("VS Code", Some(&r(true, "unknown"))).2);
-        assert!(!app_item_state("Codex", None).2, "an old CLI cannot connect anything");
-        assert_eq!(app_item_state("Codex", Some(&r(true, "none"))), ("Codex".into(), false, true));
+        assert_eq!(app_row(Some(&r(true, "bridge"))), ("connected".into(), Some("Disconnect")));
+        let (state, action) = app_row(Some(&r(true, "http")));
+        assert!(state.contains("HTTP") && action == Some("Switch to the bridge"), "{state}");
+        assert_eq!(app_row(Some(&r(true, "other"))).1, Some("Replace"));
+        assert_eq!(app_row(Some(&r(false, "none"))), ("not installed".into(), None));
+        assert_eq!(app_row(Some(&r(true, "unknown"))).1, None);
+        assert_eq!(app_row(None).1, None, "an old CLI cannot connect anything");
+        assert_eq!(app_row(Some(&r(true, "none"))), ("not connected".into(), Some("Connect")));
     }
 
     fn st(
@@ -1286,7 +1468,7 @@ mod status_text_tests {
         let s = st("one", Some("0.4.0"), "0.4.2", canonical);
         assert_eq!(
             status_text(&Daemon::External, Some(&s), None),
-            "daemon 0.4.0 running, 0.4.2 installed - Restart Daemon to update"
+            "daemon 0.4.0 running, 0.4.2 installed - restart it in Settings"
         );
         let conflict = serde_json::json!({
             "situation": "conflict",
@@ -1305,5 +1487,77 @@ mod status_text_tests {
             "daemon: attached (externally managed)"
         );
         assert_eq!(status_text(&Daemon::Starting, None, None), "daemon: starting...");
+    }
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::{server_add_args, settings_caller_ok, settings_url, SETTINGS_COMMANDS};
+
+    /// docs/settings-page.md S1: a setting changes only from the app's own settings page - not from
+    /// the viewer the same window shows, which a daemon or a hub serves, and not from any other
+    /// address, a hub's page or a lookalike path included.
+    #[test]
+    fn only_the_apps_own_page_may_change_a_setting() {
+        let own = settings_url();
+        let viewer: tauri::Url = "viz://localhost/".parse().unwrap();
+        let hub: tauri::Url = "https://hub.example/viz/".parse().unwrap();
+        let other_page: tauri::Url = "tauri://localhost/index.html".parse().unwrap();
+        let windows_viewer: tauri::Url = "http://viz.localhost/settings.html".parse().unwrap();
+        assert!(settings_caller_ok("main", &own));
+        assert!(!settings_caller_ok("main", &viewer), "the viewer in the same window");
+        assert!(!settings_caller_ok("main", &hub));
+        assert!(!settings_caller_ok("main", &other_page), "another page of the app");
+        assert!(!settings_caller_ok("main", &windows_viewer), "a viewer path that looks alike");
+        assert!(!settings_caller_ok("other", &own), "a window that is not the main one");
+    }
+
+    /// S1, the other half: build.rs declares the commands so none is open by default, and the one
+    /// capability that grants them grants every one, to the main window only. The lists are held to
+    /// the one in main.rs.
+    #[test]
+    fn settings_commands_are_closed_until_granted() {
+        let build = include_str!("../build.rs");
+        let settings: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/settings.json")).unwrap();
+        let viewer: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(settings["windows"], serde_json::json!(["main"]));
+        let granted = |cap: &serde_json::Value, perm: &str| {
+            cap["permissions"].as_array().unwrap().iter().any(|p| p.as_str() == Some(perm))
+        };
+        for cmd in SETTINGS_COMMANDS {
+            assert!(build.contains(&format!("\"{cmd}\"")), "build.rs must declare {cmd}");
+            let perm = format!("allow-{}", cmd.replace('_', "-"));
+            assert!(granted(&settings, &perm), "the settings capability needs {perm}");
+            assert!(!granted(&viewer, &perm), "{perm} belongs to the settings capability alone");
+        }
+    }
+
+    /// S2 by construction: the arguments of `server add` are built without the credential, which
+    /// reaches the CLI on stdin only.
+    #[test]
+    fn a_credential_never_becomes_an_argument() {
+        assert_eq!(
+            server_add_args("home", "https://hub.example", None),
+            ["server", "add", "home", "https://hub.example"]
+        );
+        assert_eq!(
+            server_add_args("home", "https://hub.example", Some(" /etc/ca.pem ")),
+            ["server", "add", "home", "https://hub.example", "--ca", "/etc/ca.pem"]
+        );
+    }
+
+    /// S5: the settings page renders the text it is given as text. It shows CLI output, which can
+    /// quote a server's answer, so no markup sink may appear in its script at all.
+    #[test]
+    fn the_settings_page_never_renders_markup() {
+        let js = include_str!("../assets/settings.js");
+        for sink in ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("] {
+            assert!(!js.contains(sink), "settings.js must not use {sink}");
+        }
+        let html = include_str!("../assets/settings.html");
+        assert!(html.contains("Content-Security-Policy"), "the page carries its own policy");
+        assert!(!html.contains("<script>"), "no inline script");
     }
 }
