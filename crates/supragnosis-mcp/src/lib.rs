@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use supragnosis_engine::{
     AffectedType as EngineAffectedType, DefineTypeInput, Engine, EntityInput as EngineEntityInput,
     Event, ObserveInput, ProposeInput as EngineProposeInput, RelationInput as EngineRelationInput,
-    SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget,
+    SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget, GATE_KINDS,
 };
 
 // --- Transport DTOs (JSON Schema auto-generated) ----------------------------
@@ -363,38 +363,59 @@ impl SupragnosisServer {
                 None,
             ));
         };
-        let ws = match parse_resource_uri(uri) {
+        let (ws, by_id) = match parse_resource_uri(uri) {
             Some(ResourceUri::Graph(ws))
             | Some(ResourceUri::Hypergraph(ws))
-            | Some(ResourceUri::Types(ws)) => ws.to_string(),
+            | Some(ResourceUri::Types(ws)) => (ws.to_string(), None),
             Some(ResourceUri::Observation(id)) => match self.engine.get_observation(id) {
-                Ok(Some(obs)) => obs.workspace().to_string(),
+                Ok(Some(obs)) => (obs.workspace().to_string(), Some(id)),
                 _ => return Ok(()), // absent or unreadable: the normal path answers that
             },
             _ => return Ok(()),
         };
         if !p.can_read(&ws) {
-            return Err(ErrorData::resource_not_found(
-                format!("{uri} is not in a workspace granted to {}", p.name),
-                None,
-            ));
+            // A workspace URI is refused whether or not the workspace exists. An observation id
+            // outside the grants answers exactly as an unknown one: its id is computable from a
+            // workspace and a content, so a different answer would confirm what was recorded where
+            // (remote-viewer.md Section 3.4).
+            return Err(match by_id {
+                Some(id) => unknown_observation(id, true),
+                None => ErrorData::resource_not_found(
+                    format!("{uri} is not in a workspace granted to {}", p.name),
+                    None,
+                ),
+            });
         }
         (surface.servable)(&ws).map_err(|why| ErrorData::resource_not_found(why, None))
     }
 
-    /// For a remote call: may its principal read `ws`, and may `ws` be served at all (R3, R5)?
-    /// Always `Ok` on the local surface.
-    fn remote_read_ok(&self, ws: &str) -> Result<(), String> {
+    /// For a remote call that resolved a workspace from an id: may its principal read `ws`, and
+    /// may `ws` be served at all (R3, R5)? Always `Ok` on the local surface.
+    fn remote_sight(&self, ws: &str) -> Result<(), Unseen> {
         let Some(p) = remote::current() else {
             return Ok(());
         };
         if !p.can_read(ws) {
-            return Err(format!("not in a workspace granted to {}", p.name));
+            return Err(Unseen::NotGranted);
         }
         match &self.remote {
-            Some(surface) => (surface.servable)(ws),
+            Some(surface) => (surface.servable)(ws).map_err(Unseen::Unservable),
             None => Ok(()),
         }
+    }
+
+    /// The answer to an entity id that is unknown - or, remotely, outside the grants, which must
+    /// read the same (remote-viewer.md Section 3.4).
+    fn unknown_entity(&self, id: &str) -> String {
+        self.engine
+            .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });
+        let note = if remote::current().is_some() {
+            "no entity with that id in the workspaces you may read - unknown, not a negation \
+             (open-world assumption)"
+        } else {
+            "unknown - not found is not a negation (open-world assumption)"
+        };
+        serde_json::json!({ "found": false, "id": id, "note": note }).to_string()
     }
 
     /// Attaches the federation sync wiring (M4 Phase 4) - enables the `sync_*` tools.
@@ -473,8 +494,10 @@ impl SupragnosisServer {
                 // refusal does not claim absence (P5) - only that this caller may not see it.
                 let ws =
                     view.entity.provenance.first().map(|p| p.workspace.clone()).unwrap_or_default();
-                if let Err(why) = self.remote_read_ok(&ws) {
-                    return err_json(&why);
+                match self.remote_sight(&ws) {
+                    Ok(()) => {}
+                    Err(Unseen::NotGranted) => return self.unknown_entity(&req.id),
+                    Err(Unseen::Unservable(why)) => return err_json(&why),
                 }
                 self.engine.emit(Event::GetEntity {
                     id: req.id.clone(),
@@ -485,16 +508,7 @@ impl SupragnosisServer {
             }
             // Open-world assumption (Principle 5): absence is not falsehood but unknown.
             // We do not return "not found" as an error, so the LLM does not misread absence as negation.
-            Ok(Ok(None)) => {
-                self.engine
-                    .emit(Event::GetEntity { id: req.id.clone(), name: None, found: false });
-                serde_json::json!({
-                    "found": false,
-                    "id": req.id,
-                    "note": "unknown - not found is not a negation (open-world assumption)"
-                })
-                .to_string()
-            }
+            Ok(Ok(None)) => self.unknown_entity(&req.id),
             // A backend failure differs from absence (Principle 5) - surfaced as an explicit error so it is not misread as "nothing there".
             Ok(Err(e)) => store_failure_json(&e),
             Err(e) => err_json(&format!("task join error: {e}")),
@@ -677,18 +691,13 @@ impl SupragnosisServer {
                         .first()
                         .map(|p| p.workspace.clone())
                         .unwrap_or_default();
-                    if let Err(why) = self.remote_read_ok(&ws) {
-                        return err_json(&why);
+                    match self.remote_sight(&ws) {
+                        Ok(()) => {}
+                        Err(Unseen::NotGranted) => return unknown_remote_start(),
+                        Err(Unseen::Unservable(why)) => return err_json(&why),
                     }
                 }
-                Ok(Ok(None)) => {
-                    return serde_json::json!({
-                        "hits": [],
-                        "note": "start entity id not found in a workspace you may read - unknown, \
-                                 not a negation. Find the id via search_knowledge first"
-                    })
-                    .to_string()
-                }
+                Ok(Ok(None)) => return unknown_remote_start(),
                 Ok(Err(e)) => return store_failure_json(&e),
                 Err(e) => return err_json(&format!("task join error: {e}")),
             }
@@ -892,6 +901,24 @@ impl SupragnosisServer {
                 }
             };
             affected_types.push(EngineAffectedType { target, name: a.name });
+        }
+        // Remotely, a gate proposal names only observations its own workspace holds. The engine
+        // checks a target against the whole log, so a principal could otherwise learn whether a
+        // guessed observation exists in a workspace it was never granted - the id is computable
+        // from the workspace and the content (remote-viewer.md Section 3.4). One answer for
+        // "absent" and "elsewhere" keeps the two indistinguishable.
+        if remote::current().is_some() && GATE_KINDS.contains(&req.kind.as_str()) {
+            let ws = req.workspace.clone().unwrap_or_default();
+            for t in &req.targets {
+                let here =
+                    matches!(self.engine.get_observation(t), Ok(Some(o)) if o.workspace() == ws);
+                if !here {
+                    return err_json(&format!(
+                        "target observation '{t}' is not in workspace '{ws}' - a remote proposal \
+                         names only observations its own workspace holds"
+                    ));
+                }
+            }
         }
         let input = EngineProposeInput {
             workspace: req.workspace,
@@ -1598,13 +1625,7 @@ impl ServerHandler for SupragnosisServer {
                 Ok(Some(obs)) => {
                     Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&obs), uri)]))
                 }
-                Ok(None) => Err(ErrorData::resource_not_found(
-                    format!(
-                        "observation id not found: {id} - absence is not a negation (open-world). \
-                         Use the kind=observation id from a search_knowledge hit"
-                    ),
-                    None,
-                )),
+                Ok(None) => Err(unknown_observation(id, self.remote.is_some())),
                 Err(e) => Err(ErrorData::internal_error(
                     format!("storage backend failure (not a missing resource): {e}"),
                     None,
@@ -1703,4 +1724,42 @@ fn store_failure_json(e: &impl std::fmt::Display) -> String {
 
 fn err_json(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
+}
+
+/// Why a remote call may not see the workspace an id resolved to (remote-viewer.md Section 3.4).
+enum Unseen {
+    /// Outside the principal's grants. Answered exactly as an unknown id: entity and observation
+    /// ids are computable from a workspace and a name or a content, so a distinct answer would
+    /// confirm what exists in a workspace the principal was never granted.
+    NotGranted,
+    /// Granted, but the hub may not serve it (R5). The principal holds the grant, so the refusal
+    /// may say why.
+    Unservable(String),
+}
+
+/// A remote walk whose start is unknown - or outside the grants, which must read the same.
+fn unknown_remote_start() -> String {
+    serde_json::json!({
+        "hits": [],
+        "note": "start entity id not found in a workspace you may read - unknown, not a negation. \
+                 Find the id via search_knowledge first"
+    })
+    .to_string()
+}
+
+/// An observation id that is not here - or, remotely, not in a workspace the principal may read,
+/// which must read the same.
+fn unknown_observation(id: &str, remote: bool) -> ErrorData {
+    let msg = if remote {
+        format!(
+            "no observation with id {id} in the workspaces you may read - absence is not a \
+             negation (open-world). Use the kind=observation id from a search_knowledge hit"
+        )
+    } else {
+        format!(
+            "observation id not found: {id} - absence is not a negation (open-world). Use the \
+             kind=observation id from a search_knowledge hit"
+        )
+    };
+    ErrorData::resource_not_found(msg, None)
 }

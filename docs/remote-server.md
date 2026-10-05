@@ -100,16 +100,16 @@ closed until someone decides what it may do (R3).
 | Tool | Remote | Rule |
 |---|---|---|
 | `search_knowledge` | read | Workspace must be granted. Omitted means the principal's first read grant; `*` means the union of its read grants. `remote`/`both` scopes are refused, since the hub does not fan a principal's query out to its peers. |
-| `get_entity` | read | The entity's workspace must be granted. Otherwise the answer is "not in a workspace you are granted", which does not claim absence (P5). |
-| `traverse` | read | The start must be granted; hits outside the grants are dropped. |
+| `get_entity` | read | The entity's workspace must be granted. An id outside the grants is answered exactly as an unknown id: "no entity with that id in the workspaces you may read", which does not claim absence (P5) and does not confirm existence elsewhere (Section 12). |
+| `traverse` | read | The start must be granted, and a start outside the grants reads as an unknown one; hits outside the grants are dropped. |
 | `workspace_map` | read | Workspace must be granted. |
 | `list_proposals`, `get_proposal` | read | Workspace must be granted. |
 | `observe` | write | Write grant on the target workspace. Recorded as Section 4.4 says. |
-| `propose` | write | Write grant. A proposal is an assertion; committing it is a verdict, which is refused below. |
+| `propose` | write | Write grant. A proposal is an assertion; committing it is a verdict, which is refused below. A `claim_promotion` or `claim_demotion` names only observations in its own workspace. |
 | `review` | refused | A verdict needs the principal's own key (federation.md 6d level ii, P23 I17). |
 | `define_type` | refused | A T-Box change. It waits for the same signed acts and for the `tbox_change` gate. |
 | `sync_status`, `sync_pull`, `sync_push` | refused | Node operations, not a principal's. |
-| Resources (`graph`, `hypergraph`, `observation`) | read | The workspace must be granted. |
+| Resources (`graph`, `hypergraph`, `observation`) | read | The workspace must be granted. An observation id outside the grants reads as an unknown one. |
 
 Workspace enumeration, wherever it appears, is filtered to the principal's grants. A no-workspace
 global query has no remote form (federation.md 6c, the second-door rule).
@@ -261,6 +261,7 @@ Guarded by:
   `governance_and_node_operations_are_refused_remotely`.
 - **The hub, end to end over HTTP through the bridge (R2-R4)**:
   `principals_are_admitted_and_revoked_through_the_file`,
+  `an_id_outside_the_grants_reads_as_an_unknown_one`,
   `a_principal_sees_and_writes_only_what_it_was_granted`.
 - **Consent (R5)**: `another_nodes_knowledge_needs_its_consent`,
   `consent_rides_a_header_and_an_older_node_sends_none`, `consent_is_kept_and_can_be_withdrawn`,
@@ -293,4 +294,12 @@ whose active profile points at it:
   rebinding. This surface is reached by whatever name the operator gives the hub, and every request
   carries a bearer credential that a rebinding page cannot attach.
 - **Only POSTs are timed out (60 s).** A GET is the event stream a client keeps open on purpose.
+- **An id outside the grants reads as an unknown one (v0.4.6).** Section 4.3 first answered such an
+  id "not in a workspace you are granted", and an unknown one "not found". Both are true, but an
+  entity id is the hash of a workspace and a name, and an observation id the hash of a workspace and
+  a content. A principal who guessed both could therefore tell from the answer whether a named
+  entity, or a sentence, was recorded in a workspace it was never granted. `get_entity`, `traverse`'s
+  start and the observation resource now give one answer for both cases. A gate proposal checked its
+  target observations against the whole log for the same reason, so on this surface it names only
+  observations in its own workspace. Writing remote-viewer.md found it (Section 3.4 there).
 
