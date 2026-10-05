@@ -3,8 +3,9 @@
 # held only as long as a human remembered to run them locally. That is how a P16 determinism guard
 # (aliases_accumulate_and_converge) sat failing ~1 in 8 runs without anyone noticing.
 #
-# This mirrors `task check` (Taskfile.yml), minus the viewer ESLint half, which frontend-lint.yml
-# already owns. Keep the two in step: a check added here should be added there, and vice versa.
+# `task check` (Taskfile.yml) runs what these jobs run, in one command, on whatever machine it is
+# given; the viewer's ESLint half lives in frontend-lint.yml. Keep the two in step: a check added
+# here is added there, and vice versa.
 name: rust
 
 on:
@@ -25,8 +26,11 @@ on:
       # gate - the gate has to run when they change, or the coupling is one-way again.
       - "docs/*.md"
       # manifest_consistency.rs include_str!s the Dockerfile to hold its toolchain pin at the
-      # declared floor, for the same reason.
+      # declared floor, for the same reason - and server.json, to hold its version to the tag's.
       - "deploy/docker/Dockerfile"
+      - "server.json"
+      # The fmt step's answer is rustfmt.toml's; changing the config can fail the check.
+      - "rustfmt.toml"
   pull_request:
     paths:
       - "crates/**"
@@ -44,8 +48,11 @@ on:
       # gate - the gate has to run when they change, or the coupling is one-way again.
       - "docs/*.md"
       # manifest_consistency.rs include_str!s the Dockerfile to hold its toolchain pin at the
-      # declared floor, for the same reason.
+      # declared floor, for the same reason - and server.json, to hold its version to the tag's.
       - "deploy/docker/Dockerfile"
+      - "server.json"
+      # The fmt step's answer is rustfmt.toml's; changing the config can fail the check.
+      - "rustfmt.toml"
   # The gate can go red with no change to the tree: a locked crate is yanked, an advisory is
   # published against one, or `stable` moves and a new lint fires. All three happened between
   # v0.4.1 and v0.4.2. The deny job had been red on main since the v0.4.1 release commit itself, and
@@ -112,6 +119,59 @@ jobs:
       - name: tests
         run: cargo test --locked
 
+      # The viewer's assets are embedded verbatim in a debug build and minified by oxc in a release
+      # one (supragnosis-viz/build.rs), so a minifier upgrade - or a script it mangles - used to
+      # surface first in the release workflow. The viz tests in release mode run against the
+      # minified assets.
+      - name: tests (viewer, release build)
+        run: cargo test --locked --release -p supragnosis-viz
+
+  # macOS, where the desktop app and every user of it live. The jobs above are all ubuntu, so code
+  # behind cfg(target_os = "macos") - launchd, the app-support paths `connect` writes, the bridge's
+  # client paths - compiled for the first time when a release was tagged, and the desktop shell's
+  # own tests and lints ran in no workflow at all (dev-app.yml only builds it, on main).
+  macos:
+    name: macOS - workspace and desktop app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-macos
+          workspaces: |
+            .
+            app
+
+      - name: clippy (workspace)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: tests (workspace)
+        run: cargo test --locked
+
+      - name: clippy (desktop app)
+        run: cargo clippy --manifest-path app/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: tests (desktop app)
+        run: cargo test --manifest-path app/Cargo.toml --locked
+
+      # The shell's declared floor, compiled rather than asserted (the msrv job below covers the
+      # server workspace, which has its own). Read from the manifest, so there is one number.
+      - name: desktop app at its declared floor
+        run: |
+          set -euo pipefail
+          v=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^rust-version *= *"\(.*\)"/\1/p' app/Cargo.toml | head -1)
+          test -n "$v" || { echo "no rust-version in app/Cargo.toml [workspace.package]" >&2; exit 1; }
+          echo "declared floor: $v"
+          rustup toolchain install "$v" --profile minimal
+          cargo "+$v" check --manifest-path app/Cargo.toml --locked --all-targets
+
   # The declared floor, tested instead of asserted. `rust-version` read 1.87 for a day and was wrong
   # when it was written: clippy's incompatible_msrv lints this workspace's own code and never the
   # dependency graph, and the gate above only ever ran stable. What actually sets the floor is `oxc`
@@ -120,8 +180,8 @@ jobs:
   # The toolchain comes from the manifest rather than a literal here, so there is one number to
   # change and this job fails when it is optimistic.
   #
-  # Server workspace only. The desktop shell is a separate workspace with its own floor and cannot
-  # be compiled on this runner (it needs the platform webview toolchain - see dev-app.yml, macOS).
+  # Server workspace only. The desktop shell is a separate workspace with its own floor, compiled
+  # at that floor by the macos job above (it needs the platform webview toolchain).
   msrv:
     name: declared msrv builds
     runs-on: ubuntu-22.04
