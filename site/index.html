@@ -350,8 +350,9 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
           <p>
             A force-graph viewer streams entities, relations, proposals, and
             sync chatter live over SSE - served on an owner-only unix socket,
-            never a TCP port. The macOS desktop app is a thin tray-resident
-            shell over the same socket. Watch your agents learn.
+            never a TCP port. The macOS desktop app wraps the same viewer, with
+            a Settings page for the server your AI apps use, how each app is
+            connected, and this Mac's daemon. Watch your agents learn.
           </p>
         </article>
         <article class="card">
@@ -360,7 +361,8 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
             <code>start</code> / <code>stop</code> / <code>status</code> /
             <code>restart</code> with pidfile and logs under
             <code>~/.supragnosis</code> - or <code>service install</code> to run it
-            at every login, which the desktop app's Start at Login does too.
+            at every login, which Start at Login on the app's Settings page
+            does too.
             stdio for MCP-client children, loopback streamable HTTP for
             everything else.
           </p>
@@ -419,6 +421,17 @@ supragnosis connect claude-desktop
         whitelist. Hub-and-spoke ships today; the replication primitive is
         topology-independent, so peer and hybrid meshes reuse it unchanged when
         they land.
+      </p>
+      <p class="section-note wide">
+        A machine does not have to run a node to use one. Every AI app connects
+        through <code>supragnosis bridge</code>, and the bridge follows the
+        machine's server profile: its own daemon, or a hub elsewhere
+        (<code>supragnosis server add</code>, or Settings in the app). The hub
+        admits people and agents as principals with per-workspace grants - over
+        MCP at <code>/mcp</code>, and to its viewer, read-only, at
+        <code>/viz/</code>. It records each remote write as the principal who
+        made it, and serves another node's knowledge only with that node's
+        consent.
       </p>
       <p class="section-note wide">
         Portability here is a checked property rather than a promise. The
@@ -500,7 +513,8 @@ supragnosis connect claude-desktop
             <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app (tray-resident), Homebrew tap, viewer on an owner-only unix socket.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>Remote servers and the read tier.</strong> One client setup for any server: AI apps reach this machine's daemon or a hub through the bridge. A hub admits principals with per-workspace grants over MCP, and serves its viewer read-only within them (phase 3.5, server side).</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app with a Settings page, a Homebrew tap whose server formula pours as a bottle (no Xcode needed on Apple silicon), and the viewer on an owner-only unix socket.</div></li>
           </ul>
         </div>
         <div class="ledger-col">
@@ -508,7 +522,7 @@ supragnosis connect claude-desktop
           <ul class="checklist">
             <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3c - bitemporal queries.</strong> Both time axes are captured; querying across them waits on explicit negation, which the model does not have yet.</div></li>
             <li class="open"><span class="mark">[&nbsp;]</span><div><strong>Canon effects for tbox_change and recall.</strong> Both fold correctly and change nothing yet - assigned, with multi-principal governance, to the federation remainder.</div></li>
-            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> Authenticated remote reads (phase 3.5), multi-principal governance (phase 5); prompts and elicitation on the MCP surface.</div></li>
+            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> The desktop app browsing a remote hub's viewer; principal-signed acts, and with them remote verdicts and multi-principal governance (phase 5); prompts and elicitation on the MCP surface.</div></li>
             <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
           </ul>
         </div>
@@ -530,7 +544,8 @@ supragnosis connect claude-desktop
           <button class="tab" id="tab-source" role="tab" aria-selected="false" aria-controls="pane-source">from source</button>
         </div>
         <pre id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># desktop app, signed + notarized:</span>
-<span class="c"># pulls the server with it</span>
+<span class="c"># pulls the server with it - poured as a</span>
+<span class="c"># bottle, no Xcode needed on Apple silicon</span>
 brew tap ashon/tap
 brew install supragnosis
 
