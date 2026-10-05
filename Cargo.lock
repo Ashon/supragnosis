@@ -4623,7 +4623,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "supragnosis-cli"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "anyhow",
  "axum",
@@ -4652,7 +4652,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-core"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "blake3",
  "ed25519-dalek",
@@ -4663,7 +4663,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-e2e"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "pulldown-cmark",
  "regex-lite",
@@ -4680,7 +4680,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-embed"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "fastembed",
  "supragnosis-core",
@@ -4688,7 +4688,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-engine"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4702,7 +4702,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-mcp"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "http",
  "rmcp",
@@ -4719,7 +4719,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-store"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "redb",
  "serde",
@@ -4730,7 +4730,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-sync"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "axum",
  "axum-server",
@@ -4749,7 +4749,7 @@ dependencies = [
 
 [[package]]
 name = "supragnosis-viz"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "anyhow",
  "lightningcss",
