@@ -592,6 +592,71 @@ async fn every_list_result_carries_cache_hints() {
     server.await.expect("server task");
 }
 
+/// The server tells a client who it is: supragnosis, at the version `supragnosis --version` prints.
+/// It used to answer `rmcp 3.5.0` - the library's name and version, because rmcp's
+/// `from_build_env()` expands `env!` in rmcp's own crate - so a client log or a bug report named the
+/// wrong program (docs/compatibility.md Section 7).
+#[tokio::test]
+async fn the_server_names_itself_and_its_release() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+    let info = client.peer_info().expect("the server introduced itself");
+    let server_info = info.server_info.as_ref().expect("serverInfo");
+    assert_eq!(server_info.name, "supragnosis");
+    assert_eq!(server_info.version, env!("CARGO_PKG_VERSION"));
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
+}
+
+/// The tool surface is the agent's contract, pinned whole: names, descriptions, input schemas and
+/// the list's cache hints, as `tools/list` sends them (docs/compatibility.md Section 7).
+///
+/// A change here is a diff of `tests/fixtures/tools.json` in review. Additive changes - a tool, an
+/// optional argument, a description - only update the file. Removing or renaming a tool or an
+/// argument, making an optional argument required, or narrowing a type breaks every agent that
+/// learned the old shape, and is named under CHANGELOG.md's Breaking changes. To accept a change,
+/// rerun with `SUPRAGNOSIS_BLESS=1` and review the file's diff.
+#[tokio::test]
+async fn the_tool_list_is_the_pinned_contract() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let server = tokio::spawn(async move {
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+    let listed = client.list_tools(None).await.expect("list tools");
+    assert!(listed.next_cursor.is_none(), "the whole list arrives in one page");
+    let live = serde_json::to_string_pretty(&listed).expect("serialize") + "\n";
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tools.json");
+    if std::env::var_os("SUPRAGNOSIS_BLESS").is_some() {
+        std::fs::create_dir_all(path.parent().expect("dir")).expect("fixtures dir");
+        std::fs::write(&path, &live).expect("bless");
+        return;
+    }
+    let pinned = std::fs::read_to_string(&path).unwrap_or_default();
+    let (pinned_v, live_v): (Value, Value) = (
+        serde_json::from_str(&pinned).unwrap_or(Value::Null),
+        serde_json::from_str(&live).expect("live"),
+    );
+    assert!(
+        pinned_v == live_v,
+        "tools/list differs from tests/fixtures/tools.json. If the change is intended, rerun with \
+         SUPRAGNOSIS_BLESS=1 and review the diff; a removed or renamed tool or argument is a \
+         breaking change for every agent (docs/compatibility.md Section 7)"
+    );
+}
+
 /// Every `resources/read` answer carries the cache hints too, on every URI form.
 ///
 /// The list methods above were made to emit these because a validating client rejects a response

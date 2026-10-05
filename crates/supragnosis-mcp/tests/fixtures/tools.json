@@ -1,0 +1,600 @@
+{
+  "ttlMs": 0,
+  "cacheScope": "private",
+  "tools": [
+    {
+      "name": "define_type",
+      "description": "Define ontology types (T-Box) for a workspace: give an entity type or relation type a name and a natural-language definition of what it means. Use this to record the vocabulary of the ontology so a type is not just a bare label but has a stated meaning (e.g. entity type 'Driver' = 'a kernel module that ...'; relation type 'depends_on' = 'X requires Y at runtime'). A description is required. Scoped to the workspace. Read them back via the supragnosis://workspace/{ws}/types resource.",
+      "inputSchema": {
+        "$defs": {
+          "TypeDefItem": {
+            "properties": {
+              "description": {
+                "description": "Natural-language definition of what this type means. Required (Principle 8: a type has no meaning without it).",
+                "type": "string"
+              },
+              "name": {
+                "description": "The type name being defined (e.g. Driver, depends_on).",
+                "type": "string"
+              },
+              "target": {
+                "description": "Which vocabulary: \"entity\" (a kind of thing, e.g. Driver) or \"relation\" (a kind of connection, e.g. depends_on).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "name",
+              "description"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "defs": {
+            "description": "The type definitions to record (at least one).",
+            "items": {
+              "$ref": "#/$defs/TypeDefItem"
+            },
+            "type": "array"
+          },
+          "on_behalf_of": {
+            "default": null,
+            "description": "(Optional) Delegation subject this agent acts on behalf of. Principle 2.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ref": {
+            "default": null,
+            "description": "Source reference (file path/URL/tool, etc.).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace": {
+            "default": null,
+            "description": "Workspace (defaults to the node default when omitted). The T-Box is scoped to the workspace.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "defs"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_entity",
+      "description": "Look up an entity and its relations/provenance by entity id.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "Entity id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_proposal",
+      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts) by id.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The proposal id.",
+            "type": "string"
+          },
+          "workspace": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_proposals",
+      "description": "List proposals in a workspace (newest first) with their folded state (open/merged/rejected/withdrawn), kind, targets, and verdict count.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "workspace": {
+            "default": null,
+            "description": "Scope to a workspace (node default when omitted; '*'/'all' means all workspaces).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "observe",
+      "description": "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id and the linked entity/relation ids.",
+      "inputSchema": {
+        "$defs": {
+          "EntityInput": {
+            "properties": {
+              "description": {
+                "default": null,
+                "description": "(Optional) Human-readable explanation of this entity - what it is, so the ontology captures the\ndefinition and not just the name/type. Updates the entity's description (latest wins).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "Canonical name of the entity.",
+                "type": "string"
+              },
+              "type": {
+                "default": null,
+                "description": "Entity type (e.g. Concept, Person, Project, Tool). Defaults to Concept when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "RelationInput": {
+            "properties": {
+              "description": {
+                "default": null,
+                "description": "(Optional) Human-readable explanation of this connection - what it means / why from relates to to\nthis way, so the ontology captures the reasoning behind the edge and not just its type.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "from": {
+                "description": "Name of the source entity.",
+                "type": "string"
+              },
+              "to": {
+                "description": "Name of the target entity.",
+                "type": "string"
+              },
+              "type": {
+                "description": "Relation type (e.g. depends_on, part_of, relates_to). The server canonicalizes the spelling\n(depends-on/dependsOn -> depends_on) - spelling variation does not become a different edge.",
+                "type": "string"
+              },
+              "valid_from": {
+                "default": null,
+                "description": "(Optional) Valid-time start, epoch millis. When the relation became true in the world - use it\nto retroactively record a fact that was true in the past. Interpreted as from the observation time when omitted.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "valid_to": {
+                "default": null,
+                "description": "(Optional) Valid-time end, epoch millis. Use it to record a fact that has already ended\n(\"true until last month\"). Interpreted as true until refuted when omitted.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "from",
+              "type",
+              "to"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "confidence": {
+            "default": null,
+            "description": "Confidence 0.0-1.0. If omitted, it is preserved as unspecified (no default substitution) -\nomit it when you cannot assess it. Out-of-range values are rejected on ingest.",
+            "format": "float",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "content": {
+            "description": "Knowledge fragment to ingest (natural language or structured text).",
+            "type": "string"
+          },
+          "derived_from": {
+            "default": [],
+            "description": "(Optional) Source observation ids this knowledge was derived from - lineage for contamination tracking. Principle 18.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "entities": {
+            "description": "(Optional) Entities extracted by the client.",
+            "items": {
+              "$ref": "#/$defs/EntityInput"
+            },
+            "type": "array"
+          },
+          "on_behalf_of": {
+            "default": null,
+            "description": "(Optional) Delegation subject - the person/principal this agent acts on behalf of (e.g. \"ashon\"). Principle 2.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relations": {
+            "description": "(Optional) Relations extracted by the client.",
+            "items": {
+              "$ref": "#/$defs/RelationInput"
+            },
+            "type": "array"
+          },
+          "source_ref": {
+            "default": null,
+            "description": "Source reference (file path/URL/tool, etc.).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace": {
+            "default": null,
+            "description": "Workspace (defaults to the node default when omitted). Knowledge is organized into named workspaces,\nso name the one this fragment belongs to: silently taking the node default splits a body of knowledge\nacross two workspaces, and later reads scoped to either will see only half.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "propose",
+      "description": "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs.",
+      "inputSchema": {
+        "$defs": {
+          "AffectedTypeItem": {
+            "properties": {
+              "name": {
+                "description": "The type name being defined or changed (e.g. Driver, depends_on).",
+                "type": "string"
+              },
+              "target": {
+                "description": "Which vocabulary: \"entity\" (a node type, e.g. Driver) or \"relation\" (an edge type, e.g. depends_on).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "name"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "affected_types": {
+            "description": "For tbox_change: the entity/relation types this proposal defines or changes, so the viewer can\nhighlight the affected nodes (entity types) / edges (relation types) when previewing it. Each\nitem is {target, name} where target is \"entity\" or \"relation\". One name may not be listed on\nboth axes - the proposal is blocked rather than merely flagged.",
+            "items": {
+              "$ref": "#/$defs/AffectedTypeItem"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "For entity_merge: the canonical target id the other targets fold into (must be one of targets).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Proposal kind, one of:\n- `entity_merge` - fold duplicate entities into one canonical id.\n- `entity_split` - reverse a merge. The folded entities separate again and the pair stops\n  being suggested for merging, without becoming unmergeable.\n- `claim_promotion` / `claim_demotion` - raise or lower the trust tier of observations. A\n  merged verdict is what the resolution policy consumes, so this settles a contested entity\n  kind; demotion is also the revert path for knowledge that turned out wrong.\n- `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was\n  so far only induced from use into one the canon declares.\n- `recall` - bulk retraction of everything derived from a contamination source, for when bad\n  input has already been built on. Its verdict is always a human's direct act: neither this\n  surface nor an agent acting on someone's behalf can approve one.",
+            "type": "string"
+          },
+          "on_behalf_of": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rationale": {
+            "default": null,
+            "description": "Why (natural language) - the proposal rationale. Required to re-merge a pair that was split:\na proposal is its content, so a verbatim re-open is the same proposal and stays reversed. Say\nwhat makes the split wrong this time.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ref": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targets": {
+            "description": "Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).\nFor entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tier": {
+            "default": null,
+            "description": "For claim_promotion/claim_demotion: the requested trust tier - unverified | agent_extracted |\nhost_signed | human_confirmed. Required for those kinds; targets are then OBSERVATION ids.\nNote: a verdict cast through this MCP surface grants at most host_signed - human_confirmed\nrequires the human console (a human's direct act, Principle 18).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace": {
+            "default": null,
+            "description": "Workspace (defaults to the node default when omitted).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "targets"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "review",
+      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). Returns the recorded observation id.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "decision": {
+            "description": "Verdict/action: merge | reject | comment | withdraw.",
+            "type": "string"
+          },
+          "note": {
+            "default": null,
+            "description": "Optional note/comment.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_behalf_of": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposal": {
+            "description": "The proposal id (from propose / list_proposals).",
+            "type": "string"
+          },
+          "workspace": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "proposal",
+          "decision"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_knowledge",
+      "description": "Search knowledge (entities/observations). The response mode reports the surface actually used: hybrid (semantic+keyword) or keyword (keyword-only degrade - an empty result in this mode may be a recall failure). score is for rank comparison only - its scale differs per mode, so the absolute value is not a confidence.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Maximum number of results (defaults to 20 when omitted).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "description": "Search query.",
+            "type": "string"
+          },
+          "scope": {
+            "default": null,
+            "description": "Search scope: \"local\" (this node only, default), \"remote\" (the configured sync servers'\nontologies - federated recall), or \"both\". Local state can lag the remote store - use\nremote/both when a local miss may just mean \"not synced yet\". Remote hits are the server's\nrecall surface: sync_pull the workspace to materialize them locally before traverse/get_entity.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace": {
+            "default": null,
+            "description": "Scope to a workspace (all workspaces when omitted).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "sync_pull",
+      "description": "Pull the workspace's missing knowledge from the configured sync servers and apply it (verify signatures -> dedup/absorb -> re-materialize the projection). Returns per-server accepted/rejected counts.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "workspace": {
+            "default": null,
+            "description": "Workspace to pull (node default when omitted).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "sync_push",
+      "description": "Push the workspace's local knowledge to the configured sync servers (backfill-stamp unstamped attestations, then send what each server lacks per its advertised version vector). Only share-whitelisted workspaces leave this node.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "workspace": {
+            "default": null,
+            "description": "Workspace to push (node default when omitted; must be on the share whitelist).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "sync_status",
+      "description": "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, the workspace's version vector (what this node holds per origin), `config_notes` (federation configuration this build worked around rather than obeyed - read these, they are the reason something is not syncing), and `negotiated` - what each host last said this node may reach, as a three-way difference against the share whitelist (`both` / `local_only` = listed here but not admitted there, a setup error / `peer_only` = admitted there but not shared here). A host with state `unknown` has not answered yet; that is not an empty grant set. Read-only.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "workspace": {
+            "default": null,
+            "description": "Workspace to report (node default when omitted).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "traverse",
+      "description": "Traverse the graph from an entity, following relation direction (from->to). Returns the entities reachable within the maximum hops (max_depth), along with their shortest distance. Reachability runs THROUGH a relation endpoint that no entity row describes yet (partial ingest), but such an endpoint is not listed - so a hit can sit deeper than any listed neighbor. That gap is unknown, not a missing edge.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "Start entity id.",
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "Maximum number of results (defaults to 100 when omitted).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_depth": {
+            "default": null,
+            "description": "Maximum number of hops (defaults to 3 when omitted).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workspace_map",
+      "description": "Survey a workspace's main co-occurrence contexts (hyperedges - the set of entities asserted together in a single observation). For cold-start orientation: before searching, grasp by name 'what is here and in what clusters'. Clusters are sorted by size (number of co-occurring entities) and sources is the number of supporting observations. This is a directional signal, not an asserted relation - confirm actual relations/details with search_knowledge/get_entity. To solidify a recurring context into first-class structure, observe a group entity (e.g. type Context) with member_of relations from each member and derived_from listing the co-asserting observation ids - the assertion then carries provenance and trust like any other edge.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Maximum number of clusters (defaults to 20 when omitted). Truncated in descending order of size.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_size": {
+            "default": null,
+            "description": "Minimum cluster size = number of co-occurring entities (defaults to 2 when omitted). Values of 3 or more exclude trivial pairs.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "workspace": {
+            "default": null,
+            "description": "Workspace (defaults to the node default when omitted; '*'/'all' means all workspaces). Knowledge is\norganized into named workspaces, so the node default is routinely empty by design - prefer '*' for a\ncold-start survey, and read an empty default as a wrong scope rather than an absent ontology.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
+}
