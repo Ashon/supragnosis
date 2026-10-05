@@ -164,8 +164,9 @@ people's reads, which they should not have had.
 
 federation.md 6d made four demands of a network viewer. Each one stands as follows.
 
-- **Output escaping.** Guarded today. Every untrusted value that reaches an innerHTML sink passes
-  through `esc()`, a test pins it, and `no-unsanitized` runs over the sinks in CI.
+- **Output escaping.** Guarded today. Every innerHTML sink takes an `html` tagged template, which
+  escapes every value through `esc()` by default; a test pins it, and `no-unsanitized` accepts nothing
+  else at a sink in CI, with no disable comments.
 - **A Content-Security-Policy.** Every viewer response carries one today, with a strict
   `script-src`. The read tier sends the same policy.
 - **No credentials in URLs.** The credential travels only in the `Authorization` header that the

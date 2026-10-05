@@ -36,10 +36,12 @@ npm run lint  # ESLint with eslint-plugin-no-unsanitized
 
 `no-unsanitized` flags every `innerHTML` / `insertAdjacentHTML` / `document.write` sink whose value is
 not a plain literal - the exact XSS class (Principle 18) that once lived unnoticed in the inline HTML
-string. Each vetted sink carries an explicit
-`// eslint-disable-next-line no-unsanitized/property -- value is built from esc()-escaped strings`,
-so the full set of HTML sinks is greppable and any NEW sink fails the lint until it is escaped and
-consciously acknowledged. CI runs this on every change under this directory (`.github/workflows/frontend-lint.yml`).
+string. The one other value it accepts is an `html` tagged template (`viewer.js`, beside `esc()`):
+the tag escapes every interpolation unless it is itself markup built with `html`, so text that never
+went through the tag cannot reach the DOM unescaped. There are no disable comments and no helper that
+vouches for an arbitrary string. A fragment someone forgets to build with `html` shows up on screen as
+visible tags rather than as markup. CI runs this on every change under this directory
+(`.github/workflows/frontend-lint.yml`).
 
 All untrusted content (entity/type names, etc. - they arrive via `observe`, including federation sync)
-must go through `esc()` before it reaches HTML.
+reaches HTML through `html`, never through string concatenation into a sink.
