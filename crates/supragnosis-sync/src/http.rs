@@ -61,7 +61,10 @@ pub const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60)
 ///
 /// Either way the handshake's signatures are verified against the certificate presented, so a
 /// server that does not hold the key of the certificate it shows is refused.
-fn tls_trusting(ca_pem: &[u8]) -> Result<rustls::ClientConfig, TransportError> {
+///
+/// Shared with every client that names a hub's certificate: the sync link, a remote MCP profile's
+/// bridge, and `server`'s check of it - all reach the same `[server]` listener.
+pub fn tls_trusting(ca_pem: &[u8]) -> Result<rustls::ClientConfig, TransportError> {
     use rustls::pki_types::{pem::PemObject, CertificateDer};
     let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(ca_pem)
         .collect::<Result<_, _>>()
