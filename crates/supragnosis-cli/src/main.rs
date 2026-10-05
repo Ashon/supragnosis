@@ -598,12 +598,17 @@ fn build_engine(
 /// Actual server run (async). With http, a streamable-http daemon; without it,
 /// stdio. With viz, the live viewer is started alongside it in the same process.
 async fn run(cfg: Config) -> Result<()> {
-    // Create the event channel only when the viewer is present - the engine sink and SSE subscription share it.
-    let events = cfg.viz.as_ref().map(|_| tokio::sync::broadcast::channel::<String>(256).0);
+    // Federation config first: a hub serves the viewer's read tier to its principals
+    // (docs/remote-viewer.md), and that tier's event stream needs the channel the engine emits into.
+    let fedcfg = fed::load()?;
+    // Create the event channel only when something subscribes to it - the local viewer, or a hub's
+    // read tier. The engine sink and the SSE subscriptions share it.
+    let hub = fedcfg.as_ref().is_some_and(|c| c.server.is_some());
+    let events =
+        (cfg.viz.is_some() || hub).then(|| tokio::sync::broadcast::channel::<String>(256).0);
     let engine = build_engine(&cfg, events.as_ref())?;
 
     // Federation status blob (viewer /api/federation) - exists only when supragnosis.toml does.
-    let fedcfg = fed::load()?;
     let fed_status: Option<supragnosis_viz::FedStatus> = fedcfg
         .as_ref()
         .map(|_| Arc::new(std::sync::RwLock::new(serde_json::json!({"configured": true}))));
@@ -612,7 +617,8 @@ async fn run(cfg: Config) -> Result<()> {
     // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5). Built
     // before the viewer so a misconfigured federation dies before any socket is bound, and so the
     // console can be handed the admission handler this produces.
-    let (sync_ctx, narrow) = build_sync_context(&engine, fedcfg, fed_status.clone())?;
+    let (sync_ctx, narrow) =
+        build_sync_context(&engine, fedcfg, fed_status.clone(), events.clone())?;
 
     if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
         spawn_viz(&engine, sock, tx.clone(), fed_status, narrow).await;
@@ -650,6 +656,7 @@ fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
+    events: Option<tokio::sync::broadcast::Sender<String>>,
 ) -> Result<(Option<Arc<supragnosis_mcp::SyncContext>>, Option<supragnosis_viz::NarrowShare>)> {
     let Some(fc) = fedcfg else {
         return Ok((None, None));
@@ -732,6 +739,7 @@ fn build_sync_context(
                 engine.clone(),
                 Arc::new(principal::Directory::new(fed::config_path())),
                 principal::servable(engine.clone(), node.node_id().to_string(), consented),
+                events,
             ),
             admitted: srv.principals.len(),
         };

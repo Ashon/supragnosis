@@ -8,7 +8,7 @@
 - Namespace URI: `supragnosis://...`
 - Status: **implemented through M4 Phase 4** (v0.3.1). M0-M2, **M3a (belief resolution) and M3b
   (identity resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases 0-4 are complete
-  (Phase 3.5 and 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
+  (Phase 3.5's read tier is built as remote-viewer.md; Phase 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
   record. This document is no longer a forward-looking baseline: it describes what exists, and marks
   what does not.
@@ -475,8 +475,10 @@ HTTP-over-UDS client (`curl --unix-socket`).
   `~/.supragnosis` dir) is the whole access control: the OS admits only the owning user, so every
   request is attributable to the local principal (F19), and the browser-borne attack classes of a
   localhost port (DNS rebinding, CSRF, cross-site fetch) cannot reach it - those defenses were deleted
-  with the TCP listener. The authenticated network read tier is federation Phase 3.5 and rides the sync
-  crate's TLS stack, not this server. See the standing caveat in Section 14 (a `workspace=*` read is
+  with the TCP listener. The authenticated network read tier (federation Phase 3.5,
+  [remote-viewer.md](remote-viewer.md)) is not this server: the hub's sync listener serves the same
+  page at `/viz/` through a second router (`supragnosis_viz::remote`), riding the sync crate's TLS
+  stack. See the standing caveat in Section 14 (a `workspace=*` read is
   not workspace-scoped).
   - **Precisely: no THIRD-PARTY origin can reach it.** The desktop shell is a webview that does reach
     the socket - `app/` proxies it through a `viz://` protocol handler, path and query verbatim - so
@@ -614,11 +616,12 @@ HTTP-over-UDS client (`curl --unix-socket`).
      machine covers the solo decision rule; the base-frontier machinery (I7/I12, the Stale state)
      did not ship with it and is recorded as debt (Section 14; proposal-workflow.md Section 4
      [impl]).
-6. **M4 - Federation [o] Phases 0-4; Phase 3.5 and 5+ pending**: version-vector delta replication +
+6. **M4 - Federation [o] Phases 0-4 and the Phase 3.5 read tier; Phase 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
    (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated recall, legacy-id
    migration. Design -> [federation.md](federation.md).
-   - Open: peer-to-peer mesh and hybrid topology; the authenticated hub read tier (Phase 3.5);
+   - Open: peer-to-peer mesh and hybrid topology; browser access to the hub read tier, which waits
+     for user keys (remote-viewer.md Section 2);
      multi-principal governance - the `tbox_change` gate and the log-borne canon-policy artifact
      (Phase 5), which is why deployment is single-principal today; sync/consolidate as **MCP Tasks** and
      human mediation as **elicitation** (Principle 21) - see Section 7.
@@ -1029,6 +1032,12 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
    must be filtered by *that user's grants* rather than admitted wholesale to whoever holds the local
    token (federation.md 6d). A single-user gate is not a per-principal one; it is what makes the
    deployment single-principal, which is the premise the rest of this ledger already rests on.
+   **REPAID for the network read tier (remote-viewer.md).** The hub's `/viz/` resolves every
+   workspace against the reader's grants: enumeration is the grants, an omitted workspace is the
+   first grant, `*` is the union of grants computed one workspace at a time, an id outside the grants
+   reads as an unknown one, and the event stream carries only observes in the grants. Guarded by
+   `the_read_tier_answers_only_within_the_grants` and
+   `a_union_with_an_unconsented_workspace_is_refused_whole`; the P17 registry row cites them.
 
 **Repaid by M3b (formerly M3 latent conditions)**
 - Keyword-search alias parity - REPAID: the file-backed search matches aliases as InMemory does (an

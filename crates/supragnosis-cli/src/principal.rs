@@ -147,8 +147,16 @@ pub fn servable(engine: Arc<Engine>, self_id: String, consented: Consented) -> S
     })
 }
 
-/// The agent surface's routes: MCP at `/mcp`, behind principal authentication and the body cap.
-pub fn router(engine: Arc<Engine>, directory: Arc<Directory>, servable: Servable) -> axum::Router {
+/// The agent surface's routes: MCP at `/mcp` and the viewer's read tier at `/viz/`
+/// (docs/remote-viewer.md), both behind principal authentication and the body cap. `events` is the
+/// node's viewer event channel; without one the read tier's event stream says so and the page polls.
+pub fn router(
+    engine: Arc<Engine>,
+    directory: Arc<Directory>,
+    servable: Servable,
+    events: Option<tokio::sync::broadcast::Sender<String>>,
+) -> axum::Router {
+    let viz = viz_routes(engine.clone(), servable.clone(), events);
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
     use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
     let surface = Surface { servable };
@@ -162,6 +170,7 @@ pub fn router(engine: Arc<Engine>, directory: Arc<Directory>, servable: Servable
     );
     axum::Router::new()
         .nest_service("/mcp", service)
+        .merge(viz)
         .layer(axum::middleware::from_fn(crate::expired_session_is_not_found))
         .layer(axum::middleware::from_fn(move |req, next| {
             admit_request(directory.clone(), req, next)
@@ -208,6 +217,184 @@ async fn admit_request(
         )
             .into_response(),
     }
+}
+
+// --- The read tier: the viewer at /viz/ (docs/remote-viewer.md Section 3) -----------------------
+
+struct VizCtx {
+    engine: Arc<Engine>,
+    servable: Servable,
+    events: Option<tokio::sync::broadcast::Sender<String>>,
+    audit: Audit,
+}
+
+/// The read tier's audit (Section 3.8): one line per principal and workspace at most once a minute,
+/// carrying the number of reads since the previous line - "who read what, and when" to the minute,
+/// without a line for every poll of every open window. Never the content.
+#[derive(Default)]
+struct Audit {
+    seen: Mutex<std::collections::HashMap<(String, String), (std::time::Instant, u64)>>,
+}
+
+impl Audit {
+    fn note(&self, principal: &str, path: &str, workspace: &str) {
+        let mut seen = self.seen.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let key = (principal.to_string(), workspace.to_string());
+        let now = std::time::Instant::now();
+        if let Some((since, n)) = seen.get_mut(&key) {
+            if now.duration_since(*since) < std::time::Duration::from_secs(60) {
+                *n += 1;
+                return;
+            }
+        }
+        let reads = seen.get(&key).map(|(_, n)| *n).unwrap_or(0);
+        tracing::info!(principal, path, workspace, reads_since_last_line = reads, "remote read");
+        seen.insert(key, (now, 0));
+    }
+}
+
+fn viz_routes(
+    engine: Arc<Engine>,
+    servable: Servable,
+    events: Option<tokio::sync::broadcast::Sender<String>>,
+) -> axum::Router {
+    let ctx = Arc::new(VizCtx { engine, servable, events, audit: Audit::default() });
+    let handler = move |axum::Extension(p): axum::Extension<Principal>,
+                        uri: axum::http::Uri,
+                        headers: axum::http::HeaderMap| {
+        let ctx = ctx.clone();
+        async move { viz_get(ctx, p, uri, headers).await }
+    };
+    // GET only: axum answers any other method with 405 before a handler runs (V2).
+    axum::Router::new()
+        .route("/viz", axum::routing::get(handler.clone()))
+        .route("/viz/", axum::routing::get(handler.clone()))
+        .route("/viz/{*rest}", axum::routing::get(handler))
+}
+
+async fn viz_get(
+    ctx: Arc<VizCtx>,
+    p: Principal,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    use supragnosis_viz::remote::{Answer, Reader};
+    let path = match uri.path().strip_prefix("/viz") {
+        None | Some("") => "/".to_string(),
+        Some(rest) => rest.to_string(),
+    };
+    let query = uri.query().unwrap_or("").to_string();
+    let reader = Reader { name: p.name.clone(), readable: p.readable().into_iter().collect() };
+    if path == "/api/events" {
+        return viz_events(&ctx, reader);
+    }
+    let named = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("workspace="))
+        .unwrap_or("-")
+        .to_string();
+    ctx.audit.note(&p.name, &path, &named);
+    let (engine, servable) = (ctx.engine.clone(), ctx.servable.clone());
+    let run = tokio::task::spawn_blocking(move || {
+        supragnosis_viz::remote::route(&engine, &reader, &servable, "GET", &path, &query)
+    });
+    let answer = match tokio::time::timeout(CALL_TIMEOUT, run).await {
+        Ok(Ok(a)) => a,
+        Ok(Err(e)) => Answer {
+            status: 500,
+            content_type: "application/json",
+            body: serde_json::json!({ "error": format!("the read failed: {e}") }).to_string(),
+        },
+        Err(_) => Answer {
+            status: 504,
+            content_type: "application/json",
+            body: r#"{"error":"the read ran past 60 seconds and was stopped"}"#.to_string(),
+        },
+    };
+    viz_respond(answer, &headers)
+}
+
+/// The headers every viewer answer carries, plus an `ETag` over a successful body so an unchanged
+/// graph costs a hash rather than a transfer across the network (Section 3.8).
+fn viz_respond(
+    a: supragnosis_viz::remote::Answer,
+    headers: &axum::http::HeaderMap,
+) -> axum::response::Response {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+    let status =
+        axum::http::StatusCode::from_u16(a.status).unwrap_or(axum::http::StatusCode::BAD_GATEWAY);
+    let common = [
+        (header::CONTENT_SECURITY_POLICY, supragnosis_viz::CSP.to_string()),
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+        (header::CACHE_CONTROL, "no-cache".to_string()),
+    ];
+    if a.status != 200 {
+        return (status, common, [(header::CONTENT_TYPE, a.content_type)], a.body).into_response();
+    }
+    let etag = format!("\"{}\"", blake3::hash(a.body.as_bytes()).to_hex());
+    let unchanged = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == etag);
+    if unchanged {
+        return (axum::http::StatusCode::NOT_MODIFIED, common, [(header::ETAG, etag)])
+            .into_response();
+    }
+    (
+        status,
+        common,
+        [(header::CONTENT_TYPE, a.content_type.to_string()), (header::ETAG, etag)],
+        a.body,
+    )
+        .into_response()
+}
+
+/// The read tier's event stream (Section 3.6): observes in the reader's servable grants, without
+/// their sessions. Nothing else this node does reaches a principal.
+fn viz_events(ctx: &VizCtx, reader: supragnosis_viz::remote::Reader) -> axum::response::Response {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+    use futures_util::StreamExt;
+    let Some(tx) = &ctx.events else {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            [(header::CONTENT_TYPE, "application/json")],
+            r#"{"error":"this hub streams no events - the page polls instead"}"#,
+        )
+            .into_response();
+    };
+    tracing::info!(principal = %reader.name, "remote event stream opened");
+    let rx = tx.subscribe();
+    let servable = ctx.servable.clone();
+    let hello = futures_util::stream::once(async {
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(b": ok\n\n"))
+    });
+    let frames = futures_util::stream::unfold(
+        (rx, reader, servable),
+        |(mut rx, reader, servable)| async move {
+            use tokio::sync::broadcast::error::RecvError;
+            loop {
+                match rx.recv().await {
+                    Ok(json) => {
+                        if let Some(frame) =
+                            supragnosis_viz::remote::filter_event(&json, &reader, &servable)
+                        {
+                            let bytes = axum::body::Bytes::from(format!("data: {frame}\n\n"));
+                            return Some((Ok(bytes), (rx, reader, servable)));
+                        }
+                    }
+                    Err(RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Closed) => return None,
+                }
+            }
+        },
+    );
+    (
+        [(header::CONTENT_TYPE, "text/event-stream"), (header::CACHE_CONTROL, "no-store")],
+        axum::body::Body::from_stream(hello.chain(frames)),
+    )
+        .into_response()
 }
 
 // --- `supragnosis principal` -------------------------------------------------------------------
@@ -376,6 +563,14 @@ mod tests {
 
     /// The hub's agent surface on an ephemeral port, as `serve` mounts it, with one principal.
     async fn hub(engine: Arc<Engine>, consented: BTreeSet<String>) -> (String, String) {
+        hub_with(engine, consented, None).await
+    }
+
+    async fn hub_with(
+        engine: Arc<Engine>,
+        consented: BTreeSet<String>,
+        events: Option<tokio::sync::broadcast::Sender<String>>,
+    ) -> (String, String) {
         let dir = std::env::temp_dir().join(format!(
             "supragnosis-hub-{}-{}",
             std::process::id(),
@@ -391,6 +586,7 @@ mod tests {
             engine.clone(),
             Arc::new(Directory::new(path)),
             servable(engine, HUB.into(), ok),
+            events,
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -573,6 +769,185 @@ mod tests {
         );
         let (err, text) = c.call("propose", promote(&team_obs)).await;
         assert!(!err && text.contains("proposal_id"), "its own workspace's observation: {text}");
+    }
+
+    /// GETs one read-tier path as alice (or as nobody), returning (status, the ETag, the body).
+    async fn viz(
+        base: &str,
+        cred: Option<&str>,
+        path: &str,
+        etag: Option<&str>,
+    ) -> (u16, Option<String>, String) {
+        let mut req = reqwest::Client::new().get(format!("{base}{path}"));
+        if let Some(c) = cred {
+            req = req.bearer_auth(c);
+        }
+        if let Some(e) = etag {
+            req = req.header("If-None-Match", e);
+        }
+        let r = req.send().await.unwrap();
+        let status = r.status().as_u16();
+        let tag = r.headers().get("etag").and_then(|v| v.to_str().ok()).map(str::to_string);
+        (status, tag, r.text().await.unwrap())
+    }
+
+    /// remote-viewer.md V1-V3 over HTTP: the read tier answers alice only, within her grants, never
+    /// changes state, and answers an id outside them as it answers an unknown one.
+    #[tokio::test]
+    async fn the_read_tier_answers_only_within_the_grants() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "hub", "default"));
+        observe(&engine, "docs", "the docs live in the wiki", "wiki");
+        observe(&engine, "team", "the team uses rust", "rust");
+        observe(&engine, "secret", "the launch date is friday", "launch");
+        let (url, cred) = hub(engine.clone(), BTreeSet::new()).await;
+        let base = url.replace("/mcp", "/viz");
+        let c = Some(cred.as_str());
+
+        assert_eq!(viz(&base, None, "/api/graph", None).await.0, 401, "V1: no anonymous read");
+        let (status, _, page) = viz(&base, c, "/", None).await;
+        assert!(
+            status == 200 && page.contains("<title>supragnosis</title>"),
+            "the page: {status}"
+        );
+
+        let (_, _, surface) = viz(&base, c, "/api/surface", None).await;
+        let surface: serde_json::Value = serde_json::from_str(&surface).unwrap();
+        assert_eq!(surface["principal"], "alice");
+        assert_eq!(surface["read_only"], true);
+        assert_eq!(surface["default_workspace"], "docs");
+
+        let (_, _, ws) = viz(&base, c, "/api/workspaces", None).await;
+        assert_eq!(ws, r#"["docs","team"]"#, "enumeration is the grants that hold knowledge");
+
+        let (_, _, g) = viz(&base, c, "/api/graph", None).await;
+        let named = |g: &str, n: &str| g.contains(&format!("\"name\":\"{n}\""));
+        assert!(named(&g, "wiki") && !named(&g, "rust"), "omitted -> docs: {g}");
+        let (_, _, g) = viz(&base, c, "/api/graph?workspace=*", None).await;
+        assert!(named(&g, "wiki") && named(&g, "rust") && !named(&g, "launch"), "{g}");
+        let (status, _, body) = viz(&base, c, "/api/graph?workspace=secret", None).await;
+        assert!(status == 403 && body.contains("not granted"), "{status} {body}");
+
+        let hidden = supragnosis_core::Entity::make_id("secret", "launch");
+        let unknown = supragnosis_core::Entity::make_id("secret", "nothing here");
+        for path in ["/api/explain?entity=", "/api/observations?entity="] {
+            let a = viz(&base, c, &format!("{path}{hidden}"), None).await;
+            let b = viz(&base, c, &format!("{path}{unknown}"), None).await;
+            assert_eq!((a.0, a.2), (b.0, b.2), "{path}: no existence oracle (Section 3.4)");
+        }
+
+        for path in [
+            "/api/review?proposal=p&decision=merge",
+            "/api/reify?hyperedge=h",
+            "/api/federation",
+            "/api/health",
+        ] {
+            assert_eq!(viz(&base, c, path, None).await.0, 403, "{path} is refused");
+        }
+        let posted = reqwest::Client::new()
+            .post(format!("{base}/api/graph"))
+            .bearer_auth(&cred)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(posted.status().as_u16(), 405, "GET only");
+
+        let (_, tag, _) = viz(&base, c, "/api/graph?workspace=team", None).await;
+        let tag = tag.expect("a successful answer carries an ETag");
+        let (status, _, body) = viz(&base, c, "/api/graph?workspace=team", Some(&tag)).await;
+        assert!(status == 304 && body.is_empty(), "an unchanged graph is not sent again");
+    }
+
+    /// remote-viewer.md V4: a union that includes a workspace the hub may not serve is refused as a
+    /// whole, naming why - never shown without it.
+    #[tokio::test]
+    async fn a_union_with_an_unconsented_workspace_is_refused_whole() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Arc::new(Engine::new(store.clone(), "hub", "default"));
+        observe(&engine, "docs", "the docs live in the wiki", "wiki");
+        let mut synced = Observation::new(
+            "a spoke's knowledge".into(),
+            Provenance {
+                host: "spoke".into(),
+                on_behalf_of: None,
+                workspace: "team".into(),
+                source_ref: None,
+                observed_at: 1,
+                confidence: None,
+                trust_tier: TrustTier::AgentExtracted,
+                sync: None,
+            },
+        );
+        synced.provenance[0].sync = Some(SyncMeta {
+            origin_node: "spoke-node".into(),
+            origin_seq: 1,
+            hlc: Hlc::legacy(1),
+            signature: String::new(),
+            lineage: vec![],
+        });
+        store.add_observation(synced).unwrap();
+        let (url, cred) = hub(engine, BTreeSet::new()).await;
+        let base = url.replace("/mcp", "/viz");
+        let c = Some(cred.as_str());
+
+        let (status, _, body) = viz(&base, c, "/api/graph?workspace=*", None).await;
+        assert!(status == 403 && body.contains("spoke-node"), "{status} {body}");
+        assert_eq!(viz(&base, c, "/api/graph?workspace=docs", None).await.0, 200);
+        let (_, _, surface) = viz(&base, c, "/api/surface", None).await;
+        assert!(
+            surface.contains("\"servable\":false") && surface.contains("spoke-node"),
+            "{surface}"
+        );
+    }
+
+    /// remote-viewer.md V7: the read tier's event stream carries observes in the reader's grants,
+    /// without their sessions - not other workspaces, and not anyone's searches.
+    #[tokio::test]
+    async fn the_read_tier_streams_knowledge_not_activity() {
+        let tx = tokio::sync::broadcast::channel::<String>(64).0;
+        let engine = Arc::new(
+            Engine::new(Arc::new(InMemoryStore::new()), "hub", "default")
+                .with_session("operator-session")
+                .with_events(Arc::new(supragnosis_viz::BroadcastSink::new(tx.clone()))),
+        );
+        let (url, cred) = hub_with(engine.clone(), BTreeSet::new(), Some(tx)).await;
+        let base = url.replace("/mcp", "/viz");
+        let mut stream = reqwest::Client::new()
+            .get(format!("{base}/api/events"))
+            .bearer_auth(&cred)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(stream.status().as_u16(), 200);
+        // The stream is open once its greeting arrives; emit only then, or the frames go nowhere.
+        let hello = tokio::time::timeout(Duration::from_secs(5), stream.chunk()).await;
+        assert!(matches!(hello, Ok(Ok(Some(_)))), "the stream greets");
+
+        // What the MCP tools emit as they run: an observe elsewhere, a search, an observe in a grant.
+        let observed = |ws: &str| supragnosis_engine::Event::Observe {
+            observation: format!("obs-{ws}"),
+            entities: vec![format!("ent-{ws}")],
+            relations: 0,
+            workspace: ws.into(),
+        };
+        engine.emit(observed("secret"));
+        engine.emit(supragnosis_engine::Event::Search {
+            query: "launch".into(),
+            workspace: Some("team".into()),
+            hits: 1,
+            nodes: vec![],
+            mode: "keyword".into(),
+        });
+        engine.emit(observed("team"));
+
+        let mut seen = String::new();
+        while !seen.contains("\"workspace\":\"team\"") {
+            match tokio::time::timeout(Duration::from_secs(5), stream.chunk()).await {
+                Ok(Ok(Some(bytes))) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+                other => panic!("the team observe never arrived ({other:?}); saw {seen}"),
+            }
+        }
+        assert!(!seen.contains("secret") && !seen.contains("launch"), "{seen}");
+        assert!(!seen.contains("operator-session"), "no session ids: {seen}");
     }
 
     /// R5: knowledge another node originated is served only with its consent, and without it the

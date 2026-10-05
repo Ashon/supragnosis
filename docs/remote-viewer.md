@@ -5,7 +5,8 @@
 > shows when it cannot. Step 4 of [remote-server.md](remote-server.md) Section 10, and federation's
 > Phase 3.5 read tier ([federation.md](federation.md) 6d).
 >
-> Status: **specified**. Step 0 of Section 10 is built (v0.4.6); steps 1-4 are not.
+> Status: **specified**. Steps 0-1 of Section 10 are built (step 0 shipped in v0.4.6); steps 2-4
+> are not. What building it changed is in Section 12.
 
 ## 1. Why this exists
 
@@ -324,7 +325,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
 
 0. **Close the existence oracle on the agent surface** (Section 3.4). It shipped in v0.4.5 and
    needs none of the rest, so it went first and was released on its own, in v0.4.6. [built]
-1. **The hub's read tier.**
+1. **The hub's read tier.** [built]
    - In the viz crate, a remote router beside the local one: the path policy table, workspace
      resolution over a reader's grants, the filtered event stream and `/api/surface`.
    - It takes the reader and the servable check as plain values and functions, so the viz crate
@@ -357,3 +358,37 @@ Owed beyond these:
 | P23 - gate to canon | V2: verdicts stay off the network until they can be a principal's own act |
 | P24 - degrade loudly, refuse when proceeding is worse | Sections 3.1 (mounted only beside the agent surface, behind its bind rule), 6 (a failure is a page that says what happened); V1, V6, V8 |
 | F19 - no unauthenticated surface | V1 |
+
+Guarded by:
+
+- **Every path classified (V2)**: `every_viewer_path_has_a_remote_policy` reads the local router's
+  own routing and holds it to the policy table, in both directions.
+- **The read tier over HTTP (V1-V4)**: `the_read_tier_answers_only_within_the_grants`,
+  `a_union_with_an_unconsented_workspace_is_refused_whole`.
+- **The event stream (V7)**: `the_read_tier_streams_knowledge_not_activity`.
+- **The union's arithmetic**: `a_union_sums_counts_and_keeps_the_larger_max`.
+- **Reads by id on the agent surface (Section 3.4)**: `an_id_outside_the_grants_reads_as_an_unknown_one`.
+
+## 12. What building it changed
+
+- **A union shows what each workspace shows alone.** The local `*` computes across workspaces. On
+  the author's store, its curation reports 168 duplicate groups - the same names in two
+  workspaces - that neither workspace has on its own. The read tier's union is merged, never
+  computed across:
+  - lists are concatenated and counts summed;
+  - a `max_` statistic takes the larger of the two;
+  - flags are or-ed;
+  - two different strings for one key (a workspace name) become null, because they describe
+    neither workspace.
+- **A hub has the event channel even without a viewer socket.** The channel the engine emits into
+  existed only when the local viewer was configured. A hub that admits principals now creates it
+  too, because the read tier's stream subscribes to it.
+- **One page serves both surfaces, so the page has to ask which it is on.** Until step 3 teaches it
+  to read `/api/surface`, the hub serves today's page as it is. Its write controls are not hidden
+  yet; they answer 403 with the reason (Section 3.2).
+- **The audit line names the workspace the request named**, or `-` when it named none - not the one
+  the request resolved to. The line records what was asked.
+- **The event filter runs the R5 origin scan once per event per open stream.** Caching that scan is
+  owed with the agent surface's (remote-server.md Section 12).
+- **`/viz` without the trailing slash also serves the page**, so a client that types the hub's
+  address gets the viewer rather than a 404.
