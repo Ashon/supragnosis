@@ -1302,9 +1302,16 @@ impl ServerHandler for SupragnosisServer {
     fn get_info(&self) -> ServerConfig {
         // Built through the constructor rather than a struct literal: rmcp marks this
         // #[non_exhaustive], so a literal - even one ending in `..Default::default()` - does not
-        // compile from outside the crate. `new` already fills server_info from the build env.
+        // compile from outside the crate.
+        //
+        // The server names itself explicitly. `Implementation::from_build_env()` reads like "this
+        // build", but its `env!` expands inside rmcp, so every client was told the server is rmcp
+        // at rmcp's version (docs/compatibility.md Section 7).
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
-            .with_server_info(Implementation::from_build_env())
+            .with_server_info(
+                Implementation::new("supragnosis", env!("CARGO_PKG_VERSION"))
+                    .with_website_url("https://supragnosis.dev"),
+            )
             .with_instructions(
                 "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
                  into an ontology. Ingest knowledge with observe and explore it with \
