@@ -588,11 +588,17 @@ changing the canon policy without a central admin - is out of scope.
   cross-node convergence (P16/P19, F13); query responses label their `mode` so a client can tell the
   convergence surface from the recall aid.
 - **F6** An event with an invalid signature, an unknown origin key, or a bad bearer token is rejected and
-  never applied.
+  never applied. So is one this release cannot decode (`Undecodable`, alone - the rest of its batch
+  proceeds), and one held behind an earlier rejection in its stream (`Held`, see F7).
 - **F7** `origin_seq` is monotonic per **(origin node, workspace)**, so a shared workspace's stream is
   dense while unshared workspaces are absent (selective sharing). Apply is **hole-tolerant and idempotent**:
   convergence rests on CAS + HLC + the deterministic fold (P16), never on dense delivery, so a re-sent,
-  out-of-order, or workspace-filtered stream still converges - there is no sequence-gap parking. Origin
+  out-of-order, or workspace-filtered stream still converges - there is no sequence-gap parking. The
+  one exception is a hole a *rejection* would leave: the first rejection in a stream holds the rest of
+  it for that batch, so the version vector stays below the rejected event and it is offered again until
+  accepted, instead of being skipped for good by a later seq (sync-correctness.md Section 6). A seq is
+  issued once per identity: the counter is reserved in a mark beside the node key before it is used,
+  and floored by what a host already holds of this node's stream (Section 5). Origin
   fields (seq/hlc/signature) are set once by the origin and preserved verbatim through relays, so relay
   copies dedup by full-attestation equality.
 - **F8** HLC is monotonic and totally ordered (the I11 clock); last-write-wins folds order by HLC, not by
@@ -750,7 +756,9 @@ input, not nondeterminism - F16).
   local attestations uniformly, in deterministic (ordering-HLC, id) order, with the stamp upgrade on
   absorb making the write-back an in-place enrichment (F4) - unstamped attestations never leave the
   node. Observe-time stamping is an optional Phase 4 wiring (once the daemon holds the node identity);
-  it changes when the stamp is applied, not its meaning. Plus the deterministic re-materialization
+  it changes when the stamp is applied, not its meaning. That holds because the HLC a stamp carries is the
+  attestation's authoring time, `observed_at`, whenever the stamp is applied - not the export time
+  (sync-correctness.md Section 3) - and because one node backfills one pass at a time (Section 4). Plus the deterministic re-materialization
   step `Engine::reproject` (HLC-ordered replay - Prop C). Property test: two in-memory nodes converge
   under any exchange order (F5); tampered event rejected (F6); a workspace-filtered (hole-y) stream
   still converges (F7); cross-node reprojection materializes identically. [done]

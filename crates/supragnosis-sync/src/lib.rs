@@ -16,6 +16,7 @@
 pub mod http;
 
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use supragnosis_core::{
@@ -31,6 +32,10 @@ use supragnosis_core::{
 pub enum SyncError {
     #[error("store failure: {0}")]
     Store(#[from] StoreError),
+    /// The identity's seq mark (sync-correctness.md Section 5) could not be read or written. Nothing
+    /// is stamped without it: a stamp whose seq the mark does not cover could be issued again.
+    #[error("seq mark at {0}")]
+    SeqMark(String),
 }
 
 /// One configured sync server and the credential this node presents to it.
@@ -168,6 +173,14 @@ pub enum RejectReason {
     /// confidence, empty-referent assertion). A signature proves origin, not well-formedness (P18),
     /// so a malformed peer event is refused before it reaches the permanent log (P1/P2).
     Malformed(String),
+    /// This release cannot decode the event - an enum value or a shape from a newer one
+    /// (sync-correctness.md Section 6). Rejected alone; the rest of its batch proceeds.
+    Undecodable(String),
+    /// An earlier event of the same (origin, workspace) stream, at this seq, was rejected in this
+    /// batch, so this one is not applied either (sync-correctness.md Section 6). The receiver's
+    /// version vector then stays below the rejected event, which is offered again every round until
+    /// it is accepted - a held stream, never a permanent hole.
+    Held(u64),
 }
 
 /// One rejected event: enough identity to audit without trusting the event's own claims.
@@ -187,14 +200,21 @@ pub struct ApplyReport {
 }
 
 /// Node-local sync state: the node identity plus the HLC clock and per-workspace origin_seq counters.
-/// Counters are seeded lazily from the store (max own stamped seq), so a restart continues the dense
-/// per-(node, workspace) sequence instead of colliding (F7).
+/// Counters are seeded lazily from the store (max own stamped seq) and from the identity's seq mark,
+/// so neither a restart nor a store restored from an older backup issues a seq twice (F7,
+/// sync-correctness.md Section 5).
 pub struct SyncNode {
     identity: NodeIdentity,
     node_id: String,
     clock: Mutex<Hlc>,
-    /// Last origin_seq USED per workspace (next = last + 1). Lazily seeded from the store.
+    /// Last origin_seq USED per workspace (next = last + 1). Lazily seeded from the store and mark.
     last_seq: Mutex<HashMap<String, u64>>,
+    /// Held from a backfill's snapshot to its last write, so two callers sharing this node cannot
+    /// both stamp one unstamped attestation (sync-correctness.md Section 4).
+    backfill: Mutex<()>,
+    /// Where the identity's seq mark lives - beside the key it belongs to. `None` keeps the counter
+    /// store-seeded only (tests, and nodes without a key file).
+    seq_mark: Option<PathBuf>,
 }
 
 impl SyncNode {
@@ -205,7 +225,17 @@ impl SyncNode {
             node_id,
             clock: Mutex::new(Hlc::default()),
             last_seq: Mutex::new(HashMap::new()),
+            backfill: Mutex::new(()),
+            seq_mark: None,
         }
+    }
+
+    /// Keeps the seq high-water mark in `path`, beside the node key (sync-correctness.md Section 5).
+    /// The counter then lives with the identity: a store restored from an older backup continues
+    /// past every seq the identity issued, instead of reissuing them for different events.
+    pub fn with_seq_mark(mut self, path: PathBuf) -> Self {
+        self.seq_mark = Some(path);
+        self
     }
 
     pub fn node_id(&self) -> &str {
@@ -216,13 +246,6 @@ impl SyncNode {
         self.identity.public_key_hex()
     }
 
-    /// Advance the local HLC for a local event (monotonic, I11).
-    fn tick(&self) -> Hlc {
-        let mut clock = self.clock.lock().unwrap();
-        *clock = Hlc::tick(&clock, now_millis(), &self.node_id);
-        clock.clone()
-    }
-
     /// Merge a remote stamp into the local clock (HLC receive rule, I11): after this, everything the
     /// node authors is causally after what it has seen.
     pub fn merge_clock(&self, remote: &Hlc) {
@@ -230,11 +253,47 @@ impl SyncNode {
         *clock = Hlc::merge(&clock, remote, now_millis(), &self.node_id);
     }
 
-    /// Next origin_seq for `workspace`, seeding from the store's max own stamped seq on first use.
-    fn next_seq(&self, store: &dyn AssertionStore, workspace: &str) -> Result<u64, SyncError> {
-        let mut map = self.last_seq.lock().unwrap();
+    /// The seq mark: per workspace, the highest seq this identity has reserved. Absent is empty.
+    fn read_mark(&self) -> Result<BTreeMap<String, u64>, SyncError> {
+        let Some(path) = &self.seq_mark else {
+            return Ok(BTreeMap::new());
+        };
+        match std::fs::read_to_string(path) {
+            Ok(text) => serde_json::from_str(&text)
+                .map_err(|e| SyncError::SeqMark(format!("{}: unreadable ({e})", path.display()))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
+            Err(e) => Err(SyncError::SeqMark(format!("{}: {e}", path.display()))),
+        }
+    }
+
+    /// Writes the mark durably - a temporary file synced, then renamed over the old one - so a
+    /// crash leaves either mark whole.
+    fn write_mark(&self, mark: &BTreeMap<String, u64>) -> Result<(), SyncError> {
+        let Some(path) = &self.seq_mark else {
+            return Ok(());
+        };
+        let fail = |e: std::io::Error| SyncError::SeqMark(format!("{}: {e}", path.display()));
+        let tmp = path.with_extension("seq.tmp");
+        {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&tmp).map_err(fail)?;
+            f.write_all(serde_json::to_string(mark).expect("a map serializes").as_bytes())
+                .map_err(fail)?;
+            f.sync_all().map_err(fail)?;
+        }
+        std::fs::rename(&tmp, path).map_err(fail)
+    }
+
+    /// The last seq used in `workspace`, seeded on first use from the greater of the store's own
+    /// stamps and the identity's mark.
+    fn seeded<'a>(
+        &self,
+        map: &'a mut HashMap<String, u64>,
+        store: &dyn AssertionStore,
+        workspace: &str,
+    ) -> Result<&'a mut u64, SyncError> {
         if !map.contains_key(workspace) {
-            let mut max_own = 0u64;
+            let mut max_own = self.read_mark()?.get(workspace).copied().unwrap_or(0);
             for ev in store.attestations_since(workspace, &VersionVector::default())? {
                 if let Some(meta) = &ev.attestation.sync {
                     if meta.origin_node == self.node_id {
@@ -244,9 +303,45 @@ impl SyncNode {
             }
             map.insert(workspace.to_string(), max_own);
         }
-        let last = map.get_mut(workspace).expect("seeded above");
-        *last += 1;
-        Ok(*last)
+        Ok(map.get_mut(workspace).expect("seeded above"))
+    }
+
+    /// Reserves `n` consecutive seqs in `workspace` and returns the first. The mark is raised and
+    /// written before any of them is used, so a crash can leave a hole (harmless, F7) but never a
+    /// seq that is issued again.
+    fn reserve(
+        &self,
+        store: &dyn AssertionStore,
+        workspace: &str,
+        n: u64,
+    ) -> Result<u64, SyncError> {
+        let mut map = self.last_seq.lock().unwrap();
+        let last = self.seeded(&mut map, store, workspace)?;
+        let first = *last + 1;
+        let reserved = *last + n;
+        if self.seq_mark.is_some() {
+            let mut mark = self.read_mark()?;
+            let entry = mark.entry(workspace.to_string()).or_default();
+            *entry = (*entry).max(reserved);
+            self.write_mark(&mark)?;
+        }
+        *last = reserved;
+        Ok(first)
+    }
+
+    /// Raises the counter to at least `seen`: a seq of this node's own stream that another node
+    /// already holds - a hub's advertised version vector, or an own event pulled back. A node whose
+    /// store lost stamps then continues past them instead of issuing them again (Section 5).
+    pub fn floor_seq(
+        &self,
+        store: &dyn AssertionStore,
+        workspace: &str,
+        seen: u64,
+    ) -> Result<(), SyncError> {
+        let mut map = self.last_seq.lock().unwrap();
+        let last = self.seeded(&mut map, store, workspace)?;
+        *last = (*last).max(seen);
+        Ok(())
     }
 
     /// Stamps every unstamped attestation in `workspace` with this node's sync metadata - the export
@@ -259,18 +354,27 @@ impl SyncNode {
         store: &dyn AssertionStore,
         workspace: &str,
     ) -> Result<usize, SyncError> {
+        // One backfill at a time per node, from snapshot to last write (Section 4). Seqs are then
+        // allocated and committed in the same ascending order, and a waiting caller finds the rows
+        // already stamped.
+        let _one_at_a_time = self.backfill.lock().unwrap();
         let mut obss = store.all_observations(Some(workspace))?;
         obss.sort_by(|a, b| {
             (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
         });
+        // Legacy-format rows (stored id != current formula) are never stamped: their signature
+        // would bind an id no receiver can recompute - permanently rejected on the wire. They stay
+        // local history; `migrate_legacy_ids` re-creates them under the current id.
+        obss.retain(|o| observation_content_id(workspace, &o.content, &o.assertions) == o.id);
+        let needed =
+            obss.iter().flat_map(|o| &o.provenance).filter(|p| p.sync.is_none()).count() as u64;
+        if needed == 0 {
+            return Ok(0);
+        }
+        let mut seq = self.reserve(store, workspace, needed)?;
+        let mut prev: Option<Hlc> = None;
         let mut stamped = 0usize;
         for mut obs in obss {
-            // Legacy-format rows (stored id != current formula) are never stamped: their signature
-            // would bind an id no receiver can recompute - permanently rejected on the wire. They
-            // stay local history; `migrate_legacy_ids` re-creates them under the current id.
-            if observation_content_id(workspace, &obs.content, &obs.assertions) != obs.id {
-                continue;
-            }
             let mut changed = false;
             let lineage = obs.derived_from.clone();
             let content_id = obs.id.clone();
@@ -278,15 +382,18 @@ impl SyncNode {
                 if p.sync.is_some() {
                     continue;
                 }
+                let hlc = self.authored_hlc(p.observed_at, prev.as_ref());
+                prev = Some(hlc.clone());
                 let mut meta = SyncMeta {
                     origin_node: self.node_id.clone(),
-                    origin_seq: self.next_seq(store, workspace)?,
-                    hlc: self.tick(),
+                    origin_seq: seq,
+                    hlc,
                     signature: String::new(),
                     // The origin's lineage declaration (signed, F13): what this observation derives
                     // from as known at stamping time.
                     lineage: lineage.clone(),
                 };
+                seq += 1;
                 meta.signature = self.identity.sign_attestation(&content_id, p, &meta);
                 p.sync = Some(meta);
                 changed = true;
@@ -302,12 +409,34 @@ impl SyncNode {
         Ok(stamped)
     }
 
+    /// The HLC of an attestation authored at `observed_at` (sync-correctness.md Section 3): the time
+    /// it was observed, not the time it is exported. `counter` separates this node's stamps that
+    /// share a wall within one pass, and the clock merges the stamp so later local events still
+    /// order after it. Before stamping, the row ordered by `Hlc::legacy(observed_at)`, so stamping
+    /// reorders nothing on the node that stamps.
+    fn authored_hlc(&self, observed_at: u64, prev: Option<&Hlc>) -> Hlc {
+        let counter = match prev {
+            Some(p) if p.wall == observed_at => p.counter + 1,
+            _ => 0,
+        };
+        let hlc = Hlc { wall: observed_at, counter, node: self.node_id.clone() };
+        let mut clock = self.clock.lock().unwrap();
+        if hlc > *clock {
+            *clock = hlc.clone();
+        }
+        hlc
+    }
+
     /// The apply pipeline (F3): per event - verify stamp/origin/signature (F6) and workspace
     /// integrity, reconstruct the observation (content id recomputed, never trusted from the wire),
     /// CAS dedup/absorb via the store, advance the version vector, and merge the origin's HLC into
-    /// the local clock (I11). Hole-tolerant and idempotent (F7): re-delivery dedups, order does not
-    /// matter, and rejection of one event never blocks the rest. The claimed trust tier rides the
-    /// attestation verbatim (F13 - evaluation is read-side, never an apply gate).
+    /// the local clock (I11). Idempotent, and tolerant of holes no event fills (F7). The claimed
+    /// trust tier rides the attestation verbatim (F13 - evaluation is read-side, never an apply gate).
+    ///
+    /// Events are taken in (origin, seq) order, and the first rejection in a stream holds the rest of
+    /// that stream for this batch (sync-correctness.md Section 6): the version vector then stays
+    /// below the rejected event, so it is offered again until it is accepted, instead of being
+    /// skipped for good by a later seq. Other streams carry on.
     pub fn apply(
         &self,
         store: &dyn AssertionStore,
@@ -316,28 +445,108 @@ impl SyncNode {
         origin_keys: &BTreeMap<String, String>,
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
+        let inbound = events.into_iter().map(|e| Inbound::Decoded(Box::new(e))).collect();
+        self.apply_inbound(store, workspace, inbound, origin_keys, vv)
+    }
+
+    /// [`Self::apply`] over events as they came off the wire. Each is decoded on its own, so one
+    /// this release cannot read - an enum value from a newer one - is rejected as `Undecodable` and
+    /// holds only its own stream, where decoding the batch whole would fail every event in it.
+    pub fn apply_wire(
+        &self,
+        store: &dyn AssertionStore,
+        workspace: &str,
+        events: Vec<serde_json::Value>,
+        origin_keys: &BTreeMap<String, String>,
+        vv: &mut VersionVector,
+    ) -> Result<ApplyReport, SyncError> {
+        let inbound = events.into_iter().map(Inbound::decode).collect();
+        self.apply_inbound(store, workspace, inbound, origin_keys, vv)
+    }
+
+    fn apply_inbound(
+        &self,
+        store: &dyn AssertionStore,
+        workspace: &str,
+        mut inbound: Vec<Inbound>,
+        origin_keys: &BTreeMap<String, String>,
+        vv: &mut VersionVector,
+    ) -> Result<ApplyReport, SyncError> {
+        inbound.sort_by_cached_key(Inbound::stream);
         let mut report = ApplyReport::default();
-        for ev in events {
-            match check_event(&ev, workspace, origin_keys) {
-                Ok(obs) => {
+        let mut held: HashMap<String, u64> = HashMap::new();
+        for item in inbound {
+            let (origin_node, origin_seq) = item.stream();
+            if let Some(at) = held.get(&origin_node) {
+                let reason = RejectReason::Held(*at);
+                report.rejected.push(Rejection { origin_node, origin_seq, reason });
+                continue;
+            }
+            let checked = match item {
+                Inbound::Decoded(ev) => check_event(&ev, workspace, origin_keys).map(|o| (o, *ev)),
+                Inbound::Undecodable { error, .. } => Err(RejectReason::Undecodable(error)),
+            };
+            match checked {
+                Ok((obs, ev)) => {
                     let meta = ev.attestation.sync.as_ref().expect("checked stamped");
                     store.add_observation(obs)?;
                     vv.advance(&meta.origin_node, workspace, meta.origin_seq);
                     self.merge_clock(&meta.hlc);
+                    if meta.origin_node == self.node_id {
+                        // An own event pulled back: the counter continues past it (Section 5).
+                        self.floor_seq(store, workspace, meta.origin_seq)?;
+                    }
                     report.accepted += 1;
                 }
                 Err(reason) => {
-                    let (origin_node, origin_seq) = ev
-                        .attestation
-                        .sync
-                        .as_ref()
-                        .map(|m| (m.origin_node.clone(), m.origin_seq))
-                        .unwrap_or_default();
+                    // An unstamped event has no stream to hold.
+                    if !origin_node.is_empty() {
+                        held.insert(origin_node.clone(), origin_seq);
+                    }
                     report.rejected.push(Rejection { origin_node, origin_seq, reason });
                 }
             }
         }
         Ok(report)
+    }
+}
+
+/// One inbound event, decoded or not (sync-correctness.md Section 6).
+enum Inbound {
+    Decoded(Box<AttestationEvent>),
+    /// Not decodable by this release. Its stream is read from the raw JSON where it can be, so the
+    /// stream is held like any other rejection.
+    Undecodable {
+        origin_node: String,
+        origin_seq: u64,
+        error: String,
+    },
+}
+
+impl Inbound {
+    fn decode(raw: serde_json::Value) -> Inbound {
+        let sync = &raw["attestation"]["sync"];
+        let origin_node = sync["origin_node"].as_str().unwrap_or_default().to_string();
+        let origin_seq = sync["origin_seq"].as_u64().unwrap_or_default();
+        match serde_json::from_value::<AttestationEvent>(raw) {
+            Ok(ev) => Inbound::Decoded(Box::new(ev)),
+            Err(e) => Inbound::Undecodable { origin_node, origin_seq, error: e.to_string() },
+        }
+    }
+
+    /// The (origin, seq) an event belongs to; unstamped events sort first, under the empty origin.
+    fn stream(&self) -> (String, u64) {
+        match self {
+            Inbound::Decoded(ev) => ev
+                .attestation
+                .sync
+                .as_ref()
+                .map(|m| (m.origin_node.clone(), m.origin_seq))
+                .unwrap_or_default(),
+            Inbound::Undecodable { origin_node, origin_seq, .. } => {
+                (origin_node.clone(), *origin_seq)
+            }
+        }
     }
 }
 
@@ -494,6 +703,203 @@ mod tests {
             m.insert(obs.id.clone(), (obs.provenance.len(), origins, obs.derived_from.clone()));
         }
         m
+    }
+
+    fn stamps(store: &InMemoryStore, ws: &str) -> Vec<SyncMeta> {
+        let mut out: Vec<SyncMeta> = store
+            .all_observations(Some(ws))
+            .unwrap()
+            .into_iter()
+            .flat_map(|o| o.provenance.into_iter().filter_map(|p| p.sync))
+            .collect();
+        out.sort_by_key(|m| (m.origin_node.clone(), m.origin_seq));
+        out
+    }
+
+    fn tmp_mark() -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("supragnosis-seq-{}-{nanos}.json", std::process::id()))
+    }
+
+    /// sync-correctness.md Section 3 (D1): a stamp carries when the attestation was observed, not
+    /// when it was exported. Node A observed X at t=100 and synced nothing; it has since seen B's
+    /// edit, stamped at t=500, so its clock is far past both. Exporting X must not make it the
+    /// newer edit.
+    #[test]
+    fn a_stamp_carries_the_authoring_time_not_the_export_time() {
+        let (a, b) = (node(1), node(2));
+        let (store_a, store_b) = (InMemoryStore::new(), InMemoryStore::new());
+        store_a.add_observation(Observation::new("X".into(), prov("ws", 100))).unwrap();
+        store_b.add_observation(Observation::new("Y".into(), prov("ws", 500))).unwrap();
+        b.backfill(&store_b, "ws").unwrap();
+        let y = store_b.attestations_since("ws", &VersionVector::default()).unwrap();
+        a.apply(&store_a, "ws", y, &keys(&[&b]), &mut VersionVector::default()).unwrap();
+        a.merge_clock(&Hlc { wall: 1_000_000, counter: 0, node: "elsewhere".into() });
+
+        a.backfill(&store_a, "ws").unwrap();
+        let mine = stamps(&store_a, "ws");
+        let x = mine.iter().find(|m| m.origin_node == a.node_id()).expect("X stamped");
+        let y = mine.iter().find(|m| m.origin_node == b.node_id()).expect("Y held");
+        assert_eq!(x.hlc.wall, 100, "the authoring time, not the export time");
+        assert!(x.hlc < y.hlc, "the older edit stays older after it is exported");
+    }
+
+    /// Section 4 (D2): two callers sharing one node backfill at once, as two MCP sessions or two
+    /// peers' pulls at a hub do. Each attestation is stamped once, under consecutive seqs.
+    #[test]
+    fn two_backfills_at_once_stamp_each_attestation_once() {
+        let n = std::sync::Arc::new(node(3));
+        let store = std::sync::Arc::new(InMemoryStore::new());
+        for i in 0..300 {
+            store
+                .add_observation(Observation::new(format!("fact {i}"), prov("ws", i)))
+                .unwrap();
+        }
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                let (n, store) = (n.clone(), store.clone());
+                scope.spawn(move || n.backfill(store.as_ref(), "ws").unwrap());
+            }
+        });
+        for obs in store.all_observations(Some("ws")).unwrap() {
+            assert_eq!(obs.provenance.len(), 1, "one act, one attestation: {}", obs.id);
+        }
+        let seqs: Vec<u64> = stamps(&store, "ws").iter().map(|m| m.origin_seq).collect();
+        assert_eq!(seqs, (1..=300).collect::<Vec<_>>());
+    }
+
+    /// Section 5 (D3): the counter lives with the identity. A store restored from a backup taken
+    /// before seqs 1-3 were issued continues at 4, instead of issuing 1 again for a different event
+    /// that every peer's version vector already covers.
+    #[test]
+    fn a_restored_store_does_not_reissue_a_seq() {
+        let mark = tmp_mark();
+        let id = || NodeIdentity::from_secret_bytes([4u8; 32]);
+        let before = InMemoryStore::new();
+        for i in 0..3 {
+            before
+                .add_observation(Observation::new(format!("sent {i}"), prov("ws", i)))
+                .unwrap();
+        }
+        SyncNode::new(id()).with_seq_mark(mark.clone()).backfill(&before, "ws").unwrap();
+
+        let restored = InMemoryStore::new();
+        restored.add_observation(Observation::new("new".into(), prov("ws", 9))).unwrap();
+        SyncNode::new(id())
+            .with_seq_mark(mark.clone())
+            .backfill(&restored, "ws")
+            .unwrap();
+        assert_eq!(stamps(&restored, "ws")[0].origin_seq, 4);
+        let _ = std::fs::remove_file(mark);
+    }
+
+    /// Section 5, without a mark: what a host holds of this node's own stream floors the counter,
+    /// whether it is advertised or pulled back.
+    #[test]
+    fn what_a_peer_holds_of_this_nodes_stream_floors_its_counter() {
+        let n = node(5);
+        let advertised = InMemoryStore::new();
+        n.floor_seq(&advertised, "ws", 7).unwrap();
+        advertised
+            .add_observation(Observation::new("after".into(), prov("ws", 1)))
+            .unwrap();
+        n.backfill(&advertised, "ws").unwrap();
+        assert_eq!(stamps(&advertised, "ws")[0].origin_seq, 8, "advertised by a hub");
+
+        let sent = InMemoryStore::new();
+        for i in 0..2 {
+            sent.add_observation(Observation::new(format!("sent {i}"), prov("ws", i)))
+                .unwrap();
+        }
+        n.backfill(&sent, "ws").unwrap();
+        let back = sent.attestations_since("ws", &VersionVector::default()).unwrap();
+        let fresh = node(5);
+        let restored = InMemoryStore::new();
+        fresh
+            .apply(&restored, "ws", back, &keys(&[&n]), &mut VersionVector::default())
+            .unwrap();
+        restored
+            .add_observation(Observation::new("new".into(), prov("ws", 50)))
+            .unwrap();
+        fresh.backfill(&restored, "ws").unwrap();
+        let own: Vec<u64> = stamps(&restored, "ws").iter().map(|m| m.origin_seq).collect();
+        // n had issued 8 above, so its sent events are 9 and 10; the restored node continues at 11.
+        assert_eq!(own, vec![9, 10, 11], "pulled back, then continued past them");
+    }
+
+    /// Section 6 (D4): a rejected event holds its stream for the batch, so the receiver's version
+    /// vector stays below it. It is offered again, and once it is accepted the stream fills in -
+    /// where advancing past it would have skipped it for good.
+    #[test]
+    fn a_rejected_event_holds_its_stream_until_it_is_accepted() {
+        let (o, r) = (node(6), node(7));
+        let (store_o, store_r) = (InMemoryStore::new(), InMemoryStore::new());
+        for i in 0..3 {
+            store_o
+                .add_observation(Observation::new(format!("e{i}"), prov("ws", i)))
+                .unwrap();
+        }
+        o.backfill(&store_o, "ws").unwrap();
+        let mut good = store_o.attestations_since("ws", &VersionVector::default()).unwrap();
+        good.sort_by_key(|e| e.attestation.sync.as_ref().unwrap().origin_seq);
+        let mut bad = good.clone();
+        bad[1].attestation.sync.as_mut().unwrap().signature = "00".repeat(64);
+
+        let report = r
+            .apply(&store_r, "ws", bad, &keys(&[&o]), &mut VersionVector::default())
+            .unwrap();
+        assert_eq!(report.accepted, 1);
+        let reasons: Vec<_> = report.rejected.iter().map(|x| x.reason.clone()).collect();
+        assert_eq!(reasons, vec![RejectReason::BadSignature, RejectReason::Held(2)]);
+        assert_eq!(version_vector(&store_r, "ws").unwrap().get(o.node_id(), "ws"), 1);
+
+        let since = version_vector(&store_r, "ws").unwrap();
+        let offered = store_o.attestations_since("ws", &since).unwrap();
+        assert_eq!(offered.len(), 2, "the rejected event and the one held behind it");
+        let report = r
+            .apply(&store_r, "ws", offered, &keys(&[&o]), &mut VersionVector::default())
+            .unwrap();
+        assert_eq!((report.accepted, report.rejected.len()), (2, 0));
+    }
+
+    /// Section 6 (D10): an event this release cannot decode is rejected alone and holds only its
+    /// own stream; the rest of the batch is applied. A typed batch would fail every event in it.
+    #[test]
+    fn an_event_this_release_cannot_decode_is_rejected_alone() {
+        let (o, p, r) = (node(8), node(9), node(10));
+        let (store_o, store_p, store_r) =
+            (InMemoryStore::new(), InMemoryStore::new(), InMemoryStore::new());
+        store_o
+            .add_observation(Observation::new("readable".into(), prov("ws", 1)))
+            .unwrap();
+        store_p
+            .add_observation(Observation::new("from later".into(), prov("ws", 2)))
+            .unwrap();
+        o.backfill(&store_o, "ws").unwrap();
+        p.backfill(&store_p, "ws").unwrap();
+        let mut wire: Vec<serde_json::Value> = store_o
+            .attestations_since("ws", &VersionVector::default())
+            .unwrap()
+            .into_iter()
+            .chain(store_p.attestations_since("ws", &VersionVector::default()).unwrap())
+            .map(|e| serde_json::to_value(e).unwrap())
+            .collect();
+        let later = wire
+            .iter_mut()
+            .find(|v| v["attestation"]["sync"]["origin_node"] == p.node_id())
+            .unwrap();
+        later["attestation"]["trust_tier"] = "a_tier_from_a_later_release".into();
+
+        let report = r
+            .apply_wire(&store_r, "ws", wire, &keys(&[&o, &p]), &mut VersionVector::default())
+            .unwrap();
+        assert_eq!(report.accepted, 1, "the readable event lands");
+        assert_eq!(report.rejected.len(), 1);
+        assert_eq!(report.rejected[0].origin_node, p.node_id());
+        assert!(matches!(report.rejected[0].reason, RejectReason::Undecodable(_)));
     }
 
     /// A failed check writes unknown, never an empty grant - and only an answer carries a time.
