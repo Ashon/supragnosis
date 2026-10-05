@@ -19,6 +19,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+pub mod remote;
+
 use anyhow::Context;
 use supragnosis_engine::{Engine, EventEnvelope, EventSink};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -301,6 +303,13 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/propose_split" => propose_split_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         "/api/about" => about_response(),
+        // Which surface the page is on (remote-viewer.md Section 3.5): this socket is the owner's
+        // full console. The hub's read tier answers the same path with the principal and its grants.
+        "/api/surface" => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: r#"{"surface":"local"}"#.to_string(),
+        },
         // What this node's store owes and last repaid (crash-recovery.md K5) - runtime state, kept
         // apart from /api/about, which describes the build.
         "/api/health" => health_response(engine),
@@ -314,7 +323,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/propose_split, /api/workspaces, /api/observations, /api/explain, or /api/events",
+                "unknown path - try /, /api/surface, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/propose_split, /api/workspaces, /api/observations, /api/explain, or /api/events",
             ),
         },
     }
@@ -1067,7 +1076,7 @@ fn workspaces_response(engine: &Engine) -> Response {
 /// - `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'`, `object-src 'none'` - the
 ///   page has no `<base>`, no form and no plugin, and nothing should frame it. Denying what is
 ///   unused costs nothing and removes the redirect tricks that turn one injection into two.
-const CSP: &str = "default-src 'none'; \
+pub const CSP: &str = "default-src 'none'; \
      script-src 'self' viz:; \
      style-src 'self' 'unsafe-inline'; \
      img-src 'self' data:; \
@@ -1141,6 +1150,40 @@ const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.js"));
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// remote-viewer.md V2: every path this router answers has a declared remote policy, so an
+    /// endpoint added to the viewer cannot reach the hub's read tier undecided. The paths are read
+    /// from this file's own routing - every match arm and every `path ==` test on a path literal -
+    /// the way the escaping guard reads the viewer's source.
+    #[test]
+    fn every_viewer_path_has_a_remote_policy() {
+        let src = include_str!("lib.rs");
+        let mut paths: Vec<&str> = Vec::new();
+        for (i, _) in src.match_indices("\"/") {
+            let rest = &src[i + 1..];
+            let Some(end) = rest.find('"') else { continue };
+            let lit = &rest[..end];
+            let routed =
+                src[..i].ends_with("path == ") || rest[end + 1..].trim_start().starts_with("=>");
+            let path_like = routed
+                && (lit == "/"
+                    || lit.starts_with("/viewer.")
+                    || (lit.starts_with("/api/")
+                        && lit[5..]
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c == '_' || c == '/')));
+            if path_like && !paths.contains(&lit) {
+                paths.push(lit);
+            }
+        }
+        assert!(paths.len() >= 20, "the scan found the router's paths: {paths:?}");
+        for p in &paths {
+            assert!(remote::policy(p).is_some(), "{p} has no remote policy (remote-viewer.md V2)");
+        }
+        for (p, _) in remote::POLICY {
+            assert!(paths.contains(p), "{p} has a remote policy but this router does not serve it");
+        }
+    }
 
     #[test]
     fn percent_decode_basics() {
