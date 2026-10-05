@@ -152,6 +152,10 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "absorb_union_is_order_independent_and_idempotent",
             "absorb_stamp_upgrade_supersedes_unstamped_base",
             "reobservation_absorbs_attestations_and_lineage",
+            // The stamp upgrade only removes an unstamped base. Two stamps of one act would both
+            // survive it, so one backfill at a time per node is what keeps an act counted once
+            // (sync-correctness.md Section 4).
+            "two_backfills_at_once_stamp_each_attestation_once",
         ]),
     )]),
     (5, &[
@@ -170,6 +174,7 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "apply_verifies_rejects_and_stays_idempotent",
             "signature_roundtrip_verifies_and_tamper_fails",
             "wire_auth_rejects_bad_token_and_unshared_workspace",
+            "an_event_this_release_cannot_decode_is_rejected_alone",
         ]),
     )]),
     (7, &[c(
@@ -178,11 +183,21 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "seq_continues_after_restart",
             "two_nodes_converge_under_any_exchange_order",
             "attestations_since_filters_by_version_vector",
+            // sync-correctness.md Sections 5-6: a seq is issued once per identity, and a rejection
+            // holds its stream rather than leaving a hole a later seq skips past for good.
+            "a_restored_store_does_not_reissue_a_seq",
+            "what_a_peer_holds_of_this_nodes_stream_floors_its_counter",
+            "a_rejected_event_holds_its_stream_until_it_is_accepted",
         ]),
     )]),
     (8, &[c(
         "HLC is monotonic and totally ordered, and an observation orders by its earliest attestation",
-        Evidence::Scenario(&["hlc_is_monotonic_and_merge_lands_after_both", "ordering_hlc_takes_earliest_and_falls_back_to_legacy"]),
+        Evidence::Scenario(&[
+            "hlc_is_monotonic_and_merge_lands_after_both",
+            "ordering_hlc_takes_earliest_and_falls_back_to_legacy",
+            // An observation's HLC is its authoring time whenever it is stamped (Section 3).
+            "a_stamp_carries_the_authoring_time_not_the_export_time",
+        ]),
     )]),
     (9, &[
         c(

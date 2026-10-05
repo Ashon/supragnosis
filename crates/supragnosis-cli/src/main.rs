@@ -665,7 +665,10 @@ fn build_sync_context(
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
     // clock and the per-workspace seq counters (two live counters over one store would collide).
     let identity = fed::load_or_create_identity()?;
-    let node = Arc::new(supragnosis_sync::SyncNode::new(identity));
+    let node = Arc::new(
+        supragnosis_sync::SyncNode::new(identity)
+            .with_seq_mark(fed::fed_base_dir().join("node.seq")),
+    );
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     let (links, mut config_notes) = fc.sync.links();
     config_notes.extend(drop_self_admission(node.node_id(), fc.server.as_ref()));
@@ -1148,7 +1151,8 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
          and an auth_token each"
     );
     let identity = fed::load_or_create_identity()?;
-    let node = supragnosis_sync::SyncNode::new(identity);
+    let node = supragnosis_sync::SyncNode::new(identity)
+        .with_seq_mark(fed::fed_base_dir().join("node.seq"));
     let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
     let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
     rt.block_on(async {
@@ -3464,7 +3468,12 @@ mod fed {
         let mut secret = [0u8; 32];
         getrandom::fill(&mut secret).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
         super::write_secret(&path, &secret)?;
-        tracing::info!(path = %path.display(), "generated the node keypair (once - the node_id is immutable, F14)");
+        tracing::info!(
+            path = %path.display(),
+            "generated the node keypair (once - the node_id is immutable, F14). The key and node.seq \
+             beside it are this node: move them with its store, never copy them to a second running \
+             node (docs/sync-correctness.md Section 5)"
+        );
         Ok(supragnosis_core::NodeIdentity::from_secret_bytes(secret))
     }
 

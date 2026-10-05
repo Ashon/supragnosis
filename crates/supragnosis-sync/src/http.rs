@@ -391,15 +391,26 @@ pub struct PullReq {
     pub since: VersionVector,
 }
 
+/// Events cross the wire as JSON values and are decoded one at a time on receipt
+/// (sync-correctness.md Section 6): an event this release cannot decode is rejected alone, where a
+/// typed list would fail the whole body - every other event with it - every round.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PullResp {
-    pub events: Vec<AttestationEvent>,
+    pub events: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PushReq {
     pub workspace: String,
-    pub events: Vec<AttestationEvent>,
+    pub events: Vec<serde_json::Value>,
+}
+
+/// The wire form of outgoing events.
+fn to_wire(events: Vec<AttestationEvent>) -> Vec<serde_json::Value> {
+    events
+        .into_iter()
+        .map(|e| serde_json::to_value(e).expect("an event serializes"))
+        .collect()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -527,7 +538,7 @@ async fn pull_handler(
     }
     state.seen(&entry.node_id, "pull");
     state.activity("pull-served", &entry.node_id, &ws, events.len());
-    Ok(Json(PullResp { events }))
+    Ok(Json(PullResp { events: to_wire(events) }))
 }
 
 async fn push_handler(
@@ -545,7 +556,7 @@ async fn push_handler(
     let ws = req.workspace.clone();
     let report = tokio::task::spawn_blocking(move || {
         let mut vv = VersionVector::default();
-        node.apply(store.as_ref(), &req.workspace, req.events, &keys, &mut vv)
+        node.apply_wire(store.as_ref(), &req.workspace, req.events, &keys, &mut vv)
     })
     .await
     .map_err(internal)?
@@ -788,7 +799,7 @@ impl SyncClient {
         &self,
         workspace: &str,
         since: &VersionVector,
-    ) -> Result<Vec<AttestationEvent>, TransportError> {
+    ) -> Result<Vec<serde_json::Value>, TransportError> {
         let resp: PullResp = self
             .call_for(
                 "/sync/pull",
@@ -806,7 +817,7 @@ impl SyncClient {
     ) -> Result<PushResp, TransportError> {
         self.call_for(
             "/sync/push",
-            &PushReq { workspace: workspace.into(), events },
+            &PushReq { workspace: workspace.into(), events: to_wire(events) },
             Some(workspace),
         )
         .await
@@ -832,9 +843,14 @@ impl SyncClient {
         .await
     }
 
-    /// One full sync round for a workspace: backfill-stamp local knowledge, push what the server
-    /// lacks (per its advertised VV), pull what we lack, and apply it (verify -> CAS -> VV).
-    /// Re-materialization (engine reproject) is the caller's follow-up - transport moves the log.
+    /// One full sync round for a workspace: learn what the server holds, backfill-stamp local
+    /// knowledge, push what the server lacks (per its advertised VV), pull what we lack, and apply it
+    /// (verify -> CAS -> VV). Re-materialization (engine reproject) is the caller's follow-up -
+    /// transport moves the log.
+    ///
+    /// The server is asked first so its copy of this node's own stream floors the seq counter before
+    /// anything is stamped (sync-correctness.md Section 5): a node whose store lost stamps it had
+    /// already sent continues past them instead of issuing their seqs again.
     pub async fn sync_workspace(
         &self,
         store: &Arc<dyn AssertionStore>,
@@ -843,8 +859,9 @@ impl SyncClient {
         share_workspaces: &[String],
         origin_keys: &BTreeMap<String, String>,
     ) -> Result<SyncSummary, TransportError> {
-        node.backfill(store.as_ref(), workspace)?;
         let remote = self.advertise(workspace).await?;
+        node.floor_seq(store.as_ref(), workspace, remote.vv.get(node.node_id(), workspace))?;
+        node.backfill(store.as_ref(), workspace)?;
         let mine = version_vector(store.as_ref(), workspace)?;
         let surplus = export_delta(store.as_ref(), workspace, &remote.vv, share_workspaces)?;
         let mut summary = SyncSummary::default();
@@ -856,7 +873,8 @@ impl SyncClient {
         let deficit = self.pull(workspace, &mine).await?;
         if !deficit.is_empty() {
             let mut vv = mine;
-            let report = node.apply(store.as_ref(), workspace, deficit, origin_keys, &mut vv)?;
+            let report =
+                node.apply_wire(store.as_ref(), workspace, deficit, origin_keys, &mut vv)?;
             summary.pulled = report.accepted;
             summary.rejected_locally = report.rejected.len();
         }
