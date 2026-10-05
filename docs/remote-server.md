@@ -283,9 +283,12 @@ whose active profile points at it:
 
 ## 12. What building it changed
 
-- **Consent travels in a header, not a request field.** An older hub ignores a header it does not
-  know. A new field in the sync request body could fail its strict request parsing. An older node,
-  in turn, sends no header, which the hub reads as no change rather than as a withdrawal.
+- **Consent travels in a header, not a request field,** because it is about the whole request - the
+  workspace it names - not about one event in it. An older hub ignores the header, as it would
+  ignore an unknown body field: the sync wire types do not deny unknown fields (an earlier version of
+  this line said otherwise; what an older peer cannot read is an unknown enum value,
+  sync-correctness.md Section 12). An older node, in turn, sends no header, which the hub reads as
+  no change rather than as a withdrawal.
 - **Only `search_knowledge` takes `*` remotely.** `workspace_map`, `list_proposals` and
   `get_proposal` answer a `*` with the principal's grants, so the refusal lists the choices. A
   remote `*` search runs once per granted workspace and merges by score. It is never the node-wide

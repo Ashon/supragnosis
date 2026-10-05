@@ -780,7 +780,10 @@ fn build_sync_context(
             router: principal::router(
                 engine.clone(),
                 Arc::new(principal::Directory::new(fed::config_path())),
-                principal::servable(engine.clone(), node.node_id().to_string(), consented),
+                principal::servable(engine.clone(), node.node_id().to_string(), consented, {
+                    let peers = peer_registry.clone();
+                    Arc::new(move |n: &str| peers.release_of(n))
+                }),
                 events,
             ),
             admitted: srv.principals.len(),
@@ -924,6 +927,7 @@ fn spawn_fed_status(task: FedStatusTask) {
                 let server = &link.url;
                 let mut healthy = false;
                 let mut version = None;
+                let mut protocol = None;
                 let mut ws_json = Vec::new();
                 let mut diff = supragnosis_sync::SurfaceDiff::default();
                 let mut negotiated_at = None;
@@ -934,6 +938,7 @@ fn spawn_fed_status(task: FedStatusTask) {
                         Ok(p) => {
                             healthy = true;
                             version = Some(p.version);
+                            protocol = Some(p.protocol);
                             // The authorization half of the answer, kept rather than dropped. This
                             // is the only place negotiation happens: handlers read the map under a
                             // lock and never ping, so nothing is added to a call that already
@@ -1002,6 +1007,7 @@ fn spawn_fed_status(task: FedStatusTask) {
                     "url": server,
                     "healthy": healthy,
                     "version": version,
+                    "protocol": protocol,
                     // Unchanged key, narrowed meaning: drift rows for the workspaces both sides
                     // hold. The two new buckets are what the old view had no way to say.
                     "workspaces": ws_json,

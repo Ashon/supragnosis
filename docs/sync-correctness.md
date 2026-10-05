@@ -5,7 +5,8 @@
 > protocol this revises, Section 12) and [compatibility.md](compatibility.md) (which hands the
 > wire's version to this document).
 >
-> Status: **designed, not built.** Section 13 orders the work.
+> Status: **built** (Section 13, all five steps). Each defect has a test that failed on the code
+> before it.
 
 ## 1. Why this exists
 
@@ -232,11 +233,12 @@ as usual.
 - **Every request carries it** in a `supragnosis-sync` header, with the binary's release beside it
   in `supragnosis-release`. Every response carries the hub's in the same headers, and `PingResp`
   gains `protocol`.
-- **The hub records each peer's** protocol and release in its peer table, and shows them where it
-  shows the peer. A peer at protocol 0 is named as such where R5 refuses its workspace: "too old to
-  send consent", not merely "has not consented".
-- **The spoke shows each hub's** protocol and release where it shows the hub. It already shows the
-  release, without comparing anything.
+- **The hub records each peer's** protocol and release in its peer table, shown with the known
+  peers in `sync_status` and the viewer. Where R5 refuses a workspace, each node that has not
+  consented is named with the release it last said it runs - or "release not known", with the note
+  that a release before v0.4.5 cannot send consent at all - not merely "has not consented".
+- **The spoke shows each hub's** protocol beside its release, in the viewer's federation panel and
+  its `/api/federation` answer, without comparing anything.
 
 **What raises `PROTOCOL`** is a change an older peer would mishandle: a new enum value on the wire,
 a new signed field (compatibility.md Section 4), or a changed meaning. Adding an optional field, an
