@@ -191,6 +191,9 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "a_restored_store_does_not_reissue_a_seq",
             "what_a_peer_holds_of_this_nodes_stream_floors_its_counter",
             "a_rejected_event_holds_its_stream_until_it_is_accepted",
+            // Across batches and pages too, and a held stream does not starve the others (Section 11).
+            "a_large_surplus_is_pushed_in_batches_and_pulled_in_pages",
+            "a_held_stream_does_not_starve_the_others_across_pages",
         ]),
     )]),
     (8, &[c(

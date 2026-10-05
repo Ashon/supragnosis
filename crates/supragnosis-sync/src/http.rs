@@ -17,7 +17,31 @@ use serde::{Deserialize, Serialize};
 
 use supragnosis_core::{AssertionStore, AttestationEvent, SearchHit, VersionVector};
 
-use crate::{export_delta, version_vector, SyncError, SyncNode};
+use crate::{export_delta, version_vector, ApplyReport, SyncError, SyncNode};
+
+/// The bounds of one sync request (sync-correctness.md Section 11). Every event fits inside them,
+/// because `observe` caps content at 1 MiB.
+///
+/// The body limit the sync routes declare, rather than inheriting axum's unnamed 2 MB default.
+pub const BODY_LIMIT: usize = 8 << 20;
+/// A push batch: at most this many encoded bytes, or [`BATCH_EVENTS`] events, whichever comes first.
+pub const BATCH_BYTES: usize = 1 << 20;
+pub const BATCH_EVENTS: usize = 500;
+/// A pull page: at most the events the client asks for (at most [`PAGE_EVENTS`]), and at most
+/// [`PAGE_BYTES`] encoded - always at least one event, so a page always makes progress.
+pub const PAGE_EVENTS: usize = 500;
+pub const PAGE_BYTES: usize = 4 << 20;
+/// How long one sync request may take, on either side.
+pub const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The (origin, seq) of a wire event, read without decoding it. Empty for an unstamped one.
+fn stream_of(raw: &serde_json::Value) -> (String, u64) {
+    let sync = &raw["attestation"]["sync"];
+    (
+        sync["origin_node"].as_str().unwrap_or_default().to_string(),
+        sync["origin_seq"].as_u64().unwrap_or_default(),
+    )
+}
 
 /// One admitted peer node (docs/federation.md 6a): wire credentials + what it may read/write.
 /// `bearer_hash` is the blake3 hex of the peer's bearer token - the server never stores the token.
@@ -396,6 +420,11 @@ pub struct AdvertiseResp {
 pub struct PullReq {
     pub workspace: String,
     pub since: VersionVector,
+    /// The most events wanted in one page. An older hub ignores it and answers with everything,
+    /// which a newer client reads as one page; an older client sends none and gets one page of
+    /// [`PAGE_EVENTS`], continued by its next round (sync-correctness.md Section 11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
 }
 
 /// Events cross the wire as JSON values and are decoded one at a time on receipt
@@ -404,6 +433,9 @@ pub struct PullReq {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PullResp {
     pub events: Vec<serde_json::Value>,
+    /// More events remain beyond this page. Absent from an older hub, which sends everything.
+    #[serde(default)]
+    pub more: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -548,9 +580,25 @@ async fn pull_handler(
             let _ = tokio::task::spawn_blocking(move || hook(&ws)).await;
         }
     }
+    // One page, in (origin, seq) order - the order `attestations_since` returns - so the caller's
+    // version vector advances exactly as far as the page went and the next page continues from it.
+    let limit = req.limit.unwrap_or(PAGE_EVENTS).clamp(1, PAGE_EVENTS);
+    let all = to_wire(events);
+    let total = all.len();
+    let mut page = Vec::new();
+    let mut bytes = 0usize;
+    for ev in all {
+        let size = serde_json::to_vec(&ev).map(|v| v.len()).unwrap_or(0);
+        if !page.is_empty() && (page.len() >= limit || bytes + size > PAGE_BYTES) {
+            break;
+        }
+        bytes += size;
+        page.push(ev);
+    }
+    let more = page.len() < total;
     state.seen(&entry.node_id, "pull");
-    state.activity("pull-served", &entry.node_id, &ws, events.len());
-    Ok(Json(PullResp { events: to_wire(events) }))
+    state.activity("pull-served", &entry.node_id, &ws, page.len());
+    Ok(Json(PullResp { events: page, more }))
 }
 
 async fn push_handler(
@@ -663,7 +711,22 @@ pub fn router(state: Arc<ServerState>) -> Router {
         .route("/sync/pull", post(pull_handler))
         .route("/sync/push", post(push_handler))
         .route("/sync/search", post(search_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(axum::middleware::from_fn(bounded))
         .with_state(state)
+}
+
+/// Answers 504 for a sync request that runs past [`CALL_TIMEOUT`], as the hub's principal routes do.
+async fn bounded(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match tokio::time::timeout(CALL_TIMEOUT, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => (StatusCode::GATEWAY_TIMEOUT, "the sync request ran past its time limit")
+            .into_response(),
+    }
 }
 
 /// TLS material for the in-process rustls termination (F10).
@@ -782,7 +845,10 @@ impl SyncClient {
         {
             builder = builder.add_root_certificate(cert);
         }
-        let http = builder.danger_accept_invalid_certs(insecure_tls).build()?;
+        let http = builder
+            .danger_accept_invalid_certs(insecure_tls)
+            .timeout(CALL_TIMEOUT)
+            .build()?;
         Ok(Self {
             base: base_url.into().trim_end_matches('/').to_string(),
             token: token.into(),
@@ -845,28 +911,102 @@ impl SyncClient {
         &self,
         workspace: &str,
         since: &VersionVector,
-    ) -> Result<Vec<serde_json::Value>, TransportError> {
-        let resp: PullResp = self
-            .call_for(
-                "/sync/pull",
-                &PullReq { workspace: workspace.into(), since: since.clone() },
-                Some(workspace),
-            )
-            .await?;
-        Ok(resp.events)
+        limit: usize,
+    ) -> Result<PullResp, TransportError> {
+        let req = PullReq { workspace: workspace.into(), since: since.clone(), limit: Some(limit) };
+        self.call_for("/sync/pull", &req, Some(workspace)).await
     }
 
+    /// Pulls page after page of what the host holds beyond `since`, handing each page to `apply`
+    /// (sync-correctness.md Section 11). A stream with a rejection in a page is held: the request
+    /// claims it whole for the rest of this round, so its later events are neither applied past the
+    /// rejected one nor sent again and again in place of the other streams. The next round asks from
+    /// the store's own version vector, which is below the rejected event, and offers it again.
+    pub async fn pull_all<F, Fut>(
+        &self,
+        workspace: &str,
+        mut since: VersionVector,
+        mut apply: F,
+    ) -> Result<ApplyReport, TransportError>
+    where
+        F: FnMut(Vec<serde_json::Value>) -> Fut,
+        Fut: std::future::Future<Output = Result<ApplyReport, TransportError>>,
+    {
+        let mut total = ApplyReport::default();
+        loop {
+            let page = self.pull(workspace, &since, PAGE_EVENTS).await?;
+            if page.events.is_empty() {
+                break;
+            }
+            let streams: Vec<(String, u64)> = page.events.iter().map(stream_of).collect();
+            let report = apply(page.events).await?;
+            let held: std::collections::HashSet<&str> =
+                report.rejected.iter().map(|r| r.origin_node.as_str()).collect();
+            let before = since.clone();
+            for (origin, seq) in streams.iter().filter(|(o, _)| !o.is_empty()) {
+                let to = if held.contains(origin.as_str()) { u64::MAX } else { *seq };
+                since.advance(origin, workspace, to);
+            }
+            total.accepted += report.accepted;
+            total.rejected.extend(report.rejected);
+            // A host that says there is more but sent nothing new is not asked again this round.
+            if !page.more || since == before {
+                break;
+            }
+        }
+        Ok(total)
+    }
+
+    /// Pushes `events` in batches (sync-correctness.md Section 11), in (origin, seq) order. A stream
+    /// with a rejection in one batch is not sent further this round: the host's version vector stays
+    /// below the rejected event, so it and everything behind it are offered again next round.
     pub async fn push(
         &self,
         workspace: &str,
-        events: Vec<AttestationEvent>,
+        mut events: Vec<AttestationEvent>,
     ) -> Result<PushResp, TransportError> {
-        self.call_for(
-            "/sync/push",
-            &PushReq { workspace: workspace.into(), events: to_wire(events) },
-            Some(workspace),
-        )
-        .await
+        events.sort_by_cached_key(|e| {
+            e.attestation.sync.as_ref().map(|m| (m.origin_node.clone(), m.origin_seq))
+        });
+        let mut total = PushResp { accepted: 0, rejected: Vec::new() };
+        let mut held: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut batch: Vec<serde_json::Value> = Vec::new();
+        let mut bytes = 0usize;
+        for ev in to_wire(events) {
+            if held.contains(&stream_of(&ev).0) {
+                continue;
+            }
+            let size = serde_json::to_vec(&ev).map(|v| v.len()).unwrap_or(0);
+            if !batch.is_empty() && (batch.len() >= BATCH_EVENTS || bytes + size > BATCH_BYTES) {
+                let sent = std::mem::take(&mut batch);
+                self.push_batch(workspace, sent, &mut total, &mut held).await?;
+                bytes = 0;
+                if held.contains(&stream_of(&ev).0) {
+                    continue;
+                }
+            }
+            bytes += size;
+            batch.push(ev);
+        }
+        if !batch.is_empty() {
+            self.push_batch(workspace, batch, &mut total, &mut held).await?;
+        }
+        Ok(total)
+    }
+
+    async fn push_batch(
+        &self,
+        workspace: &str,
+        events: Vec<serde_json::Value>,
+        total: &mut PushResp,
+        held: &mut std::collections::HashSet<String>,
+    ) -> Result<(), TransportError> {
+        let req = PushReq { workspace: workspace.into(), events };
+        let resp: PushResp = self.call_for("/sync/push", &req, Some(workspace)).await?;
+        held.extend(resp.rejected.iter().map(|r| r.0.clone()).filter(|o| !o.is_empty()));
+        total.accepted += resp.accepted;
+        total.rejected.extend(resp.rejected);
+        Ok(())
     }
 
     /// Health check: verifies connectivity, auth, and per-workspace authorization in one call.
@@ -916,14 +1056,17 @@ impl SyncClient {
             summary.pushed = resp.accepted;
             summary.rejected_by_server = resp.rejected.len();
         }
-        let deficit = self.pull(workspace, &mine).await?;
-        if !deficit.is_empty() {
-            let mut vv = mine;
-            let report =
-                node.apply_wire(store.as_ref(), workspace, deficit, origin_keys, None, &mut vv)?;
-            summary.pulled = report.accepted;
-            summary.rejected_locally = report.rejected.len();
-        }
+        let report = self
+            .pull_all(workspace, mine, |events| {
+                let mut vv = VersionVector::default();
+                std::future::ready(
+                    node.apply_wire(store.as_ref(), workspace, events, origin_keys, None, &mut vv)
+                        .map_err(TransportError::from),
+                )
+            })
+            .await?;
+        summary.pulled = report.accepted;
+        summary.rejected_locally = report.rejected.len();
         Ok(summary)
     }
 }
@@ -1011,7 +1154,12 @@ mod tests {
         let addr = spawn_server(state).await;
         let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
         assert_eq!(
-            client.pull("ws", &VersionVector::default()).await.unwrap().len(),
+            client
+                .pull("ws", &VersionVector::default(), PAGE_EVENTS)
+                .await
+                .unwrap()
+                .events
+                .len(),
             1,
             "the admitted peer can pull before the change"
         );
@@ -1020,7 +1168,7 @@ mod tests {
         peers.replace(Vec::new());
 
         let err = client
-            .pull("ws", &VersionVector::default())
+            .pull("ws", &VersionVector::default(), PAGE_EVENTS)
             .await
             .expect_err("must be refused now");
         assert!(
@@ -1039,7 +1187,15 @@ mod tests {
 
         // Re-admitting restores both halves, so the change is a swap and not a one-way latch.
         peers.replace(vec![entry(&peer, "token-p", &["ws"])]);
-        assert_eq!(client.pull("ws", &VersionVector::default()).await.unwrap().len(), 1);
+        assert_eq!(
+            client
+                .pull("ws", &VersionVector::default(), PAGE_EVENTS)
+                .await
+                .unwrap()
+                .events
+                .len(),
+            1
+        );
     }
 
     /// Spawns the sync API on an ephemeral loopback port (plain HTTP - the local trust surface;
@@ -1280,6 +1436,97 @@ mod tests {
         );
         client.sync_workspace(&mine, &client_node, "ws", &share, &keys).await.unwrap();
         assert_eq!(calls.lock().unwrap().len(), 1, "a pull with nothing left to stamp does not");
+    }
+
+    /// sync-correctness.md Section 11 (D9): a surplus past any single body - here about 3 MB, over
+    /// axum's old unnamed 2 MB default, which answered 413 to the whole push every round - goes in
+    /// batches, and another node pulls it back in pages.
+    #[tokio::test]
+    async fn a_large_surplus_is_pushed_in_batches_and_pulled_in_pages() {
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let a = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
+        let b = SyncNode::new(NodeIdentity::from_secret_bytes([2u8; 32]));
+        let allow = vec![entry(&a, "token-a", &["ws"]), entry(&b, "token-b", &["ws"])];
+        let state = Arc::new(ServerState::new(hub_store.clone(), hub_node, allow));
+        let keys = state.peers.admitted().origin_keys;
+        let addr = spawn_server(state).await;
+        let share = vec!["ws".to_string()];
+
+        let a_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let filler = "x".repeat(2_000);
+        for i in 0..1_500u64 {
+            a_store
+                .add_observation(Observation::new(format!("{i} {filler}"), prov("ws", i)))
+                .unwrap();
+        }
+        let ca = SyncClient::new(format!("http://{addr}"), "token-a", false).unwrap();
+        let pushed = ca.sync_workspace(&a_store, &a, "ws", &share, &keys).await.unwrap();
+        assert_eq!(pushed.pushed, 1_500, "every batch landed");
+        assert_eq!(hub_store.all_observations(Some("ws")).unwrap().len(), 1_500);
+
+        let b_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let cb = SyncClient::new(format!("http://{addr}"), "token-b", false).unwrap();
+        let pulled = cb.sync_workspace(&b_store, &b, "ws", &share, &keys).await.unwrap();
+        assert_eq!(pulled.pulled, 1_500, "every page applied");
+    }
+
+    /// Section 11 with Section 6: a stream held by a rejection is claimed whole for the rest of the
+    /// round, so pages move on to the other streams instead of resending the held one forever.
+    #[tokio::test]
+    async fn a_held_stream_does_not_starve_the_others_across_pages() {
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let (n1, n2) = (
+            SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32])),
+            SyncNode::new(NodeIdentity::from_secret_bytes([2u8; 32])),
+        );
+        // `first` sorts first, so its held stream is what every page would start with.
+        let (first, second) = if n1.node_id() < n2.node_id() { (n1, n2) } else { (n2, n1) };
+        let puller = SyncNode::new(NodeIdentity::from_secret_bytes([3u8; 32]));
+        let allow = vec![entry(&puller, "token-p", &["ws"])];
+        let state = Arc::new(ServerState::new(hub_store.clone(), hub_node, allow));
+        let addr = spawn_server(state).await;
+
+        let src = InMemoryStore::new();
+        for i in 0..(PAGE_EVENTS as u64 + 100) {
+            src.add_observation(Observation::new(format!("first {i}"), prov("ws", i)))
+                .unwrap();
+        }
+        first.backfill(&src, "ws").unwrap();
+        let other = InMemoryStore::new();
+        for i in 0..10u64 {
+            other
+                .add_observation(Observation::new(format!("second {i}"), prov("ws", i)))
+                .unwrap();
+        }
+        second.backfill(&other, "ws").unwrap();
+        // The hub holds a damaged copy of `first`'s seq 1: its signature no longer verifies.
+        let mut events = src.attestations_since("ws", &VersionVector::default()).unwrap();
+        events.extend(other.attestations_since("ws", &VersionVector::default()).unwrap());
+        for ev in events {
+            let mut ev = ev;
+            let meta = ev.attestation.sync.as_mut().unwrap();
+            if meta.origin_node == first.node_id() && meta.origin_seq == 1 {
+                meta.signature = "00".repeat(64);
+            }
+            let obs = Observation::with_assertions(ev.content, ev.attestation, ev.assertions);
+            hub_store.add_observation(obs).unwrap();
+        }
+
+        let keys: BTreeMap<String, String> = [&first, &second]
+            .iter()
+            .map(|n| (n.node_id().to_string(), n.public_key_hex()))
+            .collect();
+        let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let client = SyncClient::new(format!("http://{addr}"), "token-p", false).unwrap();
+        let summary = client
+            .sync_workspace(&store, &puller, "ws", &["ws".to_string()], &keys)
+            .await
+            .unwrap();
+        assert_eq!(summary.pulled, 10, "the other stream arrived");
+        let held = version_vector(store.as_ref(), "ws").unwrap();
+        assert_eq!(held.get(first.node_id(), "ws"), 0, "nothing of the held stream past its hole");
     }
 
     #[tokio::test]

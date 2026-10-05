@@ -1121,37 +1121,40 @@ impl SupragnosisServer {
                 Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
                 Err(e) => return err_json(&format!("task join error: {e}")),
             };
-            match client.pull(&ws, &mine).await {
-                Ok(events) => {
-                    let store = self.engine.store();
-                    let node = ctx.node.clone();
-                    let keys = ctx.origin_keys.clone();
-                    let ws2 = ws.clone();
-                    let mut vv = mine;
-                    match tokio::task::spawn_blocking(move || {
-                        node.apply_wire(store.as_ref(), &ws2, events, &keys, None, &mut vv)
-                    })
-                    .await
-                    {
-                        Ok(Ok(report)) => {
-                            self.engine.emit(Event::Sync {
-                                direction: "pull".into(),
-                                peer: server.clone(),
-                                workspace: ws.clone(),
-                                count: report.accepted,
-                            });
-                            results.push(serde_json::json!({
-                                "server": server,
-                                "applied": report.accepted,
-                                "rejected": report.rejected.len(),
-                            }))
-                        }
-                        Ok(Err(e)) => results
-                            .push(serde_json::json!({"server": server, "error": e.to_string()})),
-                        Err(e) => results.push(
-                            serde_json::json!({"server": server, "error": format!("join: {e}")}),
-                        ),
+            // Page after page (sync-correctness.md Section 11); each page is applied off the
+            // async runtime, as one pull was.
+            let pulled = client
+                .pull_all(&ws, mine, |events| {
+                    let (store, node) = (self.engine.store(), ctx.node.clone());
+                    let (keys, ws2) = (ctx.origin_keys.clone(), ws.clone());
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            let mut vv = supragnosis_sync::VersionVector::default();
+                            node.apply_wire(store.as_ref(), &ws2, events, &keys, None, &mut vv)
+                        })
+                        .await
+                        .map_err(|e| {
+                            supragnosis_sync::http::TransportError::Io(std::io::Error::other(
+                                format!("join: {e}"),
+                            ))
+                        })?
+                        .map_err(Into::into)
                     }
+                })
+                .await;
+            match pulled {
+                Ok(report) => {
+                    self.engine.emit(Event::Sync {
+                        direction: "pull".into(),
+                        peer: server.clone(),
+                        workspace: ws.clone(),
+                        count: report.accepted,
+                    });
+                    results.push(serde_json::json!({
+                        "server": server,
+                        "applied": report.accepted,
+                        "rejected": report.rejected.len(),
+                    }))
                 }
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}))
