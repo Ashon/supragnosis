@@ -125,9 +125,22 @@ impl ConsentBook {
 /// The nodes that have consented to this hub serving a workspace (Section 4.5).
 pub type Consented = Arc<dyn Fn(&str) -> BTreeSet<String> + Send + Sync>;
 
+/// The release a peer last said it runs (docs/sync-correctness.md Section 12), if it has said.
+pub type ReleaseOf = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 /// R5 for one hub: a workspace may be served when every node whose attestations it holds is this
 /// node or has consented for that workspace.
-pub fn servable(engine: Arc<Engine>, self_id: String, consented: Consented) -> Servable {
+///
+/// The refusal names each node that has not, with the release it last said it runs. A node that has
+/// never said is older than the protocol header, and one older than v0.4.5 cannot send consent at
+/// all - so "has not consented" alone would send the operator after a setting that node does not
+/// have.
+pub fn servable(
+    engine: Arc<Engine>,
+    self_id: String,
+    consented: Consented,
+    release_of: ReleaseOf,
+) -> Servable {
     Arc::new(move |ws: &str| {
         let origins = engine
             .origins(ws)
@@ -138,11 +151,20 @@ pub fn servable(engine: Arc<Engine>, self_id: String, consented: Consented) -> S
         if missing.is_empty() {
             return Ok(());
         }
+        let named: Vec<String> = missing
+            .iter()
+            .map(|n| match release_of(n) {
+                Some(r) => format!("{n} (release {r})"),
+                None => format!(
+                    "{n} (release not known - a release before v0.4.5 cannot send consent at all)"
+                ),
+            })
+            .collect();
         Err(format!(
             "workspace {ws:?} holds knowledge from node(s) {} that have not consented to this hub \
              serving it - each can add the workspace to `[sync] serve_workspaces` (docs/remote-server.md \
              Section 4.5)",
-            missing.join(", ")
+            named.join(", ")
         ))
     })
 }
@@ -585,7 +607,7 @@ mod tests {
         let app = router(
             engine.clone(),
             Arc::new(Directory::new(path)),
-            servable(engine, HUB.into(), ok),
+            servable(engine, HUB.into(), ok, Arc::new(|_: &str| None)),
             events,
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -950,6 +972,43 @@ mod tests {
         assert!(!seen.contains("operator-session"), "no session ids: {seen}");
     }
 
+    #[tokio::test]
+    async fn a_refusal_names_the_release_each_unconsented_node_runs() {
+        // sync-correctness.md Section 12: "has not consented" alone sends the operator after a
+        // setting an old node does not have, so the refusal says which release each node runs.
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Arc::new(Engine::new(store.clone(), "hub", "default"));
+        for (node, at) in [("new-node", 1), ("old-node", 2)] {
+            let mut obs = Observation::new(
+                format!("from {node}"),
+                Provenance {
+                    host: node.into(),
+                    on_behalf_of: None,
+                    workspace: "team".into(),
+                    source_ref: None,
+                    observed_at: at,
+                    confidence: None,
+                    trust_tier: TrustTier::AgentExtracted,
+                    sync: None,
+                },
+            );
+            obs.provenance[0].sync = Some(SyncMeta {
+                origin_node: node.into(),
+                origin_seq: 1,
+                hlc: Hlc::legacy(at),
+                signature: String::new(),
+                lineage: vec![],
+            });
+            store.add_observation(obs).unwrap();
+        }
+        let releases: ReleaseOf =
+            Arc::new(|n: &str| (n == "new-node").then(|| "0.4.9".to_string()));
+        let check = servable(engine, HUB.into(), Arc::new(|_: &str| BTreeSet::new()), releases);
+        let msg = check("team").expect_err("neither node consented");
+        assert!(msg.contains("new-node (release 0.4.9)"), "{msg}");
+        assert!(msg.contains("old-node (release not known"), "{msg}");
+    }
+
     /// R5: knowledge another node originated is served only with its consent, and without it the
     /// answer is a refusal that names the node - not a quietly smaller result.
     #[tokio::test]
@@ -985,6 +1044,7 @@ mod tests {
             .call("search_knowledge", serde_json::json!({"query":"knowledge","workspace":"team"}))
             .await;
         assert!(err && text.contains("spoke-node"), "refused, naming the origin: {text}");
+        assert!(text.contains("release not known"), "and saying its release is unknown: {text}");
 
         let (url, cred) = hub(engine, ["spoke-node".to_string()].into()).await;
         let mut c = Client::start(url, cred).await;

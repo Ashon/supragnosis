@@ -352,7 +352,8 @@ async function refreshPeers() {
         const dot = s.healthy ? TEAL : "#d96a5f";
         html += `<div class="fed"><span class="dot" style="background:${dot}"></span>`
           + `<span class="furl" title="${esc(s.url)}">${esc(s.url.replace(/^https?:\/\//, ""))}</span>`
-          + (s.version ? `<span class="hint">v${esc(s.version)}</span>` : "") + `</div>`;
+          + (s.version ? `<span class="hint">v${esc(s.version)}`
+            + (s.protocol != null ? ` - sync ${esc(String(s.protocol))}` : "") + `</span>` : "") + `</div>`;
         for (const w of (s.workspaces || [])) {
           const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
           html += `<div class="fws">${esc(w.workspace)}: ` + (insync
@@ -385,7 +386,8 @@ async function refreshPeers() {
         const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
         html += `<div class="fed"><span class="dot" style="background:${GOLD}"></span>`
           + `<span class="furl" title="${esc(p.node_id)}">${esc(p.node_id.slice(0, 16))}</span>`
-          + `<span class="hint">${esc(p.last_action)}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})</span></div>`;
+          + `<span class="hint">${esc(p.last_action)}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})`
+          + ` - ${p.release ? "v" + esc(p.release) : "release not known"}, sync ${esc(String(p.protocol | 0))}</span></div>`;
       }
     } else if (f.role === "hub") {
       html += `<div class="fsec">Known peers</div><div class="empty">no peer has checked in yet</div>`;

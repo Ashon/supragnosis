@@ -188,6 +188,10 @@ HTTPS (JSON wire format initially; gRPC is a later optimization):
   verifies, dedups by CAS, absorbs provenance, and re-projects. Every request is bounded in size and
   time, and an observation's content in size at ingest, so every event fits (sync-correctness.md
   Section 11).
+- Every request and response carries the sync protocol's version and the binary's release in
+  headers (`supragnosis-sync`, `supragnosis-release`); a peer that sends none speaks protocol 0. The
+  protocol rises only for a change an older peer would mishandle - a new enum value on the wire, a new
+  signed field, a changed meaning (sync-correctness.md Section 12).
 - `ping` -> **health check and surface negotiation**: an authenticated no-op that verifies
   connectivity, auth, and the caller's per-workspace authorization in one round trip. The response
   carries the hub identity, version, and the **caller's** shared workspaces - the peer's entitlement,
