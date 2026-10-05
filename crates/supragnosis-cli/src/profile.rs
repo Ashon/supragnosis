@@ -96,18 +96,23 @@ pub fn valid_name(name: &str) -> Result<(), String> {
 /// A remote server's MCP URL: HTTPS, or plain HTTP to loopback only (an SSH tunnel is the one
 /// reason to want it). A URL with no path gets `/mcp`, the path every supragnosis server uses
 /// (R8: a remote credential never crosses an unverified connection).
+/// Whether a URL's host is this machine: `localhost`, or a loopback address in either family.
+pub fn is_loopback_host(host: &str) -> bool {
+    host == "localhost"
+        || host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
 pub fn normalize_url(url: &str) -> Result<String, String> {
     let mut u =
         reqwest::Url::parse(url.trim()).map_err(|e| format!("{url:?} is not a URL: {e}"))?;
     let Some(host) = u.host_str() else {
         return Err(format!("{url:?} names no host"));
     };
-    let loopback = host == "localhost"
-        || host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback());
+    let loopback = is_loopback_host(host);
     match u.scheme() {
         "https" => {}
         "http" if loopback => {}

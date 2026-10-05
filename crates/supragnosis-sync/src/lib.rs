@@ -45,10 +45,16 @@ pub enum SyncError {
 /// this node. That is tolerable while the token only fetches knowledge, and stops being tolerable
 /// once a host's own answer decides where knowledge goes - an answer is worth no more than the
 /// identification of the caller it was given to (negotiated-surface.md Section 5).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ServerLink {
     pub url: String,
     pub auth_token: String,
+    /// PEM of the CA, or of the self-signed certificate, to trust for this host, read with the
+    /// configuration. `None` trusts the system's roots (sync-correctness.md Section 10).
+    pub ca_pem: Option<Vec<u8>>,
+    /// Accept any certificate. Set only for a loopback host: anywhere else it would send the bearer
+    /// to whoever answers, so the configuration ignores it there and says to name a `ca`.
+    pub insecure_tls: bool,
 }
 
 /// What a host said this node may reach, and when it said it (federation.md 6e).
@@ -953,9 +959,13 @@ mod tests {
         }
         // And unknown does not narrow, while the empty answer did.
         assert_eq!(
-            route(&[ServerLink { url: url.into(), auth_token: "t".into() }], &surfaces, "ws")
-                .skipped
-                .len(),
+            route(
+                &[ServerLink { url: url.into(), auth_token: "t".into(), ..Default::default() }],
+                &surfaces,
+                "ws",
+            )
+            .skipped
+            .len(),
             0
         );
     }
@@ -963,7 +973,8 @@ mod tests {
     /// Routing skips a host only on an explicit refusal, never on not knowing.
     #[test]
     fn routing_narrows_on_a_refusal_and_never_on_ignorance() {
-        let link = |u: &str| ServerLink { url: u.into(), auth_token: "t".into() };
+        let link =
+            |u: &str| ServerLink { url: u.into(), auth_token: "t".into(), ..Default::default() };
         let links = vec![link("https://a"), link("https://b"), link("https://c")];
         let surfaces: NegotiatedSurfaces = Default::default();
         {

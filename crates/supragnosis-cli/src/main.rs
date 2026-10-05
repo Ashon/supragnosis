@@ -866,7 +866,6 @@ fn build_sync_context(
             servers: links,
             config_notes,
             surfaces: surfaces.clone(),
-            insecure_tls: fc.sync.insecure_tls,
             origin_keys,
             // Only a hub (server role) observes peers; a client-only node reports none.
             peer_registry: fc.server.is_some().then_some(peer_registry),
@@ -928,12 +927,8 @@ fn spawn_fed_status(task: FedStatusTask) {
                 let mut ws_json = Vec::new();
                 let mut diff = supragnosis_sync::SurfaceDiff::default();
                 let mut negotiated_at = None;
-                if let Ok(client) = supragnosis_sync::http::SyncClient::new(
-                    server,
-                    &link.auth_token,
-                    sync.insecure_tls,
-                )
-                .map(|c| c.with_serve(sync.serve_set().0))
+                if let Ok(client) = supragnosis_sync::http::SyncClient::for_link(link)
+                    .map(|c| c.with_serve(sync.serve_set().0))
                 {
                     match client.ping().await {
                         Ok(p) => {
@@ -1200,12 +1195,8 @@ fn sync_cmd(a: SyncArgs) -> Result<()> {
         keys.insert(node.node_id().to_string(), node.public_key_hex());
         for link in &links {
             let server = &link.url;
-            let client = supragnosis_sync::http::SyncClient::new(
-                server,
-                &link.auth_token,
-                fc.sync.insecure_tls,
-            )?
-            .with_serve(fc.sync.serve_set().0);
+            let client = supragnosis_sync::http::SyncClient::for_link(link)?
+                .with_serve(fc.sync.serve_set().0);
             let s = client
                 .sync_workspace(&store, &node, &ws, &fc.sync.share_workspaces, &keys)
                 .await?;
@@ -3301,6 +3292,10 @@ mod fed {
     pub struct ServerEntry {
         pub url: String,
         pub auth_token: String,
+        /// The CA, or the hub's self-signed certificate, to trust for this hub: a PEM file. How a
+        /// self-signed hub is reached without `insecure_tls` (sync-correctness.md Section 10).
+        #[serde(default)]
+        pub ca: Option<std::path::PathBuf>,
     }
 
     impl SyncSection {
@@ -3345,10 +3340,7 @@ mod fed {
                 let links = self
                     .server
                     .iter()
-                    .map(|e| supragnosis_sync::ServerLink {
-                        url: e.url.clone(),
-                        auth_token: e.auth_token.clone(),
-                    })
+                    .filter_map(|e| self.link(&e.url, &e.auth_token, e.ca.as_deref(), &mut notes))
                     .collect();
                 return (links, notes);
             }
@@ -3368,12 +3360,64 @@ mod fed {
             let links = self
                 .servers
                 .iter()
-                .map(|url| supragnosis_sync::ServerLink {
-                    url: url.clone(),
-                    auth_token: token.clone(),
-                })
+                .filter_map(|url| self.link(url, &token, None, &mut notes))
                 .collect();
             (links, notes)
+        }
+
+        /// One host as this node will reach it (sync-correctness.md Section 10). The bearer is
+        /// never sent where it could be read in transit: a plain `http://` URL to another machine
+        /// disables the link, and `insecure_tls` - which accepts any certificate - applies to a
+        /// loopback host only. Both are ignored rather than refused, because ignoring them can only
+        /// make a link fail, never send more (P24), and each says what to change.
+        fn link(
+            &self,
+            url: &str,
+            token: &str,
+            ca: Option<&std::path::Path>,
+            notes: &mut Vec<String>,
+        ) -> Option<supragnosis_sync::ServerLink> {
+            let parsed = reqwest::Url::parse(url).ok();
+            let loopback = parsed
+                .as_ref()
+                .and_then(|u| u.host_str())
+                .is_some_and(crate::profile::is_loopback_host);
+            if parsed.as_ref().is_some_and(|u| u.scheme() == "http") && !loopback {
+                notes.push(format!(
+                    "[sync] {url} is plain HTTP to another machine, so its bearer would cross the \
+                     network unencrypted. The link is DISABLED for this run. Use https:// - the \
+                     hub's [server] listener terminates TLS."
+                ));
+                return None;
+            }
+            if self.insecure_tls && !loopback {
+                notes.push(format!(
+                    "[sync] insecure_tls is IGNORED for {url}: it accepts any certificate, so the \
+                     bearer would go to whoever answers. Name the hub's certificate with `ca = \
+                     \"<pem file>\"` in its [[sync.server]] entry instead."
+                ));
+            }
+            let ca_pem = match ca {
+                None => None,
+                Some(path) => match std::fs::read(path) {
+                    Ok(pem) => Some(pem),
+                    Err(e) => {
+                        notes.push(format!(
+                            "[sync] {url}: its ca {} could not be read ({e}). The link is \
+                             DISABLED for this run rather than trusting a certificate it did not \
+                             name.",
+                            path.display()
+                        ));
+                        return None;
+                    }
+                },
+            };
+            Some(supragnosis_sync::ServerLink {
+                url: url.to_string(),
+                auth_token: token.to_string(),
+                ca_pem,
+                insecure_tls: self.insecure_tls && loopback,
+            })
         }
     }
 
@@ -4059,6 +4103,67 @@ mod json_contract {
         assert!(same_shape(&e, &serde_json::json!({"a": {"b": 2}, "c": "y"}), "t").is_ok());
         assert!(same_shape(&e, &serde_json::json!({"a": {"bb": 1}, "c": "x"}), "t").is_err());
         assert!(same_shape(&e, &serde_json::json!({"a": {"b": "1"}, "c": "x"}), "t").is_err());
+    }
+}
+
+/// sync-correctness.md Section 10: the bearer is never sent where it could be read in transit.
+#[cfg(test)]
+mod link_transport {
+    use super::*;
+
+    fn links_of(toml: &str) -> (Vec<supragnosis_sync::ServerLink>, Vec<String>) {
+        let fc: fed::FileConfig = toml::from_str(toml).expect("parses");
+        fc.sync.links()
+    }
+
+    #[test]
+    fn the_bearer_only_crosses_the_network_encrypted_to_a_verified_host() {
+        let ca = std::env::temp_dir().join(format!("supragnosis-ca-{}.pem", std::process::id()));
+        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").expect("write");
+        let (links, notes) = links_of(&format!(
+            r#"
+            [sync]
+            insecure_tls = true
+            [[sync.server]]
+            url = "https://hub.example:7420"
+            auth_token = "a"
+            [[sync.server]]
+            url = "http://hub.example:7420"
+            auth_token = "b"
+            [[sync.server]]
+            url = "http://127.0.0.1:7420"
+            auth_token = "c"
+            [[sync.server]]
+            url = "https://localhost:7420"
+            auth_token = "d"
+            [[sync.server]]
+            url = "https://named.example:7420"
+            auth_token = "e"
+            ca = "{}"
+            [[sync.server]]
+            url = "https://missing.example:7420"
+            auth_token = "f"
+            ca = "/nonexistent/ca.pem"
+            "#,
+            ca.display()
+        ));
+        let by_url = |u: &str| links.iter().find(|l| l.url == u);
+        let remote = by_url("https://hub.example:7420").expect("kept, but verified");
+        assert!(!remote.insecure_tls, "insecure_tls does not reach another machine");
+        assert!(by_url("http://hub.example:7420").is_none(), "plain HTTP off loopback is off");
+        assert!(by_url("http://127.0.0.1:7420").is_some(), "plain HTTP on loopback stays");
+        assert!(by_url("https://localhost:7420").expect("loopback").insecure_tls);
+        assert!(by_url("https://named.example:7420").expect("named").ca_pem.is_some());
+        assert!(by_url("https://missing.example:7420").is_none(), "an unreadable ca disables it");
+        let said = |needle: &str| notes.iter().any(|n| n.contains(needle));
+        assert!(said("insecure_tls is IGNORED for https://hub.example:7420"), "{notes:?}");
+        assert!(said("http://hub.example:7420 is plain HTTP"), "{notes:?}");
+        assert!(said("/nonexistent/ca.pem"), "{notes:?}");
+        assert!(
+            !said("https://localhost:7420"),
+            "nothing to say about a loopback host: {notes:?}"
+        );
+        let _ = std::fs::remove_file(ca);
     }
 }
 

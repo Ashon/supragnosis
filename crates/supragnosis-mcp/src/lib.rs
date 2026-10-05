@@ -311,8 +311,6 @@ pub struct SyncContext {
     /// loop; read here under a lock. A handler never negotiates - that would add a round trip per
     /// host to a call that already blocks (F11, negotiated-surface.md N1).
     pub surfaces: supragnosis_sync::NegotiatedSurfaces,
-    /// Accept a self-signed hub certificate (internal VMs; content authenticity stays with F6).
-    pub insecure_tls: bool,
     /// Origin-key directory {node_id -> public key hex} for verifying pulled events (F6).
     /// Phase 5 supersedes this with the log-borne canon-policy binding.
     pub origin_keys: std::collections::BTreeMap<String, String>,
@@ -557,11 +555,7 @@ impl SupragnosisServer {
                         }
                         for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
                             let server = &link.url;
-                            let client = match supragnosis_sync::http::SyncClient::new(
-                                server,
-                                &link.auth_token,
-                                ctx.insecure_tls,
-                            ) {
+                            let client = match supragnosis_sync::http::SyncClient::for_link(link) {
                                 Ok(c) => c,
                                 Err(e) => {
                                     remote_results.push(
@@ -1109,11 +1103,7 @@ impl SupragnosisServer {
         let mut results = Vec::new();
         for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
             let server = &link.url;
-            let client = match supragnosis_sync::http::SyncClient::new(
-                server,
-                &link.auth_token,
-                ctx.insecure_tls,
-            ) {
+            let client = match supragnosis_sync::http::SyncClient::for_link(link) {
                 Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}));
@@ -1207,11 +1197,7 @@ impl SupragnosisServer {
         let mut asked = Vec::new();
         for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
             let server = &link.url;
-            let client = match supragnosis_sync::http::SyncClient::new(
-                server,
-                &link.auth_token,
-                ctx.insecure_tls,
-            ) {
+            let client = match supragnosis_sync::http::SyncClient::for_link(link) {
                 Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
                 Err(e) => {
                     results.push(serde_json::json!({"server": server, "error": e.to_string()}));
