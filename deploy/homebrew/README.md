@@ -42,7 +42,10 @@ such check.
 - **Which machines pour one:**
   - Apple silicon on macOS 14 or later (`arm64_sonoma`). Homebrew pours a bottle built for an older
     macOS on every newer one, which is why it is built on the oldest arm64 runner.
-  - x86_64 Linux (`x86_64_linux`).
+  - x86_64 Linux (`x86_64_linux`). On a distribution whose glibc is older than Homebrew's own
+    minimum, Homebrew installs its glibc and gcc beside any formula it installs - on ubuntu-22.04
+    that was twelve formulae before this bottle poured. The bottle does not change that; it only
+    spares the source-build checks.
   - Intel Macs do not: there is no Intel runner to build on, since the release cross-compiles the
     Intel binary. They keep the source-build path, so an outdated Command Line Tools still stops the
     install there (`xcode-select --install`, or Software Update).
