@@ -85,22 +85,33 @@ trap 'rm -rf "${tmp}"' EXIT INT TERM
 
 echo "Download: ${url}"
 curl -fsSL "${url}" -o "${tmp}/pkg.tar.gz"
-curl -fsSL "${url}.sha256" -o "${tmp}/pkg.sha256" 2>/dev/null || true
 
-# Checksum verification (if the sha256 file exists).
-if [ -s "${tmp}/pkg.sha256" ]; then
-  want="$(cut -d' ' -f1 "${tmp}/pkg.sha256")"
-  if command -v sha256sum >/dev/null 2>&1; then
-    got="$(sha256sum "${tmp}/pkg.tar.gz" | cut -d' ' -f1)"
-  else
-    got="$(shasum -a 256 "${tmp}/pkg.tar.gz" | cut -d' ' -f1)"
-  fi
-  if [ "${want}" != "${got}" ]; then
-    echo "Checksum mismatch (expected ${want}, actual ${got})." >&2
-    exit 1
-  fi
-  echo "Checksum OK"
+# Checksum verification, required. Every release publishes <asset>.sha256 beside each binary, so a
+# checksum that cannot be fetched means the download is not what the release published - or the
+# network in between is not to be trusted with it. Installing anyway would make the check decorative:
+# it used to be skipped whenever the .sha256 could not be fetched.
+if ! curl -fsSL "${url}.sha256" -o "${tmp}/pkg.sha256" || [ ! -s "${tmp}/pkg.sha256" ]; then
+  echo "No checksum at ${url}.sha256 - refusing to install a binary that cannot be verified." >&2
+  exit 1
 fi
+want="$(cut -d' ' -f1 "${tmp}/pkg.sha256")"
+case "${want}" in
+  *[!0-9a-f]* | "") echo "The checksum file does not hold a sha256 - refusing to install." >&2; exit 1 ;;
+esac
+[ "${#want}" -eq 64 ] || { echo "The checksum file does not hold a sha256 - refusing to install." >&2; exit 1; }
+if command -v sha256sum >/dev/null 2>&1; then
+  got="$(sha256sum "${tmp}/pkg.tar.gz" | cut -d' ' -f1)"
+elif command -v shasum >/dev/null 2>&1; then
+  got="$(shasum -a 256 "${tmp}/pkg.tar.gz" | cut -d' ' -f1)"
+else
+  echo "Neither sha256sum nor shasum is installed, so the download cannot be verified - refusing." >&2
+  exit 1
+fi
+if [ "${want}" != "${got}" ]; then
+  echo "Checksum mismatch (expected ${want}, actual ${got})." >&2
+  exit 1
+fi
+echo "Checksum OK"
 
 tar -C "${tmp}" -xzf "${tmp}/pkg.tar.gz"
 mkdir -p "${BIN_DIR}"
