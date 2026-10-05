@@ -589,7 +589,9 @@ changing the canon policy without a central admin - is out of scope.
   convergence surface from the recall aid.
 - **F6** An event with an invalid signature, an unknown origin key, or a bad bearer token is rejected and
   never applied. So is one this release cannot decode (`Undecodable`, alone - the rest of its batch
-  proceeds), and one held behind an earlier rejection in its stream (`Held`, see F7).
+  proceeds), one held behind an earlier rejection in its stream (`Held`, see F7), and one pushed to a
+  hub for an origin that hub does not grant the workspace (`OriginNotAdmitted`). Signatures and keys
+  verify in one spelling only, lowercase hex (sync-correctness.md Sections 7-8).
 - **F7** `origin_seq` is monotonic per **(origin node, workspace)**, so a shared workspace's stream is
   dense while unshared workspaces are absent (selective sharing). Apply is **hole-tolerant and idempotent**:
   convergence rests on CAS + HLC + the deterministic fold (P16), never on dense delivery, so a re-sent,

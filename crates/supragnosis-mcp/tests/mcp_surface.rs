@@ -798,6 +798,58 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
     server.abort();
 }
 
+/// sync-correctness.md Section 9 (D7): a remote search sends its query only for a workspace this
+/// node shares. For any other workspace no host is asked - the response says why - where it used to
+/// ship the query text to every host regardless of the share list a push already honored.
+#[tokio::test]
+async fn a_remote_search_does_not_leave_for_an_unshared_workspace() {
+    use supragnosis_core::NodeIdentity;
+    use supragnosis_sync::{ServerLink, SyncNode};
+
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let host = "http://127.0.0.1:1".to_string(); // closed port: an attempt shows up as an error
+    let sync = Arc::new(supragnosis_mcp::SyncContext {
+        node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
+        share_workspaces: vec!["ws".into()],
+        serve_workspaces: Vec::new(),
+        config_notes: Vec::new(),
+        servers: vec![ServerLink { url: host.clone(), auth_token: "t".into() }],
+        surfaces: Default::default(),
+        insecure_tls: false,
+        origin_keys: Default::default(),
+        peer_registry: None,
+    });
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .with_sync(sync)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+    let search = |ws: &'static str| {
+        CallToolRequestParams::new("search_knowledge")
+            .with_arguments(args(json!({"query": "plans", "workspace": ws, "scope": "remote"})))
+    };
+
+    let v = tool_json(&client.call_tool(search("private")).await.expect("search"));
+    let remote = v["remote"].as_array().expect("remote results");
+    assert!(remote.iter().all(|r| r.get("server").is_none()), "no host was asked: {v}");
+    assert_eq!(remote[0]["skipped_workspace"], "private", "{v}");
+
+    let v = tool_json(&client.call_tool(search("ws")).await.expect("search"));
+    let asked = v["remote"].as_array().expect("remote results");
+    assert!(
+        asked.iter().any(|r| r["server"] == host.as_str()),
+        "a shared workspace is asked: {v}"
+    );
+
+    client.cancel().await.ok();
+    server.abort();
+}
+
 /// GIVEN knowledge in the log, WHEN a round is routed on the negotiated map, THEN the log is
 /// byte-identical - nothing about the negotiation was recorded as knowledge.
 ///

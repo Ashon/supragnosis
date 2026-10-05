@@ -175,6 +175,9 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "signature_roundtrip_verifies_and_tamper_fails",
             "wire_auth_rejects_bad_token_and_unshared_workspace",
             "an_event_this_release_cannot_decode_is_rejected_alone",
+            // A signature in another spelling of the same bytes is a bad signature, not a second
+            // attestation (sync-correctness.md Section 7).
+            "a_signature_verifies_in_one_spelling_only",
         ]),
     )]),
     (7, &[c(
@@ -202,11 +205,20 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
     (9, &[
         c(
             "only whitelisted workspaces leave the node, filtered before the boundary",
-            Evidence::Scenario(&["export_respects_share_list_and_vv"]),
+            Evidence::Scenario(&[
+                "export_respects_share_list_and_vv",
+                // A query is knowledge leaving too (sync-correctness.md Section 9).
+                "a_remote_search_does_not_leave_for_an_unshared_workspace",
+            ]),
         ),
         c(
             "the server enforces per-node access, and the remote read surface obeys the same list",
-            Evidence::Scenario(&["wire_auth_rejects_bad_token_and_unshared_workspace"]),
+            Evidence::Scenario(&[
+                "wire_auth_rejects_bad_token_and_unshared_workspace",
+                // Per event as well as per request: a peer cannot push for an origin the hub does
+                // not grant the workspace (sync-correctness.md Section 8).
+                "a_peer_cannot_push_for_an_origin_not_granted_the_workspace",
+            ]),
         ),
     ]),
     (10, &[c(
@@ -1000,7 +1012,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("the workaround reaches the operator's own surface, not only a startup log",
           Evidence::Scenario(&["a_configuration_workaround_reaches_the_operator_surface"])),
         c("a workaround narrows without asking only toward sharing less, never toward more",
-          Evidence::Scenario(&["a_node_is_never_its_own_peer_through_either_path"])),
+          Evidence::Scenario(&[
+              "a_node_is_never_its_own_peer_through_either_path",
+              "a_key_in_another_spelling_is_named_and_ignored",
+          ])),
         c("refusal is reserved for proceeding being worse: a wrong answer, or an unauthorized surface",
           Evidence::Scenario(&[
               "bind_guard_enforces_f10",
