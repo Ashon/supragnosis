@@ -47,6 +47,10 @@ diff is already public.
 
 ## Breaking changes
 
+A change that breaks a promise in [docs/compatibility.md](docs/compatibility.md) Section 10 is
+listed here, and opens its release note: a store earlier releases can no longer open, a removed or
+renamed MCP tool or argument, a CLI `--json` schema raised.
+
 - **v0.3.0** put the HTTP transport behind a bearer token. An existing `claude mcp add --transport
   http` entry answers 401 after the upgrade: read the token from `~/.supragnosis/mcp.token` and send
   it as `Authorization: Bearer <token>`. `supragnosis start` and `supragnosis status` both print the

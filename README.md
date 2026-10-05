@@ -181,7 +181,13 @@ declared evidence state, tested by
 deferral names the milestone that repays it. If a guard is deleted or renamed, the clause
 reports itself as unguarded. See [architecture.md](docs/architecture.md) Section 14.
 
-Versions before 1.0 may break the store format. Migrations are provided and documented.
+**Compatibility.** A store is never misread. A release upgrades a store an earlier one wrote, in
+place. It refuses a store a later release changed past it, and changes nothing in it: the message
+names the release to install. An id or a signature, once made, verifies under every later build.
+Before 1.0 a minor release may raise what a store requires, and its release note says so first.
+The CLI's `--json` answers carry a schema number. A breaking change to the MCP tools is listed
+under [Breaking changes](CHANGELOG.md#breaking-changes). The whole promise, and what it leaves to
+federation's design (the sync wire), is [docs/compatibility.md](docs/compatibility.md).
 
 ## Configuration
 
