@@ -5,9 +5,8 @@
 > write path), [crash-recovery.md](crash-recovery.md) (the first store change that needed this) and
 > [federation.md](federation.md) (the wire, whose version is decided there, not here).
 >
-> Status: Section 9 steps 1-2 are **built** (the store's format, the encodings, golden stores, the
-> MCP surface). Steps 3-4 (machine-read CLI output, the app and daemon, the stated promise) are
-> designed, not built.
+> Status: **built** (Section 9). One part waits for its occasion: the tripwire in Section 3.6
+> belongs to the first release that raises `min_reader` past 2.
 
 ## 1. Why this exists
 
@@ -79,13 +78,13 @@ The `meta` table gains three keys:
 | `min_reader` | The lowest format a binary must implement to open this store safely. |
 | `format_by` | The release that last raised either number, or first recorded them, by version string. |
 
-Each build carries two constants. `FORMAT` is the format it writes. `MIN_READER` is the lowest format
-that can safely share a store this build has written.
+Each build carries two constants. `FORMAT` is the format it writes. `MIN_READER` is the lowest
+format that can safely share a store this build has written.
 
 The numbers are separate because a format change is not always a hazard for older binaries. A new
 table that only holds derived data, and that an older writer can leave stale without harm, raises
-`format` and leaves `min_reader` alone. A new stored field raises both, because an older writer would
-strip it (Section 1).
+`format` and leaves `min_reader` alone. A new stored field raises both, because an older writer
+would strip it (Section 1).
 
 ### 3.2 The formats so far
 
@@ -114,8 +113,8 @@ With the store's `format` S and `min_reader` R, and this build's `FORMAT` F:
 | S = F | Open as usual. |
 
 A refusal comes from `open` itself, so every path that opens a redb store for writing gets it:
-`serve`, `start`, `sync`, `migrate`, `rekey-workspace`, `reproject`. The lock probe that lifecycle commands
-use (`redb_in_use`) opens read-only, reads nothing, and is unaffected.
+`serve`, `start`, `sync`, `migrate`, `rekey-workspace`, `reproject`. The lock probe that lifecycle
+commands use (`redb_in_use`) opens read-only, reads nothing, and is unaffected.
 
 Refusing is the Principle 24 case. Proceeding would serve rows this build silently drops, and its
 first rewrite would destroy the fields it does not know. Opening read-only instead is not a safe
@@ -239,16 +238,18 @@ Cozo refusal keeps discharging it for the era before.
     supragnosis-server is newer than the app - update the app" on the tray line and the Settings
     page, and stops reading the payload.
 
-Each output has one example document, checked in at `crates/supragnosis-cli/tests/fixtures/`. Two
-tests read the same file:
+Each output has one example document, checked in at `crates/supragnosis-cli/tests/fixtures/json/`.
+Two sets of tests read the same file:
 
-- The CLI's test builds its output from fixed inputs and requires the same keys, at every level, as
-  the example.
-- The app's tests parse the example through the same functions that parse a live answer.
+- **The CLI's tests** build each output from fixed inputs and require the same keys at every
+  level as the example, and the same kind of value wherever both hold one. Each document is built
+  by a function of facts already gathered, so no daemon is needed. `status` gathers its probes
+  first and then shapes them.
+- **The app's tests** list every field the app reads, by JSON pointer, and require each one in the
+  example. They also pass the examples through the same functions that read a live answer.
 
-A producer change that a consumer would miss fails one of the two. The `status` JSON is assembled
-inline from live probes today. Building the value moves into a function of the probe results, so a
-test can call it without a daemon.
+A field the CLI renames or drops fails the CLI's side. A field the app starts reading that the CLI
+never sends fails the app's side.
 
 The plain-text lines the app reads (the first line of an outcome, `Error:` stripped) are not a
 contract and do not become one. The app shows them as messages and never branches on their wording.
@@ -280,9 +281,11 @@ cross that gap:
 
 - **The CLI's JSON** is covered by Section 6.
 - **The viewer page the shell decorates.** `shell-init.js` comes from the app and runs inside the
-  page the daemon serves. It finds `#settingsBtn`, `header` and `h1` there. A viz test pins those
-  elements as the page's contract with the shell. When one is missing, `shell-init.js` leaves the
-  page as the daemon drew it and logs which element it did not find. It does not half-decorate.
+  page the daemon serves. It finds `#settingsBtn`, `header` and `h1` there, and stands in for
+  `EventSource("/api/events")` through `onmessage` alone. A viz test pins those as the page's
+  contract with the shell. A page without a header (the shell's own splash) is not decorated at
+  all. A viewer without the gear keeps its own settings, and `shell-init.js` logs that it found
+  none.
 
 The app does not compare its own version with the daemon's, and this does not add that check. Drift
 is reported between the CLI and the daemon, which is the pair that has to agree for a restart to
@@ -304,11 +307,11 @@ fix it.
    CHANGELOG.md's Breaking changes section named as where a broken promise is announced.
 
 Steps 1 and 2 are independent of each other. Step 3 touches the app and the CLI together. Step 4
-lands with the last of them, because a promise belongs in the README only once it is kept.
+landed with the last of them, because a promise belongs in the README only once it is kept.
 
 ## 10. The promise
 
-What a release of supragnosis promises, once Section 9 is built:
+What a release of supragnosis promises:
 
 - **A store is never misread.**
   - A release opens every redb store an earlier release wrote, and upgrades it in place.
