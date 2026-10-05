@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.7](docs/releases/v0.4.7.md) | Upgrade, then restart the daemon once; the app's settings moved. `brew upgrade` then `supragnosis |
 | [v0.4.6](docs/releases/v0.4.6.md) | Upgrade a hub that admits principals; nothing else needs doing. On such a hub, a principal could |
 | [v0.4.5](docs/releases/v0.4.5.md) | Nothing to do on upgrade; one thing worth doing. An AI app connected the old way - `claude mcp add |
 | [v0.4.4](docs/releases/v0.4.4.md) | Upgrade, then restart the daemon once. The first start of v0.4.4 re-projects every workspace before |
