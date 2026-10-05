@@ -63,8 +63,10 @@
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span>
   <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
        being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->
+  <!-- The gear is Lucide's "settings" icon (ISC, https://lucide.dev), the set the desktop app uses.
+       It replaced a hand-drawn circle with eight spokes, which read as a sun. -->
   <button id="settingsBtn" title="settings" aria-label="settings">
-    <svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="2.6"/><path d="M9 1.6v2M9 14.4v2M16.4 9h-2M3.6 9h-2M14.23 3.77l-1.41 1.41M5.18 12.82l-1.41 1.41M14.23 14.23l-1.41-1.41M5.18 5.18L3.77 3.77"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
   </button>
 </div>
 <!-- Settings. One dialog, composed of sections - federation is the first, and the seam is where the
