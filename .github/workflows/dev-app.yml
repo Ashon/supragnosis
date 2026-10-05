@@ -27,22 +27,34 @@ jobs:
     # title bar's traffic lights.
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v7
-
-      - name: install rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          persist-credentials: false
+
+      # rustup, which the runner image already has, rather than dtolnay/rust-toolchain: that action
+      # publishes no version tags, only branches (stable, master), so a SHA pin would freeze it and
+      # Dependabot could not move it.
+      - name: install rust
+        run: rustup toolchain install stable --profile minimal --target aarch64-apple-darwin --target x86_64-apple-darwin && rustup default stable
 
       - name: cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: app-universal   # shares the release app job's cache
+          key: app-universal   # the release builds without a cache (release.yml, build)
 
-      # Same gate as release.yml: enable the tauri bundler's signing/notarization env only
-      # when the secrets exist - passing empty strings would make the bundler try to sign
-      # and fail, so existence is checked first and exported via GITHUB_ENV only.
-      - name: enable signing + notarization (when secrets exist)
+      # The tauri CLI is app/package.json's exact version, its integrity held by package-lock.json,
+      # and installed in a step that holds no secrets. It used to be `npx --yes @tauri-apps/cli@^2`:
+      # whatever 2.x npm served that minute, run in a job whose environment held the Apple signing
+      # certificate and the notarization password.
+      - name: install the pinned tauri CLI
+        working-directory: app
+        run: npm ci --no-audit --no-fund
+
+      # The signing secrets reach this step only. They used to be exported through GITHUB_ENV, which
+      # handed them to every later step of the job - the packaging, the upload and release actions.
+      # They are set only when they exist: empty strings make the bundler attempt signing and fail.
+      - name: build the desktop app (universal, signed when the secrets exist)
+        working-directory: app
         shell: bash
         env:
           APPLE_CERTIFICATE_S: ${{ secrets.APPLE_CERTIFICATE }}
@@ -56,16 +68,13 @@ jobs:
           if [ -n "$APPLE_SIGNING_IDENTITY_S" ]; then
             for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
               s="${v}_S"
-              printf '%s<<__EOV__\n%s\n__EOV__\n' "$v" "${!s}" >> "$GITHUB_ENV"
+              export "$v=${!s}"
             done
             echo "signing + notarization enabled"
           else
             echo "no APPLE_SIGNING_IDENTITY secret - building unsigned"
           fi
-
-      - name: build the desktop app (universal, signed when enabled)
-        working-directory: app
-        run: npx --yes @tauri-apps/cli@^2 build --target universal-apple-darwin
+          npx --no-install tauri build --target universal-apple-darwin
 
       - name: package app zip
         shell: bash

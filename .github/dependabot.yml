@@ -2,12 +2,18 @@
 # (app/Cargo.toml says why). Dependabot resolves one manifest per directory entry, so an update to
 # the shell's dependency tree is invisible from the root - which is the same separation that keeps a
 # webview advisory from reading as an advisory against the daemon, seen from the other side.
+#
+# Every entry waits a week after a version is published before proposing it. A hijacked release is
+# usually caught and yanked within days; a version-update PR opened the hour it appears is how one
+# reaches a lockfile. Security updates are not held by the cooldown.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       # One PR per week for the routine drift, so review attention goes to the majors.
@@ -18,6 +24,8 @@ updates:
     directory: /app
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 3
     groups:
       patch-and-minor:
@@ -29,3 +37,24 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+
+  # The desktop app's build tooling: the tauri CLI, pinned exactly in app/package.json because the
+  # release step that runs it holds the signing secrets. A pin nothing moves goes stale quietly.
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+
+  # The viewer's lint tooling (ESLint and no-unsanitized), for the same reason.
+  - package-ecosystem: npm
+    directory: /crates/supragnosis-viz/assets
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
