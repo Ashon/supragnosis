@@ -10,8 +10,8 @@
 // 2. Window-chrome integration - the macOS title bar is a transparent overlay (see show_viewer),
 //    so a page's header doubles as the title bar: it becomes the drag region, and the shared
 //    chrome stylesheet (shell.css) pads it clear of the traffic lights.
-// 3. Navigation - the Graph | Settings control in the title bar (docs/settings-page.md Section
-//    3.0). Built here, once, for both pages, so its markup has one source as its style does.
+// 3. Navigation - the graph and settings icons at the right of the title bar (docs/settings-page.md
+//    Section 3.0). Built here, once, for both pages, so its markup has one source as its style does.
 // 4. Startup health signal - report which page actually loaded (the daemon-served viewer vs the
 //    shell's starting splash); the shell's only observable for "the proxy + webview path works".
 //
@@ -25,19 +25,18 @@
   var onSettings = /settings\.html$/.test(location.pathname) &&
     (location.protocol === "tauri:" || location.hostname === "tauri.localhost");
 
-  // The icon is a Lucide file drawn by shell.css (.i-graph, .i-settings), not markup.
+  // An icon-only link: the icon is a Lucide file drawn by shell.css (.i-graph, .i-settings), and the
+  // name and shortcut are its tooltip and accessible name.
   function tab(label, href, iconName, key, current) {
     var a = document.createElement("a");
     a.href = href;
+    a.title = label + " (" + key + ")";
+    a.setAttribute("aria-label", label);
     if (current) a.setAttribute("aria-current", "page");
     var i = document.createElement("span");
     i.className = "i i-" + iconName;
     i.setAttribute("aria-hidden", "true");
     a.appendChild(i);
-    a.appendChild(document.createTextNode(label));
-    var k = document.createElement("kbd");
-    k.textContent = key;
-    a.appendChild(k);
     return a;
   }
 
@@ -48,9 +47,8 @@
     nav.setAttribute("aria-label", "Pages");
     nav.appendChild(tab("Graph", GRAPH, "graph", "\u23181", !onSettings));
     nav.appendChild(tab("Settings", SETTINGS, "settings", "\u2318,", onSettings));
-    var h1 = header.querySelector("h1");
-    if (h1 && h1.nextSibling) header.insertBefore(nav, h1.nextSibling);
-    else header.appendChild(nav);
+    // At the right end of the title bar, after whatever the page put there.
+    header.appendChild(nav);
   }
 
   window.addEventListener("DOMContentLoaded", function () {
