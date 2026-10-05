@@ -15,8 +15,9 @@
 #    the Tauri shell instead, which proxies its own webview onto the socket via viz://. To poke the
 #    HTTP API by hand, `task viz -- /api/curation` speaks the socket directly with curl.
 #
-# No fmt task on purpose: the tree is not rustfmt-managed (cargo fmt --check currently reports ~410
-# hunks), so a `task fmt` would tempt an enormous unrelated diff. Format by hand if you need to.
+# 3. `task check` needs what CI installs: rustup (the msrv task compiles at both declared floors),
+#    cargo-deny (`cargo install cargo-deny`), npm for the viewer's ESLint, and on Linux the webview
+#    toolchain the desktop shell compiles against.
 
 version: '3'
 
@@ -150,13 +151,20 @@ tasks:
       - 'curl -sS http://127.0.0.1:7531/api/federation | python3 -m json.tool'
 
   check:
-    desc: The full gate - clippy, viewer ESLint, tests. Same checks CI runs, so run it before pushing.
+    desc: The full gate - every check rust.yml and frontend-lint.yml run. Run it before pushing.
+    # One entry per CI step. A gate that runs less than CI is a green light CI then turns red; one
+    # that runs more holds contributors to a bar the project does not. rust.yml says the same.
     cmds:
       - task: fmt
       - task: lint
       - task: lint:fastembed
+      - task: lint:app
       - task: lint:web
       - task: test
+      - task: test:viewer-release
+      - task: test:app
+      - task: msrv
+      - task: deny
 
   fmt:
     desc: rustfmt over both workspaces, check-only (matches the rust.yml fmt step exactly)
@@ -176,12 +184,29 @@ tasks:
     desc: cargo clippy over all targets, warnings denied (matches the rust.yml clippy step exactly)
     # Workspace lints deny clippy::all, but rustc lints stay at warn - dead_code among them, which
     # is what a guard that lost its #[test] becomes. Keep this identical to rust.yml.
-    cmds: [cargo clippy --all-targets -- -D warnings]
+    cmds: [cargo clippy --all-targets --locked -- -D warnings]
 
   lint:fastembed:
     desc: clippy with the opt-in fastembed feature on (matches the rust.yml fastembed job)
     # The default build never compiles the ONNX adapter, so this is the only local check that does.
-    cmds: [cargo clippy -p supragnosis-cli --features fastembed --all-targets -- -D warnings]
+    cmds: [cargo clippy --locked -p supragnosis-cli --features fastembed --all-targets -- -D warnings]
+
+  lint:app:
+    desc: clippy over the desktop shell, a separate workspace (matches the rust.yml macos job)
+    cmds: [cargo clippy --manifest-path app/Cargo.toml --all-targets --locked -- -D warnings]
+
+  msrv:
+    desc: Compile both workspaces at their declared floors (matches the rust.yml msrv and macos jobs)
+    # Through `rustup run`, not `cargo +toolchain`: the cargo on PATH may be a package manager's,
+    # which does not understand the + syntax. Each floor is read from its manifest, as CI reads it.
+    cmds:
+      - |
+        set -eu
+        floor() { sed -n '/^\[workspace\.package\]/,/^\[/ s/^rust-version *= *"\(.*\)"/\1/p' "$1" | head -1; }
+        server=$(floor Cargo.toml); shell=$(floor app/Cargo.toml)
+        rustup toolchain install "$server" "$shell" --profile minimal
+        rustup run "$server" cargo check --locked --all-targets
+        rustup run "$shell" cargo check --manifest-path app/Cargo.toml --locked --all-targets
 
   deny:
     desc: cargo-deny over both workspaces - advisories, licences, bans, sources (mirrors rust.yml)
@@ -205,7 +230,15 @@ tasks:
 
   test:
     desc: 'cargo test (the real-model suite is #[ignore]d - see test:e2e)'
-    cmds: [cargo test]
+    cmds: [cargo test --locked]
+
+  test:viewer-release:
+    desc: The viewer tests against its minified assets (oxc runs only in release builds)
+    cmds: [cargo test --locked --release -p supragnosis-viz]
+
+  test:app:
+    desc: The desktop shell's tests, a separate workspace (matches the rust.yml macos job)
+    cmds: [cargo test --manifest-path app/Cargo.toml --locked]
 
   test:e2e:
     desc: 'Real-model scorecard - needs a local Ollama or an API key. Measures, does not guard.'
