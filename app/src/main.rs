@@ -355,7 +355,7 @@ fn shell_asset(target: &str) -> Option<(&'static str, &'static [u8])> {
         "/__shell/shell.css" => {
             Some(("text/css; charset=utf-8", include_bytes!("../assets/shell.css")))
         }
-        // The icons shell.css itself draws - the Graph | Settings control (assets/icons/README.md).
+        // The icons shell.css itself draws - the graph and settings links (assets/icons/README.md).
         "/__shell/icons/waypoints.svg" => {
             Some(("image/svg+xml", include_bytes!("../assets/icons/waypoints.svg")))
         }
