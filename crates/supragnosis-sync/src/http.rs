@@ -31,6 +31,22 @@ pub const BATCH_EVENTS: usize = 500;
 /// [`PAGE_BYTES`] encoded - always at least one event, so a page always makes progress.
 pub const PAGE_EVENTS: usize = 500;
 pub const PAGE_BYTES: usize = 4 << 20;
+/// The sync protocol's version (sync-correctness.md Section 12). Raised by a change an older peer
+/// would mishandle - a new enum value on the wire, a new signed field, a changed meaning - and not
+/// by an optional field, an endpoint or a header, which older peers ignore. A peer that sends none
+/// speaks protocol 0: everything before this number existed.
+pub const PROTOCOL: u32 = 1;
+/// The headers every request and every response carry: the protocol, and the binary's release.
+pub const PROTOCOL_HEADER: &str = "supragnosis-sync";
+pub const RELEASE_HEADER: &str = "supragnosis-release";
+
+/// What a request's headers say about the peer that sent it. `(0, None)` from a peer before them.
+fn peer_speaks(headers: &HeaderMap) -> (u32, Option<String>) {
+    let text = |name: &str| headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let protocol = text(PROTOCOL_HEADER).and_then(|v| v.parse().ok()).unwrap_or(0);
+    (protocol, text(RELEASE_HEADER))
+}
+
 /// How long one sync request may take, on either side.
 pub const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -128,8 +144,10 @@ pub type OnActivity = Arc<dyn Fn(SyncActivity) + Send + Sync>;
 /// records it; the sync crate only carries it.
 pub type OnConsent = Arc<dyn Fn(&str, &str, bool) + Send + Sync>;
 
-/// The header a node sends its consent in. A header rather than a body field, because an older hub
-/// ignores a header it does not know, where a body field could fail its strict request parsing.
+/// The header a node sends its consent in. A header because consent is about the whole request -
+/// the workspace it names - not about any one event in it. (An older hub would ignore an unknown
+/// body field exactly as it ignores an unknown header: the wire types do not deny unknown fields.
+/// What an older peer cannot read is an unknown enum value, sync-correctness.md Section 12.)
 pub const SERVE_HEADER: &str = "supragnosis-serve";
 
 fn consent_of(headers: &HeaderMap) -> Option<bool> {
@@ -157,6 +175,10 @@ pub struct PeerRegistry {
 #[derive(Debug, Clone, Serialize)]
 pub struct PeerStatus {
     pub node_id: String,
+    /// The sync protocol the peer last spoke - 0 for a release before the protocol header.
+    pub protocol: u32,
+    /// The release the peer last said it runs. `None` for a release before the header.
+    pub release: Option<String>,
     /// Epoch millis of the most recent authenticated request.
     pub last_seen_ms: u64,
     /// The most recent action ("ping" | "advertise" | "pull" | "push" | "search").
@@ -166,10 +188,13 @@ pub struct PeerStatus {
 }
 
 impl PeerRegistry {
-    pub fn record(&self, node_id: &str, action: &str) {
+    /// Records a request and what the peer said about itself (sync-correctness.md Section 12).
+    pub fn record(&self, node_id: &str, action: &str, speaks: (u32, Option<String>)) {
         let mut m = self.peers.lock().unwrap();
         let e = m.entry(node_id.to_string()).or_insert_with(|| PeerStatus {
             node_id: node_id.to_string(),
+            protocol: 0,
+            release: None,
             last_seen_ms: 0,
             last_action: String::new(),
             hits: 0,
@@ -177,6 +202,12 @@ impl PeerRegistry {
         e.last_seen_ms = supragnosis_core::now_millis();
         e.last_action = action.to_string();
         e.hits += 1;
+        (e.protocol, e.release) = speaks;
+    }
+
+    /// The release a peer last said it runs, if it has said.
+    pub fn release_of(&self, node_id: &str) -> Option<String> {
+        self.peers.lock().unwrap().get(node_id).and_then(|p| p.release.clone())
     }
 
     pub fn snapshot(&self) -> Vec<PeerStatus> {
@@ -385,9 +416,9 @@ impl ServerState {
         self
     }
 
-    fn seen(&self, node_id: &str, action: &str) {
+    fn seen(&self, node_id: &str, action: &str, headers: &HeaderMap) {
         if let Some(r) = &self.registry {
-            r.record(node_id, action);
+            r.record(node_id, action, peer_speaks(headers));
         }
     }
 
@@ -478,6 +509,9 @@ pub struct PingResp {
     pub node_id: String,
     /// The hub's binary version.
     pub version: String,
+    /// The hub's sync protocol (sync-correctness.md Section 12). 0 from a hub before it.
+    #[serde(default)]
+    pub protocol: u32,
     /// The workspaces the CALLER is authorized to sync (diagnostics for setup mistakes).
     pub shared_workspaces: Vec<String>,
 }
@@ -545,7 +579,7 @@ async fn advertise_handler(
         .map_err(internal)?;
     // Recorded in the peer registry, but NOT streamed: advertise is a metadata handshake that the
     // status loop fires every minute - the activity feed shows knowledge movement, not heartbeats.
-    state.seen(&entry.node_id, "advertise");
+    state.seen(&entry.node_id, "advertise", &headers);
     Ok(Json(AdvertiseResp { node_id: state.node.node_id().to_string(), vv }))
 }
 
@@ -596,7 +630,7 @@ async fn pull_handler(
         page.push(ev);
     }
     let more = page.len() < total;
-    state.seen(&entry.node_id, "pull");
+    state.seen(&entry.node_id, "pull", &headers);
     state.activity("pull-served", &entry.node_id, &ws, page.len());
     Ok(Json(PullResp { events: page, more }))
 }
@@ -631,7 +665,7 @@ async fn push_handler(
     .await
     .map_err(internal)?
     .map_err(internal)?;
-    state.seen(&entry.node_id, "push");
+    state.seen(&entry.node_id, "push", &headers);
     state.activity("push-received", &entry.node_id, &ws, report.accepted);
     // Re-materialize after new events land (Prop C) - injected by the wiring layer.
     if report.accepted > 0 {
@@ -680,7 +714,7 @@ async fn search_handler(
             (hits, "keyword".to_string())
         }
     };
-    state.seen(&entry.node_id, "search");
+    state.seen(&entry.node_id, "search", &headers);
     state.activity("search-served", &entry.node_id, &req.workspace, hits.len());
     Ok(Json(SearchResp { mode, hits }))
 }
@@ -695,10 +729,11 @@ async fn ping_handler(
     let admitted = state.peers.admitted();
     let entry = authenticate(&headers, &admitted.allowlist)?;
     // Registry only (see advertise) - health checks are heartbeats, not knowledge movement.
-    state.seen(&entry.node_id, "ping");
+    state.seen(&entry.node_id, "ping", &headers);
     Ok(Json(PingResp {
         node_id: state.node.node_id().to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
+        protocol: PROTOCOL,
         shared_workspaces: entry.shared_workspaces.clone(),
     }))
 }
@@ -716,17 +751,22 @@ pub fn router(state: Arc<ServerState>) -> Router {
         .with_state(state)
 }
 
-/// Answers 504 for a sync request that runs past [`CALL_TIMEOUT`], as the hub's principal routes do.
+/// Every sync response says which protocol and release answered (Section 12), and a request that
+/// runs past [`CALL_TIMEOUT`] is answered 504, as the hub's principal routes do (Section 11).
 async fn bounded(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
-    match tokio::time::timeout(CALL_TIMEOUT, next.run(req)).await {
+    let mut response = match tokio::time::timeout(CALL_TIMEOUT, next.run(req)).await {
         Ok(response) => response,
         Err(_) => (StatusCode::GATEWAY_TIMEOUT, "the sync request ran past its time limit")
             .into_response(),
-    }
+    };
+    let h = response.headers_mut();
+    h.insert(PROTOCOL_HEADER, axum::http::HeaderValue::from(PROTOCOL));
+    h.insert(RELEASE_HEADER, axum::http::HeaderValue::from_static(env!("CARGO_PKG_VERSION")));
+    response
 }
 
 /// TLS material for the in-process rustls termination (F10).
@@ -883,6 +923,8 @@ impl SyncClient {
             .http
             .post(format!("{}{}", self.base, path))
             .bearer_auth(&self.token)
+            .header(PROTOCOL_HEADER, PROTOCOL)
+            .header(RELEASE_HEADER, env!("CARGO_PKG_VERSION"))
             .json(req);
         if let (Some(ws), Some(serve)) = (workspace, &self.serve) {
             builder = builder.header(SERVE_HEADER, if serve.contains(ws) { "yes" } else { "no" });
@@ -1527,6 +1569,64 @@ mod tests {
         assert_eq!(summary.pulled, 10, "the other stream arrived");
         let held = version_vector(store.as_ref(), "ws").unwrap();
         assert_eq!(held.get(first.node_id(), "ws"), 0, "nothing of the held stream past its hole");
+    }
+
+    /// sync-correctness.md Section 12 (D10): every request and every response says which protocol
+    /// and release is talking, a hub's ping answer carries its protocol, and the hub records what each
+    /// peer said - 0 and no release for a peer from before the headers.
+    #[tokio::test]
+    async fn both_sides_say_which_protocol_and_release_they_speak() {
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let spoke = SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]));
+        let old = SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]));
+        let peers = Arc::new(PeerDirectory::new(
+            vec![entry(&spoke, "tok", &["w"]), entry(&old, "old", &["w"])],
+            hub.node_id(),
+            &hub.public_key_hex(),
+        ));
+        let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let registry = Arc::new(PeerRegistry::default());
+        let addr = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+        let hooks = Hooks { peer_registry: Some(registry.clone()), ..Hooks::default() };
+        let server = tokio::spawn(serve(store, hub.clone(), addr, None, peers, hooks));
+
+        let client = SyncClient::new(format!("http://{addr}"), "tok", false).unwrap();
+        let mut ping = client.ping().await;
+        for _ in 0..50 {
+            if ping.is_ok() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            ping = client.ping().await;
+        }
+        assert_eq!(ping.expect("answered").protocol, PROTOCOL);
+
+        // A peer from before the headers: a bare bearer, no protocol, no release.
+        let raw = reqwest::Client::new()
+            .post(format!("http://{addr}/sync/ping"))
+            .bearer_auth("old")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(raw.headers()[PROTOCOL_HEADER], PROTOCOL.to_string().as_str());
+        assert_eq!(raw.headers()[RELEASE_HEADER], env!("CARGO_PKG_VERSION"));
+
+        let seen: BTreeMap<String, (u32, Option<String>)> = registry
+            .snapshot()
+            .into_iter()
+            .map(|p| (p.node_id, (p.protocol, p.release)))
+            .collect();
+        let here = Some(env!("CARGO_PKG_VERSION").to_string());
+        assert_eq!(seen[spoke.node_id()], (PROTOCOL, here));
+        assert_eq!(seen[old.node_id()], (0, None));
+
+        // And a hub from before them answers a ping without `protocol`, which reads as 0.
+        let older: PingResp =
+            serde_json::from_str(r#"{"node_id":"n","version":"0.4.7","shared_workspaces":[]}"#)
+                .unwrap();
+        assert_eq!(older.protocol, 0);
+        server.abort();
     }
 
     #[tokio::test]
