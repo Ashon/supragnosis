@@ -1149,6 +1149,30 @@ const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.js"));
 
 #[cfg(test)]
 mod tests {
+
+    /// The desktop shell decorates this page from outside (app/assets/shell-init.js): the header
+    /// becomes the title bar and its drag region, the status bar's gear opens the app's Settings
+    /// page, and the event stream arrives through a stand-in for EventSource that feeds `onmessage`
+    /// and nothing else. The shell ships in the app and this page in the daemon, and the two can be
+    /// a release apart, so what the shell finds here is this page's contract with it
+    /// (docs/compatibility.md Section 8). Changing one of these needs the shell changed too, and an
+    /// app from before that change will leave the page undecorated rather than half done.
+    #[test]
+    fn the_page_keeps_what_the_desktop_shell_finds() {
+        let html = include_str!("../assets/viewer.html");
+        for (needle, what) in [
+            ("<header", "the header the shell makes its title bar"),
+            ("<h1", "the title it makes part of the drag region"),
+            (r#"id="settingsBtn""#, "the gear it routes to the app's Settings page"),
+        ] {
+            assert!(html.contains(needle), "viewer.html lost {what} ({needle})");
+        }
+        let js = include_str!("../assets/viewer.js");
+        assert!(
+            js.contains(r#"new EventSource("/api/events")"#) && js.contains("es.onmessage ="),
+            "the shell's EventSource stand-in serves /api/events through onmessage only"
+        );
+    }
     use super::*;
 
     /// remote-viewer.md V2: every path this router answers has a declared remote policy, so an

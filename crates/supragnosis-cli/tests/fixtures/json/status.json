@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "situation": "conflict",
+  "managers": [
+    {
+      "type": "pidfile",
+      "pid": 4242
+    },
+    {
+      "type": "launchd",
+      "label": "com.supragnosis.daemon",
+      "source": "canonical",
+      "formula": null,
+      "pid": 4243,
+      "last_exit": 0
+    }
+  ],
+  "answering": true,
+  "store_held": true,
+  "mcp": "http://127.0.0.1:7373/mcp",
+  "version": {
+    "here": "0.4.8",
+    "running": "0.4.7"
+  },
+  "store": {
+    "owed_projections": 0,
+    "last_recovery": null
+  },
+  "server": {
+    "name": "lab",
+    "url": "https://lab.example:7420/mcp",
+    "remote": true
+  },
+  "service": {
+    "label": "com.supragnosis.daemon",
+    "plist": "/Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist",
+    "state": "generated"
+  }
+}

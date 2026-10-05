@@ -1320,6 +1320,31 @@ fn run_client_cli(client: connect::Client, env: &connect::Env, argv: &[String]) 
     Ok(())
 }
 
+/// The schema of every machine-read CLI answer: `status --json`, `connect --json` and
+/// `server --json` (docs/compatibility.md Section 6). Adding a field keeps it. Removing or renaming
+/// one, changing its type or what a value means raises it, and the desktop app - which reads these -
+/// then says to update itself instead of misreading the answer. Each has an example document in
+/// tests/fixtures/json that this crate's tests and the app's both read.
+const JSON_SCHEMA: u64 = 1;
+
+/// `connect --json`: every AI app this build knows, and how each is connected.
+fn connect_document(env: &connect::Env, program: &str) -> serde_json::Value {
+    use connect::{Entry, CLIENTS};
+    let clients: Vec<_> = CLIENTS
+        .iter()
+        .map(|c| {
+            let installed = c.installed(env);
+            let entry = if installed { c.entry(env) } else { Entry::None };
+            serde_json::json!({
+                "id": c.id(), "name": c.name(), "installed": installed,
+                "entry": entry.as_str(), "config": c.config(env).0,
+                "via": match c.via() { connect::Via::Cli => "cli", connect::Via::File => "file" },
+            })
+        })
+        .collect();
+    serde_json::json!({ "schema": JSON_SCHEMA, "program": program, "clients": clients })
+}
+
 fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
     use connect::{Entry, CLIENTS};
     let rows: Vec<_> = CLIENTS
@@ -1327,17 +1352,7 @@ fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
         .map(|c| (*c, c.installed(env), if c.installed(env) { c.entry(env) } else { Entry::None }))
         .collect();
     if json {
-        let clients: Vec<_> = rows
-            .iter()
-            .map(|(c, installed, entry)| {
-                serde_json::json!({
-                    "id": c.id(), "name": c.name(), "installed": installed,
-                    "entry": entry.as_str(), "config": c.config(env).0,
-                    "via": match c.via() { connect::Via::Cli => "cli", connect::Via::File => "file" },
-                })
-            })
-            .collect();
-        println!("{}", serde_json::json!({ "program": program, "clients": clients }));
+        println!("{}", connect_document(env, program));
         return Ok(());
     }
     println!(
@@ -1616,6 +1631,26 @@ fn check_server(target: &profile::Target) -> ServerCheck {
     }
 }
 
+/// `server --json`: the server profiles, which one is active, and whether it answers.
+fn servers_document(
+    active: &str,
+    rows: &[(String, String, bool)],
+    check: &ServerCheck,
+) -> serde_json::Value {
+    let servers: Vec<_> = rows
+        .iter()
+        .map(|(n, u, remote)| {
+            serde_json::json!({"name": n, "url": u, "remote": remote, "active": n == active})
+        })
+        .collect();
+    serde_json::json!({
+        "schema": JSON_SCHEMA,
+        "active": active,
+        "servers": servers,
+        "check": {"answering": check.answering, "credential": check.credential, "detail": check.detail},
+    })
+}
+
 fn server_list(home: &std::path::Path, file: &profile::ClientFile, json: bool) -> Result<()> {
     let target =
         profile::active(home, |k| std::env::var(k).ok()).map_err(|e| anyhow::anyhow!(e))?;
@@ -1629,20 +1664,7 @@ fn server_list(home: &std::path::Path, file: &profile::ClientFile, json: bool) -
     }
     let check = check_server(&target);
     if json {
-        let servers: Vec<_> = rows
-            .iter()
-            .map(|(n, u, remote)| {
-                serde_json::json!({"name": n, "url": u, "remote": remote, "active": n == target.name()})
-            })
-            .collect();
-        println!(
-            "{}",
-            serde_json::json!({
-                "active": target.name(),
-                "servers": servers,
-                "check": {"answering": check.answering, "credential": check.credential, "detail": check.detail},
-            })
-        );
+        println!("{}", servers_document(target.name(), &rows, &check));
         return Ok(());
     }
     println!("servers - the bridge sends this machine's AI apps to the active one (*)");
@@ -2665,9 +2687,71 @@ fn await_daemon(_label: &str) -> Result<()> {
     Ok(())
 }
 
+/// Everything `status --json` reports, already gathered. [`status_document`] only shapes it, so a
+/// test can build the document without a daemon (docs/compatibility.md Section 6).
+#[cfg(unix)]
+struct StatusFacts<'a> {
+    situation: &'a lifecycle::Situation,
+    answering: bool,
+    store_held: bool,
+    http: String,
+    here: &'a str,
+    running: Option<String>,
+    health: Option<serde_json::Value>,
+    server: serde_json::Value,
+    plist: std::path::PathBuf,
+    plist_state: &'static str,
+}
+
+/// `status --json`, which the desktop app reads for its tray line and its Settings page.
+#[cfg(unix)]
+fn status_document(f: &StatusFacts) -> serde_json::Value {
+    use lifecycle::{Manager, Situation};
+    let managers: Vec<&Manager> = match f.situation {
+        Situation::One(m) => vec![m],
+        Situation::Conflict(ms) => ms.iter().collect(),
+        Situation::Stopped | Situation::Unrecognized => vec![],
+    };
+    let manager_json = |m: &Manager| match m {
+        Manager::Pidfile { pid } => serde_json::json!({ "type": "pidfile", "pid": pid }),
+        Manager::Launchd(j) => {
+            let (source, formula) = match j.kind {
+                lifecycle::LabelKind::Canonical => ("canonical", None),
+                lifecycle::LabelKind::Homebrew(t) => ("homebrew", Some(t)),
+                lifecycle::LabelKind::Retired => ("retired", None),
+            };
+            serde_json::json!({
+                "type": "launchd", "label": j.label, "source": source, "formula": formula,
+                "pid": j.pid, "last_exit": j.last_exit,
+            })
+        }
+    };
+    serde_json::json!({
+        "schema": JSON_SCHEMA,
+        "situation": match f.situation {
+            Situation::Stopped => "stopped",
+            Situation::One(_) => "one",
+            Situation::Conflict(_) => "conflict",
+            Situation::Unrecognized => "unrecognized",
+        },
+        "managers": managers.iter().map(|m| manager_json(m)).collect::<Vec<_>>(),
+        "answering": f.answering,
+        "store_held": f.store_held,
+        "mcp": format!("http://{}/mcp", f.http),
+        "version": { "here": f.here, "running": f.running },
+        "store": f.health,
+        "server": f.server,
+        "service": {
+            "label": lifecycle::CANONICAL_LABEL,
+            "plist": f.plist,
+            "state": f.plist_state,
+        },
+    })
+}
+
 #[cfg(unix)]
 fn status(json: bool) -> Result<()> {
-    use lifecycle::{Drift, Manager, Situation};
+    use lifecycle::{Drift, Situation};
     let http = status_http_addr();
     let observed = observe();
     let situation = lifecycle::classify(&observed);
@@ -2686,47 +2770,20 @@ fn status(json: bool) -> Result<()> {
             Err(e) => serde_json::json!({"error": e}),
         };
 
-    let managers: Vec<&Manager> = match &situation {
-        Situation::One(m) => vec![m],
-        Situation::Conflict(ms) => ms.iter().collect(),
-        Situation::Stopped | Situation::Unrecognized => vec![],
-    };
     if json {
-        let manager_json = |m: &Manager| match m {
-            Manager::Pidfile { pid } => serde_json::json!({ "type": "pidfile", "pid": pid }),
-            Manager::Launchd(j) => {
-                let (source, formula) = match j.kind {
-                    lifecycle::LabelKind::Canonical => ("canonical", None),
-                    lifecycle::LabelKind::Homebrew(t) => ("homebrew", Some(t)),
-                    lifecycle::LabelKind::Retired => ("retired", None),
-                };
-                serde_json::json!({
-                    "type": "launchd", "label": j.label, "source": source, "formula": formula,
-                    "pid": j.pid, "last_exit": j.last_exit,
-                })
-            }
+        let facts = StatusFacts {
+            situation: &situation,
+            answering: observed.answering,
+            store_held: observed.store_held,
+            http: http.clone(),
+            here,
+            running: running.clone(),
+            health,
+            server,
+            plist: canonical_plist_path(),
+            plist_state: canonical_plist_state(),
         };
-        let out = serde_json::json!({
-            "situation": match situation {
-                Situation::Stopped => "stopped",
-                Situation::One(_) => "one",
-                Situation::Conflict(_) => "conflict",
-                Situation::Unrecognized => "unrecognized",
-            },
-            "managers": managers.iter().map(|m| manager_json(m)).collect::<Vec<_>>(),
-            "answering": observed.answering,
-            "store_held": observed.store_held,
-            "mcp": format!("http://{http}/mcp"),
-            "version": { "here": here, "running": running },
-            "store": health,
-            "server": server,
-            "service": {
-                "label": lifecycle::CANONICAL_LABEL,
-                "plist": canonical_plist_path(),
-                "state": canonical_plist_state(),
-            },
-        });
-        println!("{out}");
+        println!("{}", status_document(&facts));
         return Ok(());
     }
 
@@ -3848,5 +3905,112 @@ mod legacy_store_guard_tests {
             None => std::env::remove_var("HOME"),
         }
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+/// docs/compatibility.md Section 6: each machine-read answer has one example document in
+/// tests/fixtures/json, read by these tests and by the desktop app's. The producer and its example
+/// must have the same keys at every level and the same kind of value wherever both hold one. A
+/// field this side renames or drops fails here; a field the app reads that the example lacks fails
+/// on the app's side.
+#[cfg(test)]
+mod json_contract {
+    use super::*;
+    use serde_json::Value;
+    use std::collections::BTreeSet;
+
+    fn example(name: &str) -> Value {
+        let text = match name {
+            "status" => include_str!("../tests/fixtures/json/status.json"),
+            "connect" => include_str!("../tests/fixtures/json/connect.json"),
+            "servers" => include_str!("../tests/fixtures/json/servers.json"),
+            other => panic!("no example named {other}"),
+        };
+        serde_json::from_str(text).expect("the example is JSON")
+    }
+
+    fn same_shape(example: &Value, made: &Value, at: &str) -> Result<(), String> {
+        match (example, made) {
+            (Value::Null, _) | (_, Value::Null) => Ok(()),
+            (Value::Object(e), Value::Object(m)) => {
+                let (ek, mk): (BTreeSet<_>, BTreeSet<_>) = (e.keys().collect(), m.keys().collect());
+                if ek != mk {
+                    return Err(format!("{at}: the example has {ek:?}, the CLI sends {mk:?}"));
+                }
+                ek.iter().try_for_each(|k| same_shape(&e[*k], &m[*k], &format!("{at}.{k}")))
+            }
+            (Value::Array(e), Value::Array(m)) => {
+                if e.len() != m.len() {
+                    return Err(format!("{at}: {} in the example, {} sent", e.len(), m.len()));
+                }
+                e.iter()
+                    .zip(m)
+                    .enumerate()
+                    .try_for_each(|(i, (x, y))| same_shape(x, y, &format!("{at}[{i}]")))
+            }
+            (Value::Bool(_), Value::Bool(_))
+            | (Value::Number(_), Value::Number(_))
+            | (Value::String(_), Value::String(_)) => Ok(()),
+            _ => Err(format!("{at}: the example holds {example}, the CLI sends {made}")),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn status_json_matches_its_example() {
+        use lifecycle::{Job, LabelKind, Manager, Situation};
+        let situation = Situation::Conflict(vec![
+            Manager::Pidfile { pid: 1 },
+            Manager::Launchd(Job {
+                label: lifecycle::CANONICAL_LABEL,
+                kind: LabelKind::Canonical,
+                pid: Some(2),
+                last_exit: Some(0),
+            }),
+        ]);
+        let doc = status_document(&StatusFacts {
+            situation: &situation,
+            answering: true,
+            store_held: true,
+            http: "127.0.0.1:7373".into(),
+            here: "1.0.0",
+            running: Some("0.9.0".into()),
+            health: Some(serde_json::json!({"owed_projections": 0, "last_recovery": null})),
+            server: serde_json::json!({"name": "lab", "url": "https://lab:7420/mcp", "remote": true}),
+            plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),
+            plist_state: "generated",
+        });
+        assert_eq!(doc["schema"], JSON_SCHEMA);
+        same_shape(&example("status"), &doc, "status").unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn connect_json_matches_its_example() {
+        let env =
+            connect::Env { home: std::env::temp_dir().join("no-such-home"), path: Vec::new() };
+        let doc = connect_document(&env, "/x/supragnosis");
+        assert_eq!(doc["schema"], JSON_SCHEMA);
+        same_shape(&example("connect"), &doc, "connect").unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn server_json_matches_its_example() {
+        let rows = vec![
+            ("local".to_string(), "http://127.0.0.1:7373/mcp".to_string(), false),
+            ("lab".to_string(), "https://lab:7420/mcp".to_string(), true),
+        ];
+        let check = ServerCheck { answering: true, credential: Some(true), detail: None };
+        let doc = servers_document("lab", &rows, &check);
+        assert_eq!(doc["schema"], JSON_SCHEMA);
+        same_shape(&example("servers"), &doc, "servers").unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// The shape check itself: a renamed field and a changed kind of value both fail it.
+    #[test]
+    fn a_renamed_or_retyped_field_fails_the_shape_check() {
+        let e = serde_json::json!({"a": {"b": 1}, "c": "x"});
+        assert!(same_shape(&e, &serde_json::json!({"a": {"b": 2}, "c": "y"}), "t").is_ok());
+        assert!(same_shape(&e, &serde_json::json!({"a": {"bb": 1}, "c": "x"}), "t").is_err());
+        assert!(same_shape(&e, &serde_json::json!({"a": {"b": "1"}, "c": "x"}), "t").is_err());
     }
 }
