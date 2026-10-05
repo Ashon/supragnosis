@@ -81,15 +81,18 @@ jobs:
     name: clippy + tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
-
-      - name: install rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          components: clippy
+          persist-credentials: false
+
+      # rustup, which the runner image already has, rather than dtolnay/rust-toolchain: that action
+      # publishes no version tags, only branches (stable, master), so a SHA pin would freeze it and
+      # Dependabot could not move it.
+      - name: install rust
+        run: rustup toolchain install stable --profile minimal -c clippy -c rustfmt && rustup default stable
 
       - name: cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: rust-check
 
@@ -186,7 +189,9 @@ jobs:
     name: declared msrv builds
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: read the declared floor
         id: msrv
@@ -197,11 +202,10 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "declared floor: $v"
 
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.msrv.outputs.version }}
+      - name: install the declared floor
+        run: rustup toolchain install "${{ steps.msrv.outputs.version }}" --profile minimal && rustup default "${{ steps.msrv.outputs.version }}"
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: msrv
 
@@ -221,15 +225,15 @@ jobs:
     name: fastembed feature builds
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: install rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+        run: rustup toolchain install stable --profile minimal -c clippy && rustup default stable
 
       - name: cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: rust-fastembed
 
@@ -246,15 +250,17 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # --all-features on both: the optional `fastembed` tree carries licences the default feature
       # set never resolves, and a gate that does not see them is a gate against the easy half.
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
           manifest-path: Cargo.toml
           arguments: --all-features
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
           manifest-path: app/Cargo.toml

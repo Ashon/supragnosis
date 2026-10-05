@@ -160,6 +160,7 @@ tasks:
       - task: lint:fastembed
       - task: lint:app
       - task: lint:web
+      - task: lint:actions
       - task: test
       - task: test:viewer-release
       - task: test:app
@@ -215,6 +216,13 @@ tasks:
       - cargo deny --all-features check
       - cargo deny --manifest-path app/Cargo.toml --config deny.toml --all-features check
 
+  lint:actions:
+    desc: zizmor over the workflows and Dependabot config - mirrors the actions-lint workflow
+    # Needs uv and gh: uvx fetches zizmor, and gh's token lets the online audits ask GitHub whether a
+    # pinned commit belongs to its action. Keep the version at the one the pinned zizmor-action
+    # resolves `latest` to (its support/versions file).
+    cmds: ['GH_TOKEN="$(gh auth token)" uvx zizmor@1.30.1 --no-progress --min-severity low .']
+
   lint:web:
     desc: ESLint no-unsanitized on the viewer assets - mirrors the frontend-lint workflow
     deps: [_web-deps]
@@ -260,7 +268,11 @@ tasks:
 
   build:app:
     desc: Bundle the macOS universal .app - the same tauri step release.yml uses
-    cmds: [npx --yes '@tauri-apps/cli@^2' build --target universal-apple-darwin]
+    # The CLI is app/package.json's pinned version (package-lock.json holds its integrity), as in CI.
+    dir: app
+    cmds:
+      - npm ci --no-audit --no-fund
+      - npx --no-install tauri build --target universal-apple-darwin
 
   # --- inspecting a running node ----------------------------------------------------------------
 
