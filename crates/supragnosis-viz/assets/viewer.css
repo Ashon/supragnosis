@@ -548,6 +548,7 @@
   #statusbar #settingsBtn { margin-left:10px; width:18px; height:18px; padding:0; flex:none;
                             display:flex; align-items:center; justify-content:center;
                             background:none; border:none; color:var(--muted); cursor:pointer; }
-  #statusbar #settingsBtn svg { width:13px; height:13px; fill:none; stroke:currentColor;
-                                stroke-width:1.5; stroke-linecap:round; }
+  /* Lucide's own stroke on its 24-unit grid, so the gear keeps the set's line weight at this size. */
+  #statusbar #settingsBtn svg { width:14px; height:14px; fill:none; stroke:currentColor;
+                                stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   #statusbar #settingsBtn:hover { color:var(--gold-bright); }
