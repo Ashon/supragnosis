@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.6](docs/releases/v0.4.6.md) | Upgrade a hub that admits principals; nothing else needs doing. On such a hub, a principal could |
 | [v0.4.5](docs/releases/v0.4.5.md) | Nothing to do on upgrade; one thing worth doing. An AI app connected the old way - `claude mcp add |
 | [v0.4.4](docs/releases/v0.4.4.md) | Upgrade, then restart the daemon once. The first start of v0.4.4 re-projects every workspace before |
 | [v0.4.3](docs/releases/v0.4.3.md) | On macOS, give the daemon one manager after upgrading. `supragnosis service install` now generates |
