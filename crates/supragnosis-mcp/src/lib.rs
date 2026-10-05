@@ -1126,7 +1126,7 @@ impl SupragnosisServer {
                     let ws2 = ws.clone();
                     let mut vv = mine;
                     match tokio::task::spawn_blocking(move || {
-                        node.apply(store.as_ref(), &ws2, events, &keys, &mut vv)
+                        node.apply_wire(store.as_ref(), &ws2, events, &keys, &mut vv)
                     })
                     .await
                     {
@@ -1186,6 +1186,48 @@ impl SupragnosisServer {
                  add it to [sync] share_workspaces in supragnosis.toml to share it"
             ));
         }
+        // Ask each routed host first. Its copy of this node's own stream floors the seq counter
+        // before anything is stamped (sync-correctness.md Section 5), and the version vector it
+        // advertises is what the push below is computed against.
+        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
+        let mut results = Vec::new();
+        let mut asked = Vec::new();
+        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
+            let server = &link.url;
+            let client = match supragnosis_sync::http::SyncClient::new(
+                server,
+                &link.auth_token,
+                ctx.insecure_tls,
+            ) {
+                Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            match client.advertise(&ws).await {
+                Ok(remote) => asked.push((server.clone(), client, remote)),
+                Err(e) => {
+                    results.push(serde_json::json!({"server": server, "error": e.to_string()}))
+                }
+            }
+        }
+        {
+            let store = self.engine.store();
+            let node = ctx.node.clone();
+            let ws2 = ws.clone();
+            let seen: Vec<u64> =
+                asked.iter().map(|(_, _, r)| r.vv.get(node.node_id(), &ws)).collect();
+            let floored = tokio::task::spawn_blocking(move || {
+                seen.into_iter().try_for_each(|s| node.floor_seq(store.as_ref(), &ws2, s))
+            })
+            .await;
+            match floored {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
+                Err(e) => return err_json(&format!("task join error: {e}")),
+            }
+        }
         // Stamp before export (export-boundary stamping, Phase 2).
         let mut reprojected = serde_json::Value::Null;
         {
@@ -1219,31 +1261,11 @@ impl SupragnosisServer {
                 _ => {}
             }
         }
-        // Narrow the round to hosts that admit this workspace, and say which were left out. The two
-        // halves ship together on purpose: filtering alone replaces a host's loud `403` with a
-        // silent skip, which trades a legible failure for an invisible one (N5).
-        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
-        let mut results = Vec::new();
-        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
-            let server = &link.url;
-            let client = match supragnosis_sync::http::SyncClient::new(
-                server,
-                &link.auth_token,
-                ctx.insecure_tls,
-            ) {
-                Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
-                    continue;
-                }
-            };
-            let remote = match client.advertise(&ws).await {
-                Ok(r) => r,
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
-                    continue;
-                }
-            };
+        // The round was narrowed above to hosts that admit this workspace, and `skipped` says which
+        // were left out. The two halves ship together on purpose: filtering alone replaces a host's
+        // loud `403` with a silent skip, which trades a legible failure for an invisible one (N5).
+        for (server, client, remote) in asked {
+            let server = &server;
             let store = self.engine.store();
             let share = ctx.share_workspaces.clone();
             let ws2 = ws.clone();
