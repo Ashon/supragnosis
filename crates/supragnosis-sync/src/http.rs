@@ -50,6 +50,106 @@ fn peer_speaks(headers: &HeaderMap) -> (u32, Option<String>) {
 /// How long one sync request may take, on either side.
 pub const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// TLS that trusts the certificates in `ca_pem` (sync-correctness.md Section 10), two ways.
+///
+/// - A server that presents one of them exactly is that certificate's host, and is trusted as it.
+///   This is the self-signed hub: its `tls_cert`, copied to the spoke. `openssl req -x509` marks
+///   such a certificate as a CA by default, and a verifier that only builds chains refuses a CA
+///   presented as the server's own certificate (`CaUsedAsEndEntity`) - the sandbox's hub did.
+/// - Any other server certificate must chain to one of them, with its name checked: the file is
+///   then a CA bundle.
+///
+/// Either way the handshake's signatures are verified against the certificate presented, so a
+/// server that does not hold the key of the certificate it shows is refused.
+fn tls_trusting(ca_pem: &[u8]) -> Result<rustls::ClientConfig, TransportError> {
+    use rustls::pki_types::{pem::PemObject, CertificateDer};
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(ca_pem)
+        .collect::<Result<_, _>>()
+        .map_err(|e| TransportError::Tls(format!("the ca file is not PEM certificates: {e}")))?;
+    if certs.is_empty() {
+        return Err(TransportError::Tls("the ca file holds no certificate".into()));
+    }
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in &certs {
+        // One webpki cannot take as a root is still trusted by exact match below.
+        let _ = roots.add(cert.clone());
+    }
+    let chain = rustls::client::WebPkiServerVerifier::builder_with_provider(
+        Arc::new(roots),
+        provider.clone(),
+    )
+    .build()
+    .ok();
+    let verifier = Arc::new(NamedCertificates { pinned: certs, chain, provider: provider.clone() });
+    Ok(rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| TransportError::Tls(e.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth())
+}
+
+#[derive(Debug)]
+struct NamedCertificates {
+    pinned: Vec<rustls::pki_types::CertificateDer<'static>>,
+    chain: Option<Arc<rustls::client::WebPkiServerVerifier>>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
+
+impl rustls::client::danger::ServerCertVerifier for NamedCertificates {
+    fn verify_server_cert(
+        &self,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
+        intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        server_name: &rustls::pki_types::ServerName<'_>,
+        ocsp_response: &[u8],
+        now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        if self.pinned.iter().any(|c| c.as_ref() == end_entity.as_ref()) {
+            return Ok(rustls::client::danger::ServerCertVerified::assertion());
+        }
+        match &self.chain {
+            Some(v) => {
+                v.verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+            }
+            None => Err(rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer)),
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider.signature_verification_algorithms.supported_schemes()
+    }
+}
+
 /// The (origin, seq) of a wire event, read without decoding it. Empty for an unstamped one.
 fn stream_of(raw: &serde_json::Value) -> (String, u64) {
     let sync = &raw["attestation"]["sync"];
@@ -878,17 +978,12 @@ impl SyncClient {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let mut builder = reqwest::Client::builder();
         // A named certificate is how a self-signed hub is trusted without trusting every hub.
-        for cert in ca_pem
-            .map(reqwest::Certificate::from_pem_bundle)
-            .transpose()?
-            .unwrap_or_default()
-        {
-            builder = builder.add_root_certificate(cert);
+        if let Some(pem) = ca_pem {
+            builder = builder.use_preconfigured_tls(tls_trusting(pem)?);
+        } else {
+            builder = builder.danger_accept_invalid_certs(insecure_tls);
         }
-        let http = builder
-            .danger_accept_invalid_certs(insecure_tls)
-            .timeout(CALL_TIMEOUT)
-            .build()?;
+        let http = builder.timeout(CALL_TIMEOUT).build()?;
         Ok(Self {
             base: base_url.into().trim_end_matches('/').to_string(),
             token: token.into(),
@@ -1254,9 +1349,17 @@ mod tests {
     /// branch is the same one a non-loopback bind takes: `serve` matches on `tls`, not on the address.
     #[tokio::test]
     async fn tls_listener_serves_https_and_refuses_plaintext() {
-        let minted =
-            rcgen::generate_simple_self_signed(vec!["localhost".into(), "127.0.0.1".into()])
-                .expect("mint a self-signed certificate");
+        // Marked as a CA, as `openssl req -x509` does by default - the shape a self-signed hub's
+        // certificate usually has, and the one a chain-only verifier refuses as a server's own.
+        let minted = {
+            let mut params =
+                rcgen::CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()])
+                    .expect("params");
+            params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+            let signing_key = rcgen::KeyPair::generate().expect("key");
+            let cert = params.self_signed(&signing_key).expect("mint a self-signed certificate");
+            rcgen::CertifiedKey { cert, signing_key }
+        };
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
