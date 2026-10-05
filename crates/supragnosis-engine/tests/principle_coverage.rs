@@ -407,6 +407,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
+    include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
     include_str!("../../supragnosis-cli/src/lifecycle.rs"),
     include_str!("../../supragnosis-cli/src/bridge.rs"),
@@ -797,11 +798,17 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // quoted - the honest state while there is no way to remove them (excision.md 8.2).
             "p17_the_log_is_scanned_for_secrets_that_predate_the_door",
         ])),
+        // Opened by remote-viewer.md: the hub serves the viewer to its principals at /viz/, and
+        // enumeration, omitted and `*` workspaces, id-based reads and the event stream are all
+        // resolved against the reader's grants - a union is computed per granted workspace, never
+        // the node-wide projection filtered afterwards (V3, V4).
         c("an authenticated network read tier filters workspace enumeration by the reader's grants",
-          Evidence::Deferred(
-            "M4 Phase 3.5 - retired for now by removing the reachable state (the viewer left TCP \
-             for a unix socket), but owed the moment that tier opens (federation.md 6d)",
-        )),
+          Evidence::Scenario(&[
+            "the_read_tier_answers_only_within_the_grants",
+            "a_union_with_an_unconsented_workspace_is_refused_whole",
+            "the_read_tier_streams_knowledge_not_activity",
+            "every_viewer_path_has_a_remote_policy",
+        ])),
     ]),
     (18, "Writes Are an Attack Surface", &[
         c("a claimed tier is the receiver's to evaluate, and no wire claim or agent verdict can \

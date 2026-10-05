@@ -18,6 +18,8 @@ workspace = true
 # Exposes the engine.graph(ws) projection by serializing it as-is (Principle 20: viz depends only on engine).
 supragnosis-engine.workspace = true
 serde_json.workspace = true
+# The read tier serializes engine projections into values it can merge across workspaces.
+serde.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 # UnixListener + AsyncRead/Write + broadcast(sync). Not in the workspace-wide set, so enabled locally

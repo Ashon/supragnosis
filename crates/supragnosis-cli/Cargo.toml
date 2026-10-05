@@ -41,6 +41,10 @@ tokio = { workspace = true, features = ["net", "io-util", "sync", "time"] }
 reqwest.workspace = true
 # HTTP server that mounts the MCP streamable-http service (daemon mode).
 axum.workspace = true
+# The hub read tier's event stream (docs/remote-viewer.md Section 3.6) - a stream body built from the
+# viewer's broadcast channel. Already in the tree through axum and rmcp, so a direct dependency rather
+# than a new compilation unit.
+futures-util = "0.3"
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
