@@ -17,7 +17,7 @@
 members = ["."]
 
 [workspace.package]
-version = "0.4.7"
+version = "0.4.8"
 edition = "2021"
 # The shell's own floor, which is not the server's - a different dependency tree, and no reason to
 # move when the server's does. Set by tauri 2.12 and its runtime crates, which declare 1.90. The

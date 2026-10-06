@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.8](docs/releases/v0.4.8.md) | Upgrade, then restart the daemon once; a spoke that sets `insecure_tls` names its hub's certificate |
 | [v0.4.7](docs/releases/v0.4.7.md) | Upgrade, then restart the daemon once; the app's settings moved. `brew upgrade` then `supragnosis |
 | [v0.4.6](docs/releases/v0.4.6.md) | Upgrade a hub that admits principals; nothing else needs doing. On such a hub, a principal could |
 | [v0.4.5](docs/releases/v0.4.5.md) | Nothing to do on upgrade; one thing worth doing. An AI app connected the old way - `claude mcp add |
@@ -51,6 +52,12 @@ A change that breaks a promise in [docs/compatibility.md](docs/compatibility.md)
 listed here, and opens its release note: a store earlier releases can no longer open, a removed or
 renamed MCP tool or argument, a CLI `--json` schema raised.
 
+- **v0.4.8** no longer reads `[sync] insecure_tls`: every sync link verifies its hub. A spoke that
+  reached a self-signed hub through it fails its rounds until the hub's `tls_cert` is copied over and
+  named with `ca = "<pem file>"` in that hub's `[[sync.server]]` entry; its configuration notes say
+  so. A `http://` URL to another machine now disables the link. See
+  [the v0.4.8 note](docs/releases/v0.4.8.md) and [docs/sync-correctness.md](docs/sync-correctness.md)
+  Section 10.
 - **v0.3.0** put the HTTP transport behind a bearer token. An existing `claude mcp add --transport
   http` entry answers 401 after the upgrade: read the token from `~/.supragnosis/mcp.token` and send
   it as `Authorization: Bearer <token>`. `supragnosis start` and `supragnosis status` both print the
