@@ -3,7 +3,7 @@
 > What a store, an encoding and a machine-read output carry from one release to the next, and what
 > a release refuses instead of misreading. Companion to [architecture.md](architecture.md) (the
 > write path), [crash-recovery.md](crash-recovery.md) (the first store change that needed this) and
-> [federation.md](federation.md) (the wire, whose version is decided there, not here).
+> [sync-correctness.md](sync-correctness.md) (the wire, whose version is decided there, not here).
 >
 > Status: **built** (Section 9). One part waits for its occasion: the tripwire in Section 3.6
 > belongs to the first release that raises `min_reader` past 2.
@@ -55,9 +55,9 @@ Around the store, every surface that another program reads is unversioned:
 ## 2. What this is NOT
 
 - **Not the sync wire's version.** Two nodes at different releases exchanging events need a
-  protocol version and a rule for fields one side does not know. That is federation's design
-  ([federation.md](federation.md), and the federation-correctness review). This document fixes the
-  encodings both sides compute (Section 4), which the wire's rule will lean on, and stops there.
+  protocol version and a rule for fields one side does not know. That is
+  [sync-correctness.md](sync-correctness.md) Sections 6 and 12. This document fixes the encodings
+  both sides compute (Section 4), which the wire's rule leans on, and stops there.
 - **Not a migration framework.** A format change brings its own upgrade step, as v0.4.4's ledger
   seed did. What this adds is the record of which steps a store has had, and the refusal when a
   binary is behind it.
@@ -195,8 +195,9 @@ optional field absent, and one has every field present. A change that alters eit
 the test. The fix is an extension under the rule above, never an edited vector. The 2026-10 review
 showed a golden signing fixture working across versions. This makes it permanent.
 
-What a receiver does with an extension it does not know, whether it rejects it, stores it opaquely
-or ignores it, is the wire's rule (Section 2).
+What a receiver does with an extension it does not know is the wire's rule: an event it cannot
+decode is rejected alone and holds its stream, and a new signed field raises the sync protocol
+(sync-correctness.md Sections 6 and 12).
 
 ## 5. Golden stores
 
@@ -325,7 +326,10 @@ What a release of supragnosis promises:
   schema.
 - **A breaking change to the MCP tools is named** in CHANGELOG.md's Breaking changes and at the top
   of its release note.
-- **What two nodes promise each other on the wire** is decided in federation's design.
+- **What two nodes promise each other on the wire:** every request and response says its sync
+  protocol and release; an event one side cannot decode is rejected alone and offered again, never
+  skipped; the protocol rises only for a change an older peer would mishandle
+  ([sync-correctness.md](sync-correctness.md) Section 12).
 
 ## 11. Closure map
 
