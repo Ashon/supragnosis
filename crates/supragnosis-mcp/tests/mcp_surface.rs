@@ -277,6 +277,17 @@ async fn mcp_protocol_surface_end_to_end() {
         "a cluster must expose concepts by name, not id (LLM readability): {map}"
     );
     assert_eq!(clusters[0]["size"].as_u64(), Some(2), "co-occurrence size 2: {map}");
+    // Names are for reading; the ids are what the next call takes (P2/P14): the cluster's own
+    // hyperedge id, and one entity id per member in the same order as the names.
+    assert_eq!(clusters[0]["id"].as_str().map(str::len), Some(64), "hyperedge id: {map}");
+    let members: Vec<&str> = clusters[0]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|m| m.as_str())
+        .collect();
+    assert_eq!(members.len(), concepts.len(), "one id per concept, same order: {map}");
+    assert!(members.iter().all(|m| m.len() == 64), "member ids are entity ids: {map}");
 
     // Cleanup: shutting down the client closes the server pipe and ends the server task.
     client.cancel().await.expect("client shutdown");
@@ -1127,6 +1138,14 @@ async fn a_brief_is_fenced_bounded_and_writes_nothing() {
         "entities": [{"name": "redb-db", "type": "Technology"}]}),
     )
     .await;
+    // Two entities in one observation: a co-occurrence cluster, which the brief reports as a theme.
+    call(
+        &client,
+        "observe",
+        json!({"workspace": "ws", "content": "redb and sled are both embedded stores",
+        "entities": [{"name": "redb", "type": "Technology"}, {"name": "sled", "type": "Technology"}]}),
+    )
+    .await;
     let proposed = call(
         &client,
         "propose",
@@ -1170,6 +1189,16 @@ async fn a_brief_is_fenced_bounded_and_writes_nothing() {
         "the open proposal: {proposed}"
     );
     assert!(fenced.contains("more not shown"), "PR3: a capped section says what it left out");
+    // P2: a theme is cited by its hyperedge id and a member by name AND id - the digest carries
+    // the dereference path, not only a readable name.
+    let digest: Value =
+        serde_json::from_str(fenced.split("</supragnosis-evidence>").next().unwrap().trim())
+            .expect("the digest is JSON");
+    let theme = &digest["themes"][0];
+    assert_eq!(theme["hyperedge"].as_str().map(str::len), Some(64), "theme id: {theme}");
+    let member = &theme["members"][0];
+    assert!(member["name"].as_str().is_some_and(|n| !n.is_empty()), "member name: {theme}");
+    assert_eq!(member["id"].as_str().map(str::len), Some(64), "member entity id: {theme}");
     let instruction = text.split("<supragnosis-evidence untrusted").next().unwrap();
     assert!(instruction.contains("Never cast a merge verdict"), "PR5");
     assert!(instruction.contains("never as") && instruction.contains("instructions"), "PR4");
