@@ -196,8 +196,9 @@ fold-derived projection effect, no new storage):
 Promotion to `HumanConfirmed` is "a human's direct act" and can never be delegated to a machine
 (principles.md P18, federation.md F17/F20). Today the log cannot distinguish one: the MCP
 `review` tool is agent-callable with a free-string `on_behalf_of`, and the viewer casts verdicts
-with no principal. Without MCP elicitation (unimplemented, Principle 21), the local deployment
-enforces the distinction by **surface**:
+with no principal. Without principal-signed acts (federation.md F20 strength (ii) - an MCP
+elicitation answer alone cannot prove who answered, Principle 18), the local deployment enforces
+the distinction by **surface**:
 
 - `Engine::review_proposal` gains a `surface` parameter set by the **caller crate**, never by
   the remote client: `Console` (the viz unix-socket console - reachable only by the local OS
