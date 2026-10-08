@@ -1014,6 +1014,12 @@ const EXCISION_REGISTRY: &[(u8, &[Clause])] = &[
              store method for the act, so there is nothing partial to catch. The first case this \
              document names must assert the four parts together, or it will be the partial version")),
     ]),
+    (10, &[c(
+        "excision outranks finality: a decision whose opening row or only valid verdict is excised          is un-decided, its effects fall with it, the closure names those decisions before the act,          and the census records that a decision event was destroyed",
+        Evidence::Deferred(
+            "M4 Phase 5 with the act itself - two absorbing states meet here and nothing is built on              either side: no tombstone, no closure walk (M5), and the fold has no notion of a              destroyed decision event. Specified before anything exists so the first implementation              inherits the rule (excision.md Section 7)",
+        ),
+    )]),
 ];
 
 // docs/unmerge.md Section 11 - entity_split, the reversal of a merge (S rows). Built.
@@ -1291,16 +1297,17 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
              keeps the exception while promotion loses it",
           )),
     ]),
-    (17, &[c(
-        "a recall merge is valid only as a human's direct act: a proxied or agent-cast one decides nothing",
-        Evidence::Deferred(
-            "M4 Phase 5 for the principal-signed act (federation.md F20 strength ii). The \
-             console-marker half - the fold counts a recall merge only with the engine-stamped \
-             console marker, and the agent surface refuses to cast one - lands with the \
-             recall-verdict change (PR #98) and its two i17 policy cases, which this clause cites \
-             once both are on one branch",
-        ),
-    )]),
+    (17, &[
+        c("a recall merge is valid only as a human's direct act: a merge cast anywhere but the            human console decides nothing, and the agent surface refuses to cast one",
+          Evidence::Scenario(&[
+            "i17_a_recall_merge_without_the_console_marker_never_folds_to_merged",
+            "i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged",
+          ])),
+        c("the human's direct act is a principal-signed act, not a surface marker",
+          Evidence::Deferred(
+            "M4 Phase 5 - the surface marker is the local-trust fallback (resolution.md Section 6);              the principal-signed act of federation.md F20 strength (ii) replaces marker trust under              multi-principal federation and nothing pins it yet - F20's own row says the same",
+          )),
+    ]),
     (10, &[c(
         "no proposal state refuses or holds an observation",
         // An observation that a blocked merge verdict already names lands through the ordinary
@@ -1400,11 +1407,10 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
             "p23_a_proposal_alone_changes_nothing_only_the_verdict_commits",
           ])),
         c("a recall acceptance stays a human's direct act even from the console",
-          Evidence::Deferred(
-            "M4 Phase 5 for the principal-signed act - the same debt as I17: the console-marker \
-             half lands with the recall-verdict change (PR #98), whose i17 policy cases this clause \
-             cites once both are on one branch",
-          )),
+          Evidence::Scenario(&[
+            "i17_a_recall_merge_without_the_console_marker_never_folds_to_merged",
+            "i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged",
+          ])),
     ]),
 ];
 
