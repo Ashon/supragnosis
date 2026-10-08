@@ -2231,6 +2231,17 @@ impl Engine {
         // this exists to say WHY rather than to let the caller discover a "blocked" state later.
         if decision == "merge" {
             if let Some(view) = self.get_proposal(Some(&workspace), &proposal)? {
+                // I17: a recall verdict is a human's direct act. The fold would not count a recall
+                // merge cast from the agent surface (it reads the marker off the log), so refuse
+                // here and say where to decide - the same courtesy as the blocking checks below.
+                if view.kind == "recall" && surface == VerdictSurface::Agent {
+                    return Err(ObserveError::Invalid(
+                        "a recall verdict is a human's direct act (Principle 23, I17): this surface \
+                         cannot merge one, and the fold would not count it. Decide it in the Review \
+                         panel of the Supragnosis app or viewer; a `comment` is accepted here"
+                            .into(),
+                    ));
+                }
                 let asserted = self.asserted_entity_ids(Some(&workspace), cx)?;
                 let decided = self.decided_merges(Some(&workspace), cx)?;
                 let failures =
@@ -2411,9 +2422,23 @@ impl Engine {
                     ProposalEventKind::Verdict => {
                         let v: serde_json::Value =
                             serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
+                        let decision = v.get("decision").and_then(|x| x.as_str());
+                        // I17: a recall merge counts only when the verdict carries the engine-stamped
+                        // console marker - the human's direct act (resolution.md Section 6). Any other
+                        // recall merge is demoted to a comment: it stays in the log and decides
+                        // nothing. The marker is read off the authoring attestation, never off the
+                        // write path, so a verdict that arrived replicated, or landed through MCP
+                        // before the agent surface refused them, is judged the same way (P16).
+                        if decision == Some("merge")
+                            && views.get(&ev.proposal).is_some_and(|p| p.kind == "recall")
+                            && authoring_attestation(obs).and_then(|p| p.source_ref.as_deref())
+                                != Some(VERDICT_SURFACE_CONSOLE)
+                        {
+                            continue;
+                        }
                         let t = tally.entry(ev.proposal.clone()).or_default();
                         t.verdicts += 1;
-                        match v.get("decision").and_then(|x| x.as_str()) {
+                        match decision {
                             Some("merge") => t.merge = true,
                             Some("reject") => t.reject = true,
                             _ => {}
