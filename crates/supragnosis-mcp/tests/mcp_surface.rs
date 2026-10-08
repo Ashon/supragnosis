@@ -1277,3 +1277,63 @@ async fn the_remote_surface_lists_no_prompt_and_refuses_each() {
     client.cancel().await.ok();
     server.abort();
 }
+
+/// PR2: a digest is a deterministic function of the node's state and the arguments - each of the
+/// four prompts, asked twice over one store, is the same bytes. The digests are assembled from
+/// reads the P16 rows already pin, through sorted lists and ordered maps; this is the case that
+/// would catch a hash map, a clock or a random source reaching one.
+#[tokio::test]
+async fn a_digest_is_the_same_bytes_twice_over_one_store() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, false).await;
+    for (content, names) in [
+        ("redb and sled are embedded stores", vec!["redb", "sled"]),
+        ("sled is a store", vec!["sled"]),
+        ("the hub serves federation", vec!["hub"]),
+    ] {
+        let entities: Vec<Value> =
+            names.iter().map(|n| json!({"name": n, "type": "Concept"})).collect();
+        call(
+            &client,
+            "observe",
+            json!({"workspace": "ws", "content": content, "entities": entities}),
+        )
+        .await;
+    }
+    let proposed = call(
+        &client,
+        "propose",
+        json!({"workspace": "ws", "kind": "entity_merge",
+        "targets": ["redb", "sled"], "into": "redb", "rationale": "one store, two names"}),
+    )
+    .await;
+    let id = proposed["proposal_id"]
+        .as_str()
+        .or(proposed["id"].as_str())
+        .unwrap_or_default()
+        .to_string();
+    let asks = [
+        ("brief", json!({"workspace": "ws"})),
+        ("what-do-we-know-about", json!({"topic": "store"})),
+        ("curate", json!({"workspace": "ws"})),
+        ("review-proposal", json!({"id": id})),
+    ];
+    for (name, a) in asks {
+        let get = |a: Value| {
+            let client = &client;
+            async move {
+                client
+                    .get_prompt(
+                        rmcp::model::GetPromptRequestParams::new(name).with_arguments(args(a)),
+                    )
+                    .await
+                    .expect(name)
+            }
+        };
+        let first = prompt_text(&get(a.clone()).await);
+        let second = prompt_text(&get(a).await);
+        assert_eq!(first, second, "PR2: {name} is not the same bytes twice over one store");
+    }
+    client.cancel().await.ok();
+    server.abort();
+}

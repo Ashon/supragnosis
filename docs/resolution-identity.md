@@ -117,8 +117,9 @@ as `reproject`, incrementally:
   the port conformance suite - which is why replacing that backend cost the demand nothing.
 - **Entity-embedding staleness**: the embedding text is `canonical_name + aliases` (existing
   `entity_text`); when the alias set or representative spelling changes, the embedding is
-  recomputed best-effort (failure degrades, P19 - never blocks the write). **IR4**: the stored
-  embedding always corresponds to the current embedding text or is absent - never silently stale.
+  recomputed best-effort (failure degrades, P19 - never blocks the write).
+- **IR4**: the stored embedding always corresponds to the current embedding text or is absent -
+  never silently stale.
 
 ## 6. T-Box conflict surfacing (Principle 9 vs 6, reusing M3a machinery)
 

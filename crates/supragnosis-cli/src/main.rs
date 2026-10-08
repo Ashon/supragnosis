@@ -1064,7 +1064,8 @@ fn spawn_sync_server(
         _ => anyhow::bail!("[server] tls_cert and tls_key must be set together"),
     };
     // Validate at startup so a misconfigured daemon dies here, not inside a spawned task (F10).
-    sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len())?;
+    // The same count `serve` recomputes: a hub admitting principals alone is a hub (R1/R2).
+    sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len() + srv.principals.len())?;
     tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
     // Admission is created here and handed BOTH to the server and back to the caller, so who may
     // connect stops being a startup snapshot: the returned handle is what a management surface

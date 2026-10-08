@@ -348,7 +348,7 @@ model to install first.
 | | Invariant |
 |---|---|
 | **C1** | The recall weight is a fold over the log. It may be **materialized at `reproject`**, the way resolution.md materializes the belief - what is forbidden is a consolidation pass writing a score of its own, which is a projection write no observation asserts. An earlier wording said "never a stored column" and so forbade the precedent it meant to follow. |
-| **C2** | The weight consumes no wall clock, no arrival order and no randomness. Recency is rank against the workspace HLC frontier. |
+| **C2** | The weight consumes no wall clock, no arrival order and no randomness. Recency is a position in the span of the workspace's own recorded HLCs - never a rank, which invents age differences (Section 4.2), and never a reading of the OS clock. |
 | **C3** | The committed weight consumes no node-local signal. Usage may only re-rank the already-exempt surfaces, labelled by `mode`. |
 | **C4** | The weight has a positive floor. `get_entity`, `get_observation` and `traverse` do not consult it - demoted knowledge stays reachable by explicit query (P7). |
 | **C5** | Demotion appends no observation and changes no belief. Anything that appends an observation goes through the gate. |
@@ -366,7 +366,7 @@ model to install first.
 |---|---|
 | P7 - forgetting is demotion of recall, never deletion | Sections 3, 4; C1, C4 |
 | P7 - consolidation generates, it does not commit | Section 5; C5 |
-| P7 - consolidation runs off the critical path | Section 7 step 5 |
+| P7 - consolidation runs off the critical path | Section 8 step 6 |
 | P16 - no nondeterminism in a fold; convergence on the deterministic surfaces | Section 4.1, 4.2; C2, C3 |
 | P16 - a response labels which surface answered | Section 4.1; C3 |
 | P18 - recall is trust-weighted | Section 4.3 (effective tier as an input) |

@@ -130,7 +130,7 @@ have produced, and running it twice changes nothing.
 1. **The ledger** in the store port: written by `add_observation` in its transaction, read and
    cleared through `KnowledgeStore`, which only the engine holds. In-memory and redb adapters.
 2. **Clearing** in the engine's writers and in `reproject`.
-3. **Recovery on open** for every writer process, with the report on `/api/about` and `status`.
+3. **Recovery on open** for every writer process, with the report on `/api/health` and `status`.
 
 Guarded by:
 

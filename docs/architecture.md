@@ -854,7 +854,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   the log's assertions and the projection - separation of capture and processing, a clue of Principle 4.)
   Note the schedule slipped: this was assigned "M3-M4", and M4 shipped without it.
 - Principle 7 (forgetting/consolidation): recall demotion + idle-time consolidation -> **M6**. The
-  generate-side (read-only curation signals) landed early with M3.5; the demotion side does not exist.
+  generate-side (read-only curation signals) landed early with M3.5; the demotion side is computed and reported
+  (`demotion_candidates`, consolidation.md Section 8 step 1) and consumed by nothing yet - a weight that ranks
+  nothing forgets nothing.
 - Principle 11 (induced schema): the **explicit `define_type` promotion act** is implemented (records entity/relation type
   definitions, workspace-scoped), and the induction **substrate** (hyperedges) now exists. What remains deferred is the
   **automatic candidate proposal** from repeated co-occurrence patterns (hyperedge -> type candidates) -> **M5**.
