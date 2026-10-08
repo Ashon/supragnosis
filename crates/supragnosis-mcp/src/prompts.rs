@@ -199,9 +199,15 @@ fn brief_digest(
         .iter()
         .filter(|h| h.size >= 2)
         .map(|h| {
+            // A theme is cited by its hyperedge id and its members by name AND id (P2: a query
+            // result carries what it takes to dereference it) - a name alone leaves the model
+            // nothing to hand get_entity.
             json!({
-                "concepts": h.member_names, "size": h.size, "sources": h.sources,
-                "trust_tier": h.trust_tier,
+                "hyperedge": h.id,
+                "members": h.members.iter().zip(&h.member_names)
+                    .map(|(id, name)| json!({ "name": name, "id": id }))
+                    .collect::<Vec<_>>(),
+                "size": h.size, "sources": h.sources, "trust_tier": h.trust_tier,
             })
         })
         .collect();
@@ -326,7 +332,8 @@ Supragnosis app or viewer. You may record a comment.
 - Answer in the language the person writes in.";
 
 const BRIEF: &str = "\n\nCover, in order, citing evidence throughout:
-1. What the workspace is about - its main themes.
+1. What the workspace is about - its main themes. Cite a theme by its hyperedge id and a member by \
+name and id (get_entity shows the observations behind it).
 2. What is contested - each conflict with its sides, left unresolved.
 3. What is weakly supported - well-connected claims resting on a single agent-tier source.
 4. What is waiting on a decision - each open proposal and what merging it would change. Point the \

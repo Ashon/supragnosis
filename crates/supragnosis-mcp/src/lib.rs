@@ -780,8 +780,12 @@ impl SupragnosisServer {
             .filter(|h| h.size >= min_size)
             .take(limit)
             .map(|h| {
+                // Names for reading, ids for the next call (P2/P14): the hyperedge id names the
+                // cluster stably, and the member ids are what get_entity takes.
                 serde_json::json!({
+                    "id": h.id,
                     "concepts": h.member_names,
+                    "members": h.members,
                     "size": h.size,
                     "sources": h.sources,
                     "trust_tier": h.trust_tier,
@@ -807,8 +811,8 @@ impl SupragnosisServer {
             resp["note"] = serde_json::Value::String(format!(
                 "showing top {shown} of {qualifying} clusters (by size). raise limit or lower \
                  min_size to see more. clusters are co-occurrence contexts (entities asserted \
-                 together), not asserted relations - drill in with search_knowledge/get_entity \
-                 by concept name"
+                 together), not asserted relations - drill in with get_entity by member id, or \
+                 search_knowledge by concept name"
             ));
         } else if shown == 0 && hg.stats.node_count == 0 {
             // An empty scope is usually a wrong scope, not an absent ontology: the node default workspace is
