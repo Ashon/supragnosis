@@ -8,6 +8,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+pub mod prompts;
 pub mod remote;
 
 use rmcp::{
@@ -1331,13 +1332,19 @@ impl ServerHandler for SupragnosisServer {
         // The server names itself explicitly. `Implementation::from_build_env()` reads like "this
         // build", but its `env!` expands inside rmcp, so every client was told the server is rmcp
         // at rmcp's version (docs/compatibility.md Section 7).
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
-            .with_server_info(
-                Implementation::new("supragnosis", env!("CARGO_PKG_VERSION"))
-                    .with_website_url("https://supragnosis.dev"),
-            )
-            .with_instructions(
-                "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .enable_prompts()
+                .build(),
+        )
+        .with_server_info(
+            Implementation::new("supragnosis", env!("CARGO_PKG_VERSION"))
+                .with_website_url("https://supragnosis.dev"),
+        )
+        .with_instructions(
+            "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
                  into an ontology. Ingest knowledge with observe and explore it with \
                  search_knowledge/get_entity/traverse. Survey a workspace's main co-occurrence \
                  contexts (clusters) with workspace_map (orientation before searching). \
@@ -1353,7 +1360,7 @@ impl ServerHandler for SupragnosisServer {
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
                  observation back-reference (raw content + provenance + lineage - use it to \
                  confirm the basis of a search hit).",
-            )
+        )
     }
 
     /// Tool calls, hand-written so the remote surface admits each one first (docs/remote-server.md
@@ -1442,6 +1449,54 @@ impl ServerHandler for SupragnosisServer {
         std::future::ready(Ok(ListToolsResult::with_all_items(self.tool_router.list_all())
             .with_ttl_ms(0)
             .with_cache_scope(CacheScope::Private)))
+    }
+
+    /// The prompts (docs/prompts.md). Carries the same cache hints as the tool list - a client that
+    /// validates the 2025-11-25 schema rejects a list without them. The remote surface lists none
+    /// until a digest is scoped to a principal's grants (PR6).
+    fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListPromptsResult, ErrorData>> + Send + '_ {
+        let items = if self.remote.is_some() { Vec::new() } else { prompts::list() };
+        std::future::ready(Ok(ListPromptsResult::with_all_items(items)
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private)))
+    }
+
+    /// One prompt: the instruction and a bounded digest of current state. Nothing is written (PR1).
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResponse, ErrorData> {
+        if self.remote.is_some() {
+            return Err(ErrorData::invalid_request(
+                format!(
+                    "prompt {:?} is not served on the remote surface yet: its digest reads the \
+                     whole workspace, and is not yet scoped to a principal's grants \
+                     (docs/prompts.md Section 6). Use the tools, which are",
+                    request.name
+                ),
+                None,
+            ));
+        }
+        let engine = self.engine.clone();
+        let args = request.arguments.unwrap_or_default();
+        let name = request.name.clone();
+        let built = tokio::task::spawn_blocking(move || prompts::get(&engine, &name, &args)).await;
+        match built {
+            Ok(Ok(result)) => Ok(result.into()),
+            Ok(Err(prompts::PromptError::Invalid(why))) => {
+                Err(ErrorData::invalid_params(why, None))
+            }
+            Ok(Err(prompts::PromptError::Store(e))) => Err(ErrorData::internal_error(
+                format!("store failure - NOT an empty store (Principle 5): {e}"),
+                None,
+            )),
+            Err(e) => Err(ErrorData::internal_error(format!("task join error: {e}"), None)),
+        }
     }
 
     /// Concrete resource listing: exposes the node's default workspace graph (other workspaces via templates).

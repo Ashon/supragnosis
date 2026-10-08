@@ -1,0 +1,60 @@
+{
+  "ttlMs": 0,
+  "cacheScope": "private",
+  "prompts": [
+    {
+      "name": "brief",
+      "description": "Brief a workspace: what its knowledge says now, what is contested, what is weakly supported, and what is waiting on your decision - written from current state, never stored.",
+      "arguments": [
+        {
+          "name": "workspace",
+          "description": "Workspace to brief. Omitted: the node default. '*' for all.",
+          "required": false
+        },
+        {
+          "name": "focus",
+          "description": "Optional topic to center the brief on.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "what-do-we-know-about",
+      "description": "What the store holds on one topic, with sources - and what it does not hold.",
+      "arguments": [
+        {
+          "name": "topic",
+          "description": "The topic, as you would search for it.",
+          "required": true
+        },
+        {
+          "name": "workspace",
+          "description": "Workspace to search. Omitted: every workspace.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "curate",
+      "description": "Improve the canon: draft proposals for the tidy-ups the curation signals point at, for you to review in the console. Nothing is decided by the model.",
+      "arguments": [
+        {
+          "name": "workspace",
+          "description": "Workspace to curate. Omitted: the node default. '*' for all.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "review-proposal",
+      "description": "A first-pass review of one proposal: what merging it would change in belief, what its checks say, and a recommendation. The verdict stays yours.",
+      "arguments": [
+        {
+          "name": "id",
+          "description": "The proposal id.",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
