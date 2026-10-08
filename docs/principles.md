@@ -17,6 +17,28 @@
 > FACT about the system, that assertion is subject to correction like any other - two such claims
 > (that a `query` passthrough tool exists) were wrong and have been fixed.
 >
+> **What this document governs, and what it does not.** Its subject is knowledge: what an assertion
+> is, how it is modelled, who may see it, how it is agreed, and (Chapter 6) the process that carries
+> it. It does not govern the engineering of the software around that process, and a decision there
+> needs no principle here: the desktop app's own security posture (content policy, navigation, its
+> update path), release and supply-chain practice (pinned actions, signing, notarization, dependency
+> audit), the compatibility contracts between releases ([compatibility.md](compatibility.md) - a
+> pinned contract is a promise about change, which Principles 10 and 14 inform but do not own), and
+> the client configuration the CLI writes ([client-connect.md](client-connect.md)). Each of those
+> documents states its own invariants. The boundary is drawn so that a decision outside it is not
+> made to cite a principle it does not follow from - and so that a decision inside it that cites
+> none is read as the signal it is: a principle is missing. That signal is how Chapter 6 came to
+> exist.
+>
+> **A revision declares what it does.** Every revision line below says whether it *tightens* (adds
+> a demand), *loosens* (permits what a clause forbade), *reinterprets* (fixes which of two readings
+> governs) or *corrects a fact*. A loosening or a reinterpretation names the decision or document
+> that forced it, so the direction of adaptation - the document following the implementation, or
+> the reverse - is on record, the way a Characterized clause in the registry (Appendix B.1) records
+> a gap without endorsing it. A tightening may wait for a milestone; a loosening may not ride on
+> convenience, and a document that reads a clause differently from this one has not revised it
+> until the reading is written here.
+>
 > Revision: 2026-07 - bitemporality made explicit (4), delegation chain (2), forgetting/consolidation (7),
 > contamination defense (18), schema induction (11), MCP long-running tasks/confirmation flow (21).
 > See Appendix C references for rationale.
@@ -69,6 +91,18 @@
 > unmet demands behind the met ones), and a fourth state, Characterized, is added - a running test
 > that pins non-compliant behavior is a record, not an endorsement, and with only three states it
 > had nowhere to live but Scenario, where it counted as evidence the clause was met.
+> Revision: 2026-10 (closure review) - *reinterprets* 7: a generated summary is node-local and
+> never stored; [consolidation.md](consolidation.md) Section 7.3 had made this reading and the
+> document had not followed it. *Tightens* 23: the recall verdict is a principal-signed act, and an
+> elicitation response is a claim unless it carries that signature - federation.md F20 already
+> demanded this. *Reconciles* 11 with 23: the explicit T-Box act IS the gate, and direct
+> `define_type` is the solo-exception shortcut, not a second path. *Tightens* 5: the answer
+> alphabet is enumerated, and the rule that decides refuse-or-unknown is stated. *Tightens* 21: the
+> elicitation channel carries the question, not the proof of who answered. *Corrects facts* in 17
+> (there is no stdio surface), 23 (six kinds for five intents; the solo exception is a configured
+> premise, not an inferred one), 22 (prompts are the person's half), 4 and 19 (wording that read as a
+> mutation and as a score-driven commit). Adds five tensions and a status disclaimer to Appendix A,
+> and the scope and revision rules above.
 
 ---
 
@@ -197,7 +231,9 @@ the world (`valid_from`/`valid_to`), (2) **transaction time** - the moment the s
     `as_of_recorded(T)` (the system's belief as of T). The append-only log (Principle 3) provides the
     latter for free.
   - When a new observation disproves an existing belief, the old relation is handled not by deletion
-    but by closing its valid interval (setting `valid_to`).
+    but by a new observation that asserts the close of its valid interval (`valid_to`): the
+    projection shows the closed interval, and the log keeps both assertions (Principle 3). Nothing
+    sets a field on a stored row.
 
 ### Principle 5. Open World Assumption (Open World Assumption)
 
@@ -210,6 +246,22 @@ the world (`valid_from`/`valid_to`), (2) **transaction time** - the moment the s
     negation is needed, it is expressed as an explicit negative assertion.
   - MCP tool responses convey a distinction between "not found" and "is false" - this is reflected in
     the response schema so that an LLM client does not misread absence as negation.
+  - **The answers a read may give form an enumerated alphabet, and each value stays its own.**
+    *Found.* *Not found* - absent from what this node holds, which is unknown and never false.
+    *False* - an explicit negative assertion. *Unavailable* - the store or the transport failed, never
+    reported as an empty result (Principle 24, federation.md F12). *Uncomputable* - a derivation this
+    build cannot perform, such as a belief diff for a kind with no commit effect. *Withheld* - the
+    caller is not granted the scope they named, answered as a refusal that names the scope
+    (remote-server.md R3/R5). *Destroyed* - a tombstone, which records the act and not the content
+    (excision.md E2). *Truncated* - a bounded answer says what it left out, because a short list must
+    not read as the whole list (prompts.md PR3). A surface that collapses two of these into one
+    answer violates this principle, and a surface that needs a value this list lacks adds it here
+    rather than locally.
+  - **Refuse, or answer unknown?** One rule decides. A refusal is given for a scope the caller named
+    and therefore already knows exists - a workspace. An id the caller is not granted is answered
+    exactly as an unknown id is, because naming the refusal would tell them the thing exists
+    (remote-viewer.md Section 3.4). Open world toward the caller is also what denies them an
+    existence oracle (Principle 17).
 
 ### Principle 6. Conflict Is Information (Contradiction Is Signal)
 
@@ -242,9 +294,16 @@ summarizes/promotes/demotes accumulated observations. The log is eternal, but re
     layer (recency, usage frequency, trust tier). Demoted knowledge is always reachable by an explicit
     query.
   - Consolidation is by default a **deterministic re-projection** (consistent with Principle 16). When
-    a probabilistic consolidation such as LLM summarization is used, its output is ingested as a
-    **derived observation** carrying confidence and `derived_from` lineage (subsumed under Principles
-    1/18/19) - consolidation does not supersede the original.
+    a probabilistic consolidation such as LLM summarization is used, its output is **generated
+    node-local and not stored**: a summary is rebuilt from current state when it is read and labelled
+    by its `mode`, because a stored summary settles the conflicts it should report, launders a
+    poisoned observation into one confident sentence, and - being an observation - replicates and
+    diverges across nodes ([consolidation.md](consolidation.md) Section 7.2). *If* such an output
+    enters the log at all, it enters only as the enrichment of a gated candidate (a proposal's
+    summary or rationale, proposal-workflow.md Section 14.1), and then as a **derived observation**
+    carrying confidence and `derived_from` lineage at the lowest trust (subsumed under Principles
+    1/18/19) - never as a fact, and never superseding its sources. **Generation is node-local; only
+    commitment replicates** (consolidation.md C11).
   - Consolidation/re-indexing runs off the critical path of user requests (idle/batch).
   - **Consolidation generates, it does not commit.** A consolidation pass may emit (a) read-only
     **curation signals** - duplicate/grab-bag/orphan/contradiction candidates, a pure projection over the
@@ -324,7 +383,11 @@ be **induced bottom-up from instances and then promoted**, rather than designed 
     `Concept` + `relates_to` + free-form properties, and promote it to a type once the pattern hardens.
   - Induction goes as far as a proposal, promotion is explicit: the system (or an LLM extractor) may
     **propose** type candidates from repeated patterns, but T-Box promotion happens only through an
-    explicit `define_type` act (passing the consistency check of Principle 9).
+    explicit act that passes the consistency check of Principle 9. Because a T-Box change affects
+    the canon, that act is the gate of Principle 23: a `tbox_change` proposal, whose merge is what
+    defines the type. The direct `define_type` tool is the single-principal shortcut of Principle
+    23's solo exception (federation.md F18) - tolerable only while one principal holds the
+    workspace, and not a second path: the gate is a prerequisite of multi-principal operation.
   - **The scope of the T-Box is the workspace** (limited to the domain ontology - the core ontology is
     globally fixed per Principle 10). There is no global domain T-Box: as long as the schema is induced
     from usage, the workspace, which is the population from which it is induced, is the scope of the
@@ -504,7 +567,10 @@ created the knowledge, and the sharing boundary is enforced at the sync layer.
   - **The sharing boundary applies to the remote query surface too**: if only the sync filter is
     blocked while the remote MCP query is left open, the same knowledge goes out through a different
     door. Reads by a remote (non-local) client are governed by the sharing whitelist, and a global
-    query with no workspace scope is limited to the local trust surface (stdio, single user).
+    query with no workspace scope is limited to the local trust surface - the one OS user who holds
+    the node's token file (the bridge and the loopback daemon, architecture.md Section 10) - or, on
+    an authenticated network read tier, to the union of that principal's grants computed one
+    workspace at a time (remote-viewer.md V3).
   - Provide a secret-redaction hook at ingest, but this is an aid to, not a replacement for, the
     sharing filter (defense in depth).
 
@@ -563,7 +629,10 @@ on them.
     carrying confidence (subsumed under Principle 1) - it is a violation if an LLM extraction result is
     turned into fact without annotation.
   - In entity resolution, embedding similarity goes only as far as candidate generation; merge
-    commitment is done with a deterministic rule (canonical key, threshold, or human confirmation).
+    commitment is a verdict observation (Principle 23) - a person's, or a policy executor's automatic
+    verdict whose routing premises the fold re-validates (proposal-workflow.md I15). A similarity
+    score never becomes a merge on its own (resolution-identity.md IR2): a threshold may decide what
+    the executor proposes, never what the canon holds.
 
 ### Principle 20. Purity of the Domain (Hexagonal Purity)
 
@@ -597,7 +666,11 @@ language.
     polling-style tasks were fixed as an official extension in the 2026-07 spec). Points that need
     human confirmation (merge approval, contradiction mediation, trust promotion) are expressed via
     MCP's input-request flow (elicitation / multi round-trip), so that the "human mediation" of
-    Principles 6/18 is possible at the protocol level.
+    Principles 6/18 is possible at the protocol level. The flow carries the question to the person;
+    it does not prove who answered. An answer reaches the server over the same channel as the
+    agent's own calls, so a confirmation that grants a tier or decides a recall must still arrive as
+    the principal's own signed act (Principles 18/23) - the channel is a convenience, never the
+    evidence.
   - `query` (Datalog passthrough) may exist only as an advanced escape hatch under a permission
     guard - and today it does not exist at all, which is the stricter state, not a gap.
 
@@ -613,8 +686,12 @@ knowledge.
 - **Enforcement**:
   - `observe` must have minimal friction: free text + optional structured assertions. It does not
     require perfect structuring as a precondition for ingest (resonating with Principle 11).
-  - Prompts (`what-do-we-know-about`, etc.) and tool descriptions are written to induce the agent to
-    observe/search voluntarily during work.
+  - Tool descriptions are written to induce the agent to observe/search voluntarily during work.
+    That is the agent's half, and only descriptions can carry it: MCP prompts (`brief`,
+    `what-do-we-know-about`, `curate`, `review-proposal` - [prompts.md](prompts.md)) are invoked by
+    the person and carry the person's half - what the agents learned reaches them as a reading on
+    request, and curation reaches them as decisions beside that reading, never as a document to
+    maintain.
   - Curation (type promotion, merge confirmation, contradiction mediation, trust promotion) is
     designed not as separate work but as micro-decisions that surface naturally in query results.
 
@@ -628,8 +705,9 @@ Concrete design in [proposal-workflow.md](proposal-workflow.md).
 ### Principle 23. Gate to Canon (Gate to Canon)
 
 **Ingest is free, and promotion to the canon happens only through a proposal.** The five intents that
-affect the canon - tier promotion/demotion, entity merge/split, T-Box change, recall - go only through
-the proposal workflow. And **a proposal is itself knowledge**: the creation/review/verdict of a
+affect the canon - tier promotion, tier demotion, entity identity (merge and split, the two directions
+of one intent), T-Box change, recall - go only through the proposal workflow; they are the six
+proposal kinds. And **a proposal is itself knowledge**: the creation/review/verdict of a
 proposal are all observation events, and are governed by this principle just the same.
 
 - **Rationale**: The pattern that code collaboration validated with the PR - placing a reviewable gate
@@ -653,15 +731,22 @@ proposal are all observation events, and are governed by this principle just the
   - Before merging, a belief diff (promotions/reversals/new contradictions/blast radius) and check
     results must already be computed - a merge without a diff is a merge without review.
   - A rejection is not a negation (Principle 5). No verdict deletes an assertion (Principle 3).
-  - Self-approval is forbidden (by the delegation chain's principal). The single-person workspace
-    exception attaches a self-attested marker so that it is distinguished in trust evaluation upon
+  - Self-approval is forbidden (by the delegation chain's principal). The solo exception - a
+    deployment configured single-principal, which is a premise the node cannot infer from its log,
+    since an absent second principal is unknown rather than known absent (Principle 5, federation.md
+    F18) - attaches a self-attested marker so that it is distinguished in trust evaluation upon
     federation (Principle 18).
   - **The recall verdict is non-delegable**: because bulk retraction of a derived tree is the verdict
     with the largest destructive radius, it cannot hold as an agent's proxy verdict through the
-    delegation chain ("under the human principal's authority") but must be the human's direct act (a
-    direct signature or an elicitation response). This blocks the path by which a contaminated agent
-    bulk-retracts without human eyes via proxy self-approval (this is exactly the scenario Principle 18
-    guards against).
+    delegation chain ("under the human principal's authority") but must be the human's direct act: a
+    principal-signed act (federation.md F20 strength (ii)). An elicitation response (Principle 21) is
+    not by itself such an act - it reaches the server over the same channel as the agent's own calls,
+    so to the receiver it is a claim that a human answered, and Principle 18 forbids a claimed
+    verification level from binding; it qualifies only when it carries the principal's signature
+    over the act. Until principals sign their acts, the local deployment tells the two apart by
+    surface (resolution.md Section 6), which is the weaker guarantee and is named as such there.
+    This blocks the path by which a contaminated agent bulk-retracts without human eyes via proxy
+    self-approval (this is exactly the scenario Principle 18 guards against).
 
 ---
 
@@ -727,6 +812,18 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Availability (24) vs failing fast on a bad config | **Degrade loudly.** A node that will not start over a configuration mistake costs every local read; the mistake costs only the subsystem it broke. Refuse only where continuing would serve a wrong answer or an unauthorized surface. |
 | Gate (23) vs minimal friction (22) | **The gate is on promotion only, not on ingest.** Even when review is backlogged, knowledge already exists and circulates at a low tier. |
 | Review rigor (23) vs reviewer's attention | **Most is automatic, only a few go to a human.** Only new contradictions/high-impact/structural changes/recall force human review. |
+| Explicit promotion act (11) vs the gate (23) | **The gate is the act.** A `tbox_change` merge defines the type; direct `define_type` is the solo-exception shortcut (federation.md F18), not a second path. |
+| Un-merge must be possible (3, 15) vs merge as an absorbing state (23, I16) | **Both hold.** A split is a new proposal and is not absorbing (unmerge.md S1/S8); the merge stays in the log and only its forwarding is removed. |
+| Honesty about absence (5) vs no existence oracle (17) | **Unknown, not refused, for an id outside the grants.** Open world toward the caller is also what hides existence; a refusal is for a scope the caller named (Principle 5, remote-viewer.md 3.4). |
+| Human mediation at the protocol level (21) vs receiver-evaluated trust (18) | **The channel carries the question, the signature carries the answer.** An elicitation response alone grants nothing above the agent surface's ceiling (federation.md F20). |
+| Convergence (16) vs node-local trust evaluation (18) | **Not a conflict as built.** Evaluation is a function of the attestation alone, and the surface marker and the canon policy are in the log (F16), so one log gives one canon; what differs between nodes is which events they admit (F6) - the set, not the fold. |
+
+The judgments above are norms, not a status report. Several of the mechanisms they name - the
+quarantine tier, the tombstone, recall demotion, the auto-merge band, the informative checks that
+route review - are owed, and the registry (Appendix B.1) and [architecture.md](architecture.md)
+Section 14 say which. A tension whose resolving mechanism is unbuilt is resolved on paper only, and
+until the mechanism exists the conservative side holds by default: nothing is removed, demoted or
+merged automatically, and "privacy wins" is a promise the system cannot yet keep.
 
 ## Appendix B - Review Checklist
 
