@@ -3,8 +3,9 @@
 > What federation.md 6e requires, how it is built, and in what order. 6e says what must hold; this
 > document says which code moves and why the steps are in this sequence rather than another.
 >
-> The work is M4 Phase 7. Nothing here is built: `ping` already carries the answer and no caller
-> consumes it, which is why F21 sits in the coverage registry as unmet with nothing pinning it.
+> The work was M4 Phase 7 and is built (Section 7 marks each step): `ping` carries the answer and
+> the daemon's fan-out consumes it. F21's clauses sit in the coverage registry as guarded, all but
+> the one about future consumers (N7), which has nothing to catch yet.
 
 ## 1. The answer is already on the wire
 
@@ -149,7 +150,7 @@ came first, until the review put two constraints on it.
 
 **Step 1 - per-server credentials, and F14's refusal. [done]** `[[sync.server]]` entries carrying a
 url and a credential each, honored everywhere a client is opened: the health loop, the one-shot CLI
-round, and the three MCP fan-out sites. Both configuration shapes present at once fails at load. A
+round, and the three MCP fan-out sites. Both configuration shapes present at once resolve by the precedence Section 5 states, loudly. A
 node whose own id sits in its own allowlist is refused. It is first because Step 3 rests on an
 identification a shared credential does not support (Section 5), so doing it later would ship a
 routing decision on a premise already known to be weak.
