@@ -54,7 +54,12 @@
 //!   architecture.md Section 14 is written in "guarded by <test>" sentences, and the resolution
 //!   documents carry test-plan tables. [`design_docs_name_tests_that_run`] holds those to the same
 //!   standard, because a promise the registry keeps and a promise beside it breaks is still a
-//!   broken promise to whoever reads the documents.
+//!   broken promise to whoever reads the documents. And every invariant table those documents
+//!   declare is a [`Family`] here, each row with an evidence state, found by shape rather than by
+//!   a list someone keeps: [`design_docs_declare_every_invariant`] reads the prefixes off the rows,
+//!   and [`every_invariant_declares_its_evidence`] holds each family to the document's numbering.
+//!   The coupling once existed for federation alone, after F21 was written with no accounting;
+//!   ten other documents had kept invariant tables that nothing read.
 //!
 //! This file deliberately does not re-run those tests - `cargo test` already does. It guards the
 //! *map*, and the three couplings above are what keep the map pinned to the territory.
@@ -351,14 +356,1841 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
 ];
 
-/// The invariant numbers `docs/federation.md` Section 8 declares, in document order.
-fn documented_invariants() -> Vec<u8> {
-    FEDERATION_DOC
-        .lines()
-        .filter_map(|l| l.trim_end().strip_prefix("- **F"))
-        .filter_map(|rest| rest.split_once("**"))
-        .filter_map(|(num, _)| num.parse::<u8>().ok())
-        .collect()
+// docs/inspector.md Section 9 - the inspector panel (D rows).
+const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "a contested field is never silenced or folded: the contested block decides first, never consults the baseline, and renders outside any condition",
+        // crates/supragnosis-viz/tests/http.rs: a source tripwire on contestedBlock and renderDetail.
+        Evidence::Scenario(&["inspector_never_folds_a_contested_belief"]),
+    )]),
+    (2, &[c(
+        "everything the rule silences or folds is one act away on the inspector itself, never on another surface",
+        Evidence::Deferred(
+            "client-only (viewer.js renderDetail: the scope line, the +N fold, the card link) and the viewer's only \
+             guards are source tripwires on escaping and on D1. Revisit when the viewer grows a DOM-level harness or a \
+             D1-style tripwire for the fold and the card link",
+        ),
+    )]),
+    (3, &[c(
+        "a silenced field is stated once for the scope on the inspector, so silence never reads as absence",
+        Evidence::Deferred(
+            "built in viewer.js (`scopeSaid` and the .scopeline span of renderDetail) but nothing reads it. Revisit \
+             when the D1 tripwire is extended to pin that the line is emitted whenever a baseline value is non-null",
+        ),
+    )]),
+    (4, &[
+        c(
+            "the tier the viewer compares is the receiver-evaluated effective tier, never a peer's claimed tier",
+            // principle_scenarios.rs: a remote human_confirmed claim reaches graph() as host_signed.
+            Evidence::Scenario(&["f13_read_path_evaluates_remote_claim_at_host_signed"]),
+        ),
+        c(
+            "the baseline is computed over the whole loaded /api/graph response, never the legend-filtered subset",
+            Evidence::Deferred(
+                "viewer.js scopeBaseline iterates `nodes` and not the typeOff-filtered set - a comment and a loop, \
+                 not a guard. Revisit when a source tripwire pins that scopeBaseline reads `nodes` and never `typeOff`",
+            ),
+        ),
+    ]),
+    (5, &[
+        c(
+            "which observations touch a node is decided by the server by canonical id, the same set the projection uses",
+            // viz http.rs: the entity filter narrows by graph node id; principle_scenarios.rs: explain's
+            // supporting set equals the filtered log.
+            Evidence::Scenario(&[
+                "viz_serves_observation_log_and_explain",
+                "explain_matches_projection_and_surfaces_competitors",
+            ]),
+        ),
+        c(
+            "which asserted relations involve the node comes from canonical endpoint ids on RelationRef, never from matching spellings",
+            Evidence::Deferred(
+                "Section 8 step 3 is unbuilt: `RelationRef` still carries only from/type/to spellings, so the viewer \
+                 has nothing to match on but names. Revisit when step 3 adds the two endpoint ids, with a test that a \
+                 merged-away spelling resolves",
+            ),
+        ),
+    ]),
+    (6, &[
+        c(
+            "the MCP tool surface is a pinned contract, so a rendering change cannot touch a tool unnoticed",
+            // mcp_surface.rs: tools/list must equal tests/fixtures/tools.json.
+            Evidence::Scenario(&["the_tool_list_is_the_pinned_contract"]),
+        ),
+        c(
+            "no field of /api/graph, /api/explain or /api/observations is removed or narrowed",
+            Evidence::Deferred(
+                "the viewer API has no pinned example document the way the CLI's --json answers do (compatibility.md \
+                 Section 6); viz_serves_observation_log_and_explain asserts a handful of fields are present, not that \
+                 none left. Revisit when the viewer's responses get a fixture pin",
+            ),
+        ),
+    ]),
+    (7, &[
+        c(
+            "esc() escapes <, &, > and both quotes, and the html tag sends every non-markup interpolation through it",
+            Evidence::Scenario(&["viz_source_escapes_untrusted_names"]),
+        ),
+        c(
+            "every HTML sink takes an html tagged template, with no no-unsanitized disable comment",
+            Evidence::Deferred(
+                "held by ESLint no-unsanitized (crates/supragnosis-viz/assets/eslint.config.js, run by \
+                 frontend-lint.yml), which this registry cannot name - it scans Rust sources for test fns. Revisit \
+                 when a Rust scan of viewer.js for sinks outside an html`...` and for eslint-disable can stand beside \
+                 the lint",
+            ),
+        ),
+    ]),
+];
+
+// docs/client-connect.md Section 8 - `connect` and the bridge (C rows).
+const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "the bridge never opens the store and never starts a daemon",
+        Evidence::Structural(
+            "bridge.rs's non-test code depends on reqwest, tokio, serde_json and the sync crate's TLS helper only - \
+             no supragnosis_store or supragnosis_engine item is in scope and nothing spawns a process - and \
+             `bridge::Config` carries a URL, a token reader, a wait, a CA bundle and two message strings, so \
+             `bridge_cmd` has no store path or binary to hand it. The store crate appears in bridge.rs only under \
+             #[cfg(test)], as the daemon the relay test stands up",
+        ),
+    )]),
+    (2, &[
+        c(
+            "connect writes no secret into a client's configuration: a registration names the bridge and carries no token",
+            // connect.rs: no argv element contains Bearer/token; a replaced http entry's token copy is gone.
+            Evidence::Scenario(&[
+                "registrations_run_the_bridge_and_carry_no_secret",
+                "a_missing_section_or_file_is_created_and_an_existing_entry_replaced",
+            ]),
+        ),
+        c(
+            "the token file is created 0600 and never exists at another mode",
+            Evidence::Scenario(&["the_state_directory_and_its_secrets_are_closed_to_other_accounts"]),
+        ),
+        c(
+            "the bridge reads the token from its file on every request and keeps no copy",
+            Evidence::Structural(
+                "`Config.token` is `Arc<dyn Fn() -> Option<String>>`, invoked inside `Bridge::post` for each request, \
+                 and neither `Bridge` nor `Session` has a field a token could be kept in; `bridge_cmd` passes \
+                 `|| read_secret(&mcp_token_path())`, so a regenerated file is read on the next request",
+            ),
+        ),
+    ]),
+    (3, &[
+        c(
+            "a file edit adds or removes one member and leaves every other byte of the client's file as written",
+            Evidence::Scenario(&["an_edit_changes_one_member_and_nothing_else"]),
+        ),
+        c(
+            "a client file that does not parse as JSON is refused, never rewritten",
+            Evidence::Scenario(&["a_file_that_does_not_parse_is_refused"]),
+        ),
+        c(
+            "the copy taken aside before an edit never overwrites an earlier copy",
+            Evidence::Scenario(&["a_backup_never_replaces_an_earlier_one"]),
+        ),
+        c(
+            "an entry connect did not write is left alone without --replace, and the copy is taken before the file is written",
+            Evidence::Deferred(
+                "both decisions live inline in `connect_cmd` beside the IO, and the only check of them was the manual \
+                 run Section 10 records. Revisit when connect_cmd's decision is lifted into a pure function like \
+                 lifecycle::plan_install, which a table test can then drive",
+            ),
+        ),
+    ]),
+    (4, &[
+        c(
+            "through the bridge a client sees the daemon's tool list, and a tool call lands in the daemon's store",
+            Evidence::Scenario(&["the_bridge_relays_the_daemons_surface_unchanged"]),
+        ),
+        c(
+            "a daemon restart is invisible: the client's own handshake is replayed and its request answered",
+            Evidence::Scenario(&["a_daemon_restart_is_invisible_through_the_bridge"]),
+        ),
+        c(
+            "the daemon's own errors reach the client as the daemon wrote them",
+            Evidence::Deferred(
+                "only success paths are relayed under test; a JSON-RPC error inside a 200 passes through `one_line` \
+                 untouched, but an HTTP-level refusal is re-authored by `describe` as a -32000 error, and no case \
+                 sends a request the daemon refuses. Revisit when a case calls an unknown tool through the bridge and \
+                 compares the two error bodies",
+            ),
+        ),
+    ]),
+    (5, &[c(
+        "connect without a client argument only reads",
+        Evidence::Deferred(
+            "`connect_list` reaches `Client::installed`/`entry`, which stat and read files, and the writers \
+             (`run_client_cli`, `write_replacing`) are reached only after a client id parses - but nothing asserts \
+             the listing leaves HOME untouched; connect_json_matches_its_example runs it under a nonexistent HOME \
+             without checking. Revisit when that test asserts the temp HOME is still absent afterwards",
+        ),
+    )]),
+];
+
+// docs/daemon-lifecycle.md Section 9 - the daemon's managers (L rows).
+const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c(
+            "the situation counts managers, not processes: two are a conflict, one is acted on, none is stopped",
+            Evidence::Scenario(&["classification_counts_managers_not_processes"]),
+        ),
+        c(
+            "install refuses while another manager is loaded unless told to take over, which retires it by name",
+            Evidence::Scenario(&["install_refuses_a_holder_it_cannot_name"]),
+        ),
+        c(
+            "a holder nothing names - answering, or holding the store with no port - is refused with or without take-over",
+            Evidence::Scenario(&[
+                "install_refuses_a_holder_it_cannot_name",
+                "a_store_held_by_no_manager_is_unrecognized",
+                "redb_in_use_sees_a_writer_and_only_a_writer",
+            ]),
+        ),
+        c(
+            "a conflict refusal names every manager, which one serves, and the command that resolves it",
+            Evidence::Scenario(&["a_conflict_names_every_manager_and_the_fix"]),
+        ),
+        c(
+            "restart and stop act on nothing in a conflict, and install re-checks that the address and store went quiet after retiring the others",
+            Evidence::Deferred(
+                "the refusals are bail! arms of stop()/restart() and the re-check is `wait_until_released`, all \
+                 beside launchctl and socket IO no test drives. Revisit when the act-or-refuse step is lifted into \
+                 lifecycle.rs beside classify",
+            ),
+        ),
+    ]),
+    (2, &[
+        c(
+            "a loaded job under any known label is a manager, the Homebrew job included",
+            Evidence::Scenario(&["classification_counts_managers_not_processes"]),
+        ),
+        c(
+            "the retired and Homebrew labels stay in the recognized set",
+            Evidence::Deferred(
+                "KNOWN_LABELS carries com.ashon.supragnosis and four Homebrew spellings, and \
+                 every_known_label_is_distinct_and_one_is_canonical checks only distinctness and the single canonical \
+                 entry; the retired entries could be deleted without a test noticing. Revisit when that test pins \
+                 them by name",
+            ),
+        ),
+    ]),
+    (3, &[
+        c(
+            "status reports running and installed versions when they differ, and an unanswering daemon's version is unknown, not assumed",
+            Evidence::Scenario(&["drift_never_assumes_the_running_version"]),
+        ),
+        c(
+            "the tray line and the settings page say the drift outright and point at the repair",
+            Evidence::Scenario(&[
+                "drift_and_conflict_are_said_outright",
+                "the_examples_read_through_the_apps_own_readers",
+            ]),
+        ),
+    ]),
+    (4, &[
+        c(
+            "every CLI lifecycle command exits non-zero on failure with the reason",
+            Evidence::Deferred(
+                "every lifecycle fn returns anyhow::Result and refuses with bail!, which main() propagates as exit 1, \
+                 but no test runs the binary: a_conflict_names_every_manager_and_the_fix pins the reason's text, not \
+                 the exit. Revisit when a CLI harness runs stop/restart against a scripted launchctl",
+            ),
+        ),
+        c(
+            "a job install loaded that does not come up is a non-zero exit naming the error log, and a slow start is reported as slow",
+            Evidence::Deferred(
+                "the rule - three seconds with no process and a non-zero last exit - sits in `await_daemon` between \
+                 sleeps and launchctl calls, and Section 11 records it was not exercised against a failing job. \
+                 Revisit when the decision is lifted into lifecycle.rs as a function over a sequence of launchctl \
+                 observations",
+            ),
+        ),
+        c(
+            "the app never discards the CLI's exit status: a refused restart or install says why",
+            Evidence::Deferred(
+                "restart_daemon and set_login route the status through cli_outcome and no test calls either. Revisit \
+                 when cli_outcome is pinned on a failing Output and the two commands' messages on a refused CLI are \
+                 asserted",
+            ),
+        ),
+    ]),
+    (5, &[
+        c(
+            "install never overwrites a plist it did not generate: a hand-written one is refused without --take-over",
+            Evidence::Scenario(&[
+                "install_refuses_a_holder_it_cannot_name",
+                "the_generated_plist_is_marked_escaped_and_carries_env_verbatim",
+            ]),
+        ),
+        c(
+            "nothing deletes an operator's plist: take-over and uninstall move it aside under ~/.supragnosis/launchd",
+            Evidence::Deferred(
+                "the destination is pinned (env_args_configure_the_daemon_and_nothing_else) but the act is \
+                 `move_aside`, a rename reached from service_install and service_uninstall, and nothing asserts a \
+                 rename rather than a remove. Revisit when the service commands' file steps run against a temp HOME \
+                 in a test",
+            ),
+        ),
+    ]),
+    (6, &[
+        c(
+            "quitting the app never stops a launchd-managed daemon",
+            Evidence::Deferred(
+                "RunEvent::Exit reaps only the Child inside Daemon::Spawned and Daemon::External holds no handle, but \
+                 the shell could still run `supragnosis stop` and nothing checks that it does not. Revisit when the \
+                 exit path is a pure function from Daemon to the action taken, testable without a Tauri runtime",
+            ),
+        ),
+        c(
+            "turning Start at Login off is the only way the app stops a daemon it did not spawn",
+            Evidence::Deferred(
+                "set_login runs `service uninstall`, which boots the canonical job out; that this is the single such \
+                 path is a reading of main.rs, not a test. Revisit together with the clause above",
+            ),
+        ),
+    ]),
+    (7, &[
+        c(
+            "install refuses an environment, given or carried, that turns off auth or the secret scan or names a non-loopback address",
+            Evidence::Scenario(&["the_generated_job_refuses_an_environment_that_adds_exposure"]),
+        ),
+        c(
+            "--env adds SUPRAGNOSIS_* keys and nothing else, and the generated job runs `serve` with its environment carried verbatim",
+            Evidence::Scenario(&[
+                "env_args_configure_the_daemon_and_nothing_else",
+                "the_generated_plist_is_marked_escaped_and_carries_env_verbatim",
+            ]),
+        ),
+    ]),
+    (8, &[c(
+        "the job is a user LaunchAgent in the gui/<uid> domain: no administrator rights, no helper tool",
+        Evidence::Deferred(
+            "the plist path is ~/Library/LaunchAgents and every launchctl target is gui/{uid}, with no sudo, \
+             SMJobBless or helper anywhere - a reading of the source, not a guard. Revisit when a source scan pins \
+             the launchctl targets, or when a Linux manager joins and the domain stops being one constant",
+        ),
+    )]),
+    (9, &[
+        c(
+            "a pid counts as a manager only when its executable is supragnosis - not the desktop shell, not a reused pid",
+            Evidence::Scenario(&["a_pid_counts_only_when_it_is_supragnosis"]),
+        ),
+        c(
+            "a pidfile naming anything else is stale and is cleared, never signalled",
+            Evidence::Deferred(
+                "`live_pidfile` filters by pid_is_supragnosis and `clear_stale_pidfile` removes what it rejects, \
+                 called by stop and restart before they classify; both shell out to kill and ps and no test drives \
+                 them. Revisit when the pidfile step is given an injectable process reader",
+            ),
+        ),
+    ]),
+];
+
+// docs/settings-page.md Section 7 - the app's settings page (S rows).
+const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c(
+            "the caller check admits only the main window showing the app's own settings page at the top level: the viewer, a hub's page, another app page and a lookalike path are refused",
+            Evidence::Scenario(&["only_the_apps_own_page_may_change_a_setting"]),
+        ),
+        c(
+            "no settings command is open by default: build.rs declares every one, the settings capability grants them to the main window only, and the viewer's capability holds none",
+            Evidence::Scenario(&["settings_commands_are_closed_until_granted"]),
+        ),
+        c(
+            "every registered command runs the caller check before it acts",
+            Evidence::Deferred(
+                "each of the eight #[tauri::command] fns opens with `settings_caller(&webview)?` and the lists are \
+                 held together, but nothing scans the commands for the call - a ninth command could skip it and both \
+                 tests above would still pass. Revisit when settings_commands_are_closed_until_granted also reads \
+                 main.rs for the check as each command's first statement",
+            ),
+        ),
+    ]),
+    (2, &[
+        c(
+            "the credential is never an argument of `server add`: the argument list is built without it",
+            Evidence::Scenario(&["a_credential_never_becomes_an_argument"]),
+        ),
+        c(
+            "the credential reaches the CLI on stdin only, appears in no log line or response, and leaves the page once handed over",
+            Evidence::Deferred(
+                "add_server pipes it to stdin and answers `added <name>` or the CLI's first stderr line, and \
+                 settings.js clears the field on submit - neither is under test, and the CLI's stderr is not pinned \
+                 to exclude the value. Revisit when add_server is driven with a stub CLI that echoes its stdin",
+            ),
+        ),
+    ]),
+    (3, &[
+        c(
+            "what the page shows of an app, the daemon and the servers is read from the CLI's --json answers, held to the CLI's own example documents",
+            Evidence::Scenario(&[
+                "an_app_item_says_what_a_click_will_do",
+                "every_field_the_app_reads_is_in_the_clis_examples",
+                "the_examples_read_through_the_apps_own_readers",
+            ]),
+        ),
+        c(
+            "every change is a CLI call, and a refusal from the CLI is what the page shows",
+            Evidence::Deferred(
+                "each command body is a run_cli call whose outcome is cli_outcome's line and none is under test; the \
+                 Add-server sheet also checks the URL's shape before the CLI does, which the document admits. Revisit \
+                 when the commands run against a stub CLI and the shown message is asserted for a refusal",
+            ),
+        ),
+    ]),
+    (4, &[c(
+        "every setting the tray offered - Start at Login, Restart Daemon, Server, AI Apps - is on the page",
+        Evidence::Deferred(
+            "the four controls became login_set, daemon_restart, server_use/add/remove and app_toggle, all in \
+             SETTINGS_COMMANDS, and the tray now builds only status, Open Graph, Settings... and Quit - but no test \
+             reads settings.js for the rows that call them. Revisit when the page's script gets a source tripwire \
+             like the viewer's, one per command name",
+        ),
+    )]),
+    (5, &[c(
+        "the page renders the text it is given as text: no markup sink in settings.js or shell-init.js, a policy in the page's head, no inline script",
+        Evidence::Scenario(&["the_settings_page_never_renders_markup"]),
+    )]),
+    (6, &[c(
+        "while a remote profile is active the daemon controls are disabled with the reason, and the commands behind them refuse",
+        Evidence::Deferred(
+            "login_set, daemon_restart and peer_narrow refuse with the reason when active_remote is set and \
+             settings.js disables the switch and hides Restart on d.remote; neither half is under test. Revisit when \
+             active_remote is injectable and the three refusals are asserted",
+        ),
+    )]),
+];
+
+// docs/consolidation.md Section 9 - the recall weight and the recall effect (C rows).
+const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("the recall weight is recomputed from the log on every read, and a consolidation pass \
+           writes no score of its own",
+          // policy_cases.rs: the pass that computes the weight changes nothing in the store;
+          // principle_scenarios.rs: two stores fed one log compute one weight.
+          Evidence::Scenario(&[
+            "p7_curation_generates_candidates_and_commits_nothing",
+            "p16_the_recall_weight_is_the_same_on_any_arrival_order",
+          ])),
+        c("if the weight is materialized it is carried at `reproject` the way the belief is, never \
+           as a per-observation column",
+          Evidence::Deferred(
+            "M6 step 2 (consolidation.md Section 8) - the span is two scalars with nowhere to live \
+             yet: a port method for a number no observation asserts, or an engine cache that the \
+             un-advanced `log_epoch` after `sync_pull` would serve stale. Nothing is materialized, so \
+             nothing can be checked for the shape it takes")),
+    ]),
+    (2, &[
+        c("the weight consumes no arrival order and no randomness",
+          Evidence::Scenario(&["p16_the_recall_weight_is_the_same_on_any_arrival_order"])),
+        c("recency is a position in the span of the workspace's own recorded HLCs, never a reading \
+           of the OS clock",
+          // principle_scenarios.rs: the oldest recorded instant is 0.0 and the newest is the
+          // frontier at exactly 1.0; against the OS clock every fixture row would sit near 0.0.
+          Evidence::Scenario(&["p7_observations_written_at_one_instant_share_one_frontier_position"])),
+    ]),
+    (3, &[
+        c("the committed weight consumes no node-local signal",
+          Evidence::Structural(
+            "`recall_weights(log, gates)` takes the observation log and the gate-grant fold and \
+             nothing else, and no port method records an access or a query - there is no usage \
+             telemetry anywhere in the system for a weight to consume")),
+        c("usage may re-rank only the already-exempt surfaces, layered after the converged ordering \
+           and labelled by `mode`",
+          Evidence::Deferred(
+            "M6 step 4 (consolidation.md Section 8) - no usage tracking and no re-rank layer exist; \
+             `search` labels its `mode` today (hybrid_search_adds_semantic_recall), which is the \
+             label the re-rank will reuse, but there is no re-rank for a case to catch leaking into \
+             the keyword ordering")),
+    ]),
+    (4, &[
+        c("the weight has a positive floor, so demotion can never reach zero",
+          Evidence::Scenario(&["p7_the_recall_weight_never_reaches_zero"])),
+        c("`get_entity`, `get_observation` and `traverse` do not consult the weight - demoted \
+           knowledge stays reachable by explicit query",
+          Evidence::Deferred(
+            "M6 step 3 - nothing consumes the weight yet (`recall_weights` has one call site, inside \
+             `curation`, and the report is its only output), so the explicit-query surfaces ignore \
+             it by default rather than by a guard. The owed case - a floored row still answers the \
+             three lookups unchanged - has nothing to assert until ranking consumes the weight")),
+    ]),
+    (5, &[
+        c("demotion appends no observation and changes no belief",
+          Evidence::Scenario(&[
+            "p7_curation_generates_candidates_and_commits_nothing",
+            "merge_suggestions_never_commit",
+          ])),
+        c("the one consolidation act that appends - a `recall` - is a proposal kind and goes \
+           through the gate",
+          // engine lib.rs unit test: `recall` opens as a proposal and folds like every other kind.
+          Evidence::Scenario(&["proposal_open_verdict_fold"])),
+    ]),
+    (6, &[
+        c("a merged `recall` marks its target and closure retracted, drops them from belief \
+           selection and floors their weight",
+          Evidence::Deferred(
+            "M6 step 5 (consolidation.md Section 6), which the P23 row files under M4 Phase 5 / M5: \
+             `recall` folds correctly and changes nothing, and no case merges one, so the gap is \
+             neither enforced nor pinned - the gate reports a decision it did not carry out")),
+        c("a merged `recall` deletes nothing - the observations stay readable",
+          Evidence::Structural(
+            "the store port has no delete: `AssertionStore` appends through `add_observation` (an \
+             absorb) and reads, `KnowledgeStore` adds `put_entity`/`add_relation` and the \
+             owed-projection ledger, so a verdict effect has no method through which to remove a row")),
+        c("a retraction is itself an observation, so it converges and is reversible by a new proposal",
+          Evidence::Deferred(
+            "M6 step 5 - the retraction status is specified as a fold-derived mark over verdict \
+             observations; until the effect exists there is no reversal to exercise. It is the P3 \
+             shape unmerge.md S7/S8 already pin for a split")),
+    ]),
+    (7, &[
+        c("a recall proposal presents its `derived_from` closure in the belief diff and never \
+           cascades it silently",
+          Evidence::Deferred(
+            "M6 step 5 - a recall's diff reports `no commit effect yet`, the branch \
+             p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty pins for tbox_change \
+             only; the closure walk is M5's lineage machinery (excision.md Section 8), so nothing \
+             presents it and nothing can cascade it")),
+        c("a recall verdict binds to the base its diff was computed over",
+          Evidence::Deferred(
+            "M4 Phase 5 - the Stale-base debt the P23 row carries: a proposal never pins its base \
+             (I7) and a verdict is not bound to one (I12), and consolidation.md Section 6 names \
+             `recall` as the kind where that starts to bite")),
+    ]),
+    (8, &[
+        c("retraction is not excision: a demand to destroy is answered by excision.md or by saying \
+           it is unbuilt, never by a recall reported as a removal",
+          Evidence::Deferred(
+            "M6 step 5 for the recall report and M4 Phase 5 for excision (E9) - no surface offers \
+             destruction and a recall merge has no effect, so nothing today can report a removal; \
+             the first guard is the recall effect's own report saying retracted-and-still-readable")),
+    ]),
+    (9, &[
+        c("the condensation substrate is deterministic and identified by member set, and promotion \
+           is a gated assertion carrying every co-asserting observation as lineage",
+          Evidence::Scenario(&[
+            "hypergraph_dedup_by_member_set_accumulates_sources",
+            "hypergraph_scoped_deterministic_and_hub_degree",
+            "p11_reify_asserts_group_with_lineage",
+          ])),
+        c("selection is a deterministic fold over stability, corroboration and cohesion, and \
+           corroboration counts independent principals rather than repetitions",
+          Evidence::Deferred(
+            "M6 condensation track (consolidation.md Section 8) - no selection fold exists, and the \
+             `sources` a hyperedge carries counts observations (one per co-assertion), not \
+             delegation-chain principals, so a fold built on it as-is would count repetition - the \
+             P11 rule the clause exists to forbid")),
+    ]),
+    (10, &[
+        c("a generated summary is written from current state and never stored by the server",
+          // mcp_surface.rs: getting the brief leaves the observation count unchanged. The brief is
+          // the first display-layer summary (prompts.md Section 1 cites 7.2).
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+        c("the digest a summary is written from carries both sides of a contested belief rather \
+           than settling it",
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+        c("a summary surface is labelled by `mode` like the recall aid it lives beside",
+          Evidence::Deferred(
+            "M6, after step 3 (consolidation.md Section 8: 7.2's display-layer summary follows the \
+             weight) - the server has no summary surface of its own to label; the prompt digest \
+             carries `mode` only on its search hits, and no case reads it")),
+    ]),
+    (11, &[
+        c("the server's generated artifacts - report, weights, digest - are never written, so they \
+           never replicate",
+          // policy_cases.rs and mcp_surface.rs; plus F1's mechanism - the wire carries attestation
+          // events only, so an unwritten artifact has no way across it.
+          Evidence::Scenario(&[
+            "p7_curation_generates_candidates_and_commits_nothing",
+            "a_brief_is_fenced_bounded_and_writes_nothing",
+          ])),
+        c("a consolidation artifact enters the log only as the enrichment of a gated candidate, \
+           derived, lowest-trust and lineage-bearing",
+          Evidence::Deferred(
+            "M5 with the extractor port - the proposal-workflow.md 14.1 enrichment path is unbuilt, \
+             a rationale is the only enrichment slot and carries no tier or lineage, and the prompt \
+             instruction telling the model never to observe a brief back is a rule the server \
+             cannot check")),
+    ]),
+    (12, &[
+        c("the weight ranks nothing until the materialized span exists, and never without the floor",
+          // read_path_cost.rs: search walks the log zero times, so a frontier term cannot enter it
+          // unmaterialized; principle_scenarios.rs pins the floor first.
+          Evidence::Scenario(&[
+            "a_search_does_not_walk_the_log",
+            "p7_the_recall_weight_never_reaches_zero",
+          ])),
+        c("a recall that retracts without its diff is not shipped",
+          Evidence::Deferred(
+            "M6 step 5 - the effect and the closure diff are both unbuilt, so no case can pin an \
+             ordering between them; the honest interim state is pinned on the tbox_change branch by \
+             p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty, and the recall branch \
+             shares it without a case of its own")),
+    ]),
+];
+
+// docs/excision.md Section 9 - the destruction-demand exception (E rows). Unbuilt past Section 8
+// steps 1-2, which are P17's registry row; every row here is owed to M4 Phase 5 except the one
+// that holds by the port's shape.
+const EXCISION_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("excision replaces an observation with a tombstone under the same id",
+          Evidence::Deferred(
+            "M4 Phase 5 (architecture.md Section 14: the first multi-principal deployment is the \
+             first time a destruction demand can arrive from someone who is not the operator) - no \
+             tombstone type, store method or surface exists; only Section 8 steps 1-2 are built, \
+             and they are P17's registry row")),
+        c("there is no in-place edit of an observation's content, because content is identity",
+          Evidence::Structural(
+            "the store port has no edit and no delete: `AssertionStore::add_observation` absorbs \
+             into the row the content address names, and no method rewrites or removes one; the id \
+             is `blake3(workspace, content, assertions)` (observation_id_includes_assertions), so a \
+             changed text is a different row, never the same row changed")),
+    ]),
+    (2, &[
+        c("a tombstone records the act and a structural census, never the content, anything \
+           reversibly derived from it, or a reason that quotes it",
+          Evidence::Deferred(
+            "M4 Phase 5 - there is no tombstone to hold a census or a reason. The detector that \
+             would bound the reason exists and never echoes what it finds \
+             (a_finding_never_carries_the_secret, \
+             p17_a_credential_is_refused_at_ingest_without_being_echoed), but it guards the ingest \
+             door and the scan, not a field that does not exist")),
+    ]),
+    (3, &[
+        c("a tombstone is absorbing: `add_observation` for that id is refused locally and from the \
+           wire, and the tombstone is never superseded or removed",
+          Evidence::Deferred(
+            "M4 Phase 5 - `add_observation` has no absorbing state to consult, and the sync apply \
+             path (apply_verifies_rejects_and_stays_idempotent) knows only dedup and absorb; the P3 \
+             row files the same clause as its tombstone debt")),
+    ]),
+    (4, &[
+        c("a tombstoned id keeps advancing the version vector for its (origin, origin_seq)",
+          Evidence::Deferred(
+            "M4 Phase 5 - the cursor is derived from stored rows (`version_vector` folds \
+             `attestations_since`), which is exactly why a deleted row would be re-pulled; the \
+             watermark a tombstone must keep does not exist, and since the failure is invisible on \
+             a node with no peers it needs a two-node case the day it lands")),
+    ]),
+    (5, &[
+        c("tombstones propagate through the ordinary signed, allowlisted, workspace-filtered sync \
+           path, and the surface reports where excision could not reach",
+          Evidence::Deferred(
+            "M4 Phase 5 - the path exists (export_respects_share_list_and_vv) but carries no \
+             tombstone event, and no surface reports an unreachable copy; excision.md Section 4's \
+             excise-first-then-narrow rule has nothing to apply to")),
+    ]),
+    (6, &[
+        c("the derived closure is presented, never cascaded; each excision is its own act with its \
+           own tombstone",
+          Evidence::Deferred(
+            "M5 for the lineage walk (excision.md Section 8: the walk is M5's machinery) and M4 \
+             Phase 5 for the act - nothing walks `derived_from` for a destruction candidate today")),
+    ]),
+    (7, &[
+        c("excision is a console-only, non-delegable act, at least as restricted as the recall \
+           verdict, and does not pass through the proposal gate",
+          Evidence::Deferred(
+            "M4 Phase 5 - no excision surface exists on the console or the MCP path, and \
+             `PROPOSAL_KINDS` has no such kind, so the gate cannot carry it by accident; the \
+             recall-verdict floor this must exceed is the P23 row's own clause")),
+    ]),
+    (8, &[
+        c("after excision the projection is re-materialized from the log, never patched",
+          Evidence::Deferred(
+            "M4 Phase 5 - `reproject` is the replay (p1_reprojection_rederives_without_touching_the_log) \
+             and would be the mechanism, but no excision triggers it; the dangling-target and \
+             shrinking-graph consequences of Section 7 have no case")),
+    ]),
+    (9, &[
+        c("a partial implementation is not shipped: excision without the lineage walk, the \
+           absorbing state, cursor participation and propagation reports a removal it did not perform",
+          Evidence::Deferred(
+            "M4 Phase 5 - holds only because nothing is shipped: there is no tool, route, kind or \
+             store method for the act, so there is nothing partial to catch. The first case this \
+             document names must assert the four parts together, or it will be the partial version")),
+    ]),
+];
+
+// docs/unmerge.md Section 11 - entity_split, the reversal of a merge (S rows). Built.
+const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("a split is a proposal kind opened through `propose` and decided by a verdict, reachable \
+           from the MCP tool and the console",
+          // principle_scenarios.rs (propose + review, then the effect); viz http.rs (the console
+          // route opens an `entity_split`); mcp_surface.rs (the `propose` description names every
+          // kind in PROPOSAL_KINDS, `entity_split` included).
+          Evidence::Scenario(&[
+            "p3_a_merged_split_reverses_the_merge_it_names",
+            "viz_propose_split_opens_a_reversal_without_committing_it",
+            "mcp_protocol_surface_end_to_end",
+          ])),
+        c("an opened split commits nothing - it carries its own state and the merge stands until \
+           the verdict",
+          Evidence::Scenario(&[
+            "viz_propose_split_opens_a_reversal_without_committing_it",
+            "p23_a_split_of_an_undecided_merge_has_no_commit_effect",
+          ])),
+    ]),
+    (2, &[
+        c("a split names the `entity_merge` proposal it reverses, not a pair of entities",
+          Evidence::Scenario(&[
+            "p3_a_merged_split_reverses_the_merge_it_names",
+            "p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing",
+          ])),
+    ]),
+    (3, &[
+        c("a merged split removes that merge's contribution to `merge_forwarding` and nothing else",
+          Evidence::Scenario(&[
+            "p3_a_merged_split_reverses_the_merge_it_names",
+            "p3_a_split_removes_the_merged_name_and_keeps_the_asserted_spelling",
+            "p23_a_split_preview_shows_the_endpoints_that_move_back",
+          ])),
+        c("every consumer follows from the one map, and none of them learns what a split is",
+          Evidence::Structural(
+            "`reversed_merges` is read by two folds only, `forwarding_less` (which `merge_forwarding` \
+             is) and `merge_cycle_sets`; every read path takes the map `merge_forwarding` returns and \
+             the candidate generators take the pair set `suppressed_pairs` returns, and the string \
+             `entity_split` occurs in no graph, search, alias or traverse code - so a consumer cannot \
+             tell a merge that was never cast from one that was split")),
+    ]),
+    (4, &[
+        c("nothing is deleted or edited: the merge proposal, its verdicts and both entity rows stay \
+           in the store",
+          Evidence::Structural(
+            "the store port has no delete: `AssertionStore` appends through `add_observation` (an \
+             absorb) and reads, `KnowledgeStore` adds `put_entity`/`add_relation` and the \
+             owed-projection ledger, so a split verdict has no method through which to remove a \
+             proposal, a verdict or an entity row; the log's only write is absorb")),
+        c("the merged-away rows were filtered at read, never rewritten, so reversing the filter \
+           restores them exactly",
+          Evidence::Scenario(&[
+            "p3_a_split_removes_the_merged_name_and_keeps_the_asserted_spelling",
+            "p3_a_merged_split_reverses_the_merge_it_names",
+          ])),
+    ]),
+    (5, &[
+        c("a split permanently suppresses the separated pair as a suggestion",
+          Evidence::Scenario(&["p19_a_split_pair_is_never_suggested_again"])),
+        c("a split never suppresses the possibility - the pair stays mergeable by hand",
+          Evidence::Scenario(&["p15_separated_entities_can_be_merged_again"])),
+        c("suppression is derived from the log, so nodes with equal logs suppress equally",
+          Evidence::Deferred(
+            "Revisit with a curation-report convergence case - `split_pairs` is computed from the \
+             proposal fold on every read and no flag is stored (the port has nowhere to put one), \
+             but no case delivers one log to two nodes in different orders and compares their \
+             suggestions; the P16 suite compares graphs, not curation reports")),
+    ]),
+    (6, &[
+        c("aliases the merge contributed leave the canonical row on a split; asserted spellings \
+           never do, so IR1's set is unchanged",
+          Evidence::Scenario(&["p3_a_split_removes_the_merged_name_and_keeps_the_asserted_spelling"])),
+    ]),
+    (7, &[
+        c("merge and split are both reversible: re-merging separated entities is an ordinary new \
+           `entity_merge` with no special case",
+          Evidence::Scenario(&["p15_separated_entities_can_be_merged_again"])),
+    ]),
+    (8, &[
+        c("a split is not absorbing: it can be followed by a new merge",
+          Evidence::Scenario(&["p15_separated_entities_can_be_merged_again"])),
+        c("the log records the whole argument - every merge and split verdict stays, and the map \
+           is a function of all of them",
+          Evidence::Structural(
+            "`forwarding_less` folds every proposal in the log and subtracts the ones a merged split \
+             names; nothing is removed to make that true because the port has no delete, so the map \
+             is a deterministic function of all the verdicts, never of the latest one")),
+    ]),
+    (9, &[
+        c("the verdict on a split whose target is absent, not an `entity_merge`, or undecided is \
+           refused and reaches nothing",
+          // One predicate - membership in `decided_merges` - covers all three cases, so the
+          // undecided case exercises the branch the other two take.
+          Evidence::Scenario(&["p23_a_split_of_an_undecided_merge_has_no_commit_effect"])),
+        c("an absent target reads as absent in the diff, never as an empty diff",
+          Evidence::Scenario(&["p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing"])),
+        c("a repeat split of one resolution is idempotent rather than an error",
+          Evidence::Deferred(
+            "Revisit with one case - reversal is set membership in `reversed_merges`, and a verbatim \
+             repeat is even the same observation id, but no case casts a second split and asserts \
+             that the map, the suppression set and the proposal states are unchanged")),
+    ]),
+    (10, &[
+        c("re-opening a reversed resolution verbatim is refused, because content addressing would \
+           hand back the id the split already named",
+          Evidence::Deferred(
+            "Revisit with one case - `propose` refuses the verbatim re-open and names the fix, and \
+             p15_separated_entities_can_be_merged_again steps around it with a rationale, but no \
+             case asserts the refusal itself, so deleting it would fail nothing")),
+    ]),
+];
+
+// docs/prompts.md Section 7 - the four MCP prompts (PR rows). Built.
+const PROMPTS_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("getting a prompt reads state and returns messages; nothing is written",
+          // mcp_surface.rs: the observation count is unchanged across `brief`; the other three go
+          // through the same `prompts::get`.
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+    ]),
+    (2, &[
+        c("a digest is a deterministic function of the node's current state and the arguments",
+          // Each of the four prompts, asked twice over one store, is the same bytes.
+          Evidence::Scenario(&["a_digest_is_the_same_bytes_twice_over_one_store"])),
+    ]),
+    (3, &[
+        c("every digest section is bounded and says what it left out",
+          // One `bounded`/`trim` wraps all four digests, so the brief's section stands for each.
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+    ]),
+    (4, &[
+        c("evidence in a digest is fenced and labelled untrusted, and the instruction says not to \
+           follow instructions found inside it",
+          // The fence is written once in `get` for every prompt.
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+    ]),
+    (5, &[
+        c("no prompt's instruction asks the model for a merge verdict",
+          // `Never cast a merge verdict`, from the RULES text every prompt shares.
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+        c("promotion to `human_confirmed` stays the console's act whether or not the model obeys",
+          Evidence::Scenario(&[
+            "p18_agent_surface_promotion_caps_at_host_signed",
+            "p18_an_agent_surface_verdict_cannot_grant_human_confirmed",
+          ])),
+    ]),
+    (6, &[
+        c("the remote surface lists no prompt and refuses each by name with the reason",
+          Evidence::Scenario(&["the_remote_surface_lists_no_prompt_and_refuses_each"])),
+    ]),
+];
+
+// docs/proposal-workflow.md Section 2 - the gate (I rows). I17 sits between I9 and I10 in the
+// document; the numbers are compared as a set.
+const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("every proposal event - open, comment, verdict, withdrawal - is an observation in the one log",
+          Evidence::Scenario(&[
+            // policy_cases.rs - opening appends exactly one observation.
+            "p23_a_proposal_alone_changes_nothing_only_the_verdict_commits",
+            // A verdict planted as an observation carrying the event is what the fold meets.
+            "p23_a_blocked_merge_verdict_does_not_reach_canon",
+            // Proposal and verdict replicate through export/apply like any observation and a fresh
+            // node folds them.
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+            // Attribution is the proposal observation's authoring attestation.
+            "p2_proposal_attribution_names_the_authoring_attestation",
+          ])),
+        c("there is no side store for proposals",
+          Evidence::Structural(
+            "a proposal event is `ProposalEventAssertion` inside `Assertions.proposal_events` of an \
+             `Observation`, and neither `AssertionStore` nor `KnowledgeStore` (core) has a proposal \
+             method or row, so the log is the only place an event can be written",
+          )),
+    ]),
+    (2, &[
+        c("a proposal's state is a deterministic fold of its events, recomputed on every read",
+          Evidence::Scenario(&[
+            // engine lib.rs unit test - open, merged, rejected from the fold alone.
+            "proposal_open_verdict_fold",
+            // A node holding only the replicated log folds the same state.
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+          ])),
+        c("the state is never stored separately",
+          Evidence::Structural(
+            "`ProposalView` has exactly one construction site, inside `Engine::fold_proposals`, which \
+             `get_proposal`/`list_proposals` run over the log on every call; the store port has no \
+             proposal row, so a materialized state has no field to live in",
+          )),
+    ]),
+    (3, &[
+        c("the conclusion is a function of the verdict set: one valid merge wins, reject only when none exists",
+          Evidence::Scenario(&[
+            "i16_merge_absorbs_over_conflicting_reject_in_any_order",
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+          ])),
+        // Both verdicts stay counted. The loser is kept AS a verdict rather than relabeled a
+        // comment as 7.1 words it; the demand (decides nothing, not erased) is what is pinned.
+        c("a conflicting verdict decides nothing and is kept, never erased",
+          Evidence::Scenario(&["i16_merge_absorbs_over_conflicting_reject_in_any_order"])),
+    ]),
+    (4, &[c(
+        "the passage of time alone moves no proposal; expiry or auto-merge is an explicit event",
+        Evidence::Deferred(
+            "the fold reads only log rows - the engine's clock port is consulted by observe and the \
+             recovery ledger, never by `fold_proposals` - but nothing pins a state as clock-independent, \
+             and the policy executor that would load an expiry event is M4+ work (Section 13); the \
+             case belongs beside it",
+        ),
+    )]),
+    (5, &[
+        c("a reject folds to rejected and leaves the proposal open to a later valid merge",
+          Evidence::Scenario(&[
+            "proposal_open_verdict_fold",
+            "i16_merge_absorbs_over_conflicting_reject_in_any_order",
+          ])),
+        c("the rejected assertion keeps its original tier",
+          Evidence::Deferred(
+            "`gate_grants` skips every non-merge verdict, so a reject grants and demotes nothing, but \
+             no case reads a target's effective tier across a reject. Revisit when the reject path \
+             grows its first effect (the Section 13 resubmission cooldown), which is when a case can \
+             catch it doing more than recording",
+          )),
+    ]),
+    (6, &[
+        c("a merge appends a verdict; the assertion is neither copied nor modified",
+          Evidence::Scenario(&[
+            // The merge verdict is exactly one appended observation and no id leaves the log.
+            "p23_a_blocked_gate_merge_grants_nothing",
+            "p23_a_proposal_alone_changes_nothing_only_the_verdict_commits",
+          ])),
+        c("cancellation is a new demotion or split event, never a rewind",
+          Evidence::Scenario(&[
+            // A merged demotion is a later gate event, not an edit; a merged split restores the
+            // pre-merge graph by filtering, not deleting.
+            "p23_demotion_overrides_below_base",
+            "p3_a_merged_split_reverses_the_merge_it_names",
+          ])),
+    ]),
+    (7, &[c(
+        "a proposal pins the canon frontier at open; a moved touched set makes it stale until re-checked",
+        Evidence::Deferred(
+            "M4 Phase 5 - no base is pinned at open, Stale is never computed, and diff and checks are \
+             functions of the proposal and the growing log (Section 4 and Section 6 [impl]; \
+             architecture.md Section 14), so only checks monotone in the growing log ship until the \
+             fixed base exists",
+        ),
+    )]),
+    (8, &[c(
+        "a check is a pure function of its input: the same conclusion on every node under every delivery order",
+        // The input is (proposal, log) today, not (proposal, base frontier) - that half is I7's
+        // debt, not a second check.
+        Evidence::Scenario(&["i8_blocking_check_conclusion_is_arrival_order_independent"]),
+    )]),
+    (9, &[
+        c("the verdict's authority principal differs from the proposer's, compared by canonical identity",
+          Evidence::Characterized(
+            &["i9_self_attested_is_blanket_true_until_principal_check_lands"],
+            "M4 Phase 5 - no principal comparison exists; the fold accepts any merge and labels every \
+             view self_attested (the case pins alice-proposed, bob-merged as merged AND self_attested)",
+          )),
+        c("a verdict between unresolved principals is suspected self-approval and forces human review",
+          Evidence::Deferred(
+            "M4 Phase 5 - principal resolution rests on the canon policy's principal-to-key binding \
+             (federation.md F17); until then there are no two principals to compare and the \
+             deployment stays solo under the P23 exception",
+          )),
+        c("claim-demotion and recall keep self-approval as the exception when the check lands",
+          Evidence::Deferred(
+            "M4 Phase 5 - costs nothing to honor today because no principal check exists \
+             (resolution.md Section 5); only a case written against the check can pin that demotion \
+             keeps the exception while promotion loses it",
+          )),
+    ]),
+    (17, &[c(
+        "a recall merge is valid only as a human's direct act: a proxied or agent-cast one decides nothing",
+        Evidence::Deferred(
+            "M4 Phase 5 for the principal-signed act (federation.md F20 strength ii). The \
+             console-marker half - the fold counts a recall merge only with the engine-stamped \
+             console marker, and the agent surface refuses to cast one - lands with the \
+             recall-verdict change (PR #98) and its two i17 policy cases, which this clause cites \
+             once both are on one branch",
+        ),
+    )]),
+    (10, &[c(
+        "no proposal state refuses or holds an observation",
+        // An observation that a blocked merge verdict already names lands through the ordinary
+        // ingest, and its arrival is what unblocks the verdict. The fold is read on the observe
+        // path only as projection input, never as a precondition.
+        Evidence::Scenario(&["p23_a_blocked_gate_merge_grants_nothing"]),
+    )]),
+    (11, &[
+        c("the clock is monotonic and a received stamp lands it after both sides",
+          Evidence::Scenario(&[
+            "hlc_is_monotonic_and_merge_lands_after_both",
+            // A stamp carries authoring time, so export reorders nothing.
+            "a_stamp_carries_the_authoring_time_not_the_export_time",
+          ])),
+        c("a fold orders by HLC, not arrival, and reaches the same conclusion on every node",
+          Evidence::Scenario(&[
+            "types_fold_orders_by_hlc_not_observed_at",
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+          ])),
+    ]),
+    (12, &[c(
+        "a verdict is bound to the base it reviewed; revise resets unfinalized verdicts and never a finalized merge",
+        Evidence::Deferred(
+            "M4 Phase 5 - a verdict carries no base reference, there is no revise event \
+             (`ProposalEventKind` is Opened/Verdict/Withdrawn/Comment) and the fold checks only \
+             7.1(b), so a stale-diff approval can still merge (Section 4 [impl]; architecture.md \
+             Section 14), owed with the quorum/revise rules of Section 13",
+        ),
+    )]),
+    (13, &[
+        c("the blocking gate is recomputed by the fold: a merge verdict on a failing proposal folds to blocked and commits nothing",
+          Evidence::Scenario(&[
+            "p23_a_blocked_merge_verdict_does_not_reach_canon",
+            "p23_a_blocked_gate_merge_grants_nothing",
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+            "p23_a_well_formed_merge_passes_its_checks_and_commits",
+          ])),
+        c("a reported check result is advisory; a forged pass cannot promote",
+          Evidence::Structural(
+            "`ProposalEventKind` has no check-report variant (Opened, Verdict, Withdrawn, Comment), so \
+             no event can carry a result for the fold to trust; `fold_proposals` runs \
+             `blocking_failures` itself over the log for every proposal carrying a merge verdict",
+          )),
+    ]),
+    (14, &[
+        c("loading an effect twice is harmless",
+          Evidence::Structural(
+            "there are no effect events to load twice: `ProposalEventKind` carries no \
+             tier_promoted/entities_merged variant, every effect is folded from the verdict \
+             (`gate_grants`, merge forwarding) and the tally is a boolean, so a second copy of a \
+             verdict is a second observation with the same content address, which the log dedups",
+          )),
+        c("duplicate entity-merge proposals do not diverge, canonicalized by canonical id order",
+          Evidence::Characterized(
+            &["p6_contradictory_merge_cycle_is_convergent_and_surfaced"],
+            "M4 Phase 5 - opposite-direction merges converge, but by hop-capped iteration parity, \
+             which the case pins as not a principled rule; the canonical-id order of the text is \
+             the Section 13 open decision on canonicalization, owed with the quorum/revise rules",
+          )),
+    ]),
+    (15, &[c(
+        "an automatic verdict counts only if the fold re-validates its routing premises at merge time",
+        Evidence::Deferred(
+            "M4+ - the auto-merge policy executor does not exist (Section 13; resolution-identity.md \
+             Section 3 keeps the top band human), the informative checks it would re-validate are not \
+             computed, impact radius waits on I7's fixed base, and the fold cannot tell an automatic \
+             verdict from a human one",
+        ),
+    )]),
+    (16, &[
+        c("merge is absorbing: no later or concurrent event cancels a valid merge",
+          Evidence::Scenario(&["i16_merge_absorbs_over_conflicting_reject_in_any_order"])),
+        c("reject is provisional: a late valid merge raises it to merged",
+          Evidence::Scenario(&["i16_merge_absorbs_over_conflicting_reject_in_any_order"])),
+        c("the blocking conclusion moves blocked -> merged only, never the reverse",
+          Evidence::Scenario(&[
+            // The missing target's arrival unblocks the same verdict.
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+            "p23_a_blocked_gate_merge_grants_nothing",
+          ])),
+        c("a reversal of a promotion is a new proposal",
+          Evidence::Scenario(&[
+            "p23_demotion_overrides_below_base",
+            "p3_a_merged_split_reverses_the_merge_it_names",
+          ])),
+    ]),
+    (18, &[
+        c("a consolidation pass emits read-only signals and candidates and commits nothing",
+          Evidence::Scenario(&[
+            "p7_curation_generates_candidates_and_commits_nothing",
+            "merge_suggestions_never_commit",
+          ])),
+        c("the console's accept is a verdict_cast observation, never a projection or log write",
+          Evidence::Scenario(&[
+            // One /api/resolve act is a proposal plus a Console verdict in the trail.
+            "viz_resolve_settles_a_contested_belief",
+            "p23_a_proposal_alone_changes_nothing_only_the_verdict_commits",
+          ])),
+        c("a recall acceptance stays a human's direct act even from the console",
+          Evidence::Deferred(
+            "M4 Phase 5 for the principal-signed act - the same debt as I17: the console-marker \
+             half lands with the recall-verdict change (PR #98), whose i17 policy cases this clause \
+             cites once both are on one branch",
+          )),
+    ]),
+];
+
+// docs/resolution.md Section 8 - belief resolution (R rows).
+const RESOLUTION_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("the belief is computed by a replaceable pure policy behind a port",
+          Evidence::Structural(
+            "`ResolutionPolicy` is a core trait with one method over a `BeliefCandidate` slice, held \
+             by the engine as `Arc<dyn ResolutionPolicy>` and swapped with `Engine::with_policy`; the \
+             belief folds and `reproject` reach the rule only through it, so a second policy is a \
+             type implementing the trait, not an edit to the fold",
+          )),
+        c("no projection write encodes a decision the policy did not make: reproject recomputes the belief from the unchanged log",
+          Evidence::Scenario(&[
+            "p1_reprojection_rederives_without_touching_the_log",
+            "incremental_write_equals_replay",
+            // The representative is the policy's choice, not first arrival.
+            "p16_canonical_name_selection_is_arrival_order_free",
+          ])),
+    ]),
+    (2, &[c(
+        "selection is effective tier, then ordering HLC, then observation id - no wall clock, no arrival order",
+        Evidence::Scenario(&[
+            // core lib.rs - each step, and slice-order independence.
+            "tier_weighted_selection_order",
+            // The id tiebreak named through the engine under tied HLCs.
+            "aliases_accumulate_and_converge",
+            // Recency within a tied band, for kinds and for type definitions.
+            "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
+            "type_def_conflict_surfaces_contested",
+        ]),
+    )]),
+    (3, &[
+        c("confidence never selects",
+          Evidence::Structural(
+            "`BeliefCandidate` - the policy's whole input - carries value, effective tier, ordering \
+             HLC and observation id and no confidence field, so `choose` has nothing to read; a \
+             policy that weights confidence must first change the input type",
+          )),
+        c("confidence is carried verbatim and an unstated confidence stays unstated",
+          Evidence::Scenario(&[
+            "unstated_confidence_is_distinct_from_full_confidence",
+            "p2_a_workspace_rekey_carries_provenance_that_a_reingest_would_restamp",
+          ])),
+    ]),
+    (4, &[
+        c("a wire claim never evaluates above HostSigned, at the policy input and at every read surface",
+          Evidence::Scenario(&[
+            "evaluated_tier_caps_remote_claimed",
+            "f13_read_path_evaluates_remote_claim_at_host_signed",
+            "p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation",
+          ])),
+        c("only a merged gate event under the Console ceiling reaches HumanConfirmed",
+          Evidence::Scenario(&[
+            "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
+            "p18_agent_surface_promotion_caps_at_host_signed",
+            "p18_an_agent_surface_verdict_cannot_grant_human_confirmed",
+          ])),
+        c("a local writer cannot self-declare a tier",
+          Evidence::Structural(
+            "`ObserveInput` has no tier field (content, workspace, source_ref, confidence, \
+             on_behalf_of, derived_from, entities, relations) and the engine stamps the default, so \
+             a client-declared tier is not a value the ingest door can receive",
+          )),
+    ]),
+    (5, &[
+        c("a merged gate event overrides the base evaluation in both directions",
+          Evidence::Scenario(&[
+            "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
+            "p23_demotion_overrides_below_base",
+            // The recall weight consumes the same evaluation.
+            "p18_a_merged_demotion_lowers_the_recall_weight_of_its_target",
+          ])),
+        c("with several merged gate events on one target, the HLC-latest governs",
+          Evidence::Deferred(
+            "`gate_grants` keeps the max over (verdict HLC, proposal id) per target, but no case \
+             stacks two merged gate events on one observation, so the rule holds unchecked. Revisit \
+             with the quorum/revise rules of proposal-workflow.md Section 13 (M4 Phase 5), whose \
+             cases must stack verdicts",
+          )),
+    ]),
+    (6, &[
+        c("contested iff distinct values survive at a tied top tier; a higher tier resolves silently in the projection",
+          Evidence::Scenario(&[
+            "contested_iff_top_tier_ties",
+            "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
+            "type_def_conflict_surfaces_contested",
+          ])),
+        c("contested status is part of the projection and converges with it",
+          Evidence::Scenario(&[
+            "cross_node_reprojection_converges",
+            "p16_partitioned_and_duplicated_delivery_converges",
+          ])),
+    ]),
+    (7, &[
+        c("a conflict trust resolved stays listed in the curation report and the defeated assertion stays queryable",
+          Evidence::Scenario(&[
+            "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
+            "viz_resolve_settles_a_contested_belief",
+            "p6_contradictory_merge_cycle_is_convergent_and_surfaced",
+          ])),
+        c("a defeated assertion is reinstated by re-resolution when the tier landscape changes",
+          // Demoting the winner makes the surviving side the belief again, with no edit.
+          Evidence::Scenario(&["p23_demotion_overrides_below_base"])),
+    ]),
+    (8, &[
+        c("the surface marker is engine-stamped; the reserved namespace is refused at every local ingest door",
+          Evidence::Scenario(&[
+            "p18_reserved_surface_namespace_is_refused_at_every_ingest_door",
+            "surface_markers_live_under_the_reserved_prefix",
+          ])),
+        c("the ceiling is applied by the fold reading the marker off the log, never by the write path",
+          Evidence::Scenario(&[
+            "verdict_ceiling_by_surface_marker",
+            // A console-marked verdict planted store-side grants through the fold.
+            "p23_a_blocked_gate_merge_grants_nothing",
+            "p18_agent_surface_promotion_caps_at_host_signed",
+          ])),
+    ]),
+    (9, &[
+        c("mediation enters as events: a counter-assertion, a proposal, a verdict",
+          Evidence::Scenario(&[
+            "viz_resolve_settles_a_contested_belief",
+            "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
+          ])),
+        c("there is no API by which a human edits the belief directly",
+          Evidence::Structural(
+            "the store port is split: `Engine::store()` hands out `AssertionStore` (append to the log, \
+             read the graph) and `put_entity`/`add_relation` exist only on `KnowledgeStore`, which \
+             the engine holds and calls from the folds alone - the viewer, the MCP tools and the CLI \
+             reach no projection write (the P1 mechanism)",
+          )),
+    ]),
+];
+
+// docs/resolution-identity.md - entity identity (IR rows, list items scattered through the sections).
+const IDENTITY_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("aliases are the log's asserted spellings minus the representative - none dropped, none duplicated",
+          Evidence::Scenario(&[
+            "aliases_accumulate_and_converge",
+            "p3_a_new_spelling_accumulates_and_never_displaces",
+            // A merged-away name joins the canonical row's aliases.
+            "get_entity_forwards_a_merged_id",
+          ])),
+        c("the alias set is identical on nodes with equal logs",
+          Evidence::Scenario(&[
+            "aliases_accumulate_and_converge",
+            "p16_partitioned_and_duplicated_delivery_converges",
+          ])),
+    ]),
+    (2, &[c(
+        "no code path turns a similarity score into a merge without a verdict observation",
+        Evidence::Scenario(&[
+            "merge_suggestions_never_commit",
+            "p7_curation_generates_candidates_and_commits_nothing",
+        ]),
+    )]),
+    (3, &[c(
+        "for any log state the incremental projection of the last write equals the row reproject would produce",
+        Evidence::Scenario(&[
+            "incremental_write_equals_replay",
+            "incremental_write_equals_replay_for_relations",
+        ]),
+    )]),
+    (4, &[c(
+        "the stored embedding corresponds to the current name+aliases text or is absent, never silently stale",
+        Evidence::Scenario(&["embedding_recomputed_on_alias_change"]),
+    )]),
+    (5, &[c(
+        "type-definition conflicts surface in the same contested/competitor shape as entity kinds, settled by one mediation act",
+        Evidence::Scenario(&["type_def_conflict_surfaces_contested"]),
+    )]),
+    (6, &[c(
+        "an induced type candidate is lineage-bearing, lowest-trust and gated; hyperedges remain a reference, never a judge",
+        Evidence::Deferred(
+            "M5 - naming the induced type is the extractor's probabilistic work (Section 7 [impl]), so \
+             no tbox_change candidate is generated and the test the document names for it is named \
+             for M5 rather than written; the reify half that shipped asserts an A-Box group entity, \
+             not a type",
+        ),
+    )]),
+];
+
+// docs/negotiated-surface.md Section 8 - the negotiated surface (N rows). The table lists
+// N1-N5, N11, N12, N6-N10; the numbers are compared as a set.
+const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("negotiation happens in the background health loop only",
+          Evidence::Structural(
+            "the map has two writers and both sit in the daemon's health loop: the success arm \
+             inserts under `surfaces.write()` and the failure arm calls `record_ping(.., None, 0)`. \
+             The MCP crate never writes it - `route` (sync lib.rs) and `sync_status` take \
+             `surfaces.read()` only",
+          )),
+        c("a tool handler reads the cached map and does no network I/O to obtain it",
+          Evidence::Scenario(&[
+            // Both hosts are closed ports, and the round still skips exactly the host the cached
+            // map says refused. A handler that negotiated would have found both unreachable, hence
+            // unknown, hence consulted - and skipped neither.
+            "a_narrowed_round_names_the_hosts_it_skipped",
+            "routing_on_the_negotiated_map_records_nothing",
+          ])),
+    ]),
+    (2, &[c(
+        "the map is link-local runtime state, never written to the observation log",
+        // The log is byte-identical before and after a narrowed round.
+        Evidence::Scenario(&["routing_on_the_negotiated_map_records_nothing"]),
+    )]),
+    (3, &[
+        c("the map may only remove a host from a round",
+          Evidence::Scenario(&["routing_narrows_on_a_refusal_and_never_on_ignorance"])),
+        c("it never extends share_workspaces: a read-authorization answer decides no write",
+          Evidence::Structural(
+            "`route(links, surfaces, workspace)` returns a partition of its `links` argument and \
+             reads nothing else (sync lib.rs); the share list is checked at each fan-out site before \
+             `route` is consulted and is never passed to it, so a host's answer has no path into \
+             what leaves - a_remote_search_does_not_leave_for_an_unshared_workspace pins the \
+             share-list check running first",
+          )),
+    ]),
+    (4, &[c(
+        "an unreachable host yields unknown, never an empty grant set",
+        Evidence::Scenario(&["a_failed_check_records_unknown_and_not_an_empty_grant"]),
+    )]),
+    (5, &[
+        c("a narrowed sync_push or sync_pull names the hosts it skipped as not-admitted",
+          Evidence::Scenario(&["a_narrowed_round_names_the_hosts_it_skipped"])),
+        c("a narrowed federated search names the hosts it skipped",
+          Evidence::Deferred(
+            "the search fan-out consults the same `route` and attaches `skipped`, but the in-process \
+             case drives only sync_push and sync_pull. incremental - add search_knowledge \
+             scope=remote to a_narrowed_round_names_the_hosts_it_skipped",
+          )),
+    ]),
+    (11, &[c(
+        "a host is dropped only on an explicit refusal; unknown is consulted",
+        Evidence::Scenario(&[
+            "routing_narrows_on_a_refusal_and_never_on_ignorance",
+            "a_failed_check_records_unknown_and_not_an_empty_grant",
+            "a_narrowed_round_names_the_hosts_it_skipped",
+        ]),
+    )]),
+    (12, &[c(
+        "narrowing applies to fan-out, not to a one-shot command naming one target",
+        Evidence::Structural(
+            "the CLI's one-shot round calls `SyncClient::sync_workspace(store, node, ws, share, keys)`, \
+             which takes no `NegotiatedSurfaces`; `supragnosis_sync::route` has exactly three callers, \
+             the daemon's fan-out handlers, and a one-shot process builds no map because it runs no \
+             health loop",
+        ),
+    )]),
+    (6, &[
+        c("the difference is three buckets, never the intersection",
+          Evidence::Scenario(&["the_surface_difference_reports_both_directions_of_disagreement"])),
+        c("sync_status and the viewer's federation blob carry the buckets with their time",
+          Evidence::Deferred(
+            "both surfaces call `surface_diff` but no case reads `negotiated` back from either; the \
+             one sync_status case checks config_notes only. incremental - seed a map in \
+             a_configuration_workaround_reaches_the_operator_surface and assert the three buckets \
+             and negotiated_at",
+          )),
+    ]),
+    (7, &[
+        c("an answer carries the time it was negotiated, and only an answer does",
+          Evidence::Scenario(&["a_failed_check_records_unknown_and_not_an_empty_grant"])),
+        c("the map is never a premise for a durable conclusion",
+          Evidence::Deferred(
+            "a claim about every future consumer: the only consumer today calls `route` inside \
+             each handler and caches nothing, so there is nothing yet for a case to catch doing \
+             otherwise - the F21 row says the same. Revisit when something wants to keep a \
+             routing decision",
+          )),
+    ]),
+    (8, &[
+        c("a sync credential or link mistake narrows or disables federation and the node starts",
+          Evidence::Scenario(&[
+            // Both shapes -> per-server wins, flat keys reported IGNORED; no token -> no links and a
+            // "federation is OFF" note, not an Err.
+            "config_parses_and_rejects_typos",
+            // Plain HTTP off loopback and an unreadable CA drop the link with a note.
+            "the_bearer_only_crosses_the_network_encrypted_to_a_verified_host",
+            "a_node_that_admits_itself_is_reported_and_ignored",
+          ])),
+        c("every workaround is reported in sync_status, not only at boot",
+          Evidence::Scenario(&["a_configuration_workaround_reaches_the_operator_surface"])),
+    ]),
+    (9, &[
+        c("an entry naming this node is dropped through every construction path, and said so",
+          Evidence::Scenario(&[
+            "a_node_is_never_its_own_peer_through_either_path",
+            "a_node_that_admits_itself_is_reported_and_ignored",
+          ])),
+        c("the file is left alone",
+          Evidence::Structural(
+            "the drop happens in two pure functions over the parsed section - `drop_self_admission` \
+             returns notes (cli main.rs) and `PeerDirectory` filters the id in `derive` (sync \
+             http.rs) - and neither is handed the config path, so the file is not something they \
+             can reach; the one writer of supragnosis.toml is the narrowing act",
+          )),
+    ]),
+    (10, &[c(
+        "a host advertises the caller's own grants, never its inventory",
+        Evidence::Scenario(&["ping_answers_with_the_callers_own_grants_and_not_the_hosts_inventory"]),
+    )]),
+];
+
+// docs/crash-recovery.md Section 5 - the owed-projection ledger (K rows). Built.
+const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("every append writes its owed entry, and only a clear removes it, on every adapter",
+          Evidence::Scenario(&["every_append_owes_its_projection_until_cleared"])),
+        c("the entry is written in the same store transaction as the row",
+          Evidence::Structural(
+            "in the redb adapter the OWED insert sits inside the write transaction that inserted \
+             the row, between the row insert and the single `txn.commit()`, so a crash cannot leave \
+             one without the other; the in-memory adapter inserts both under one write lock",
+          )),
+        c("no append path can skip it",
+          Evidence::Structural(
+            "the ledger write is inside `add_observation`, the only log-append method on the \
+             `AssertionStore` port, and the adapters write it themselves; a caller holding only the \
+             narrow port - the sync crate's `apply` - has no other way into the log, which is the \
+             path every_append_owes_its_projection_until_cleared exercises",
+          )),
+        c("appends from before the ledger existed are owed once, at the first ledger-aware open",
+          Evidence::Scenario(&["a_store_from_before_the_ledger_is_owed_in_full_once"])),
+    ]),
+    (2, &[
+        c("a writer clears only its own entry, and only after its last projection write",
+          Evidence::Scenario(&[
+            "a_completed_write_owes_nothing",
+            // An append with no projection stays owed; the clear runs after `project_relations`.
+            "health_reports_owed_projections_and_the_last_recovery",
+          ])),
+        c("a reproject clears the workspace it projected and no other",
+          Evidence::Scenario(&["a_reproject_repays_only_its_own_workspace"])),
+        c("a reproject clears only the entries it read before it began",
+          Evidence::Deferred(
+            "`reproject` reads the owed ids before it opens its read context and clears exactly \
+             those, but no case appends during a reproject to see the late entry survive. Revisit \
+             with the atomic-write follow-up crash-recovery.md Section 2 names, which removes the \
+             window this ordering exists for",
+          )),
+        c("the hub re-materializes after a pull or push that stamped rows",
+          Evidence::Scenario(&["a_pull_that_stamps_rows_re_materializes_them"])),
+    ]),
+    (3, &[
+        c("a writer that opens a store with owed entries re-projects exactly those workspaces",
+          Evidence::Scenario(&[
+            "an_append_whose_projection_never_ran_is_projected_at_the_next_open",
+            "redb_owed_projections_survive_a_reopen",
+          ])),
+        c("the repayment runs before the process serves a read or accepts a write",
+          Evidence::Deferred(
+            "`build_engine` repays before handing the engine to every daemon and CLI entry that \
+             binds, but that is call order inside one function; no case starts a daemon over a \
+             seeded ledger and probes its socket, and the SIGKILL check in crash-recovery.md \
+             Section 7 was run by hand. Revisit when the lifecycle suite can start a daemon over a \
+             scratch store",
+          )),
+    ]),
+    (4, &[
+        c("a process ending between append and projection leaves an entry the next open repays",
+          Evidence::Scenario(&[
+            // The crash is the engine dropped after an append through the narrow port; the ledger
+            // outlives the process.
+            "an_append_whose_projection_never_ran_is_projected_at_the_next_open",
+            "redb_owed_projections_survive_a_reopen",
+            "a_store_from_before_the_ledger_is_owed_in_full_once",
+          ])),
+        c("a projection write that fails leaves the entry for the next open",
+          Evidence::Deferred(
+            "the clear sits after the projection writes, so an error returns with the entry in \
+             place, but nothing pins it because there is no fault-injecting adapter - the gap F12's \
+             store leg records. Revisit when one exists",
+          )),
+    ]),
+    (5, &[
+        c("/api/health carries the ledger's size and the last recovery",
+          Evidence::Scenario(&["health_reports_owed_projections_and_the_last_recovery"])),
+        c("supragnosis status carries the ledger's size and the last recovery",
+          // The status document's `store` object is held to the fixture's keys owed_projections
+          // and last_recovery; the human-readable "recovered at start" line is not pinned.
+          Evidence::Scenario(&["status_json_matches_its_example"])),
+    ]),
+];
+
+// docs/remote-server.md Section 8 - the hub's agent surface (R rows).
+const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("the local MCP daemon binds loopback only",
+          Evidence::Scenario(&["parse_loopback_addr_accepts_loopback_rejects_public"])),
+        c("MCP leaves loopback only on the hub's listener, and only with TLS",
+          Evidence::Scenario(&[
+            "bind_guard_enforces_f10",
+            "tls_listener_serves_https_and_refuses_plaintext",
+          ])),
+        c("a non-loopback listener needs at least one admitted principal or node",
+          Evidence::Deferred(
+            "`serve` counts `allowlist + principals`, and the daemon's pre-validation now passes the \
+             same sum (it used to pass the allowlist alone, so a principals-only hub off loopback \
+             died at startup); bind_guard_enforces_f10 drives `validate_bind` with one count and no \
+             case starts a principals-only hub. incremental - add that case to the guard",
+          )),
+    ]),
+    (2, &[c(
+        "every remote request is authenticated as exactly one admitted principal; none is anonymous",
+        Evidence::Scenario(&[
+            // No credential -> 401; the `admit_request` layer wraps the merged /mcp + /viz router.
+            "the_read_tier_answers_only_within_the_grants",
+            // Wrong credential, revoked, unparsable file: nobody admitted.
+            "principals_are_admitted_and_revoked_through_the_file",
+            // The call ran as the authenticated principal, whatever the client claimed.
+            "a_principal_sees_and_writes_only_what_it_was_granted",
+        ]),
+    )]),
+    (3, &[
+        c("every tool has a declared remote policy, and a tool without one is refused",
+          Evidence::Scenario(&[
+            "every_tool_has_a_remote_policy",
+            "governance_and_node_operations_are_refused_remotely",
+          ])),
+        c("a principal reads and writes only granted workspaces, enumeration and ids included",
+          Evidence::Scenario(&[
+            "a_principal_reads_only_its_grants",
+            "a_remote_write_is_the_principals_own",
+            "a_principal_sees_and_writes_only_what_it_was_granted",
+            "an_id_outside_the_grants_reads_as_an_unknown_one",
+          ])),
+    ]),
+    (4, &[
+        c("a remote write is on_behalf_of the principal; a client's claim cannot replace it",
+          Evidence::Scenario(&[
+            "a_remote_write_is_the_principals_own",
+            "a_principal_sees_and_writes_only_what_it_was_granted",
+          ])),
+        c("a remote write is recorded at no higher than AgentExtracted",
+          Evidence::Scenario(&["a_principal_sees_and_writes_only_what_it_was_granted"])),
+        c("a remote write is recorded with host = the hub",
+          Evidence::Structural(
+            "`ObserveRequest` carries no host field (content, workspace, source_ref, confidence, \
+             on_behalf_of, derived_from, entities, relations), so the engine stamps `host` from the \
+             label it was built with and a client cannot name one",
+          )),
+    ]),
+    (5, &[
+        c("another node's content is served only with that node's consent for the workspace",
+          Evidence::Scenario(&[
+            "another_nodes_knowledge_needs_its_consent",
+            "consent_rides_a_header_and_an_older_node_sends_none",
+            "consent_is_kept_and_can_be_withdrawn",
+            "serving_is_narrowed_to_what_is_shared",
+          ])),
+        c("without consent the answer is a refusal naming the origin, never a partial view",
+          Evidence::Scenario(&[
+            "another_nodes_knowledge_needs_its_consent",
+            "a_refusal_names_the_release_each_unconsented_node_runs",
+            "a_union_with_an_unconsented_workspace_is_refused_whole",
+          ])),
+    ]),
+    (6, &[
+        c("no credential appears in an AI app's configuration",
+          Evidence::Scenario(&["registrations_run_the_bridge_and_carry_no_secret"])),
+        c("no credential appears on a command line",
+          // `server add` argv is name, url, --ca; the credential goes on stdin. The CLI side is by
+          // construction: `ServerCmd::Add { name, url, ca }` has no token argument and reads stdin.
+          Evidence::Scenario(&["a_credential_never_becomes_an_argument"])),
+        c("the bridge and the CLI read the credential from a 0600 file",
+          Evidence::Scenario(&[
+            // A URL without a token file is refused; the target names a file.
+            "the_environment_names_a_server_only_with_a_credential_file",
+            // `write_secret`, which `server add` uses, is 0600 and never at another mode.
+            "the_state_directory_and_its_secrets_are_closed_to_other_accounts",
+          ])),
+    ]),
+    (7, &[c(
+        "review, define_type and the sync_* tools are refused on the remote surface",
+        Evidence::Scenario(&[
+            "governance_and_node_operations_are_refused_remotely",
+            "a_principal_sees_and_writes_only_what_it_was_granted",
+        ]),
+    )]),
+    (8, &[
+        c("a remote profile URL is HTTPS, or plain HTTP to loopback only",
+          Evidence::Scenario(&["a_remote_server_is_reached_over_verified_tls_or_loopback"])),
+        c("there is no option to skip verification",
+          Evidence::Structural(
+            "`ServerEntry` is `deny_unknown_fields` with `url`, `ca` and `token_file` only, and the \
+             bridge's client builder installs nothing but a trusting root via `tls_trusting`, whose \
+             verifier pins the named certificates or delegates to webpki and otherwise answers \
+             UnknownIssuer (sync http.rs); the node side's `insecure_tls` is reported as no longer read",
+          )),
+    ]),
+];
+
+// docs/remote-viewer.md Section 8 - the hub's read tier (V rows). Steps 0-1 of Section 10 are
+// built; steps 2 (the relay) and 3 (the app) are not.
+const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c("a read-tier request without an admitted credential is answered 401 before any route",
+          Evidence::Scenario(&[
+            "the_read_tier_answers_only_within_the_grants",
+            "principals_are_admitted_and_revoked_through_the_file",
+          ])),
+        c("the page and its assets are behind the same admission as the API",
+          Evidence::Structural(
+            "the `admit_request` layer wraps the merged router after `/viz` is merged into it \
+             (principal.rs), so `/`, `/viewer.css` and `/viewer.js` cannot be routed without \
+             passing it; the read tier has no route outside that router",
+          )),
+    ]),
+    (2, &[
+        c("every path on the read tier has a declared policy, and an undeclared one is refused",
+          // Router paths == policy table in both directions; an unknown path answers 404 at runtime.
+          Evidence::Scenario(&["every_viewer_path_has_a_remote_policy"])),
+        c("no path changes state, and the console's verdict path is unreachable",
+          // /api/review, /api/reify, /api/federation, /api/health -> 403; POST -> 405.
+          Evidence::Scenario(&["the_read_tier_answers_only_within_the_grants"])),
+    ]),
+    (3, &[
+        c("enumeration, an omitted workspace and a named one resolve against the grants",
+          Evidence::Scenario(&["the_read_tier_answers_only_within_the_grants"])),
+        c("`*` is the union of grants, computed per workspace and merged",
+          Evidence::Scenario(&[
+            "the_read_tier_answers_only_within_the_grants",
+            "a_union_sums_counts_and_keeps_the_larger_max",
+          ])),
+        c("an id outside the grants is answered as an unknown id, on both surfaces",
+          Evidence::Scenario(&[
+            "the_read_tier_answers_only_within_the_grants",
+            "an_id_outside_the_grants_reads_as_an_unknown_one",
+          ])),
+        c("the event stream is filtered to the reader's grants",
+          Evidence::Scenario(&["the_read_tier_streams_knowledge_not_activity"])),
+    ]),
+    (4, &[c(
+        "a union including a workspace the hub may not serve is refused whole, with the reason",
+        Evidence::Scenario(&["a_union_with_an_unconsented_workspace_is_refused_whole"]),
+    )]),
+    (5, &[c(
+        "the credential is read per request from its 0600 file and sent only as a header",
+        Evidence::Deferred(
+            "the relay (`supragnosis bridge --viewer`, remote-viewer.md Section 10 step 2) is not \
+             built - no code reads a credential for the viewer, so nothing can be pinned; the hub \
+             side already takes it from `Authorization` only (principal.rs). Revisit when step 2 \
+             lands, with the profile's `token_file` guard (R6) as the model",
+        ),
+    )]),
+    (6, &[c(
+        "the relay verifies TLS, relays only GET, and cannot outlive the app that started it",
+        Evidence::Deferred(
+            "step 2 of remote-viewer.md Section 10, not built: there is no `--viewer` relay in the \
+             CLI, so none of the three demands has code to hold to. The TLS half will reuse the \
+             profile rule R8 pins today. Revisit when step 2 lands",
+        ),
+    )]),
+    (7, &[c(
+        "the remote stream carries knowledge changes in readable, servable workspaces only",
+        Evidence::Scenario(&["the_read_tier_streams_knowledge_not_activity"]),
+    )]),
+    (8, &[c(
+        "on a remote profile each failure state has its own page, never an empty graph",
+        Evidence::Deferred(
+            "step 3 of remote-viewer.md Section 10, not built: the shell still serves the one \
+             placeholder page `remote_html` for every remote state, and no app case pins even that. \
+             Revisit when step 3 lands with the relay's `state` JSON",
+        ),
+    )]),
+    (9, &[c(
+        "the local viewer is unchanged: a 0600 unix socket, the full console, no credential",
+        Evidence::Scenario(&[
+            "viz_socket_is_owner_only_and_review_needs_no_browser_headers",
+            "p17_socket_directory_denies_foreign_users_before_the_socket_mode",
+        ]),
+    )]),
+];
+
+/// One design document's invariant family: the file, the id prefix its rows use, and the registry
+/// rows that give each invariant an evidence state. The coupling that used to exist for the F axis
+/// alone - an invariant written into the document is a failure here until it is given a state -
+/// now holds for every document that declares invariants, because the hole it closes was not
+/// specific to federation: an invariant anywhere could be written with no accounting at all.
+struct Family {
+    doc: &'static str,
+    text: &'static str,
+    /// The letters before the number: `F`, `I`, `IR`, `PR`, ... One document, one prefix.
+    prefix: &'static str,
+    rows: &'static [(u8, &'static [Clause])],
+}
+
+/// Every invariant family the design documents declare. The federation rows keep their own const
+/// above; the rest follow it in the same shape. A document that grows an invariant table is added
+/// here, or `design_docs_declare_every_invariant` names it.
+const FAMILIES: &[Family] = &[
+    Family {
+        doc: "docs/federation.md",
+        text: FEDERATION_DOC,
+        prefix: "F",
+        rows: FEDERATION_REGISTRY,
+    },
+    Family {
+        doc: "docs/inspector.md",
+        text: include_str!("../../../docs/inspector.md"),
+        prefix: "D",
+        rows: INSPECTOR_REGISTRY,
+    },
+    Family {
+        doc: "docs/client-connect.md",
+        text: include_str!("../../../docs/client-connect.md"),
+        prefix: "C",
+        rows: CLIENT_CONNECT_REGISTRY,
+    },
+    Family {
+        doc: "docs/daemon-lifecycle.md",
+        text: include_str!("../../../docs/daemon-lifecycle.md"),
+        prefix: "L",
+        rows: DAEMON_LIFECYCLE_REGISTRY,
+    },
+    Family {
+        doc: "docs/settings-page.md",
+        text: include_str!("../../../docs/settings-page.md"),
+        prefix: "S",
+        rows: SETTINGS_PAGE_REGISTRY,
+    },
+    Family {
+        doc: "docs/consolidation.md",
+        text: include_str!("../../../docs/consolidation.md"),
+        prefix: "C",
+        rows: CONSOLIDATION_REGISTRY,
+    },
+    Family {
+        doc: "docs/excision.md",
+        text: include_str!("../../../docs/excision.md"),
+        prefix: "E",
+        rows: EXCISION_REGISTRY,
+    },
+    Family {
+        doc: "docs/unmerge.md",
+        text: include_str!("../../../docs/unmerge.md"),
+        prefix: "S",
+        rows: UNMERGE_REGISTRY,
+    },
+    Family {
+        doc: "docs/prompts.md",
+        text: include_str!("../../../docs/prompts.md"),
+        prefix: "PR",
+        rows: PROMPTS_REGISTRY,
+    },
+    Family {
+        doc: "docs/proposal-workflow.md",
+        text: include_str!("../../../docs/proposal-workflow.md"),
+        prefix: "I",
+        rows: PROPOSAL_REGISTRY,
+    },
+    Family {
+        doc: "docs/resolution.md",
+        text: include_str!("../../../docs/resolution.md"),
+        prefix: "R",
+        rows: RESOLUTION_REGISTRY,
+    },
+    Family {
+        doc: "docs/resolution-identity.md",
+        text: include_str!("../../../docs/resolution-identity.md"),
+        prefix: "IR",
+        rows: IDENTITY_REGISTRY,
+    },
+    Family {
+        doc: "docs/negotiated-surface.md",
+        text: include_str!("../../../docs/negotiated-surface.md"),
+        prefix: "N",
+        rows: NEGOTIATED_REGISTRY,
+    },
+    Family {
+        doc: "docs/crash-recovery.md",
+        text: include_str!("../../../docs/crash-recovery.md"),
+        prefix: "K",
+        rows: CRASH_RECOVERY_REGISTRY,
+    },
+    Family {
+        doc: "docs/remote-server.md",
+        text: include_str!("../../../docs/remote-server.md"),
+        prefix: "R",
+        rows: REMOTE_SERVER_REGISTRY,
+    },
+    Family {
+        doc: "docs/remote-viewer.md",
+        text: include_str!("../../../docs/remote-viewer.md"),
+        prefix: "V",
+        rows: REMOTE_VIEWER_REGISTRY,
+    },
+];
+
+/// The invariant numbers a document declares under one prefix, first occurrence of each, in
+/// document order. Three row shapes are in use and all are read: a bold table row `| **E1** |`, a
+/// plain table row `| I1 |`, and a list item `- **F1**` or `- **IR1**:`. The id must end right
+/// after its digits (`**`, `|` or ` |`), so prefix `R` does not swallow an `IR` row and a heading
+/// cell such as `| Invariant |` is not a row. A later table that cites the same ids (a closure
+/// map, a test plan) repeats numbers already seen and adds nothing.
+fn documented_rows(text: &str, prefix: &str) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::new();
+    for line in text.lines() {
+        let l = line.trim_start();
+        let rest = if let Some(r) = l.strip_prefix("| **") {
+            r
+        } else if let Some(r) = l.strip_prefix("- **") {
+            r
+        } else if let Some(r) = l.strip_prefix("| ") {
+            r
+        } else {
+            continue;
+        };
+        let Some(rest) = rest.strip_prefix(prefix) else {
+            continue;
+        };
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        if digits.is_empty() {
+            continue;
+        }
+        let after = &rest[digits.len()..];
+        if !(after.starts_with("**") || after.starts_with(" |") || after.starts_with('|')) {
+            continue;
+        }
+        if let Ok(n) = digits.parse::<u8>() {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
+/// Every document with an invariant table is a family here. Scanned by shape rather than listed by
+/// hand, so a new document's table cannot sit unaccounted the way F21 once did: the prefixes a
+/// document uses are read off its rows, and each (document, prefix) pair must be a [`Family`].
+#[test]
+fn design_docs_declare_every_invariant() {
+    let mut missing: Vec<String> = Vec::new();
+    for (doc, text) in DESIGN_DOCS {
+        // The prefixes this document's rows use: the letters before the digits of every row-shaped
+        // line. Principles.md has no invariant rows; its coupling is `every_principle_declares_its_evidence`.
+        let mut prefixes: Vec<String> = Vec::new();
+        for line in text.lines() {
+            let l = line.trim_start();
+            let rest = if let Some(r) = l.strip_prefix("| **") {
+                r
+            } else if let Some(r) = l.strip_prefix("- **") {
+                r
+            } else if let Some(r) = l.strip_prefix("| ") {
+                r
+            } else {
+                continue;
+            };
+            let letters: String = rest.chars().take_while(char::is_ascii_uppercase).collect();
+            if letters.is_empty() || letters.len() > 2 {
+                continue;
+            }
+            let tail = &rest[letters.len()..];
+            let digits: String = tail.chars().take_while(char::is_ascii_digit).collect();
+            let after = &tail[digits.len()..];
+            if digits.is_empty()
+                || !(after.starts_with("**") || after.starts_with(" |") || after.starts_with('|'))
+            {
+                continue;
+            }
+            // A principle row (`| P7 |` in a document's own alignment table) cites principles.md,
+            // which has its own registry; it is not a family of that document.
+            if letters == "P" {
+                continue;
+            }
+            if !prefixes.contains(&letters) {
+                prefixes.push(letters);
+            }
+        }
+        for p in prefixes {
+            if !FAMILIES.iter().any(|f| f.doc == *doc && f.prefix == p) {
+                missing.push(format!("{doc}: rows under prefix {p} have no Family here"));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "design documents declare invariants the registry does not account for:\n  {}",
+        missing.join("\n  ")
+    );
 }
 
 /// The design documents, which make "guarded by <test>" claims of their own - test-plan tables in
@@ -417,6 +2249,13 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards live in the app workspace, which this test cannot
     // reach; the shell's source joins SOURCES so the test names it cites are still checked.
     ("docs/settings-page.md", include_str!("../../../docs/settings-page.md")),
+    // Four documents that were never listed: the prompts (built, with a PR table), the
+    // compatibility contracts, the sync-correctness defects and the store migration. None named a
+    // test when listed, so the first guard any of them cites is checked from that day.
+    ("docs/prompts.md", include_str!("../../../docs/prompts.md")),
+    ("docs/compatibility.md", include_str!("../../../docs/compatibility.md")),
+    ("docs/sync-correctness.md", include_str!("../../../docs/sync-correctness.md")),
+    ("docs/store-migration.md", include_str!("../../../docs/store-migration.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
@@ -1212,26 +3051,31 @@ fn declared_scenarios_exist() {
             }
         }
     }
-    for (n, clauses) in FEDERATION_REGISTRY {
-        for cl in *clauses {
-            let (tests, kind) = match &cl.evidence {
-                Evidence::Scenario(t) => (*t, "Scenario"),
-                Evidence::Characterized(t, _) => (*t, "Characterized"),
-                Evidence::Structural(_) | Evidence::Deferred(_) => continue,
-            };
-            assert!(
-                !tests.is_empty(),
-                "F{n} files \"{}\" as {kind} but names no test - use Deferred instead",
-                cl.demands
-            );
-            for t in tests {
-                let why = match declares(t) {
-                    Declared::Running => continue,
-                    Declared::NotFound => "no such function (renamed, deleted, or a typo here)",
-                    Declared::NotATest => "exists but has no #[test] attribute, so it never runs",
-                    Declared::Ignored => "is #[ignore]d, so a plain `cargo test` skips it",
+    for fam in FAMILIES {
+        for (n, clauses) in fam.rows {
+            let id = format!("{}{n}", fam.prefix);
+            for cl in *clauses {
+                let (tests, kind) = match &cl.evidence {
+                    Evidence::Scenario(t) => (*t, "Scenario"),
+                    Evidence::Characterized(t, _) => (*t, "Characterized"),
+                    Evidence::Structural(_) | Evidence::Deferred(_) => continue,
                 };
-                broken.push(format!("F{n} \"{}\" -> {t}: {why}", cl.demands));
+                assert!(
+                    !tests.is_empty(),
+                    "{id} files \"{}\" as {kind} but names no test - use Deferred instead",
+                    cl.demands
+                );
+                for t in tests {
+                    let why = match declares(t) {
+                        Declared::Running => continue,
+                        Declared::NotFound => "no such function (renamed, deleted, or a typo here)",
+                        Declared::NotATest => {
+                            "exists but has no #[test] attribute, so it never runs"
+                        }
+                        Declared::Ignored => "is #[ignore]d, so a plain `cargo test` skips it",
+                    };
+                    broken.push(format!("{id} \"{}\" -> {t}: {why}", cl.demands));
+                }
             }
         }
     }
@@ -1242,44 +3086,60 @@ fn declared_scenarios_exist() {
     );
 }
 
-/// The F axis of the same coupling: an invariant written into `docs/federation.md` Section 8 has no
-/// evidence state until someone gives it one, and this fails until they do.
+/// The invariant axis of the same coupling, for every family: an invariant written into a design
+/// document has no evidence state until someone gives it one, and this fails until they do.
 ///
-/// The hole this closes is not hypothetical. F21 was added to the spec in this same branch and
-/// nothing anywhere objected, because the only completeness check read the principles document.
+/// The hole this closes is not hypothetical. F21 was added to federation.md and nothing anywhere
+/// objected, because the only completeness check read the principles document - and the fix was
+/// then made for federation alone, while ten other documents kept invariant tables nothing read.
+/// Numbers are compared as sets rather than in document order, because two tables (I17 among the
+/// I rows, N11/N12 among the N rows) list an invariant out of sequence on purpose.
 #[test]
 fn every_invariant_declares_its_evidence() {
-    let documented = documented_invariants();
-    assert!(
-        documented.len() > 10,
-        "parsed {} invariants out of docs/federation.md - the list format changed and this registry \
-         is no longer reading the document it claims to mirror",
-        documented.len()
-    );
-    for (i, n) in documented.iter().enumerate() {
-        assert_eq!(
-            *n,
-            i as u8 + 1,
-            "docs/federation.md must number its invariants contiguously from 1: entry {i} is F{n}"
+    for fam in FAMILIES {
+        let documented = documented_rows(fam.text, fam.prefix);
+        assert!(
+            !documented.is_empty(),
+            "parsed no {} rows out of {} - the row format changed and this registry is no longer \
+             reading the document it claims to mirror",
+            fam.prefix,
+            fam.doc
         );
-    }
-    assert_eq!(
-        FEDERATION_REGISTRY.len(),
-        documented.len(),
-        "docs/federation.md declares {} invariants, the registry has {} rows - an invariant was \
-         added or removed and has no evidence state",
-        documented.len(),
-        FEDERATION_REGISTRY.len()
-    );
-    for ((n, clauses), dn) in FEDERATION_REGISTRY.iter().zip(&documented) {
-        assert_eq!(n, dn, "the registry must mirror the document: registry F{n}, document F{dn}");
-        assert!(!clauses.is_empty(), "F{n} declares no clause");
-        for cl in *clauses {
-            assert!(
-                cl.demands.len() > 20,
-                "F{n}: a clause must state the demand it is evidence for, not a label: {:?}",
-                cl.demands
-            );
+        let mut sorted = documented.clone();
+        sorted.sort_unstable();
+        let expected: Vec<u8> = (1..=documented.len() as u8).collect();
+        assert_eq!(
+            sorted, expected,
+            "{} must number its {} invariants contiguously from 1 (found {:?})",
+            fam.doc, fam.prefix, documented
+        );
+        let mut registered: Vec<u8> = fam.rows.iter().map(|(n, _)| *n).collect();
+        let before = registered.len();
+        registered.sort_unstable();
+        registered.dedup();
+        assert_eq!(
+            before,
+            registered.len(),
+            "{}: a {} row is registered twice",
+            fam.doc,
+            fam.prefix
+        );
+        assert_eq!(
+            registered, sorted,
+            "{} declares {} invariants {:?}, the registry has {:?} - an invariant was added or \
+             removed and has no evidence state",
+            fam.doc, fam.prefix, sorted, registered
+        );
+        for (n, clauses) in fam.rows {
+            assert!(!clauses.is_empty(), "{}{n} declares no clause", fam.prefix);
+            for cl in *clauses {
+                assert!(
+                    cl.demands.len() > 20,
+                    "{}{n}: a clause must state the demand it is evidence for, not a label: {:?}",
+                    fam.prefix,
+                    cl.demands
+                );
+            }
         }
     }
 }
@@ -1460,24 +3320,27 @@ fn structural_and_deferred_states_are_justified() {
             }
         }
     }
-    for (n, clauses) in FEDERATION_REGISTRY {
-        for cl in *clauses {
-            let d = cl.demands;
-            match &cl.evidence {
-                Evidence::Scenario(_) => {}
-                Evidence::Structural(why) => assert!(
-                    why.len() > 60,
-                    "F{n} \"{d}\": Structural needs the mechanism that makes violation unrepresentable"
-                ),
-                Evidence::Characterized(_, why) | Evidence::Deferred(why) => {
-                    assert!(
+    for fam in FAMILIES {
+        for (n, clauses) in fam.rows {
+            let id = format!("{}{n}", fam.prefix);
+            for cl in *clauses {
+                let d = cl.demands;
+                match &cl.evidence {
+                    Evidence::Scenario(_) => {}
+                    Evidence::Structural(why) => assert!(
                         why.len() > 60,
-                        "F{n} \"{d}\": an unmet clause needs a reason and a repayment point"
-                    );
-                    assert!(
-                        repayment_named(why),
-                        "F{n} \"{d}\": an unmet clause must name where it is repaid"
-                    );
+                        "{id} \"{d}\": Structural needs the mechanism that makes violation unrepresentable"
+                    ),
+                    Evidence::Characterized(_, why) | Evidence::Deferred(why) => {
+                        assert!(
+                            why.len() > 60,
+                            "{id} \"{d}\": an unmet clause needs a reason and a repayment point"
+                        );
+                        assert!(
+                            repayment_named(why),
+                            "{id} \"{d}\": an unmet clause must name where it is repaid"
+                        );
+                    }
                 }
             }
         }
@@ -1528,48 +3391,58 @@ fn report_principle_coverage() {
         REGISTRY.len()
     );
 
-    // The same accounting for the federation invariants. Reported separately rather than summed in,
-    // because the two documents answer different questions - principles say what the system must be,
-    // invariants say what federation must preserve - and one blended ratio would hide that most of
-    // the F debt is a single milestone rather than a scatter.
-    let (mut f_guarded, mut f_structural, mut f_pinned, mut f_unguarded) = (0, 0, 0, 0);
+    // The same accounting for every invariant family. Reported per document rather than summed into
+    // the principles, because the documents answer different questions - principles say what the
+    // system must be, invariants say what one design must preserve - and one blended ratio would
+    // hide that most of a family's debt is a single milestone rather than a scatter.
     let mut f_owed: Vec<String> = Vec::new();
-    println!("\ndocs/federation.md Section 8 - invariants");
-    for (n, clauses) in FEDERATION_REGISTRY {
-        println!("  F{n}");
-        for cl in *clauses {
-            let mark = match &cl.evidence {
-                Evidence::Scenario(t) => {
-                    f_guarded += 1;
-                    format!("guard    ({} tests)", t.len())
+    let (mut all_total, mut all_assured) = (0, 0);
+    for fam in FAMILIES {
+        let (mut f_guarded, mut f_structural, mut f_pinned, mut f_unguarded) = (0, 0, 0, 0);
+        println!("\n{} - invariants ({})", fam.doc, fam.prefix);
+        for (n, clauses) in fam.rows {
+            println!("  {}{n}", fam.prefix);
+            for cl in *clauses {
+                let mark = match &cl.evidence {
+                    Evidence::Scenario(t) => {
+                        f_guarded += 1;
+                        format!("guard    ({} tests)", t.len())
+                    }
+                    Evidence::Structural(_) => {
+                        f_structural += 1;
+                        "structural".to_string()
+                    }
+                    Evidence::Characterized(t, _) => {
+                        f_pinned += 1;
+                        format!("OWED     (pinned by {} test)", t.len())
+                    }
+                    Evidence::Deferred(_) => {
+                        f_unguarded += 1;
+                        "OWED     (nothing pins it)".to_string()
+                    }
+                };
+                println!("       {mark:<28} {}", cl.demands);
+                if !cl.evidence.holds() {
+                    f_owed.push(format!("{}{n:02} {}", fam.prefix, cl.demands));
                 }
-                Evidence::Structural(_) => {
-                    f_structural += 1;
-                    "structural".to_string()
-                }
-                Evidence::Characterized(t, _) => {
-                    f_pinned += 1;
-                    format!("OWED     (pinned by {} test)", t.len())
-                }
-                Evidence::Deferred(_) => {
-                    f_unguarded += 1;
-                    "OWED     (nothing pins it)".to_string()
-                }
-            };
-            println!("       {mark:<28} {}", cl.demands);
-            if !cl.evidence.holds() {
-                f_owed.push(format!("F{n:02} {}", cl.demands));
             }
         }
+        let f_total = f_guarded + f_structural + f_pinned + f_unguarded;
+        all_total += f_total;
+        all_assured += f_guarded + f_structural;
+        println!(
+            "  {f_total} clauses over {} invariants: {f_guarded} guarded / {f_structural} structural / \
+             {f_pinned} pinned-but-unmet / {f_unguarded} unmet-and-unpinned",
+            fam.rows.len()
+        );
     }
-    let f_total = f_guarded + f_structural + f_pinned + f_unguarded;
     println!(
-        "\n{f_total} clauses over {} invariants: {f_guarded} guarded / {f_structural} structural / \
-         {f_pinned} pinned-but-unmet / {f_unguarded} unmet-and-unpinned",
-        FEDERATION_REGISTRY.len()
+        "\n{all_total} invariant clauses over {} families: {all_assured} assured / {} owed",
+        FAMILIES.len(),
+        all_total - all_assured
     );
     println!(
-        "\nWhat federation promises and this build does not enforce yet ({}):",
+        "\nWhat the design documents promise and this build does not enforce yet ({}):",
         f_owed.len()
     );
     for o in &f_owed {
