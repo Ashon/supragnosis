@@ -136,8 +136,9 @@ pub struct ProposeRequest {
     /// - `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was
     ///   so far only induced from use into one the canon declares.
     /// - `recall` - bulk retraction of everything derived from a contamination source, for when bad
-    ///   input has already been built on. Its verdict is always a human's direct act: neither this
-    ///   surface nor an agent acting on someone's behalf can approve one.
+    ///   input has already been built on. Its verdict is always a human's direct act: `review` refuses
+    ///   to merge one from this surface, and the fold does not count a merge cast outside the human
+    ///   console. Open it, comment on it, and point the person to the Review panel.
     pub kind: String,
     /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
     /// For entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.
@@ -948,7 +949,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). Returns the recorded observation id."
+        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();

@@ -961,8 +961,15 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   the log-borne marker the exception calls for, and it cannot distinguish a genuinely reviewed merge from a
   self-approved one. When multi-principal support lands, this flag must be **computed** from the proposer/reviewer
   delegation chains, or it will label reviewed merges as self-attested (the inverse error).
-  The **recall verdict's non-delegability** (a human's direct act) has no mechanism yet - which is safe only because
-  `recall` enforces nothing. -> **M3.5 remainder / M4 Phase 5**.
+  The **recall verdict's non-delegability** (a human's direct act) now has its local mechanism: the fold counts a
+  recall merge only when the verdict carries the engine-stamped console marker (resolution.md Section 6) and
+  demotes any other to a comment, and the agent surface refuses to cast one - so a recall merge that reached the
+  log through MCP before this guard, or arrives replicated without the marker, never folds to merged (guarded by
+  `i17_a_recall_merge_without_the_console_marker_never_folds_to_merged` and
+  `i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged`). It was built while `recall` still
+  has no effect, on purpose: the day the effect lands, no merge that an agent cast earlier can fire. What stays
+  owed is the principal-signed act (federation.md F20 strength (ii)) that replaces marker trust under
+  multi-principal federation. -> **M4 Phase 5**.
 
 **Milestone entry conditions (when deferrals are repaid)**
 

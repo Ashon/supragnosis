@@ -945,3 +945,163 @@ fn p23_a_well_formed_merge_passes_its_checks_and_commits() {
         .expect("a passing proposal must be reviewable");
     assert_eq!(engine.get_proposal(None, &proposal).expect("get").expect("p").state, "merged");
 }
+
+/// GIVEN a recall proposal, WHEN an agent-surface merge is cast on it, THEN the surface refuses and
+/// the log is unchanged - and a comment through the same surface is accepted and appends exactly
+/// one observation that decides nothing. A recall verdict is a human's direct act (P23, I17): the
+/// agent path may speak, never decide.
+#[test]
+fn i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged() {
+    let (store, engine) = engine();
+    observe(&engine, "a contamination source", &["Source"]);
+    let source = store
+        .all_observations(Some(WS))
+        .expect("obs")
+        .into_iter()
+        .next()
+        .expect("one observation")
+        .id;
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "recall".into(),
+            targets: vec![source],
+            into: None,
+            tier: None,
+            rationale: Some("retract the derived tree".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("agent".into()),
+        })
+        .expect("propose");
+    let case = Case::new("Principle 23 (I17)", "a recall verdict is a human's direct act");
+
+    let before = snapshot(store.as_ref());
+    let refused = engine
+        .review_proposal(
+            None,
+            proposal.clone(),
+            "merge".into(),
+            None,
+            Some("agent".into()),
+            VerdictSurface::Agent,
+        )
+        .expect_err("the agent surface must refuse a recall merge");
+    assert!(
+        refused.to_string().contains("human's direct act"),
+        "the refusal must say why and where to decide: {refused}"
+    );
+    let after = snapshot(store.as_ref());
+    case.changed_nothing(&before, &after);
+
+    // Speaking is still allowed: a comment records, and the proposal stays open.
+    engine
+        .review_proposal(
+            None,
+            proposal.clone(),
+            "comment".into(),
+            Some("looks contaminated to me".into()),
+            Some("agent".into()),
+            VerdictSurface::Agent,
+        )
+        .expect("a comment is accepted on the agent surface");
+    let commented = snapshot(store.as_ref());
+    case.log_appended(&after, &commented, 1);
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(view.state, "open", "a comment decides nothing");
+    assert_eq!(view.verdicts, 0, "a comment is not a verdict");
+}
+
+/// GIVEN a recall proposal and a merge verdict that reached the log WITHOUT the console marker -
+/// planted store-side, the shape of a verdict replicated from a peer or one that landed through MCP
+/// before the agent surface refused them - WHEN the state is folded, THEN it is not merged: the
+/// fold demotes the verdict to a comment (I17). A console merge then folds to merged, so the marker
+/// is the discriminator and not the kind. Read off the log, the rule gives one answer on every node.
+#[test]
+fn i17_a_recall_merge_without_the_console_marker_never_folds_to_merged() {
+    let (store, engine) = engine();
+    observe(&engine, "a contamination source", &["Source"]);
+    let source = store
+        .all_observations(Some(WS))
+        .expect("obs")
+        .into_iter()
+        .next()
+        .expect("one observation")
+        .id;
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "recall".into(),
+            targets: vec![source],
+            into: None,
+            tier: None,
+            rationale: Some("retract the derived tree".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("agent".into()),
+        })
+        .expect("propose");
+    // Distinct content per plant: two verdicts with one content address would absorb into one
+    // row (P3), which is a different case from two writers.
+    let plant_merge = |source_ref: Option<&str>, observed_at, writer: &str| {
+        store
+            .add_observation(Observation::with_assertions(
+                format!("proposal(merge) {proposal} by {writer}"),
+                Provenance {
+                    host: "host-b".into(),
+                    on_behalf_of: Some("agent".into()),
+                    workspace: WS.into(),
+                    source_ref: source_ref.map(String::from),
+                    observed_at,
+                    confidence: None,
+                    trust_tier: TrustTier::default(),
+                    sync: None,
+                },
+                Assertions {
+                    proposal_events: vec![ProposalEventAssertion {
+                        proposal: proposal.clone(),
+                        event: ProposalEventKind::Verdict,
+                        payload: r#"{"decision":"merge"}"#.into(),
+                    }],
+                    ..Default::default()
+                },
+            ))
+            .expect("plant verdict");
+    };
+    let case = Case::new(
+        "Principle 23 (I17)",
+        "a recall merge without the console marker decides nothing",
+    );
+
+    // An agent-marked merge, and one with no marker at all (an older or foreign writer).
+    let before = snapshot(store.as_ref());
+    plant_merge(Some("surface:agent"), 9_000, "an agent");
+    plant_merge(None, 9_001, "an unmarked writer");
+    let after = snapshot(store.as_ref());
+    case.log_appended(&before, &after, 2);
+    case.forgot_nothing(&before, &after);
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(
+        view.state, "open",
+        "a recall merge without the console marker must not fold to merged"
+    );
+    assert_eq!(view.verdicts, 0, "a demoted verdict is a comment, not a verdict");
+
+    // The console's own act is what the fold counts.
+    engine
+        .review_proposal(
+            None,
+            proposal.clone(),
+            "merge".into(),
+            None,
+            None,
+            VerdictSurface::Console,
+        )
+        .expect("the console may merge a recall");
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(view.state, "merged", "the console marker is the discriminator");
+    assert_eq!(view.verdicts, 1, "only the console merge counts");
+    // Planting the console marker store-side is the replicated-console case, honored under the
+    // single-principal premise (resolution.md Section 6) - the same marker, the same answer.
+    let _ = VERDICT_SURFACE_CONSOLE;
+}

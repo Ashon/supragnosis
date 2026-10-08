@@ -1006,13 +1006,23 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              Open-state check). Recorded in architecture.md Section 14 and the [impl] note in \
              proposal-workflow.md Section 4",
         )),
-        c("self-attestation is computed from the proposer and reviewer, and a recall verdict is \
-           not delegable",
+        c("self-attestation is computed from the proposer and reviewer",
           Evidence::Characterized(
             &["i9_self_attested_is_blanket_true_until_principal_check_lands"],
             "M4 Phase 5 - the fold hardcodes self_attested: true, which is honest as a solo-mode \
              blanket label but will mislabel reviewed merges the moment there are two principals",
         )),
+        // Split out of the clause above, where it used to hide behind the self-attestation debt.
+        // The local mechanism is the surface marker read off the log (resolution.md Section 6):
+        // the fold demotes a recall merge without the console marker to a comment, whichever path
+        // it arrived by, and the agent surface refuses to cast one. The principal-signed act that
+        // replaces marker trust under multi-principal federation stays F20's owed clause.
+        c("a recall verdict is not delegable: a recall merge cast anywhere but the human console \
+           decides nothing, and the agent surface refuses to cast one",
+          Evidence::Scenario(&[
+            "i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged",
+            "i17_a_recall_merge_without_the_console_marker_never_folds_to_merged",
+          ])),
     ]),
     (24, "Operational Posture", &[
         c("a subsystem that cannot come up leaves the node serving, and says what it disabled",

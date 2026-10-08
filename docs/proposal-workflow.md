@@ -198,6 +198,10 @@ the diagram above has no such edge, and while the absorbing rule of I16 decides 
 genuinely concurrent case in merge's favor, the sequential case should be invalid under
 (d) and is not yet. The debt is recorded in architecture.md Section 14 and the coverage
 registry, owed to M4 Phase 5 together with the quorum/revise rules of Section 13.
+I17's fold half IS in: a merge verdict on a `recall` counts only when it carries the
+engine-stamped console marker (resolution.md Section 6) and is otherwise demoted to a comment,
+whichever path it arrived by; the agent surface refuses to cast one and says where to decide.
+The principal-signed act that replaces marker trust (federation.md F20) is the Phase 5 half.
 
 ---
 

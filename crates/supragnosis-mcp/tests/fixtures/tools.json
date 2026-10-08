@@ -324,7 +324,7 @@
             ]
           },
           "kind": {
-            "description": "Proposal kind, one of:\n- `entity_merge` - fold duplicate entities into one canonical id.\n- `entity_split` - reverse a merge. The folded entities separate again and the pair stops\n  being suggested for merging, without becoming unmergeable.\n- `claim_promotion` / `claim_demotion` - raise or lower the trust tier of observations. A\n  merged verdict is what the resolution policy consumes, so this settles a contested entity\n  kind; demotion is also the revert path for knowledge that turned out wrong.\n- `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was\n  so far only induced from use into one the canon declares.\n- `recall` - bulk retraction of everything derived from a contamination source, for when bad\n  input has already been built on. Its verdict is always a human's direct act: neither this\n  surface nor an agent acting on someone's behalf can approve one.",
+            "description": "Proposal kind, one of:\n- `entity_merge` - fold duplicate entities into one canonical id.\n- `entity_split` - reverse a merge. The folded entities separate again and the pair stops\n  being suggested for merging, without becoming unmergeable.\n- `claim_promotion` / `claim_demotion` - raise or lower the trust tier of observations. A\n  merged verdict is what the resolution policy consumes, so this settles a contested entity\n  kind; demotion is also the revert path for knowledge that turned out wrong.\n- `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was\n  so far only induced from use into one the canon declares.\n- `recall` - bulk retraction of everything derived from a contamination source, for when bad\n  input has already been built on. Its verdict is always a human's direct act: `review` refuses\n  to merge one from this surface, and the fold does not count a merge cast outside the human\n  console. Open it, comment on it, and point the person to the Review panel.",
             "type": "string"
           },
           "on_behalf_of": {
@@ -382,7 +382,7 @@
     },
     {
       "name": "review",
-      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). Returns the recorded observation id.",
+      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
