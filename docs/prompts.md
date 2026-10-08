@@ -77,7 +77,9 @@ The digest is a pure read of the node's current state - node-local, like a searc
 same state always gives the same digest.
 
 - **`brief`:** entity, relation and observation counts; the largest co-occurrence clusters
-  (`workspace_map`); contested beliefs with their competing values and tiers; claims resting on a
+  (`workspace_map`), each named by its hyperedge id with its members as name and entity id, so a
+  theme and every member can be cited and dereferenced (Principle 2 - a query result carries its
+  provenance path); contested beliefs with their competing values and tiers; claims resting on a
   single agent-tier source; open proposals with kind and targets; the most recent observations with
   their ids and tiers.
 - **`what-do-we-know-about`:** the search hits for the topic across workspaces, with ids, kinds,
