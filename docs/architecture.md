@@ -325,9 +325,13 @@ the URI is not dereferenceable - a standing Principle 14 gap), `supragnosis://wo
 itself is M4 Phase 5).
 
 ### Prompts
-**Not implemented.** `what-do-we-know-about {topic}` and `summarize-workspace-knowledge {ws}` remain
-specified only; the server exposes no prompt capability today. This is the main outstanding piece of
-Principle 22 (curation as a by-product of work) on the MCP surface.
+Four prompts on the local surface ([prompts.md](prompts.md)): `brief {workspace, focus}` (the
+`summarize-workspace-knowledge` of earlier drafts, renamed for what it carries - contested points and
+open decisions, which a summary would flatten), `what-do-we-know-about {topic}`, `curate
+{workspace}` and `review-proposal {id}` (proposal-workflow.md Section 11). Each returns an instruction
+and a bounded digest of current state; the client's model writes the answer, nothing is stored
+(consolidation.md C11), and a judgment meant to last becomes a proposal the person decides in the
+console. The remote surface lists none until digests are scoped to a principal's grants.
 
 ### Long-running tasks / human mediation (Principle 21) - **not implemented**
 - Target: `sync` / `consolidate` / bulk reprojection exposed **without blocking**, as pollable **task
@@ -920,8 +924,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   a generic entropy heuristic fires on hashes and ids, and a detector the operator learns to override
   is worse than none. Defence in depth, not a replacement for the sharing filter - and the reason it
   comes first is that the removal path it backstops does not exist ([excision.md](excision.md)).
-- Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, but
-  the MCP **prompts** that would induce voluntary observe/search during work do not exist (Section 7) -> incremental.
+- Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, and
+  the MCP prompts (Section 7, prompts.md) bring the brief, the curation pass and a proposal's review to where the
+  person already works. What is still owed is the agent-side half: tool descriptions and prompts that make an agent
+  observe and search *during* its own work without being asked -> incremental.
 - Principle 23 (the gateway to canon) *enforcement*: the structure is in place, and **three kinds now
   have effects** - `entity_merge` (id forwarding), and since M3a `claim_promotion`/`claim_demotion`
   (the gate tier, surface-capped); `tbox_change`/`recall` fold correctly and change nothing

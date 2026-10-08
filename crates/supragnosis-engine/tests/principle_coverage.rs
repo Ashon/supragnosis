@@ -939,9 +939,14 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
     (22, "Knowledge as a By-Product", &[
         c("ordinary work induces capture and recall without a separate curation chore",
           Evidence::Deferred(
-            "incremental - the curation console surfaces micro-decisions, but the MCP prompts that \
-             would induce observe/search during work do not exist, so there is no behavior to assert",
+            "incremental - the person's side has prompts now (brief, curate, review-proposal), but \
+             nothing yet makes an agent observe and search during its own work unasked, so there is \
+             no agent behavior to assert",
         )),
+        // docs/prompts.md: curation reaches the person where they already work, as decisions
+        // (open proposals, contested points) beside the reading - and the reading is never stored.
+        c("curation surfaces as decisions where the person reads, never as a document to maintain",
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
     ]),
     (23, "Gate to Canon", &[
         c("a proposal is itself an observation, and its state is a deterministic fold with merge \

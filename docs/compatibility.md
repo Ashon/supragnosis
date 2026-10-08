@@ -274,6 +274,9 @@ variable, so a change reaches review as a diff of the file.
 The cache hints `list_tools` adds (`ttlMs`, `cacheScope`) are part of the golden file too. Their
 absence once made a strict client reject the whole list (v0.3.1).
 
+The prompt list is pinned the same way (`tests/fixtures/prompts.json`, [prompts.md](prompts.md)
+Section 6): renaming a prompt or an argument, or making an argument required, is breaking.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on
