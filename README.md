@@ -134,6 +134,21 @@ Plus dereferenceable resources: `supragnosis://workspaces`,
 `supragnosis://workspace/{ws}/graph`, `supragnosis://workspace/{ws}/hypergraph`,
 `supragnosis://workspace/{ws}/types`, `supragnosis://observation/{id}`.
 
+## What you get
+
+Four MCP prompts, which a client offers as commands (in Claude Code, `/mcp__supragnosis__brief`):
+
+- `brief` - what a workspace's knowledge says now: its themes, what is contested, what rests on a
+  single agent claim, and what is waiting on your decision.
+- `what-do-we-know-about` - what the store holds on one topic, with sources, and what it does not.
+- `curate` - the model drafts proposals for the tidy-ups the curation signals point at.
+- `review-proposal` - a first-pass review of one proposal: what merging it would change, and a
+  recommendation.
+
+Your model writes the brief from current state and nothing is stored. A judgment worth keeping
+becomes a proposal, and you cast the verdict in the app's Review panel. The canon is what remains,
+and the next brief reads it. See [docs/prompts.md](docs/prompts.md).
+
 ## How it works
 
 Three ideas, and everything else follows from them.

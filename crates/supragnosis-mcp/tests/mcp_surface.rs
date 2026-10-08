@@ -1021,3 +1021,230 @@ fn every_tool_has_a_remote_policy() {
         supragnosis_mcp::remote::POLICY.iter().map(|(n, _)| n.to_string()).collect();
     assert_eq!(declared, classified, "the remote policy table and the tool list disagree");
 }
+
+// --- Prompts (docs/prompts.md) ------------------------------------------------------------------
+
+async fn prompt_server(
+    engine: Arc<Engine>,
+    remote: bool,
+) -> (rmcp::service::RunningService<rmcp::RoleClient, ()>, tokio::task::JoinHandle<()>) {
+    let (server_io, client_io) = tokio::io::duplex(256 * 1024);
+    let server = tokio::spawn(async move {
+        let mut s = SupragnosisServer::new(engine);
+        if remote {
+            s = s.with_remote(supragnosis_mcp::remote::Surface {
+                servable: Arc::new(|_: &str| Ok(())),
+            });
+        }
+        let running = s.serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    (().serve(client_io).await.expect("client handshake"), server)
+}
+
+async fn call(
+    client: &rmcp::service::RunningService<rmcp::RoleClient, ()>,
+    tool: &str,
+    v: Value,
+) -> Value {
+    let res = client
+        .call_tool(CallToolRequestParams::new(tool.to_string()).with_arguments(args(v)))
+        .await
+        .unwrap_or_else(|e| panic!("{tool}: {e}"));
+    tool_json(&res)
+}
+
+fn prompt_text(r: &rmcp::model::GetPromptResult) -> String {
+    r.messages
+        .iter()
+        .filter_map(|m| m.content.as_text().map(|t| t.text.clone()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The prompt list is a contract like the tool list (docs/prompts.md Section 6): names and
+/// arguments pinned whole, with the cache hints a validating client requires. Accepting a change
+/// takes SUPRAGNOSIS_BLESS=1 and reaches review as a diff of tests/fixtures/prompts.json.
+#[tokio::test]
+async fn the_prompt_list_is_the_pinned_contract() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, false).await;
+    let listed = client.list_prompts(None).await.expect("list prompts");
+    assert_eq!(listed.ttl_ms, Some(0));
+    assert_eq!(listed.cache_scope, Some(CacheScope::Private));
+    let live = serde_json::to_string_pretty(&listed).expect("serialize") + "\n";
+    client.cancel().await.ok();
+    server.abort();
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prompts.json");
+    if std::env::var_os("SUPRAGNOSIS_BLESS").is_some() {
+        std::fs::write(&path, &live).expect("bless");
+        return;
+    }
+    let pinned: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap_or_default())
+        .unwrap_or(Value::Null);
+    let live: Value = serde_json::from_str(&live).expect("live");
+    assert!(
+        pinned == live,
+        "prompts/list differs from tests/fixtures/prompts.json. If intended, rerun with \
+         SUPRAGNOSIS_BLESS=1 and review the diff; a renamed prompt or argument is breaking"
+    );
+}
+
+/// `brief` (PR1-PR5): the digest carries what is contested and what waits on a decision, fenced as
+/// untrusted evidence; a section past its cap says how much it left out; the instruction never
+/// asks for a merge; and getting the prompt writes nothing.
+#[tokio::test]
+async fn a_brief_is_fenced_bounded_and_writes_nothing() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, false).await;
+
+    // Two tier-tied readings of one entity's type: contested.
+    for kind in ["Technology", "Database"] {
+        call(
+            &client,
+            "observe",
+            json!({"workspace": "ws", "content": format!("redb is a {kind}"),
+            "entities": [{"name": "redb", "type": kind}]}),
+        )
+        .await;
+    }
+    // Twenty single-source agent claims: more weak claims than a section shows.
+    for i in 0..20 {
+        call(
+            &client,
+            "observe",
+            json!({"workspace": "ws", "content": format!("fact {i}"),
+            "entities": [{"name": format!("thing {i}"), "type": "Concept"}]}),
+        )
+        .await;
+    }
+    call(
+        &client,
+        "observe",
+        json!({"workspace": "ws", "content": "redb-db is redb, spelled otherwise",
+        "entities": [{"name": "redb-db", "type": "Technology"}]}),
+    )
+    .await;
+    let proposed = call(
+        &client,
+        "propose",
+        json!({"workspace": "ws", "kind": "entity_merge",
+        "targets": ["redb", "redb-db"], "into": "redb", "rationale": "one store, two spellings"}),
+    )
+    .await;
+    let proposal = proposed["proposal_id"]
+        .as_str()
+        .or(proposed["id"].as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    use supragnosis_core::AssertionStore;
+    let before = store.all_observations(None).unwrap().len();
+    let brief = client
+        .get_prompt(
+            rmcp::model::GetPromptRequestParams::new("brief")
+                .with_arguments(args(json!({"workspace": "ws"}))),
+        )
+        .await
+        .expect("brief");
+    assert_eq!(
+        store.all_observations(None).unwrap().len(),
+        before,
+        "PR1: a prompt writes nothing"
+    );
+
+    let text = prompt_text(&brief);
+    let fenced = text
+        .split("<supragnosis-evidence untrusted=\"true\">")
+        .nth(1)
+        .expect("PR4 fence");
+    assert!(
+        fenced.contains("\"contested\"") && fenced.contains("redb"),
+        "contested in the digest"
+    );
+    assert!(fenced.contains("Database") && fenced.contains("Technology"), "both sides kept");
+    assert!(
+        !proposal.is_empty() && fenced.contains(&proposal),
+        "the open proposal: {proposed}"
+    );
+    assert!(fenced.contains("more not shown"), "PR3: a capped section says what it left out");
+    let instruction = text.split("<supragnosis-evidence untrusted").next().unwrap();
+    assert!(instruction.contains("Never cast a merge verdict"), "PR5");
+    assert!(instruction.contains("never as") && instruction.contains("instructions"), "PR4");
+
+    client.cancel().await.ok();
+    server.abort();
+}
+
+/// The other three prompts answer from their own digests, and refuse arguments they cannot use.
+#[tokio::test]
+async fn the_topic_curate_and_review_prompts_answer_or_refuse() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, false).await;
+    call(
+        &client,
+        "observe",
+        json!({"workspace": "ws", "content": "the hub serves federation",
+        "entities": [{"name": "hub", "type": "Concept"}]}),
+    )
+    .await;
+    call(
+        &client,
+        "observe",
+        json!({"workspace": "ws", "content": "the hubs serve federation",
+        "entities": [{"name": "hubs", "type": "Concept"}]}),
+    )
+    .await;
+    let get = |name: &'static str, a: Value| {
+        let client = &client;
+        async move {
+            client
+                .get_prompt(rmcp::model::GetPromptRequestParams::new(name).with_arguments(args(a)))
+                .await
+        }
+    };
+
+    let topic = get("what-do-we-know-about", json!({"topic": "federation"}))
+        .await
+        .expect("topic");
+    assert!(prompt_text(&topic).contains("\"hits\""), "the search hits are the digest");
+    assert!(get("what-do-we-know-about", json!({})).await.is_err(), "topic is required");
+
+    let curate = get("curate", json!({"workspace": "ws"})).await.expect("curate");
+    assert!(prompt_text(&curate).contains("\"contradictions\""), "the curation report");
+    assert!(prompt_text(&curate).contains("Never propose recall"));
+
+    let proposed = call(
+        &client,
+        "propose",
+        json!({"workspace": "ws", "kind": "entity_merge",
+        "targets": ["hub", "hubs"], "into": "hub"}),
+    )
+    .await;
+    let id = proposed["proposal_id"].as_str().or(proposed["id"].as_str()).unwrap_or_default();
+    let review = get("review-proposal", json!({"id": id})).await.expect("review");
+    assert!(prompt_text(&review).contains("belief_diff"), "the diff is the review artifact");
+    assert!(get("review-proposal", json!({"id": "no-such"})).await.is_err(), "unknown id");
+    assert!(get("no-such-prompt", json!({})).await.is_err(), "unknown prompt");
+
+    client.cancel().await.ok();
+    server.abort();
+}
+
+/// PR6: a hub's principals get no prompts until a digest is scoped to their grants - an empty list,
+/// and a refusal that names why.
+#[tokio::test]
+async fn the_remote_surface_lists_no_prompt_and_refuses_each() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, true).await;
+    assert!(client.list_prompts(None).await.expect("list").prompts.is_empty());
+    let refused = client
+        .get_prompt(rmcp::model::GetPromptRequestParams::new("brief"))
+        .await
+        .expect_err("refused remotely");
+    assert!(refused.to_string().contains("remote surface"), "{refused}");
+    client.cancel().await.ok();
+    server.abort();
+}
