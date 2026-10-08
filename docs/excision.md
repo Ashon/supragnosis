@@ -144,6 +144,23 @@ Two consequences to make explicit, because both look like bugs when first seen:
 - **The graph can shrink in ways no one asked for**, if the excised row was the last support for
   entities that other rows merely mention. This is the same shape as the log/projection divergence a
   fresh replay exposes, and the same answer applies: the log is the truth, and the projection follows.
+- **A decision whose record is excised is un-decided.** A proposal's opening row carries its
+  rationale and a verdict's row carries its note - both free text, so both are places a secret can
+  land. Excising either removes it from the fold: a proposal whose only valid merge is gone folds
+  back to open, a proposal whose opening row is gone has no kind or targets left to fold, and every
+  effect that rested on the decision - id forwarding, a tier grant - falls with it, exactly as the
+  projection follows the log above. This is the one case where the finality of
+  [proposal-workflow.md](proposal-workflow.md) I16 does not hold, and it is not a contradiction:
+  monotonicity is a theorem about a log that only grows, and excision is the single act that
+  shrinks it - P3's one exception outranks a rule derived from P3's append-only log. Two absorbing
+  states meet here, and the tombstone wins. Three consequences follow. The derived closure of
+  Section 5 must name the decisions that rest on the row *before* the act ("excising this row
+  un-decides proposal P, which removes the forwarding A -> B"), so the person excises knowing what
+  falls. The census records that a decision event was destroyed - the event kind, never its payload
+  - so a later reader can tell an un-decided merge from one that was never cast. And re-deciding is
+  a new proposal under a new id with a clean rationale; the log keeps the whole story (unmerge.md
+  S4, S10). The ingest detector of Section 8 already runs on `propose` and `review`, which is what
+  makes this the rare case rather than the common one.
 
 ## 8. Ordering - why prevention comes first
 
@@ -185,6 +202,7 @@ So the order is:
 | **E7** | Excision is a console act only, non-delegable, at least as restricted as the recall verdict (P23 I17). It does not pass through the proposal gate, which is a gate of tier and not of existence. |
 | **E8** | After excision the projection is re-materialized from the log, never patched. |
 | **E9** | A partial implementation is not shipped. Excision without the lineage walk, the absorbing state, cursor participation or propagation reports a removal it did not perform. |
+| **E10** | Excision outranks finality. A decision whose opening row or only valid verdict is excised is un-decided and its effects fall with it (E8). The derived closure names those decisions before the act, the census records that a decision event was destroyed, and re-deciding is a new proposal under a new id. |
 
 ## 10. Closure map
 
@@ -197,3 +215,4 @@ So the order is:
 | P16 - absorbing state, monotonicity, no resurrection | Section 3; E3, E4 |
 | P14 - content is identity, so excision is not editing | Section 2; E1 |
 | P2 - who destroyed this, under whose authority | Sections 3, 6; E2 |
+| P23 I16 - merge is absorbing among events; excision is the one act that shrinks the log, and the two absorbing states meet | Section 7; E10 |
