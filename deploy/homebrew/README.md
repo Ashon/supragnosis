@@ -58,15 +58,22 @@ such check.
 1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release's tap job
    (or a manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
 2. Register repo secrets (Settings > Secrets and variables > Actions) - the release.yml app job
-   uses them for signing/notarization. If any is missing (precisely: no APPLE_SIGNING_IDENTITY),
-   the job only verifies the build without signing.
+   and dev-app.yml use them for signing/notarization. If any is missing (precisely: no
+   APPLE_SIGNING_IDENTITY), the job only verifies the build without signing.
    - `APPLE_CERTIFICATE` - base64 of the Developer ID Application certificate .p12
      (`base64 -i cert.p12 | pbcopy`)
    - `APPLE_CERTIFICATE_PASSWORD` - the .p12 password
    - `APPLE_SIGNING_IDENTITY` - e.g. `Developer ID Application: <Name> (<TEAMID>)`
-   - `APPLE_ID` - the Apple ID email
-   - `APPLE_PASSWORD` - an app-specific password (issued at appleid.apple.com)
    - `APPLE_TEAM_ID` - the team id
+   - Notarization, preferred: an App Store Connect API key. It is not tied to an Apple ID login,
+     so an account lock or a new app-specific password does not break releases. Create it in App
+     Store Connect > Users and Access > Integrations > App Store Connect API > Team Keys with the
+     Developer role; the .p8 downloads only once.
+     - `APPLE_API_KEY_P8` - the .p8 file contents (`gh secret set APPLE_API_KEY_P8 < AuthKey_<KEYID>.p8`)
+     - `APPLE_API_KEY_ID` - the key ID
+     - `APPLE_API_ISSUER` - the issuer ID shown above the key list
+   - Notarization, fallback when no API key is set: `APPLE_ID` (the Apple ID email) and
+     `APPLE_PASSWORD` (an app-specific password issued at appleid.apple.com).
 3. Register the tap auto-update secret: create a fine-grained PAT (Developer settings > Personal
    access tokens > Fine-grained; restrict the target repo to `Ashon/homebrew-tap` only, with just
    Contents: Read and write) and add it as the `TAP_PUSH_TOKEN` repo secret. Without it the

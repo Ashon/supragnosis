@@ -63,14 +63,29 @@ jobs:
           APPLE_ID_S: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD_S: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID_S: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_P8_S: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID_S: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_S: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
           if [ -n "$APPLE_SIGNING_IDENTITY_S" ]; then
-            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
               s="${v}_S"
               export "$v=${!s}"
             done
-            echo "signing + notarization enabled"
+            # Notarization uses the App Store Connect API key when it exists: a key is not tied to an
+            # Apple ID login, so an account lock or a new app-specific password does not break the
+            # build. Only one set is exported, because the bundler prefers the Apple ID when both are
+            # present. Tauri reads APPLE_API_KEY as the key ID and the .p8 from APPLE_API_KEY_PATH.
+            if [ -n "$APPLE_API_KEY_P8_S" ]; then
+              key="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID_S}.p8"
+              (umask 077 && printf '%s\n' "$APPLE_API_KEY_P8_S" > "$key")
+              export APPLE_API_KEY="$APPLE_API_KEY_ID_S" APPLE_API_ISSUER="$APPLE_API_ISSUER_S" APPLE_API_KEY_PATH="$key"
+              echo "signing + notarization (App Store Connect API key) enabled"
+            else
+              export APPLE_ID="$APPLE_ID_S" APPLE_PASSWORD="$APPLE_PASSWORD_S"
+              echo "signing + notarization (Apple ID) enabled"
+            fi
           else
             echo "no APPLE_SIGNING_IDENTITY secret - building unsigned"
           fi
