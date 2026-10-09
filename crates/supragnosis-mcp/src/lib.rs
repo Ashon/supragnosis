@@ -670,8 +670,9 @@ impl SupragnosisServer {
                         }
                         supragnosis_engine::SearchMode::Keyword => {
                             "no hits under keyword-only degrade (semantic recall UNAVAILABLE) \
-                             - a miss here is weak evidence of absence, not a negation. \
-                             Try exact terms the knowledge would contain"
+                             - a miss here is weak evidence of absence, not a negation. Every \
+                             term must appear (in any order, each as a substring), so retry with \
+                             fewer or shorter terms the knowledge would contain"
                                 .into()
                         }
                     });

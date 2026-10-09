@@ -457,6 +457,55 @@ fn search_matches_canonical_name_and_alias() {
     });
 }
 
+/// A query matches when the text holds it whole or holds every one of its terms, in any order
+/// (architecture.md Section 4.2). Found against a live store: `pg-boss` found an entity named
+/// `pg-boss default import boot crash` and `pg-boss boot crash` did not, because the whole query
+/// was matched as one substring. Every term is required, terms never combine across two spellings
+/// of one entity, and a verbatim match ranks above an all-terms match of the same kind.
+#[test]
+fn search_matches_every_term_in_any_order() {
+    for_each_adapter(|store| {
+        store.put_entity(ent("pg-boss default import boot crash")).expect("put");
+        let found = |q: &str| hit_keys(&store.search(q, Some(WS), 10).expect("search"));
+        let crash = vec![(SearchHitKind::Entity, eid("pg-boss default import boot crash"))];
+        assert_eq!(found("pg-boss boot crash"), crash, "every term, not contiguous");
+        assert_eq!(found("crash   PG-BOSS"), crash, "any order, any case, any spacing");
+        assert!(found("pg-boss crash nowhere").is_empty(), "every term is required");
+
+        // Terms never combine across two names of one entity.
+        let mut e = ent("Alpha");
+        e.aliases = vec!["Beta".into()];
+        store.put_entity(e).expect("put");
+        assert!(found("alpha beta").is_empty(), "no spelling holds both terms");
+
+        // A verbatim match outranks an all-terms match of its kind; any entity outranks any
+        // observation.
+        store.put_entity(ent("boot crash")).expect("put");
+        store.add_observation(obs("the boot crash again")).expect("obs");
+        store.add_observation(obs("crash on every boot")).expect("obs");
+        let ranked = found("boot crash");
+        let pos = |k: SearchHitKind, id: &str| {
+            ranked
+                .iter()
+                .position(|h| *h == (k, id.to_string()))
+                .unwrap_or_else(|| panic!("{id} not found for `boot crash`: {ranked:?}"))
+        };
+        let phrase_entity = pos(SearchHitKind::Entity, &eid("boot crash"));
+        let terms_entity = pos(SearchHitKind::Entity, &eid("pg-boss default import boot crash"));
+        let phrase_obs = pos(
+            SearchHitKind::Observation,
+            &Observation::new("the boot crash again".into(), prov_in(WS)).id,
+        );
+        let terms_obs = pos(
+            SearchHitKind::Observation,
+            &Observation::new("crash on every boot".into(), prov_in(WS)).id,
+        );
+        assert!(phrase_entity < terms_entity, "verbatim entity first: {ranked:?}");
+        assert!(terms_entity < phrase_obs, "entities above observations: {ranked:?}");
+        assert!(phrase_obs < terms_obs, "verbatim observation before all-terms: {ranked:?}");
+    });
+}
+
 /// Truncation is part of the answer, so it has to be reproducible: the same query against the
 /// same state returns the same rows in the same order, twice (Principle 16, reproducibility).
 /// A hash-ordered result would pass a length assertion and fail this one.
