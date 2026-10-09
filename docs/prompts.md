@@ -80,8 +80,15 @@ same state always gives the same digest.
   (`workspace_map`), each named by its hyperedge id with its members as name and entity id, so a
   theme and every member can be cited and dereferenced (Principle 2 - a query result carries its
   provenance path); contested beliefs with their competing values and tiers; claims resting on a
-  single agent-tier source; open proposals with kind and targets; the most recent observations with
-  their ids and tiers.
+  single agent-tier source; open proposals with kind and targets; and what arrived last, in two
+  sections because they answer two questions. **Recent observations** are the newest knowledge
+  rows, with ids and tiers. **Recent proposal events** are the newest opens, verdicts, comments and
+  withdrawals, each with its proposal's kind and current state, its targets by name and id, and the
+  surface a verdict was cast from (console or agent). A proposal event is an observation (I1), but
+  its stored text is machine shorthand and its tier is the writer's, not a claim about the world;
+  listed among the knowledge rows it reads as knowledge. In a workspace that has just replayed a
+  batch of merges, the newest fifteen rows were all such events, and "what arrived last" said
+  nothing about what the agents learned (found running v0.4.9 against a live store).
 - **`what-do-we-know-about`:** the search hits for the topic across workspaces, with ids, kinds,
   scores and the `mode` that answered (keyword or hybrid), and the entities they touch.
 - **`curate`:** the curation report - duplicate candidates, grab-bag clusters, orphans,

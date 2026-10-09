@@ -222,10 +222,18 @@ fn brief_digest(
             })
         })
         .collect();
-    // One past the cap, so a full section can say that older observations exist (PR3).
-    let log = engine.observation_log(ws, None, Some(SECTION_CAP + 1))?;
-    let older = log.len() > SECTION_CAP;
-    let recent: Vec<Value> = log
+    // What arrived last, split in two (prompts.md Section 4): knowledge rows, and proposal events.
+    // An event is an observation (I1), but its text is machine shorthand and its tier is the
+    // writer's - listed among knowledge rows it reads as knowledge, and after a batch of merges it
+    // was all the section showed. The log is read whole because a split cannot be capped before it
+    // is made; it is newest-first, so each half keeps its own newest rows.
+    let (events, knowledge): (Vec<_>, Vec<_>) = engine
+        .observation_log(ws, None, None)?
+        .into_iter()
+        .partition(|o| o.proposal.is_some());
+    let older = knowledge.len() > SECTION_CAP;
+    let older_events = events.len() > SECTION_CAP;
+    let recent: Vec<Value> = knowledge
         .into_iter()
         .take(SECTION_CAP)
         .map(|o| {
@@ -233,6 +241,24 @@ fn brief_digest(
                 "observation": format!("supragnosis://observation/{}", o.id),
                 "trust_tier": o.effective_tier, "text": o.content,
             })
+        })
+        .collect();
+    let recent_events: Vec<Value> = events
+        .into_iter()
+        .take(SECTION_CAP)
+        .filter_map(|o| {
+            let p = o.proposal?;
+            // Who decided, by the engine-stamped surface marker (resolution.md Section 6): the
+            // console's verdict and an agent's are different acts, and the person should see which.
+            let surface = o.attestations.iter().find_map(|a| {
+                a.source_ref.as_deref()?.strip_prefix(supragnosis_core::VERDICT_SURFACE_PREFIX)
+            });
+            Some(json!({
+                "observation": format!("supragnosis://observation/{}", o.id),
+                "event": p.event, "decision": p.decision, "surface": surface,
+                "proposal": p.proposal, "kind": p.kind, "state": p.state,
+                "targets": p.targets, "into": p.into,
+            }))
         })
         .collect();
     let mut digest = json!({
@@ -246,10 +272,17 @@ fn brief_digest(
         "weakly_supported": weak,
         "open_proposals": open,
         "recent_observations": recent,
+        "recent_proposal_events": recent_events,
     });
     if older {
         digest["recent_observations_note"] = json!(format!(
             "the newest {SECTION_CAP}; older observations exist - search_knowledge reaches them"
+        ));
+    }
+    if older_events {
+        digest["recent_proposal_events_note"] = json!(format!(
+            "the newest {SECTION_CAP}; older proposal events exist - list_proposals and \
+             get_proposal reach them"
         ));
     }
     if let Some(f) = focus {
@@ -338,7 +371,9 @@ name and id (get_entity shows the observations behind it).
 3. What is weakly supported - well-connected claims resting on a single agent-tier source.
 4. What is waiting on a decision - each open proposal and what merging it would change. Point the \
 person to the Review panel to decide.
-5. What arrived most recently.
+5. What arrived most recently: the knowledge first (recent_observations), then what was proposed \
+or decided (recent_proposal_events) - say which verdicts came from the console and which from an \
+agent. A proposal event is a decision about knowledge, not knowledge; never report one as a claim.
 Close by suggesting the `curate` prompt if you saw tidy-ups worth proposing.";
 
 const TOPIC: &str = "\n\nStart from the search hits in the digest; call get_entity and traverse for \
