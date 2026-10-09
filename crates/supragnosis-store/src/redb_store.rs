@@ -29,8 +29,8 @@ use std::path::Path;
 
 use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition};
 use supragnosis_core::{
-    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit,
-    SearchHitKind, StoreError, TraverseHit,
+    cosine_similarity, AssertionStore, Entity, KeywordQuery, KnowledgeStore, Observation, Relation,
+    SearchHit, SearchHitKind, StoreError, TraverseHit,
 };
 
 /// The log, the projection, and the adapter's own metadata - each row a JSON value under its id.
@@ -580,31 +580,32 @@ impl AssertionStore for RedbStore {
         workspace: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>, StoreError> {
-        let q = query.trim().to_lowercase();
+        // The matching rule is core's, shared with every adapter (architecture.md Section 4.2).
+        let q = KeywordQuery::new(query);
         let mut hits: Vec<SearchHit> = Vec::new();
 
-        // Substring match over canonical name and aliases. Both are inside the row, so this is the
-        // same full scan the other adapters run - keyword recall is a scan on every backend, and
-        // pretending otherwise would only hide where the cost is.
+        // Canonical name and aliases, matched spelling by spelling. Both are inside the row, so
+        // this is the same full scan the other adapters run - keyword recall is a scan on every
+        // backend, and pretending otherwise would only hide where the cost is.
         for e in self.all_entities(workspace)? {
-            let matched = e.canonical_name.to_lowercase().contains(&q)
-                || e.aliases.iter().any(|a| a.to_lowercase().contains(&q));
-            if matched {
+            let spellings = std::iter::once(e.canonical_name.as_str())
+                .chain(e.aliases.iter().map(String::as_str));
+            if let Some(m) = q.best_of(spellings) {
                 hits.push(SearchHit {
                     kind: SearchHitKind::Entity,
+                    score: KeywordQuery::score(SearchHitKind::Entity, m),
                     id: e.id,
                     snippet: e.canonical_name,
-                    score: 1.0,
                 });
             }
         }
         for o in self.all_observations(workspace)? {
-            if o.content.to_lowercase().contains(&q) {
+            if let Some(m) = q.matches(&o.content) {
                 hits.push(SearchHit {
                     kind: SearchHitKind::Observation,
                     id: o.id,
                     snippet: o.content.chars().take(160).collect(),
-                    score: 0.7,
+                    score: KeywordQuery::score(SearchHitKind::Observation, m),
                 });
             }
         }

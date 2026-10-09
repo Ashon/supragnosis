@@ -316,3 +316,68 @@ fn recall_at_5_meets_baseline() {
         "entity-gold recall@5 = {entity_mean:.3} - entity semantic (Gap A) regression"
     );
 }
+
+/// Keyword-only recall - the surface every release build has, since it ships without an embedder
+/// (architecture.md Section 4.2). The queries are what a person or an agent types: the right words,
+/// not in the order or adjacency the corpus wrote them. Matching the whole query as one substring
+/// recalled none of them (0.000 before the every-term rule); each term in any order recalls all of
+/// them. No query may pull in the unrelated noise row.
+#[test]
+fn keyword_recall_finds_the_terms_in_any_order() {
+    let engine = Engine::new(Arc::new(InMemoryStore::new()), "recall-host", WS);
+    let obs_ids = load(&engine);
+    let cases: &[(&str, &str, Option<&str>, Option<&str>)] = &[
+        // (name, query, gold entity, gold observation)
+        (
+            "entity: reordered",
+            "index vector similarity",
+            Some("vector similarity index"),
+            None,
+        ),
+        (
+            "entity: two of three",
+            "addressed storage",
+            Some("content addressed storage"),
+            None,
+        ),
+        (
+            "entity: reordered pair",
+            "chain delegation",
+            Some("delegation chain identity"),
+            None,
+        ),
+        (
+            "obs: scattered terms",
+            "tokio runtime rust",
+            None,
+            Some("the tokio crate provides an asynchronous runtime for the rust language"),
+        ),
+        (
+            "obs: reordered",
+            "position rank fusion",
+            None,
+            Some("reciprocal rank fusion merges ranked lists by their rank position"),
+        ),
+    ];
+    let mut recalled = 0usize;
+    for (name, query, gold_entity, gold_obs) in cases {
+        let gold = match (gold_entity, gold_obs) {
+            (Some(e), _) => supragnosis_core::Entity::make_id(WS, e),
+            (None, Some(o)) => obs_ids[o].clone(),
+            (None, None) => unreachable!(),
+        };
+        let out = engine.search(query, Some(WS), 5).unwrap();
+        assert_eq!(out.mode, supragnosis_engine::SearchMode::Keyword, "no embedder: keyword only");
+        let hit = out.hits.iter().take(5).any(|h| h.id == gold);
+        eprintln!(
+            "[keyword recall] {name:<24} `{query}` -> {}",
+            if hit { "found" } else { "MISSED" }
+        );
+        recalled += usize::from(hit);
+        let noise = out.hits.iter().any(|h| h.snippet.contains("banana"));
+        assert!(!noise, "`{query}` pulled in the unrelated row: {:?}", out.hits);
+    }
+    let recall = recalled as f32 / cases.len() as f32;
+    eprintln!("[keyword recall] recall@5 = {recall:.3}");
+    assert!(recall >= 0.99, "keyword recall@5 = {recall:.3} - every-term matching regressed");
+}

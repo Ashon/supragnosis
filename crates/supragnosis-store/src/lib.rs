@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use supragnosis_core::{
-    cosine_similarity, AssertionStore, Entity, KnowledgeStore, Observation, Relation, SearchHit,
-    SearchHitKind, StoreError, TraverseHit,
+    cosine_similarity, AssertionStore, Entity, KeywordQuery, KnowledgeStore, Observation, Relation,
+    SearchHit, SearchHitKind, StoreError, TraverseHit,
 };
 
 mod redb_store;
@@ -79,36 +79,39 @@ impl AssertionStore for InMemoryStore {
         workspace: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>, StoreError> {
-        let q = query.trim().to_lowercase();
+        // The matching rule is core's, shared with every adapter (architecture.md Section 4.2).
+        let q = KeywordQuery::new(query);
         let mut hits: Vec<SearchHit> = Vec::new();
 
-        // Entity: substring match on canonical name/alias.
+        // Entity: the canonical name and each alias, matched spelling by spelling.
         for e in self.entities.read().unwrap().values() {
             let in_ws = workspace.is_none_or(|ws| e.provenance.iter().any(|p| p.workspace == ws));
             if !in_ws {
                 continue;
             }
-            let name_hit = e.canonical_name.to_lowercase().contains(&q)
-                || e.aliases.iter().any(|a| a.to_lowercase().contains(&q));
-            if name_hit {
+            let spellings = std::iter::once(e.canonical_name.as_str())
+                .chain(e.aliases.iter().map(String::as_str));
+            if let Some(m) = q.best_of(spellings) {
                 hits.push(SearchHit {
                     kind: SearchHitKind::Entity,
                     id: e.id.clone(),
                     snippet: e.canonical_name.clone(),
-                    score: 1.0,
+                    score: KeywordQuery::score(SearchHitKind::Entity, m),
                 });
             }
         }
 
-        // Observation: substring match on content.
+        // Observation: the content.
         for o in self.observations.read().unwrap().values() {
-            let in_ws = workspace.is_none_or(|ws| o.workspace() == ws);
-            if in_ws && o.content.to_lowercase().contains(&q) {
+            if !workspace.is_none_or(|ws| o.workspace() == ws) {
+                continue;
+            }
+            if let Some(m) = q.matches(&o.content) {
                 hits.push(SearchHit {
                     kind: SearchHitKind::Observation,
                     id: o.id.clone(),
                     snippet: o.content.chars().take(160).collect(),
-                    score: 0.7,
+                    score: KeywordQuery::score(SearchHitKind::Observation, m),
                 });
             }
         }

@@ -168,6 +168,33 @@ sequenceDiagram
 
 ### 4.2 Query
 - `search`: **vector (HNSW) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
+- **The keyword match** is the one recall surface every build has (release builds ship without
+  an embedder, P19), so it has to find what a person or an agent types, not only what was typed
+  verbatim. A text matches when it contains the whole query, case-folded (a **phrase** match), or
+  when it contains every whitespace-separated term of the query, in any order and anywhere (an
+  **all-terms** match). An entity is matched spelling by spelling - its canonical name, then each
+  alias - so terms never combine across two names. A phrase match ranks above an all-terms match of
+  the same kind, entities above observations: entity phrase 1.0, entity all-terms 0.9, observation
+  phrase 0.7, observation all-terms 0.6, ties by id (P16).
+  - The rule only widens: a phrase contains every one of its own terms, so nothing that matched
+    before stops matching, and a single-term query behaves exactly as before.
+  - Every term is required. Matching any one term would answer `pg-boss crash` with every row that
+    says `crash`, and a question made of common words with the whole store; a partial match is the
+    semantic surface's job, which ranks by meaning instead of guessing from shared words.
+  - Terms are split on whitespace only. `pg-boss` stays one term, and a term is matched as a
+    substring, so `crash` finds `crashes`. An inflected form the text does not contain - a Korean
+    particle glued to a noun, a plural the text never uses - is not found: that is morphology, which
+    this surface does not do.
+  - The rule is one pure function in `supragnosis-core` (`KeywordQuery`) that every store adapter
+    calls, so two backends cannot disagree about what matches; the port conformance suite holds them
+    to it (`search_matches_every_term_in_any_order`), and the recall eval measures it on the
+    keyword-only surface (`keyword_recall_finds_the_terms_in_any_order`: reordered and gapped
+    queries, recall@5 0.000 under the phrase-only rule, 1.000 under this one).
+  - A keyword search with no hits tells the caller the rule - every term must appear - so a model
+    retries with fewer or shorter terms instead of concluding the knowledge is absent (P5, P21).
+  - Found running v0.4.9's `what-do-we-know-about` against a live store: `pg-boss` found fifteen
+    rows and `pg-boss 부팅 크래시` found none, beside an entity named `pg-boss default import 부팅
+    크래시` - the whole query was matched as one substring.
 - `traverse`: n-hop traversal from an entity (relation-type filter). How the walk is expressed is the
   adapter's business - an explicit BFS in both shipping adapters, a recursive Datalog rule in the
   file-backed adapter that preceded them - while the
