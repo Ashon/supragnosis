@@ -1159,6 +1159,15 @@ async fn a_brief_is_fenced_bounded_and_writes_nothing() {
         .unwrap_or_default()
         .to_string();
 
+    // An agent's comment on it: a proposal event cast from the agent surface.
+    call(
+        &client,
+        "review",
+        json!({"workspace": "ws", "proposal": proposal, "decision": "comment",
+        "note": "same store, two spellings"}),
+    )
+    .await;
+
     use supragnosis_core::AssertionStore;
     let before = store.all_observations(None).unwrap().len();
     let brief = client
@@ -1199,6 +1208,32 @@ async fn a_brief_is_fenced_bounded_and_writes_nothing() {
     let member = &theme["members"][0];
     assert!(member["name"].as_str().is_some_and(|n| !n.is_empty()), "member name: {theme}");
     assert_eq!(member["id"].as_str().map(str::len), Some(64), "member entity id: {theme}");
+    // What arrived last is two sections (prompts.md Section 4): a proposal event is never listed
+    // as a knowledge row, and it is listed as an event with its kind, its targets by name, and the
+    // surface it was cast from.
+    let recent = digest["recent_observations"].as_array().expect("recent_observations");
+    assert!(
+        recent
+            .iter()
+            .all(|o| !o["text"].as_str().unwrap_or("").starts_with("proposal(")),
+        "a proposal event listed as knowledge: {recent:?}"
+    );
+    let events = digest["recent_proposal_events"].as_array().expect("recent_proposal_events");
+    let opened = events
+        .iter()
+        .find(|e| e["event"] == "opened" && e["proposal"] == proposal.as_str())
+        .unwrap_or_else(|| panic!("the open proposal is an event: {events:?}"));
+    assert_eq!(opened["kind"], "entity_merge", "{opened}");
+    assert!(
+        opened["targets"]
+            .as_array()
+            .is_some_and(|t| t.iter().any(|x| x["name"] == "redb")),
+        "targets carry names: {opened}"
+    );
+    assert!(
+        events.iter().any(|e| e["event"] == "comment" && e["surface"] == "agent"),
+        "the agent's comment names its surface: {events:?}"
+    );
     let instruction = text.split("<supragnosis-evidence untrusted").next().unwrap();
     assert!(instruction.contains("Never cast a merge verdict"), "PR5");
     assert!(instruction.contains("never as") && instruction.contains("instructions"), "PR4");
