@@ -1262,8 +1262,8 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
     // mapping also depends on the traffic-light metrics, and macOS 26 gates those on the
     // linked SDK - an app built with an older SDK gets the compatibility metrics and lands
     // the lights off-center (seen on the macos-14-built release under macOS 26). The release
-    // workflow pins an SDK-26 runner for the app job (release.yml); build locally with a
-    // current Xcode. y=26 re-confirmed on macOS 26 with the SDK-26 build.
+    // build pins an SDK-26 runner for the app; build locally with a current Xcode. y=26
+    // re-confirmed on macOS 26 with the SDK-26 build.
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)

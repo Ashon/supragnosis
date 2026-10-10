@@ -117,7 +117,7 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
 
       # Default members only (the desktop app needs platform webview toolchains and is covered by
-      # dev-app.yml / release.yml). The e2e suite compiles here but its real-model tests are
+      # the macos job below). The e2e suite compiles here but its real-model tests are
       # #[ignore]d, so this runs the deliverables' tests, not a scorecard against a live model.
       - name: tests
         run: cargo test --locked
@@ -132,7 +132,7 @@ jobs:
   # macOS, where the desktop app and every user of it live. The jobs above are all ubuntu, so code
   # behind cfg(target_os = "macos") - launchd, the app-support paths `connect` writes, the bridge's
   # client paths - compiled for the first time when a release was tagged, and the desktop shell's
-  # own tests and lints ran in no workflow at all (dev-app.yml only builds it, on main).
+  # own tests and lints ran in no workflow at all (the app's release build only builds it).
   macos:
     name: macOS - workspace and desktop app
     runs-on: macos-14

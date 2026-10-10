@@ -6,7 +6,7 @@
 # the server side compiles, and they sat in the server's Cargo.lock, where a security advisory
 # against a webview dependency reads as an advisory against the daemon.
 #
-# Cargo builds this from `app/`, which is where both release.yml and dev-app.yml already run
+# Cargo builds this from `app/`, which is where the release and dev-channel builds already run
 # (`working-directory: app`).
 #
 # The one thing membership did give for free is version sync, and it is now manual: the version

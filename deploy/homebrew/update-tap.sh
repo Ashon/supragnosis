@@ -42,7 +42,7 @@ cp "${HERE}/Casks/supragnosis.rb" "$CASK"
 cp "${HERE}/Casks/supragnosis-dev.rb" "${TAP_DIR}/Casks/supragnosis-dev.rb"
 
 # version line, then each sha256 by position: formula has 3 (arm, x86, linux), cask has 1.
-# -i.bak (attached suffix) works under both BSD and GNU sed - the CI tap job runs on Linux.
+# -i.bak (attached suffix) works under both BSD and GNU sed - the tap may be rendered on Linux.
 sed -i.bak -E "s/^(  version \")[^\"]+(\")/\\1${VERSION}\\2/" "$FORMULA" "$CASK"
 rm -f "${FORMULA}.bak" "${CASK}.bak"
 python3 - "$FORMULA" "$arm" "$x86" "$lin" <<'EOF'
