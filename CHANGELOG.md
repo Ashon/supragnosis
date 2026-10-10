@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.4.11](docs/releases/v0.4.11.md) | Upgrade, then restart the daemon once; a search finds the words you type, in any order. |
 | [v0.4.10](docs/releases/v0.4.10.md) | Upgrade, then restart the daemon once; the recall gate holds, and a brief cites what it reads. |
 | [v0.4.9](docs/releases/v0.4.9.md) | Upgrade, then restart the daemon once; four MCP prompts arrive. `brew upgrade` then `supragnosis |
 | [v0.4.8](docs/releases/v0.4.8.md) | Upgrade, then restart the daemon once; a spoke that sets `insecure_tls` names its hub's certificate |
