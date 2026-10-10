@@ -30,8 +30,9 @@ OUT="$(cd "$OUT" && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# 1. The formula for this tag.
-"${HERE}/update-tap.sh" "$TAG" "${WORK}/render" >/dev/null
+# 1. The formula for this tag. Only the formula: the desktop app is attached to the release after
+#    the bottles are built.
+FORMULA_ONLY=1 "${HERE}/update-tap.sh" "$TAG" "${WORK}/render" >/dev/null
 
 # 2. A local tap named like the real one. Newer Homebrew refuses developer commands on a tap it has
 #    not been told to trust; older Homebrew has no such command.
