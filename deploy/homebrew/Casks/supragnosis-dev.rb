@@ -1,5 +1,5 @@
 # Rolling dev-channel cask for the desktop shell: installs the `dev` pre-release asset that
-# .github/workflows/dev-app.yml republishes from main (signed/notarized exactly like a
+# dev-channel build republishes from main (signed/notarized exactly like a
 # release build). `version :latest` + `sha256 :no_check` because the artifact rolls under a
 # single URL - `brew upgrade` does not track it, so refresh with
 # `brew reinstall supragnosis-dev`. Conflicts with the stable cask (same app bundle); pair

@@ -267,7 +267,7 @@ tasks:
     cmds: [cargo build --release --locked --bin supragnosis]
 
   build:app:
-    desc: Bundle the macOS universal .app - the same tauri step release.yml uses
+    desc: Bundle the macOS universal .app - the same tauri step the release build uses
     # The CLI is app/package.json's pinned version (package-lock.json holds its integrity), as in CI.
     dir: app
     cmds:

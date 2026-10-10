@@ -1,8 +1,13 @@
 name: release
 
 # Pushing a v* tag builds the per-platform release binaries and attaches them to the GitHub Release
-# as tar.gz + sha256. workflow_dispatch builds and packages without publishing, so the pipeline can
-# be exercised without cutting a release.
+# as tar.gz + sha256, bottles the server formula and publishes the container image. The desktop app
+# and the Homebrew tap are released from the same tag outside this repository, once this run has
+# finished (deploy/homebrew/README.md). workflow_dispatch builds and packages without publishing, so
+# the pipeline can be exercised without cutting a release.
+#
+# "Without publishing" means nothing reaches the GitHub Release or ghcr - every step that would is
+# guarded on the tag ref, and the image build passes `push: false`.
 #
 # The prebuilt binaries are a default build: keyword plus hashing search. Local ONNX semantic search
 # means building from source with `--features fastembed`, which is kept out of the release because
@@ -89,10 +94,8 @@ jobs:
       - name: install rust
         run: rustup toolchain install stable --profile minimal --target "${{ matrix.target }}" && rustup default stable
 
-      # No cargo cache in this workflow: what it publishes is built from the tagged tree alone. A cache
-      # a tag run saves is scoped to that tag, so these per-target ones never hit; the one that did
-      # (the app's) was written by dev-app.yml on main, which put whatever any step there left in
-      # target/ into the signed, notarized app.
+      # No cargo cache in this workflow: what it publishes is built from the tagged tree alone, and a
+      # cache a tag run saves is scoped to that tag, so these per-target ones would never hit.
 
       - name: build
         run: cargo build --release --locked --bin supragnosis --target ${{ matrix.target }}
@@ -193,7 +196,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${GITHUB_REF_NAME}" bottle/*.bottle.tar.gz --clobber
 
-      - name: upload the bottle's description for the tap job
+      - name: upload the bottle's description for rendering the tap
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bottle-${{ matrix.os }}
@@ -281,4 +284,3 @@ jobs:
           test "$v" = "${{ steps.tags.outputs.version }}" || {
             echo "server.json version $v does not match the tag" >&2; exit 1; }
           echo "server.json agrees: $got"
-

@@ -36,7 +36,7 @@ such check.
   - it installs the rendered formula from a local tap with `--build-bottle`;
   - `brew bottle` makes the bottle;
   - it reinstalls from that bottle and requires that Homebrew poured it.
-  The job attaches the bottle to the release and hands its JSON to the tap job, where
+  The job attaches the bottle to the release and hands its JSON to the tap rendering, where
   `update-tap.sh` writes the `bottle do` block. A bottle that fails to build is left out, and that
   platform keeps the source-build path it has without one.
 - **Which machines pour one:**
@@ -55,11 +55,17 @@ such check.
 
 ## One-time setup
 
-1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release's tap job
-   (or a manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
-2. From the next `v*` tag on, the release carries `Supragnosis-v<ver>-macos-universal.app.zip`.
+1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release (or a
+   manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
+2. Every release from then on carries `Supragnosis-v<ver>-macos-universal.app.zip`.
 
 ## Per release
+
+Pushing a `v*` tag runs release.yml here: the binaries, the bottles and the image. The signed,
+notarized desktop app and the tap are released from the same tag outside this repository, once that
+run has finished: the app zip is attached to the release, and update-tap.sh renders the formula and
+casks from the tag's templates, with the bottles the run produced. To render the tap by hand, run it
+from a checkout of the same tag, so the templates match the release:
 
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
@@ -99,10 +105,9 @@ brew upgrade --fetch-HEAD supragnosis-server && supragnosis restart   # whenever
 ```
 
 **Desktop app**: casks cannot build from source (no `--HEAD`), so the dev channel is the
-`supragnosis-dev` cask - it installs the rolling `dev` pre-release that
-`.github/workflows/dev-app.yml` rebuilds (signed/notarized like a release) whenever `app/`
-changes on main, or on manual dispatch. `version :latest` means `brew upgrade` does not track
-it: refresh with reinstall.
+`supragnosis-dev` cask - it installs the rolling `dev` pre-release, rebuilt from main (signed and
+notarized like a release) when the dev channel is rolled. `version :latest` means `brew upgrade`
+does not track it: refresh with reinstall.
 
 ```sh
 brew uninstall --cask supragnosis        # the two casks install the same app bundle
