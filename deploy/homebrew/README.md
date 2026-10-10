@@ -36,7 +36,7 @@ such check.
   - it installs the rendered formula from a local tap with `--build-bottle`;
   - `brew bottle` makes the bottle;
   - it reinstalls from that bottle and requires that Homebrew poured it.
-  The job attaches the bottle to the release and hands its JSON to the tap job, where
+  The job attaches the bottle to the release and hands its JSON to the tap rendering, where
   `update-tap.sh` writes the `bottle do` block. A bottle that fails to build is left out, and that
   platform keeps the source-build path it has without one.
 - **Which machines pour one:**
@@ -55,36 +55,17 @@ such check.
 
 ## One-time setup
 
-1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release's tap job
-   (or a manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
-2. Register repo secrets (Settings > Secrets and variables > Actions) - the release.yml app job
-   and dev-app.yml use them for signing/notarization. If any is missing (precisely: no
-   APPLE_SIGNING_IDENTITY), the job only verifies the build without signing.
-   - `APPLE_CERTIFICATE` - base64 of the Developer ID Application certificate .p12
-     (`base64 -i cert.p12 | pbcopy`)
-   - `APPLE_CERTIFICATE_PASSWORD` - the .p12 password
-   - `APPLE_SIGNING_IDENTITY` - e.g. `Developer ID Application: <Name> (<TEAMID>)`
-   - `APPLE_TEAM_ID` - the team id
-   - Notarization: an App Store Connect API key, and only that. A key is not tied to an Apple ID
-     login, so an account lock or an expired app-specific password cannot break a release; the Apple
-     ID path is retired and the workflows refuse to build signed without the key. Create it in App
-     Store Connect > Users and Access > Integrations > App Store Connect API > Team Keys with the
-     Developer role; the .p8 downloads only once.
-     - `APPLE_API_KEY_P8` - the .p8 file contents (`gh secret set APPLE_API_KEY_P8 < AuthKey_<KEYID>.p8`)
-     - `APPLE_API_KEY_ID` - the key ID
-     - `APPLE_API_ISSUER` - the issuer ID shown above the key list
-3. Register the tap auto-update secret: create a fine-grained PAT (Developer settings > Personal
-   access tokens > Fine-grained; restrict the target repo to `Ashon/homebrew-tap` only, with just
-   Contents: Read and write) and add it as the `TAP_PUSH_TOKEN` repo secret. Without it the
-   release.yml tap job skips and you fall back to the manual procedure below.
-4. From the next `v*` tag on, the release carries `Supragnosis-v<ver>-macos-universal.app.zip`.
+1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release (or a
+   manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
+2. Every release from then on carries `Supragnosis-v<ver>-macos-universal.app.zip`.
 
 ## Per release
 
-Automatic: pushing a `v*` tag makes the release.yml tap job run update-tap.sh after the assets
-are attached, rendering the formula and casks from the tag's templates and pushing. If the job
-fails or `TAP_PUSH_TOKEN` is missing, run it by hand from a checkout of the same tag, so the
-templates match the release:
+Pushing a `v*` tag runs release.yml here: the binaries, the bottles and the image. The signed,
+notarized desktop app and the tap are released from the same tag outside this repository, once that
+run has finished: the app zip is attached to the release, and update-tap.sh renders the formula and
+casks from the tag's templates, with the bottles the run produced. To render the tap by hand, run it
+from a checkout of the same tag, so the templates match the release:
 
 ```sh
 git clone git@github.com:Ashon/homebrew-tap && cd homebrew-tap
@@ -124,10 +105,9 @@ brew upgrade --fetch-HEAD supragnosis-server && supragnosis restart   # whenever
 ```
 
 **Desktop app**: casks cannot build from source (no `--HEAD`), so the dev channel is the
-`supragnosis-dev` cask - it installs the rolling `dev` pre-release that
-`.github/workflows/dev-app.yml` rebuilds (signed/notarized like a release) whenever `app/`
-changes on main, or on manual dispatch. `version :latest` means `brew upgrade` does not track
-it: refresh with reinstall.
+`supragnosis-dev` cask - it installs the rolling `dev` pre-release, rebuilt from main (signed and
+notarized like a release) when the dev channel is rolled. `version :latest` means `brew upgrade`
+does not track it: refresh with reinstall.
 
 ```sh
 brew uninstall --cask supragnosis        # the two casks install the same app bundle
