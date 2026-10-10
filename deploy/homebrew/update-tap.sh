@@ -9,6 +9,9 @@
 # and Homebrew treats it as a source build: it then demands an up-to-date Xcode or Command Line
 # Tools, though the formula only copies a prebuilt binary.
 #
+# FORMULA_ONLY=1 renders the formula alone, for bottle.sh: the bottles are built before the desktop
+# app is attached to the release, so the app's sum is not there yet.
+#
 # The templates are the source and the tap is output. This script used to edit the tap's own copy
 # in place - version and sha256 only - so a change to a template's structure never reached users:
 # v0.4.3 dropped the formula's `service do` block, and the tap would have kept it, along with the
@@ -28,23 +31,27 @@ sha_of() { # asset name -> sha256 (the release publishes <asset>.sha256 sidecars
 
 FORMULA="${TAP_DIR}/Formula/supragnosis-server.rb"
 CASK="${TAP_DIR}/Casks/supragnosis.rb"
+RENDERED=("$FORMULA")
+[ -n "${FORMULA_ONLY:-}" ] || RENDERED+=("$CASK")
 
 # Fetch every sum before writing anything, so a missing asset leaves the tap as it was.
 arm=$(sha_of "supragnosis-${TAG}-aarch64-apple-darwin.tar.gz")
 x86=$(sha_of "supragnosis-${TAG}-x86_64-apple-darwin.tar.gz")
 lin=$(sha_of "supragnosis-${TAG}-x86_64-unknown-linux-gnu.tar.gz")
-app=$(sha_of "Supragnosis-${TAG}-macos-universal.app.zip")
+[ -n "${FORMULA_ONLY:-}" ] || app=$(sha_of "Supragnosis-${TAG}-macos-universal.app.zip")
 
 # The dev cask has no version or sum (it tracks a rolling asset), so it is copied as-is.
 mkdir -p "${TAP_DIR}/Formula" "${TAP_DIR}/Casks"
 cp "${HERE}/Formula/supragnosis-server.rb" "$FORMULA"
-cp "${HERE}/Casks/supragnosis.rb" "$CASK"
-cp "${HERE}/Casks/supragnosis-dev.rb" "${TAP_DIR}/Casks/supragnosis-dev.rb"
+if [ -z "${FORMULA_ONLY:-}" ]; then
+  cp "${HERE}/Casks/supragnosis.rb" "$CASK"
+  cp "${HERE}/Casks/supragnosis-dev.rb" "${TAP_DIR}/Casks/supragnosis-dev.rb"
+fi
 
 # version line, then each sha256 by position: formula has 3 (arm, x86, linux), cask has 1.
 # -i.bak (attached suffix) works under both BSD and GNU sed - the tap may be rendered on Linux.
-sed -i.bak -E "s/^(  version \")[^\"]+(\")/\\1${VERSION}\\2/" "$FORMULA" "$CASK"
-rm -f "${FORMULA}.bak" "${CASK}.bak"
+sed -i.bak -E "s/^(  version \")[^\"]+(\")/\\1${VERSION}\\2/" "${RENDERED[@]}"
+for f in "${RENDERED[@]}"; do rm -f "${f}.bak"; done
 python3 - "$FORMULA" "$arm" "$x86" "$lin" <<'EOF'
 import re, sys
 path, *shas = sys.argv[1:]
@@ -53,7 +60,7 @@ it = iter(shas)
 src = re.sub(r'(sha256 ")[^"]*(")', lambda m: m.group(1) + next(it) + m.group(2), src, count=3)
 open(path, "w").write(src)
 EOF
-python3 - "$CASK" "$app" <<'EOF'
+[ -n "${FORMULA_ONLY:-}" ] || python3 - "$CASK" "$app" <<'EOF'
 import re, sys
 path, sha = sys.argv[1], sys.argv[2]
 src = open(path).read()
@@ -93,11 +100,11 @@ EOF
 
 # A template that grows a sha256 line, or a version line in another shape, would otherwise ship a
 # placeholder or the template's own stale version to every `brew upgrade`.
-if grep -nE 'REPLACE_|BOTTLE_BLOCK' "$FORMULA" "$CASK"; then
+if grep -nE 'REPLACE_|BOTTLE_BLOCK' "${RENDERED[@]}"; then
   echo "update-tap.sh: a placeholder survived rendering (above)" >&2
   exit 1
 fi
-for f in "$FORMULA" "$CASK"; do
+for f in "${RENDERED[@]}"; do
   if ! grep -q "^  version \"${VERSION}\"$" "$f"; then
     echo "update-tap.sh: no version ${VERSION} in $f" >&2
     exit 1
@@ -105,4 +112,4 @@ for f in "$FORMULA" "$CASK"; do
 done
 
 echo "tap rendered for ${TAG}:"
-grep -H "version \"" "$FORMULA" "$CASK"
+grep -H "version \"" "${RENDERED[@]}"
