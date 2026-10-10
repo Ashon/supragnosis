@@ -46,7 +46,7 @@ a direct consequence of a principle.
 |---|-----------|-----------------|
 | I1 | **A proposal is also knowledge.** The creation/update/review/verdict of a proposal are all loaded as observation events. There is no separate side store. | 1, 3 |
 | I2 | **State is a fold.** A proposal's current state is a deterministic function that folds the event stream belonging to that proposal in HLC order. Storing the state separately is a violation. | 16 |
-| I3 | **Concurrent verdicts converge and are monotonic.** The conclusion is a function of the verdict set (it does not depend on HLC arrival order): if even one valid merge exists the conclusion is Merged, and reject becomes the conclusion only when none exists. Merged is an absorbing state, so from the moment a valid merge is in the log it is never overturned (I16). Conflicting verdicts are invalidated and recorded as comments. Every node reaches the same conclusion. | 16 |
+| I3 | **Concurrent verdicts converge and are monotonic.** The conclusion is a function of the verdict set (it does not depend on HLC arrival order): if even one valid merge exists the conclusion is Merged, and reject becomes the conclusion only when none exists. Merged is an absorbing state, so from the moment a valid merge is in the log it is never overturned (I16). A conflicting verdict decides nothing and stays in the log - equivalent to a comment (7.1). Every node reaches the same conclusion. | 16 |
 | I4 | **No wall clock.** The mere passage of time causes no state transition. Expiry/auto-merge must be expressed as an explicit event (loaded by a policy executor). | 16, 18 |
 | I5 | **Rejection is not negation.** Rejecting a proposal means "not promoting", not "the assertion is false". A rejected assertion continues to exist at its original tier. | 5 |
 | I6 | **Merge is additive.** A merge does not copy/modify the assertion; it only appends a promotion event. Cancellation, too, is done via a new demotion event (no rewind). | 3 |
@@ -308,6 +308,9 @@ can cast opposing verdicts without knowing about each other.
 - A conflicting reject or revise that arrives after Merged cannot change the conclusion and
   is demoted to a record equivalent to `review_commented` (information is preserved -
   Principle 3).
+  [impl] "Equivalent" is in effect, not in label: the fold keeps the losing verdict in the
+  proposal view's verdict count, and what it does not do is decide (guarded by
+  `i16_merge_absorbs_over_conflicting_reject_in_any_order`, which pins both).
 
 Example 1 (convergence): on node A, Alice casts merge (HLC=t1); on node B, which was
 offline, Bob casts reject (HLC=t2, t1 < t2). After sync, since a valid merge exists in the

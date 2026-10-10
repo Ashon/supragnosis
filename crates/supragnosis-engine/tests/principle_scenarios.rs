@@ -3016,3 +3016,57 @@ fn a_reproject_repays_only_its_own_workspace() {
     assert_eq!(owed.len(), 1);
     assert_eq!(owed[0].1, "other");
 }
+
+/// Loose ingest (P11, P22): free text alone is a complete observation, an entity named without a
+/// kind enters as `Concept`, and a kind the vocabulary has never defined is accepted as written.
+/// Nothing about the schema stands between a writer and the log - the escape hatch is the default
+/// path, and refinement happens afterwards.
+#[test]
+fn p22_free_text_alone_is_knowledge_and_no_schema_blocks_ingest() {
+    let (store, engine) = engine();
+    // Free text, no structured assertion at all.
+    engine
+        .observe(ObserveInput {
+            content: "the nightly batch stalls when the queue backs up".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .expect("free text alone is an observation");
+    assert_eq!(store.all_observations(Some(WS)).expect("log").len(), 1);
+
+    // An untyped entity, and one typed with a kind no define_type ever declared.
+    engine
+        .observe(ObserveInput {
+            content: "the queue is drained by a worker of a kind nobody has named yet".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "queue".into(), kind: None, description: None },
+                EntityInput {
+                    name: "drain worker".into(),
+                    kind: Some("NeverDefinedKind".into()),
+                    description: None,
+                },
+            ],
+            relations: vec![],
+        })
+        .expect("no schema blocks ingest");
+    let kind = |name: &str| {
+        engine
+            .get_entity(&Entity::make_id(WS, name))
+            .expect("get")
+            .expect("entity")
+            .entity
+            .kind
+    };
+    assert_eq!(kind("queue"), "Concept", "an untyped entity is a Concept");
+    assert_eq!(kind("drain worker"), "NeverDefinedKind", "an undefined kind is kept as written");
+}
