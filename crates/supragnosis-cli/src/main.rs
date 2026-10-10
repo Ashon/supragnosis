@@ -3646,9 +3646,9 @@ mod fed {
             assert_eq!(links.len(), 2);
             assert!(links.iter().all(|l| l.auth_token == "shared"));
 
-            // Both shapes at once is refused, not resolved by precedence. A precedence rule here
-            // would decide silently which credential a host is given, which is exactly the class of
-            // configuration failure P5 asks to be loud (negotiated-surface.md N8).
+            // Both shapes at once resolve by a stated precedence, loudly: a rule that chose silently
+            // which credential a host is given is the class of configuration failure P5 asks to be
+            // loud about, and the note below is what keeps it loud (negotiated-surface.md N8).
             let both = r#"
                 [sync]
                 servers = ["https://a:7420"]

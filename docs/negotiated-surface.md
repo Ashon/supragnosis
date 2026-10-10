@@ -221,7 +221,7 @@ that it does.
 | **N12** | Narrowing applies to fan-out, not to a command naming one target. A one-shot round keeps the host's own answer, which says more than a skip (P5). |
 | **N6** | The difference is reported in three buckets and never as the intersection, which would hide the misconfiguration that produced it. |
 | **N7** | The map carries the time it was negotiated and is never a premise for a durable conclusion (F21.6). |
-| **N8** | A federation configuration mistake disables or narrows federation and never stops a node serving its own knowledge - the shape a missing embedder and an unbindable viewer socket already use. Every workaround is reported in `sync_status`, so degrading is loud rather than silent (P5). |
+| **N8** | A federation configuration mistake disables or narrows federation and never stops a node serving its own knowledge - the shape a missing embedder and an unbindable viewer socket already use. Every workaround is reported in `sync_status`, so degrading is loud rather than silent (P5). The one exception is a key this build does not know, which refuses to start: a misspelled key would otherwise parse clean and do nothing, and in an allowlist entry that silence decides who may connect (P5, P24's refusal for serving something other than what was configured). |
 | **N9** | An allowlist entry naming this node is dropped in the admission directory, through every construction path, and the file is left alone (F14). |
 | **N10** | What a host advertises is the caller's entitlement and never the host's inventory. This is a property of the existing handler and must survive the change (F21.1, P17). |
 

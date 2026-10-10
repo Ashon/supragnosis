@@ -60,6 +60,10 @@
 //!   and [`every_invariant_declares_its_evidence`] holds each family to the document's numbering.
 //!   The coupling once existed for federation alone, after F21 was written with no accounting;
 //!   ten other documents had kept invariant tables that nothing read.
+//! - **To what each principle says.** A principle is coupled bullet by bullet, not only by name:
+//!   [`BULLETS`] maps every Enforcement bullet to the clauses that answer it, and
+//!   [`every_enforcement_bullet_answers_to_a_clause`] fails when a bullet has no clause or a clause
+//!   answers nothing the document asks.
 //!
 //! This file deliberately does not re-run those tests - `cargo test` already does. It guards the
 //! *map*, and the three couplings above are what keep the map pinned to the territory.
@@ -647,7 +651,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             "turning Start at Login off is the only way the app stops a daemon it did not spawn",
             Evidence::Deferred(
                 "set_login runs `service uninstall`, which boots the canonical job out; that this is the single such \
-                 path is a reading of main.rs, not a test. Revisit together with the clause above",
+                 path is a reading of main.rs, not a test. Revisit when the clause above is repaid, with the same harness",
             ),
         ),
     ]),
@@ -1086,7 +1090,7 @@ const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
           Evidence::Scenario(&["p15_separated_entities_can_be_merged_again"])),
         c("suppression is derived from the log, so nodes with equal logs suppress equally",
           Evidence::Deferred(
-            "Revisit with a curation-report convergence case - `split_pairs` is computed from the \
+            "Revisit when the curation report joins the P16 convergence suite - `split_pairs` is computed from the \
              proposal fold on every read and no flag is stored (the port has nowhere to put one), \
              but no case delivers one log to two nodes in different orders and compares their \
              suggestions; the P16 suite compares graphs, not curation reports")),
@@ -1121,7 +1125,7 @@ const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
           Evidence::Scenario(&["p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing"])),
         c("a repeat split of one resolution is idempotent rather than an error",
           Evidence::Deferred(
-            "Revisit with one case - reversal is set membership in `reversed_merges`, and a verbatim \
+            "Revisit when entity_split's fold next changes - reversal is set membership in `reversed_merges`, and a verbatim \
              repeat is even the same observation id, but no case casts a second split and asserts \
              that the map, the suppression set and the proposal states are unchanged")),
     ]),
@@ -1129,7 +1133,7 @@ const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
         c("re-opening a reversed resolution verbatim is refused, because content addressing would \
            hand back the id the split already named",
           Evidence::Deferred(
-            "Revisit with one case - `propose` refuses the verbatim re-open and names the fix, and \
+            "Revisit when entity_split's fold next changes - `propose` refuses the verbatim re-open and names the fix, and \
              p15_separated_entities_can_be_merged_again steps around it with a rationale, but no \
              case asserts the refusal itself, so deleting it would fail nothing")),
     ]),
@@ -1643,7 +1647,7 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
         c("a narrowed federated search names the hosts it skipped",
           Evidence::Deferred(
             "the search fan-out consults the same `route` and attaches `skipped`, but the in-process \
-             case drives only sync_push and sync_pull. incremental - add search_knowledge \
+             case drives only sync_push and sync_pull. Revisit when the federated search fan-out next changes - add search_knowledge \
              scope=remote to a_narrowed_round_names_the_hosts_it_skipped",
           )),
     ]),
@@ -1670,7 +1674,7 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
         c("sync_status and the viewer's federation blob carry the buckets with their time",
           Evidence::Deferred(
             "both surfaces call `surface_diff` but no case reads `negotiated` back from either; the \
-             one sync_status case checks config_notes only. incremental - seed a map in \
+             one sync_status case checks config_notes only. Revisit when sync_status's federation blob next changes - seed a map in \
              a_configuration_workaround_reaches_the_operator_surface and assert the three buckets \
              and negotiated_at",
           )),
@@ -1753,7 +1757,7 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
           Evidence::Deferred(
             "`reproject` reads the owed ids before it opens its read context and clears exactly \
              those, but no case appends during a reproject to see the late entry survive. Revisit \
-             with the atomic-write follow-up crash-recovery.md Section 2 names, which removes the \
+             when the atomic-write follow-up lands - crash-recovery.md Section 2 names, which removes the \
              window this ordering exists for",
           )),
         c("the hub re-materializes after a pull or push that stamped rows",
@@ -1815,7 +1819,7 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
             "`serve` counts `allowlist + principals`, and the daemon's pre-validation now passes the \
              same sum (it used to pass the allowlist alone, so a principals-only hub off loopback \
              died at startup); bind_guard_enforces_f10 drives `validate_bind` with one count and no \
-             case starts a principals-only hub. incremental - add that case to the guard",
+             case starts a principals-only hub. Revisit when the bind guard next changes - add that case to it",
           )),
     ]),
     (2, &[c(
@@ -2370,6 +2374,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              clause holds only because no constructor produces the empty case (architecture.md \
              Section 14, overdue entry condition 1)",
         )),
+        // P2's third and fourth Enforcement bullets had no clause (2026-10 closure review).
+        c("a query result can carry its provenance: a hit dereferences to its observation, with its \
+           attestations and delegation chain",
+          Evidence::Scenario(&["mcp_resource_graph_surface"])),
+        c("a relayed attestation is authenticated by its origin's signature, not by the relay",
+          Evidence::Scenario(&[
+            "signature_roundtrip_verifies_and_tamper_fails",
+            "apply_verifies_rejects_and_stays_idempotent",
+          ])),
     ]),
     (3, "Supersede, Don't Delete", &[
         c("a re-arrival merges monotonically and drops nothing, in any order",
@@ -2457,6 +2470,26 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "merge_band_reports_whether_it_could_run_and_over_how_much",
             "p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty",
         ])),
+        // The answer alphabet and the refuse-or-unknown rule (2026-10 revision) had no clause.
+        c("each value of the answer alphabet stays its own - unavailable, uncomputable, withheld \
+           and truncated never collapse into not found",
+          Evidence::Scenario(&[
+            "merge_band_reports_whether_it_could_run_and_over_how_much",
+            "p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty",
+            "a_principal_reads_only_its_grants",
+            "a_brief_is_fenced_bounded_and_writes_nothing",
+          ])),
+        c("a destroyed id answers as destroyed, recording the act and never the content",
+          Evidence::Deferred(
+            "M4 Phase 5 with excision (excision.md E2) - no tombstone exists, so the alphabet's \
+             destroyed value has nothing to answer for yet",
+        )),
+        c("an id outside the caller's grants answers as unknown, and a named scope outside them is \
+           refused by name",
+          Evidence::Scenario(&[
+            "an_id_outside_the_grants_reads_as_an_unknown_one",
+            "a_principal_reads_only_its_grants",
+          ])),
     ]),
     (6, "Contradiction Is Signal", &[
         c("a conflict that trust does not settle surfaces as contested instead of resolving silently",
@@ -2470,6 +2503,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "M3c/M5 - relations coexist rather than conflict until an explicit negative assertion \
              exists to contradict them with",
         )),
+        c("a defeated assertion stays in the log and is reinstated by re-resolution",
+          Evidence::Scenario(&["p23_demotion_overrides_below_base"])),
     ]),
     (7, "Forgetting as Demotion, Consolidation as Re-Projection", &[
         c("consolidation generates candidates and commits none of them",
@@ -2485,6 +2520,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              reported as `demotion_candidates`. The clause stays unmet because nothing \
              consumes it - `fuse_rrf` still fuses by rank position alone (step 2), and a \
              weight that ranks nothing forgets nothing")),
+        // The 2026-10 revision of the probabilistic-consolidation bullet (consolidation.md C10/C11).
+        c("a generated summary is never stored by the server",
+          Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+        c("a consolidation output enters the log only as a gated candidate's derived, lowest-trust, \
+           lineage-bearing enrichment",
+          Evidence::Deferred(
+            "M5 with the extractor port - the proposal-workflow.md 14.1 enrichment path is unbuilt, \
+             and consolidation.md C11 carries the same debt",
+        )),
     ]),
     (8, "Clarity", &[
         // The clause with teeth is a refusal, checked on both entry points: a passing-path test
@@ -2493,6 +2537,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["p8_a_type_definition_without_a_description_is_refused_on_both_paths"])),
         c("a description already captured is never erased by a later omission",
           Evidence::Scenario(&["p8_description_survives_reobservation_without_one"])),
+        c("a relation type reads its direction from its name, and relates_to is the one catch-all, \
+           treated as not yet classified",
+          Evidence::Deferred(
+            "M5 with the induction track - a relation name is a review judgment with no predicate, \
+             and no fold treats relates_to as unclassified; it is an ordinary kind everywhere",
+        )),
     ]),
     (9, "Coherence", &[
         c("conflicting definitions of one type surface as contested",
@@ -2508,6 +2558,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Deferred(
             "Revisit when subtyping is introduced - no subtype hierarchy exists in the T-Box, so \
              this clause has nothing to bite on yet",
+        )),
+        c("inference rules are tested for non-derivation of contradictions",
+          Evidence::Deferred(
+            "Revisit when the first inference rule lands - the system derives nothing from the \
+             T-Box today, so there is no rule for a test to hold",
         )),
     ]),
     (10, "Extendibility / Open-Closed", &[
@@ -2540,6 +2595,20 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Deferred(
             "M5 with the Extractor port - the substrate exists, but naming an induced type is \
              probabilistic and belongs with the extractor (IR6)",
+        )),
+        // Five of P11's ten Enforcement bullets had no clause (2026-10 closure review).
+        c("no schema blocks ingest: free text alone is an observation, an untyped entity is a \
+           Concept, and an undefined kind is kept as written",
+          Evidence::Scenario(&["p22_free_text_alone_is_knowledge_and_no_schema_blocks_ingest"])),
+        c("the escape hatch is complete: Concept, relates_to and free-form properties",
+          Evidence::Deferred(
+            "M5 with the induction track - Entity.properties has no ingest path (the projection \
+             writes null and only carries a value forward), so one leg of the tripod is missing",
+        )),
+        c("corroboration counts independent principals, not repetitions",
+          Evidence::Deferred(
+            "M6 condensation track - a hyperedge's sources counts observations, not \
+             delegation-chain principals (consolidation.md C9)",
         )),
     ]),
     (12, "Minimal Encoding Bias", &[
@@ -2585,9 +2654,24 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         ])),
         c("every identifier the system hands out is dereferenceable",
           Evidence::Deferred(
-            "Revisit with the MCP resource surface - supragnosis://entity/{id} does not resolve \
+            "Revisit when the MCP resource surface next grows a template - supragnosis://entity/{id} does not resolve \
              (architecture.md Section 7). The ledger records this as a standing gap and assigns it \
              to no milestone, so this is the registry's own unscheduled entry",
+        )),
+        // The mechanical-enforcement bullet, missing since the 2026-08 closure review.
+        c("a field added to the identity, attestation-order, re-arrival-merge or signing functions \
+           is a compile error until it is classified",
+          Evidence::Structural(
+            "`Assertions::hash_into`, `attestation_signing_bytes` (with `SyncMeta`), the \
+             `provenance_order` key and `absorb` destructure their inputs with no `..`, so a new \
+             field fails to compile in exactly the functions that must decide whether it is \
+             identity, an attestation axis, a merge target, or inside the signed bytes",
+        )),
+        c("the wire envelope and the well-formedness check are forced the same way",
+          Evidence::Deferred(
+            "Revisit when the wire envelope next gains a field - `AttestationEvent` is read field \
+             by field in `check_event`, and `check_well_formed` and `Assertions::is_empty` \
+             enumerate without destructuring, so a new field there rides unchecked",
         )),
     ]),
     (15, "Resolution Is Substrate's Job", &[
@@ -2642,6 +2726,17 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "traverse_passes_through_an_unprojected_endpoint",
             "search_truncation_is_reproducible",
         ])),
+        c("a response labels the surface that answered, so a recall aid is told apart from the \
+           convergence surface",
+          Evidence::Scenario(&[
+            "hybrid_search_adds_semantic_recall",
+            "keyword_recall_finds_the_terms_in_any_order",
+          ])),
+        c("a terminal state is absorbing, so a conclusion is never overturned by a later event",
+          Evidence::Scenario(&[
+            "i16_merge_absorbs_over_conflicting_reject_in_any_order",
+            "i8_blocking_check_conclusion_is_arrival_order_independent",
+          ])),
     ]),
     (17, "Knowledge Sovereignty", &[
         c("sharing is opt-in per workspace and enforced at the sync boundary, federated recall included",
@@ -2760,6 +2855,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "semantic_recall_ranks_by_similarity_and_skips_unembedded",
             "semantic_entity_recall_ranks_by_similarity",
         ])),
+        c("a probabilistic component's output enters as an assertion carrying its confidence, \
+           never as fact",
+          Evidence::Deferred(
+            "M5 with the extractor port - there is no extractor; an agent's own observe is the only \
+             path, and nothing pins how an extraction would be annotated",
+        )),
+        c("embedding similarity only generates identity candidates; a merge commits only through a \
+           verdict",
+          Evidence::Scenario(&["merge_suggestions_never_commit"])),
     ]),
     (20, "Hexagonal Purity", &[
         c("dependencies point inward only",
@@ -2768,6 +2872,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              violation is a Cargo.toml diff rather than a behavior a test could miss. Workspace \
              lints additionally forbid unsafe_code and deny clippy::all.",
         )),
+        c("all engine logic runs against an in-memory adapter",
+          Evidence::Structural(
+            "`Engine::new` takes `Arc<dyn KnowledgeStore>`, and `InMemoryStore` implements the port \
+             and is held to the same conformance suite as the file-backed adapter (every case runs \
+             on both), so every engine path is reachable without IO",
+        )),
     ]),
     (21, "Narrow, LLM-Legible Surface", &[
         c("a failure tells the caller how to correct itself, since the caller is a model with no \
@@ -2775,16 +2885,18 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["p23_the_gate_surface_refuses_a_malformed_proposal"])),
         c("the surface stays at one tool per recurring intent",
           Evidence::Deferred(
-            "incremental - narrowness is a judgment (13 tools) with no executable predicate; the \
+            "Revisit when a tool is proposed for addition - narrowness is a judgment (13 tools) with no executable predicate; the \
              registry records it as unguarded rather than pretending the count is the property",
         )),
         c("long-running work is non-blocking, and mediation asks through elicitation",
           Evidence::Deferred("M4 remainder - MCP Tasks and elicitation are not exposed (architecture.md Section 7)")),
+        c("no query-language passthrough exists; the pinned tool list would show one",
+          Evidence::Scenario(&["the_tool_list_is_the_pinned_contract"])),
     ]),
     (22, "Knowledge as a By-Product", &[
         c("ordinary work induces capture and recall without a separate curation chore",
           Evidence::Deferred(
-            "incremental - the person's side has prompts now (brief, curate, review-proposal), but \
+            "Revisit when the tool descriptions are next revised - the person's side has prompts now (brief, curate, review-proposal), but \
              nothing yet makes an agent observe and search during its own work unasked, so there is \
              no agent behavior to assert",
         )),
@@ -2792,6 +2904,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // (open proposals, contested points) beside the reading - and the reading is never stored.
         c("curation surfaces as decisions where the person reads, never as a document to maintain",
           Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
+        c("observe has minimal friction: free text alone is an observation",
+          Evidence::Scenario(&["p22_free_text_alone_is_knowledge_and_no_schema_blocks_ingest"])),
     ]),
     (23, "Gate to Canon", &[
         c("a proposal is itself an observation, and its state is a deterministic fold with merge \
@@ -2868,6 +2982,21 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged",
             "i17_a_recall_merge_without_the_console_marker_never_folds_to_merged",
           ])),
+        // Three of P23's bullets had no clause of their own (2026-10 closure review).
+        c("a T-Box change passes the gate - a tbox_change merge defines the type - and direct \
+           define_type is the solo-exception shortcut",
+          Evidence::Deferred(
+            "M4 Phase 5 - define_type appends a definition directly and tbox_change has no commit \
+             effect (federation.md F18), tolerable only while one principal holds the workspace",
+        )),
+        c("no proposal state blocks or delays an observe",
+          Evidence::Scenario(&["p23_a_blocked_gate_merge_grants_nothing"])),
+        c("a rejection is not a negation, and no verdict deletes an assertion",
+          Evidence::Scenario(&[
+            "proposal_open_verdict_fold",
+            "i16_merge_absorbs_over_conflicting_reject_in_any_order",
+            "p23_a_proposal_alone_changes_nothing_only_the_verdict_commits",
+          ])),
     ]),
     (24, "Operational Posture", &[
         c("a subsystem that cannot come up leaves the node serving, and says what it disabled",
@@ -2891,8 +3020,141 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
               // stripped (compatibility.md Section 3.3).
               "a_store_a_later_release_raised_is_refused_unchanged",
           ])),
+        c("a workaround applies to the running state and never rewrites the operator's file",
+          Evidence::Structural(
+            "the workarounds are pure functions over the parsed configuration - \
+             `drop_self_admission` returns notes and `PeerDirectory::derive` filters the id - and \
+             none is handed the configuration path, so the file is not something they can reach",
+        )),
+        c("two conflicting settings resolve by a stated precedence that names what it ignored",
+          Evidence::Scenario(&["config_parses_and_rejects_typos"])),
     ]),
 ];
+
+/// Which clauses answer each Enforcement bullet of `docs/principles.md`, per principle. The first
+/// entry is the principle's headline statement - for a clause that follows from it rather than from
+/// a bullet - and the rest are the bullets in document order, each naming its clauses by 1-based
+/// position in [`REGISTRY`].
+///
+/// The registry was coupled to the principle set and not to what each principle says: a principle
+/// could gain a bullet, or keep one from the start, with no clause anywhere answering it. The 2026-08
+/// closure review found the first such hole (P14's compile-forced enumeration) and the 2026-10 review
+/// counted 92 bullets against 81 clauses, with whole demands unanswered - P5's answer alphabet, P11's
+/// loose ingest, P16's monotonicity. A table keyed by bullet position fails the build the moment a
+/// bullet is added, removed or reordered, which is when the mapping should be read again.
+const BULLETS: &[(u8, &[&[u8]])] = &[
+    (1, &[&[], &[1, 4], &[1], &[2, 3], &[5]]),
+    (2, &[&[], &[3], &[1], &[4], &[2, 5], &[1]]),
+    (3, &[&[], &[1, 3], &[1, 4, 6], &[5], &[2]]),
+    (4, &[&[], &[1], &[2], &[2]]),
+    (5, &[&[], &[1], &[1, 2], &[2, 3, 4], &[5]]),
+    (6, &[&[], &[3], &[1, 2]]),
+    (7, &[&[], &[2], &[3, 4], &[2], &[1]]),
+    (8, &[&[], &[1, 2], &[3]]),
+    (9, &[&[], &[1, 2, 3], &[4]]),
+    (10, &[&[], &[2], &[1], &[1]]),
+    (11, &[&[], &[4], &[6], &[4], &[3], &[5], &[2], &[1], &[2], &[7], &[1, 4]]),
+    (12, &[&[], &[1], &[1]]),
+    (13, &[&[], &[1], &[1]]),
+    (14, &[&[], &[1, 3], &[2], &[5], &[4, 6, 7]]),
+    (15, &[&[], &[2], &[1, 3, 4], &[1]]),
+    (16, &[&[], &[1], &[2], &[2, 3], &[1], &[4]]),
+    (17, &[&[], &[1], &[1, 4], &[2, 3, 6], &[5]]),
+    // C4 (untrusted text never becomes markup in the review console) answers the headline - every
+    // write is an attack surface, including the one that reaches the person deciding on it.
+    (18, &[&[4], &[1, 5], &[5], &[5], &[1, 2], &[1, 3, 6]]),
+    (19, &[&[], &[1, 2], &[3], &[4]]),
+    (20, &[&[], &[1], &[2]]),
+    (21, &[&[], &[2], &[1], &[3], &[4]]),
+    (22, &[&[], &[3], &[1], &[2]]),
+    (
+        23,
+        &[&[], &[5, 8, 12, 13], &[1], &[1, 3, 4, 7], &[2, 6, 9], &[14], &[10], &[11]],
+    ),
+    (24, &[&[], &[1, 2], &[4], &[3], &[5], &[6]]),
+];
+
+/// The Enforcement bullets `docs/principles.md` declares, counted per principle: top-level items
+/// (two-space indent) after an `**Enforcement` label, including P11's extension list. Nested items
+/// belong to the bullet above them.
+fn documented_bullets() -> Vec<(u8, usize)> {
+    let mut out: Vec<(u8, usize)> = Vec::new();
+    let mut in_enforcement = false;
+    for line in PRINCIPLES_DOC.lines() {
+        if let Some(rest) = line.strip_prefix("### Principle ") {
+            let n = rest.split('.').next().and_then(|n| n.trim().parse::<u8>().ok());
+            if let Some(n) = n {
+                out.push((n, 0));
+            }
+            in_enforcement = false;
+        } else if line.starts_with("## ") || line.starts_with("---") {
+            in_enforcement = false;
+        } else if line.contains("**Enforcement") {
+            in_enforcement = !out.is_empty();
+        } else if in_enforcement && line.starts_with("  - ") {
+            if let Some(last) = out.last_mut() {
+                last.1 += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Every Enforcement bullet is answered by at least one clause, and every clause answers a bullet or
+/// the headline. Both directions: a bullet with no clause is a demand nothing tracks, and a clause no
+/// bullet asks for is a check the document never states.
+#[test]
+fn every_enforcement_bullet_answers_to_a_clause() {
+    let documented = documented_bullets();
+    assert_eq!(
+        documented.len(),
+        REGISTRY.len(),
+        "parsed {} principles' bullets, the registry has {} rows",
+        documented.len(),
+        REGISTRY.len()
+    );
+    assert_eq!(BULLETS.len(), REGISTRY.len(), "BULLETS needs one row per principle");
+    let mut broken: Vec<String> = Vec::new();
+    for (((n, name, clauses), (dn, count)), (bn, rows)) in
+        REGISTRY.iter().zip(&documented).zip(BULLETS)
+    {
+        assert_eq!((n, n), (dn, bn), "rows out of order: registry P{n}, doc P{dn}, BULLETS P{bn}");
+        if rows.len() != count + 1 {
+            broken.push(format!(
+                "P{n} ({name}): the document has {count} Enforcement bullets, BULLETS maps {} - a \
+                 bullet was added, removed or reordered; read the mapping again",
+                rows.len().saturating_sub(1)
+            ));
+            continue;
+        }
+        let mut cited = vec![false; clauses.len()];
+        for (b, ids) in rows.iter().enumerate() {
+            if b > 0 && ids.is_empty() {
+                broken.push(format!("P{n} bullet {b}: no clause answers it"));
+            }
+            for id in *ids {
+                match cited.get_mut(usize::from(*id).wrapping_sub(1)) {
+                    Some(c) => *c = true,
+                    None => broken.push(format!("P{n} bullet {b}: no clause {id}")),
+                }
+            }
+        }
+        for (i, c) in cited.iter().enumerate() {
+            if !c {
+                broken.push(format!(
+                    "P{n} clause {} (\"{}\") answers no bullet and not the headline",
+                    i + 1,
+                    clauses[i].demands
+                ));
+            }
+        }
+    }
+    assert!(
+        broken.is_empty(),
+        "Enforcement bullets and clauses disagree:\n  {}",
+        broken.join("\n  ")
+    );
+}
 
 /// The principles `docs/principles.md` actually declares, as (number, short name) in document
 /// order. A heading reads `### Principle 4. Bitemporal - Two Time Axes (Bi-Temporality)`, and the
@@ -3295,10 +3557,10 @@ fn design_docs_name_tests_that_run() {
 /// move this registry exists to make impossible.
 #[test]
 fn structural_and_deferred_states_are_justified() {
+    // A milestone, or a stated trigger. "Revisit" alone and "incremental" used to pass, and they
+    // named no point at which the debt comes due - 12 clauses sat behind them (Appendix B.1).
     let repayment_named = |why: &str| {
-        ["M3", "M4", "M5", "M6", "Revisit", "incremental"]
-            .iter()
-            .any(|m| why.contains(m))
+        ["M3", "M4", "M5", "M6"].iter().any(|m| why.contains(m)) || why.contains("Revisit when ")
     };
     for (n, name, clauses) in REGISTRY {
         for cl in *clauses {

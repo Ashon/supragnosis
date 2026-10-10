@@ -103,6 +103,9 @@
 > premise, not an inferred one), 22 (prompts are the person's half), 4 and 19 (wording that read as a
 > mutation and as a score-driven commit). Adds five tensions and a status disclaimer to Appendix A,
 > and the scope and revision rules above.
+> Revision: 2026-10 (closure follow-up) - *tightens* Appendix B.1: every Enforcement bullet is
+> answered by a registry clause and every clause by a bullet, every design document's invariant
+> table carries evidence states, and an owed clause names a milestone or a "Revisit when" trigger.
 
 ---
 
@@ -900,10 +903,21 @@ Rules this imposes:
 - **A new principle cannot be added without declaring how it is checked.** The completeness test
   fails until it is - the same compile-forced enumeration Principle 14 applies to model fields,
   turned on the principles themselves.
+- **Every Enforcement bullet is answered by a clause, and every clause answers a bullet.** The
+  coupling above reaches the principle set and not what each principle says, so a principle could
+  gain a bullet - or keep one from the start - with nothing answering it. The 2026-10 review counted
+  92 bullets against 81 clauses, with whole demands unanswered. The registry now maps each bullet
+  to the clauses that answer it (or a clause to the principle's headline statement), in both
+  directions, and a bullet added, removed or reordered fails the build until the mapping is read
+  again. Every invariant table of the design documents is held the same way: a document whose rows
+  have no evidence state fails the build.
 - **A checklist item migrates to a scenario test once it becomes mechanizable.** Appendix B is where
   a question lives while it is still a judgment; the registry is where it goes when it stops being
   one. Items that stay judgments (is this tool really a recurring intent?) legitimately stay here.
-- **`Deferred` is a debt, not a category.** It names a milestone and is expected to move.
+- **`Deferred` is a debt, not a category.** It names a milestone and is expected to move. Where no
+  milestone owns it, it names the event that brings it due - "Revisit when <trigger>" - and nothing
+  less: "Revisit" alone and "incremental" used to pass, and twelve clauses sat behind them with no
+  point at which anything would ask again.
 - **`Deferred` covers "unchecked", not only "unmet".** This wording was too narrow at first and
   three clauses had nowhere honest to sit: they hold today because no code violates them, which
   `Scenario` cannot claim (there is no test) and "does not hold" misdescribes. Filing them as
