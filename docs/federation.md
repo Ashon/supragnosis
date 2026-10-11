@@ -2,7 +2,8 @@
 
 Status: living spec - Phases 0-4 implemented (core foundations, sync core, re-materialization,
 transport, CLI/config wiring); Phase 3.5's read tier is built as [remote-viewer.md](remote-viewer.md),
-with the revisions noted in 6d; Phase 5+ pending. This document is the specification agreed before the code; implementation feedback
+with the revisions noted in 6d; Phase 7 is built ([negotiated-surface.md](negotiated-surface.md));
+Phases 5 and 6 pending. This document is the specification agreed before the code; implementation feedback
 is folded back as revisions (see the 8th revision note in principles.md). It fixes the data model, the
 sync protocol, the trust/auth model, the invariants (F1..), and the propositions deriving convergence
 from them (8a). It refines the M4 sketch in [architecture.md](architecture.md) Section 5 and Section 10, and
@@ -36,23 +37,24 @@ node syncs its log to a hub. This document is about (b).
 
 Two layers of the projection must not be conflated; federation's guarantees differ per layer.
 
-- **Working set (ungated, immediate)**: entities, relations, hyperedges - and, today, the type glossary -
+- **Working set (ungated, immediate)**: entities, relations, hyperedges - and, while direct `define_type` is the solo shortcut (F18), the type glossary -
   project directly from every observation in the log (P1). `observe` and `define_type` write claims, and
   the projection reflects them at once; that is not a federation choice but P1 itself (the graph is a
   projection of the log). The working set is deterministic and converges (P16), so a synced observation
   **joins the receiver's working projection immediately** - it shows up in search, the graph view, and the
-  workspace map. Assertion-level last-write-wins fields (entity/relation descriptions, and currently the
+  workspace map. Assertion-level last-write-wins fields (entity/relation descriptions, and under that shortcut the
   T-Box definition per (target, name)) are working-set semantics, ordered by HLC under federation.
-- **Canon (gate-committed)**: the layer only the proposal accept gate can change (I18) - the entity-merge
-  effect today; claim promotion/demotion, `tbox_change`, and recall as their enforcement lands. This is
-  the layer Sections 6b/7a/7b and F16 speak about.
+- **Canon (gate-committed)**: the layer only the proposal accept gate can change (I18) - the effects of
+  P23's intents: entity merge and split, claim promotion and demotion, the T-Box change, and recall.
+  Which of those the fold enforces yet is recorded in architecture.md Section 14 and the coverage
+  registry, not here. This is the layer Sections 6b/7a/7b and F16 speak about.
 
 Consequence for inbound defense (6b): a contaminated synced claim is **visible in the working set**. The
 defense is that it arrives down-weighted on retrieval surfaces and cannot reach the canon layer without a
 verdict - NOT that it is invisible. Any statement of the form "nothing changes until a verdict" applies to
 the canon layer only.
 
-The T-Box caveat (governance): today `define_type` writes the shared vocabulary as working set - ungated,
+The T-Box caveat (governance): direct `define_type` writes the shared vocabulary as working set - ungated,
 last-write-wins. In a single-principal workspace that is the P23 solo exception at work. In a
 **multi-principal shared workspace it is unacceptable**: any spoke (including a machine) could silently
 rewrite the vocabulary for everyone, with the HLC-latest write winning on every node - contradicting the
@@ -292,10 +294,10 @@ P18/P17) for good, because the two never meet on the same axis:
   exactly like the embedding index, without touching P16: it sits on the other side of the door from
   commit. The origin's declared `trust_tier` is stored verbatim for audit; the receiver never honors it as
   authority, and a tier never rises just by crossing the wire. One projection change is required to uphold
-  this: the current representative-tier computation takes a **max over attestations' claimed tiers**, which
-  would let a remote claimed `HumanConfirmed` raise the projected tier on every receiver. The claimed tier
-  is **log data** (stored verbatim, converges); the effective/representative tier is an **evaluation** and
-  must not absorb unverified remote claims (Phasing, Phase 5).
+  this: the representative tier is the highest **evaluated** tier over attestations, never a max over
+  their claimed tiers, so a remote claimed `HumanConfirmed` cannot raise the projected tier on a receiver
+  (resolution.md Section 3, R4). The claimed tier is **log data** (stored verbatim, converges); the
+  effective/representative tier is an **evaluation** and never absorbs unverified remote claims.
 - **Contaminated / low-trust inbound is therefore a low-priority candidate, not canon.** It materializes
   into the append-only log (auditable, P3), is down-weighted or withheld from a node's own high-trust reads
   by that node's retrieval policy, and can reach canon only by passing a verdict at the accept gate. There is
@@ -402,7 +404,7 @@ it there; F21 states them normatively, one clause per demand.
   `wire_auth_rejects_bad_token_and_unshared_workspace`. Should the answer ever degrade to an empty
   result, the argument here stops holding and has to be rewritten, not quietly kept. What advertising
   adds is *enumeration*, and that removes a P5 hazard rather than creating a P17 one -
-  today a spoke that fails to guess a granted workspace's name concludes "no knowledge" where the
+  without it, a spoke that fails to guess a granted workspace's name concludes "no knowledge" where the
   truth is "granted, never asked". Advertising the host's full workspace list instead would disclose
   the existence of workspaces the peer may not read: the same class of leak as the deferred
   cross-workspace lineage exposure (Section 11), and a P17 violation.
@@ -447,8 +449,8 @@ as an optimization and a legibility aid, and calling it a third one overstates i
 **Report the difference, not the intersection.** The operator value is in the disagreement between what
 this node believes it shares and what the peer says it admits. Silently intersecting the two hides the
 misconfiguration that produced it, so the surface is reported in three buckets: **both**; **local-only**
-(this node lists the workspace, the peer does not admit it - a setup error that today vanishes from the
-drift view without a word); and **peer-only** (the peer would admit it, this node does not share it -
+(this node lists the workspace, the peer does not admit it - a setup error that an intersection would
+drop from the drift view without a word); and **peer-only** (the peer would admit it, this node does not share it -
 knowledge left on the table).
 
 ## 7. Topology
@@ -798,8 +800,7 @@ input, not nondeterminism - F16).
 - **Phase 5** - **governance enforcement** (prerequisite for multi-principal operation, F15-F18): the
   canon-policy as a log-borne signed artifact incl. the principal-to-key binding and the default-solo
   fallback (7a); I9/I17 checks in the proposal fold (today the fold hardcodes the solo self-attested path);
-  `tbox_change` gate enforcement for shared workspaces (F18, 1a); the representative-tier evaluation change
-  (F13, 6b - stop maxing in unverified remote claimed tiers); the causal-stability watermark for verdict
+  `tbox_change` gate enforcement for shared workspaces (F18, 1a); the causal-stability watermark for verdict
   finality (7a, F16); and the **hub human surface write tier** (6d, F19/F20: session-attributed acts
   `host = hub, on_behalf_of = principal`, plus **principal-signed acts** - client-side user-key
   signatures required for recall/`HumanConfirmed` - with the user whitelist unified into the
@@ -823,7 +824,7 @@ input, not nondeterminism - F16).
   impersonate the spoke there. An answer promoted to a routing input must not rest on a credential
   shared across the hosts being routed between, so the config gains per-server entries (url, token,
   share list - mirroring the shape `[[server.allowlist]]` already has per peer) before the map decides
-  where knowledge goes.
+  where knowledge goes. [done - negotiated-surface.md Section 7]
 
 ## 11. Deferred (not this milestone)
 
