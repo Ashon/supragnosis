@@ -1045,8 +1045,8 @@ fn spawn_fed_status(task: FedStatusTask) {
 }
 
 /// Starts the federation sync API (the ONLY surface allowed to bind non-loopback - and only with
-/// TLS + a non-empty allowlist, F10). A misconfigured [server] section fails daemon startup loudly
-/// (P5) instead of silently running without the role.
+/// TLS and an admitted node or principal, F10). A misconfigured [server] section fails daemon
+/// startup loudly (P5) instead of silently running without the role.
 fn spawn_sync_server(
     store: Arc<dyn AssertionStore>,
     node: Arc<supragnosis_sync::SyncNode>,
@@ -3433,7 +3433,7 @@ mod fed {
     #[derive(Debug, Clone, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct ServerSection {
-        /// Sync API bind (IP:port). Non-loopback demands TLS + a non-empty allowlist (F10).
+        /// Sync API bind (IP:port). Non-loopback demands TLS and an admitted node or principal (F10).
         pub listen: String,
         pub tls_cert: Option<String>,
         pub tls_key: Option<String>,
@@ -3728,7 +3728,7 @@ mod fed {
 host_label = "hub"
 
 [server]
-listen = "0.0.0.0:7420"   # F10: non-loopback needs TLS + a non-empty allowlist
+listen = "0.0.0.0:7420"   # F10: non-loopback needs TLS and an admitted node or principal
 
 # ashons-MacBook-Air
 [[server.allowlist]]

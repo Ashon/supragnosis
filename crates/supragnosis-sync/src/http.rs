@@ -1,9 +1,9 @@
 //! Sync transport (M4 Phase 3, docs/federation.md Section 6a): the axum sync API
 //! (`/sync/advertise|pull|push`) with in-process rustls TLS and bearer/allowlist wire auth, plus the
 //! reqwest client. This is the ONLY surface permitted to bind non-loopback, and only with TLS enabled
-//! and a non-empty allowlist (F10) - the MCP/viz loopback guard is untouched. Wire auth here is
-//! transport authentication (who is on the wire); content trust stays with the apply pipeline's
-//! signature verification (F6) and the read side (F13).
+//! and at least one admitted node or principal (F10) - the MCP/viz loopback guard is untouched. Wire
+//! auth here is transport authentication (who is on the wire); content trust stays with the apply
+//! pipeline's signature verification (F6) and the read side (F13).
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -185,7 +185,7 @@ pub struct AllowEntry {
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
     #[error(
-        "refusing to bind {addr}: {reason} (F10: non-loopback needs TLS + a non-empty allowlist)"
+        "refusing to bind {addr}: {reason} (F10: non-loopback needs TLS and an admitted node or principal)"
     )]
     Bind { addr: SocketAddr, reason: String },
     #[error("tls setup failed: {0}")]
