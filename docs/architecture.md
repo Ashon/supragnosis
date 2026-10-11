@@ -6,9 +6,10 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through M4 Phase 4** (v0.3.1). M0-M2, **M3a (belief resolution) and M3b
-  (identity resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases 0-4 are complete
-  (Phase 3.5's read tier is built as remote-viewer.md; Phase 5+ pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
+- Status: **implemented through v0.4.11.** M0-M2, **M3a (belief resolution) and M3b (identity
+  resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases
+  0-4 and 7 are complete (Phase 3.5's read tier is built as remote-viewer.md; Phases 5 and 6
+  pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
   record. This document is no longer a forward-looking baseline: it describes what exists, and marks
   what does not.
@@ -19,14 +20,22 @@
   [`resolution.md`](resolution.md) (M3a, implemented),
   [`resolution-identity.md`](resolution-identity.md) (M3b, implemented except IR6),
   [`consolidation.md`](consolidation.md) (M6, specified - Section 8 step 1 landed),
-  [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, specified - nothing built),
+  [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, built),
   [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built),
-  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 built,
-  Section 11 specified),
+  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 and
+  Section 11 built),
   [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built),
   [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, built),
   [`remote-server.md`](remote-server.md) (server profiles and the hub's agent surface, built -
-  Section 10 steps 1-3).
+  Section 10 steps 1-3),
+  [`remote-viewer.md`](remote-viewer.md) (the viewer on a remote profile and on the hub, specified -
+  Section 10 steps 0-1 built),
+  [`settings-page.md`](settings-page.md) (the app's settings page, built),
+  [`sync-correctness.md`](sync-correctness.md) (sync defects and their rules, built),
+  [`compatibility.md`](compatibility.md) (pinned contracts between releases, built - the Section 3.6
+  tripwire waits for its occasion),
+  [`unmerge.md`](unmerge.md) (reversing an identity resolution, built),
+  [`prompts.md`](prompts.md) (the MCP prompts, built - Section 8 steps 1-2).
 
 ---
 
