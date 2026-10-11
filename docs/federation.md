@@ -71,8 +71,9 @@ reviewed-canon governance of 7b. Enforcing the `tbox_change` gate for shared wor
   another). Therefore `node_id` is **derived from the public-key fingerprint** (self-certifying:
   `node_id = blake3(pubkey)[..N]`) and is **immutable once generated** - it keys the version vector and is
   the final tiebreak of the HLC total order, so it must never change. A human-readable host label may be
-  carried as a separate display-only field; it does not enter `node_id`. The sync role **refuses to start**
-  if `node_id` is empty, the default, or collides on the allowlist.
+  carried as a separate display-only field; it does not enter `node_id`. An empty or default id is
+  unreachable, since the id is derived and never configured, and an allowlist entry naming this node
+  is dropped rather than refused (F14).
 - `node_id` is provenance identity (who acted, P2); the keypair is transport authenticity (that the acting
   node really produced this event, even through a relay). Because `node_id` is bound to the key, an event's
   claimed origin cannot be forged by a party that lacks the key.

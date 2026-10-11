@@ -148,10 +148,10 @@ Three steps. Each is useful alone, each lands on a green tree, and only the thir
 The sequence is not the order the work was first imagined in - filtering was the interesting part and
 came first, until the review put two constraints on it.
 
-**Step 1 - per-server credentials, and F14's refusal. [done]** `[[sync.server]]` entries carrying a
+**Step 1 - per-server credentials, and F14's self entry. [done]** `[[sync.server]]` entries carrying a
 url and a credential each, honored everywhere a client is opened: the health loop, the one-shot CLI
-round, and the three MCP fan-out sites. Both configuration shapes present at once resolve by the precedence Section 5 states, loudly. A
-node whose own id sits in its own allowlist is refused. It is first because Step 3 rests on an
+round, and the three MCP fan-out sites. Both configuration shapes present at once resolve by the precedence Section 5 states, loudly. An
+allowlist entry naming the node itself is dropped, loudly, and the file is left alone (N9). It is first because Step 3 rests on an
 identification a shared credential does not support (Section 5), so doing it later would ship a
 routing decision on a premise already known to be weak.
 
@@ -240,7 +240,7 @@ that it does.
 | P21 - a recurring intent, not a new tool: `sync_status` already reports the share list | Section 7 step 2 |
 | F11 - sync never blocks a tool handler | Section 7 step 2; N1 |
 | F12 - a failure is reported as a failure, never as empty | Section 4; N4 |
-| F14 - the sync role refuses a colliding node id | Section 5; N9 |
+| F14 - an allowlist entry naming this node is dropped, not refused | Section 5; N9 |
 | F21 - all six clauses | Sections 3, 4, 5; N1-N12 |
 | P5 - unknown is not a refusal, and a narrowed answer says so | Section 7 step 3; N11, N12 |
 | P5 - a console edit that does not take effect must say so | Section 6 |
