@@ -112,8 +112,8 @@ configuration is a policy question, not a capability one.
 a mistake worth recording.** 6a's argument is about a threat: an act that can only narrow means a
 mistake, or a console left open, can only share less. That distinguishes a console from a file editor
 only where the console is reachable by someone who could not edit the file. On the hub that is exactly
-the case - the human surface is a network surface authenticated by enrolled user keys (F19), a
-different boundary from the file - and 6a is written for the hub. Locally it is not: the viewer is a
+the case - the human surface is a network surface on which each request authenticates as an admitted
+principal (remote-viewer.md Section 3), a different boundary from the file - and 6a is written for the hub. Locally it is not: the viewer is a
 unix socket at mode 0600, so whoever can reach it is whoever can write the config, the same OS
 account. Applying the hub's asymmetry to the local shell forbids nothing an attacker could not
 already do and costs the operator a surface for no gain.
@@ -221,7 +221,7 @@ that it does.
 | **N12** | Narrowing applies to fan-out, not to a command naming one target. A one-shot round keeps the host's own answer, which says more than a skip (P5). |
 | **N6** | The difference is reported in three buckets and never as the intersection, which would hide the misconfiguration that produced it. |
 | **N7** | The map carries the time it was negotiated and is never a premise for a durable conclusion (F21.6). |
-| **N8** | A federation configuration mistake disables or narrows federation and never stops a node serving its own knowledge - the shape a missing embedder and an unbindable viewer socket already use. Every workaround is reported in `sync_status`, so degrading is loud rather than silent (P5). The one exception is a key this build does not know, which refuses to start: a misspelled key would otherwise parse clean and do nothing, and in an allowlist entry that silence decides who may connect (P5, P24's refusal for serving something other than what was configured). |
+| **N8** | A federation configuration mistake disables or narrows federation and never stops a node serving its own knowledge - the shape a missing embedder and an unbindable viewer socket already use. Every workaround is reported in `sync_status`, so degrading is loud rather than silent (P24). The one exception is a key this build does not know, which refuses to start: a misspelled key would otherwise parse clean and do nothing, and in an allowlist entry that silence decides who may connect (P24's third refusal shape: a configuration other than the one written). |
 | **N9** | An allowlist entry naming this node is dropped in the admission directory, through every construction path, and the file is left alone (F14). |
 | **N10** | What a host advertises is the caller's entitlement and never the host's inventory. This is a property of the existing handler and must survive the change (F21.1, P17). |
 
@@ -230,10 +230,10 @@ that it does.
 | Demand | Where it is answered |
 |---|---|
 | P17 - what leaves is decided by this node's share list, which the map never widens | Sections 3, 5; N3, N10 |
-| P17 - the boundary governs the remote read surface too | Section 4; N5 |
+| P17 - the map narrows within the boundaries that exist and adds none | Section 4 |
 | P18 - a remote claim never binds the receiver's own policy | Section 5; N3 |
 | P5 - absence is unknown, never negation | Section 4; N4, N5 |
-| P5 - explicit configuration works or fails, never degrades silently | Section 5; N8 |
+| P24 - degrade loudly, and refuse a key this build does not know | Section 5; N8 |
 | P16 - a response says which surface, and which hosts, answered it | Section 4; N5 |
 | P16 - convergence and monotonicity are different properties | Section 3; N7 |
 | P20 - adapters depend inward, never on each other | Section 2 |

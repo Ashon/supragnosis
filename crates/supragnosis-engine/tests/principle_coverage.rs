@@ -3026,9 +3026,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
               // make a link fail, never send the bearer unverified (sync-correctness.md 10).
               "the_bearer_only_crosses_the_network_encrypted_to_a_verified_host",
           ])),
-        c("refusal is reserved for proceeding being worse: a wrong answer, or an unauthorized surface",
+        c("refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, \
+           or a configuration other than the one written",
           Evidence::Scenario(&[
               "bind_guard_enforces_f10",
+              // An unknown key refuses rather than parsing clean and doing nothing (N8).
+              "config_parses_and_rejects_typos",
               "an_unmigrated_store_is_refused_with_the_way_out",
               // A store a later release changed is "a store this build cannot read" in the newest
               // direction: refused unchanged rather than served with rows dropped and fields

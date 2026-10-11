@@ -128,6 +128,8 @@
 > prefix, can be revised by a concurrent earlier-HLC event; the decision rule stays absorbing among
 > verdicts. *Tightens* 18's Enforcement to carry promotion to human-confirmed as a human's direct
 > act - not a new demand: the 9th revision line stated it, and resolution.md cites it here.
+> *Tightens* 24 with a third refusal shape, a key this build does not know, which the config parser
+> and negotiated-surface.md N8 already applied while crediting a refusal this principle did not list.
 
 ---
 
@@ -818,12 +820,14 @@ something wrong - knowledge silently absent, or a surface open without authentic
     away, and a degrade nobody can see afterwards has become a silent one, which is what Principle 5
     forbids. Every workaround is reported on the operator's own surface (for federation, the
     `config_notes` of `sync_status`), stating what was ignored and what to change.
-  - **Refuse when proceeding would be worse than stopping.** Two shapes qualify. Serving an answer
+  - **Refuse when proceeding would be worse than stopping.** Three shapes qualify. Serving an answer
     that is wrong rather than absent: a store this build cannot read must not come up empty beside it,
     because "no knowledge" and "knowledge unavailable" are different answers (Principle 5). And
     opening a surface the configuration did not authorize: a non-loopback bind without TLS, or with
     nothing admitted - no node and no principal - refuses, because degrading there would serve in
-    the open.
+    the open. And running a configuration other than the one written: a key this build does not
+    know refuses, because a misspelled key parses clean and does nothing, and where it sits in an
+    allowlist entry that silence decides who may connect (negotiated-surface.md N8).
   - **Narrow without asking only in the direction the safety principle already prefers.** A
     configuration mistake may be worked around by sharing *less* - the asymmetry Principle 17 relies
     on - and never by sharing more. Dropping an allowlist entry that admits this node is permitted
@@ -852,7 +856,7 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Aggressiveness of resolution (15) vs conservatism | **Conservatism is the default.** Auto-merge only in the confident band; when ambiguous, hold off with a candidate link. |
 | Minimal tool surface (21) vs expressiveness | **Minimal is the default.** An expressiveness demand is first validated by composing existing tools, and promoted only when it is a repeated pattern. |
 | Deterministic core (19) vs semantic search quality | Use the probabilistic element only **to widen retrieval**, and commit deterministically. |
-| Availability (24) vs failing fast on a bad config | **Degrade loudly.** A node that will not start over a configuration mistake costs every local read; the mistake costs only the subsystem it broke. Refuse only where continuing would serve a wrong answer or an unauthorized surface. |
+| Availability (24) vs failing fast on a bad config | **Degrade loudly.** A node that will not start over a configuration mistake costs every local read; the mistake costs only the subsystem it broke. Refuse only where continuing would serve a wrong answer, an unauthorized surface, or a configuration other than the one written. |
 | Gate (23) vs minimal friction (22) | **The gate is on promotion only, not on ingest.** Even when review is backlogged, knowledge already exists and circulates at a low tier. |
 | Review rigor (23) vs reviewer's attention | **Most is automatic, only a few go to a human.** Only new contradictions/high-impact/structural changes/recall force human review. |
 | Explicit promotion act (11) vs the gate (23) | **The gate is the act.** A `tbox_change` merge defines the type; direct `define_type` is the solo-exception shortcut (federation.md F18), not a second path. |
