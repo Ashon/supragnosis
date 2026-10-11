@@ -570,9 +570,9 @@ client.** Hosts speak in their own vocabularies, and the resolution layer makes 
     deterministic read surfaces (exact lookup, graph traversal, keyword search). A semantic-retrieval
     index (embeddings, ANN graph) is not part of the materialized graph but a **node-local retrieval
     aid** - being an insertion-order-dependent approximate structure, it cannot promise convergence
-    across nodes, and need not (the storage/recall separation of Principle 7, the recall/commit
+    across nodes, and need not (the storage/retrieval separation of Principle 7, the retrieval/commit
     separation of Appendix A) - it is not subject to the convergence norm. This exemption, however,
-    presumes two guards: when a recall result becomes an input to a commit (merge/promotion, etc.), it
+    presumes two guards: when a retrieval result becomes an input to a commit (merge/promotion, etc.), it
     must pass through the deterministic rules again (Principle 19), and a query response must label
     which surface it came from (mode) so that a client can distinguish the convergence surface from the
     retrieval aid.
