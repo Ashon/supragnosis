@@ -1958,11 +1958,11 @@ async fn expired_session_is_not_found(
 /// Parses the MCP streamable-http bind address and **verifies it is loopback** (Principle 17).
 ///
 /// Accepts only a `host:port` IP literal (e.g. `127.0.0.1:7373`). Non-loopback addresses are
-/// rejected - the MCP surface is the local trust surface; remote MCP access is not a supported
-/// topology (federation is the sync surface). A hostname (localhost) is not accepted because it
-/// would require DNS resolution (removing ambiguity). This TCP port is the last one standing: the
-/// viewer already serves over a unix socket, and this bind follows once MCP clients can reach the
-/// daemon through the stdio proxy shim.
+/// rejected - this port is the local trust surface; MCP beyond loopback is the hub's governed
+/// agent surface on its TLS listener (docs/remote-server.md R1), never this port. A hostname
+/// (localhost) is not accepted because it would require DNS resolution (removing ambiguity). This
+/// TCP port is the last one standing: the viewer serves over a unix socket, and clients reach this
+/// one through `supragnosis bridge`, which relays to it.
 fn parse_loopback_addr(s: &str) -> Result<std::net::SocketAddr> {
     let addr: std::net::SocketAddr = s.trim().parse().with_context(|| {
         format!("invalid MCP bind address: {s:?} - must be in IP:port form (e.g. 127.0.0.1:7373)")
@@ -1970,8 +1970,8 @@ fn parse_loopback_addr(s: &str) -> Result<std::net::SocketAddr> {
     if !addr.ip().is_loopback() {
         anyhow::bail!(
             "MCP bind address {addr} is not loopback - refusing (Principle 17: knowledge \
-             sovereignty). Use 127.0.0.1:<port>; network sharing goes through the sync surface \
-             (TLS + allowlist), never the MCP port"
+             sovereignty). Use 127.0.0.1:<port>; remote access goes through a hub's TLS listener \
+             (sync, and MCP for admitted principals), never this port"
         );
     }
     Ok(addr)
