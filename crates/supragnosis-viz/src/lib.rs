@@ -296,7 +296,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // P22 - trust promotion of the reified claim goes through the gate afterwards).
         "/api/reify" => reify_response(engine, query),
         // Merge-band action (resolution-identity.md Section 3): open an entity_merge proposal for a
-        // suggested pair - the suggestion is a recall aid; committing goes through the gate (P23).
+        // suggested pair - the suggestion is a retrieval aid; committing goes through the gate (P23).
         // The opened proposal then rides the normal accept flow in the proposals panel (IR2).
         "/api/proposal" => proposal_response(engine, query),
         "/api/propose_merge" => propose_merge_response(engine, query),

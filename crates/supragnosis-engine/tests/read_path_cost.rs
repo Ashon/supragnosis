@@ -370,7 +370,7 @@ fn a_read_walks_the_log_once() {
 /// cost does not track the workspace size. Nothing said so, and "at most once" would have blessed a
 /// scan appearing here as if it were the same kind of cost.
 ///
-/// The case that made this worth pinning: consolidation.md Section 8 wires the recall weight into
+/// The case that made this worth pinning: consolidation.md Section 8 wires the retrieval weight into
 /// `fuse_rrf` at step 2, and one of that weight's three factors - position against the workspace's
 /// HLC frontier - needs the whole ordering. Supplying it inside `search` would turn every query into
 /// a full deserialization of the log, and at 10k observations that is seconds per query for a

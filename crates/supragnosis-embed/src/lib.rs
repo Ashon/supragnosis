@@ -7,7 +7,7 @@
 //! - [`HashingEmbedder`]: a deterministic embedder based on token feature-hashing.
 //!   Zero external dependencies. The same text always maps to the same vector, and
 //!   texts that share words map to high cosine similarity - used for offline
-//!   development and recall regression tests (Principle 16: deterministic).
+//!   development and retrieval regression tests (Principle 16: deterministic).
 //! - [`FastEmbedProvider`](fastembed feature): a semantic embedder based on a local
 //!   ONNX model.
 

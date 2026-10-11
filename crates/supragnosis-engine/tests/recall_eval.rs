@@ -1,6 +1,6 @@
-//! Recall regression eval.
+//! Retrieval regression eval.
 //!
-//! Principles Appendix B: "search/recall changes are verified with a memory-benchmark-style regression eval."
+//! Principles Appendix B: "search/retrieval changes are verified with a memory-benchmark-style regression eval."
 //! This test is that eval - it measures recall@k over labeled (query -> gold id) fixtures and sets a threshold
 //! as a regression guard. Any change to the search path must pass these numbers.
 //!
@@ -298,7 +298,7 @@ fn recall_at_5_meets_baseline() {
     // After introducing entity embeddings (Gap A), 1.000. Pinned to 0.9 to catch regressions.
     assert!(
         mean >= 0.9,
-        "mean recall@5 = {mean:.3} - recall regression (below the 0.9 threshold)"
+        "mean recall@5 = {mean:.3} - retrieval regression (below the 0.9 threshold)"
     );
 
     // Gap A-specific guard: entity-gold queries are recalled only by entity embeddings (unreachable via observation

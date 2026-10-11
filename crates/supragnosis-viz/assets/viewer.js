@@ -526,7 +526,7 @@ async function renderFedSection(host) {
       parts.push(html`</div></div>`);
     }
     parts.push(html`<div class="note">Removing a grant takes effect at once and is written to `,
-      html`supragnosis.toml. It stops FUTURE reads - it does not recall what has already synced. `,
+      html`supragnosis.toml. It stops FUTURE reads - it does not take back what has already synced. `,
       html`Granting a workspace, and adding or removing a peer, stay in the file.</div>`);
   }
 
@@ -863,7 +863,7 @@ function renderCuration() {
         html`<span class="nchip" data-id="${m.a}" title="focus ${m.a_name}">${m.a_name}</span>`,
         html`<span class="msx">~</span>`,
         html`<span class="nchip" data-id="${m.b}" title="focus ${m.b_name}">${m.b_name}</span>`,
-        html`<span class="mssim" title="embedding similarity (recall aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`,
+        html`<span class="mssim" title="embedding similarity (retrieval aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`,
         html`<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`,
         html`</div>`])
     : html`<div class="empty">${bandEmptyReason(curation.merge_band)}</div>`);

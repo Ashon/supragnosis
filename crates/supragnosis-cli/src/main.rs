@@ -750,7 +750,7 @@ fn build_sync_context(
                     count: a.count,
                 });
             });
-        // Federated recall: remote peers search THIS node's full recall surface (hybrid when the
+        // Federated retrieval: remote peers search THIS node's full retrieval surface (hybrid when the
         // embedder is present), not just the store's keyword path.
         let search_engine = engine.clone();
         let on_search: supragnosis_sync::http::OnSearch = Arc::new(move |ws, q, lim| {

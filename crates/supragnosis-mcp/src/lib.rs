@@ -237,9 +237,9 @@ pub struct GetEntityRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SearchRequest {
     /// Search scope: "local" (this node only, default), "remote" (the configured sync servers'
-    /// ontologies - federated recall), or "both". Local state can lag the remote store - use
+    /// ontologies - federated retrieval), or "both". Local state can lag the remote store - use
     /// remote/both when a local miss may just mean "not synced yet". Remote hits are the server's
-    /// recall surface: sync_pull the workspace to materialize them locally before traverse/get_entity.
+    /// retrieval surface: sync_pull the workspace to materialize them locally before traverse/get_entity.
     #[serde(default)]
     pub scope: Option<String>,
     /// Search query.
@@ -520,7 +520,7 @@ impl SupragnosisServer {
     )]
     async fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         let scope = req.scope.as_deref().unwrap_or("local");
-        // Federated recall (scope remote/both): query the configured sync servers' ontologies -
+        // Federated retrieval (scope remote/both): query the configured sync servers' ontologies -
         // local state can lag the remote store, so a local miss may just mean "not synced yet".
         let mut remote_results: Vec<serde_json::Value> = Vec::new();
         if scope == "remote" || scope == "both" {
@@ -579,7 +579,7 @@ impl SupragnosisServer {
                                         "server": server,
                                         "mode": resp.mode,
                                         "hits": resp.hits,
-                                        "note": "remote recall surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
+                                        "note": "remote retrieval surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
                                     }));
                                 }
                                 Err(e) => remote_results.push(
@@ -669,7 +669,7 @@ impl SupragnosisServer {
                                 .into()
                         }
                         supragnosis_engine::SearchMode::Keyword => {
-                            "no hits under keyword-only degrade (semantic recall UNAVAILABLE) \
+                            "no hits under keyword-only degrade (semantic retrieval UNAVAILABLE) \
                              - a miss here is weak evidence of absence, not a negation. Every \
                              term must appear (in any order, each as a substring), so retry with \
                              fewer or shorter terms the knowledge would contain"

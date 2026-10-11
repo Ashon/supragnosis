@@ -437,7 +437,7 @@ fn search_scopes_by_workspace() {
 }
 
 /// An entity is reachable by an alias, not only by its canonical name - spelling variants
-/// accumulate as aliases (resolution-identity.md IR1), so a recall surface that only matched the
+/// accumulate as aliases (resolution-identity.md IR1), so a retrieval surface that only matched the
 /// canonical spelling would hide the node behind whichever name won resolution.
 #[test]
 fn search_matches_canonical_name_and_alias() {
@@ -762,11 +762,11 @@ fn attestations_since_filters_by_version_vector() {
 }
 
 // ---------------------------------------------------------------------------
-// semantic recall
+// semantic retrieval
 // ---------------------------------------------------------------------------
 
-/// Semantic recall ranks by cosine similarity and excludes rows with no embedding - it widens
-/// recall (Principle 19) and is never a filter that invents membership. The port's default
+/// Semantic retrieval ranks by cosine similarity and excludes rows with no embedding - it widens
+/// retrieval (Principle 19) and is never a filter that invents membership. The port's default
 /// implementation returns nothing, so an adapter that stores vectors is opting in to this
 /// contract.
 #[test]
@@ -806,7 +806,7 @@ fn semantic_recall_ranks_by_similarity_and_skips_unembedded() {
                 .search_semantic(&[1.0, 0.0, 0.0], Some(WS_OTHER), 10)
                 .expect("scoped")
                 .is_empty(),
-            "semantic recall is workspace-scoped like every other read"
+            "semantic retrieval is workspace-scoped like every other read"
         );
     });
 }

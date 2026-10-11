@@ -1471,7 +1471,7 @@ fn get_entity_forwards_a_merged_id() {
 // --- M3b / Principle 15/19: the conservative merge band generates, never commits (IR2) ---------
 
 /// guard (resolution-identity.md Section 3, IR2): embedding-near distinct-name entities surface as
-/// merge SUGGESTIONS (a node-local recall aid) - but a suggestion commits nothing: no proposal, no
+/// merge SUGGESTIONS (a node-local retrieval aid) - but a suggestion commits nothing: no proposal, no
 /// verdict, the rows are untouched. An open entity_merge for the pair suppresses it (in flight).
 #[test]
 fn merge_suggestions_never_commit() {
@@ -2798,10 +2798,10 @@ fn p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing() {
     );
 }
 
-/// guard (consolidation.md Section 4, C2/C3): the recall weight is a fold over the observation set
+/// guard (consolidation.md Section 4, C2/C3): the retrieval weight is a fold over the observation set
 /// and nothing else, so two stores fed the same observations in opposite orders compute the same
 /// weights. This is the property that lets the weight enter the surfaces P16 binds - a ranking that
-/// depended on insertion order could only ever live behind the recall-aid exemption.
+/// depended on insertion order could only ever live behind the retrieval-aid exemption.
 #[test]
 fn p16_the_recall_weight_is_the_same_on_any_arrival_order() {
     let read = |forward: bool| {
@@ -2849,7 +2849,7 @@ fn p7_the_recall_weight_never_reaches_zero() {
     }
 }
 
-/// guard (consolidation.md Section 4.3, P18's unmet "recall is trust-weighted" clause): the tier the
+/// guard (consolidation.md Section 4.3, P18's unmet "retrieval is trust-weighted" clause): the tier the
 /// weight consumes is the receiver's evaluation, so a merged demotion lowers what the observation
 /// would recall at. Asserted as a difference across the act rather than as a final state, because
 /// "the weight responds to the gate" is a statement about a change (Appendix B.2).
@@ -2893,7 +2893,7 @@ fn p18_a_merged_demotion_lowers_the_recall_weight_of_its_target() {
     let after = weight_of(&id2);
     assert!(
         after < before,
-        "a merged demotion must lower the target's recall weight (was {before}, now {after})"
+        "a merged demotion must lower the target's retrieval weight (was {before}, now {after})"
     );
 }
 

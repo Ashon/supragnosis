@@ -365,7 +365,7 @@ function renderSync() {
             h("div", { class: "chips" }, chips)));
       })));
     }
-    out.push(h("p", { class: "hint", text: "Removing a grant takes effect at once and is written to supragnosis.toml. It stops future reads; it does not recall what has already synced. Granting a workspace, and admitting or removing a peer, stay in the file." }));
+    out.push(h("p", { class: "hint", text: "Removing a grant takes effect at once and is written to supragnosis.toml. It stops future reads; it does not take back what has already synced. Granting a workspace, and admitting or removing a peer, stay in the file." }));
   }
   return out;
 }
