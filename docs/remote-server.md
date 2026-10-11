@@ -120,8 +120,9 @@ closed until someone decides what it may do (R3).
 | `sync_status`, `sync_pull`, `sync_push` | refused | Node operations, not a principal's. |
 | Resources (`graph`, `hypergraph`, `observation`) | read | The workspace must be granted. An observation id outside the grants reads as an unknown one. |
 
-Workspace enumeration, wherever it appears, is filtered to the principal's grants. A no-workspace
-global query has no remote form (federation.md 6c, the second-door rule).
+Workspace enumeration, wherever it appears, is filtered to the principal's grants. The node-wide
+query has no remote form (federation.md 6c, the second-door rule): an omitted workspace is the
+principal's first read grant, and a `*` is answered from its grants alone, computed per workspace.
 
 ### 4.4 Provenance of a remote write
 
@@ -233,7 +234,7 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
   local daemon (R1). The hub's sync listener gains the governed agent surface of Section 4, under
   the generalized bind rule of Section 4.1.
 - **federation.md 6c's second-door rule** is what Section 4.3 implements: the same workspace grants,
-  and no remote global query.
+  and no remote node-wide query.
 - **client-connect.md Section 2** says the bridge reaches only the local daemon. It reaches the
   server its active profile names; the local daemon is the default profile. C1 (the bridge opens no
   store and starts no daemon) is unchanged.

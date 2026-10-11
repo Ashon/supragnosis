@@ -311,8 +311,9 @@ P18/P17) for good, because the two never meet on the same axis:
 - **The second-door rule** (P17): the sharing boundary must also govern any remote read surface. The
   local MCP bind stays loopback-only and the viewer stays on its local unix socket; the hub MAY open a
   governed human surface (6d), and when it
-  does, that surface MUST enforce the same `share_workspaces` whitelist (and a no-workspace-scope global
-  query stays limited to the local trust surface) - otherwise knowledge leaves through a different door.
+  does, that surface MUST enforce the same `share_workspaces` whitelist (and a node-wide query stays
+  on the local trust surface: a remote `*` is the caller's grants, computed per workspace) - otherwise
+  knowledge leaves through a different door.
 
 ### 6d. Hub human surface - people managing knowledge at the hub
 
@@ -332,7 +333,8 @@ governance identity and the login identity are the same key, not two systems to 
 - **Read tier (Phase 3.5)**: the hub serves its viewer / read APIs over the network - TLS in-process,
   authentication by **proof of possession of a whitelisted user key** (challenge-response establishing a
   short-lived session), authorization by that entry's **workspace grants** (a user sees exactly the
-  granted workspaces; workspace enumeration is filtered too; no global no-workspace query). ALL write
+  granted workspaces; workspace enumeration is filtered too; no node-wide query - `*` is the union of the
+  grants, computed per workspace). ALL write
   endpoints (`observe`, `propose`, `review`, `define_type` - and the viewer's `/api/review`) are disabled
   on this surface. **Republication consent** (P17): a spoke's share to the hub is `sync-only` by default -
   serving that workspace to hub users is a *further* disclosure that requires the spoke's explicit
