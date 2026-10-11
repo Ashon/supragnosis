@@ -61,9 +61,9 @@ The client side holds a list of servers and one active profile:
   - `supragnosis server use <name|local>` switches; `supragnosis server remove <name>` deletes.
 - **The bridge** reads the active profile on every connect, as it already reads the token. Switching
   profiles therefore takes effect at the next session with no change in any AI app. A remote profile
-  is reached over HTTPS only, verified against the system roots or the profile's CA. There is no
-  option to skip verification, because a skipped check hands the credential to whoever sits on the
-  path.
+  is reached over HTTPS, verified against the system roots or the profile's CA; plain HTTP is
+  accepted only to a loopback host, where no network sits between the two ends. There is no option
+  to skip verification, because a skipped check hands the credential to whoever sits on the path.
 - **Headless use (c).** `SUPRAGNOSIS_SERVER_URL` and `SUPRAGNOSIS_SERVER_TOKEN_FILE` select a server
   without a profile file. This is for a container that runs the bridge. An agent whose MCP client
   speaks HTTP can skip the bridge and send the token itself.
@@ -226,7 +226,7 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
 | **R5** | Content another node originated is served remotely only with that node's consent for that workspace. Without it the answer is a refusal, never a partial view. |
 | **R6** | No credential appears in an AI app's configuration or on a command line. The bridge and the CLI read it from a 0600 file. |
 | **R7** | Verdicts, T-Box changes and node operations are refused on the remote surface until principals can sign their own acts. |
-| **R8** | A remote profile is reached over verified TLS only. There is no option to skip verification. |
+| **R8** | A remote profile off loopback is reached over verified TLS only; plain HTTP is accepted only to a loopback host. There is no option to skip verification. |
 
 ## 9. What this revises
 
