@@ -84,6 +84,15 @@ A **principal** is a person or an agent the hub admits to its agent surface. Eac
 in `supragnosis.toml` as a name, the hash of its bearer credential, and per-workspace `read` and
 `write` grants.
 
+The word names an **access identity**, not the governance principal of federation.md Section 7b (a
+human or an org, whose authority a verdict carries). Admission authenticates a caller and scopes what
+it reads and writes; it says nothing about who stands behind an act, and the operator may give an
+agent or a pipeline its own credential (Section 6, (c)). So an admitted principal is never, by
+being admitted, a stakeholder: it does not count as a distinct principal for I9, and it cannot carry
+a human's direct act (I17, F17). That is why verdicts and T-Box changes stay off this surface (R7).
+Whether an access identity can ever stand as a governance principal is decided where principals
+enroll signing keys (federation.md 6d, 7a; M4 Phase 5), and nowhere sooner.
+
 - `supragnosis principal add <name> --read <ws,..> --write <ws,..>` generates a credential, prints
   it once for the operator to hand over, and stores only its hash. `principal remove` revokes it.
   Admission is read per request, like the node allowlist, so either change takes effect without a

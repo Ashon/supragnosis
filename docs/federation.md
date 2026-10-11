@@ -554,7 +554,9 @@ stakeholder in three roles.
 not the host. One person's several machines are one stakeholder (several signing hosts, one principal);
 I9's self-approval check compares principals, so a single principal acting from many nodes is still solo
 and self-attested (7a, P23). A machine/agent is an acting host under a delegation chain (P2); a host acting
-with no principal stands alone and is trusted correspondingly less (P18).
+with no principal stands alone and is trusted correspondingly less (P18). A hub's admitted principal
+(remote-server.md Section 4.2) is an access identity - a credential with grants, which an agent may
+hold - and is not a stakeholder by being admitted.
 
 **Standing is graded, not one-vote-per-node.** A machine/agent may contribute freely and, where the canon
 policy allows, cast verdicts on low-risk kinds (an auto-merge is itself a verdict with a delegation chain,
