@@ -3586,7 +3586,7 @@ mod fed {
             assert!(notes[0].contains("private"));
         }
 
-        /// The documented supragnosis.toml shape parses; unknown keys are rejected loudly (P5).
+        /// The documented supragnosis.toml shape parses; unknown keys are rejected loudly (P24, N8).
         #[test]
         fn config_parses_and_rejects_typos() {
             let good = r#"
