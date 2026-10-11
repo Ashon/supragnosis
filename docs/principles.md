@@ -588,12 +588,13 @@ created the knowledge, and the sharing boundary is enforced at the sync layer.
     reaches the peer node (not a delete request after it arrives).
   - **The sharing boundary applies to the remote query surface too**: if only the sync filter is
     blocked while the remote MCP query is left open, the same knowledge goes out through a different
-    door. Reads by a remote (non-local) client are governed by the sharing whitelist, and a global
-    query with no workspace scope is limited to the local trust surface - the one OS user who holds
-    the node's token file and store (the bridge and the loopback daemon, architecture.md Section 10,
-    and the store-opening stdio server, client-connect.md Section 6) - or, on
-    an authenticated network read tier, to the union of that principal's grants computed one
-    workspace at a time (remote-viewer.md V3).
+    door. Reads by a remote (non-local) client are governed by the sharing whitelist, and a
+    node-wide query - every workspace the node holds - exists only on the local trust surface: the
+    one OS user who holds the node's token file and store (the bridge and the loopback daemon,
+    architecture.md Section 10, and the store-opening stdio server, client-connect.md Section 6). A
+    remote surface answers a workspace-less or `*` read from the caller's grants alone, computed
+    one workspace at a time and never filtered afterwards (remote-server.md Section 4.3,
+    remote-viewer.md V3).
   - Provide a secret-redaction hook at ingest, but this is an aid to, not a replacement for, the
     sharing filter (defense in depth).
 
