@@ -26,9 +26,25 @@ Check `loginctl show-user "$USER" | grep Linger` first - it may already be on.
 
 ## Getting the binary
 
-There is no prebuilt Linux aarch64 release (`.github/workflows/release.yml` builds
-`x86_64-unknown-linux-gnu` only), so on arm64 hosts - Grace/GH200 boxes among them - build from
-source:
+Every release ships a Linux tarball for `x86_64-unknown-linux-gnu` and one for
+`aarch64-unknown-linux-gnu`; arm64 hosts, Grace/GH200 boxes among them, take the second. Both are
+built on Ubuntu 22.04, so they need glibc 2.35 or newer:
+
+```sh
+v=X.Y.Z                         # the release to install
+t=aarch64-unknown-linux-gnu     # or x86_64-unknown-linux-gnu
+base="https://github.com/Ashon/supragnosis/releases/download/v$v"
+curl -fsSLO "$base/supragnosis-v$v-$t.tar.gz"
+curl -fsSLO "$base/supragnosis-v$v-$t.tar.gz.sha256"
+sha256sum -c "supragnosis-v$v-$t.tar.gz.sha256"
+tar -xzf "supragnosis-v$v-$t.tar.gz"
+install -m 755 "supragnosis-v$v-$t/supragnosis" ~/.local/bin/supragnosis
+```
+
+The release binary is built without `--features fastembed`, which is what a pure hub wants. The hub
+relays and stores; retrieval happens on the spokes, so the ONNX runtime buys nothing there.
+
+Build from source for an older glibc or for a feature the release leaves out:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
@@ -48,9 +64,6 @@ apt-get download libclang-common-18-dev
 dpkg-deb -x libclang-common-18-dev_*.deb root
 export BINDGEN_EXTRA_CLANG_ARGS="-I$HOME/opt/clangdev/root/usr/lib/llvm-18/lib/clang/18/include"
 ```
-
-Omit `--features fastembed` on a pure hub. The hub relays and stores; retrieval happens on the
-spokes, so the ONNX runtime buys nothing there and is one more thing to source for the arch.
 
 ## Two things that bite in a *user* unit
 
