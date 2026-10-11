@@ -2218,6 +2218,177 @@ fn design_docs_declare_every_invariant() {
     );
 }
 
+/// A section number a reference may name: digits, at most one lowercase letter, then dotted
+/// digits - `6`, `6d`, `3.4`, `14.1`. Returns the token and the rest of the text.
+fn section_token(s: &str) -> Option<(&str, &str)> {
+    let mut end = s.chars().take_while(char::is_ascii_digit).count();
+    if end == 0 {
+        return None;
+    }
+    if s[end..].starts_with(|c: char| c.is_ascii_lowercase())
+        && !s[end + 1..].starts_with(|c: char| c.is_ascii_alphabetic())
+    {
+        end += 1;
+    }
+    while s[end..].starts_with('.') {
+        let digits = s[end + 1..].chars().take_while(char::is_ascii_digit).count();
+        if digits == 0 {
+            break;
+        }
+        end += 1 + digits;
+    }
+    if s[end..].starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    Some((&s[..end], &s[end..]))
+}
+
+/// The section numbers a document's headings declare: `## 6. Title`, `### 6a. Title`,
+/// `### 3.4 Title`, `## Section 2 ...`.
+fn documented_sections(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let hashes = line.chars().take_while(|c| *c == '#').count();
+        if !(2..=4).contains(&hashes) {
+            continue;
+        }
+        let rest = line[hashes..].trim_start();
+        let rest = rest.strip_prefix("Section ").unwrap_or(rest);
+        if let Some((token, after)) = section_token(rest) {
+            if after.starts_with('.') || after.starts_with(char::is_whitespace) {
+                out.push(token);
+            }
+        }
+    }
+    out
+}
+
+/// A reference from one design document into another must land: `federation.md Section 5`,
+/// `federation.md 6d`, `remote-server.md 4.3`, `unmerge.md S1/S8`. The registry checks that each
+/// clause declares evidence, never that prose is true, and a pointer is the one kind of prose a
+/// gate can check. Five had gone stale at once - a flooring rule cited a section of its own
+/// document that held none, a "line ~504" had drifted, a companion named the other document's
+/// closure map as the list of what it revised - and a reader following any of them found nothing,
+/// or the wrong thing. This catches the first kind: a section heading or an invariant row that
+/// does not exist. Whether an existing target says what the citing sentence claims stays a review
+/// question (Appendix B).
+#[test]
+fn design_docs_cross_references_resolve() {
+    let text_of = |name: &str| {
+        DESIGN_DOCS
+            .iter()
+            .find(|(doc, _)| doc.strip_prefix("docs/") == Some(name))
+            .map(|(_, t)| *t)
+    };
+    let mut dangling: Vec<String> = Vec::new();
+    for (src, text) in DESIGN_DOCS {
+        // A reference can wrap across lines, inside a blockquote too, so read the text as one line.
+        let flat = text
+            .lines()
+            .map(|l| {
+                let l = l.trim_start();
+                l.strip_prefix('>').unwrap_or(l).trim_start()
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        for (at, _) in flat.match_indices(".md") {
+            let start = flat[..at]
+                .rfind(|c: char| !(c.is_ascii_lowercase() || c == '-'))
+                .map_or(0, |i| i + 1);
+            if start == at {
+                continue;
+            }
+            let name = &flat[start..at + 3];
+            let Some(target) = text_of(name) else {
+                continue;
+            };
+            let after = &flat[at + 3..];
+            let after = after.strip_prefix(')').unwrap_or(after);
+            if !after.starts_with(' ') {
+                continue;
+            }
+            let after = after.trim_start();
+            let sections = documented_sections(target);
+            let mut check_section = |token: &str| {
+                if !sections.contains(&token) {
+                    dangling.push(format!("{src}: {name} Section {token} - no such heading"));
+                }
+            };
+            let listed = ["Sections ", "Section ", "sections ", "section "]
+                .iter()
+                .find_map(|w| after.strip_prefix(w));
+            if let Some(mut rest) = listed {
+                // `Section 3`, `Sections 3/8a`, `Sections 3, 4`, `Sections 10 and 11`.
+                while let Some((token, tail)) = section_token(rest) {
+                    check_section(token);
+                    let next = ["/", ", ", " and ", "/ "]
+                        .iter()
+                        .find_map(|sep| tail.strip_prefix(sep))
+                        .filter(|t| section_token(t).is_some());
+                    match next {
+                        Some(t) => rest = t,
+                        None => break,
+                    }
+                }
+                continue;
+            }
+            // A bare number is a section only when it carries a letter or a dot (`6d`, `4.3`):
+            // a plain `7` after a document name is too often something else to read as one.
+            if let Some((token, _)) = section_token(after) {
+                if token.contains(|c: char| c == '.' || c.is_ascii_lowercase()) {
+                    check_section(token);
+                }
+                continue;
+            }
+            // `F20`, `R3/R5`: an invariant id under one of the target document's own prefixes.
+            let mut rest = after;
+            loop {
+                let letters = rest.chars().take_while(char::is_ascii_uppercase).count();
+                let digits = rest[letters..].chars().take_while(char::is_ascii_digit).count();
+                if !(1..=2).contains(&letters)
+                    || digits == 0
+                    || rest[letters + digits..].starts_with(|c: char| c.is_ascii_alphanumeric())
+                {
+                    break;
+                }
+                let (prefix, number) = (&rest[..letters], &rest[letters..letters + digits]);
+                let n: u8 = number.parse().unwrap_or(0);
+                let doc = format!("docs/{name}");
+                if name == "principles.md" && prefix == "P" {
+                    if !documented_principles().iter().any(|(p, _)| *p == n) {
+                        dangling
+                            .push(format!("{src}: {name} {prefix}{number} - no such principle"));
+                    }
+                } else if !FAMILIES.iter().any(|f| f.doc == doc) {
+                    break; // a document with no invariant table: an uppercase token is something else
+                } else {
+                    match FAMILIES.iter().find(|f| f.doc == doc && f.prefix == prefix) {
+                        Some(f) if documented_rows(f.text, prefix).contains(&n) => {}
+                        Some(_) => {
+                            dangling.push(format!("{src}: {name} {prefix}{number} - no such row"))
+                        }
+                        None => dangling.push(format!(
+                            "{src}: {name} {prefix}{number} - {name} has no invariants under {prefix}"
+                        )),
+                    }
+                }
+                let tail = rest[letters + digits..].trim_start();
+                match tail.strip_prefix('/') {
+                    Some(t) => rest = t.trim_start(),
+                    None => break,
+                }
+            }
+        }
+    }
+    dangling.sort();
+    dangling.dedup();
+    assert!(
+        dangling.is_empty(),
+        "cross-document references that land nowhere:\n  {}",
+        dangling.join("\n  ")
+    );
+}
+
 /// The design documents, which make "guarded by <test>" claims of their own - test-plan tables in
 /// resolution.md / resolution-identity.md, and the compliance ledger in architecture.md. Those
 /// claims are the same shape of promise as this registry and were rotting the same way: five names
@@ -2286,6 +2457,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
 /// IO and cannot go stale against a moved file without failing to build.
 const SOURCES: &[&str] = &[
+    // This file too: a document may name one of the registry's own guards (principles.md Appendix
+    // B names the cross-reference check), and that claim is held to the same standard.
+    include_str!("principle_coverage.rs"),
     include_str!("principle_scenarios.rs"),
     include_str!("policy_cases.rs"),
     include_str!("recall_eval.rs"),
