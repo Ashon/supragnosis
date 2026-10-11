@@ -649,10 +649,12 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             ),
         ),
         c(
-            "turning Start at Login off is the only way the app stops a daemon it did not spawn",
+            "the Start at Login switch is the only way the app stops a daemon it did not spawn - off \
+             uninstalls, on takes over another manager's",
             Evidence::Deferred(
-                "set_login runs `service uninstall`, which boots the canonical job out; that this is the single such \
-                 path is a reading of main.rs, not a test. Revisit when the clause above is repaid, with the same harness",
+                "set_login runs `service uninstall` or `service install --take-over`, which boot a job out or \
+                 retire another manager's; that these are the only such paths is a reading of main.rs, not a test. \
+                 Revisit when the clause above is repaid, with the same harness",
             ),
         ),
     ]),
