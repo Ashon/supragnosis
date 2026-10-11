@@ -115,6 +115,10 @@
 > P17's local trust surface now names it beside the bridge and the loopback daemon. *Corrects a
 > fact* in 21: its examples named `search`, which is `search_knowledge`, and `assert_relation`, which
 > architecture.md Section 7 declined under this principle because `observe` already carries relations.
+> *Loosens* 2: the source reference and the confidence are carried when stated, not required. The
+> schema has made both optional since M0, a required basis would be the ingest gate Principle 22
+> forbids, and an unstated value is preserved as unstated - the rule this principle already gave
+> confidence.
 
 ---
 
@@ -153,7 +157,8 @@ but "host H, at time T, on the basis of S, observed/asserted X". "Fact (the curr
 ### Principle 2. Provenance Is a First-Class Citizen, Identity Is a Delegation Chain (Provenance First, Identity as Delegation Chain)
 
 **Knowledge without provenance cannot exist.** Every observation/relation necessarily carries
-(host, workspace, source_ref, observed_at, confidence). And **an agent usually acts on behalf of
+(host, workspace, observed_at), and carries the source reference and the confidence its asserter
+stated - one left unstated is recorded as unstated, never filled in. And **an agent usually acts on behalf of
 someone** - the "who" of provenance must be expressible not as a flat host id but as a **delegation
 chain** (e.g., `ashon -> claude-code@macbook`).
 
