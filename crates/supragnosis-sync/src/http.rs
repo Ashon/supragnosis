@@ -261,7 +261,7 @@ fn consent_of(headers: &HeaderMap) -> Option<bool> {
     }
 }
 
-/// Federated-recall hook: the wiring layer injects the engine's hybrid search so a remote read
+/// Federated-retrieval hook: the wiring layer injects the engine's hybrid search so a remote read
 /// query answers from this node's full retrieval surface (hits, mode). Without it the handler falls
 /// back to the store's keyword path.
 pub type OnSearch =
@@ -494,7 +494,7 @@ impl ServerState {
         self
     }
 
-    /// Injects the federated-recall hook (the engine's hybrid search).
+    /// Injects the federated-retrieval hook (the engine's hybrid search).
     pub fn with_on_search(mut self, f: OnSearch) -> Self {
         self.on_search = Some(f);
         self
