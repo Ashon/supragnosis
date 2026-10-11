@@ -9,10 +9,10 @@
 > - Scope: the **identity** half of M3 - alias accumulation, the conservative merge band with
 >   embedding candidates, the resolution write path (absorbing `write_guard`), keyword-search alias
 >   parity, entity-embedding staleness, T-Box conflict surfacing, and induced type candidates.
-> - Out of scope: bitemporal **query logic** (`as_of_valid`/`as_of_recorded`, automatic `valid_to`
->   closing) - split off as **M3c** (Section 8): it is read-surface work orthogonal to identity, and
->   bundling it would hold shippable identity work hostage to negation-semantics design. Capture is
->   already complete (M1/M4); only processing is deferred, so no information is lost (Principle 4's
+> - Out of scope: bitemporal **query logic** (`as_of_valid`/`as_of_recorded`, the asserted close of a
+>   disproven relation's valid interval) - split off as **M3c** (Section 8): it is read-surface
+>   work orthogonal to identity, and bundling it would hold shippable identity work hostage to
+>   negation-semantics design. Capture is already complete (M1/M4); only processing is deferred, so no information is lost (Principle 4's
 >   capture/processing separation). The auto-merge **executor** (top-band automatic entity_merge)
 >   stays with the M4+ policy layer (I15) - M3b generates candidates, it never casts verdicts.
 
@@ -170,8 +170,8 @@ as `reproject`, incrementally:
 
 ## 8. M3c - bitemporal query logic (split out, not dropped)
 
-`as_of_valid(T)` / `as_of_recorded(T)` and automatic `valid_to` closing on disproof need negation
-semantics (what counts as a disproving assertion - P5's explicit negative assertion is not yet
+`as_of_valid(T)` / `as_of_recorded(T)` and the asserted close of a disproven relation's valid
+interval need negation semantics (what counts as a disproving assertion - P5's explicit negative assertion is not yet
 modeled) and a query-surface design of their own. Splitting them keeps this ledger honest: the M3
 roadmap entry stays open until M3c ships, and the capture side (already complete) guarantees the
 deferral is non-destructive. M3c is scheduled after M3b, before M5.

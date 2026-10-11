@@ -2466,7 +2466,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // guarded now even though the query logic is not built.
         c("both time axes are captured at ingest, into the log and the projection",
           Evidence::Scenario(&["relation_valid_interval_is_captured_in_log_and_projection"])),
-        c("as_of_valid / as_of_recorded time travel, and automatic valid_to closing",
+        c("as_of_valid / as_of_recorded time travel, and the asserted close of a disproven \
+           relation's valid interval",
           Evidence::Deferred(
             "M3c - blocked on the explicit negative assertion Principle 5 does not model yet; \
              non-destructive because capture is complete",
