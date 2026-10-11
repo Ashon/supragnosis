@@ -99,7 +99,7 @@
 > `define_type` is the solo-exception shortcut, not a second path. *Tightens* 5: the answer
 > alphabet is enumerated, and the rule that decides refuse-or-unknown is stated. *Tightens* 21: the
 > elicitation channel carries the question, not the proof of who answered. *Corrects facts* in 17
-> (there is no stdio surface), 23 (six kinds for five intents; the solo exception is a configured
+> (the local trust surface is the OS user who holds the node's token file, not a transport), 23 (six kinds for five intents; the solo exception is a configured
 > premise, not an inferred one), 22 (prompts are the person's half), 4 and 19 (wording that read as a
 > mutation and as a score-driven commit). Adds five tensions and a status disclaimer to Appendix A,
 > and the scope and revision rules above.
@@ -110,6 +110,9 @@
 > self-approved, the correction fast-path that proposal-workflow.md I9 and Section 9 had adopted
 > without this document following. *Reinterprets* 23 against 3: a destruction demand is the one act
 > outside the gate, and it outranks finality - excision.md E7/E10 had made this reading.
+> *Corrects a fact* in the closure-review line, which said there is no stdio surface: the
+> store-opening stdio server remains, demoted rather than removed (client-connect.md Section 6), and
+> P17's local trust surface now names it beside the bridge and the loopback daemon.
 
 ---
 
@@ -575,7 +578,8 @@ created the knowledge, and the sharing boundary is enforced at the sync layer.
     blocked while the remote MCP query is left open, the same knowledge goes out through a different
     door. Reads by a remote (non-local) client are governed by the sharing whitelist, and a global
     query with no workspace scope is limited to the local trust surface - the one OS user who holds
-    the node's token file (the bridge and the loopback daemon, architecture.md Section 10) - or, on
+    the node's token file and store (the bridge and the loopback daemon, architecture.md Section 10,
+    and the store-opening stdio server, client-connect.md Section 6) - or, on
     an authenticated network read tier, to the union of that principal's grants computed one
     workspace at a time (remote-viewer.md V3).
   - Provide a secret-redaction hook at ingest, but this is an aid to, not a replacement for, the
