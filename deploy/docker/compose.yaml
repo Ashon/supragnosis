@@ -40,8 +40,8 @@ services:
       # The federation sync API. The ONLY surface allowed off loopback, and only with TLS plus an
       # admitted node or principal - the daemon refuses to bind otherwise rather than serving in the open.
       - "7420:7420"
-      # MCP (7373) is deliberately absent. It is unauthenticated by design as a local trust surface
-      # (Principle 17), so publishing it would put an unauthenticated write surface on the network.
+      # MCP (7373) is deliberately absent. It is the local trust surface (Principle 17), loopback and
+      # token-scoped to one OS user; remote MCP is the hub's governed door on 7420 (remote-server.md).
       # To use it, reach the container rather than opening the port: `docker exec` for the viewer
       # socket, or an ssh tunnel to the host and `docker compose exec`.
 

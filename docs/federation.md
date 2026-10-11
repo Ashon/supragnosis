@@ -374,9 +374,9 @@ socket (`ssh -L <port>:<viz.sock path>` - authentication = SSH key, read and wri
 owner's local trust surface). The former interim read-only TCP exposure (SUPRAGNOSIS_VIZ_PUBLIC) was
 removed together with the viewer's TCP listener: the viewer now binds only a 0600 unix socket, so
 F19's hard line (no unauthenticated write surface) holds by transport **on the viewer**. The MCP
-daemon is the standing exception: loopback TCP with no auth layer is a write surface open to every
-local OS account on the host - host-local, not single-user (architecture.md Sections 10/14; owed as
-the P17 registry row records). Network reads return with the user-key read tier.
+daemon holds it by a secret instead: loopback TCP, and a bearer token read from the 0600
+`mcp.token`, so it is confined to the OS user who holds that file rather than to every local
+account (architecture.md Section 10). Network reads return with the user-key read tier.
 
 ### 6e. Negotiated surface - the boundary made legible (P17, P18, P5)
 

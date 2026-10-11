@@ -24,8 +24,8 @@
 #     explicitly. 7373 (the installed daemon's MCP), 7374-7376 and 7399 (`task dev`) are untouched,
 #     and 7420 is deliberately NOT published - the real hub's compose file publishes it, and two
 #     stacks fighting over it is exactly the collision this block avoids.
-#   * MCP is not published at all, from either node. It is an unauthenticated local trust surface
-#     by design (P17); a sandbox is not a reason to put one on a network interface.
+#   * MCP is not published at all, from either node. It is a local trust surface (P17), loopback
+#     and token-scoped; a sandbox is not a reason to put one on a network interface.
 # ---------------------------------------------------------------------------------------------
 
 name: supragnosis-sandbox
