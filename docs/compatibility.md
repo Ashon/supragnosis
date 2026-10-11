@@ -144,9 +144,11 @@ not a decision to make silently.
 
 ### 3.6 Binaries from before the stamp
 
-v0.4.7 and earlier never read the stamp, so they cannot refuse. The guarantee starts at the first
-release that writes it. Until a release raises `min_reader` above 2, that gap costs nothing: no
-format between them has changed.
+v0.4.7 and earlier never read the stamp, so they cannot refuse; the guarantee starts at the first
+release that writes it. For v0.4.4 to v0.4.7 that gap costs nothing until a release raises
+`min_reader` above 2, since they write format 2 as well. For v0.2.0 to v0.4.3 it is open now: they
+write format 1 and never open the ledger (3.2), so a run of one appends without recording what it
+owes, and nothing refuses it until the tripwire below ships.
 
 The first release that raises `min_reader` above 2 also needs a tripwire. That release re-types one
 table that every pre-stamp build opens at startup. A pre-stamp build then fails at open with redb's
@@ -319,8 +321,9 @@ What a release of supragnosis promises:
 
 - **A store is never misread.**
   - A release opens every redb store an earlier release wrote, and upgrades it in place.
-  - A release refuses a store a later release has changed in a way it cannot handle safely. It says
-    which release wrote it and what to install, and it changes nothing.
+  - A release from the first that writes the stamp onward refuses a store a later release has
+    changed in a way it cannot handle safely. It says which release wrote it and what to install,
+    and it changes nothing. Earlier binaries cannot refuse (3.6).
   - Raising `min_reader` happens only in a minor release (0.x.0). Its release note opens with the
     fact, and the store is copied aside first.
 - **An identity or a signature, once made, verifies forever.** The encodings only grow, by the rule
@@ -340,7 +343,7 @@ What a release of supragnosis promises:
 |---|---|
 | Older binary strips unknown fields on rewrite | 3.3 refusal, 3.6 tripwire, 3.7 rule |
 | Older binary hides rows it cannot parse | 3.3 refusal |
-| Pre-v0.4.4 binary skips the ledger | 3.2 (format 2, `min_reader` 2) and 3.6 |
+| Pre-v0.4.4 binary skips the ledger | Open until the 3.6 tripwire ships, which every pre-stamp build trips at open; 3.2 records the format they write |
 | No era recorded in the store | 3.1 |
 | "Every encoding stays readable" unguarded for redb | 5 |
 | Content id and signing bytes unpinned | 4 |
