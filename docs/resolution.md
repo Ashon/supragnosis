@@ -179,8 +179,9 @@ fold-derived projection effect, no new storage):
 - **Effect**: a merged verdict sets the targets' gate tier (Section 3). The effect is derived by
   the fold from the verdict (I2/I6 - no separate `tier_promoted` event is required for
   correctness; one may be emitted later as a UX record, per proposal-workflow.md 7.2).
-- **Ordering**: multiple merged gate events on one target order by verdict HLC; the latest
-  governs (a fold-projection, continuous convergence). Merged stays absorbing per proposal
+- **Ordering**: multiple merged gate events on one target order by the HLC of each proposal's
+  representative merge verdict (proposal-workflow.md 7.1); the latest governs (a
+  fold-projection, continuous convergence). Merged stays absorbing per proposal
   (I16); a reversal is a new proposal (demotion), which is exactly the HLC-later gate event.
 - **Self-approval**: unchanged from the current solo mode - I9 enforcement (principal
   comparison) remains M4 Phase 5, and `self_attested` remains the blanket solo marker until
@@ -214,8 +215,11 @@ the distinction by **surface**:
   guarded: a replicated verdict legitimately carries its marker (that is how the ceiling
   converges), and honoring it stays the single-principal premise below.
 - **Ceiling rule (fold-side, deterministic)**: the tier a merged promotion may grant is capped
-  by the ceiling of its verdict's surface marker - `Console` grants up to `HumanConfirmed`;
-  `Agent`, an absent marker, and any unknown marker cap at `HostSigned`. The cap is applied by
+  by the highest ceiling among its merge verdicts' surface markers - `Console` grants up to
+  `HumanConfirmed`; `Agent`, an absent marker, and any unknown marker cap at `HostSigned`. A
+  person's console merge on a promotion an agent merged first therefore raises it: the grant is
+  monotonic in the verdicts, as the decision rule is (proposal-workflow.md I16), and does not
+  turn on which verdict happens to represent the proposal. The cap is applied by
   the fold reading the marker from the log - not by the write path - so it is a deterministic
   function of the log and converges (I2, P16, F15-consistent).
   [impl] The ceiling is a function of the **marker alone**, deliberately: making it depend on
@@ -266,7 +270,8 @@ defend against the local user's own processes.
   evaluate above `HostSigned`; only a gate event under a `Console` ceiling (or, from Phase 5, a
   principal-signed act) reaches `HumanConfirmed` (P18, F13).
 - **R5** A gate event overrides the base evaluation in both directions; the HLC-latest merged
-  gate event per target governs (P23, fast-path demotion).
+  gate event per target governs, ordered by each proposal's representative merge verdict (P23,
+  fast-path demotion).
 - **R6** Contested = distinct surviving values whose effective tiers tie at the top. Contested
   status is part of the projection and subject to the P16 convergence obligation (P6).
 - **R7** Conflicts are never suppressed: tier-resolved conflicts remain queryable in the
