@@ -236,7 +236,7 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 |---|---|
 | P5 - unknown is not absent | Section 3: a server's state, an app's state and the store's health are shown with their reasons, never as a blank |
 | P17 - knowledge sovereignty | Section 4, S1: what decides where this Mac's knowledge goes answers only the app's own page |
-| P18 - writes are an attack surface | S5: CLI-supplied text, which can quote a server, is never markup |
+| Outside principles.md's scope (the app's own security posture) - P18's untrusted input, followed by analogy | S5: CLI-supplied text, which can quote a server, is never markup |
 | P24 - degrade loudly, refuse when proceeding is worse | S3, S6: a refusal from the CLI is shown, and controls that do not apply say why |
 
 ## 11. Guarded by
