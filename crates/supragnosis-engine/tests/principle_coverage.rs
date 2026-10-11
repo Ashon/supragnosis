@@ -996,8 +996,8 @@ const EXCISION_REGISTRY: &[(u8, &[Clause])] = &[
              Phase 5 for the act - nothing walks `derived_from` for a destruction candidate today")),
     ]),
     (7, &[
-        c("excision is a console-only, non-delegable act, at least as restricted as the recall \
-           verdict, and does not pass through the proposal gate",
+        c("excision is non-delegable and held to the recall verdict's bar - a principal-signed act, \
+           console-only until principals sign - and does not pass through the proposal gate",
           Evidence::Deferred(
             "M4 Phase 5 - no excision surface exists on the console or the MCP path, and \
              `PROPOSAL_KINDS` has no such kind, so the gate cannot carry it by accident; the \

@@ -108,7 +108,8 @@
 > table carries evidence states, and an owed clause names a milestone or a "Revisit when" trigger.
 > Revision: 2026-10 (coherence review) - *loosens* 23: a claim-demotion or a recall may be
 > self-approved, the correction fast-path that proposal-workflow.md I9 and Section 9 had adopted
-> without this document following.
+> without this document following. *Reinterprets* 23 against 3: a destruction demand is the one act
+> outside the gate, and it outranks finality - excision.md E7/E10 had made this reading.
 
 ---
 
@@ -726,7 +727,10 @@ proposal are all observation events, and are governed by this principle just the
 - **Enforcement**:
   - It is a violation if there is an API path by which a change affecting the canon bypasses the
     proposal. Conversely, it is also a violation if the proposal procedure blocks or delays observe (no
-    bidirectional gating).
+    bidirectional gating). The one act outside the gate is a destruction demand (Principle 3): it
+    removes what the canon rested on rather than changing a tier, so it is held to the recall
+    verdict's bar instead of passing through review, and a decision whose record it destroys is
+    un-decided (excision.md E7/E10, Appendix A).
   - A proposal's state is a deterministic fold of the event stream (Principle 16). The passage of
     wall-clock time causes no transition, and auto-merge/expiry are also expressed only as explicit
     events.
@@ -823,6 +827,7 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Gate (23) vs minimal friction (22) | **The gate is on promotion only, not on ingest.** Even when review is backlogged, knowledge already exists and circulates at a low tier. |
 | Review rigor (23) vs reviewer's attention | **Most is automatic, only a few go to a human.** Only new contradictions/high-impact/structural changes/recall force human review. |
 | Explicit promotion act (11) vs the gate (23) | **The gate is the act.** A `tbox_change` merge defines the type; direct `define_type` is the solo-exception shortcut (federation.md F18), not a second path. |
+| Gate and finality (23, I16) vs a destruction demand (3, 17) | **Destruction wins.** Excision does not pass through the gate, which governs tier and not existence, and a decision whose opening row or only valid verdict is excised is un-decided with its effects. Finality is a theorem about a log that only grows; excision is the one act that shrinks it. The person sees which decisions fall before the act (excision.md E7/E10). |
 | Un-merge must be possible (3, 15) vs merge as an absorbing state (23, I16) | **Both hold.** A split is a new proposal and is not absorbing (unmerge.md S1/S8); the merge stays in the log and only its forwarding is removed. |
 | Honesty about absence (5) vs no existence oracle (17) | **Unknown, not refused, for an id outside the grants.** Open world toward the caller is also what hides existence; a refusal is for a scope the caller named (Principle 5, remote-viewer.md 3.4). |
 | Human mediation at the protocol level (21) vs receiver-evaluated trust (18) | **The channel carries the question, the signature carries the answer.** An elicitation response alone grants nothing above the agent surface's ceiling (federation.md F20). |
