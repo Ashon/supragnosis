@@ -178,7 +178,7 @@ silence rule never reaches it, and the panel renders it outside any condition of
 | **D1** | A contested field is never silenced or folded. A node with `contested` true shows its contested block expanded, with its actions, in every scope (P6). |
 | **D2** | Everything the rule silences or folds is reachable from the inspector in at most one act - an expand, or opening the card - and none of it requires another surface (P2, P14). |
 | **D3** | Silence is declared. A field the rule silences is stated once for the scope on the inspector itself; a silenced value never reads as an absent one (P5). |
-| **D4** | The baseline is computed over the loaded scope from effective values - the tier from `GraphNode.trust_tier`, never a claimed tier - and never over the legend-filtered subset (resolution.md Section 3, F13). |
+| **D4** | The baseline is computed over the loaded scope from effective values - the tier from `GraphNode.trust_tier`, never a claimed tier - and never over the legend-filtered subset (resolution.md Section 3, federation.md F13). |
 | **D5** | The viewer never re-resolves identity. Which entity an assertion is about comes from server-resolved ids, not from matching spellings (P15). |
 | **D6** | The rule changes rendering only. No response field is removed or narrowed, and no MCP tool or resource changes (P21). |
 | **D7** | Every HTML sink takes an `html` tagged template, which escapes every interpolation through `esc()` unless it is itself `html`-built markup. The `no-unsanitized` lint accepts nothing else at a sink, with no disable comments, and `viz_source_escapes_untrusted_names` pins the escaper (P18, federation.md 6d). |

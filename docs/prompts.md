@@ -151,7 +151,7 @@ a P5 failure: a short list must not read as the whole list.
 1. **The prompts capability and the four prompts** on the local surface, with the digest builders
    as functions of the engine's reads (`supragnosis-mcp/src/prompts.rs`), the remote refusal, the
    golden `prompts/list`, and the cache hints.
-2. **Documentation.** architecture.md Section 7 (prompts implemented), P22's status in Section 14,
+2. **Documentation.** architecture.md Section 7 (prompts implemented), P22's status in architecture.md Section 14,
    the README's tool and prompt list.
 3. **Later, each its own decision:** prompts on the remote surface once digests are grant-scoped;
    a verdict from inside the conversation once elicitation exists; a signed review - a person's
