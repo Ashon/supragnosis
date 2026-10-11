@@ -973,9 +973,10 @@ fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> Trus
 /// The authoring attestation of an observation: earliest effective HLC, index-tiebroken. After an
 /// absorb the provenance vec is union-sorted (by host first), so `first()` names whichever host
 /// sorts first, and any max-over-attestations moves as attestations accumulate - neither names the
-/// author. This is the single rule for "who authored this act": the verdict surface marker
-/// (gate_grants), relation provenance (reproject) and proposal attribution (fold_proposals) must
-/// not each pick a different attestation off one row.
+/// author. This is the single rule for "who authored this act": relation provenance (reproject)
+/// and proposal attribution (fold_proposals) must not each pick a different attestation off one
+/// row. A gate grant's ceiling is not an authorship question - it reads every attestation of a
+/// merge verdict (gate_grants, resolution.md Section 6).
 fn authoring_attestation(obs: &Observation) -> Option<&Provenance> {
     obs.provenance
         .iter()
@@ -3158,8 +3159,10 @@ impl Engine {
     /// Gate-tier grants (resolution.md Section 5): target observation id -> the tier set by the
     /// HLC-latest merged claim_promotion/claim_demotion verdict targeting it. Per proposal, the
     /// representative verdict is the earliest merge by (ordering HLC, observation id) - the
-    /// proposal-workflow 7.1 canonicalization; what it grants is min(requested tier, the surface
-    /// ceiling of the log-borne marker on that verdict) (resolution.md Section 6). A pure
+    /// proposal-workflow 7.1 canonicalization, which orders the proposal's effect among others on
+    /// the same target; what it grants is min(requested tier, the highest surface ceiling among the
+    /// proposal's merge verdicts) (resolution.md Section 6), so a further merge can raise a grant
+    /// and never lower it, whichever verdict represents. A pure
     /// fold-projection of the log - converges continuously (F5), and a gate event overrides the base
     /// evaluation in BOTH directions (a merged demotion can push below base - the fast-path).
     ///
@@ -3178,8 +3181,9 @@ impl Engine {
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
         // proposal id -> (targets, requested tier); collected from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier)> = HashMap::new();
-        // proposal id -> representative merge verdict (ordering hlc, verdict obs id, source_ref).
-        let mut rep_merge: HashMap<String, (Hlc, String, Option<String>)> = HashMap::new();
+        // proposal id -> (representative merge verdict's ordering hlc and obs id, the highest
+        // surface ceiling among the proposal's merge verdicts).
+        let mut rep_merge: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
         for obs in self.log(workspace, cx)?.iter() {
             let okey = ordering_hlc(obs);
             for ev in &obs.assertions.proposal_events {
@@ -3209,19 +3213,26 @@ impl Engine {
                         if v.get("decision").and_then(|x| x.as_str()) != Some("merge") {
                             continue;
                         }
-                        // The verdict's surface marker rides the authoring attestation's source_ref
-                        // (engine-stamped, resolution.md R8).
-                        let source_ref =
-                            authoring_attestation(obs).and_then(|p| p.source_ref.clone());
-                        let cand = (okey.clone(), obs.id.clone(), source_ref);
+                        // The surface marker rides each attestation's source_ref (engine-stamped,
+                        // resolution.md R8). One decision cast twice - by an agent, then at the
+                        // console - is one content address with two attestations (P3), and each
+                        // is an act, so the ceiling is the highest over all of them.
+                        let ceiling = obs
+                            .provenance
+                            .iter()
+                            .map(|p| verdict_grant_ceiling(p.source_ref.as_deref()))
+                            .max()
+                            .unwrap_or_else(|| verdict_grant_ceiling(None));
                         rep_merge
                             .entry(ev.proposal.clone())
                             .and_modify(|cur| {
-                                if (&cand.0, cand.1.as_str()) < (&cur.0, cur.1.as_str()) {
-                                    *cur = cand.clone();
+                                if (&okey, obs.id.as_str()) < (&cur.0, cur.1.as_str()) {
+                                    cur.0 = okey.clone();
+                                    cur.1 = obs.id.clone();
                                 }
+                                cur.2 = cur.2.max(ceiling);
                             })
-                            .or_insert(cand);
+                            .or_insert((okey.clone(), obs.id.clone(), ceiling));
                     }
                     _ => {}
                 }
@@ -3238,13 +3249,13 @@ impl Engine {
         // Per target, the HLC-latest gate event governs (tie: proposal id) - resolution.md R5.
         let mut grants: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
         for (proposal_id, (targets, requested)) in &opened {
-            let Some((verdict_hlc, _, source_ref)) = rep_merge.get(proposal_id) else {
+            let Some((verdict_hlc, _, ceiling)) = rep_merge.get(proposal_id) else {
                 continue; // not merged - grants nothing (the gate, Principle 23)
             };
             if states.get(proposal_id).is_none_or(|p| p.state != "merged") {
                 continue; // the fold says this merge did not commit (blocked) - no effect (I13)
             }
-            let granted = (*requested).min(verdict_grant_ceiling(source_ref.as_deref()));
+            let granted = (*requested).min(*ceiling);
             for target in targets {
                 let cand = (verdict_hlc.clone(), proposal_id.clone(), granted);
                 grants

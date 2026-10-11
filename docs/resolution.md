@@ -219,7 +219,9 @@ the distinction by **surface**:
   `HumanConfirmed`; `Agent`, an absent marker, and any unknown marker cap at `HostSigned`. A
   person's console merge on a promotion an agent merged first therefore raises it: the grant is
   monotonic in the verdicts, as the decision rule is (proposal-workflow.md I16), and does not
-  turn on which verdict happens to represent the proposal. The cap is applied by
+  turn on which verdict happens to represent the proposal. One decision cast twice with the same
+  note is one content address with two attestations (Principle 3), so the ceiling reads the
+  marker on every attestation of a merge verdict, not only the authoring one. The cap is applied by
   the fold reading the marker from the log - not by the write path - so it is a deterministic
   function of the log and converges (I2, P16, F15-consistent).
   [impl] The ceiling is a function of the **marker alone**, deliberately: making it depend on
@@ -278,7 +280,8 @@ defend against the local user's own processes.
   curation report; the defeated assertion remains in the log and is reinstated by re-resolution
   if the tier landscape changes (P3, P6).
 - **R8** The surface marker on a verdict is engine-stamped, never client-supplied; the ceiling
-  is applied by the fold from the log, never by the write path (I2, P16).
+  is applied by the fold from the log, never by the write path, and is the highest among a
+  promotion's merge verdicts, so a further verdict never lowers it (I2, P16, I16).
 - **R9** Mediation enters as events (counter-assertion, proposal, verdict) - there is no API by
   which a human edits the belief directly (P1, P19, P23 no-bypass).
 

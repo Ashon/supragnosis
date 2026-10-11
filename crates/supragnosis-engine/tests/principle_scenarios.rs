@@ -341,6 +341,51 @@ fn p18_agent_surface_promotion_caps_at_host_signed() {
     );
 }
 
+/// guard (resolution.md Section 6, proposal-workflow.md 7.1): a gate grant takes the highest
+/// ceiling among a promotion's merge verdicts. A person's console merge cast after an agent's
+/// raises the promotion - the grant is monotonic in the verdicts, like the decision rule (I16),
+/// rather than fixed by whichever verdict represents the proposal.
+#[test]
+fn p18_a_console_merge_after_an_agent_merge_raises_the_grant() {
+    let (store, engine) = engine();
+    let o1 = kind_obs("cozo", "Tool", 100);
+    let id1 = o1.id.clone();
+    store.add_observation(o1).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    let tier_of = |engine: &Engine| {
+        let g = engine.graph(Some(WS)).expect("graph");
+        g.nodes.iter().find(|n| n.name == "cozo").expect("node").trust_tier
+    };
+
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![id1],
+            into: None,
+            tier: Some("human_confirmed".into()),
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("some-agent".into()),
+        })
+        .expect("propose");
+    engine
+        .review_proposal(None, pid.clone(), "merge".into(), None, None, VerdictSurface::Agent)
+        .expect("agent verdict");
+    assert_eq!(tier_of(&engine), TrustTier::HostSigned, "the agent's merge caps at host_signed");
+
+    engine
+        .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
+        .expect("console verdict");
+    assert_eq!(
+        tier_of(&engine),
+        TrustTier::HumanConfirmed,
+        "a person's console merge on the same promotion must raise it, not be outranked by the \
+         earlier agent verdict (resolution.md Section 6)"
+    );
+}
+
 /// guard (resolution.md Section 6, R8): the verdict-surface markers ride source_ref, and the
 /// ceiling fold trusts a log-borne marker to be engine-stamped. That trust holds only if every
 /// LOCAL ingest door refuses the namespace - review_proposal stamps its own marker and accepts no
