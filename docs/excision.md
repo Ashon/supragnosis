@@ -4,8 +4,9 @@
 > it may not, and why the obvious cheaper versions are worse than not having it.
 >
 > Status: **specification**. The excision path itself is unbuilt and the ledger owns it as M4 Phase 5
-> ([architecture.md](architecture.md) Section 14). Step 1 of Section 8 - the ingest hook that keeps
-> secrets out in the first place - has since been built; nothing else here has.
+> ([architecture.md](architecture.md) Section 14). Steps 1 and 2 of Section 8 - the ingest hook that
+> keeps secrets out in the first place, and the read-only detection signal over the stored log - are
+> built; the excision path itself is not.
 
 ## 1. Why this exists, and why it is the only one
 
@@ -118,11 +119,16 @@ system to a heuristic.
 ## 6. Who may do it
 
 At least as restricted as the recall verdict, which P23 makes **non-delegable** - a human's direct act,
-not an agent's proxy verdict under a human principal's authority. Excision has a strictly larger radius
-than recall, so:
+not an agent's proxy verdict under a human principal's authority, and at full strength a
+principal-signed act (federation.md F20 strength (ii)). Excision has a strictly larger radius than
+recall, so:
 
-- **Console only.** The viewer's unix socket is the surface whose "only the local principal" property
-  is guarded (P17, F19). The agent MCP path must not carry it - not gated, not with elicitation.
+- **The principal's own act, and the console until it can be signed.** The bar is the recall
+  verdict's: an act the principal signs. Until principals sign their acts, the viewer's unix socket is
+  the surface whose "only the local principal" property is guarded (P17, F19), and excision is
+  offered there alone - the same interim, and the same weaker guarantee, that resolution.md Section 6
+  names for the recall verdict. The agent MCP path must not carry it - not gated, not with
+  elicitation, because an elicitation answer is a claim that a human answered (P21).
 - **Not through the proposal gate.** P23 is explicit that the gate is *"a gate of tier, not a gate of
   existence"*, and a proposal is itself an observation, so proposing an excision would put a
   reason-bearing record of the secret's location in the log and then wait for review. A destruction
@@ -199,7 +205,7 @@ So the order is:
 | **E4** | A tombstoned id keeps advancing the version vector for its `(origin, origin_seq)`. Without this the cursor retreats and the row is re-pulled. |
 | **E5** | Tombstones propagate through the ordinary signed, allowlisted, workspace-filtered sync path. Excision reaches exactly as far as sharing reached, and the surface reports where it could not reach. |
 | **E6** | The derived closure is presented, never cascaded. Each excision is its own act with its own tombstone (P19: a generator proposes, a deterministic act commits). |
-| **E7** | Excision is a console act only, non-delegable, at least as restricted as the recall verdict (P23 I17). It does not pass through the proposal gate, which is a gate of tier and not of existence. |
+| **E7** | Excision is non-delegable and held to at least the recall verdict's bar (P23 I17): a principal-signed act, and until principals sign their acts, a console act only. It does not pass through the proposal gate, which is a gate of tier and not of existence (principles.md Appendix A). |
 | **E8** | After excision the projection is re-materialized from the log, never patched. |
 | **E9** | A partial implementation is not shipped. Excision without the lineage walk, the absorbing state, cursor participation or propagation reports a removal it did not perform. |
 | **E10** | Excision outranks finality. A decision whose opening row or only valid verdict is excised is un-decided and its effects fall with it (E8). The derived closure names those decisions before the act, the census records that a decision event was destroyed, and re-deciding is a new proposal under a new id. |
