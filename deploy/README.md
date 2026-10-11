@@ -13,7 +13,7 @@ daemon is the sole holder of the db, the single-process lock problem also disapp
 - Viewer: `~/.supragnosis/viz.sock` (HTTP over a unix socket, 0600 owner-only - no TCP port)
 - All local for MCP and the viewer - non-local exposure / auth for these two surfaces is not
   supported yet (later). The federation sync API is the separate network surface, guarded by
-  TLS + a non-empty allowlist (docs/federation.md).
+  TLS and at least one admitted node or principal (docs/federation.md F10).
 
 ## Quick install (recommended)
 

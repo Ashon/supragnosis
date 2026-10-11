@@ -225,13 +225,13 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 
 ### 6a. Transport authentication and network bind (P2, P18)
 
-- Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the sync surface ONLY, and ONLY when all of
-  {TLS enabled, allowlist non-empty} hold. The MCP loopback bind guard is unchanged - it is NOT
-  relaxed - and the viewer does not bind TCP at all (it serves over a local unix socket); federation
-  adds a separately-guarded surface. **Revision (specified in [remote-server.md](remote-server.md)):**
-  the local daemon's guard stays exactly as stated, and this listener gains a second, governed door -
-  MCP for principals the hub admits, under the same TLS and a bind rule generalized to "an admitted
-  node or principal".
+- Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the hub listener ONLY, and ONLY when TLS
+  is enabled and something is admitted - a node on the allowlist or a principal. The MCP loopback
+  bind guard is unchanged - it is NOT relaxed - and the viewer does not bind TCP at all (it serves
+  over a local unix socket); federation adds a separately-guarded surface. **Revision (specified in
+  [remote-server.md](remote-server.md)):** the local daemon's guard stays exactly as stated, and this
+  listener gains a second, governed door - MCP for principals the hub admits, under the same TLS -
+  which is why the bind rule counts principals beside nodes.
 - TLS: terminated in-process with `rustls`. A cert/key path is required to bind non-loopback (F10).
   Guarded end to end by `tls_listener_serves_https_and_refuses_plaintext`, which mints a certificate
   and drives the listener: an admitted peer is answered over HTTPS, a plaintext request on the same
@@ -618,8 +618,9 @@ changing the canon policy without a central admin - is out of scope.
 - **F9** Only whitelisted workspaces cross the sync boundary (opt-in, default nothing, P17); the server
   enforces per-node access, filtering before the boundary. Any remote read surface obeys the same whitelist
   (P17 second-door rule).
-- **F10** The sync surface binds non-loopback ONLY with TLS enabled and a non-empty allowlist. MCP stays
-  loopback-only (its bind guard unchanged); the viewer has no TCP bind (local unix socket only).
+- **F10** The hub listener binds non-loopback ONLY with TLS enabled and at least one admitted node or
+  principal (remote-server.md R1). The local daemon's MCP stays loopback-only (its bind guard
+  unchanged); the local viewer has no TCP bind (local unix socket only).
 - **F11** Sync is a non-blocking, pollable task (P21). It never blocks tool handlers; store calls offload
   via `spawn_blocking`.
 - **F12** A storage/transport failure is reported as a failure, never as "empty" or "converged" (P5).

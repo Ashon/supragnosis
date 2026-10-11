@@ -488,8 +488,8 @@ sections are present, and `peers` awaits the P2P phase.
     no auth layer, so it stays loopback-bound.
 - **Hub server (implemented, M4 Phase 4)**: the `[server]` section starts the sync API alongside the
   daemon - axum routes `/sync/ping|advertise|pull|push|search` under bearer auth matched against the
-  allowlist, then per-workspace authorization. A **non-loopback bind requires TLS and a non-empty
-  allowlist** (`validate_bind`), checked at startup and again at serve time; a misconfigured `[server]`
+  allowlist, then per-workspace authorization. A **non-loopback bind requires TLS and at least one
+  admitted node or principal** (`validate_bind`), checked at startup and again at serve time; a misconfigured `[server]`
   fails startup loudly rather than running without the role.
 
 ### Ontology live viewer (for local inspection)
@@ -788,9 +788,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 17 (knowledge sovereignty, sync boundary): sharing is a workspace whitelist defaulting to
   none; `export_delta` returns nothing for a non-shared workspace; the hub authenticates per node
   (bearer) and authorizes per workspace on every route. **Federated retrieval goes through the same
-  authorization**, closing the "same knowledge through a different door" concern. A non-loopback sync bind
-  requires TLS **and** a non-empty allowlist. *Caveat*: the viewer's public read mode does not honor this
-  (see outstanding entry conditions).
+  authorization**, closing the "same knowledge through a different door" concern. A non-loopback hub bind
+  requires TLS **and** at least one admitted node or principal; the viewer has no TCP listener to
+  guard (its public read mode was removed with it, overdue entry 4 below).
 - Principle 18 (transport authenticity portion): every exported attestation is ed25519-signed by its
   origin; the receiver **recomputes the content id** from (workspace, content, assertions) before
   verifying, so a forged or stale id never lands; the origin's lineage declaration is inside the signed

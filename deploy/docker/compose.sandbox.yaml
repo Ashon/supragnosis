@@ -55,7 +55,7 @@ services:
   # changes). So the chown is not tidying: without it the daemon cannot create its own store.
   #
   # The certificate is not optional either. The F10 bind guard refuses a non-loopback sync surface
-  # without TLS and a non-empty allowlist, so a hub without one does not come up at all.
+  # without TLS and at least one admitted node or principal, so a hub without one does not come up.
   prepare:
     image: alpine:3
     volumes:

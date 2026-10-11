@@ -31,14 +31,14 @@ services:
       # (F14), so losing this volume does not lose a container - it retires a node identity that
       # every peer's allowlist still names.
       - supragnosis-state:/var/lib/supragnosis/.supragnosis
-      # Federation needs TLS and a non-empty allowlist before it will bind anything non-loopback
+      # The hub needs TLS and an admitted node or principal before it will bind anything non-loopback
       # (F10), so the certificate and the config come from the host, read-only.
       # - ./supragnosis.toml:/var/lib/supragnosis/.supragnosis/supragnosis.toml:ro
       # - ./tls:/var/lib/supragnosis/tls:ro
 
     ports:
-      # The federation sync API. The ONLY surface allowed off loopback, and only with TLS plus a
-      # non-empty allowlist - the daemon refuses to bind otherwise rather than serving in the open.
+      # The federation sync API. The ONLY surface allowed off loopback, and only with TLS plus an
+      # admitted node or principal - the daemon refuses to bind otherwise rather than serving in the open.
       - "7420:7420"
       # MCP (7373) is deliberately absent. It is unauthenticated by design as a local trust surface
       # (Principle 17), so publishing it would put an unauthenticated write surface on the network.

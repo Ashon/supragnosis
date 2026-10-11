@@ -809,8 +809,9 @@ something wrong - knowledge silently absent, or a surface open without authentic
   - **Refuse when proceeding would be worse than stopping.** Two shapes qualify. Serving an answer
     that is wrong rather than absent: a store this build cannot read must not come up empty beside it,
     because "no knowledge" and "knowledge unavailable" are different answers (Principle 5). And
-    opening a surface the configuration did not authorize: a non-loopback bind without TLS and a
-    non-empty allowlist refuses, because degrading there would serve in the open.
+    opening a surface the configuration did not authorize: a non-loopback bind without TLS, or with
+    nothing admitted - no node and no principal - refuses, because degrading there would serve in
+    the open.
   - **Narrow without asking only in the direction the safety principle already prefers.** A
     configuration mistake may be worked around by sharing *less* - the asymmetry Principle 17 relies
     on - and never by sharing more. Dropping an allowlist entry that admits this node is permitted
