@@ -126,7 +126,8 @@
 > *Loosens* 23 and 16 with I16: finality is reached at causal stability, not the moment a valid merge
 > is in the log. federation.md 7a and F16 had found that a verdict's validity, read off the HLC
 > prefix, can be revised by a concurrent earlier-HLC event; the decision rule stays absorbing among
-> verdicts.
+> verdicts. *Tightens* 18's Enforcement to carry promotion to human-confirmed as a human's direct
+> act - not a new demand: the 9th revision line stated it, and resolution.md cites it here.
 
 ---
 
@@ -630,6 +631,8 @@ trust tiers, lineage tracking, and quarantine.
     Principle 3) - lineage is the recall list.
   - **Promotion** of the trust tier happens **only explicitly** (human confirmation, independent
     cross-source verification, etc.). Trust does not rise by itself just because time has passed.
+    Promotion to human-confirmed is a human's direct act, never delegated to a machine
+    (resolution.md Section 6, federation.md F17/F20).
   - **The tier is the receiver's evaluation**: a trust tier is not a stored attribute that an event
     self-declares, but an evaluation the receiving node computes based on provenance (delegation chain,
     signature, verification history at its own node). A tier annotation carried on an observation that

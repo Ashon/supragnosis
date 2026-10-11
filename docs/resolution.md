@@ -188,8 +188,9 @@ fold-derived projection effect, no new storage):
   then. The I9 exception (demotion permits self-approval) costs nothing to honor now since
   no principal check exists yet; the spec point is that when Phase 5 lands, demotion keeps the
   exception while promotion does not.
-- **Recall stays inert** in M3a: its effect (bulk lineage retraction) belongs to M5 (sanitize),
-  and its I17 human-direct enforcement lands with it. The Section 6 surface ceiling is designed
+- **Recall's effect stays inert**: bulk lineage retraction belongs to M5 (sanitize). Its I17
+  fold half is in - a recall merge counts only with the console marker (proposal-workflow.md
+  Section 4 [impl]) - and the principal-signed half is M4 Phase 5. The Section 6 surface ceiling is designed
   to be the same mechanism I17 will use.
 
 ## 6. The human-direct surface ceiling (Principle 18, I17-analog)
@@ -230,7 +231,8 @@ the distinction by **surface**:
   The consequence is that a replicated console marker is honored on the receiver, which is
   sound exactly under the single-principal federation premise (the only supported deployment,
   F18/Phase 6) - a "malicious peer minting console markers" is outside that premise, and
-  Phase 5's principal-signed acts replace marker trust for multi-principal federation.
+  Phase 5's principal-signed acts take over from marker trust where a marker arrives from another
+  principal's node; on the local node the marker stays the fallback (the last bullet below).
 - Demotion needs no ceiling (lowering trust is the low-risk direction - the fast-path
   rationale).
 - Phase 5 composes, not replaces: a principal-signed act (F20 strength ii) becomes a second,
@@ -269,8 +271,9 @@ defend against the local user's own processes.
   observation id. No wall clock, no arrival order (P16).
 - **R3** Confidence never selects; it is carried verbatim, unspecified stays unspecified (P2).
 - **R4** The policy consumes only **effective** tiers. A claimed tier from the wire can never
-  evaluate above `HostSigned`; only a gate event under a `Console` ceiling (or, from Phase 5, a
-  principal-signed act) reaches `HumanConfirmed` (P18, F13).
+  evaluate above `HostSigned`; only a human's direct act reaches `HumanConfirmed` - at full
+  strength a principal-signed act (F20), and until principals sign their acts, a gate event
+  under a `Console` ceiling (Section 6) (P18, F13).
 - **R5** A gate event overrides the base evaluation in both directions; the HLC-latest merged
   gate event per target governs, ordered by each proposal's representative merge verdict (P23,
   fast-path demotion).
@@ -331,6 +334,6 @@ had been renamed out from under it, which is the failure mode the sweep exists t
 | `ResolutionPolicy` port + `TierWeighted`, effective tier, contested projection, gate effects, surface ceiling | **this spec (M3a)** |
 | Alias accumulation, merge band, embedding candidates, atomic write path | M3b (architecture.md Section 12) |
 | Negative assertions / automatic `valid_to` closing / time-travel queries | M3b/M5 per architecture.md (bitemporal logic) |
-| Recall effect + I17 enforcement, quarantine, lineage cleanup, retrieval ranking | M5 |
+| Recall effect, quarantine, lineage cleanup, retrieval ranking | M5 |
 | I9 principal comparison, canon policy, principal-signed acts, `tbox_change` gate | M4 Phase 5 (federation.md) |
 | MCP elicitation (protocol-level human confirmation) | Principle 21 remainder (architecture.md Section 7) |
