@@ -168,7 +168,7 @@ sequenceDiagram
 
 ### 4.2 Query
 - `search_knowledge`: **vector (a brute-force cosine scan, Section 6) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
-- **The keyword match** is the one recall surface every build has (release builds ship without
+- **The keyword match** is the one retrieval surface every build has (release builds ship without
   an embedder, P19), so it has to find what a person or an agent types, not only what was typed
   verbatim. A text matches when it contains the whole query, case-folded (a **phrase** match), or
   when it contains every whitespace-separated term of the query, in any order and anywhere (an
@@ -292,10 +292,10 @@ Measured on the read path when both existed (800 observations, release build): `
 5.64ms, `curation` 22.66ms -> 14.13ms; with vectors attached, `graph` 33.07ms -> 6.20ms, because an
 f32 decode costs about 2ns per component against roughly 75ns to parse a JSON float.
 
-**What was given up.** The native ANN index. Semantic recall is a cosine scan, which measured
+**What was given up.** The native ANN index. Semantic retrieval is a cosine scan, which measured
 *faster* below roughly 5-6k embedded rows and slower above it (at 20k: 12.4ms with the index, 39.4ms
 without). Two things bound the cost: the index engaged only in a `--features fastembed` build, and an
-ANN index is a node-local recall aid exempt from the convergence norm (Principle 16, 4th revision) -
+ANN index is a node-local retrieval aid exempt from the convergence norm (Principle 16, 4th revision) -
 so adding one back changes no answer the graph must agree on.
 
 **Migration.** v0.1.21 is the last release that reads a Cozo store; its `migrate-store` copies the
@@ -321,7 +321,7 @@ last release wrote is read back by every build ([compatibility.md](compatibility
 | Tool | Role |
 |------|------|
 | `observe` | ingest a knowledge fragment (free text + optional entities/relations/descriptions/`valid_from`/`valid_to`/`on_behalf_of`/`derived_from`/`confidence`) -> creates an observation, links entities |
-| `search_knowledge` | semantic + keyword hybrid search; `scope` = `local` \| `remote` \| `both` (federated recall), response labels the `mode` actually used (Principle 16 4th) |
+| `search_knowledge` | semantic + keyword hybrid search; `scope` = `local` \| `remote` \| `both` (federated retrieval), response labels the `mode` actually used (Principle 16 4th) |
 | `get_entity` | look up an entity + relations + provenance |
 | `traverse` | n-hop graph traversal from an entity |
 | `workspace_map` | co-occurrence contexts (hyperedges) for cold-start orientation (Principle 11 second-order structure) |
@@ -581,7 +581,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - **Provenance/trust/delegation**: every fact carries (acting host, on_behalf_of, workspace, source, confidence, trust_tier, time). Provenance filtering/trust weighting at query time.
 - **Bitemporal** (Principle 4): observation = transaction time, relation = valid interval (valid_from/to) -> the two time-travel queries `as_of_valid(T)`/`as_of_recorded(T)`.
 - **Contamination defense** (Principle 18): trust tier + `derived_from` lineage + quarantine + batch retraction by lineage back-tracing (cleanup). A signature is only transport integrity, not content authenticity.
-- **Forgetting/consolidation** (Principle 7): the log is forever, recall is finite. Demotion touches only index weights (the log is immutable); consolidation is a deterministic idle-time reprojection that generates signals and candidate proposals and commits nothing; a probabilistic summary is generated node-local on read and never stored ([consolidation.md](consolidation.md) C10/C11).
+- **Forgetting/consolidation** (Principle 7): the log is forever, retrieval is finite. Demotion touches only index weights (the log is immutable); consolidation is a deterministic idle-time reprojection that generates signals and candidate proposals and commits nothing; a probabilistic summary is generated node-local on read and never stored ([consolidation.md](consolidation.md) C10/C11).
 - **Identity resolution**: canonical key first + embedding similarity only up to candidates, merge finalization deterministic/conservative. Merge history preserved/un-merge possible.
 - **Security/privacy**: workspace scoping, an ingest redaction hook, a **sync-boundary filter** (sharing opt-in).
 - **Node identity/transport**: node-keypair event **signing** (authenticity), sync TLS/mTLS.
@@ -595,7 +595,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
    file persistence. (E2E verified. Delivered on Cozo/RocksDB; replaced by redb in v0.2.0 - Section 6.)
 3. **M2 - Semantic search [o]**: `EmbeddingProvider` (fastembed BGE-small-en-v1.5, 384d) + a native
    HNSW index in the then-current store, RRF fusion of keyword/semantic-observation/semantic-entity lists, 1-hop graph enrichment.
-   Recall regression set in place (`recall_eval.rs`: mean recall@5 >= 0.9, entity-gold subset >= 0.99).
+   Retrieval regression set in place (`recall_eval.rs`: mean recall@5 >= 0.9, entity-gold subset >= 0.99).
 4. **M3 - Resolution/schema/bitemporal: M3a [o] and M3b [o] done (M3b except IR6), M3c open** (split into slices):
    - **M3a - belief resolution [o] ([resolution.md](resolution.md))**: a replaceable
      `ResolutionPolicy` port with the `TierWeighted` default (effective tier -> ordering HLC -> id;
@@ -657,7 +657,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
      [impl]).
 6. **M4 - Federation [o] Phases 0-4 and the Phase 3.5 read tier; Phase 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
-   (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated recall, legacy-id
+   (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated retrieval, legacy-id
    migration. Design -> [federation.md](federation.md).
    - Open: peer-to-peer mesh and hybrid topology; browser access to the hub read tier, which waits
      for user keys (remote-viewer.md Section 2);
@@ -665,7 +665,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
      (Phase 5), which is why deployment is single-principal today; sync/consolidate as **MCP Tasks** and
      human mediation as **elicitation** (Principle 21) - see Section 7.
 7. **M5 - Inference/extraction/contamination defense [ ]**: lightweight inference, the `Extractor` port, mandatory `derived_from` lineage/quarantine/cleanup (Principle 18).
-8. **M6 - Forgetting/consolidation [ ]**: deterministic idle-time reprojection + recall demotion (Principle 7, sleep-time). Selection of consolidation targets is based on hyperedge stability/corroboration/cohesion metrics (Principle 11 second-order structure). Design -> [consolidation.md](consolidation.md), which also carries the recall half of M5's P18 clause and the commit effect M3.5 left `recall` without: all three wait on one mechanism, a per-item recall weight. It now exists as a fold and is reported (`demotion_candidates`), and the three clauses stay unmet because nothing consumes it - `fuse_rrf` still fuses by rank position and has nowhere for a weight to enter. A weight that ranks nothing forgets nothing.
+8. **M6 - Forgetting/consolidation [ ]**: deterministic idle-time reprojection + retrieval demotion (Principle 7, sleep-time). Selection of consolidation targets is based on hyperedge stability/corroboration/cohesion metrics (Principle 11 second-order structure). Design -> [consolidation.md](consolidation.md), which also carries the retrieval half of M5's P18 clause and the commit effect M3.5 left `recall` without: all three wait on one mechanism, a per-item retrieval weight. It now exists as a fold and is reported (`demotion_candidates`), and the three clauses stay unmet because nothing consumes it - `fuse_rrf` still fuses by rank position and has nowhere for a weight to enter. A weight that ranks nothing forgets nothing.
 
 ---
 
@@ -677,7 +677,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - Embedding default: **local (fastembed)**, behind a compile feature. [o] Resolved in M2 - `fastembed`
   when built with the feature, else `none` (keyword degrade); `hashing` is a deterministic dev
   provider. Client-supplied and remote-API embedding were dropped: a remote API contradicts local-first
-  and would make recall depend on network reachability.
+  and would make retrieval depend on network reachability.
 - The first federation topology: **hub-and-spoke**. [o] Resolved in M4 - a hub gives always-available
   relay and catch-up between nodes that are never online together, and the replication primitive is
   topology-independent, so peer/mesh reuses it unchanged (federation.md).
@@ -760,7 +760,7 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   ([compatibility.md](compatibility.md) Sections 4-5).
   Note what this does NOT change, since the blast radius was easy to overstate: keyword and semantic
   search read the observation table's columns directly and never reconstruct, so those rows were always
-  recallable. What was broken is everything downstream of reconstruction - the folds, the log browser,
+  retrievable. What was broken is everything downstream of reconstruction - the folds, the log browser,
   `supragnosis://observation/{id}` dereference (so a search could return a hit whose provenance could not
   be inspected, Principles 2/14), and `add_observation`'s merge baseline, which propagates a read failure
   by design and so refused to absorb a re-observation of that content at all.
@@ -778,16 +778,16 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   fold-projections (workspaces, types, proposal state) converge continuously, while the materialized
   entity/relation projection converges **at re-materialization**, which the sync apply path triggers.
 - Principle 16 (4th revision, two layers of determinism): `search_knowledge` labels the `mode` it actually
-  used (hybrid vs keyword), so a client can tell the convergence surface from the node-local recall aid,
+  used (hybrid vs keyword), so a client can tell the convergence surface from the node-local retrieval aid,
   and the tool description states that score scale differs per mode. Embeddings deliberately do not
-  replicate - they are a node-local recall aid, exempt from the convergence norm. The curation report
+  replicate - they are a node-local retrieval aid, exempt from the convergence norm. The curation report
   applies the same rule to its one embedding-dependent signal: `merge_band`
   (`available`/`embedded`/`examined`) accompanies `merge_suggestions`, so an empty list separates "no
   near pairs" from "no embedder here" from "ran over part of the workspace" instead of collapsing the
   three (the other curation signals are deterministic and need no such caveat).
 - Principle 17 (knowledge sovereignty, sync boundary): sharing is a workspace whitelist defaulting to
   none; `export_delta` returns nothing for a non-shared workspace; the hub authenticates per node
-  (bearer) and authorizes per workspace on every route. **Federated recall goes through the same
+  (bearer) and authorizes per workspace on every route. **Federated retrieval goes through the same
   authorization**, closing the "same knowledge through a different door" concern. A non-loopback sync bind
   requires TLS **and** a non-empty allowlist. *Caveat*: the viewer's public read mode does not honor this
   (see outstanding entry conditions).
@@ -815,7 +815,7 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   every co-asserting observation (P18 lineage) - the hyperedge stays a derived view; only the
   asserted grouping becomes first-class and is managed like any other edge. Hyperedges themselves are
   deliberately NOT edge-managed (no direct edit/refute surface): a derived view has no state, and the
-  management policy is projection hygiene + gated promotion (P1/P19), plus recall demotion at M6.
+  management policy is projection hygiene + gated promotion (P1/P19), plus retrieval demotion at M6.
 - Principle 23 (gate to canon, *structure*): a proposal is itself an observation; its state is a
   deterministic fold with merge as the **absorbing** outcome (convergent and monotonic); no verdict
   deletes an assertion; the viewer's accept casts a verdict observation rather than writing the
@@ -885,7 +885,7 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   Ingest-surface capture is implemented: `observe`'s relation accepts optional `valid_from`/`valid_to` and encloses them in
   the log's assertions and the projection - separation of capture and processing, a clue of Principle 4.)
   Note the schedule slipped: this was assigned "M3-M4", and M4 shipped without it.
-- Principle 7 (forgetting/consolidation): recall demotion + idle-time consolidation -> **M6**. The
+- Principle 7 (forgetting/consolidation): retrieval demotion + idle-time consolidation -> **M6**. The
   generate-side (read-only curation signals) landed early with M3.5; the demotion side is computed and reported
   (`demotion_candidates`, consolidation.md Section 8 step 1) and consumed by nothing yet - a weight that ranks
   nothing forgets nothing.
@@ -935,8 +935,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   max-over-claimed-tiers representative computation is retired; a wire claim caps at HostSigned),
   and tier promotion exists as an explicit gated act with the human-direct surface ceiling. Still
   open -> **M5** (with the extraction port): quarantine of lineage-less derived assertions, lineage
-  back-tracing cleanup (sanitize, the `recall` effect), and trust-weighted **search/recall ranking**
-  (the tier weights belief selection today, not the ranked recall surfaces).
+  back-tracing cleanup (sanitize, the `recall` effect), and trust-weighted **search/retrieval ranking**
+  (the tier weights belief selection today, not the ranked retrieval surfaces).
 - Principle 3 (the destruction-demand exception) - **unscheduled**: the tombstone (the absorbing record left by a
   regulation/privacy destruction demand, including its sync propagation and re-ingest refusal) exists only in
   principles.md. No milestone owns it. This is the one deferral in this ledger with no assigned repayment point;
@@ -1033,7 +1033,7 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
   unnoticed. A guarantee that nothing checks is a guarantee only on paper.
 - Blocking store/embedding calls are behind `spawn_blocking` on every MCP tool handler - the remote-transport
   precondition.
-- The sharing opt-in whitelist and sync-boundary filter exist, and federated recall is governed by the same
+- The sharing opt-in whitelist and sync-boundary filter exist, and federated retrieval is governed by the same
   authorization (Principle 17 at the sync boundary).
 
 **Overdue [x] - declared as M4 entry conditions, but M4 Phases 0-4 shipped without them**

@@ -74,7 +74,7 @@ supragnosis service install                           # macOS; Linux: deploy/sys
 supragnosis connect claude-code
 ```
 
-Prebuilt binaries are keyword search only. For local semantic recall (ONNX, no API calls),
+Prebuilt binaries are keyword search only. For local semantic retrieval (ONNX, no API calls),
 build with `--features fastembed`.
 
 ### Your first minute
@@ -123,7 +123,7 @@ Watching it while an agent works is the part that is hard to convey in text:
 13 MCP tools, each one recurring intent:
 
 - `observe` - free text plus optional structured assertions. No schema required up front.
-- `search_knowledge` - hybrid keyword and semantic recall, labelled with the mode it used.
+- `search_knowledge` - hybrid keyword and semantic retrieval, labelled with the mode it used.
 - `get_entity`, `traverse` - exact lookup and bounded graph walks.
 - `workspace_map` - co-occurrence hyperedges: what tends to get said together.
 - `define_type` - promote a pattern into the workspace glossary.
@@ -183,11 +183,11 @@ different storage engine, without changing a line of `core` or `engine`.
 
 ## Status
 
-Working today: hybrid recall, belief resolution with contested claims surfaced, identity
+Working today: hybrid retrieval, belief resolution with contested claims surfaced, identity
 resolution with an entity merge gate that can be reversed, hub-and-spoke log replication with
 ed25519-signed events over TLS, and a live viewer.
 
-Not yet: bitemporal time-travel queries, multi-principal governance, recall demotion and idle
+Not yet: bitemporal time-travel queries, multi-principal governance, retrieval demotion and idle
 consolidation, and automatic type induction.
 
 That second list is not a roadmap gesture. Every unmet demand is a named clause with a

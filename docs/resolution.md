@@ -14,7 +14,7 @@
 >   M3a re-routes the projection merge through the policy but keeps the `write_guard`
 >   serialization; the atomic read-merge-write redesign stays with M3b, as recorded in
 >   architecture.md Section 14.
-> - Out of scope (M5): trust-weighted recall ranking and quarantine. M3a makes the tier decide
+> - Out of scope (M5): trust-weighted retrieval ranking and quarantine. M3a makes the tier decide
 >   the **belief**; making it also weight **search ranking** rides with the extraction port and
 >   lineage cleanup (Principle 18's remaining logic).
 
@@ -309,7 +309,7 @@ had been renamed out from under it, which is the failure mode the sweep exists t
   (effective tier + representative-tier switch); apply-path verbatim storage is by-design (F13)
   and Phase 5 owns the remaining canon-policy evaluation.
 - Latent condition "canonical_name deterministic": repaid.
-- P18 logic: partially repaid (tier now decides resolution and display); recall ranking,
+- P18 logic: partially repaid (tier now decides resolution and display); retrieval ranking,
   quarantine, and lineage cleanup remain M5.
 - Principle 23 enforcement: `claim_promotion` / `claim_demotion` join `entity_merge`;
   `tbox_change` (Phase 5) and `recall` (M5) remain.
@@ -323,6 +323,6 @@ had been renamed out from under it, which is the failure mode the sweep exists t
 | `ResolutionPolicy` port + `TierWeighted`, effective tier, contested projection, gate effects, surface ceiling | **this spec (M3a)** |
 | Alias accumulation, merge band, embedding candidates, atomic write path | M3b (architecture.md Section 12) |
 | Negative assertions / automatic `valid_to` closing / time-travel queries | M3b/M5 per architecture.md (bitemporal logic) |
-| Recall effect + I17 enforcement, quarantine, lineage cleanup, recall ranking | M5 |
+| Recall effect + I17 enforcement, quarantine, lineage cleanup, retrieval ranking | M5 |
 | I9 principal comparison, canon policy, principal-signed acts, `tbox_change` gate | M4 Phase 5 (federation.md) |
 | MCP elicitation (protocol-level human confirmation) | Principle 21 remainder (architecture.md Section 7) |

@@ -56,7 +56,7 @@ Sections 12-14):
 
 Embedding similarity **generates candidates; only the gate commits.**
 
-- **Candidate generation** (deterministic given the node's index - a recall aid, P16-exempt but
+- **Candidate generation** (deterministic given the node's index - a retrieval aid, P16-exempt but
   guarded): for each entity, nearest entities by embedding similarity above a **candidate floor**
   (`SIM_CANDIDATE`, initial 0.85) that are not already the same id, not already merged, and not
   already covered by an open entity_merge proposal. Emitted as a new curation-report section
@@ -64,8 +64,8 @@ Embedding similarity **generates candidates; only the gate commits.**
 - **No auto-merge in M3b.** The confident band ("top band automatic") requires the M4+ policy
   executor whose routing premises the fold re-validates (I15). Until then every suggestion is a
   human decision in the console / an agent-opened proposal - both through the existing gate (P23).
-- **Recall-aid guard** (Principle 16, 4th revision): similarity scores are node-local; a suggestion
-  is labeled as coming from the recall aid, and the committed merge is the verdict, which is
+- **Retrieval-aid guard** (Principle 16, 4th revision): similarity scores are node-local; a suggestion
+  is labeled as coming from the retrieval aid, and the committed merge is the verdict, which is
   log-derived and converges. Two nodes may see different *suggestions*; they commit the same
   *merges*.
 - **Availability is reported, not implied** (Principle 5): the band needs an embedder, and an entity
@@ -197,4 +197,4 @@ deferral is non-destructive. M3c is scheduled after M3b, before M5.
 | Induced type candidates (IR6 - naming the type) | M5 (Section 7 [impl]) |
 | Bitemporal query logic + negation semantics | M3c (Section 8) |
 | Auto-merge executor (top band, I15 re-validation) | M4+ policy layer (proposal-workflow.md Section 9) |
-| Quarantine, lineage cleanup, recall effect, trust-weighted recall ranking | M5 |
+| Quarantine, lineage cleanup, recall effect, trust-weighted retrieval ranking | M5 |

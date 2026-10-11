@@ -52,7 +52,7 @@
 > knowledge sovereignty to the query surface (17), trust tier as the receiver's evaluation (18),
 > non-delegability of the recall verdict (23).
 > Revision: 2026-07 (4th) - Two layers of query determinism (16): reproducibility and convergence
-> distinguished, and recall aids (embedding/ANN indexes) excluded from the convergence norm (with guards).
+> distinguished, and retrieval aids (embedding/ANN indexes) excluded from the convergence norm (with guards).
 > Preservation of unspecified confidence (2): an unspecified value is not substituted with a default.
 > Revision: 2026-07 (5th) - Well-formedness of assertions (1): the boundary of ingest validation
 > (well-formedness only, no content censorship) made explicit. Mechanical enforcement of structural
@@ -120,7 +120,9 @@
 > forbids, and an unstated value is preserved as unstated - the rule this principle already gave
 > confidence. *Reinterprets* 7's headline, which still said consolidation summarizes, promotes and
 > demotes - the 7th revision and the closure review had made it a generator that commits nothing and
-> stores no summary.
+> stores no summary. *Reinterprets* the vocabulary, applying 8 to this document: "recall" names only
+> the retraction - the `recall` proposal kind and its verdict - and fetching knowledge is "retrieval"
+> (a retrieval aid, retrieval demotion, the retrieval weight), earlier revision lines included.
 
 ---
 
@@ -300,15 +302,15 @@ current belief while leaving the existence of the contradiction itself queryable
 ### Principle 7. Forgetting Is Demotion, Consolidation Is Re-Projection (Forgetting as Demotion, Consolidation as Re-Projection)
 
 **The lifecycle of knowledge does not end at ingest.** Stale or low-value knowledge is forgotten not
-by deletion but by **demotion of recall priority**, and an idle-time **consolidation** process
+by deletion but by **demotion of retrieval priority**, and an idle-time **consolidation** process
 re-ranks the accumulated observations and generates from them - curation signals and candidate
-proposals - while committing nothing itself. The log is eternal, but recall is finite.
+proposals - while committing nothing itself. The log is eternal, but retrieval is finite.
 
-- **Rationale**: An append-only log grows without bound, and recall without curation is polluted by
+- **Rationale**: An append-only log grows without bound, and retrieval without curation is polluted by
   noise. This is the solution that recent agent-memory research has converged on - reprocessing memory
   during idle time (sleep-time) outside the user-response path to improve its representation (a
   computational analogue of memory consolidation during sleep). Separating storage (Principle 3:
-  preserve everything) from recall (finite attention) keeps the two demands from conflicting.
+  preserve everything) from retrieval (finite attention) keeps the two demands from conflicting.
 - **Enforcement**:
   - Forgetting does not touch the observation log - it only adjusts weights in the projection/index
     layer (recency, usage frequency, trust tier). Demoted knowledge is always reachable by an explicit
@@ -550,17 +552,17 @@ client.** Hosts speak in their own vocabularies, and the resolution layer makes 
     ties/truncation are pinned by a stable key (id).
   - **Two layers of query determinism - reproducibility and convergence**: (a) **reproducibility**
     (same query against the same state of the same node -> same response) is the duty of every query
-    surface - semantic recall (ANN) also upholds this by pinning ties/truncation with a stable key.
+    surface - semantic retrieval (ANN) also upholds this by pinning ties/truncation with a stable key.
     (b) **convergence** (two nodes with the same observation set -> same response) is the duty of the
-    deterministic read surfaces (exact lookup, graph traversal, keyword search). A semantic-recall
-    index (embeddings, ANN graph) is not part of the materialized graph but a **node-local recall
+    deterministic read surfaces (exact lookup, graph traversal, keyword search). A semantic-retrieval
+    index (embeddings, ANN graph) is not part of the materialized graph but a **node-local retrieval
     aid** - being an insertion-order-dependent approximate structure, it cannot promise convergence
     across nodes, and need not (the storage/recall separation of Principle 7, the recall/commit
     separation of Appendix A) - it is not subject to the convergence norm. This exemption, however,
     presumes two guards: when a recall result becomes an input to a commit (merge/promotion, etc.), it
     must pass through the deterministic rules again (Principle 19), and a query response must label
     which surface it came from (mode) so that a client can distinguish the convergence surface from the
-    recall aid.
+    retrieval aid.
   - This property is verified continuously by test: maintain a property test that injects the same
     event set in random order/partitioning and checks graph identity.
   - **Convergence and monotonicity are different properties.** Convergence is "order-independent - the
@@ -833,10 +835,10 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Loose ingest (11, 22) vs schema clarity (8, 9) | **Prioritize ingest**, but leave a refinement path. Knowledge that never came in cannot be refined either. |
 | Loose ingest (22) vs contamination defense (18) | **Do not block ingest; defend with trust.** Suspicious knowledge comes in too, but is quarantined at the lowest tier - not locking the door but attaching a label. |
 | Preservation (3, 6) vs privacy (17) | **Privacy wins.** A destruction demand is the only exception to Principle 3 and leaves a tombstone. |
-| Preservation (3) vs forgetting (7) | Not a conflict - **the log is eternal and recall is finite.** Forgetting is the allocation of attention, not of storage. |
+| Preservation (3) vs forgetting (7) | Not a conflict - **the log is eternal and retrieval is finite.** Forgetting is the allocation of attention, not of storage. |
 | Aggressiveness of resolution (15) vs conservatism | **Conservatism is the default.** Auto-merge only in the confident band; when ambiguous, hold off with a candidate link. |
 | Minimal tool surface (21) vs expressiveness | **Minimal is the default.** An expressiveness demand is first validated by composing existing tools, and promoted only when it is a repeated pattern. |
-| Deterministic core (19) vs semantic search quality | Use the probabilistic element only **to widen recall**, and commit deterministically. |
+| Deterministic core (19) vs semantic search quality | Use the probabilistic element only **to widen retrieval**, and commit deterministically. |
 | Availability (24) vs failing fast on a bad config | **Degrade loudly.** A node that will not start over a configuration mistake costs every local read; the mistake costs only the subsystem it broke. Refuse only where continuing would serve a wrong answer or an unauthorized surface. |
 | Gate (23) vs minimal friction (22) | **The gate is on promotion only, not on ingest.** Even when review is backlogged, knowledge already exists and circulates at a low tier. |
 | Review rigor (23) vs reviewer's attention | **Most is automatic, only a few go to a human.** Only new contradictions/high-impact/structural changes/recall force human review. |
@@ -848,7 +850,7 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Convergence (16) vs node-local trust evaluation (18) | **Not a conflict as built.** Evaluation is a function of the attestation alone, and the surface marker and the canon policy are in the log (F16), so one log gives one canon; what differs between nodes is which events they admit (F6) - the set, not the fold. |
 
 The judgments above are norms, not a status report. Several of the mechanisms they name - the
-quarantine tier, the tombstone, recall demotion, the auto-merge band, the informative checks that
+quarantine tier, the tombstone, retrieval demotion, the auto-merge band, the informative checks that
 route review - are owed, and the registry (Appendix B.1) and [architecture.md](architecture.md)
 Section 14 say which. A tension whose resolving mechanism is unbuilt is resolved on paper only, and
 until the mechanism exists the conservative side holds by default: nothing is removed, demoted or
@@ -893,7 +895,7 @@ Questions to apply quickly during design/PR review:
   proposal state? (Principle 23)
 - Is there a path that makes self-approval possible, outside the solo and correction exceptions?
   (Principle 23)
-- Do we measure recall quality? - search/recall changes are verified with a regression eval set in the
+- Do we measure retrieval quality? - search/retrieval changes are verified with a regression eval set in the
   style of a memory benchmark (LongMemEval-like).
 - Does this change assert something about the system that another document contradicts? The coverage
   registry checks that a clause declares evidence, never that prose is true, so a document disagreeing
