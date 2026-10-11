@@ -79,8 +79,8 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           # For ARM Linux servers (Graviton, Raspberry Pi). A native arm64 runner, so no cross
-          # toolchain. The tap formula does not reference this target, so it is unrelated to the
-          # tap update below.
+          # toolchain. The tap formula installs this tarball on arm64 Linux, so rendering the
+          # formula (the bottle job below, and the tap update after this run) needs its sum.
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
@@ -165,8 +165,9 @@ jobs:
   # which homebrew.yml also runs on pull requests). macos-14 gives arm64_sonoma, which Homebrew also
   # pours on every later macOS;
   # ubuntu gives x86_64_linux. There is no Intel macOS runner (the Intel binary is cross-compiled),
-  # so Intel Macs keep the source-build path. A bottle that fails to build is left out of the tap,
-  # not a reason to hold the release back.
+  # so Intel Macs keep the source-build path, and so does arm64 Linux, which this matrix does not
+  # bottle. A bottle that fails to build is left out of the tap, not a reason to hold the release
+  # back.
   bottle:
     name: homebrew bottle (${{ matrix.os }})
     permissions:
