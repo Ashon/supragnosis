@@ -534,7 +534,7 @@ replication the workflow was designed to run on.
   both proposer and reviewer, verdict carries the self-attested mark). Only when a **second principal**
   contributes does I9 (proposer != reviewer) begin to bite - the correct effect of admitting another party
   to the canon, not a regression.
-- Deferred to M4+ (per `proposal-workflow.md` line ~504): quorum policy, the auto-merge policy, and a
+- Deferred to M4+ (per `proposal-workflow.md` Section 13): quorum policy, the auto-merge policy, and a
   conflict-resolution UI. These are policy layers on top of the convergence this milestone provides, not
   prerequisites for it.
 
@@ -614,7 +614,7 @@ changing the canon policy without a central admin - is out of scope.
   it for that batch, so the version vector stays below the rejected event and it is offered again until
   accepted, instead of being skipped for good by a later seq (sync-correctness.md Section 6). A seq is
   issued once per identity: the counter is reserved in a mark beside the node key before it is used,
-  and floored by what a host already holds of this node's stream (Section 5). Origin
+  and floored by what a host already holds of this node's stream (sync-correctness.md Section 5). Origin
   fields (seq/hlc/signature) are set once by the origin and preserved verbatim through relays, so relay
   copies dedup by full-attestation equality.
 - **F8** HLC is monotonic and totally ordered (the I11 clock); last-write-wins folds order by HLC, not by
@@ -777,7 +777,7 @@ input, not nondeterminism - F16).
   node. Observe-time stamping is an optional Phase 4 wiring (once the daemon holds the node identity);
   it changes when the stamp is applied, not its meaning. That holds because the HLC a stamp carries is the
   attestation's authoring time, `observed_at`, whenever the stamp is applied - not the export time
-  (sync-correctness.md Section 3) - and because one node backfills one pass at a time (Section 4). Plus the deterministic re-materialization
+  (sync-correctness.md Section 3) - and because one node backfills one pass at a time (sync-correctness.md Section 4). Plus the deterministic re-materialization
   step `Engine::reproject` (HLC-ordered replay - Prop C). Property test: two in-memory nodes converge
   under any exchange order (F5); tampered event rejected (F6); a workspace-filtered (hole-y) stream
   still converges (F7); cross-node reprojection materializes identically. [done]
@@ -837,7 +837,7 @@ input, not nondeterminism - F16).
   say so plainly or it will be read as one. Admission additionally needs the peer's key and bearer
   hash to arrive from somewhere, which is an out-of-band exchange the console cannot perform for the
   operator.
-- Proposal **quorum / auto-merge policy** and a conflict-resolution UI (`proposal-workflow.md` line ~504,
+- Proposal **quorum / auto-merge policy** and a conflict-resolution UI (`proposal-workflow.md` Section 13,
   M4+). Note: cross-node verdict *convergence* is enabled by this milestone (Section 7a) - only these
   policy layers on top of it are deferred.
 - Redaction finer than workspace-level (e.g. per-entity sensitivity labels).

@@ -237,7 +237,7 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
 - **federation.md 6c's second-door rule** is what Section 4.3 implements: the same workspace grants,
   and no remote node-wide query.
 - **client-connect.md Section 2** says the bridge reaches only the local daemon. It reaches the
-  server its active profile names; the local daemon is the default profile. C1 (the bridge opens no
+  server its active profile names; the local daemon is the default profile. client-connect.md C1 (the bridge opens no
   store and starts no daemon) is unchanged.
 
 ## 10. Ordering
