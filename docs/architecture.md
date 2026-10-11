@@ -213,7 +213,7 @@ sequenceDiagram
 
 **A single binary, composed roles.** A single supragnosis instance can hold the roles below in overlapping combinations.
 
-- **Local node (always)** - ontologizes that host's knowledge via the embedded store + local MCP (stdio).
+- **Local node (always)** - ontologizes that host's knowledge via the embedded store + local MCP (stdio through the bridge, streamable-HTTP on loopback).
 - **Sync client** - pull/push its own observation log against a remote (server/peer).
 - **Server (hub) node** - aggregates/relays multiple nodes' logs, always available, central authz.
 - **Peer** - direct node<->node sync without a center (mesh).
@@ -228,13 +228,13 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph HostA["Host A (node)"]
-        A1["Local store + MCP(stdio)"]
+        A1["Local store + MCP(stdio/loopback)"]
     end
     subgraph HostB["Host B (node)"]
-        B1["Local store + MCP(stdio)"]
+        B1["Local store + MCP(stdio/loopback)"]
     end
     subgraph HostC["Host C (node)"]
-        C1["Local store + MCP(stdio)"]
+        C1["Local store + MCP(stdio/loopback)"]
     end
     Hub[("Server / hub node\naggregate, relay, always-available")]
     A1 <-->|sync API| Hub
@@ -247,7 +247,7 @@ flowchart LR
 | | MCP transport | Sync (federation) transport |
 |--|----------------|-------------------------------|
 | Target | **agent <-> node** | **node <-> node/server** |
-| Protocol | MCP (stdio local / streamable-HTTP remote) | a dedicated sync API (HTTP(S), later gRPC) |
+| Protocol | MCP (stdio local via the bridge / streamable-HTTP on loopback and the hub) | a dedicated sync API (HTTP(S), later gRPC) |
 | What it does | observe/search/traverse tool calls | observation-log version-vector delta exchange |
 
 > That is, "connecting to a server" is possible at both levels: (a) a remote agent connects to a node's MCP-HTTP,
@@ -451,7 +451,12 @@ Node identity is **not** configured: an ed25519 keypair is generated once at `~/
 The older sketch above (`host_id`, `[node] role`, `peers`) is superseded: roles are implied by which
 sections are present, and `peers` awaits the P2P phase.
 
-- **Local host (stdio)**: the MCP client launches supragnosis as a child process (per chat).
+- **Local host (bridge)**: the MCP client launches `supragnosis bridge` as its stdio server (per
+  chat). The bridge relays to the standalone daemon below, reading the token from its file on every
+  connect, so no client configuration holds a secret ([client-connect.md](client-connect.md) Section 3).
+  The **store-opening stdio server** (`supragnosis` with no arguments) remains for where no daemon
+  runs - a CI job, a one-off container - and is not recommended beside a daemon, where it would be the
+  second writer (client-connect.md Section 6).
 - **Standalone daemon**: given `--http` / `SUPRAGNOSIS_HTTP_ADDR` (e.g. 127.0.0.1:7373), it exposes
   MCP **streamable-HTTP** persistently instead of stdio (rmcp `StreamableHttpService` -> axum `/mcp`). Because the daemon is
   the sole holder of the db, the single-process lock problem disappears, and multiple agents connect via
