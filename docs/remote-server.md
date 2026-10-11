@@ -40,9 +40,10 @@ node that serves MCP beyond loopback, to principals it knows, under the same sha
 - **Not a widening of the local daemon.** The local MCP daemon stays on loopback and the viewer
   stays on its unix socket. Only the hub's TLS listener - the surface that already admits other
   machines for sync - gains a second, separately governed door.
-- **Not remote governance, yet.** Verdicts, T-Box changes and node operations need an identity
-  stronger than a bearer token (federation.md 6d, level ii). Until principals can sign their own
-  acts, the remote surface refuses them (Section 4.3).
+- **Not remote governance, yet.** Verdicts and T-Box changes need an identity stronger than a
+  bearer token (federation.md 6d, level ii), and a T-Box change also needs the `tbox_change` gate
+  (F18). Until principals can sign their own acts, the remote surface refuses both (Section 4.3).
+  Node operations are refused for good: they are the node's acts, not a principal's.
 
 ## 3. The client: server profiles
 
@@ -225,7 +226,7 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
 | **R4** | A remote write is recorded `host` = hub, `on_behalf_of` = principal, at no higher than `AgentExtracted`. A client-supplied `on_behalf_of` cannot replace the principal. |
 | **R5** | Content another node originated is served remotely only with that node's consent for that workspace. Without it the answer is a refusal, never a partial view. |
 | **R6** | No credential appears in an AI app's configuration or on a command line. The bridge and the CLI read it from a 0600 file. |
-| **R7** | Verdicts, T-Box changes and node operations are refused on the remote surface until principals can sign their own acts. |
+| **R7** | Node operations are never served to a principal. A verdict is refused on the remote surface until it can arrive as the principal's own signed act, and a T-Box change until it can arrive that way through the `tbox_change` gate (F18). |
 | **R8** | A remote profile off loopback is reached over verified TLS only; plain HTTP is accepted only to a loopback host. There is no option to skip verification. |
 
 ## 9. What this revises
