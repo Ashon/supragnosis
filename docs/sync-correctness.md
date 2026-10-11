@@ -2,7 +2,7 @@
 
 > Ten defects in federation's shipped sync, found by the 2026-10 adversarial review and re-traced
 > against v0.4.7, and the rules that close them. Companion to [federation.md](federation.md) (the
-> protocol this revises, Section 12) and [compatibility.md](compatibility.md) (which hands the
+> protocol this revises; Section 14 lists what) and [compatibility.md](compatibility.md) (which hands the
 > wire's version to this document).
 >
 > Status: **built** (Section 13, all five steps). Each defect has a test that failed on the code
@@ -240,7 +240,7 @@ as usual.
   in `supragnosis-release`. Every response carries the hub's in the same headers, and `PingResp`
   gains `protocol`.
 - **The hub records each peer's** protocol and release in its peer table, shown with the known
-  peers in `sync_status` and the viewer. Where R5 refuses a workspace, each node that has not
+  peers in `sync_status` and the viewer. Where remote-server.md R5 refuses a workspace, each node that has not
   consented is named with the release it last said it runs - or "release not known", with the note
   that a release before v0.4.5 cannot send consent at all - not merely "has not consented".
 - **The spoke shows each hub's** protocol beside its release, in the viewer's federation panel and

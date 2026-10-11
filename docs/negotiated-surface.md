@@ -10,7 +10,7 @@
 ## 1. The answer is already on the wire
 
 `/sync/ping` responds with the hub's node id, its version, and **the caller's own** shared workspaces
-(Section 5, `PingResp`). The handler comment states the intent plainly: a spoke can verify
+(federation.md Section 5, `PingResp`). The handler comment states the intent plainly: a spoke can verify
 connectivity, auth AND authorization in one round trip.
 
 One caller consumes it. The daemon's health loop reads the version, discards the workspace list, and

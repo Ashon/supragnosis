@@ -7,6 +7,8 @@
 >
 > Status: **specified**. Steps 0-1 of Section 10 are built (step 0 shipped in v0.4.6); steps 2-4
 > are not. What building it changed is in Section 12.
+>
+> A bare R-number here is one of remote-server.md's invariants (its Section 8), not resolution.md's.
 
 ## 1. Why this exists
 
