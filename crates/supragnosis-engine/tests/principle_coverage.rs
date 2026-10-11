@@ -1535,6 +1535,9 @@ const RESOLUTION_REGISTRY: &[(u8, &[Clause])] = &[
             "p23_a_blocked_gate_merge_grants_nothing",
             "p18_agent_surface_promotion_caps_at_host_signed",
           ])),
+        c("the ceiling is the highest among a promotion's merge verdicts, so a later merge raises a \
+           grant and never lowers it",
+          Evidence::Scenario(&["p18_a_console_merge_after_an_agent_merge_raises_the_grant"])),
     ]),
     (9, &[
         c("mediation enters as events: a counter-assertion, a proposal, a verdict",
