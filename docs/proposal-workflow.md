@@ -57,9 +57,9 @@ a direct consequence of a principle.
 | I10 | **Loading is not gated.** No part of the proposal procedure blocks or delays observe. | 22 |
 | I11 | **HLC causal propagation.** On the creation/ingest/sync of an observation, the HLC is updated causally. The fold's prefix-based determination (referential integrity, "first valid verdict") depends on this property; without it, multi-node convergence does not hold. | 16 |
 | I12 | **Verdicts are bound to base.** A verdict references the base frontier it reviewed. A verdict inconsistent with the current base is invalidated and demoted to a comment, and revise (re-pinning the base) automatically invalidates prior verdicts that are **not yet finalized (merge/quorum met)** (resetting the quorum count). An approval of a stale diff does not leak into a merge. However, a revise that arrives after a valid merge has already been finalized cannot move the base and is demoted to a comment - finality beats revise (the monotonicity of I16). | 9, 16 |
-| I13 | **The fold recomputes blocking checks.** Whether the blocking gate for merge validity passes is recomputed by the fold rather than trusting the `check_reported` event (I8 guarantees reproducibility). `check_reported` is merely a UX cache/advisory; a forged "pass" cannot promote contamination. | 8, 18 |
+| I13 | **The fold recomputes blocking checks.** Whether the blocking gate for merge validity passes is recomputed by the fold rather than trusting the `check_reported` event (I8 guarantees reproducibility). `check_reported` is merely a UX cache/advisory; a forged "pass" cannot promote contamination. | 18, 19 |
 | I14 | **Merge effects are idempotent.** Duplicate loading of the same effect is harmless, and entity-merge canonicalizes by canonical id order so concurrent duplicate proposals do not diverge. | 3 |
-| I15 | **The fold re-validates the routing conditions of an automatic verdict.** A policy executor's (automatic) verdict is valid only when the fold recomputes its routing premises (zero new contradictions, impact radius at or below the threshold) at the merge-time state and they pass - even if a contaminated/buggy executor auto-merges a high-impact proposal, the fold invalidates it. This does not apply to human verdicts. | 8, 16, 18 |
+| I15 | **The fold re-validates the routing conditions of an automatic verdict.** A policy executor's (automatic) verdict is valid only when the fold recomputes its routing premises (zero new contradictions, impact radius at or below the threshold) at the merge-time state and they pass - even if a contaminated/buggy executor auto-merges a high-impact proposal, the fold invalidates it. This does not apply to human verdicts. | 16, 18, 19 |
 | I16 | **Finality is monotonic in the verdicts, and reached at causal stability.** Merged is the absorbing element of the decision rule: once a valid merge is among the verdicts, no further verdict, reject or revise can cancel it (I3, I12). Whether a verdict is valid (7.1) is read off the log before it, so an event authored concurrently - without seeing the verdict (I11) - can still revise that until the verdict is causally stable (federation.md 7a, F16); from then on, no event's arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). | 16, 3 |
 | I18 | **Consolidation generates, never commits.** A consolidation/curation pass (Principle 7) may only emit read-only curation signals and candidate proposals; it never loads a `verdict_cast` or a merge effect directly. The sole commit path to canon is the proposal verdict (I1/I3/I6), so "generate != commit" is mechanical rather than a discipline. A human-facing curation console (the viewer, or an agent via elicitation) casts its accept as a `verdict_cast` observation - it does not write the projection/log - and a recall acceptance stays a human's direct act (I17). | 7, 19, 23 |
 
@@ -92,21 +92,21 @@ An entity added to the core ontology (the meta level of Principle 10).
 | `base` | Canon frontier at the time it opens (version vector) - the reference point of I7 |
 | `proposer` | Provenance including the delegation chain (Principle 2) |
 
-### 3.3 Proposal Kinds (the 5 intents that affect canon)
+### 3.3 Proposal Kinds (five intents, six kinds)
 
-Per Principle 23, the following five are reflected into canon **only through a
-proposal**.
+Per Principle 23, the following five intents are reflected into canon **only through a
+proposal**, as six kinds - merge and split are the two directions of one intent.
 
 1. **claim-promotion** - promotion of the trust tier of an assertion bundle (the most common case)
 2. **claim-demotion** - tier demotion (a de facto revert, including contamination response)
-3. **entity-merge / split** - finalizing/canceling an identity resolution (the "human confirmation" path of Principle 15)
+3. **entity-merge / entity-split** - finalizing/canceling an identity resolution (the "human confirmation" path of Principle 15; the split is [unmerge.md](unmerge.md))
 4. **tbox-change** - adding/revising a type/relation in the canon T-Box (the "explicit promotion" of Principle 11)
 5. **recall** - bulk retraction of the derivation tree from a contamination source (the sanitization of Principle 18)
 
 Each kind shares the same state machine and differs only in its check suite (Section 6).
 
-Consolidation (Principle 7) is **not a sixth kind** but a **source** that emits proposals of these
-five: a duplicate -> entity-merge, stale/low-value knowledge -> claim-demotion, an induced type ->
+Consolidation (Principle 7) is **not a seventh kind** but a **source** that emits proposals of these
+kinds: a duplicate -> entity-merge, stale/low-value knowledge -> claim-demotion, an induced type ->
 tbox-change, a contamination source -> recall. It generates candidates, never commits (I18). See
 Section 14.
 
@@ -503,7 +503,7 @@ A summary of how each step aligns with the principles (for review):
 | automation | 2, 18, 19 (responsibility, contamination defense, the LLM is not a judge) | auto-merge is also a verdict with a delegation chain, the routing premise is re-validated by the fold (I15), the agent goes only as far as a comment (Section 9) |
 | governance | 18 (explicit promotion) | policy is also knowledge, no self-approval + solo special case (Section 10) |
 
-The 9 kinds of edge cases deliberately resolved:
+The 10 kinds of edge cases deliberately resolved:
 
 1. **Concurrent opposing verdicts** -> valid-merge-absorbing decision rule (a function of the set) + a reversal is a new proposal (7.1).
 2. **Nondeterminism of time-based auto-merge** -> expiry/automation only via explicit events (I4).
@@ -513,7 +513,7 @@ The 9 kinds of edge cases deliberately resolved:
 6. **Concurrent duplicate merges** -> merge effects idempotent + entity-merge canonicalization (I14).
 7. **Auto-merge due to impact underestimation** -> recompute the impact radius at merge time (Sections 4, 9).
 8. **High-impact auto-merge by a contaminated/buggy executor** -> the fold re-validates the routing premise of an automatic verdict (I15).
-9. **Retroactive reversal by a late early-HLC verdict** -> finality is a monotonic function of the event set, Merged is an absorbing state (I16, 7.1).
+9. **Retroactive reversal by a late early-HLC verdict** -> Merged absorbs among the verdicts, and a verdict's validity is final at causal stability (I16, 7.1).
 10. **Proxied recall self-approval by a contaminated agent** -> a recall verdict cannot be delegated, only a human principal's direct act is valid (I17).
 
 ---
@@ -604,7 +604,7 @@ A consolidation pass runs off the user-request critical path (Principle 7) and p
   orphans, and contradiction points, computed deterministically from the log + the hyperedge
   second-order structure (Principles 11/16). This is a pure projection; surfacing it commits nothing
   and needs no gate, so it is the safe first increment (before any proposal machinery exists).
-- **Candidate proposals** of the five kinds (Section 3.3). An LLM may enrich a candidate (a summary,
+- **Candidate proposals** of the kinds in Section 3.3. An LLM may enrich a candidate (a summary,
   a merge rationale), but that enrichment enters as a **derived, lowest-trust, lineage-bearing**
   observation (Principles 18/19), and the LLM never casts the verdict (Principle 19: not a judge -
   an agent review is a comment, Section 9).
