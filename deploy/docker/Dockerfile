@@ -75,7 +75,7 @@ VOLUME ["/var/lib/supragnosis/.supragnosis"]
 USER supragnosis
 
 # 7420 is the federation sync API - the only surface allowed to bind non-loopback, and only with
-# TLS and a non-empty allowlist (F10). 7373 (MCP) is deliberately NOT exposed: it is unauthenticated
+# TLS and at least one admitted node or principal (F10). 7373 (MCP) is deliberately NOT exposed: it is unauthenticated
 # by design as a local trust surface (Principle 17), and publishing it from a container would put an
 # unauthenticated write surface on the network. See README.md if you need it.
 EXPOSE 7420

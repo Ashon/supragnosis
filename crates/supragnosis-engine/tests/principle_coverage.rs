@@ -234,7 +234,8 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     ]),
     (10, &[c(
-        "the sync surface binds non-loopback only with TLS and a non-empty allowlist",
+        "the hub listener binds non-loopback only with TLS and something admitted - whether a \
+         principals-only hub starts is R1's clause",
         Evidence::Scenario(&[
             "bind_guard_enforces_f10",
             "parse_loopback_addr_accepts_loopback_rejects_public",
