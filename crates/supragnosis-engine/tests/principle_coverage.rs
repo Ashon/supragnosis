@@ -2277,6 +2277,90 @@ fn documented_sections(text: &str) -> Vec<&str> {
 /// or the wrong thing. This catches the first kind: a section heading or an invariant row that
 /// does not exist. Whether an existing target says what the citing sentence claims stays a review
 /// question (Appendix B).
+/// An invariant id: one or two capitals and digits, ending at a non-alphanumeric - `F20`, `IR2`.
+fn id_token(s: &str) -> Option<(&str, &str, &str)> {
+    let letters = s.chars().take_while(char::is_ascii_uppercase).count();
+    let digits = s[letters..].chars().take_while(char::is_ascii_digit).count();
+    let end = letters + digits;
+    if !(1..=2).contains(&letters)
+        || digits == 0
+        || s[end..].starts_with(|c: char| c.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some((&s[..letters], &s[letters..end], &s[end..]))
+}
+
+/// Checks a list of section numbers - `3`, `3/8a`, `3, 4`, `10 and 11` - against `target`'s
+/// headings, and returns the text after the list.
+fn check_sections<'a>(
+    src: &str,
+    name: &str,
+    target: &str,
+    mut rest: &'a str,
+    dangling: &mut Vec<String>,
+) -> &'a str {
+    let sections = documented_sections(target);
+    while let Some((token, tail)) = section_token(rest) {
+        if !sections.contains(&token) {
+            dangling.push(format!("{src}: {name} Section {token} - no such heading"));
+        }
+        let next = ["/", ", ", " and ", "/ "]
+            .iter()
+            .find_map(|sep| tail.strip_prefix(sep))
+            .filter(|t| section_token(t).is_some());
+        match next {
+            Some(t) => rest = t,
+            None => return tail,
+        }
+    }
+    rest
+}
+
+/// Checks a list of invariant ids - `F20`, `R3/R5`, `F17, F20` - against `name`'s invariant rows
+/// (or principles.md's principles). An uppercase token that is no family's prefix anywhere, such as
+/// a milestone `M4`, is not an invariant reference and ends the list.
+fn check_ids(src: &str, name: &str, mut rest: &str, dangling: &mut Vec<String>) {
+    let doc = format!("docs/{name}");
+    while let Some((prefix, number, tail)) = id_token(rest) {
+        let n: u8 = number.parse().unwrap_or(0);
+        if name == "principles.md" && prefix == "P" {
+            if !documented_principles().iter().any(|(p, _)| *p == n) {
+                dangling.push(format!("{src}: {name} {prefix}{number} - no such principle"));
+            }
+        } else if !FAMILIES.iter().any(|f| f.prefix == prefix) {
+            return;
+        } else {
+            match FAMILIES.iter().find(|f| f.doc == doc && f.prefix == prefix) {
+                Some(f) if documented_rows(f.text, prefix).contains(&n) => {}
+                Some(_) => dangling.push(format!("{src}: {name} {prefix}{number} - no such row")),
+                None => dangling.push(format!(
+                    "{src}: {name} {prefix}{number} - {name} has no invariants under {prefix}"
+                )),
+            }
+        }
+        let next = ["/", ", "]
+            .iter()
+            .find_map(|sep| tail.trim_start().strip_prefix(sep))
+            .map(str::trim_start)
+            .filter(|t| id_token(t).is_some());
+        match next {
+            Some(t) => rest = t,
+            None => return,
+        }
+    }
+}
+
+/// A reference must land on a section or an invariant that exists. Named references -
+/// `federation.md Section 5`, `federation.md 6d`, `remote-server.md 4.3`, `unmerge.md S1/S8`,
+/// `principles.md P18` - are checked against the named document, and a bare `Section N` against
+/// the citing document's own headings, so a reference into another document has to name it. The
+/// registry checks that each clause declares evidence, never that prose is true, and a pointer is
+/// the one kind of prose a gate can check. Five had gone stale at once - a flooring rule cited a
+/// section of its own document that held none, a "line ~504" had drifted, a companion named the
+/// other document's closure map as the list of what it revised - and a reader following any of
+/// them found nothing, or the wrong thing. Whether an existing target says what the citing
+/// sentence claims stays a review question (Appendix B).
 #[test]
 fn design_docs_cross_references_resolve() {
     let text_of = |name: &str| {
@@ -2296,10 +2380,14 @@ fn design_docs_cross_references_resolve() {
             })
             .collect::<Vec<_>>()
             .join(" ");
+        // Where each named reference's own text begins, so the bare pass below skips it.
+        let mut named_at: Vec<usize> = Vec::new();
         for (at, _) in flat.match_indices(".md") {
             let start = flat[..at]
-                .rfind(|c: char| !(c.is_ascii_lowercase() || c == '-'))
-                .map_or(0, |i| i + 1);
+                .char_indices()
+                .rev()
+                .find(|(_, c)| !(c.is_ascii_lowercase() || *c == '-'))
+                .map_or(0, |(i, c)| i + c.len_utf8());
             if start == at {
                 continue;
             }
@@ -2308,32 +2396,22 @@ fn design_docs_cross_references_resolve() {
                 continue;
             };
             let after = &flat[at + 3..];
-            let after = after.strip_prefix(')').unwrap_or(after);
+            let after =
+                after.strip_prefix(')').or_else(|| after.strip_prefix('`')).unwrap_or(after);
+            let after = after.strip_prefix("'s").unwrap_or(after);
             if !after.starts_with(' ') {
                 continue;
             }
             let after = after.trim_start();
-            let sections = documented_sections(target);
-            let mut check_section = |token: &str| {
-                if !sections.contains(&token) {
-                    dangling.push(format!("{src}: {name} Section {token} - no such heading"));
-                }
-            };
+            named_at.push(flat.len() - after.len());
             let listed = ["Sections ", "Section ", "sections ", "section "]
                 .iter()
                 .find_map(|w| after.strip_prefix(w));
-            if let Some(mut rest) = listed {
-                // `Section 3`, `Sections 3/8a`, `Sections 3, 4`, `Sections 10 and 11`.
-                while let Some((token, tail)) = section_token(rest) {
-                    check_section(token);
-                    let next = ["/", ", ", " and ", "/ "]
-                        .iter()
-                        .find_map(|sep| tail.strip_prefix(sep))
-                        .filter(|t| section_token(t).is_some());
-                    match next {
-                        Some(t) => rest = t,
-                        None => break,
-                    }
+            if let Some(rest) = listed {
+                // `Section 4.3, R3, R5`: ids may follow the sections in the same list.
+                let tail = check_sections(src, name, target, rest, &mut dangling);
+                if let Some(ids) = tail.strip_prefix(", ") {
+                    check_ids(src, name, ids, &mut dangling);
                 }
                 continue;
             }
@@ -2341,47 +2419,22 @@ fn design_docs_cross_references_resolve() {
             // a plain `7` after a document name is too often something else to read as one.
             if let Some((token, _)) = section_token(after) {
                 if token.contains(|c: char| c == '.' || c.is_ascii_lowercase()) {
-                    check_section(token);
+                    check_sections(src, name, target, after, &mut dangling);
                 }
                 continue;
             }
-            // `F20`, `R3/R5`: an invariant id under one of the target document's own prefixes.
-            let mut rest = after;
-            loop {
-                let letters = rest.chars().take_while(char::is_ascii_uppercase).count();
-                let digits = rest[letters..].chars().take_while(char::is_ascii_digit).count();
-                if !(1..=2).contains(&letters)
-                    || digits == 0
-                    || rest[letters + digits..].starts_with(|c: char| c.is_ascii_alphanumeric())
-                {
-                    break;
+            check_ids(src, name, after, &mut dangling);
+        }
+        // A bare `Section N` is this document's own.
+        let own = src.strip_prefix("docs/").unwrap_or(src);
+        for word in ["Section ", "Sections ", "section ", "sections "] {
+            for (pos, _) in flat.match_indices(word) {
+                let inside_a_word =
+                    flat[..pos].chars().next_back().is_some_and(|c| c.is_ascii_alphabetic());
+                if named_at.contains(&pos) || inside_a_word {
+                    continue;
                 }
-                let (prefix, number) = (&rest[..letters], &rest[letters..letters + digits]);
-                let n: u8 = number.parse().unwrap_or(0);
-                let doc = format!("docs/{name}");
-                if name == "principles.md" && prefix == "P" {
-                    if !documented_principles().iter().any(|(p, _)| *p == n) {
-                        dangling
-                            .push(format!("{src}: {name} {prefix}{number} - no such principle"));
-                    }
-                } else if !FAMILIES.iter().any(|f| f.doc == doc) {
-                    break; // a document with no invariant table: an uppercase token is something else
-                } else {
-                    match FAMILIES.iter().find(|f| f.doc == doc && f.prefix == prefix) {
-                        Some(f) if documented_rows(f.text, prefix).contains(&n) => {}
-                        Some(_) => {
-                            dangling.push(format!("{src}: {name} {prefix}{number} - no such row"))
-                        }
-                        None => dangling.push(format!(
-                            "{src}: {name} {prefix}{number} - {name} has no invariants under {prefix}"
-                        )),
-                    }
-                }
-                let tail = rest[letters + digits..].trim_start();
-                match tail.strip_prefix('/') {
-                    Some(t) => rest = t.trim_start(),
-                    None => break,
-                }
+                check_sections(src, own, text, &flat[pos + word.len()..], &mut dangling);
             }
         }
     }
@@ -2389,7 +2442,7 @@ fn design_docs_cross_references_resolve() {
     dangling.dedup();
     assert!(
         dangling.is_empty(),
-        "cross-document references that land nowhere:\n  {}",
+        "references that land nowhere (a reference into another document names it):\n  {}",
         dangling.join("\n  ")
     );
 }

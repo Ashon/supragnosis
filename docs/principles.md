@@ -108,7 +108,7 @@
 > answered by a registry clause and every clause by a bullet, every design document's invariant
 > table carries evidence states, and an owed clause names a milestone or a "Revisit when" trigger.
 > Revision: 2026-10 (coherence review) - *loosens* 23: a claim-demotion or a recall may be
-> self-approved, the correction fast-path that proposal-workflow.md I9 and Section 9 had adopted
+> self-approved, the correction fast-path that proposal-workflow.md Section 9 and I9 had adopted
 > without this document following. *Reinterprets* 23 against 3: a destruction demand is the one act
 > outside the gate, and it outranks finality - excision.md E7/E10 had made this reading.
 > *Corrects a fact* in the closure-review line, which said there is no stdio surface: the
@@ -784,7 +784,7 @@ proposal are all observation events, and are governed by this principle just the
     federation (Principle 18). The one other exception is correction: a claim-demotion or a recall
     may be approved by its own proposer, because demoting what you introduced destroys nothing
     (Principle 3) and waiting for a second reviewer would widen the window in which the
-    contamination is read (proposal-workflow.md I9, Section 9). It relaxes who may approve, not
+    contamination is read (proposal-workflow.md Section 9, I9). It relaxes who may approve, not
     how: a recall verdict is still the principal's own act, never an agent's proxy (below).
   - **The recall verdict is non-delegable**: because bulk retraction of a derived tree is the verdict
     with the largest destructive radius, it cannot hold as an agent's proxy verdict through the
@@ -925,8 +925,10 @@ Questions to apply quickly during design/PR review:
   registry checks that a clause declares evidence, never that prose is true, so a document disagreeing
   with a document is invisible to every gate. It has happened twice: a store removal left three design
   documents describing the store it removed, and a federation section claimed a default the invariant
-  one page later reversed. The one kind of disagreement a gate can see is a reference that names its
-  document and lands on no section or invariant: `design_docs_cross_references_resolve` fails it.
+  one page later reversed. The one kind of disagreement a gate can see is a reference that lands
+  nowhere - a section or invariant that does not exist, where a bare section number is the citing
+  document's own, so a reference into another document names it: `design_docs_cross_references_resolve`
+  fails it.
 - Does a comment state a premise more strongly than the code guarantees? The recurring shape is a
   comment that is right about the common case and silent about the path that breaks it - "taking the
   first is not a choice between candidates" was true of an observed entity and false after a merge

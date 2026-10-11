@@ -319,5 +319,5 @@ whose active profile points at it:
   entity, or a sentence, was recorded in a workspace it was never granted. `get_entity`, `traverse`'s
   start and the observation resource now give one answer for both cases. A gate proposal checked its
   target observations against the whole log for the same reason, so on this surface it names only
-  observations in its own workspace. Writing remote-viewer.md found it (Section 3.4 there).
+  observations in its own workspace. Writing remote-viewer.md found it (remote-viewer.md Section 3.4).
 

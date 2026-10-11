@@ -32,8 +32,8 @@
   Section 10 steps 0-1 built),
   [`settings-page.md`](settings-page.md) (the app's settings page, built),
   [`sync-correctness.md`](sync-correctness.md) (sync defects and their rules, built),
-  [`compatibility.md`](compatibility.md) (pinned contracts between releases, built - the Section 3.6
-  tripwire waits for its occasion),
+  [`compatibility.md`](compatibility.md) (pinned contracts between releases, built - the tripwire of
+  compatibility.md Section 3.6 waits for its occasion),
   [`unmerge.md`](unmerge.md) (reversing an identity resolution, built),
   [`prompts.md`](prompts.md) (the MCP prompts, built - Section 8 steps 1-2).
 

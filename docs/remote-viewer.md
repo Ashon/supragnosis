@@ -26,7 +26,7 @@ read-only and filtered by their grants. Two things have changed since that plan 
 
 - **Principals exist.** The hub already admits people and agents with a bearer credential and
   per-workspace grants (remote-server.md Section 4.2). Spokes already consent, per workspace, to
-  having their contributions served (Section 4.5). The read tier needs neither a second identity
+  having their contributions served (remote-server.md Section 4.5). The read tier needs neither a second identity
   system nor a second consent.
 - **The desktop app is a client.** It reads the server profile, so it already knows which server
   the person means. What it lacks is a way to reach that server's viewer: the shell speaks HTTP
