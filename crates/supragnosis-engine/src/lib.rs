@@ -91,7 +91,7 @@ pub enum ObserveError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchMode {
-    /// Hybrid of keyword (convergence surface) + semantic vector (node-local recall assistance).
+    /// Hybrid of keyword (convergence surface) + semantic vector (node-local retrieval assistance).
     Hybrid,
     /// Keyword only. Includes the state degraded by a missing embedder or a failed query embedding (Principle 19) -
     /// zero results in this mode are more likely a "recall failure" than zero results in hybrid mode.
@@ -212,7 +212,7 @@ const CURATION_GRAB_BAG_MIN: usize = 10;
 /// above this makes a distinct-name entity pair a merge candidate. Deliberately high - a candidate
 /// is a hypothesis for review, and the gate (not the score) commits (Principle 15/19).
 const SIM_CANDIDATE: f32 = 0.85;
-/// Nearest entities considered per node when scanning the merge band (cost bound - the recall aid
+/// Nearest entities considered per node when scanning the merge band (cost bound - the retrieval aid
 /// returns a ranked list; only the closest few are plausible merge candidates).
 const MERGE_BAND_K: usize = 8;
 
@@ -287,7 +287,7 @@ pub struct CurationReport {
     /// the signal, and the remedy is a new proposal, never an edit (P3/P23).
     pub merge_cycles: Vec<MergeCycle>,
     /// The conservative merge band (resolution-identity.md Section 3, Principle 15): distinct-name
-    /// entity pairs whose embeddings are near (a node-local recall aid, P16-exempt) - entity-merge
+    /// entity pairs whose embeddings are near (a node-local retrieval aid, P16-exempt) - entity-merge
     /// candidates the substrate proposes so resolution is not the operator's manual job. Read-only:
     /// a suggestion commits nothing (IR2) - acting on it opens an entity_merge proposal through the
     /// gate. Excludes same-id, already-merged, and already-open-proposal pairs.
@@ -322,7 +322,7 @@ pub struct CurationReport {
     pub stats: CurationStats,
 }
 
-/// One observation's recall weight ([consolidation.md](../../../docs/consolidation.md) Section 4).
+/// One observation's retrieval weight ([consolidation.md](../../../docs/consolidation.md) Section 4).
 ///
 /// Computed and reported, consumed by nothing: Section 8 step 1 is deliberately observable before it
 /// is load-bearing, so an operator can read what the system would demote before it demotes anything.
@@ -337,7 +337,7 @@ pub struct RecallWeight {
     /// In `[FLOOR, 1.0]`. Never zero: a weight of zero is deletion by arithmetic, and P7 requires
     /// demoted knowledge to stay reachable by an explicit query (C4).
     pub weight: f32,
-    /// The receiver's evaluation, never the claimed tier (P18) - the "recall is trust-weighted"
+    /// The receiver's evaluation, never the claimed tier (P18) - the "retrieval is trust-weighted"
     /// half of P18's unmet clause.
     pub tier: &'static str,
     /// Where this observation falls in the time SPAN the workspace's own log covers: 0.0 at the
@@ -355,7 +355,7 @@ pub struct RecallWeight {
 }
 
 /// One conservative-merge-band candidate (resolution-identity.md Section 3): a pair of distinct
-/// entities whose name embeddings are near, with the similarity (node-local recall score) and how
+/// entities whose name embeddings are near, with the similarity (node-local retrieval score) and how
 /// many graph neighbors they share (a corroborating structural signal). Not a proposal - the
 /// viewer/agent opens an entity_merge through the gate to act on it (IR2).
 #[derive(Serialize)]
@@ -364,7 +364,7 @@ pub struct MergeSuggestion {
     pub a_name: String,
     pub b: String,
     pub b_name: String,
-    /// Embedding cosine similarity (recall aid, P16-exempt, node-local) - for ranking only.
+    /// Embedding cosine similarity (retrieval aid, P16-exempt, node-local) - for ranking only.
     pub similarity: f32,
     /// Graph neighbors the two entities share - structural corroboration of the name similarity.
     pub shared_neighbors: usize,
@@ -417,7 +417,7 @@ type CycleSet = (Vec<String>, Vec<String>);
 /// (resolution-identity.md Section 3). Without this, an empty `merge_suggestions` is
 /// indistinguishable from "no embedder is configured" - exactly the absence-vs-unavailable
 /// conflation `search_knowledge` already refuses to make by labelling the `mode` it actually used
-/// (Principle 5; Principle 16 4th revision, the convergence surface vs the node-local recall aid).
+/// (Principle 5; Principle 16 4th revision, the convergence surface vs the node-local retrieval aid).
 /// The other curation signals are deterministic and need no such caveat.
 #[derive(Serialize)]
 pub struct MergeBandCoverage {
@@ -1146,7 +1146,7 @@ pub struct ProposalEventSummary {
 /// One observation flattened for the log-browser surface (observability). The observation log is
 /// the source of truth (Principle 1); this is a read-only projection of one log row with its
 /// provenance (Principle 2) and effective tier (resolution.md Section 3). Embeddings never appear
-/// (Principle 21 - they are an internal recall aid, not part of the legible surface).
+/// (Principle 21 - they are an internal retrieval aid, not part of the legible surface).
 #[derive(Serialize)]
 pub struct ObsSummary {
     pub id: String,
@@ -1680,7 +1680,7 @@ impl Engine {
 
     /// The conservative merge band (resolution-identity.md Section 3, Principle 15): distinct-name
     /// entity pairs whose name embeddings are near (>= [`SIM_CANDIDATE`]) - candidates the substrate
-    /// proposes so identity resolution is not the operator's manual job. A node-local recall aid
+    /// proposes so identity resolution is not the operator's manual job. A node-local retrieval aid
     /// (P16-exempt, P19): the similarity is not part of the converging graph, and a candidate commits
     /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
     /// already-merged (either side forwarded away), and pairs already under an open entity_merge.
@@ -2019,7 +2019,7 @@ impl Engine {
                 }
             }
         }
-        // The recall weight (consolidation.md Section 4), over the same log pass the secret scan
+        // The retrieval weight (consolidation.md Section 4), over the same log pass the secret scan
         // walks. Reported, consumed by nothing - Section 8 step 1.
         let gates = self.gate_grants(workspace, cx)?;
         let demotion_candidates = recall_weights(&self.log(workspace, cx)?, &gates);
@@ -3361,7 +3361,7 @@ impl Engine {
     ///   (first-asserting ordering-HLC, spelling) - a deterministic set union that never drops a
     ///   spelling (Principle 3, IR1).
     /// - **description**: HLC-latest non-empty (never erased by a later omission - Principle 8).
-    /// - **embedding**: the name-meaning recall aid (Principle 19), recomputed only when the
+    /// - **embedding**: the name-meaning retrieval aid (Principle 19), recomputed only when the
     ///   embedding text (canonical_name + aliases) changed since the stored row (IR4) - so it is
     ///   never silently stale, and unchanged rows do not re-hit the probabilistic adapter.
     ///
@@ -4051,7 +4051,7 @@ impl Engine {
         // An embedding failure is a degrade (keyword only, Principle 19), but a store failure is an Err -
         // the absence/failure of the probabilistic adapter and the failure of the deterministic store are different events.
         let qvec = self.embedder.as_ref().and_then(|e| e.embed_one(query).ok());
-        // mode is "did it reference the semantic surface" - even if semantic recall is zero, it did reference it, so it is
+        // mode is "did it reference the semantic surface" - even if semantic retrieval is zero, it did reference it, so it is
         // hybrid (the epistemic weight of zero results differs by mode, Principle 5/16 4th).
         let mode = if qvec.is_some() { SearchMode::Hybrid } else { SearchMode::Keyword };
         let (semantic_obs, semantic_ent) = match &qvec {
@@ -4062,7 +4062,7 @@ impl Engine {
             None => (Vec::new(), Vec::new()),
         };
 
-        // If there is no semantic recall (no embedder / not embedded), use the keyword ranking as-is; otherwise RRF-fuse.
+        // If there is no semantic retrieval (no embedder / not embedded), use the keyword ranking as-is; otherwise RRF-fuse.
         let fused = if semantic_obs.is_empty() && semantic_ent.is_empty() {
             keyword
         } else {
@@ -4660,7 +4660,7 @@ fn alias_set(cands: &[BeliefCandidate], canonical: &str) -> Vec<String> {
     ordered.into_iter().map(|(v, _)| v.to_string()).collect()
 }
 
-/// The text to embed for an entity: canonical name + aliases (if any). Opens semantic recall by the meaning of the name.
+/// The text to embed for an entity: canonical name + aliases (if any). Opens semantic retrieval by the meaning of the name.
 /// Since aliases hold notation variants, embedding them together widens the reach to other notations of the same target.
 fn entity_text(entity: &Entity) -> String {
     if entity.aliases.is_empty() {
@@ -4819,11 +4819,11 @@ fn name_variant_groups(
 /// a thing a human reads, and "everything, sorted" is not a curation signal.
 const DEMOTION_CANDIDATES: usize = 20;
 
-/// The floor of the recall weight. Positive on purpose (C4): zero would make an item unrankable,
+/// The floor of the retrieval weight. Positive on purpose (C4): zero would make an item unrankable,
 /// which is deletion performed by arithmetic, and P7 requires demoted knowledge to stay reachable.
 const RECALL_FLOOR: f32 = 0.05;
 
-/// The recall weight of every observation, lowest first ([consolidation.md](../../../docs/consolidation.md)
+/// The retrieval weight of every observation, lowest first ([consolidation.md](../../../docs/consolidation.md)
 /// Section 4.3).
 ///
 /// Three factors compose multiplicatively rather than additively, because the signal being looked
@@ -5760,7 +5760,7 @@ mod tests {
             .unwrap();
     }
 
-    /// Recall regression (Appendix B): with an embedder attached, hybrid search recalls observations that keyword
+    /// Retrieval regression (Appendix B): with an embedder attached, hybrid search recalls observations that keyword
     /// substring match misses via the semantic (lexical-overlap) path. Contrasted with degrade (no embedder).
     #[test]
     fn hybrid_search_adds_semantic_recall() {

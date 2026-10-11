@@ -567,7 +567,7 @@ pub struct Observation {
     #[serde(default)]
     pub derived_from: Vec<String>,
     /// (Optional) embedding vector for semantic search (Principle 19: probabilistic boundary).
-    /// **Not included in the content-address id computation** - an embedding is only a local aid that widens recall,
+    /// **Not included in the content-address id computation** - an embedding is only a local aid that widens retrieval,
     /// not content identity, and using a different model per node does not shake identity/convergence.
     ///
     /// Excluded from serde entirely (Principle 21, symmetric with Entity.embedding): when an observation goes out as an MCP
@@ -680,7 +680,7 @@ impl Observation {
     /// the union is commutative/associative/idempotent, so it converges to the same result regardless of arrival order (Principle 16).
     /// Relay duplicates (fully identical attestations) are naturally deduped, and independent re-observations (attestations
     /// differing in any field) accumulate. Identity fields (content/assertions) are identical when the id matches, so they
-    /// are not touched. An embedding is only a recall aid (Principle 19), so the existing value is
+    /// are not touched. An embedding is only a retrieval aid (Principle 19), so the existing value is
     /// kept and one is only taken when absent.
     pub fn absorb(&mut self, other: Observation) {
         debug_assert_eq!(self.id, other.id, "absorb only between the same content address");
@@ -913,7 +913,7 @@ pub struct Entity {
     pub properties: serde_json::Value,
     #[serde(default)]
     pub provenance: Vec<Provenance>,
-    /// (Optional) embedding vector for semantic search (Principle 19: probabilistic boundary). A recall aid that lets the
+    /// (Optional) embedding vector for semantic search (Principle 19: probabilistic boundary). A retrieval aid that lets the
     /// node be reached by the meaning of its name/aliases - like observations, **not included in the id computation** (it is
     /// recall expansion, not identity, and using a different model per node does not shake identity/convergence).
     ///

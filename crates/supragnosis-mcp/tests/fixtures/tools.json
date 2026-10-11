@@ -446,7 +446,7 @@
           },
           "scope": {
             "default": null,
-            "description": "Search scope: \"local\" (this node only, default), \"remote\" (the configured sync servers'\nontologies - federated recall), or \"both\". Local state can lag the remote store - use\nremote/both when a local miss may just mean \"not synced yet\". Remote hits are the server's\nrecall surface: sync_pull the workspace to materialize them locally before traverse/get_entity.",
+            "description": "Search scope: \"local\" (this node only, default), \"remote\" (the configured sync servers'\nontologies - federated retrieval), or \"both\". Local state can lag the remote store - use\nremote/both when a local miss may just mean \"not synced yet\". Remote hits are the server's\nretrieval surface: sync_pull the workspace to materialize them locally before traverse/get_entity.",
             "type": [
               "string",
               "null"

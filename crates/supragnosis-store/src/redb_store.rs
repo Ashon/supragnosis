@@ -213,7 +213,7 @@ fn encode_vector(v: &[f32]) -> Vec<u8> {
 }
 
 /// Decodes a stored vector. A length that is not a multiple of four is a corrupt row rather than an
-/// absent one, but a vector is a recall aid (Principle 19): losing one degrades recall, it does not
+/// absent one, but a vector is a retrieval aid (Principle 19): losing one degrades retrieval, it does not
 /// make the knowledge wrong, so this drops the vector rather than failing the read of the row.
 ///
 /// The length guard is load-bearing rather than defensive: `as_chunks` discards a trailing partial
@@ -342,7 +342,7 @@ impl RedbStore {
                 return Err(StoreError::Backend(format!(
                     "store was written with embedder '{existing}' but was opened with \
                      '{embedder_id}' - vectors from two models share no space, so mixing them \
-                     silently degrades recall. Re-embed the store, or open it with the original model"
+                     silently degrades retrieval. Re-embed the store, or open it with the original model"
                 )));
             }
             return Ok(());
@@ -1252,7 +1252,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
     }
 
-    /// Vectors from two models share no space, so mixing them degrades recall silently rather than
+    /// Vectors from two models share no space, so mixing them degrades retrieval silently rather than
     /// loudly. Reopening under a different embedder is refused because the failure has to happen at
     /// open, not at the first bad ranking.
     #[test]

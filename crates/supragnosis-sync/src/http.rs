@@ -262,7 +262,7 @@ fn consent_of(headers: &HeaderMap) -> Option<bool> {
 }
 
 /// Federated-recall hook: the wiring layer injects the engine's hybrid search so a remote read
-/// query answers from this node's full recall surface (hits, mode). Without it the handler falls
+/// query answers from this node's full retrieval surface (hits, mode). Without it the handler falls
 /// back to the store's keyword path.
 pub type OnSearch =
     Arc<dyn Fn(&str, &str, usize) -> Result<(Vec<SearchHit>, String), String> + Send + Sync>;
@@ -319,7 +319,7 @@ impl PeerRegistry {
 }
 
 /// The wiring-layer hooks injected into the sync API (all optional): re-materialization after
-/// inbound pushes, activity streaming to the viewer, and the engine-backed federated recall.
+/// inbound pushes, activity streaming to the viewer, and the engine-backed federated retrieval.
 #[derive(Default)]
 pub struct Hooks {
     pub on_applied: Option<OnApplied>,
@@ -600,8 +600,8 @@ fn default_search_limit() -> usize {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResp {
-    /// The recall surface the SERVER used (hybrid/keyword) - results are the server's node-local
-    /// recall aid (P16 exemption): to become local graph material they must arrive via pull (F1).
+    /// The retrieval surface the SERVER used (hybrid/keyword) - results are the server's node-local
+    /// retrieval aid (P16 exemption): to become local graph material they must arrive via pull (F1).
     pub mode: String,
     pub hits: Vec<SearchHit>,
 }
@@ -786,9 +786,9 @@ async fn push_handler(
     }))
 }
 
-/// Federated recall (P17 second door, honored): an authenticated peer searches THIS node's
+/// Federated retrieval (P17 second door, honored): an authenticated peer searches THIS node's
 /// ontology - gated by the same per-node workspace authorization as sync, answered from the node's
-/// recall surface, and streamed to the activity feed like any other hit.
+/// retrieval surface, and streamed to the activity feed like any other hit.
 async fn search_handler(
     State(state): State<Arc<ServerState>>,
     headers: HeaderMap,
@@ -1149,7 +1149,7 @@ impl SyncClient {
         self.call("/sync/ping", &serde_json::json!({})).await
     }
 
-    /// Federated recall: search the SERVER's ontology (its recall surface, mode-labeled). Results
+    /// Federated retrieval: search the SERVER's ontology (its retrieval surface, mode-labeled). Results
     /// are remote ids - pull the workspace to materialize them locally before traverse/get_entity.
     pub async fn search(
         &self,
