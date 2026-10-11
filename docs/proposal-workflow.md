@@ -307,9 +307,12 @@ can cast opposing verdicts without knowing about each other.
   computed from the log's own streams (federation.md 7a), which answers "from when may I trust
   this conclusion and accumulate derivations on it". Neither drags in a wall clock, so both
   are consistent with I4.
-- If there are multiple valid merges, the representative verdict is canonicalized to the
-  **minimum HLC** (since effects are idempotent there is no semantic issue; the
-  canonicalization is only for the determinism of choosing the representative - I14).
+- If there are multiple valid merges, the representative verdict - the one whose HLC orders
+  the proposal's effect among others on the same target (resolution.md Section 5) - is
+  canonicalized to the **minimum HLC** (I14). What the effect grants does not depend on which
+  verdict represents: a gate grant's ceiling is the highest any of the merge verdicts carries
+  (resolution.md Section 6), so a further merge can raise it and never lower it - monotonic in
+  the verdicts, as the decision rule is (I16).
 - A conflicting reject or revise that arrives after Merged cannot change the conclusion and
   is demoted to a record equivalent to `review_commented` (information is preserved -
   Principle 3).
