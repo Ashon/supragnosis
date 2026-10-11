@@ -148,7 +148,7 @@ flowchart TB
 ### Layers
 1. **MCP protocol layer** (`rmcp`): tools/resources/prompts, transport (local stdio + remote HTTP).
 2. **Service (engine) layer**: orchestration of the ingest/resolve/project/query/sync use cases.
-3. **Domain layer**: models + port traits + schema/resolution/inference rules (zero external dependencies).
+3. **Domain layer**: models + port traits + schema/resolution/inference rules (zero IO dependencies, Principle 20).
 4. **Storage layer**: the embedded store adapter (observation log + materialized graph + vector index).
 5. **Synchronization layer**: observation-log replication across hosts.
 
@@ -588,13 +588,15 @@ HTTP-over-UDS client (`curl --unix-socket`).
 
 ## 11. Cross-cutting Concerns
 
-- **Provenance/trust/delegation**: every fact carries (acting host, on_behalf_of, workspace, source, confidence, trust_tier, time). Provenance filtering/trust weighting at query time.
-- **Bitemporal** (Principle 4): observation = transaction time, relation = valid interval (valid_from/to) -> the two time-travel queries `as_of_valid(T)`/`as_of_recorded(T)`.
-- **Contamination defense** (Principle 18): trust tier + `derived_from` lineage + quarantine + batch retraction by lineage back-tracing (cleanup). A signature is only transport integrity, not content authenticity.
+Each concern names what is built and what is owed; the milestone of an owed part is in Section 14.
+
+- **Provenance/trust/delegation**: every fact carries (acting host, on_behalf_of, workspace, time, trust_tier, and the source and confidence when stated). The effective tier decides belief and display; trust weighting of ranked retrieval is owed (M5/M6, consolidation.md Section 4.3).
+- **Bitemporal** (Principle 4): observation = transaction time, relation = valid interval (valid_from/to), both captured. The two time-travel queries `as_of_valid(T)`/`as_of_recorded(T)` are owed (M3c).
+- **Contamination defense** (Principle 18): trust tier + `derived_from` lineage are built; quarantine of lineage-less derived assertions and batch retraction by lineage back-tracing (the `recall` effect) are owed (M5). A signature is only transport integrity, not content authenticity.
 - **Forgetting/consolidation** (Principle 7): the log is forever, retrieval is finite. Demotion touches only index weights (the log is immutable); consolidation is a deterministic idle-time reprojection that generates signals and candidate proposals and commits nothing; a probabilistic summary is generated node-local on read and never stored ([consolidation.md](consolidation.md) C10/C11).
 - **Identity resolution**: canonical key first + embedding similarity only up to candidates, merge finalization deterministic/conservative. Merge history preserved/un-merge possible.
 - **Security/privacy**: workspace scoping, an ingest redaction hook, a **sync-boundary filter** (sharing opt-in).
-- **Node identity/transport**: node-keypair event **signing** (authenticity), sync TLS/mTLS.
+- **Node identity/transport**: node-keypair event **signing** (authenticity), sync over TLS with per-node bearer auth; mutual TLS is not used (the listener asks for no client certificate).
 
 ---
 
