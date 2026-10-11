@@ -166,8 +166,8 @@ classify managers itself - one implementation, in the workspace where it is test
 - **Start at Login**, a check item in the tray menu, reflects whether the canonical job is
   installed. Turning it on runs `supragnosis service install --take-over` (the click is the consent;
   the status line then says what was retired) and re-attaches. Turning it off runs `supragnosis
-  service uninstall`. That stops the daemon - the one path by which the app stops a daemon it did
-  not spawn - so the shell then falls back to attach-or-spawn and runs one for the session, and the
+  service uninstall`. That stops the daemon - with turning it on, which can retire another
+  manager's daemon, the only paths by which the app stops a daemon it did not spawn - so the shell then falls back to attach-or-spawn and runs one for the session, and the
   status line says the daemon is no longer started at login.
 - **The status line** names the manager (launchd, Homebrew, pidfile, spawned by this app) and
   carries version drift and conflicts from `status`.
@@ -221,7 +221,7 @@ which is the reason the shell attaches rather than owns.
 | **L3** | Version drift is visible: `status` and the tray show running and installed versions when they differ, and an unanswering daemon's version is unknown, not assumed. |
 | **L4** | Lifecycle failures are loud: every CLI lifecycle command exits non-zero on failure with the reason - including a job it loaded that does not come up - and the app never discards that exit status. |
 | **L5** | The operator's file is theirs: `install` never overwrites a plist it did not generate, and nothing deletes one - it is moved aside. |
-| **L6** | The daemon's lifetime is not the app's. Quitting the app never stops a launchd-managed daemon; turning Start at Login off is the only way the app stops one it did not spawn. |
+| **L6** | The daemon's lifetime is not the app's. Quitting the app never stops a launchd-managed daemon. The app stops a daemon it did not spawn only through the Start at Login switch: off uninstalls the job, and on takes over from another manager, stopping what that manager ran (Section 4). |
 | **L7** | The generated job adds no exposure: loopback MCP, the viewer's unix socket, the bearer token unchanged. Nothing in the plist widens a bind or disables auth, and `install` refuses an environment that would. |
 | **L8** | No new privilege: a user LaunchAgent in the `gui/<uid>` domain, no administrator rights, no helper tool. |
 | **L9** | A signal goes only to a supragnosis process. A pidfile naming any other process is stale, and is cleared rather than acted on. |
