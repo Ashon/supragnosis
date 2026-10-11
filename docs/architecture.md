@@ -878,28 +878,27 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   any resolution policy can be applied retroactively by reprojecting the log - the grounds that this deferral is
   non-destructive. **This defense is now discharged rather than promised**: `reproject` is implemented (it was
   pulled forward for M4's re-materialization), so a new resolution policy really can be applied to existing logs.
-  What remains missing is the policy itself.
-  **Federation raises the cost of this deferral.** A last-write-wins projection over an exact-name-match resolution
-  layer means two nodes that spell the same subject differently produce two entities that no mechanism will ever
-  reconcile, and the `entity_merge` proposal is the only remedy - a manual one. Principle 15 says resolution is the
-  substrate's job; today it is the operator's.
+  **Federation raised the cost of this deferral.** Over exact-name matching, two nodes that spelled the same
+  subject differently produced two entities that only a manual `entity_merge` could join. M3b's merge band now
+  generates those candidates (resolution-identity.md Section 3), so resolution is the substrate's job as
+  Principle 15 asks, and the merge itself stays a verdict (IR2).
 - Principle 3 (atomicity of projection merge): an entity upsert splits into two store calls, get -> put, and is not
   atomic - if concurrent observations touch the same entity, the **projection's**
   attestations may be lost. Because the observation log is atomically merged at the store layer, it is safe
   (the Principle 3 item above), and the loss is confined to the derived view and recoverable by reprojection
   - and since `reproject` now exists, that recovery is an actual procedure, not a theoretical guarantee.
-  Because the entire projection write path is replaced by the M3 resolution layer, **full atomicity** is repaid together in **M3**.
   This deferral rested on the deployment fact that "concurrent tool calls are rare (a single stdio client)."
   **Update (introduction of the standalone daemon)**: the MCP-HTTP daemon permits concurrent tool calls, so that deployment
   premise breaks. So a write-serialization lock (`write_guard`) is introduced on the `Engine` to serialize observe's
   log-append + projection-upsert section - preventing attestation loss from concurrent same-entity observations
-  (the read path is not locked, so it stays concurrent). This is a provisional repayment that does not replace M3's full atomicity
-  (a fundamental redesign of read-merge-write in the resolution layer), and when M3 begins this lock is
-  absorbed/removed into the resolution layer's write path.
+  (the read path is not locked, so it stays concurrent). M3b replaced the read-merge-write upsert with one fold
+  shared by observe and reproject (resolution-identity.md Section 4), and the write section stays serialized by
+  that same `write_guard` - the lock was kept, not absorbed.
   **Update (M4)**: `reproject` does **not** take `write_guard`, so a re-materialization concurrent with an `observe`
   can interleave. In practice re-materialization runs either from the CLI with the daemon stopped, or from the
   post-apply sync hook - but that is again a deployment fact, not a guard, and it is the same class of argument this
-  section exists to retire. Repaid with M3's write path.
+  section exists to retire. M3's write path was to repay it and shipped without it; it is owed to a store-level
+  atomic upsert, the atomic-write follow-up crash-recovery.md Section 2 names.
 - Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, automatic valid_to closing,
   `as_of_valid`/`as_of_recorded` time-travel queries -> **M3c** (split out of M3b, since it needs negation
   semantics rather than identity work - resolution-identity.md Section 8). (Fields were introduced in M1.
@@ -981,8 +980,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   comes first is that the removal path it backstops does not exist ([excision.md](excision.md)).
 - Principle 22 (a byproduct of work): partially met - the curation console surfaces curation as micro-decisions, and
   the MCP prompts (Section 7, prompts.md) bring the brief, the curation pass and a proposal's review to where the
-  person already works. What is still owed is the agent-side half: tool descriptions and prompts that make an agent
-  observe and search *during* its own work without being asked -> incremental.
+  person already works. What is still owed is the agent-side half, which only tool descriptions can carry (P22):
+  descriptions that make an agent observe and search *during* its own work without being asked -> revisit when
+  the tool descriptions are next revised.
 - Principle 23 (the gateway to canon) *enforcement*: the structure is in place, and **three kinds now
   have effects** - `entity_merge` (id forwarding), and since M3a `claim_promotion`/`claim_demotion`
   (the gate tier, surface-capped); `tbox_change`/`recall` fold correctly and change nothing
