@@ -123,6 +123,10 @@
 > stores no summary. *Reinterprets* the vocabulary, applying 8 to this document: "recall" names only
 > the retraction - the `recall` proposal kind and its verdict - and fetching knowledge is "retrieval"
 > (a retrieval aid, retrieval demotion, the retrieval weight), earlier revision lines included.
+> *Loosens* 23 and 16 with I16: finality is reached at causal stability, not the moment a valid merge
+> is in the log. federation.md 7a and F16 had found that a verdict's validity, read off the HLC
+> prefix, can be revised by a concurrent earlier-HLC event; the decision rule stays absorbing among
+> verdicts.
 
 ---
 
@@ -572,7 +576,9 @@ client.** Hosts speak in their own vocabularies, and the resolution layer makes 
     (finality) holds only when the decision rule forms a semilattice (absorbing state) and is thus
     monotonic. An ordering function (of the first-writer-wins kind) converges but is not monotonic,
     because a late-arriving early-timestamped event can change the conclusion. Therefore a terminal
-    state on which derivations accumulate is designed as an absorbing state (proposal-workflow.md I16).
+    state on which derivations accumulate is designed as an absorbing state (proposal-workflow.md I16),
+    and where what reaches it is still read off an ordering, it is final only once that ordering can
+    no longer change - causal stability (federation.md 7a).
 
 ### Principle 17. Knowledge Sovereignty - Selective Sharing (Knowledge Sovereignty)
 
@@ -752,9 +758,11 @@ proposal are all observation events, and are governed by this principle just the
     wall-clock time causes no transition, and auto-merge/expiry are also expressed only as explicit
     events.
   - Concurrent verdicts converge via a decision rule that treats a valid merge as an absorbing state.
-    Beyond convergence (order-independent), it is **monotonic** - promotion is a monotonic function of
-    the event set, so from the moment a valid merge is in the log, no event's arrival can retroactively
-    cancel the promotion. A reversal (demotion) is always a new proposal.
+    Beyond convergence (order-independent), it is **monotonic in the verdicts** - once a valid merge
+    is among them, no further verdict cancels the promotion. Whether a verdict is valid is read off
+    the log before it, so an event authored concurrently, without seeing it, can still change that
+    until the verdict is causally stable; from then on no event's arrival can retroactively cancel
+    the promotion (federation.md 7a, F16). A reversal (demotion) is always a new proposal.
   - Before merging, a belief diff (promotions/reversals/new contradictions/blast radius) and check
     results must already be computed - a merge without a diff is a merge without review.
   - A rejection is not a negation (Principle 5). No verdict deletes an assertion (Principle 3).
