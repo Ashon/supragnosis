@@ -49,6 +49,8 @@ such check.
   - Intel Macs do not: there is no Intel runner to build on, since the release cross-compiles the
     Intel binary. They keep the source-build path, so an outdated Command Line Tools still stops the
     install there (`xcode-select --install`, or Software Update).
+  - arm64 Linux does not either: the bottle job has no arm64 Linux runner. It installs the
+    release's aarch64 tarball through the source-build path.
 - **Pull requests check it.** `.github/workflows/homebrew.yml` runs `bottle.sh` against the latest
   release whenever this directory changes, and weekly, so a change to the formula or to Homebrew
   that breaks bottling shows up before a release depends on it.
