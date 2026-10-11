@@ -639,8 +639,8 @@ Each concern names what is built and what is owed; the milestone of an owed part
      surfaced (hyperedges/grab-bags/reify), but naming the induced type is probabilistic and belongs
      with the extractor (resolution-identity.md Section 7 [impl]).
    - **M3c - bitemporal query logic (split from M3b, after it)**: `as_of_valid`/`as_of_recorded`
-     time-travel queries and automatic `valid_to` closing - needs negation semantics (Principle 5's
-     explicit negative assertion is not yet modeled). Capture is complete, so the deferral stays
+     time-travel queries and the asserted close of a disproven relation's valid interval - needs
+     negation semantics (Principle 5's explicit negative assertion is not yet modeled). Capture is complete, so the deferral stays
      non-destructive (Principle 4).
    - Landed ahead of the milestone: the **hyperedge (co-occurrence second-order structure) projection**
      (`workspace_map` / `hypergraph`) and **reprojection** (`reproject`, the declared first task and
@@ -899,7 +899,7 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   post-apply sync hook - but that is again a deployment fact, not a guard, and it is the same class of argument this
   section exists to retire. M3's write path was to repay it and shipped without it; it is owed to a store-level
   atomic upsert, the atomic-write follow-up crash-recovery.md Section 2 names.
-- Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, automatic valid_to closing,
+- Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, the asserted close of a disproven relation's valid interval,
   `as_of_valid`/`as_of_recorded` time-travel queries -> **M3c** (split out of M3b, since it needs negation
   semantics rather than identity work - resolution-identity.md Section 8). (Fields were introduced in M1.
   Ingest-surface capture is implemented: `observe`'s relation accepts optional `valid_from`/`valid_to` and encloses them in

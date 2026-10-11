@@ -78,7 +78,7 @@ explicitly.
 | Entity `kind` | `TierWeighted` selection + contested signal (Section 4) - the headline case |
 | Entity `canonical_name` (representative spelling) | `TierWeighted` selection - retires the "first-write-wins by arrival" latent condition (architecture.md Section 14). Not contested-flagged: spelling choice is display, not belief |
 | Entity / relation `description` | Unchanged: HLC-latest non-empty wins (display field, allowed to converge late - federation.md Section 4). A later omission still never erases (Principle 8) |
-| Relation `valid_from` / `valid_to` | Captured as today. Automatic `valid_to` closing on disproof needs negation semantics that do not exist yet - stays M3b/M5 (see Section 4.2) |
+| Relation `valid_from` / `valid_to` | Captured as today. The asserted close of a disproven relation's valid interval needs negation semantics that do not exist yet - stays M3c (see Section 4.2) |
 
 Relations are naturally multi-valued (one entity `depends_on` many things), so a mere coexistence
 of relations is not a conflict; genuine relation contradiction requires explicit negative
@@ -333,7 +333,7 @@ had been renamed out from under it, which is the failure mode the sweep exists t
 | Curation report / console, gated `/api/review` | existing code (M3.5) |
 | `ResolutionPolicy` port + `TierWeighted`, effective tier, contested projection, gate effects, surface ceiling | **this spec (M3a)** |
 | Alias accumulation, merge band, embedding candidates, atomic write path | M3b (architecture.md Section 12) |
-| Negative assertions / automatic `valid_to` closing / time-travel queries | M3b/M5 per architecture.md (bitemporal logic) |
+| Negative assertions / the asserted close of a disproven relation's valid interval / time-travel queries | M3c per architecture.md (bitemporal logic) |
 | Recall effect, quarantine, lineage cleanup, retrieval ranking | M5 |
 | I9 principal comparison, canon policy, principal-signed acts, `tbox_change` gate | M4 Phase 5 (federation.md) |
 | MCP elicitation (protocol-level human confirmation) | Principle 21 remainder (architecture.md Section 7) |
