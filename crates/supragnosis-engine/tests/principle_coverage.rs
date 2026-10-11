@@ -1383,7 +1383,7 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     )]),
     (16, &[
-        c("merge is absorbing: no later or concurrent event cancels a valid merge",
+        c("merge is absorbing: no later or concurrent verdict cancels a valid merge",
           Evidence::Scenario(&["i16_merge_absorbs_over_conflicting_reject_in_any_order"])),
         c("reject is provisional: a late valid merge raises it to merged",
           Evidence::Scenario(&["i16_merge_absorbs_over_conflicting_reject_in_any_order"])),
@@ -2733,7 +2733,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "hybrid_search_adds_semantic_recall",
             "keyword_recall_finds_the_terms_in_any_order",
           ])),
-        c("a terminal state is absorbing, so a conclusion is never overturned by a later event",
+        c("a terminal state is absorbing, so a conclusion is never overturned by a later verdict",
           Evidence::Scenario(&[
             "i16_merge_absorbs_over_conflicting_reject_in_any_order",
             "i8_blocking_check_conclusion_is_arrival_order_independent",

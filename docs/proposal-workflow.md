@@ -60,7 +60,7 @@ a direct consequence of a principle.
 | I13 | **The fold recomputes blocking checks.** Whether the blocking gate for merge validity passes is recomputed by the fold rather than trusting the `check_reported` event (I8 guarantees reproducibility). `check_reported` is merely a UX cache/advisory; a forged "pass" cannot promote contamination. | 8, 18 |
 | I14 | **Merge effects are idempotent.** Duplicate loading of the same effect is harmless, and entity-merge canonicalizes by canonical id order so concurrent duplicate proposals do not diverge. | 3 |
 | I15 | **The fold re-validates the routing conditions of an automatic verdict.** A policy executor's (automatic) verdict is valid only when the fold recomputes its routing premises (zero new contradictions, impact radius at or below the threshold) at the merge-time state and they pass - even if a contaminated/buggy executor auto-merges a high-impact proposal, the fold invalidates it. This does not apply to human verdicts. | 8, 16, 18 |
-| I16 | **Finality is monotonic.** Promotion (Merged) is a monotonic function of the event set and an absorbing state - as long as a valid merge exists in the log, no later event arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). | 16, 3 |
+| I16 | **Finality is monotonic in the verdicts, and reached at causal stability.** Merged is the absorbing element of the decision rule: once a valid merge is among the verdicts, no further verdict, reject or revise can cancel it (I3, I12). Whether a verdict is valid (7.1) is read off the log before it, so an event authored concurrently - without seeing the verdict (I11) - can still revise that until the verdict is causally stable (federation.md 7a, F16); from then on, no event's arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). | 16, 3 |
 | I18 | **Consolidation generates, never commits.** A consolidation/curation pass (Principle 7) may only emit read-only curation signals and candidate proposals; it never loads a `verdict_cast` or a merge effect directly. The sole commit path to canon is the proposal verdict (I1/I3/I6), so "generate != commit" is mechanical rather than a discipline. A human-facing curation console (the viewer, or an agent via elicitation) casts its accept as a `verdict_cast` observation - it does not write the projection/log - and a recall acceptance stays a human's direct act (I17). | 7, 19, 23 |
 
 ---
@@ -257,7 +257,8 @@ UX/reproduction convenience, and whether the blocking gate for merge validity pa
 recomputed by the fold at that HLC prefix. A forged "pass" event cannot promote
 contamination into canon.
 
-**Monotonicity note (consistency with I16).** The fold's blocking recomputation uses the
+**Monotonicity note (consistency with I16).** This note covers condition (b) of 7.1, the one whose
+input the base fixes. The fold's blocking recomputation uses the
 fixed base frontier (I7) as input - check result = f(proposal, base) (I8). Even if a
 late-arriving early-HLC event slips into the prefix, the check input (the fixed base) does
 not change, so the verdict "a valid merge exists" does not flip pass -> fail after the
@@ -294,14 +295,18 @@ can cast opposing verdicts without knowing about each other.
   self-approval, I9), (b) the fold recomputes the blocking checks and they pass (I13),
   (c) the base the verdict referenced matches the current base (I12), (d) the proposal was
   in the Open state, (e) if the verdict-casting party is automatic, the fold recomputes the
-  routing premises and they pass (I15).
+  routing premises and they pass (I15). (b) reads the fixed base (Section 6's monotonicity note);
+  (c)-(e) read the log before the verdict, which a concurrent earlier-HLC event can still change,
+  so a verdict's validity is final at causal stability (I16, federation.md 7a).
 - The decision rule is a join over the chain pending <= reject <= merge. Since the join is
   associative/commutative/idempotent and merge is the absorbing element (top), the
-  conclusion is independent of arrival order (convergence) and is fixed from the moment a
-  valid merge is in the log (monotonicity/finality). Without any separate machinery such as
-  watermarks or waiting for straggler verdicts, we get both convergence and finality
-  ("from when may I trust this conclusion and accumulate derivations on it") at once - and
-  since it does not drag in a wall clock, it is consistent with I4.
+  conclusion is independent of arrival order (convergence), and among the verdicts it is
+  fixed from the moment a valid merge is in the log (monotonicity): no straggler verdict can
+  undo it, so the join itself needs no watermark. What does need one is validity - (c)-(e)
+  above read the log before the verdict - and that settles at causal stability, a watermark
+  computed from the log's own streams (federation.md 7a), which answers "from when may I trust
+  this conclusion and accumulate derivations on it". Neither drags in a wall clock, so both
+  are consistent with I4.
 - If there are multiple valid merges, the representative verdict is canonicalized to the
   **minimum HLC** (since effects are idempotent there is no semantic issue; the
   canonicalization is only for the determinism of choosing the representative - I14).
