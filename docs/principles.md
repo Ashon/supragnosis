@@ -273,7 +273,7 @@ the world (`valid_from`/`valid_to`), (2) **transaction time** - the moment the s
     reported as an empty result (Principle 24, federation.md F12). *Uncomputable* - a derivation this
     build cannot perform, such as a belief diff for a kind with no commit effect. *Withheld* - the
     caller is not granted the scope they named, answered as a refusal that names the scope
-    (remote-server.md R3/R5). *Destroyed* - a tombstone, which records the act and not the content
+    (remote-server.md Section 4.3, R3, R5). *Destroyed* - a tombstone, which records the act and not the content
     (excision.md E2). *Truncated* - a bounded answer says what it left out, because a short list must
     not read as the whole list (prompts.md PR3). A surface that collapses two of these into one
     answer violates this principle, and a surface that needs a value this list lacks adds it here
@@ -281,7 +281,7 @@ the world (`valid_from`/`valid_to`), (2) **transaction time** - the moment the s
   - **Refuse, or answer unknown?** One rule decides. A refusal is given for a scope the caller named
     and therefore already knows exists - a workspace. An id the caller is not granted is answered
     exactly as an unknown id is, because naming the refusal would tell them the thing exists
-    (remote-viewer.md Section 3.4). Open world toward the caller is also what denies them an
+    (remote-server.md Section 4.3, remote-viewer.md Section 3.4). Open world toward the caller is also what denies them an
     existence oracle (Principle 17).
 
 ### Principle 6. Conflict Is Information (Contradiction Is Signal)

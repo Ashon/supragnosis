@@ -94,8 +94,8 @@ Neither means anything for a principal. The read tier resolves both against the 
 surface does (remote-server.md Section 4.3):
 
 - **Omitted** is the principal's first readable grant, in name order.
-- **Named** must be granted and servable (R5). Otherwise the answer is a 403 that names the grants,
-  or the origins that have not consented.
+- **Named** must be granted and servable (R5). Otherwise the answer is a 403 that names the
+  workspace asked for and the grants, or the origins that have not consented.
 - **`*`, `all` or empty** is the union of the principal's grants:
   - Each projection runs once per granted workspace, and the results are merged. It is never the
     node-wide projection filtered afterwards, which would put the decision about what to show
