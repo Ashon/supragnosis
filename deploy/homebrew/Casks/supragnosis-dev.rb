@@ -16,6 +16,7 @@ cask "supragnosis-dev" do
 
   conflicts_with cask: "supragnosis"
   depends_on formula: "supragnosis-server"
+  depends_on :macos
 
   app "Supragnosis.app"
 

@@ -13,7 +13,12 @@ cask "supragnosis" do
   desc "Desktop shell for the supragnosis knowledge daemon"
   homepage "https://supragnosis.dev/"
 
+  # Both casks install Supragnosis.app, and brew checks only the conflicts the cask being installed
+  # declares, so each side names the other: brew then refuses with the conflict instead of failing
+  # on the app bundle already in /Applications.
+  conflicts_with cask: "supragnosis-dev"
   depends_on formula: "supragnosis-server"
+  depends_on :macos
 
   app "Supragnosis.app"
 
