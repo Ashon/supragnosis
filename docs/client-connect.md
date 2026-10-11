@@ -62,10 +62,12 @@ A client launches `supragnosis bridge` as its stdio server. The bridge relays ev
 client sends to the local daemon's streamable-HTTP endpoint, and every reply back. It does not
 read or rewrite what passes through.
 
-- **The token is read from its file, by the bridge, on every connect.** No client configuration
-  holds a secret, and regenerating the token needs no change in any client.
-- **The address** is `SUPRAGNOSIS_HTTP_ADDR` or `127.0.0.1:7373`, refused unless it is loopback -
-  the same check `serve` applies.
+- **The token is read from its file, by the bridge, on every connect** - the local daemon's, or the
+  active profile's credential (remote-server.md Section 3). No client configuration holds a secret,
+  and regenerating the token needs no change in any client.
+- **The address** of the local profile is `SUPRAGNOSIS_HTTP_ADDR` or `127.0.0.1:7373`, refused unless
+  it is loopback - the same check `serve` applies. A remote profile is reached over verified TLS, or
+  plain HTTP to a loopback host only (remote-server.md R8).
 - **A daemon restart is invisible to the client.** The daemon answers 404 for a session it no longer
   knows, which is already how it tells a client to re-initialize. The bridge keeps the client's own
   `initialize` request, replays it to open a new session, and retries the request once. An upgrade
@@ -173,7 +175,7 @@ steps.
 | | Invariant |
 |---|---|
 | **C1** | The bridge never opens the store and never starts a daemon. |
-| **C2** | `connect` never writes a secret into a client's configuration. The bridge reads the token from the 0600 file. |
+| **C2** | `connect` never writes a secret into a client's configuration. The bridge reads the active profile's credential from its 0600 file. |
 | **C3** | `connect` never replaces an entry it did not write unless `--replace` is given, and never edits a client file without first copying it aside. A file it cannot parse is refused, not rewritten. |
 | **C4** | Through the bridge a client sees the daemon's surface unchanged: the same tool list, the same results, the same errors. |
 | **C5** | `connect` without a client argument only reads. |
@@ -190,10 +192,10 @@ steps.
 
 | Principle | Where this closes it |
 |---|---|
-| P17 - local surfaces stay local, the secret stays in one place | Section 3 (loopback only, token read from its file); C2 |
+| P17 - local surfaces stay local, the secret stays in one place | Section 3 (the local profile on loopback only, a remote one over verified TLS, the credential read from its file); C2 |
 | P21 - one narrow surface | Section 2 and the relay decision; C4 |
-| P24 - the operator's file is theirs | Section 4 (backup, merge, refuse what does not parse, `--replace` to take over); C3 |
-| P5 - unknown is not absent | Section 4's listing distinguishes not installed, not connected, and connected some other way |
+| Outside principles.md's scope (client configuration) - P24's "the operator's file is theirs", followed by analogy | Section 4 (backup, merge, refuse what does not parse, `--replace` to take over); C3 |
+| Outside principles.md's scope - P5's refusal to collapse states, followed by analogy | Section 4's listing distinguishes not installed, not connected, and connected some other way |
 | daemon-lifecycle.md L1 - one owner | C1: the bridge is never a second writer |
 
 Guarded by:
