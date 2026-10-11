@@ -923,10 +923,10 @@ Questions to apply quickly during design/PR review:
   element only widens retrieval, so how far it widens it is measured, not assumed.)
 - Does this change assert something about the system that another document contradicts? The coverage
   registry checks that a clause declares evidence, never that prose is true, so a document disagreeing
-  with a document is invisible to every gate - except a reference to a section or invariant that does
-  not exist, which `design_docs_cross_references_resolve` fails. It has happened twice: a store removal left three design
+  with a document is invisible to every gate. It has happened twice: a store removal left three design
   documents describing the store it removed, and a federation section claimed a default the invariant
-  one page later reversed.
+  one page later reversed. The one kind of disagreement a gate can see is a reference that names its
+  document and lands on no section or invariant: `design_docs_cross_references_resolve` fails it.
 - Does a comment state a premise more strongly than the code guarantees? The recurring shape is a
   comment that is right about the common case and silent about the path that breaks it - "taking the
   first is not a choice between candidates" was true of an observed entity and false after a merge

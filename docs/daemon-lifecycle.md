@@ -166,9 +166,10 @@ classify managers itself - one implementation, in the workspace where it is test
 - **Start at Login**, a check item in the tray menu, reflects whether the canonical job is
   installed. Turning it on runs `supragnosis service install --take-over` (the click is the consent;
   the status line then says what was retired) and re-attaches. Turning it off runs `supragnosis
-  service uninstall`. That stops the daemon - with turning it on, which can retire another
-  manager's daemon, the only paths by which the app stops a daemon it did not spawn - so the shell then falls back to attach-or-spawn and runs one for the session, and the
-  status line says the daemon is no longer started at login.
+  service uninstall`. That stops the daemon, so the shell then falls back to attach-or-spawn and
+  runs one for the session, and the status line says the daemon is no longer started at login.
+  The switch is the only way the app stops a daemon it did not spawn: off uninstalls the job, and
+  on can retire another manager's daemon by taking over (L6).
 - **The status line** names the manager (launchd, Homebrew, pidfile, spawned by this app) and
   carries version drift and conflicts from `status`.
 - **Restart Daemon** reports its outcome. The CLI's exit status and message reach the status line; a
