@@ -386,6 +386,55 @@ fn p18_a_console_merge_after_an_agent_merge_raises_the_grant() {
     );
 }
 
+/// guard (resolution.md Section 6, proposal-workflow.md 7.1 (d)): a console verdict of its own -
+/// a different note, so a different row from the agent's - cast after the promotion merged still
+/// raises the grant. It changes no state; (d) decides what can merge a proposal, not what can
+/// confirm it once merged.
+#[test]
+fn p18_a_console_verdict_of_its_own_after_the_merge_raises_the_grant() {
+    let (store, engine) = engine();
+    let o1 = kind_obs("cozo", "Tool", 100);
+    let id1 = o1.id.clone();
+    store.add_observation(o1).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    let tier_of = |engine: &Engine| {
+        let g = engine.graph(Some(WS)).expect("graph");
+        g.nodes.iter().find(|n| n.name == "cozo").expect("node").trust_tier
+    };
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![id1],
+            into: None,
+            tier: Some("human_confirmed".into()),
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("some-agent".into()),
+        })
+        .expect("propose");
+    let review = |note: &str, surface| {
+        engine
+            .review_proposal(None, pid.clone(), "merge".into(), Some(note.into()), None, surface)
+            .expect("verdict")
+    };
+    let agent_row = review("routine", VerdictSurface::Agent);
+    assert_eq!(tier_of(&engine), TrustTier::HostSigned);
+    let console_row = review("checked by hand", VerdictSurface::Console);
+    assert_ne!(agent_row, console_row, "a different note is a verdict of its own");
+    assert_eq!(
+        engine.get_proposal(None, &pid).expect("get").expect("proposal").state,
+        "merged",
+        "the later verdict changes no state"
+    );
+    assert_eq!(
+        tier_of(&engine),
+        TrustTier::HumanConfirmed,
+        "a console verdict after the merge must still raise the grant (resolution.md Section 6)"
+    );
+}
+
 /// guard (resolution.md Section 6, R8): the verdict-surface markers ride source_ref, and the
 /// ceiling fold trusts a log-borne marker to be engine-stamped. That trust holds only if every
 /// LOCAL ingest door refuses the namespace - review_proposal stamps its own marker and accepts no
