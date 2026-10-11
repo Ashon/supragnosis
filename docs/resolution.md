@@ -218,7 +218,9 @@ the distinction by **surface**:
 - **Ceiling rule (fold-side, deterministic)**: the tier a merged promotion may grant is capped
   by the highest ceiling among its merge verdicts' surface markers - `Console` grants up to
   `HumanConfirmed`; `Agent`, an absent marker, and any unknown marker cap at `HostSigned`. A
-  person's console merge on a promotion an agent merged first therefore raises it: the grant is
+  person's console merge on a promotion an agent merged first therefore raises it, whether it is a
+  verdict of its own or the same decision sharing the agent's row - condition (d) of
+  proposal-workflow.md 7.1 decides what can merge a proposal, not what can confirm it once merged: the grant is
   monotonic in the verdicts, as the decision rule is (proposal-workflow.md I16), and does not
   turn on which verdict happens to represent the proposal. One decision cast twice with the same
   note is one content address with two attestations (Principle 3), so the ceiling reads the

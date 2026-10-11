@@ -295,7 +295,10 @@ can cast opposing verdicts without knowing about each other.
   self-approval, I9), (b) the fold recomputes the blocking checks and they pass (I13),
   (c) the base the verdict referenced matches the current base (I12), (d) the proposal was
   in the Open state, (e) if the verdict-casting party is automatic, the fold recomputes the
-  routing premises and they pass (I15). (b) reads the fixed base (Section 6's monotonicity note);
+  routing premises and they pass (I15). (d) decides which verdicts can make a proposal Merged: a
+  merge cast after it merged changes no state, and counts only toward a gate grant's ceiling
+  (resolution.md Section 6) - confirming a merged promotion more strongly is not a second
+  decision. (b) reads the fixed base (Section 6's monotonicity note);
   (c)-(e) read the log before the verdict, which a concurrent earlier-HLC event can still change,
   so a verdict's validity is final at causal stability (I16, federation.md 7a).
 - The decision rule is a join over the chain pending <= reject <= merge. Since the join is
