@@ -159,8 +159,10 @@ does not hold" - so it is a prerequisite of, not an addition to, the proposal wo
   policy-in-force lookups) - **finality** (where derivations may be stacked) therefore never rests on the
   ordering alone: it rests on absorbing states (I16) plus **causal stability** (7a). The multi-attestation
   minimum itself only settles last-write-wins display fields, which are allowed to converge late.
-  Proposal/verdict events carry a unique payload per author, so in practice each has exactly one authoring
-  attestation and the rule is unambiguous.
+  A proposal/verdict event's content carries no author, so the same decision cast twice - by two
+  writers, or from two surfaces - is one row with several attestations. "Who acted" reads the authoring
+  attestation (the earliest, so the rule is unambiguous); the surface ceiling and the I17 recall check
+  read all of them (resolution.md Section 6).
 - **No drift bound - a recorded exposure.** The merge rule accepts any remote `wall`: there is no
   maximum-drift rejection, and the stamp is stored verbatim in the log forever. A skewed or compromised
   allowlisted origin that stamps a far-future wall therefore (a) drags every receiver's clock forward on
