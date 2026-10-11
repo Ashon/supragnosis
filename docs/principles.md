@@ -106,6 +106,9 @@
 > Revision: 2026-10 (closure follow-up) - *tightens* Appendix B.1: every Enforcement bullet is
 > answered by a registry clause and every clause by a bullet, every design document's invariant
 > table carries evidence states, and an owed clause names a milestone or a "Revisit when" trigger.
+> Revision: 2026-10 (coherence review) - *loosens* 23: a claim-demotion or a recall may be
+> self-approved, the correction fast-path that proposal-workflow.md I9 and Section 9 had adopted
+> without this document following.
 
 ---
 
@@ -738,7 +741,11 @@ proposal are all observation events, and are governed by this principle just the
     deployment configured single-principal, which is a premise the node cannot infer from its log,
     since an absent second principal is unknown rather than known absent (Principle 5, federation.md
     F18) - attaches a self-attested marker so that it is distinguished in trust evaluation upon
-    federation (Principle 18).
+    federation (Principle 18). The one other exception is correction: a claim-demotion or a recall
+    may be approved by its own proposer, because demoting what you introduced destroys nothing
+    (Principle 3) and waiting for a second reviewer would widen the window in which the
+    contamination is read (proposal-workflow.md I9, Section 9). It relaxes who may approve, not
+    how: a recall verdict is still the principal's own act, never an agent's proxy (below).
   - **The recall verdict is non-delegable**: because bulk retraction of a derived tree is the verdict
     with the largest destructive radius, it cannot hold as an agent's proxy verdict through the
     delegation chain ("under the human principal's authority") but must be the human's direct act: a
@@ -865,7 +872,8 @@ Questions to apply quickly during design/PR review:
 - Does this feature demand extra labor from the host? (Principle 22)
 - Does a change affecting the canon bypass the proposal? Did wall-clock/nondeterminism enter the
   proposal state? (Principle 23)
-- Is there a path that makes self-approval possible? (Principle 23)
+- Is there a path that makes self-approval possible, outside the solo and correction exceptions?
+  (Principle 23)
 - Do we measure recall quality? - search/recall changes are verified with a regression eval set in the
   style of a memory benchmark (LongMemEval-like).
 - Does this change assert something about the system that another document contradicts? The coverage
