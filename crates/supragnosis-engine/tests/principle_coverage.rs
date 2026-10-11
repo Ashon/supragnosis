@@ -823,13 +823,13 @@ const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
              three lookups unchanged - has nothing to assert until ranking consumes the weight")),
     ]),
     (5, &[
-        c("demotion appends no observation and changes no belief",
+        c("retrieval demotion appends no observation and changes no belief",
           Evidence::Scenario(&[
             "p7_curation_generates_candidates_and_commits_nothing",
             "merge_suggestions_never_commit",
           ])),
-        c("the one consolidation act that appends - a `recall` - is a proposal kind and goes \
-           through the gate",
+        c("a consolidation output changes the belief only through a verdict on a proposal - a \
+           `recall` among them - and opening one is ingest",
           // engine lib.rs unit test: `recall` opens as a proposal and folds like every other kind.
           Evidence::Scenario(&["proposal_open_verdict_fold"])),
     ]),
