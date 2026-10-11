@@ -9,11 +9,13 @@ Instead of spawning over stdio for each chat, **a single always-on local daemon*
 and exposes MCP streamable-http. Agents (Claude Code, etc.) just connect over http. Because the
 daemon is the sole holder of the db, the single-process lock problem also disappears.
 
-- MCP: `http://127.0.0.1:7373/mcp` (loopback-only, no auth = local trust surface, Principle 17)
+- MCP: `http://127.0.0.1:7373/mcp` (loopback-only, bearer token from the 0600 `mcp.token` - the
+  local trust surface, Principle 17)
 - Viewer: `~/.supragnosis/viz.sock` (HTTP over a unix socket, 0600 owner-only - no TCP port)
-- All local for MCP and the viewer - non-local exposure / auth for these two surfaces is not
-  supported yet (later). The federation sync API is the separate network surface, guarded by
-  TLS and at least one admitted node or principal (docs/federation.md F10).
+- Both stay local. Reaching knowledge from elsewhere goes through a hub: its TLS listener carries
+  the federation sync API and, for principals it admits, MCP and the viewer
+  (docs/remote-server.md, docs/remote-viewer.md). It binds off loopback only with TLS and at least
+  one admitted node or principal (docs/federation.md F10).
 
 ## Quick install (recommended)
 

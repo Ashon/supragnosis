@@ -27,15 +27,16 @@ containers on the same lock.
 | | Host service | Container |
 |---|---|---|
 | State | `~/.supragnosis` | one volume at `$HOME/.supragnosis`, where `HOME=/var/lib/supragnosis` |
-| MCP (7373) | loopback, unauthenticated by design | **not published** - see below |
+| MCP (7373) | loopback, bearer token | **not published** - see below |
 | Viewer socket | `~/.supragnosis/viz.sock`, 0600 | inside the volume, reachable by `docker exec` |
-| Federation (7420) | binds a configured address | publish it; the daemon still demands TLS + allowlist |
+| Federation (7420) | binds a configured address | publish it; the daemon still demands TLS and an admitted node or principal |
 
-**Why 7373 stays unpublished.** The MCP daemon is unauthenticated - that is not an oversight but the
-local trust surface Principle 17 describes, and it is why the host service binds it to loopback.
-Publishing it from a container puts an unauthenticated *write* surface on the network. If you need
-MCP from elsewhere, tunnel to the host and use `docker compose exec`, or wait for the authenticated
-network read tier (federation Phase 3.5).
+**Why 7373 stays unpublished.** The daemon's MCP is the local trust surface Principle 17 describes:
+loopback, and a bearer token that only the holder of the 0600 `mcp.token` can present. Its guard
+refuses a non-loopback bind, and publishing it would move a surface scoped to one OS user onto a
+network. If you need MCP from elsewhere, configure `[server]` with a principal and reach the hub's
+governed agent surface at `https://<hub>:7420/mcp` (docs/remote-server.md), or use
+`docker compose exec`.
 
 **The viewer socket is inside the container.** Its security property is a unix socket in a 0700
 directory - one principal, no port. Bind-mounting it to the host hands it to whoever can read that
@@ -135,8 +136,7 @@ rest on remembering:
 - **A separate port block, bound to loopback.** 752x/753x, each published as `127.0.0.1:`. 7373 and
   7374-7376 (an installed daemon), 7399 (`task dev`) and 7420 (the real hub compose) are untouched.
 - **MCP is not published from either node**, for the reason it is not published above: it is an
-  unauthenticated local trust surface by design (P17), and a sandbox is not a reason to move one
-  onto a network interface.
+  local trust surface (P17), and a sandbox is not a reason to move one onto a network interface.
 
 ### What it shortcuts, and why that is not a template
 
