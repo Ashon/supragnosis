@@ -31,7 +31,7 @@ let contrib = 1.0 / (K + rank as f32 + 1.0);
 
 Reciprocal Rank Fusion combines the keyword and semantic lists by **rank position alone**. There is
 no per-item term in that sum, so there is nowhere for a weight to enter. Trust cannot tilt retrieval
-because recall takes no tilt. Demotion has no handle to turn. A `recall` verdict has nothing to
+because retrieval takes no tilt. Demotion has no handle to turn. A `recall` verdict has nothing to
 change even when the gate merges it.
 
 So the missing thing is not three features. It is one: **a per-item retrieval weight**, and the three

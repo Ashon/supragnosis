@@ -49,7 +49,7 @@ dpkg-deb -x libclang-common-18-dev_*.deb root
 export BINDGEN_EXTRA_CLANG_ARGS="-I$HOME/opt/clangdev/root/usr/lib/llvm-18/lib/clang/18/include"
 ```
 
-Omit `--features fastembed` on a pure hub. The hub relays and stores; recall happens on the
+Omit `--features fastembed` on a pure hub. The hub relays and stores; retrieval happens on the
 spokes, so the ONNX runtime buys nothing there and is one more thing to source for the arch.
 
 ## Two things that bite in a *user* unit
