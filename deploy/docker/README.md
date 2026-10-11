@@ -50,7 +50,7 @@ allowlist. The daemon refuses rather than serving in the open, and says which ha
 
 ```
 Error: refusing to bind 0.0.0.0:7420: TLS is not enabled
-       (F10: non-loopback needs TLS + a non-empty allowlist)
+       (F10: non-loopback needs TLS and an admitted node or principal)
 ```
 
 So a hub needs a config and a certificate mounted in - both commented into `compose.yaml`:
