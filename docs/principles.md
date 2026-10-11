@@ -118,7 +118,9 @@
 > *Loosens* 2: the source reference and the confidence are carried when stated, not required. The
 > schema has made both optional since M0, a required basis would be the ingest gate Principle 22
 > forbids, and an unstated value is preserved as unstated - the rule this principle already gave
-> confidence.
+> confidence. *Reinterprets* 7's headline, which still said consolidation summarizes, promotes and
+> demotes - the 7th revision and the closure review had made it a generator that commits nothing and
+> stores no summary.
 
 ---
 
@@ -299,7 +301,8 @@ current belief while leaving the existence of the contradiction itself queryable
 
 **The lifecycle of knowledge does not end at ingest.** Stale or low-value knowledge is forgotten not
 by deletion but by **demotion of recall priority**, and an idle-time **consolidation** process
-summarizes/promotes/demotes accumulated observations. The log is eternal, but recall is finite.
+re-ranks the accumulated observations and generates from them - curation signals and candidate
+proposals - while committing nothing itself. The log is eternal, but recall is finite.
 
 - **Rationale**: An append-only log grows without bound, and recall without curation is polluted by
   noise. This is the solution that recent agent-memory research has converged on - reprocessing memory
