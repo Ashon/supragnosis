@@ -207,7 +207,7 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 |---|---|
 | **S1** | A settings command runs only for the app's own settings page, at the top level of the main window. The viewer cannot invoke one, whatever page it shows, framed or not. |
 | **S2** | A credential typed into the page reaches the CLI on stdin and nowhere else: not an argument, a log line, a response, or the page once handed over. |
-| **S3** | The page decides nothing the CLI decides. Every change is a CLI call, and the CLI's answer is what the page shows. |
+| **S3** | The page decides nothing the CLI or the daemon decides. Every change is a CLI call, except stopping a peer's sharing, which is the daemon's narrow-only endpoint (Section 3.4); the page shows the answer it gets. |
 | **S4** | Every setting the tray offered is on the page. Moving it lost nothing. |
 | **S5** | The page renders the text it is given as text, never as markup. |
 | **S6** | While a remote profile is active, the daemon controls are disabled with the reason, as the tray's were. |
