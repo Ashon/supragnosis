@@ -176,7 +176,7 @@ panel. It is now named in `local_only`, which is the bucket that exists for it.
 > applied to work that had not existed yet.
 
 **Step 3 - route, and say what was skipped. [done]** The daemon's three fan-out sites - `sync_push`,
-`sync_pull` and federated `search` - consult the map, and each narrowed response carries a `skipped`
+`sync_pull` and federated `search_knowledge` - consult the map, and each narrowed response carries a `skipped`
 list. The two halves shipped in one change, for the reason Section 4 gives: filtering without
 labelling trades a loud failure for an invisible one.
 

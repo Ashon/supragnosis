@@ -429,7 +429,7 @@ it there; F21 states them normatively, one clause per demand.
   nothing durable is stacked on it: a routing decision is re-derived, never treated as settled.
 
 What the surface buys beyond diagnosis is that a **workspace-to-host map** becomes derivable at
-runtime. Fan-out - sync push/pull and federated `search` - can then stop addressing a host that has
+runtime. Fan-out - sync push/pull and federated `search_knowledge` - can then stop addressing a host that has
 said it does not admit the workspace, so a remote miss becomes interpretable instead of being mixed
 with denials and timeouts.
 
@@ -808,7 +808,7 @@ input, not nondeterminism - F16).
   order in [negotiated-surface.md](negotiated-surface.md)): consume the `ping`
   authorization answer instead of discarding it, hold it per server as link-local state, and expose it
   through `sync_status` and the viewer's federation blob as the three-bucket difference (both /
-  local-only / peer-only) with the negotiation time attached (F21.6). Then filter fan-out - `sync_push`, `sync_pull`, federated `search` - on the
+  local-only / peer-only) with the negotiation time attached (F21.6). Then filter fan-out - `sync_push`, `sync_pull`, federated `search_knowledge` - on the
   negotiated map, so a workspace is offered only to hosts that admit it - each such response naming
   the hosts consulted and those skipped (F21.5), since a silently narrowed fan-out is a worse answer
   than an unnarrowed one. **No new MCP tool**:
