@@ -1768,6 +1768,13 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
           )),
         c("the hub re-materializes after a pull or push that stamped rows",
           Evidence::Scenario(&["a_pull_that_stamps_rows_re_materializes_them"])),
+        c("a clear by id never covers a concurrent re-arrival of the same observation",
+          Evidence::Deferred(
+            "the accepted exception of crash-recovery.md Section 8: an observe's clear removes the \
+             entry an apply re-arrival shares, and the debt is lost if the process dies before the \
+             apply re-materializes. Revisit when the atomic-write follow-up lands - it removes the \
+             window, and a per-append sequence in the ledger would otherwise be the fix",
+          )),
     ]),
     (3, &[
         c("a writer that opens a store with owed entries re-projects exactly those workspaces",

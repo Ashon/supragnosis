@@ -110,10 +110,10 @@ have produced, and running it twice changes nothing.
 
 | | Invariant |
 |---|---|
-| **K1** | Every append records its owed projection in the same store transaction as the row. No append path can skip it. |
-| **K2** | An owed entry is cleared only after the projection that repays it is written: the appending writer's own projection, or a reproject that read the entry before it began. |
+| **K1** | Every append a ledger-aware build makes records its owed projection in the same store transaction as the row. No append path in such a build can skip it; appends an older build made are Section 4's downgrade case. |
+| **K2** | An owed entry is cleared only after the projection that repays it is written: the appending writer's own projection, or a reproject that read the entry before it began. The one accepted exception is a clear by id that also covers a concurrent re-arrival of the same observation (Section 8). |
 | **K3** | A writer process that opens a store with owed entries re-projects those workspaces before it serves a read or accepts a write. |
-| **K4** | Correctness does not depend on how a process ends. SIGKILL, panic, power loss, a failed projection write: each leaves entries the next open repays. |
+| **K4** | Correctness does not depend on how a process ends. SIGKILL, panic, power loss, a failed projection write: each leaves entries the next open repays, within K1's and K2's stated exceptions. |
 | **K5** | Recovery is reported where it is read: `/api/health` and `supragnosis status` carry the last recovery and the ledger's current size. |
 
 ## 6. Closure map
