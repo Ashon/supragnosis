@@ -27,7 +27,7 @@ same `KnowledgeStore` port and are held to it by one suite
 against every adapter - a backend does not get to bring its own reading of the contract.
 
 Measured differences are in [architecture.md](architecture.md) Section 6. The short version: the read
-path is faster, markedly so when rows carry embeddings, and semantic recall is slower above roughly
+path is faster, markedly so when rows carry embeddings, and semantic retrieval is slower above roughly
 5-6k embedded rows because redb scans where Cozo has an ANN index.
 
 ## 2. What moves, and what is rebuilt
@@ -45,7 +45,7 @@ Rebuilt from the log: entities, relations, aliases, the type glossary, proposal 
 resolution.
 
 Recomputed rather than carried: **entity name embeddings**, if an embedder is attached during the
-replay. They are a node-local recall aid, exempt from the convergence norm (Principle 16, 4th
+replay. They are a node-local retrieval aid, exempt from the convergence norm (Principle 16, 4th
 revision), so regenerating them changes no answer the graph is required to agree on. Observation
 embeddings are copied as-is.
 

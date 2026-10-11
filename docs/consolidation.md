@@ -19,8 +19,8 @@ The coverage registry files three separate clauses as unmet, filed under three d
 
 | Principle | Unmet clause |
 |---|---|
-| P7 | forgetting happens as recall demotion at idle, never as deletion |
-| P18 | derived assertions without lineage are quarantined, **recall is trust-weighted**, and contamination can be traced back and cleaned |
+| P7 | forgetting happens as retrieval demotion at idle, never as deletion |
+| P18 | derived assertions without lineage are quarantined, **retrieval is trust-weighted**, and contamination can be traced back and cleaned |
 | P23 | every proposal kind the surface accepts has a commit effect (`recall` folds correctly and changes nothing) |
 
 They read as three debts. They are one, and the reason is visible in eleven lines of `fuse_rrf`:
@@ -30,11 +30,11 @@ let contrib = 1.0 / (K + rank as f32 + 1.0);
 ```
 
 Reciprocal Rank Fusion combines the keyword and semantic lists by **rank position alone**. There is
-no per-item term in that sum, so there is nowhere for a weight to enter. Trust cannot tilt recall
+no per-item term in that sum, so there is nowhere for a weight to enter. Trust cannot tilt retrieval
 because recall takes no tilt. Demotion has no handle to turn. A `recall` verdict has nothing to
 change even when the gate merges it.
 
-So the missing thing is not three features. It is one: **a per-item recall weight**, and the three
+So the missing thing is not three features. It is one: **a per-item retrieval weight**, and the three
 clauses are what it would repay.
 
 ## 2. What this is NOT
@@ -44,7 +44,7 @@ nothing and reaches nothing on disk; a demoted observation answers an explicit q
 did before. The two documents share a lineage walk and nothing else.
 
 **Not `claim_demotion`.** That kind exists and has a commit effect, and it moves the trust tier -
-which decides *which assertion becomes the current belief*. Recall weight decides *what surfaces
+which decides *which assertion becomes the current belief*. Retrieval weight decides *what surfaces
 when nobody named it*. A claim can be the winning belief and still be worth demoting out of a
 crowded search result; a claim can be demoted below its rivals and still be the thing a direct
 lookup must return. P7 draws this line itself: forgetting "only adjusts weights in the
@@ -53,14 +53,14 @@ projection/index layer", never the belief.
 **Not a garbage collector.** The log is eternal (P3). Nothing in this document shrinks it, and any
 future version that does has left this document for excision.md.
 
-## 3. The recall weight
+## 3. The retrieval weight
 
-A **recall weight** is a number attached to a candidate at ranking time, multiplying its RRF
+A **retrieval weight** is a number attached to a candidate at ranking time, multiplying its RRF
 contribution. It is not stored, not authoritative, and not a belief.
 
 Where it lives is already decided by precedent. [resolution.md](resolution.md) established that the
 current belief is **policy-current on the read path and materialized at `reproject`** - a fold over
-the log, recomputed rather than written. The recall weight is the same shape and must reuse that
+the log, recomputed rather than written. The retrieval weight is the same shape and must reuse that
 split rather than invent a second one: a mutable score column that a background job writes is a
 projection write that no observation asserts, which is the P1 violation the store port was split to
 make unrepresentable (`AssertionStore` / `KnowledgeStore`).
@@ -81,7 +81,7 @@ and no other node can derive it. A weight that consumes usage cannot converge, a
 convergence binds the deterministic read surfaces - exact lookup, graph traversal, **keyword search**.
 
 The embedding exemption does not extend here. P16 grants it to an ANN index because such an index
-"is not part of the materialized graph but a node-local recall aid". A weight that demotes knowledge
+"is not part of the materialized graph but a node-local retrieval aid". A weight that demotes knowledge
 is a statement *about the knowledge*, and if two nodes holding the same log return keyword results in
 different orders, the convergence surface has stopped converging.
 
@@ -165,7 +165,7 @@ loosen it.
 What M6 adds is not another signal. It is the answer to *what happens next*, and there are exactly
 two answers:
 
-**Automatic, because it is not a canon change.** Recomputing the recall weight commits nothing that a
+**Automatic, because it is not a canon change.** Recomputing the retrieval weight commits nothing that a
 reprojection would not reproduce. It writes no observation, changes no belief, and removes no
 reachability. Putting a gate in front of it would gate arithmetic. It runs off the critical path
 (P7), and "runs" means "is recomputed", not "is written".
@@ -189,7 +189,7 @@ A merged `recall` verdict, over its target and the `derived_from` closure the pr
 1. **marks them retracted** - a fold-derived status, like every other verdict effect;
 2. **removes them from belief selection** - a retracted assertion is not a candidate, so the belief
    recomputes to whatever else asserts the subject, or to nothing (P5: absence, not falsehood);
-3. **floors their recall weight** (Section 4);
+3. **floors their retrieval weight** (Section 4);
 4. **deletes nothing** (P3) - the observations stay, `get_observation` still returns them, and the
    retraction is itself an observation, so it converges (P16) and is reversible by a new proposal.
 
@@ -229,7 +229,7 @@ Nothing in this half needs a model, and it is the first condensation worth build
 
 ### 7.2 Semantic condensation is a display act, not a storage act
 
-A summary sentence over forty observations needs an extractor, and the moment it becomes what recall
+A summary sentence over forty observations needs an extractor, and the moment it becomes what retrieval
 returns, three things go wrong at once:
 
 - **It resolves the conflict it should be reporting.** If three of the forty disagree, a summary
@@ -347,7 +347,7 @@ model to install first.
 
 | | Invariant |
 |---|---|
-| **C1** | The recall weight is a fold over the log. It may be **materialized at `reproject`**, the way resolution.md materializes the belief - what is forbidden is a consolidation pass writing a score of its own, which is a projection write no observation asserts. An earlier wording said "never a stored column" and so forbade the precedent it meant to follow. |
+| **C1** | The retrieval weight is a fold over the log. It may be **materialized at `reproject`**, the way resolution.md materializes the belief - what is forbidden is a consolidation pass writing a score of its own, which is a projection write no observation asserts. An earlier wording said "never a stored column" and so forbade the precedent it meant to follow. |
 | **C2** | The weight consumes no wall clock, no arrival order and no randomness. Recency is a position in the span of the workspace's own recorded HLCs - never a rank, which invents age differences (Section 4.2), and never a reading of the OS clock. |
 | **C3** | The committed weight consumes no node-local signal. Usage may only re-rank the already-exempt surfaces, labelled by `mode`. |
 | **C4** | The weight has a positive floor. `get_entity`, `get_observation` and `traverse` do not consult it - demoted knowledge stays reachable by explicit query (P7). |
@@ -364,12 +364,12 @@ model to install first.
 
 | Demand | Where it is answered |
 |---|---|
-| P7 - forgetting is demotion of recall, never deletion | Sections 3, 4; C1, C4 |
+| P7 - forgetting is demotion of retrieval, never deletion | Sections 3, 4; C1, C4 |
 | P7 - consolidation generates, it does not commit | Section 5; C5 |
 | P7 - consolidation runs off the critical path | Section 8 step 6 |
 | P16 - no nondeterminism in a fold; convergence on the deterministic surfaces | Section 4.1, 4.2; C2, C3 |
 | P16 - a response labels which surface answered | Section 4.1; C3 |
-| P18 - recall is trust-weighted | Section 4.3 (effective tier as an input) |
+| P18 - retrieval is trust-weighted | Section 4.3 (effective tier as an input) |
 | P18 - contamination can be traced back and cleaned | Section 6; C6, C7 |
 | P23 - every proposal kind the surface accepts has a commit effect | Section 6 |
 | P23 - no merge without a diff; a verdict binds to the base it reviewed | Section 6; C7 |
@@ -378,5 +378,5 @@ model to install first.
 | P5 - a retracted subject with no other assertion is absent, not false | Section 6 point 2 |
 | P11 - the induction substrate is second-order structure; a reference, not a judge | Section 7.1; C9 |
 | P6 - a condensation must not settle a contradiction it should surface | Section 7.2; C10 |
-| P19 - the probabilistic edge widens recall and never commits | Sections 7.2, 7.3; C10, C11 |
+| P19 - the probabilistic edge widens retrieval and never commits | Sections 7.2, 7.3; C10, C11 |
 | P7 - the two readings of "ingested as a derived observation" reconciled | Section 7.3 |

@@ -768,10 +768,10 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
 ];
 
-// docs/consolidation.md Section 9 - the recall weight and the recall effect (C rows).
+// docs/consolidation.md Section 9 - the retrieval weight and the recall effect (C rows).
 const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
-        c("the recall weight is recomputed from the log on every read, and a consolidation pass \
+        c("the retrieval weight is recomputed from the log on every read, and a consolidation pass \
            writes no score of its own",
           // policy_cases.rs: the pass that computes the weight changes nothing in the store;
           // principle_scenarios.rs: two stores fed one log compute one weight.
@@ -896,7 +896,7 @@ const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
         c("the digest a summary is written from carries both sides of a contested belief rather \
            than settling it",
           Evidence::Scenario(&["a_brief_is_fenced_bounded_and_writes_nothing"])),
-        c("a summary surface is labelled by `mode` like the recall aid it lives beside",
+        c("a summary surface is labelled by `mode` like the retrieval aid it lives beside",
           Evidence::Deferred(
             "M6, after step 3 (consolidation.md Section 8: 7.2's display-layer summary follows the \
              weight) - the server has no summary surface of its own to label; the prompt digest \
@@ -1486,7 +1486,7 @@ const RESOLUTION_REGISTRY: &[(u8, &[Clause])] = &[
           Evidence::Scenario(&[
             "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
             "p23_demotion_overrides_below_base",
-            // The recall weight consumes the same evaluation.
+            // The retrieval weight consumes the same evaluation.
             "p18_a_merged_demotion_lowers_the_recall_weight_of_its_target",
           ])),
         c("with several merged gate events on one target, the HLC-latest governs",
@@ -2513,7 +2513,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "name_variants_stop_being_offered_once_a_merge_is_open",
             "p7_curation_generates_candidates_and_commits_nothing",
         ])),
-        c("forgetting happens as recall demotion at idle, never as deletion",
+        c("forgetting happens as retrieval demotion at idle, never as deletion",
           Evidence::Deferred(
             "M6 ([consolidation.md](../../../docs/consolidation.md)) - the generate side landed early \
              with M3.5, and Section 8 step 1 has now landed too: the weight is computed and \
@@ -2706,7 +2706,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // The newest fold on the read path, declared here on the day it landed rather than the
             // day someone audits it. Its convergence is what decides which side of P16's two-layer
             // split it may live on: a weight that inherited arrival order could only ever be a
-            // node-local recall aid (consolidation.md Section 4).
+            // node-local retrieval aid (consolidation.md Section 4).
             "p16_the_recall_weight_is_the_same_on_any_arrival_order",
         ])),
         c("a query response is reproducible, and ties and truncation break on a stable key",
@@ -2726,7 +2726,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "traverse_passes_through_an_unprojected_endpoint",
             "search_truncation_is_reproducible",
         ])),
-        c("a response labels the surface that answered, so a recall aid is told apart from the \
+        c("a response labels the surface that answered, so a retrieval aid is told apart from the \
            convergence surface",
           Evidence::Scenario(&[
             "hybrid_search_adds_semantic_recall",
@@ -2739,7 +2739,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           ])),
     ]),
     (17, "Knowledge Sovereignty", &[
-        c("sharing is opt-in per workspace and enforced at the sync boundary, federated recall included",
+        c("sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included",
           Evidence::Scenario(&["export_respects_share_list_and_vv"])),
         // The clause used to read "the local read surface is reachable only by the local
         // principal" and cite these same tests - an over-claim: none of them touches the MCP
@@ -2818,12 +2818,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         ])),
         c("untrusted text never becomes markup in the console that reviews it",
           Evidence::Scenario(&["viz_source_escapes_untrusted_names"])),
-        c("derived assertions without lineage are quarantined, recall is trust-weighted, and \
+        c("derived assertions without lineage are quarantined, retrieval is trust-weighted, and \
            contamination can be traced back and cleaned",
           Evidence::Deferred(
             "M5 with the extraction port - the tier weights belief today, not the ranked recall \
              surfaces, because `fuse_rrf` fuses by rank position and takes no per-item term. The \
-             recall half is specified with M6's weight ([consolidation.md](../../../docs/consolidation.md) \
+             retrieval half is specified with M6's weight ([consolidation.md](../../../docs/consolidation.md) \
              Section 4.3); the quarantine and lineage-cleanup halves stay here")),
         c("a replicated verdict marker is evaluated against the canon policy, not honored as sent",
           Evidence::Deferred(
@@ -2848,7 +2848,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // serializing it accepts every vector and stores none. A third adapter did exactly that, and
         // every semantic read answered the same empty result a vector-less backend gives. The clause
         // exists because the failure is invisible from the outside unless something asks.
-        c("a vector the store accepted is a vector the store returns - a dropped recall aid must not \
+        c("a vector the store accepted is a vector the store returns - a dropped retrieval aid must not \
            be reported as a backend that has none",
           Evidence::Scenario(&[
             "a_stored_vector_survives_the_round_trip",
@@ -2894,7 +2894,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["the_tool_list_is_the_pinned_contract"])),
     ]),
     (22, "Knowledge as a By-Product", &[
-        c("ordinary work induces capture and recall without a separate curation chore",
+        c("ordinary work induces capture and retrieval without a separate curation chore",
           Evidence::Deferred(
             "Revisit when the tool descriptions are next revised - the person's side has prompts now (brief, curate, review-proposal), but \
              nothing yet makes an agent observe and search during its own work unasked, so there is \

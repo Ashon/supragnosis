@@ -151,7 +151,7 @@ and Principle 17 says the origin decides that (federation.md 6d, republication c
 - **Older nodes have not consented.** A node too old to send consent has not given it, so the rule
   fails closed.
 
-Withdrawal stops future serving. It cannot recall what a principal has already read; that is true of
+Withdrawal stops future serving. It cannot take back what a principal has already read; that is true of
 every disclosure, and the reason this one asks first.
 
 ### 4.6 Limits

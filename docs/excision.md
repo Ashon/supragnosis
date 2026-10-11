@@ -191,7 +191,7 @@ So the order is:
    goes. The door and the scan walk one shared field list, because two would drift silently in the
    worst direction - a field the door checks and the scan does not is a secret reported as absent.
 3. **Containment, which already works today.** Narrowing a peer's shared workspaces stops a leak
-   spreading now. It does not recall what has synced, and Section 4's ordering rule applies.
+   spreading now. It does not take back what has synced, and Section 4's ordering rule applies.
 4. **Excision**, with the lineage walk, the absorbing tombstone, cursor participation and propagation
    - all of it or none of it.
 

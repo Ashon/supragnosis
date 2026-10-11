@@ -26,7 +26,7 @@ Two connection kinds stay distinct and independent:
 |--|----------------|------------------------------|
 | Target | agent <-> node | node <-> node/server |
 | Surface | MCP (stdio local / streamable-HTTP loopback) | dedicated sync API (HTTPS) |
-| Payload | observe/search/traverse tool calls | signed observation-log delta exchange + federated recall (search) |
+| Payload | observe/search/traverse tool calls | signed observation-log delta exchange + federated retrieval (search) |
 | Bind | loopback only (P17, unchanged) | network bind allowed, but only with auth + TLS (see 6) |
 
 "Connecting to a server" happens at both levels: (a) a remote agent connects to a node's MCP-HTTP; (b) a
@@ -48,7 +48,7 @@ Two layers of the projection must not be conflated; federation's guarantees diff
   the layer Sections 6b/7a/7b and F16 speak about.
 
 Consequence for inbound defense (6b): a contaminated synced claim is **visible in the working set**. The
-defense is that it arrives down-weighted on recall surfaces and cannot reach the canon layer without a
+defense is that it arrives down-weighted on retrieval surfaces and cannot reach the canon layer without a
 verdict - NOT that it is invisible. Any statement of the form "nothing changes until a verdict" applies to
 the canon layer only.
 
@@ -199,11 +199,11 @@ HTTPS (JSON wire format initially; gRPC is a later optimization):
   state changes stream to the activity feed. The authorization half is not a diagnostic afterthought:
   it is the only mechanism by which a spoke *learns*, rather than restates from local config, which
   host holds which workspace (6e).
-- `search(workspace, query)` -> **federated recall**: an authenticated read of the SERVER's ontology,
-  answered from that node's recall surface (hybrid/keyword, mode-labeled). Local state can lag the
+- `search(workspace, query)` -> **federated retrieval**: an authenticated read of the SERVER's ontology,
+  answered from that node's retrieval surface (hybrid/keyword, mode-labeled). Local state can lag the
   remote store, so a local miss may mean "not synced yet" - this call lets an agent check without
   pulling first. Gated by the same per-node workspace authorization as sync (the P17 second door,
-  honored); results are a recall aid (P16 exemption, P19) - to become local graph material or commit
+  honored); results are a retrieval aid (P16 exemption, P19) - to become local graph material or commit
   input they must arrive via pull (the log is the only transport of knowledge, F1). Served hits are
   streamed to the activity feed like every other hit.
 
@@ -285,7 +285,7 @@ P18/P17) for good, because the two never meet on the same axis:
   (`supragnosis://workspace/{ws}/canon-policy`, itself log-borne - see 7a) plus I9/I17. Being a function of
   the log alone, it computes identically on every node -> the canon layer converges (P16), while the
   receiver honors no claimed authority it did not itself re-derive (P18).
-- **Trust evaluation lives on the generate/recall side only** (P7, P19, the P16 recall exemption). A node's
+- **Trust evaluation lives on the generate/retrieval side only** (P7, P19, the P16 retrieval exemption). A node's
   trust weighting decides what it surfaces as a **candidate/proposal** and how it **ranks** reads - never
   what commits. So it may be fully receiver-relative, sovereign (P18/P17), node-local, and non-converging,
   exactly like the embedding index, without touching P16: it sits on the other side of the door from
@@ -297,7 +297,7 @@ P18/P17) for good, because the two never meet on the same axis:
   must not absorb unverified remote claims (Phasing, Phase 5).
 - **Contaminated / low-trust inbound is therefore a low-priority candidate, not canon.** It materializes
   into the append-only log (auditable, P3), is down-weighted or withheld from a node's own high-trust reads
-  by that node's recall policy, and can reach canon only by passing a verdict at the accept gate. There is
+  by that node's retrieval policy, and can reach canon only by passing a verdict at the accept gate. There is
   no separate "structural quarantine" - that would wrongly make the committed graph observer-relative and
   re-open the loop.
 - **Lineage is preserved** so a later contradiction can trace and retract the derivation subtree (P3/P18).
@@ -389,7 +389,7 @@ silently.
 Making the surface legible adds **no mechanism**: the data is produced by the Phase 3 transport and the
 Phase 4 allowlist, and the only change is that it is consumed and shown instead of discarded. Nothing
 about it enters the log, so no convergence claim (8a) depends on it - it sits in the region the
-proposition chain already excludes, alongside recall aids and hub availability. Six clauses keep
+proposition chain already excludes, alongside retrieval aids and hub availability. Six clauses keep
 it there; F21 states them normatively, one clause per demand.
 
 - **Entitlement, never inventory.** The response is scoped to the authenticated caller's own grants. A
@@ -420,7 +420,7 @@ it there; F21 states them normatively, one clause per demand.
   without explanation reads as a smaller world - the exact misreading P5 exists to prevent. So a
   response the map narrowed states which hosts it consulted and which it skipped as not-admitted. This
   is P16's mode-labelling guard carried onto the host axis: there a response says which surface
-  answered it (convergence surface or recall aid), here which hosts were in scope at all. Without the
+  answered it (convergence surface or retrieval aid), here which hosts were in scope at all. Without the
   label the feature *regresses* legibility while claiming to improve it, because the caller cannot tell
   a narrowed fan-out from an empty world.
 - **Non-monotonic.** A grant can be narrowed at any time (6a), so the map is not stable under further
@@ -547,7 +547,7 @@ stakeholder in three roles.
   alone. Canon advances by peer review among stakeholders, and the canon policy
   (`supragnosis://workspace/{ws}/canon-policy`) records which principals/keys hold verdict authority.
 - **Sovereign** - each spoke decides what leaves (selective sharing, P17) and how it weights others'
-  knowledge for its own reads (recall-side trust, 6b). No stakeholder forces its trust view on another;
+  knowledge for its own reads (retrieval-side trust, 6b). No stakeholder forces its trust view on another;
   only the log-derived, canon-policy-gated structure converges.
 
 **A stakeholder is a principal, not a machine.** The governance unit is the principal (a human or an org),
@@ -593,9 +593,9 @@ changing the canon policy without a central admin - is out of scope.
   HLC-ordered replay (`reproject`, the "re-project" step of F3) - and may transiently diverge between
   observe-time upserts and the next replay (Prop C). The **canon layer** converges within a shared
   canon policy (F16, Prop D). Policy is a deterministic input, not nondeterminism. Trust weighting and
-  embeddings / ANN recall are **node-local aids** on the generate/recall side and are NOT subject to
+  embeddings / ANN retrieval are **node-local aids** on the generate/retrieval side and are NOT subject to
   cross-node convergence (P16/P19, F13); query responses label their `mode` so a client can tell the
-  convergence surface from the recall aid.
+  convergence surface from the retrieval aid.
 - **F6** An event with an invalid signature, an unknown origin key, or a bad bearer token is rejected and
   never applied. So is one this release cannot decode (`Undecodable`, alone - the rest of its batch
   proceeds), one held behind an earlier rejection in its stream (`Held`, see F7), and one pushed to a
@@ -624,7 +624,7 @@ changing the canon policy without a central admin - is out of scope.
   via `spawn_blocking`.
 - **F12** A storage/transport failure is reported as a failure, never as "empty" or "converged" (P5).
 - **F13** A valid signature proves origin (P2), never content truth (P18). Inbound trust evaluation is the
-  receiver's and lives on the **generate/recall side only** - it shapes candidates and ranking, never
+  receiver's and lives on the **generate/retrieval side only** - it shapes candidates and ranking, never
   commits; the claimed tier is stored for audit, a tier never rises by crossing the wire, and lineage is
   preserved. Low-trust inbound is a down-weighted candidate, not a structural quarantine. The claimed tier
   is log data (converges); the **effective/representative tier is an evaluation** - the projection must not
@@ -722,7 +722,7 @@ section says exactly which conclusions fall.
   Phase 5; the fold mechanics are pinned today by `supragnosis-engine::proposal_open_verdict_fold`.
 
 What the chain does NOT claim: materialized tables between replays (transient divergence, F5),
-recall aids and trust weighting (node-local by design, F13), hub availability (a hub may withhold -
+retrieval aids and trust weighting (node-local by design, F13), hub availability (a hub may withhold -
 Section 11), and canon equality across DIFFERENT policy domains (a policy difference is a different
 input, not nondeterminism - F16).
 
@@ -764,7 +764,7 @@ input, not nondeterminism - F16).
   `all_observations(workspace)` exists today - a delta scan is new). Tests: cross-node identical id, HLC
   monotonicity, signature round-trip, absorb dedups relay copies but unions distinct attestations. [done]
 - **Phase 2** - `supragnosis-sync`: VV diff, delta codec, apply pipeline (claimed-tier verbatim storage +
-  recall-side down-weighting hooks, F13 - no apply-time trust gating), selective sharing, and
+  retrieval-side down-weighting hooks, F13 - no apply-time trust gating), selective sharing, and
   **export-boundary stamping** (implemented model): one backfill pass stamps pre-federation and new
   local attestations uniformly, in deterministic (ordering-HLC, id) order, with the stamp upgrade on
   absorb making the write-back an in-place enrichment (F4) - unstamped attestations never leave the
@@ -827,7 +827,7 @@ input, not nondeterminism - F16).
 - gRPC transport (JSON/HTTPS first).
 - Key rotation / revocation workflow. Narrowing an admitted peer's workspaces is operable from the
   console (6a); **admitting and removing peers is not**. What remains for it is mostly semantics
-  rather than mechanism: removing a peer stops future reads but does not recall what has already
+  rather than mechanism: removing a peer stops future reads but does not take back what has already
   synced (P17 filters at the boundary, it is not a takeback), and a surface that offers the act has to
   say so plainly or it will be read as one. Admission additionally needs the peer's key and bearer
   hash to arrive from somewhere, which is an out-of-band exchange the console cannot perform for the
@@ -868,7 +868,7 @@ property of the spec: no dangling dependency.
 | Content-address id, `absorb`, workspace scoping, entity-id derivation | existing (`supragnosis-core`) |
 | Proposal fold, accept gate, invariants I1-I18 | existing M3.5 (`proposal-workflow.md`, engine fold); I9/I17 cross-node enforcement in Phase 5 |
 | Keypair + `node_id`, HLC, VV, Provenance sync fields (+ signed lineage declaration), store delta scan | Phase 1 |
-| VV diff, delta codec, hole-tolerant apply, sharing filter, claimed-tier storage + recall hooks | Phase 2 |
+| VV diff, delta codec, hole-tolerant apply, sharing filter, claimed-tier storage + retrieval hooks | Phase 2 |
 | Sync transport (axum/rustls/reqwest), allowlist/bearer | Phase 3 |
 | Hub human surface: read tier (user-key enrollment + grants, share grades, RO, web hardening) | Phase 3.5 - built as remote-viewer.md (principal credentials and `serve_workspaces`; user keys with signed acts) |
 | Config (supragnosis.toml: `host_label`, origin keys, allowlist), node.key identity, CLI roles, `sync_*` tools | Phase 4 |
