@@ -30,7 +30,8 @@
 > none is read as the signal it is: a principle is missing. That signal is how Chapter 6 came to
 > exist.
 >
-> **A revision declares what it does.** Every revision line below says whether it *tightens* (adds
+> **A revision declares what it does.** Every revision from the 2026-10 closure review on says
+> whether it *tightens* (adds
 > a demand), *loosens* (permits what a clause forbade), *reinterprets* (fixes which of two readings
 > governs) or *corrects a fact*. A loosening or a reinterpretation names the decision or document
 > that forced it, so the direction of adaptation - the document following the implementation, or
@@ -99,9 +100,10 @@
 > `define_type` is the solo-exception shortcut, not a second path. *Tightens* 5: the answer
 > alphabet is enumerated, and the rule that decides refuse-or-unknown is stated. *Tightens* 21: the
 > elicitation channel carries the question, not the proof of who answered. *Corrects facts* in 17
-> (the local trust surface is the OS user who holds the node's token file, not a transport), 23 (six kinds for five intents; the solo exception is a configured
-> premise, not an inferred one), 22 (prompts are the person's half), 4 and 19 (wording that read as a
-> mutation and as a score-driven commit). Adds five tensions and a status disclaimer to Appendix A,
+> (the local trust surface is the OS user who holds the node's token file, not a transport), 23
+> (six kinds for five intents; the solo exception is a configured premise, not an inferred one), 22
+> (prompts are the person's half), 4 and 19 (wording that read as a mutation and as a score-driven
+> commit). Adds five tensions and a status disclaimer to Appendix A,
 > and the scope and revision rules above.
 > Revision: 2026-10 (closure follow-up) - *tightens* Appendix B.1: every Enforcement bullet is
 > answered by a registry clause and every clause by a bullet, every design document's invariant
@@ -169,8 +171,8 @@ but "host H, at time T, on the basis of S, observed/asserted X". "Fact (the curr
 
 **Knowledge without provenance cannot exist.** Every observation/relation necessarily carries
 (host, workspace, observed_at), and carries the source reference and the confidence its asserter
-stated - one left unstated is recorded as unstated, never filled in. And **an agent usually acts on behalf of
-someone** - the "who" of provenance must be expressible not as a flat host id but as a **delegation
+stated - one left unstated is recorded as unstated, never filled in. And **an agent usually acts on
+behalf of someone** - the "who" of provenance must be expressible not as a flat host id but as a **delegation
 chain** (e.g., `ashon -> claude-code@macbook`).
 
 - **Rationale**: In a multi-host environment, the value of knowledge lies as much in "who said it and
@@ -467,17 +469,17 @@ self-refinement agenda.
 at the knowledge level, and whether the encoding is a B-tree, Datalog or RDF is the adapter's concern.
 
 - **Rationale**: The store choice (architecture.md section 6) is a decision that can change. If
-  encoding leaks into the model, the store holds the domain hostage.
+  encoding leaks into the model, the store holds the domain hostage. This has been paid once rather
+  than merely asserted: the file-backed store was replaced wholesale (Datalog/RocksDB -> an embedded
+  B-tree, architecture.md Section 6) and the knowledge model did not move - the same port, held by
+  one conformance suite.
 - **Enforcement**:
   - `supragnosis-core` does not depend on any store crate (dependency direction is enforced).
   - It is a violation if a store-specific concept (e.g., a particular index structure) is exposed in
-    the domain model / MCP surface. This clause has been paid once rather than merely asserted: the
-    file-backed store was replaced wholesale (Datalog/RocksDB -> an embedded B-tree, architecture.md
-    Section 6) and the knowledge model did not move - the same port, held by one conformance suite.
-    A principle that survived its store being swapped is the evidence this clause asks for. Should the `query` passthrough tool ever be opened it is the only
-    permitted exception, and then only documented as an "escape hatch for advanced users". (It has
-    never been opened - whether to open it, and under what authorization guard, is still an open
-    decision in architecture.md Section 13. This clause used to describe the tool as existing.)
+    the domain model / MCP surface. Should the `query` passthrough tool ever be opened it is the
+    only permitted exception, and then only documented as an "escape hatch for advanced users";
+    whether to open it, and under what authorization guard, is an open decision in architecture.md
+    Section 13.
 
 ### Principle 13. Distinguishing Essence from Role (Rigidity - OntoClean)
 
@@ -666,8 +668,8 @@ on them.
   - In entity resolution, embedding similarity goes only as far as candidate generation; merge
     commitment is a verdict observation (Principle 23) - a person's, or a policy executor's automatic
     verdict whose routing premises the fold re-validates (proposal-workflow.md I15). A similarity
-    score never becomes a merge on its own (resolution-identity.md IR2): a threshold may decide what
-    the executor proposes, never what the canon holds.
+    score never becomes a merge without a verdict observation (resolution-identity.md IR2): a
+    threshold may decide what the executor proposes, and only the verdict changes the canon.
 
 ### Principle 20. Purity of the Domain (Hexagonal Purity)
 
@@ -707,7 +709,7 @@ language.
     the principal's own signed act (Principles 18/23) - the channel is a convenience, never the
     evidence.
   - `query` (Datalog passthrough) may exist only as an advanced escape hatch under a permission
-    guard - and today it does not exist at all, which is the stricter state, not a gap.
+    guard; its absence is the stricter state, not a gap.
 
 ### Principle 22. Knowledge Management Is a By-Product of Work (Knowledge as a By-Product)
 
@@ -864,7 +866,7 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Un-merge must be possible (3, 15) vs merge as an absorbing state (23, I16) | **Both hold.** A split is a new proposal and is not absorbing (unmerge.md S1/S8); the merge stays in the log and only its forwarding is removed. |
 | Honesty about absence (5) vs no existence oracle (17) | **Unknown, not refused, for an id outside the grants.** Open world toward the caller is also what hides existence; a refusal is for a scope the caller named (Principle 5, remote-viewer.md 3.4). |
 | Human mediation at the protocol level (21) vs receiver-evaluated trust (18) | **The channel carries the question, the signature carries the answer.** An elicitation response alone grants nothing above the agent surface's ceiling (federation.md F20). |
-| Convergence (16) vs node-local trust evaluation (18) | **Not a conflict as built.** Evaluation is a function of the attestation alone, and the surface marker and the canon policy are in the log (F16), so one log gives one canon; what differs between nodes is which events they admit (F6) - the set, not the fold. |
+| Convergence (16) vs node-local trust evaluation (18) | **Not a conflict.** Evaluation is a function of the attestation alone, and the surface marker and the canon policy are in the log (F16), so one log gives one canon; what differs between nodes is which events they admit (F6) - the set, not the fold. |
 
 The judgments above are norms, not a status report. Several of the mechanisms they name - the
 quarantine tier, the tombstone, retrieval demotion, the auto-merge band, the informative checks that
@@ -913,7 +915,8 @@ Questions to apply quickly during design/PR review:
 - Is there a path that makes self-approval possible, outside the solo and correction exceptions?
   (Principle 23)
 - Do we measure retrieval quality? - search/retrieval changes are verified with a regression eval set in the
-  style of a memory benchmark (LongMemEval-like).
+  style of a memory benchmark (LongMemEval-like). (Principle 19 and Appendix A: the probabilistic
+  element only widens retrieval, so how far it widens it is measured, not assumed.)
 - Does this change assert something about the system that another document contradicts? The coverage
   registry checks that a clause declares evidence, never that prose is true, so a document disagreeing
   with a document is invisible to every gate. It has happened twice: a store removal left three design
