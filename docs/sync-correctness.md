@@ -151,8 +151,8 @@ not silent and permanent. It clears by itself once the cause is gone: an upgrade
 
 **Events are decoded one at a time.** The batch is read as a list of JSON values, and each is
 decoded into an event separately. An event this release cannot decode, such as an enum value from a
-newer one, is rejected as `Undecodable`, naming what failed. The rest of the body proceeds. Today
-the whole request fails, and with it every other stream in the batch.
+newer one, is rejected as `Undecodable`, naming what failed. The rest of the body proceeds. Before
+this rule the whole request failed, and with it every other stream in the batch.
 
 Holes that no event fills, seqs whose stamps `rekey` or `migrate` removed, stay harmless. Nothing
 waits for a seq that is not offered. The rule above only stops the receiver advancing past one that
@@ -261,7 +261,8 @@ applies to the whole request, not to one event.
 Each step is independent and lands with its tests. Order is by what each loses if left.
 
 1. **Delivery** (Sections 3-6): the authoring-time stamp, the backfill lock, the seq mark with
-   pull-before-backfill, held streams with per-event decoding. Each has a test that fails today:
+   pull-before-backfill, held streams with per-event decoding. Each has a test that failed on the
+   code before it:
    - two concurrent backfills stamp a row once;
    - a restored store does not reuse a seq;
    - a rejected event is offered again and fills its gap once accepted;

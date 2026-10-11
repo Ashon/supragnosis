@@ -35,9 +35,10 @@ it to where the rules already allow it:
 
 MCP prompts are the surface for this. They are user-invoked (a client shows them as commands, e.g.
 `/mcp__supragnosis__brief`), they run on the client's model rather than in this server (no model
-here - architecture.md non-goals), and they are already specified and unbuilt: architecture.md
-Section 7 lists `what-do-we-know-about` and `summarize-workspace-knowledge`, and
-proposal-workflow.md Section 11 lists `review-proposal`. P22 names them as its outstanding piece.
+here - architecture.md non-goals), and when this was written they were specified and unbuilt:
+architecture.md Section 7 listed `what-do-we-know-about` and `summarize-workspace-knowledge`, and
+proposal-workflow.md Section 11 listed `review-proposal`. P22 now names prompts as the person's
+half, beside the agent's half that only tool descriptions can carry.
 
 ## 2. What this is NOT
 

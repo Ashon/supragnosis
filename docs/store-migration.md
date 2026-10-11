@@ -104,7 +104,8 @@ In the author's own store the gap was **72 entity rows out of 440**:
 | name asserted, but under a different workspace | 37 |
 
 They were early-era rows, written before the current ingest path existed - some through the raw
-`put_entity` that `Engine::store()` still exposes, some test sentinels. By Principle 1 they are not
+`put_entity` that `Engine::store()` then exposed (it now hands out only the `AssertionStore` port),
+some test sentinels. By Principle 1 they are not
 knowledge: no assertion supports them, so nothing can reproduce them and the log cannot explain them.
 
 **Check yours before you switch**, so the decision is informed rather than discovered:
