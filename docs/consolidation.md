@@ -65,8 +65,9 @@ split rather than invent a second one: a mutable score column that a background 
 projection write that no observation asserts, which is the P1 violation the store port was split to
 make unrepresentable (`AssertionStore` / `KnowledgeStore`).
 
-So: **the weight is a fold, never a column.** A node that has never run a consolidation pass and a
-node that has run a hundred compute the same weight from the same log.
+So: **the weight is a fold, never a score a consolidation pass writes.** It may be materialized at
+`reproject` the way the belief is (C1). A node that has never run a consolidation pass and a node
+that has run a hundred compute the same weight from the same log.
 
 ## 4. What feeds it, and the convergence decision
 
@@ -99,7 +100,10 @@ projection/resolution logic."
 
 The fix is to stop asking the machine what time it is and ask the log instead. Age is a **position
 in the time span the workspace's own log covers** - 0.0 at its oldest recorded HLC, 1.0 at its
-newest
+newest. Two nodes holding the same observations compute the same span and therefore the same
+recency, and the number moves when knowledge arrives rather than when time passes - which is also
+the more honest reading of "stale", since a workspace nobody has written to in a year has not become
+less current about its subject.
 
 > **Corrected twice while building it, and both corrections matter.** This section first said a
 > *rank* in the ordering, and rejected arithmetic on the HLC's `wall` value as "smuggling physical
@@ -122,12 +126,6 @@ newest
 > Guarded by `p7_observations_written_at_one_instant_share_one_frontier_position`, which fails under
 > the rank reading.
 
-: an observation's position in the ordering the log already
-carries, normalized by the newest HLC in that workspace. Two nodes holding the same observations
-compute the same frontier and therefore the same recency, and the number moves when knowledge
-arrives rather than when time passes - which is also the more honest reading of "stale", since a
-workspace nobody has written to in a year has not become less current about its subject.
-
 ### 4.3 The inputs, then
 
 Fold-derived, converging, part of the weight:
@@ -135,7 +133,7 @@ Fold-derived, converging, part of the weight:
 | Input | Source | Direction |
 |---|---|---|
 | effective tier | already computed (resolution.md) | higher tier, higher weight |
-| HLC frontier rank | the log's own ordering (4.2) | nearer the frontier, higher weight |
+| HLC span position | the workspace's recorded HLC span (4.2) | newer in the span, higher weight |
 | retraction status | the `recall` fold (Section 6) | retracted floors the weight |
 | lineage depth without corroboration | `derived_from` + attestation count | derived-and-alone, lower weight |
 | structural integration | the orphan signal already in `CurationReport` | unconnected, lower weight |
@@ -174,9 +172,11 @@ reachability. Putting a gate in front of it would gate arithmetic. It runs off t
 a non-delegable verdict (P23 I17) and a blast radius that lineage defines. Section 6.
 
 The boundary is therefore sharp and needs no new machinery to police: **if the act is recomputable
-from the log alone, it is automatic; if it appends an observation, it goes through the gate.** Every
-existing signal is on the first side today, which is why the console can surface them without a
-verdict, and `recall` is the only one that crosses.
+from the log alone, it is automatic; if it changes the belief, it is a verdict on a proposal
+(I18).** Every signal is on the first side, which is why the console can surface them without a
+verdict. What crosses does so as a candidate proposal - a merge, a demotion, a type, a recall - and
+opening one is ingest, not commitment; of those, the recall is the one whose verdict is
+non-delegable.
 
 ## 6. The recall verdict's commit effect
 
@@ -239,8 +239,8 @@ returns, three things go wrong at once:
   with no visible dissent and no provenance spread. P11 already names this failure for co-occurrence;
   a summary is its stronger form.
 - **It replicates, and therefore multiplies.** This is the one that has no answer anywhere else in
-  these documents. P7 says a probabilistic consolidation's output "is ingested as a derived
-  observation" - and observations replicate. Two nodes holding the same log each run a pass, each
+  these documents. P7's 3rd-revision wording said a probabilistic consolidation's output "is
+  ingested as a derived observation" - and observations replicate. Two nodes holding the same log each run a pass, each
   produces a *different* summary, both are signed and both sync. Next round summarizes the summaries.
   Consolidation would grow the log with divergent content, which is the opposite of what the word
   means.
@@ -255,9 +255,10 @@ laundered; and nothing replicates, so nothing multiplies.
 
 > **Generation is node-local. Only commitment replicates.**
 
-P7 can be read two ways, and the readings appear to conflict. The 3rd-revision clause says a
-probabilistic consolidation's output "is ingested as a derived observation carrying confidence and
-`derived_from` lineage". The 7th-revision clause says "consolidation generates, it does not commit".
+P7 could be read two ways, before the closure review settled it, and the readings appeared to
+conflict. The 3rd-revision clause said a probabilistic consolidation's output "is ingested as a
+derived observation carrying confidence and `derived_from` lineage". The 7th-revision clause says
+"consolidation generates, it does not commit".
 Read the first alone and every summary becomes a log entry; read the second alone and no summary
 ever does.
 
@@ -351,7 +352,7 @@ model to install first.
 | **C2** | The weight consumes no wall clock, no arrival order and no randomness. Recency is a position in the span of the workspace's own recorded HLCs - never a rank, which invents age differences (Section 4.2), and never a reading of the OS clock. |
 | **C3** | The committed weight consumes no node-local signal. Usage may only re-rank the already-exempt surfaces, labelled by `mode`. |
 | **C4** | The weight has a positive floor. `get_entity`, `get_observation` and `traverse` do not consult it - demoted knowledge stays reachable by explicit query (P7). |
-| **C5** | Demotion appends no observation and changes no belief. Anything that appends an observation goes through the gate. |
+| **C5** | Retrieval demotion appends no observation and changes no belief. A consolidation output changes the belief only through a verdict on a proposal (I18); opening the proposal is ingest, not commitment. |
 | **C6** | A merged `recall` retracts and floors; it deletes nothing and is reversible by a new proposal (P3). |
 | **C7** | A recall proposal presents its `derived_from` closure in the belief diff and binds to the base it reviewed. The closure is never cascaded silently. |
 | **C8** | Retraction is not excision. A demand to destroy is answered by excision.md or by saying it is unbuilt - never by a recall reported as removal (E9). |
