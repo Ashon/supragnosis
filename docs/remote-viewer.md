@@ -295,7 +295,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
 | **V3** | A principal reads only granted workspaces. This covers enumeration, omitted and `*` workspaces, id-based reads and the event stream. `*` is the union of grants, computed per workspace. An id outside the grants is answered as an unknown id is, on both the read tier and the agent surface. |
 | **V4** | A workspace is shown only when the hub may serve it (R5). A union that includes one it may not serve is refused with the reason, never shown in part. |
 | **V5** | The credential never appears in a URL, the page or the shell. The relay reads it from its 0600 file per request and sends it as a header. |
-| **V6** | The relay reaches a remote server over verified TLS only (R8), relays only GET, and cannot outlive the app that started it. |
+| **V6** | The relay reaches a remote server over verified TLS, or plain HTTP to loopback only (R8), relays only GET, and cannot outlive the app that started it. |
 | **V7** | One principal's reads are not shown to another. The remote event stream carries knowledge changes in readable, servable workspaces, without session ids, queries or lookups. |
 | **V8** | On a remote profile, the window never shows an empty graph for a failure. Unreachable, credential refused, server too old and no grants each have their own page. |
 | **V9** | The local viewer is unchanged: the daemon's unix socket, the full console, no credential. |
