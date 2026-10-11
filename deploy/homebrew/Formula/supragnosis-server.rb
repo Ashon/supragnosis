@@ -15,27 +15,37 @@ class SupragnosisServer < Formula
   # source build and refuses to install it without an up-to-date Xcode or Command Line Tools.
   # BOTTLE_BLOCK
 
-  on_macos do
-    if Hardware::CPU.arm?
-      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-aarch64-apple-darwin.tar.gz"
-      sha256 "REPLACE_SHA256_AARCH64_APPLE_DARWIN"
-    else
-      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-x86_64-apple-darwin.tar.gz"
-      sha256 "REPLACE_SHA256_X86_64_APPLE_DARWIN"
-    end
-  end
-
-  on_linux do
-    url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
-    sha256 "REPLACE_SHA256_X86_64_UNKNOWN_LINUX_GNU"
-  end
-
   # Dev channel: `brew install --HEAD supragnosis-server` builds current main from source
   # (rust toolchain pulled as a build dep; default features = keyword search, same as the
   # release binaries). Refresh an installed HEAD with `brew upgrade --fetch-HEAD`.
   head do
     url "https://github.com/Ashon/supragnosis.git", branch: "main"
     depends_on "rust" => :build
+  end
+
+  # One release tarball per OS and arch, each named for its target triple. on_arm / on_intel, not
+  # `if Hardware::CPU.arm?`: brew resolves them for whichever platform it is asked about, not only
+  # the machine it runs on. Linux once had a single url, so arm64 Linux installed the x86_64 binary.
+  on_macos do
+    on_arm do
+      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-aarch64-apple-darwin.tar.gz"
+      sha256 "REPLACE_SHA256_AARCH64_APPLE_DARWIN"
+    end
+    on_intel do
+      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-x86_64-apple-darwin.tar.gz"
+      sha256 "REPLACE_SHA256_X86_64_APPLE_DARWIN"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "REPLACE_SHA256_AARCH64_UNKNOWN_LINUX_GNU"
+    end
+    on_intel do
+      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "REPLACE_SHA256_X86_64_UNKNOWN_LINUX_GNU"
+    end
   end
 
   def install
