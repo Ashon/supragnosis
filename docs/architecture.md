@@ -726,7 +726,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 
 **Currently satisfied (as of M4 Phase 4)**
 - Principle 2 (provenance first-class/delegation): every observation carries at least one attestation with
-  acting `host` + `on_behalf_of` + workspace + `source_ref` + `observed_at` + `confidence` + `trust_tier`;
+  acting `host` + workspace + `observed_at` + `trust_tier`, and `on_behalf_of`, `source_ref` and `confidence`
+  when they were stated;
   under federation each attestation additionally carries `origin_node`/`origin_seq`/`hlc`/`signature`.
   Unspecified confidence is preserved as unspecified (no 1.0 substitution - 4th revision). *Caveat*: the
   "reject at ingest, schema-level" clause is still enforced by engine construction only (see deferrals).

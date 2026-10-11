@@ -66,8 +66,9 @@ spokes, so the ONNX runtime buys nothing there and is one more thing to source f
 ## As a federation hub
 
 The unit runs `serve`, and a `[server]` section in `supragnosis.toml` starts the sync API
-alongside it. F10 validates at startup: a non-loopback bind demands **both** TLS and a non-empty
-allowlist, and a misconfigured section fails the daemon loudly rather than dropping the role.
+alongside it. F10 validates at startup: a non-loopback bind demands **both** TLS and at least one
+admitted node or principal, and a misconfigured section fails the daemon loudly rather than dropping
+the role.
 
 Self-signed is fine for an internal hub - event authenticity rests on the ed25519 signatures
 (F6), and TLS here only buys transport privacy. Give the cert an **IP** SAN if spokes will dial

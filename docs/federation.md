@@ -786,7 +786,8 @@ input, not nondeterminism - F16).
   still converges (F7); cross-node reprojection materializes identically. [done]
 - **Phase 3** - transport: axum sync API (`/sync/advertise|pull|push`) + in-process rustls TLS +
   allowlist/bearer wire auth + reqwest client (`sync-http` = the sync crate's `http` feature); the F10
-  bind guard refuses non-loopback without TLS + a non-empty allowlist. Loopback guard for MCP
+  bind guard refuses non-loopback without TLS + a non-empty allowlist (since generalized to count
+  admitted principals, remote-server.md R1). Loopback guard for MCP
   untouched; the viewer later moved off TCP entirely (local unix socket). [done]
 - **Phase 3.5** - **hub human surface, read tier** (6d, F19): user-key enrollment + admin-managed user
   whitelist with per-workspace grants, challenge-response session auth, `sync+web-read` share grades,
