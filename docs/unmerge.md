@@ -1,7 +1,8 @@
 # Un-merge - reversing an identity resolution (Principles 3, 15)
 
-> The other half of `entity_merge`, specified in three documents and built in none. This fixes what
-> the reversal does, what it must not become, and which of the obvious cheap versions is a trap.
+> The other half of `entity_merge`, which three documents had specified and none had built. This
+> fixes what the reversal does, what it must not become, and which of the obvious cheap versions is
+> a trap.
 >
 > Status: **built.** `entity_split` is a proposal kind with blocking and informative checks, a merged
 > one stops its merge forwarding, the separated pair is suppressed as a suggestion, and the act is
@@ -19,17 +20,18 @@ This is not a proposed feature. Three normative documents already require it, in
 - Principle 3's enforcement: *"Entity merge also preserves history - un-merge must be possible."*
 - Principle 15's enforcement, on holding off rather than merging without conviction: *"A wrong merge
   is more expensive than a wrong split (though, by Principle 3, both must be reversible)."*
-- Principle 23 counts the gated intents as five, and names the third **"entity merge/split"**.
+- Principle 23 counts the gated intents as five, and names the third **"entity identity (merge and
+  split, the two directions of one intent)"** - six proposal kinds for five intents.
   [proposal-workflow.md](proposal-workflow.md) Section 3 spells the same row out as *"entity-merge /
   split - finalizing/canceling an identity resolution"*.
 
-The implementation shipped five kinds and dropped half of the third: `PROPOSAL_KINDS` is
+The implementation had shipped five kinds and dropped half of the third: `PROPOSAL_KINDS` was
 `["entity_merge", "claim_promotion", "claim_demotion", "tbox_change", "recall"]`. Five names, five
-intents on paper, one intent missing. `merge_forwarding`'s own doc comment already states the answer -
+intents on paper, one intent missing. `merge_forwarding`'s own doc comment already stated the answer -
 *"un-merge is a new proposal"* - so the shape was decided when merge was written, and only the code
-is absent.
+was absent. `entity_split` is the sixth kind.
 
-That makes this different from a feature request. The gap is between the documents and the code, and
+That made this different from a feature request. The gap was between the documents and the code, and
 the P23 clause "every proposal kind the surface accepts has a commit effect" is the same hole seen
 from the other side.
 
@@ -39,8 +41,8 @@ Three cheaper things look like this and are not.
 
 **It is not withdrawing or rejecting the merge proposal.** The fold derives a proposal's state from
 the *presence* of a merge verdict, not the latest one: `merged` if any merge verdict exists and no
-blocking check fails, and only then does it consider `withdrawn` or `rejected`. Adding a withdraw
-verdict after a merge changes nothing, and that is correct rather than a bug - a proposal that
+blocking check fails, and only then does it consider `withdrawn` or `rejected`. Adding a withdrawal
+(which is not a verdict) after a merge changes nothing, and that is correct rather than a bug - a proposal that
 already committed cannot become one that never did. Making later verdicts win would make the state
 depend on arrival order, which is the opposite of what the gate is for (P16).
 
@@ -73,7 +75,8 @@ document is short where [excision](excision.md) is long.
 
 One consequence to state plainly, because it is the reason the estimate is small: there is a single
 chokepoint. A split that `merge_forwarding` respects is a split that all nine consumers respect,
-without any of them being touched.
+without any of them being touched. The one other thing a split yields is the suppressed pair of
+Section 5, and the merge band takes that as a pair set, not as a split.
 
 ## 4. The unit is a resolution, not a pair
 
@@ -244,7 +247,7 @@ out.
 |---|---|
 | **S1** | A split is a proposal kind, subject to the same gate and state machine as every other (P23). It is not a state transition on the merge it reverses. |
 | **S2** | A split names the `entity_merge` proposal it reverses, not a pair of entities. The unit of reversal equals the unit of decision. |
-| **S3** | A merged split removes that merge's contribution to `merge_forwarding` and nothing else. Every consumer follows from the one map; none of them learns what a split is. |
+| **S3** | A merged split removes that merge's contribution to `merge_forwarding`; the only other thing derived from it is the suppressed pair of S5. Every consumer follows from the map, or the band from the pair set, and none of them learns what a split is. |
 | **S4** | Nothing is deleted or edited. The merge proposal, its verdicts, and both entity rows all stay exactly where they are - the rows were never removed, only filtered (P3, P14). |
 | **S5** | A split permanently suppresses the separated pair as a *suggestion*, and never as a *possibility*. Suppression is derived from the log, so nodes with equal logs suppress equally (P16). |
 | **S6** | Aliases contributed by the merge leave the canonical row; asserted spellings never do. IR1's set is unchanged by a split. |
