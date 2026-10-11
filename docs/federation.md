@@ -44,7 +44,8 @@ Two layers of the projection must not be conflated; federation's guarantees diff
   **joins the receiver's working projection immediately** - it shows up in search, the graph view, and the
   workspace map. Assertion-level last-write-wins fields (entity/relation descriptions, and under that shortcut the
   T-Box definition per (target, name)) are working-set semantics, ordered by HLC under federation.
-- **Canon (gate-committed)**: the layer only the proposal accept gate can change (I18) - the effects of
+- **Canon (gate-committed)**: the layer only the proposal accept gate commits to (I18; excision is the one
+  act that removes from it outside the gate, excision.md E10) - the effects of
   P23's intents: entity merge and split, claim promotion and demotion, the T-Box change, and recall.
   Which of those the fold enforces yet is recorded in architecture.md Section 14 and the coverage
   registry, not here. This is the layer Sections 6b/7a/7b and F16 speak about.
