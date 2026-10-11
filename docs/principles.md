@@ -96,14 +96,13 @@
 > never stored; [consolidation.md](consolidation.md) Section 7.3 had made this reading and the
 > document had not followed it. *Tightens* 23: the recall verdict is a principal-signed act, and an
 > elicitation response is a claim unless it carries that signature - federation.md F20 already
-> demanded this. *Reconciles* 11 with 23: the explicit T-Box act IS the gate, and direct
+> demanded this. *Reinterprets* 11 against 23 (reconciles them): the explicit T-Box act IS the gate, and direct
 > `define_type` is the solo-exception shortcut, not a second path. *Tightens* 5: the answer
 > alphabet is enumerated, and the rule that decides refuse-or-unknown is stated. *Tightens* 21: the
 > elicitation channel carries the question, not the proof of who answered. *Corrects facts* in 17
-> (the local trust surface is the OS user who holds the node's token file, not a transport), 23
-> (six kinds for five intents; the solo exception is a configured premise, not an inferred one), 22
-> (prompts are the person's half), 4 and 19 (wording that read as a mutation and as a score-driven
-> commit). Adds five tensions and a status disclaimer to Appendix A,
+> (there is no stdio surface), 23 (six kinds for five intents; the solo exception is a configured
+> premise, not an inferred one), 22 (prompts are the person's half), 4 and 19 (wording that read as a
+> mutation and as a score-driven commit). Adds five tensions and a status disclaimer to Appendix A,
 > and the scope and revision rules above.
 > Revision: 2026-10 (closure follow-up) - *tightens* Appendix B.1: every Enforcement bullet is
 > answered by a registry clause and every clause by a bullet, every design document's invariant
@@ -128,10 +127,15 @@
 > *Loosens* 23 and 16 with I16: finality is reached at causal stability, not the moment a valid merge
 > is in the log. federation.md 7a and F16 had found that a verdict's validity, read off the HLC
 > prefix, can be revised by a concurrent earlier-HLC event; the decision rule stays absorbing among
-> verdicts. *Tightens* 18's Enforcement to carry promotion to human-confirmed as a human's direct
-> act - not a new demand: the 9th revision line stated it, and resolution.md cites it here.
-> *Tightens* 24 with a third refusal shape, a key this build does not know, which the config parser
-> and negotiated-surface.md N8 already applied while crediting a refusal this principle did not list.
+> verdicts. *Reinterprets* 18: the 9th revision line's demand that promotion to human-confirmed be
+> a human's direct act governs over the Enforcement's silence, and the Enforcement now carries it -
+> resolution.md cited it here. *Tightens* 24 with a third refusal shape, a key this build does not
+> know, which the config parser and negotiated-surface.md N8 already applied while crediting a
+> refusal this principle did not list. *Loosens* 24's bind example to the rule remote-server.md R1
+> generalized: a hub that admits only principals binds off loopback. *Reinterprets* 17: a remote
+> workspace-less or `*` read is answered from the caller's grants on every remote surface, never
+> filtered afterwards - remote-server.md 4.3 and remote-viewer.md V3 had made this reading, where
+> this principle had covered only the network read tier.
 
 ---
 
@@ -603,9 +607,9 @@ created the knowledge, and the sharing boundary is enforced at the sync layer.
     node-wide query - every workspace the node holds - exists only on the local trust surface: the
     one OS user who holds the node's token file and store (the bridge and the loopback daemon,
     architecture.md Section 10, and the store-opening stdio server, client-connect.md Section 6). A
-    remote surface answers a workspace-less or `*` read from the caller's grants alone, computed
-    one workspace at a time and never filtered afterwards (remote-server.md Section 4.3,
-    remote-viewer.md V3).
+    remote surface answers a workspace-less or `*` read from the caller's grants alone - an omitted
+    workspace may name one grant, and `*` is their union computed one workspace at a time, never
+    filtered afterwards (remote-server.md Section 4.3, remote-viewer.md V3).
   - Provide a secret-redaction hook at ingest, but this is an aid to, not a replacement for, the
     sharing filter (defense in depth).
 
