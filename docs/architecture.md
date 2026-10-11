@@ -167,7 +167,7 @@ sequenceDiagram
 ```
 
 ### 4.2 Query
-- `search`: **vector (HNSW) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
+- `search_knowledge`: **vector (a brute-force cosine scan, Section 6) + keyword** hybrid for fragment/entity candidates -> graph-context enrichment -> ranking with provenance included.
 - **The keyword match** is the one recall surface every build has (release builds ship without
   an embedder, P19), so it has to find what a person or an agent types, not only what was typed
   verbatim. A text matches when it contains the whole query, case-folded (a **phrase** match), or

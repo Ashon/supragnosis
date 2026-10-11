@@ -112,7 +112,9 @@
 > outside the gate, and it outranks finality - excision.md E7/E10 had made this reading.
 > *Corrects a fact* in the closure-review line, which said there is no stdio surface: the
 > store-opening stdio server remains, demoted rather than removed (client-connect.md Section 6), and
-> P17's local trust surface now names it beside the bridge and the loopback daemon.
+> P17's local trust surface now names it beside the bridge and the loopback daemon. *Corrects a
+> fact* in 21: its examples named `search`, which is `search_knowledge`, and `assert_relation`, which
+> architecture.md Section 7 declined under this principle because `observe` already carries relations.
 
 ---
 
@@ -661,7 +663,7 @@ and the dependency direction always points from the outside (adapters) to the in
 ### Principle 21. A Narrow, Clear Surface for the LLM (Narrow, LLM-Legible Surface)
 
 **MCP tools are few, and each tool expresses one intent.** The default surface is intent-level tools
-such as `observe`/`search`/`traverse`/`assert_relation`, not the exposure of a general-purpose query
+such as `observe`/`search_knowledge`/`traverse`/`propose`, not the exposure of a general-purpose query
 language.
 
 - **Rationale**: The primary user is the LLM agent. An LLM uses narrow, honestly-named tools well, and

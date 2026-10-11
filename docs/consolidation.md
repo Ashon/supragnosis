@@ -293,7 +293,7 @@ them. Step 1 landed and then step 2 would not fit:
 
 > **The dependency this ordering missed.** Two of the weight's three factors - tier and lineage - are
 > properties of the row itself, readable from a hit. The third, position against the workspace's HLC
-> frontier, needs the whole ordering. `search` answers from the store's indexes and walks the log
+> frontier, needs the whole ordering. `search_knowledge` answers from the store's indexes and walks the log
 > zero times (pinned by `a_search_does_not_walk_the_log`), so supplying the frontier inside a query
 > would turn a bounded lookup into a full deserialization of the log - seconds per query at 10k
 > observations, for a ranking nudge. **Materialization is therefore a precondition for ranking, not
