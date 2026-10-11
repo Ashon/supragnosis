@@ -1055,7 +1055,8 @@ const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
           ])),
     ]),
     (3, &[
-        c("a merged split removes that merge's contribution to `merge_forwarding` and nothing else",
+        c("a merged split removes that merge's contribution to `merge_forwarding`, and otherwise \
+           yields only the suppressed pair of S5",
           Evidence::Scenario(&[
             "p3_a_merged_split_reverses_the_merge_it_names",
             "p3_a_split_removes_the_merged_name_and_keeps_the_asserted_spelling",
