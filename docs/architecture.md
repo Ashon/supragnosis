@@ -512,12 +512,15 @@ which a human visually inspects and curates the knowledge graph; clients are the
 HTTP-over-UDS client (`curl --unix-socket`).
 
 - **Every write is gated or is observe ingest** (Principles 1/23): the viewer never writes the
-  projection or the log directly. Its four write endpoints all route through the same engine surfaces
-  every client uses - `/api/review` and `/api/resolve` cast **verdict observations** through
+  projection or the log directly. Its five knowledge-write endpoints all route through the same engine
+  surfaces every client uses - `/api/review` and `/api/resolve` cast **verdict observations** through
   `engine.review_proposal` (the Principle 23 gate; resolve also opens the claim_promotion it
-  confirms), `/api/propose_merge` opens an entity_merge proposal (a gate OPEN, not a commit - the
-  verdict stays a separate act), and `/api/reify` asserts a group entity through the normal observe
-  ingest (free ingest, Principle 22). Everything else is read-only. This bullet used to say "the sole
+  confirms), `/api/propose_merge` and `/api/propose_split` open an entity_merge or entity_split
+  proposal (a gate OPEN, not a commit - the verdict stays a separate act), and `/api/reify` asserts a
+  group entity through the normal observe ingest (free ingest, Principle 22). One more endpoint writes
+  configuration rather than knowledge: `POST /api/peer/share` narrows a peer's shared workspaces in
+  `supragnosis.toml`, and the daemon refuses any widening (settings-page.md Section 3.4).
+  Everything else is read-only. This bullet used to say "the sole
   write is /api/review"; the write surface grew with M3a/M3b and the sentence had not - what holds
   invariantly is not "one write path" but "no path that bypasses the gate or the observe ingest".
 - **Bind policy** (Principle 17): a unix socket only - never TCP. The socket file (0600, in the 0700
@@ -527,8 +530,8 @@ HTTP-over-UDS client (`curl --unix-socket`).
   with the TCP listener. The authenticated network read tier (federation Phase 3.5,
   [remote-viewer.md](remote-viewer.md)) is not this server: the hub's sync listener serves the same
   page at `/viz/` through a second router (`supragnosis_viz::remote`), riding the sync crate's TLS
-  stack. See the standing caveat in Section 14 (a `workspace=*` read is
-  not workspace-scoped).
+  stack; there a `*` read is the union of the principal's grants, computed per workspace
+  (remote-viewer.md V3), while on this socket it is the whole store.
   - **Precisely: no THIRD-PARTY origin can reach it.** The desktop shell is a webview that does reach
     the socket - `app/` proxies it through a `viz://` protocol handler, path and query verbatim - so
     "no browser is involved" is not the property that holds. What holds is that the only page on that
@@ -557,8 +560,9 @@ HTTP-over-UDS client (`curl --unix-socket`).
 - **Single-process constraint**: an embedded store admits one process at a time (RocksDB and redb
   alike), so the viewer must be in-process with the server (sharing the same `Arc<Engine>`), and two
   server instances at once would contend for the port/db lock.
-- Endpoints (all GET - acceptable because the socket admits no third-party origin, per the bind policy
-  above; the Phase 3.5 network read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
+- Endpoints (GET except `/api/peer/share`, which is POST - a state-changing GET is acceptable here
+  because the socket admits no third-party origin, per the bind policy above; the Phase 3.5 network
+  read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
   `/api/graph[?workspace=<ws>]` (unspecified = default
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
   `/api/proposals`, `/api/proposal?id=` (one proposal with its computed belief diff and check
@@ -569,9 +573,14 @@ HTTP-over-UDS client (`curl --unix-socket`).
   propose claim_promotion + Console merge verdict in one act - both gated appended events),
   `/api/propose_merge` (open an entity_merge proposal from a merge suggestion - a gate open, its
   rationale whitelisted to the surface that actually generated the candidate),
+  `/api/propose_split` (open an entity_split proposal reversing a committed merge, unmerge.md - a gate
+  open with a fixed rationale), `/api/peer/share` (POST: narrow a peer's shared workspaces,
+  narrow-only),
   `/api/reify` (hyperedge promotion: assert a group entity + member_of relations as a
   lineage-bearing observation - free ingest, Principle 11/22),
-  `/api/workspaces`, `/api/federation`, and `/api/events` (SSE live activity stream).
+  `/api/workspaces`, `/api/federation`, `/api/about` (the build), `/api/health` (what the store owes
+  and last repaid, crash-recovery.md K5), `/api/surface` (which surface the page is on,
+  remote-viewer.md Section 3.5), and `/api/events` (SSE live activity stream).
 - **Implemented views**: the hyperedge overlay (co-occurrence hulls with density-based opacity),
   the **curation console** (contested-belief and merge-cycle signals with per-value confirm actions
   (M3a), duplicate/grab-bag/orphan signals, proposal list, accept/reject casting a
