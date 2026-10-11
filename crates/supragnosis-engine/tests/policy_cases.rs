@@ -1105,3 +1105,84 @@ fn i17_a_recall_merge_without_the_console_marker_never_folds_to_merged() {
     // single-principal premise (resolution.md Section 6) - the same marker, the same answer.
     let _ = VERDICT_SURFACE_CONSOLE;
 }
+
+/// GIVEN a recall proposal whose agent-marked merge reached the log - replicated, or from before the
+/// agent surface refused one - WHEN a person casts the same decision at the console, THEN the
+/// recall folds to merged. The two acts share one content address, so the console's is a second
+/// attestation on the agent's row (P3); the fold reads the marker off every attestation, as the gate
+/// ceiling does, so the person's act is not hidden behind the agent's authorship (I17).
+#[test]
+fn i17_a_console_act_on_an_agent_marked_recall_merge_counts() {
+    let (store, engine) = engine();
+    observe(&engine, "a contamination source", &["Source"]);
+    let source = store
+        .all_observations(Some(WS))
+        .expect("obs")
+        .into_iter()
+        .next()
+        .expect("one observation")
+        .id;
+    let proposal = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "recall".into(),
+            targets: vec![source],
+            into: None,
+            tier: None,
+            rationale: Some("retract the derived tree".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("agent".into()),
+        })
+        .expect("propose");
+    // The exact row review_proposal writes for a merge with no note, under the agent's marker.
+    store
+        .add_observation(Observation::with_assertions(
+            format!("proposal(merge) {proposal}"),
+            Provenance {
+                host: "host-b".into(),
+                on_behalf_of: Some("agent".into()),
+                workspace: WS.into(),
+                source_ref: Some("surface:agent".into()),
+                observed_at: 9_000,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: None,
+            },
+            Assertions {
+                proposal_events: vec![ProposalEventAssertion {
+                    proposal: proposal.clone(),
+                    event: ProposalEventKind::Verdict,
+                    payload: serde_json::json!({ "decision": "merge", "note": null }).to_string(),
+                }],
+                ..Default::default()
+            },
+        ))
+        .expect("plant the agent's verdict");
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(view.state, "open", "the agent's recall merge alone decides nothing");
+
+    let case = Case::new(
+        "Principle 23 (I17)",
+        "a person's console act on an agent-marked recall merge is counted",
+    );
+    let before = snapshot(store.as_ref());
+    engine
+        .review_proposal(
+            None,
+            proposal.clone(),
+            "merge".into(),
+            None,
+            None,
+            VerdictSurface::Console,
+        )
+        .expect("the console may merge a recall");
+    let after = snapshot(store.as_ref());
+    case.log_appended(&before, &after, 0);
+    case.forgot_nothing(&before, &after);
+    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
+    assert_eq!(
+        view.state, "merged",
+        "the console's attestation on the shared row is the human's direct act"
+    );
+}

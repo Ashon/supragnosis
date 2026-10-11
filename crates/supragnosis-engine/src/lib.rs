@@ -975,8 +975,8 @@ fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> Trus
 /// sorts first, and any max-over-attestations moves as attestations accumulate - neither names the
 /// author. This is the single rule for "who authored this act": relation provenance (reproject)
 /// and proposal attribution (fold_proposals) must not each pick a different attestation off one
-/// row. A gate grant's ceiling is not an authorship question - it reads every attestation of a
-/// merge verdict (gate_grants, resolution.md Section 6).
+/// row. The surface marker is not an authorship question - a gate grant's ceiling and the I17
+/// recall check read every attestation of a merge verdict (resolution.md Section 6).
 fn authoring_attestation(obs: &Observation) -> Option<&Provenance> {
     obs.provenance
         .iter()
@@ -2427,13 +2427,17 @@ impl Engine {
                         // I17: a recall merge counts only when the verdict carries the engine-stamped
                         // console marker - the human's direct act (resolution.md Section 6). Any other
                         // recall merge is demoted to a comment: it stays in the log and decides
-                        // nothing. The marker is read off the authoring attestation, never off the
-                        // write path, so a verdict that arrived replicated, or landed through MCP
-                        // before the agent surface refused them, is judged the same way (P16).
+                        // nothing. The marker is read off the log, never off the write path, so a
+                        // verdict that arrived replicated, or landed through MCP before the agent
+                        // surface refused them, is judged the same way (P16). It is read off every
+                        // attestation, as the gate ceiling is: one decision cast twice is one row
+                        // with two attestations (P3), and a person's console act on it is still theirs.
                         if decision == Some("merge")
                             && views.get(&ev.proposal).is_some_and(|p| p.kind == "recall")
-                            && authoring_attestation(obs).and_then(|p| p.source_ref.as_deref())
-                                != Some(VERDICT_SURFACE_CONSOLE)
+                            && !obs
+                                .provenance
+                                .iter()
+                                .any(|p| p.source_ref.as_deref() == Some(VERDICT_SURFACE_CONSOLE))
                         {
                             continue;
                         }

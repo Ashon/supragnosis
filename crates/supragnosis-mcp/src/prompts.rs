@@ -250,9 +250,16 @@ fn brief_digest(
             let p = o.proposal?;
             // Who decided, by the engine-stamped surface marker (resolution.md Section 6): the
             // console's verdict and an agent's are different acts, and the person should see which.
-            let surface = o.attestations.iter().find_map(|a| {
-                a.source_ref.as_deref()?.strip_prefix(supragnosis_core::VERDICT_SURFACE_PREFIX)
-            });
+            // One decision cast from both surfaces is one row with two attestations, and the
+            // console's act is the one the gate counts, so it is the one shown.
+            let markers: Vec<&str> = o
+                .attestations
+                .iter()
+                .filter_map(|a| {
+                    a.source_ref.as_deref()?.strip_prefix(supragnosis_core::VERDICT_SURFACE_PREFIX)
+                })
+                .collect();
+            let surface = markers.iter().find(|m| **m == "console").or(markers.first()).copied();
             Some(json!({
                 "observation": format!("supragnosis://observation/{}", o.id),
                 "event": p.event, "decision": p.decision, "surface": surface,
