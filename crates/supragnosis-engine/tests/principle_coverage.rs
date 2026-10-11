@@ -1559,7 +1559,8 @@ const RESOLUTION_REGISTRY: &[(u8, &[Clause])] = &[
 // docs/resolution-identity.md - entity identity (IR rows, list items scattered through the sections).
 const IDENTITY_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
-        c("aliases are the log's asserted spellings minus the representative - none dropped, none duplicated",
+        c("an entity's asserted aliases are its own id's spellings minus the representative - none \
+           dropped, none duplicated",
           Evidence::Scenario(&[
             "aliases_accumulate_and_converge",
             "p3_a_new_spelling_accumulates_and_never_displaces",

@@ -18,8 +18,8 @@
 
 ## 1. Problem
 
-Entity identity is still M0: exact canonical-name match. The standing debts (architecture.md
-Sections 12-14):
+Before this slice, entity identity was M0: exact canonical-name match. The debts it stood on
+(architecture.md Sections 12-14), each repaid below except IR6:
 
 1. **Aliases never accumulate.** Spelling variants of one entity converge to one id (case/trim
    normalization), and since M3a the representative spelling is the policy's choice - but the
@@ -49,8 +49,10 @@ Sections 12-14):
 - **Merged-entity names join the alias set.** An accepted `entity_merge` already lists the folded
   entities' names as view-level aliases in the graph projection; the write path now materializes
   them on the canonical row too, so search and `get_entity` see them without the graph fold.
-- **IR1**: aliases = the log's asserted spellings minus the representative; a spelling is never
-  dropped, never duplicated, and the set is identical on nodes with equal logs.
+- **IR1**: an entity's asserted aliases = the spellings asserted for its own id, minus the
+  representative; a spelling is never dropped, never duplicated, and the set is identical on nodes
+  with equal logs. Names a merge contributes are a separate union derived from forwarding, outside
+  IR1, which is why a split can remove them (unmerge.md S6).
 
 ## 3. The conservative merge band (Principle 15/19)
 
@@ -128,9 +130,12 @@ as `reproject`, incrementally:
   their asserting observations; a `claim_promotion` on the chosen defining observation settles it
   (the same mediation path as kinds - no new mechanism).
 - **Structural checks stay minimal** because no subtype hierarchy exists yet (Principle 13 has
-  nothing to bite on): the one implementable P9 check - one name defined on BOTH the entity and
-  relation axes - surfaces as a curation signal (informative, not blocking: an axis collision is
-  legal but usually a mistake). Cyclic-subtype / domain-range checks arrive with subtyping.
+  nothing to bite on): the one implementable P9 check is one name defined on BOTH the entity and
+  relation axes. Inside one `tbox_change` proposal's own types it blocks (proposal-workflow.md
+  Section 13, M3.5b). Against the live glossary it surfaces as a curation signal and does not
+  block, because a glossary-scoped blocking check would let a later `define_type` flip an
+  already-merged proposal to blocked, the direction I16 forbids. Cyclic-subtype / domain-range
+  checks arrive with subtyping.
 - **IR5**: type-definition conflicts are surfaced through the same contested/competitor shape as
   entity kinds - one UI, one mediation act.
 
