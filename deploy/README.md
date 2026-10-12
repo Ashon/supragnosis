@@ -84,9 +84,14 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.supragnosis.daemon.p
 launchctl kickstart -k gui/$(id -u)/com.supragnosis.daemon   # restart in place
 
 # full removal
-supragnosis service uninstall
-claude mcp remove supragnosis -s user
+supragnosis service uninstall              # no longer started at login
+supragnosis connect                        # lists the AI apps and how each is connected
+supragnosis connect claude-code --remove   # once per connected app
+rm ~/.local/bin/supragnosis                # or brew uninstall supragnosis-server
 ```
+
+`~/.supragnosis` holds the knowledge itself - the store, the node's identity key, the logs - and
+nothing above touches it. Remove it only if the knowledge should go too.
 
 ## Notes / cautions
 
