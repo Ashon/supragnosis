@@ -533,6 +533,13 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["a_daemon_restart_is_invisible_through_the_bridge"]),
         ),
         c(
+            "a request whose answer breaks off or never comes is answered with an error, never left waiting",
+            Evidence::Scenario(&[
+                "the_bridge_says_what_to_do_when_no_daemon_answers",
+                "a_request_the_daemon_leaves_unanswered_gets_an_error",
+            ]),
+        ),
+        c(
             "the daemon's own errors reach the client as the daemon wrote them",
             Evidence::Deferred(
                 "only success paths are relayed under test; a JSON-RPC error inside a 200 passes through `one_line` \
