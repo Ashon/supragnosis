@@ -94,9 +94,12 @@ claude mcp remove supragnosis -s user
 - The plist is generated per user (no hand-edited paths). Settings that exist only as environment
   variables - `SUPRAGNOSIS_HOST` (recorded in provenance), `_WORKSPACE`, `_EMBED`, `_DATA_DIR` - go
   in with `supragnosis service install --env KEY=VALUE` and are carried forward on reinstall.
-- To use real semantic embeddings, build with `--features fastembed` and install with
-  `--env SUPRAGNOSIS_EMBED=fastembed --env SUPRAGNOSIS_DATA_DIR=<a new dir>` (an existing db is
-  indexed with hashing-256, so swapping the embedder on it is rejected).
+- To use real semantic embeddings, build with `--features fastembed` (that build makes `fastembed`
+  the default embedder) and reinstall. A store the prebuilt binary wrote has no embedder recorded,
+  so it takes the new one; `supragnosis reproject` then gives its existing entities vectors, while
+  observations written before the switch stay keyword-only. A store indexed with a different model
+  is refused at open, since two models share no vector space - point that one at a new
+  `SUPRAGNOSIS_DATA_DIR`.
 - Only one daemon should run (single ownership of the db + ports), and only one manager should
   run it - `supragnosis status` reports a conflict, and `service install --take-over` resolves it.
   Do not use stdio registration and http registration at the same time.
