@@ -1835,12 +1835,12 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
             "tls_listener_serves_https_and_refuses_plaintext",
           ])),
         c("a non-loopback listener needs at least one admitted principal or node",
-          Evidence::Deferred(
-            "`serve` counts `allowlist + principals`, and the daemon's pre-validation now passes the \
-             same sum (it used to pass the allowlist alone, so a principals-only hub off loopback \
-             died at startup); bind_guard_enforces_f10 drives `validate_bind` with one count and no \
-             case starts a principals-only hub. Revisit when the bind guard next changes - add that case to it",
-          )),
+          Evidence::Scenario(&[
+            "bind_guard_enforces_f10",
+            // `serve` assembles the count (the allowlist plus the agent surface's principals); a
+            // principals-only hub off loopback died at startup while the daemon counted nodes alone.
+            "a_principals_only_hub_passes_the_bind_guard",
+          ])),
     ]),
     (2, &[c(
         "every remote request is authenticated as exactly one admitted principal; none is anonymous",
