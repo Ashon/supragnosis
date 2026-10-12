@@ -171,7 +171,7 @@
           <p>
             Nothing your agents learn is ever lost. Corrections supersede rather
             than erase, contradictions surface as signals instead of being
-            silently resolved away, and forgetting only demotes recall - the log
+            silently resolved away, and forgetting only demotes retrieval - the log
             is eternal; only attention is finite.
           </p>
         </article>
@@ -179,7 +179,7 @@
           <h3>Deterministic core, probabilistic edge</h3>
           <p>
             No model ever judges your knowledge. LLMs and embeddings extract and
-            widen recall - they draft, they never decide. Everything that commits
+            widen retrieval - they draft, they never decide. Everything that commits
             is deterministic, so the graph is correct with no model attached at
             all, and every node holding the same log holds the same graph.
           </p>
@@ -197,7 +197,7 @@
     <section class="section reveal" id="flow">
       <p class="eyebrow">03 / how it works</p>
       <h2>From observation to ontology.</h2>
-      <div class="flow" role="img" aria-label="Pipeline: observe, then observation log, then projector, then ontology, then recall">
+      <div class="flow" role="img" aria-label="Pipeline: observe, then observation log, then projector, then ontology, then retrieval">
         <div class="flow-step"><strong>observe</strong><span>MCP tool call</span></div>
         <span class="flow-arrow">-&gt;</span>
         <div class="flow-step"><strong>observation log</strong><span>immutable, signed</span></div>
@@ -206,7 +206,7 @@
         <span class="flow-arrow">-&gt;</span>
         <div class="flow-step"><strong>ontology</strong><span>entities + relations</span></div>
         <span class="flow-arrow">-&gt;</span>
-        <div class="flow-step"><strong>recall</strong><span>search / traverse / map</span></div>
+        <div class="flow-step"><strong>retrieval</strong><span>search / traverse / map</span></div>
       </div>
       <p class="section-note">
         The log is the source of truth. Delete the graph, replay the log, and you
@@ -235,7 +235,7 @@ observe {
 }</code></pre>
         </div>
         <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">host B - weeks later, a different agent recalls it</span></div>
+          <div class="terminal-bar"><span class="terminal-title">host B - weeks later, a different agent retrieves it</span></div>
           <pre><code>search_knowledge {
   "query": "cozo redb"
 }
@@ -513,7 +513,7 @@ supragnosis connect claude-desktop
             <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid retrieval.</strong> Keyword search, plus semantic (fastembed ONNX) in a build with that feature; file-backed persistence, stdio MCP + HTTP daemon.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated retrieval.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>Remote servers and the read tier.</strong> One client setup for any server: AI apps reach this machine's daemon or a hub through the bridge. A hub admits principals with per-workspace grants over MCP, and serves its viewer read-only within them (phase 3.5, server side).</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>MCP prompts.</strong> <code>brief</code>, <code>what-do-we-know-about</code>, <code>curate</code> and <code>review-proposal</code>: a reading of the graph for the person, with the open decisions beside it, cited and never stored.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app with a Settings page, a Homebrew tap whose server formula pours as a bottle (no Xcode needed on Apple silicon), and the viewer on an owner-only unix socket.</div></li>
