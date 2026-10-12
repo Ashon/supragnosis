@@ -191,6 +191,14 @@ pub struct Recovery {
     pub observations: usize,
 }
 
+/// The core ontology's meta-level types (principles.md P10). The core is fixed and the domain
+/// vocabulary extends it through `define_type`, so these names are refused there: a domain type
+/// called `Observation` would put a second meaning on the word the whole model is built on (P8).
+/// Refused at the local door only. A peer's definition is not refused on arrival, since a node
+/// that did would diverge from one that had already accepted it (P16).
+const CORE_META_TYPES: [&str; 6] =
+    ["Observation", "Entity", "Relation", "Provenance", "Host", "Workspace"];
+
 /// What a workspace re-key moved, skipped, and why.
 #[derive(Serialize, Debug, Default)]
 pub struct RekeyReport {
@@ -1600,8 +1608,8 @@ impl Engine {
     /// scoped to the workspace). It rides the observation log like any other assertion (Principle 1/23:
     /// no parallel provenance/storage), so the glossary is a deterministic projection
     /// ([`Engine::types`]) and a future proposal gate (Principle 23) can wrap this without rework.
-    /// Principle 8 is enforced here:
-    /// a definition with no name or an empty description is rejected before it reaches the permanent log.
+    /// Principles 8 and 10 are enforced here: a definition with no name, an empty description, or a
+    /// core meta-type's name is rejected before it reaches the permanent log.
     pub fn define_type(&self, input: DefineTypeInput) -> Result<String, ObserveError> {
         reject_reserved_source_ref(input.source_ref.as_deref())?;
         if input.defs.is_empty() {
@@ -1615,6 +1623,16 @@ impl Engine {
                 return Err(ObserveError::Invalid(
                     "a type definition has an empty name - name the type you are defining".into(),
                 ));
+            }
+            // Principle 10: the core ontology is fixed, so its meta-level names are not domain types.
+            if let Some(core) =
+                CORE_META_TYPES.iter().find(|c| c.eq_ignore_ascii_case(d.name.trim()))
+            {
+                return Err(ObserveError::Invalid(format!(
+                    "type '{}' is the core ontology's {core}, and the core is fixed (Principle 10) - \
+                     name the domain concept you mean instead, such as 'MeetingNote' or 'Service'",
+                    d.name.trim()
+                )));
             }
             // Principle 8 (Clarity): a type cannot be created without a natural-language definition.
             if d.description.trim().is_empty() {

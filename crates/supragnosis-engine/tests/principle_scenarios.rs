@@ -1949,6 +1949,34 @@ fn p8_a_type_definition_without_a_description_is_refused_on_both_paths() {
     assert_eq!(types[0].description, "a deployable part");
 }
 
+/// guard (principles.md P10: the core ontology is fixed, the domain ontology extends it): the
+/// meta-level names are not domain types. Defining `Observation` used to succeed and show up in the
+/// glossary beside the meaning the whole model gives the word. The refusal names the rule and how
+/// to proceed, and is a match on the whole name: a domain type built from one is fine.
+#[test]
+fn p10_define_type_refuses_a_core_meta_type_name() {
+    use supragnosis_core::TypeTarget;
+    use supragnosis_engine::{DefineTypeInput, TypeDefInput};
+
+    let (_store, engine) = engine();
+    let define = |target: TypeTarget, name: &str| {
+        engine.define_type(DefineTypeInput {
+            workspace: None,
+            defs: vec![TypeDefInput { target, name: name.into(), description: "a meaning".into() }],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+    };
+    for name in ["Observation", "provenance", " Workspace "] {
+        for target in [TypeTarget::Entity, TypeTarget::Relation] {
+            let err = define(target, name).expect_err("a core meta-type name is refused");
+            assert!(err.to_string().contains("Principle 10"), "{name}: {err}");
+        }
+    }
+    assert!(engine.types(Some(WS)).unwrap().is_empty(), "nothing reached the glossary");
+    define(TypeTarget::Entity, "ObservationNote").expect("a domain type built from one is fine");
+}
+
 /// guard (principles.md P2 "an observation without provenance is rejected at the ingest stage
 /// (schema-level enforcement)"; architecture.md Section 14 entry condition 1): the constructors take
 /// one attestation by value, but `provenance` is a list and a literal can leave it empty. The

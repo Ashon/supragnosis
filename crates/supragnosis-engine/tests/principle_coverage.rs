@@ -2814,7 +2814,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
     ]),
     (10, "Extendibility / Open-Closed", &[
         c("the domain vocabulary extends through the log without touching the core model",
-          Evidence::Scenario(&["types_fold_orders_by_hlc_not_observed_at"])),
+          Evidence::Scenario(&[
+            "types_fold_orders_by_hlc_not_observed_at",
+            "p10_define_type_refuses_a_core_meta_type_name",
+          ])),
         // Three 0.x eras changed the assertion encoding; `migrate` is that path honored rather
         // than promised.
         c("a change to the core model comes with a migration path",

@@ -756,7 +756,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
 - Principle 10 (schema open to extension, closed to modification): the core ontology (Observation,
   Entity, Relation, Provenance, Workspace) is fixed in `core`, while the domain vocabulary extends
   through `define_type` without touching it - a new domain type invalidates no existing observation,
-  since the T-Box is a fold over the log like any other assertion. The clause with teeth is "a core
+  since the T-Box is a fold over the log like any other assertion, and `define_type` refuses the
+  core's own type names (`p10_define_type_refuses_a_core_meta_type_name`). The clause with teeth is "a core
   change demands a migration path": the assertion encoding changed three times across 0.x (the
   description field, type_defs, proposal_events), and `migrate` is that path honored rather than
   promised - it re-creates pre-formula rows under the current content address so they can sync again.
