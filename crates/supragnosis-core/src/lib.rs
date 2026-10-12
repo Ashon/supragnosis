@@ -101,20 +101,27 @@ pub struct Hlc {
 }
 
 impl Hlc {
+    /// The smallest `(wall, counter)` after this one: the next counter, or - when the counter is
+    /// full - the next wall. A remote stamp is a peer's signed claim and may carry any counter, so
+    /// `counter + 1` must neither overflow nor wrap round to a time before the one it follows.
+    fn successor(&self) -> (u64, u32) {
+        match self.counter.checked_add(1) {
+            Some(counter) => (self.wall, counter),
+            None => (self.wall.saturating_add(1), 0),
+        }
+    }
+
     /// Advance for a local event: wall catches up to physical time, the counter breaks same-wall ties.
     pub fn tick(prev: &Hlc, now: Timestamp, node: &str) -> Hlc {
-        let wall = prev.wall.max(now);
-        let counter = if wall == prev.wall { prev.counter + 1 } else { 0 };
+        let (wall, counter) = prev.successor().max((now, 0));
         Hlc { wall, counter, node: node.to_string() }
     }
 
     /// Merge on receiving a remote stamp (standard HLC receive rule): never runs backwards, and lands
     /// strictly after both `prev` and `remote` when physical time has not caught up.
     pub fn merge(prev: &Hlc, remote: &Hlc, now: Timestamp, node: &str) -> Hlc {
-        let wall = prev.wall.max(remote.wall).max(now);
-        let c_prev = if wall == prev.wall { prev.counter + 1 } else { 0 };
-        let c_remote = if wall == remote.wall { remote.counter + 1 } else { 0 };
-        Hlc { wall, counter: c_prev.max(c_remote), node: node.to_string() }
+        let (wall, counter) = prev.successor().max(remote.successor()).max((now, 0));
+        Hlc { wall, counter, node: node.to_string() }
     }
 
     /// Deterministic fallback for pre-federation attestations (no sync block): wall = `observed_at`,
@@ -2041,6 +2048,13 @@ mod tests {
         let remote = Hlc { wall: 500, counter: 3, node: "n2".into() };
         let merged = Hlc::merge(&clock, &remote, 100, "n1");
         assert!(merged > clock && merged > remote, "merge must land after both sides");
+        // A remote counter is a peer's signed claim and can be anything, the largest included.
+        // The next stamp carries into the wall: no overflow panic (which would also poison the
+        // node's clock mutex), and no wrap to a time before the stamp it follows.
+        let full = Hlc { wall: 500, counter: u32::MAX, node: "n2".into() };
+        let merged = Hlc::merge(&clock, &full, 100, "n1");
+        assert!(merged > full, "merge lands after a full counter: {merged:?}");
+        assert!(Hlc::tick(&full, 100, "n2") > full, "and so does a tick");
         // Legacy fallback is deterministic and orders by observed_at.
         assert!(Hlc::legacy(5) < Hlc::legacy(6));
     }

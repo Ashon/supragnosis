@@ -426,7 +426,9 @@ impl SyncNode {
     /// reorders nothing on the node that stamps.
     fn authored_hlc(&self, observed_at: u64, prev: Option<&Hlc>) -> Hlc {
         let counter = match prev {
-            Some(p) if p.wall == observed_at => p.counter + 1,
+            // Saturating: the wall is the authoring time and cannot carry, and four billion stamps
+            // of one node in one millisecond is not a pass that happens.
+            Some(p) if p.wall == observed_at => p.counter.saturating_add(1),
             _ => 0,
         };
         let hlc = Hlc { wall: observed_at, counter, node: self.node_id.clone() };
