@@ -745,7 +745,8 @@ async fn every_resource_read_carries_cache_hints() {
     server.await.expect("server task");
 }
 
-/// A narrowed round names the hosts it skipped, and skips only the one that refused.
+/// A narrowed round names the hosts it skipped, and skips only the one that refused - a sync round
+/// and a federated search alike, since both route through the negotiated map.
 ///
 /// This is F21 clause 5 and it needs no transport: the routing decision comes from the negotiated
 /// map, which is ordinary state, so a context carrying two hosts - one that admits the workspace and
@@ -816,6 +817,24 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
             "{tool} must name the refusing host and only it - unknown and admitting hosts are consulted: {v}"
         );
     }
+    let res = client
+        .call_tool(CallToolRequestParams::new("search_knowledge").with_arguments(args(
+            json!({"query": "anything", "workspace": "ws", "scope": "remote"}),
+        )))
+        .await
+        .expect("search_knowledge");
+    let v = tool_json(&res);
+    let entries = v["remote"].as_array().unwrap_or_else(|| panic!("no remote answer: {v}"));
+    let skipped: Vec<&str> = entries
+        .iter()
+        .find_map(|e| e["skipped"].as_array())
+        .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
+        .unwrap_or_else(|| panic!("the remote search names no skipped host: {v}"));
+    assert_eq!(skipped, [refuses.as_str()], "the search narrows the same way: {v}");
+    assert!(
+        entries.iter().any(|e| e["server"] == admits.as_str()),
+        "and asks the admitting host: {v}"
+    );
 
     client.cancel().await.ok();
     server.abort();
