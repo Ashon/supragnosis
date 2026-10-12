@@ -2710,6 +2710,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // Asked of every read on the port, on every adapter: the clause is about the storage
             // layer's whole surface, and one entity lookup is one of eight places it could break.
             "absence_reads_as_absence_never_as_error",
+            // And at the agent surface: get_entity and get_proposal answer found:false.
+            "mcp_protocol_surface_end_to_end",
         ])),
         c("absent is distinguished from unavailable, rather than collapsing into an empty result",
           Evidence::Scenario(&[

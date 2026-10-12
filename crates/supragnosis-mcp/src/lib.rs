@@ -1010,10 +1010,16 @@ impl SupragnosisServer {
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.get_proposal(ws.as_deref(), &id)).await {
             Ok(Ok(Some(p))) => to_json(&p),
-            Ok(Ok(None)) => err_json(&format!(
-                "proposal not found: {} - absence is not a negation (open-world). Use list_proposals",
-                req.id
-            )),
+            // Open-world (Principle 5): absence is a well-formed answer, as for `get_entity` - an
+            // error envelope would read as a failed call rather than as "not here".
+            Ok(Ok(None)) => serde_json::json!({
+                "found": false,
+                "id": req.id,
+                "note": "unknown - no proposal with that id in this scope, which is not a negation \
+                         (open-world). A proposal lives in one workspace: pass workspace '*' to look \
+                         in all of them, or use list_proposals",
+            })
+            .to_string(),
             Ok(Err(e)) => store_failure_json(&e),
             Err(e) => err_json(&format!("task join error: {e}")),
         }
