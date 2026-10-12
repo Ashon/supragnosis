@@ -657,7 +657,7 @@ async fn run(cfg: Config) -> Result<()> {
     // before the viewer so a misconfigured federation dies before any socket is bound, and so the
     // console can be handed the admission handler this produces.
     let (sync_ctx, narrow) =
-        build_sync_context(&engine, fedcfg, fed_status.clone(), events.clone())?;
+        build_sync_context(&engine, fedcfg, fed_status.clone(), events.clone()).await?;
 
     if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
         spawn_viz(&engine, sock, tx.clone(), fed_status, narrow).await;
@@ -691,7 +691,7 @@ async fn run(cfg: Config) -> Result<()> {
 
 /// Builds the MCP sync context from supragnosis.toml (and starts the sync API server when a
 /// `[server]` section is present). Returns None on a standalone node.
-fn build_sync_context(
+async fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
@@ -803,7 +803,7 @@ fn build_sync_context(
             extra: Some(extra),
             on_consent: Some(on_consent),
         };
-        admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks)?);
+        admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks).await?);
     }
     let mut origin_keys = trusted_origin_keys(&fc.sync);
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -1047,8 +1047,10 @@ fn spawn_fed_status(task: FedStatusTask) {
 
 /// Starts the federation sync API (the ONLY surface allowed to bind non-loopback - and only with
 /// TLS and an admitted node or principal, F10). A misconfigured [server] section fails daemon
-/// startup loudly (P5) instead of silently running without the role.
-fn spawn_sync_server(
+/// startup loudly (P5) instead of silently running without the role: the address, the TLS pair,
+/// the bind rule, the certificate and the port are all tried before anything runs in the
+/// background, and only accepting connections is left to the spawned task.
+async fn spawn_sync_server(
     store: Arc<dyn AssertionStore>,
     node: Arc<supragnosis_sync::SyncNode>,
     srv: fed::ServerSection,
@@ -1064,9 +1066,6 @@ fn spawn_sync_server(
         (None, None) => None,
         _ => anyhow::bail!("[server] tls_cert and tls_key must be set together"),
     };
-    // Validate at startup so a misconfigured daemon dies here, not inside a spawned task (F10).
-    // The same count `serve` recomputes: a hub admitting principals alone is a hub (R1/R2).
-    sync_http::validate_bind(&listen, tls.is_some(), srv.allowlist.len() + srv.principals.len())?;
     tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
     // Admission is created here and handed BOTH to the server and back to the caller, so who may
     // connect stops being a startup snapshot: the returned handle is what a management surface
@@ -1076,9 +1075,13 @@ fn spawn_sync_server(
         node.node_id(),
         &node.public_key_hex(),
     ));
-    let serving = peers.clone();
+    // The bind rule is checked here against the directory's count, which leaves out an entry it
+    // could not admit (a malformed key, this node's own id) - the count the server answers by.
+    let bound = sync_http::bind(store, node, listen, tls, peers.clone(), hooks)
+        .await
+        .with_context(|| format!("the [server] listener on {listen} could not start"))?;
     tokio::spawn(async move {
-        if let Err(e) = sync_http::serve(store, node, listen, tls, serving, hooks).await {
+        if let Err(e) = bound.run().await {
             tracing::error!(error = %e, "federation sync API terminated");
         }
     });
@@ -4138,6 +4141,28 @@ mod json_contract {
 #[cfg(test)]
 mod link_transport {
     use super::*;
+
+    /// docs/federation.md F10 with P5: a [server] section whose listener cannot start stops the
+    /// daemon with the reason. The certificate is read and the port bound before the server is
+    /// spawned, so a typo in tls_cert is a startup error, not a hub that runs with no listener.
+    #[tokio::test]
+    async fn a_server_section_that_cannot_start_fails_the_daemon() {
+        let store: Arc<dyn AssertionStore> = Arc::new(supragnosis_store::InMemoryStore::new());
+        let node = Arc::new(supragnosis_sync::SyncNode::new(
+            supragnosis_core::NodeIdentity::from_secret_bytes([7u8; 32]),
+        ));
+        let srv = fed::ServerSection {
+            listen: "127.0.0.1:0".into(),
+            tls_cert: Some("/nonexistent/hub.crt".into()),
+            tls_key: Some("/nonexistent/hub.key".into()),
+            allowlist: Vec::new(),
+            principals: Vec::new(),
+        };
+        let hooks = supragnosis_sync::http::Hooks::default();
+        let err = spawn_sync_server(store, node, srv, hooks).await.err().expect("refused");
+        let why = format!("{err:#}");
+        assert!(why.contains("could not start") && why.contains("hub.crt"), "{why}");
+    }
 
     fn links_of(toml: &str) -> (Vec<supragnosis_sync::ServerLink>, Vec<String>) {
         let fc: fed::FileConfig = toml::from_str(toml).expect("parses");
