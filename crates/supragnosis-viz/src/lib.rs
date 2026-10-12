@@ -131,9 +131,7 @@ pub async fn serve(
         let fed = fed.clone();
         let narrow = narrow.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                handle_conn(&engine, &events, stream, fed.as_ref(), narrow.as_ref()).await
-            {
+            if let Err(e) = handle_conn(engine, &events, stream, fed, narrow).await {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
@@ -148,11 +146,11 @@ pub async fn serve(
 /// (DNS-rebinding) and CSRF gates the TCP listener needed do not apply - admission was already
 /// decided by the socket file's 0600 mode.
 async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
-    engine: &Engine,
+    engine: Arc<Engine>,
     events: &broadcast::Sender<String>,
     mut stream: S,
-    fed: Option<&FedStatus>,
-    narrow: Option<&NarrowShare>,
+    fed: Option<FedStatus>,
+    narrow: Option<NarrowShare>,
 ) -> anyhow::Result<()> {
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
@@ -179,7 +177,33 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         return stream_events(stream, events.subscribe()).await;
     }
 
-    let resp = if path == "/api/peer/share" {
+    // Every route below reads the store, folds the log or writes a file - synchronous work that can
+    // take seconds on a large store (the merge band, a curation poll every 2.5s). Run on the async
+    // worker it would hold that thread, which the MCP daemon shares, and stall its tool calls.
+    let (method, path, query) = (method.to_string(), path.to_string(), query.to_string());
+    let resp = tokio::task::spawn_blocking(move || {
+        respond(&engine, &method, &path, &query, fed.as_ref(), narrow.as_ref())
+    })
+    .await
+    .unwrap_or_else(|e| Response {
+        status: "500 Internal Server Error",
+        content_type: "application/json",
+        body: err_body(&format!("the request's handler failed: {e}")),
+    });
+    write_response(&mut stream, &resp).await
+}
+
+/// The response to one non-streaming request: the two endpoints the wiring layer hooks in, then
+/// the engine's routes.
+fn respond(
+    engine: &Engine,
+    method: &str,
+    path: &str,
+    query: &str,
+    fed: Option<&FedStatus>,
+    narrow: Option<&NarrowShare>,
+) -> Response {
+    if path == "/api/peer/share" {
         // POST, unlike every other endpoint here. The GET-with-side-effect convention the rest of
         // this surface uses is defensible because no third-party origin can reach a 0600 unix socket,
         // and that argument still holds - but this one changes a sharing boundary rather than
@@ -198,8 +222,7 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         }
     } else {
         route(engine, method, path, query)
-    };
-    write_response(&mut stream, &resp).await
+    }
 }
 
 /// SSE stream: after the `text/event-stream` header, emit `data: {json}\n\n` per event.
