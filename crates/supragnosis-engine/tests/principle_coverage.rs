@@ -2976,6 +2976,9 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "traverse_bounds_depth_and_truncates_nearest_first",
             "traverse_passes_through_an_unprojected_endpoint",
             "search_truncation_is_reproducible",
+            // Every similarity ranking sorts with `partial_cmp`, where a NaN compares equal to all
+            // and lands wherever the sort leaves it. The score is held finite at its one source.
+            "cosine_similarity_basics",
         ])),
         c("a response labels the surface that answered, so a retrieval aid is told apart from the \
            convergence surface",

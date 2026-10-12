@@ -1467,8 +1467,11 @@ pub enum EmbedError {
     Provider(String),
 }
 
-/// Cosine similarity of two vectors (-1.0~1.0). 0.0 if the lengths differ or a vector is a zero vector.
-/// A pure function - shared by the InMemory adapter and recall evaluation.
+/// Cosine similarity of two vectors (-1.0~1.0). 0.0 if the lengths differ, a vector is a zero
+/// vector, or the result is not finite - a NaN or infinite component, or a norm that overflows.
+/// Every similarity ranking sorts on this score with `partial_cmp`, where a NaN compares equal to
+/// everything and lands wherever the sort leaves it, first included; so no caller sees one.
+/// A pure function - shared by both store adapters, the merge band, and recall evaluation.
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
         return 0.0;
@@ -1484,7 +1487,12 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if na == 0.0 || nb == 0.0 {
         return 0.0;
     }
-    dot / (na.sqrt() * nb.sqrt())
+    let sim = dot / (na.sqrt() * nb.sqrt());
+    if sim.is_finite() {
+        sim
+    } else {
+        0.0
+    }
 }
 
 /// UI activity event (observability). Emitted by MCP tool calls **per intent**, and consumed by the viewer
@@ -1961,6 +1969,12 @@ mod tests {
         // Defensive: length mismatch / zero vector is 0.0.
         assert_eq!(cosine_similarity(&[1.0], &[1.0, 0.0]), 0.0);
         assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+        // A vector no ranking can order is no similarity: NaN compares equal to every score, so
+        // one bad vector would otherwise sort wherever the sort left it - first, in practice.
+        for bad in [[f32::NAN, 1.0], [f32::INFINITY, 1.0], [f32::MAX, f32::MAX]] {
+            assert_eq!(cosine_similarity(&bad, &[1.0, 1.0]), 0.0, "{bad:?}");
+            assert_eq!(cosine_similarity(&[1.0, 1.0], &bad), 0.0, "{bad:?}");
+        }
     }
 
     // --- M4 Phase 1: federation core foundations (docs/federation.md Section 10) -----------------
