@@ -3427,8 +3427,10 @@ impl Engine {
                             observation: obs.id.clone(),
                         });
                     }
-                    if let Some(d) = description {
-                        descr.insert(id.clone(), d.to_string()); // ascending replay: highest HLC wins
+                    // Ascending replay: the highest HLC wins among the observations that supplied
+                    // one. A blank description is an omission, and an omission never erases (P8).
+                    if let Some(d) = description.filter(|d| !d.trim().is_empty()) {
+                        descr.insert(id.clone(), d.to_string());
                     }
                     touched_here.insert(id);
                 };
@@ -3564,8 +3566,13 @@ impl Engine {
                 if only.is_some_and(|s| !s.contains(&id)) {
                     continue;
                 }
-                // Ascending replay, upsert by id: description and valid interval are last-write, which
-                // is the store's own semantics given a deterministic order.
+                // Ascending replay, upsert by id: the valid interval is last-write, which is the
+                // store's own semantics given a deterministic order. The description is the
+                // highest-HLC one supplied, as for an entity: an omission, or a blank, never erases.
+                let description = match ra.description.as_deref() {
+                    Some(d) if !d.trim().is_empty() => Some(d.to_string()),
+                    _ => rels.get(&id).and_then(|r| r.description.clone()),
+                };
                 rels.insert(
                     id.clone(),
                     Relation {
@@ -3573,7 +3580,7 @@ impl Engine {
                         from,
                         to,
                         kind,
-                        description: ra.description.clone(),
+                        description,
                         provenance: prov.clone(),
                         // The client's valid interval is projected as-is (Principle 4 capture);
                         // derivation such as auto-closing valid_to on refutation is M3c.

@@ -2783,7 +2783,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // cannot tell an enforced validator from a deleted one.
         c("a type cannot enter the vocabulary without a natural-language definition",
           Evidence::Scenario(&["p8_a_type_definition_without_a_description_is_refused_on_both_paths"])),
-        c("a description already captured is never erased by a later omission",
+        c("a description already captured, an entity's or a relation's, is never erased by a later \
+           omission, and a blank description is an omission",
           Evidence::Scenario(&["p8_description_survives_reobservation_without_one"])),
         c("a relation type reads its direction from its name, and relates_to is the one catch-all, \
            treated as not yet classified",

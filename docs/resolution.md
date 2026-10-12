@@ -77,7 +77,7 @@ explicitly.
 |---|---|
 | Entity `kind` | `TierWeighted` selection + contested signal (Section 4) - the headline case |
 | Entity `canonical_name` (representative spelling) | `TierWeighted` selection - retires the "first-write-wins by arrival" latent condition (architecture.md Section 14). Not contested-flagged: spelling choice is display, not belief |
-| Entity / relation `description` | Unchanged: HLC-latest non-empty wins (display field, allowed to converge late - federation.md Section 4). A later omission still never erases (Principle 8) |
+| Entity / relation `description` | Unchanged: HLC-latest non-blank wins (display field, allowed to converge late - federation.md Section 4). A later omission, or a blank, never erases (Principle 8) |
 | Relation `valid_from` / `valid_to` | Captured as today. The asserted close of a disproven relation's valid interval needs negation semantics that do not exist yet - stays M3c (see Section 4.2) |
 
 Relations are naturally multi-valued (one entity `depends_on` many things), so a mere coexistence
