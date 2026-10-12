@@ -91,7 +91,7 @@ entities it names, the relations between them, and who said it:
 observed  "auth in this repo is JWT with a 15-minute expiry..."
           entities   JWT [AuthMechanism], mobile client [Component]
           relations  repo --uses--> JWT,  JWT --constrained_by--> mobile client
-          provenance host=your-laptop  on_behalf_of=you  tier=human_confirmed
+          provenance host=your-laptop  on_behalf_of=you  tier=agent_extracted
 ```
 
 Later, in a different session, with none of that in the context window:
@@ -101,9 +101,10 @@ Later, in a different session, with none of that in the context window:
 > **agent:** JWT with a 15-minute expiry. That came from you directly rather than from reading the
 > code, and the stated reason was that the mobile client cannot hold a session cookie.
 
-The second half of that answer is the point. `search_knowledge` returns the provenance beside the
-claim, so the agent can tell you *who said it and how sure to be* - and you can ask for the
-observation it came from and read the original text.
+The second half of that answer is the point. A search hit is the id of what matched, and that id
+leads to the provenance: `get_entity` lists every attestation behind an entity, and the observation
+it came from (`supragnosis://observation/{id}`) has the original text and who said it, for whom and
+when. So the agent can tell you *who said it and how sure to be*, and you can read it yourself.
 
 The viewer runs alongside the daemon on a unix socket - the desktop app opens it, or read it
 directly:
