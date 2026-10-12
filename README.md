@@ -42,7 +42,7 @@ to resolve conflicts means recomputing, not rewriting.
 | **A gate before the canon** | entity merges, trust promotions, and schema changes go through a proposal with a computed diff of what the verdict would overturn |
 | **Sharing is opt-in** | a workspace leaves the node only if you list it. Peers are authorized per workspace, on the sync path and the query path alike |
 | **Secrets do not enter** | credential-shaped text is refused at ingest, not rewritten, because an append-only log that has replicated cannot take it back |
-| **Local-first, no cloud** | one binary, an embedded pure-Rust store, no C toolchain, no account, no network unless you configure a peer |
+| **Local-first, no cloud** | one binary, an embedded pure-Rust store, no account, no network unless you configure a peer |
 
 ## Quick start
 

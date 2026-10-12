@@ -20,7 +20,8 @@ declared clause false.
 
 ## Build and test
 
-Requires a recent stable Rust toolchain. No C or C++ toolchain is needed.
+Requires a recent stable Rust toolchain and a C compiler: the TLS stack compiles C (`ring`, and
+`aws-lc-sys` behind the HTTP server). No C++ toolchain is needed.
 
 ```bash
 cargo build            # default: keyword search, lightweight
@@ -39,8 +40,9 @@ task dev:snapshot    # same, but against a copy of the live daemon's knowledge
 task check           # clippy + viewer ESLint + tests
 ```
 
-The desktop shell needs platform webview toolchains, so it is excluded from the default
-members. Build it explicitly with `cargo build -p supragnosis-app`.
+The desktop shell needs platform webview toolchains, so it is a workspace of its own in `app/`,
+outside the default one. Build it with `cargo build --manifest-path app/Cargo.toml`, or bundle the
+macOS .app with `task build:app`.
 
 `e2e/` is a real-model measurement suite, not a regression guard. Its tests are `#[ignore]`d
 by default and need a local Ollama or an API key.
