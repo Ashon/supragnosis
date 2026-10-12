@@ -507,8 +507,11 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["an_edit_changes_one_member_and_nothing_else"]),
         ),
         c(
-            "a client file that does not parse as JSON is refused, never rewritten",
-            Evidence::Scenario(&["a_file_that_does_not_parse_is_refused"]),
+            "a client file that does not parse as JSON, or cannot be read, is refused, never rewritten",
+            Evidence::Scenario(&[
+                "a_file_that_does_not_parse_is_refused",
+                "a_file_that_cannot_be_read_is_not_taken_for_an_empty_one",
+            ]),
         ),
         c(
             "the copy taken aside before an edit never overwrites an earlier copy",

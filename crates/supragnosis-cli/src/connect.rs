@@ -331,11 +331,21 @@ fn verify(
     Ok(())
 }
 
+/// A client's config file as text. A missing file is the empty one `connect` may create; any other
+/// failure to read it - text that is not UTF-8, a file this user may not read - is an error, since
+/// a file read as empty would be rewritten with one entry and lose everything else in it (C3).
+pub fn read_config(path: &Path) -> std::io::Result<String> {
+    match std::fs::read_to_string(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        other => other,
+    }
+}
+
 /// Reads one named entry from a JSON config file. A missing file or section is `None`; a file that
-/// does not parse is `Unknown`, never `None` (P5).
+/// cannot be read or does not parse is `Unknown`, never `None` (P5).
 pub fn read_json_entry(path: &Path, section: &str, name: &str) -> Entry {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Entry::None;
+    let Ok(text) = read_config(path) else {
+        return Entry::Unknown;
     };
     if text.trim().is_empty() {
         return Entry::None;
@@ -522,8 +532,8 @@ impl Client {
     pub fn entry(self, env: &Env) -> Entry {
         let (path, section) = self.config(env);
         if self == Client::Codex {
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                return Entry::None;
+            let Ok(text) = read_config(&path) else {
+                return Entry::Unknown;
             };
             return match text.parse::<toml::Table>() {
                 Ok(t) => t
@@ -722,6 +732,23 @@ mod tests {
 
     /// A file that is not JSON - a comment someone added, a half-written save - is refused, never
     /// rewritten into something that parses (C3).
+    /// A file that exists and cannot be read is not an absent one: read as empty, it would be
+    /// rewritten with only the bridge in it. Not UTF-8 here; a file this user may not read is the
+    /// same case.
+    #[test]
+    fn a_file_that_cannot_be_read_is_not_taken_for_an_empty_one() {
+        let dir = std::env::temp_dir().join(format!("supragnosis-connect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let unreadable = dir.join("mcp.json");
+        std::fs::write(&unreadable, b"{\"mcpServers\": {\"other\": \"\xff\"}}").unwrap();
+        assert!(read_config(&unreadable).is_err());
+        assert_eq!(read_json_entry(&unreadable, "mcpServers", NAME), Entry::Unknown);
+        let missing = dir.join("absent.json");
+        assert_eq!(read_config(&missing).unwrap(), "", "a missing file is the empty one");
+        assert_eq!(read_json_entry(&missing, "mcpServers", NAME), Entry::None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_file_that_does_not_parse_is_refused() {
         let jsonc = "{\n  // my servers\n  \"mcpServers\": {}\n}";
