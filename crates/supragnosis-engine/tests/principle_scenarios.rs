@@ -2225,51 +2225,49 @@ fn i8_blocking_check_conclusion_is_arrival_order_independent() {
 
 // --- P14 / P3: a re-keyed row is one act, not two ----------------------------------------------
 
-/// guard (principles.md P14 content-is-identity, P3 nothing is deleted): `migrate` re-creates a
-/// pre-formula row under the current content address and, the log being append-only, leaves the
-/// original in place. Both rows then carry the same content and the same assertions, so a raw
-/// enumeration would report one act as two.
+/// guard (P14 one content counts once; P10 a core change comes with a migration path; P3 nothing
+/// is deleted): `migrate_legacy_ids` re-creates a pre-formula row under the current id so it can
+/// sync again. The predecessor stays, and the live set folds the pair to one act - otherwise an
+/// entity's supporting-attestation count doubles, which the corroboration rules read as extra
+/// independent support (P2/P18). The successor names its predecessor, a second run changes
+/// nothing, and the row now crosses the wire, which the legacy row never does.
 ///
-/// What that costs is not cosmetic. A proposal's id IS its opening observation's id, so the copy
-/// becomes a second proposal that no verdict can ever reference - permanently open, un-closable. And
-/// an entity's supporting-attestation count doubles, which the corroboration rules read as extra
-/// independent support (P2/P18). Both are measured here before and after the migration, because a
-/// duplicate is only legible as a difference.
-///
-/// The other half of the claim is that this is dedup, not deletion (P3): the predecessor is still in
-/// the store and still dereferenceable by its id afterwards.
+/// A legacy row carrying proposal events is left as it is. Its id is the proposal's id and the
+/// verdict rows name it, so re-keying the opening row reopened a merged proposal with no verdict
+/// (P23: a decided proposal stays decided).
 #[test]
 fn p14_migration_rekeys_an_act_without_duplicating_it() {
     let (store, engine) = engine();
-    let prov = || Provenance {
+    let prov = |observed_at| Provenance {
         host: "host-a".into(),
         on_behalf_of: Some("ashon".into()),
         workspace: WS.into(),
         source_ref: None,
-        observed_at: 10,
+        observed_at,
         confidence: None,
         trust_tier: TrustTier::default(),
         sync: None,
     };
-    // Two pre-formula rows: one opening a proposal, one asserting an entity. Simulating the id era
-    // is what `migrate` itself keys on - a stored id that no longer matches the current formula.
-    let mut legacy_proposal = Observation::with_assertions(
-        "propose: promote the store note".into(),
-        prov(),
-        Assertions {
-            proposal_events: vec![supragnosis_core::ProposalEventAssertion {
-                proposal: String::new(),
-                event: supragnosis_core::ProposalEventKind::Opened,
-                payload: r#"{"kind":"claim_promotion","targets":["obs-x"],"tier":"host_signed"}"#
-                    .into(),
-            }],
-            ..Default::default()
-        },
-    );
-    legacy_proposal.id = "legacy-era-proposal-id".into();
-    let mut legacy_entity = Observation::with_assertions(
-        "cozo is the store".into(),
-        prov(),
+    // Pre-formula rows: one asserting an entity, and a decided proposal - its opening row and its
+    // merge verdict. Simulating the id era is what `migrate` itself keys on: a stored id that no
+    // longer matches the current formula.
+    let legacy = |id: &str, content: &str, observed_at, assertions| {
+        let mut row = Observation::with_assertions(content.into(), prov(observed_at), assertions);
+        row.id = id.into();
+        store.add_observation(row).unwrap();
+    };
+    let event = |proposal: &str, event, payload: &str| Assertions {
+        proposal_events: vec![supragnosis_core::ProposalEventAssertion {
+            proposal: proposal.into(),
+            event,
+            payload: payload.into(),
+        }],
+        ..Default::default()
+    };
+    legacy(
+        "legacy-era-entity-id",
+        "cozo is the store",
+        10,
         Assertions {
             entities: vec![EntityAssertion {
                 name: "Cozo".into(),
@@ -2279,44 +2277,77 @@ fn p14_migration_rekeys_an_act_without_duplicating_it() {
             ..Default::default()
         },
     );
-    legacy_entity.id = "legacy-era-entity-id".into();
-    store.add_observation(legacy_proposal).unwrap();
-    store.add_observation(legacy_entity).unwrap();
-    engine.reproject(Some(WS)).unwrap();
-
-    let sources = |e: &Engine| {
-        e.graph(Some(WS))
-            .unwrap()
-            .nodes
-            .iter()
-            .find(|n| n.name == "Cozo")
-            .expect("the entity projects")
-            .sources
-    };
-    let before = (engine.list_proposals(Some(WS)).unwrap().len(), sources(&engine));
-    assert_eq!(before, (1, 1), "one proposal and one supporting attestation to start with");
-
-    let migrated = supragnosis_sync::migrate_legacy_ids(store.as_ref(), WS).unwrap();
-    assert_eq!(migrated, 2, "both pre-formula rows are re-keyed");
-    engine.reproject(Some(WS)).unwrap();
-
-    assert_eq!(
-        (engine.list_proposals(Some(WS)).unwrap().len(), sources(&engine)),
-        before,
-        "re-keying an act must not turn it into two - a duplicate proposal cannot be closed, \
-         and a doubled attestation count reads as independent corroboration (P14, P2/P18)"
+    legacy(
+        "legacy-era-proposal-id",
+        "propose: promote the store note",
+        20,
+        event(
+            "",
+            supragnosis_core::ProposalEventKind::Opened,
+            r#"{"kind":"claim_promotion","targets":["legacy-era-entity-id"],"tier":"host_signed"}"#,
+        ),
     );
-    // Dedup, not deletion (P3): the predecessor is still there to be dereferenced.
-    for id in ["legacy-era-proposal-id", "legacy-era-entity-id"] {
-        assert!(
-            store.get_observation(id).unwrap().is_some(),
-            "{id} must stay in the store - the successor supersedes it, nothing erases it"
-        );
-    }
+    legacy(
+        "legacy-era-verdict-id",
+        "proposal(merge) legacy-era-proposal-id",
+        30,
+        event(
+            "legacy-era-proposal-id",
+            supragnosis_core::ProposalEventKind::Verdict,
+            r#"{"decision":"merge","note":null}"#,
+        ),
+    );
+    engine.reproject(Some(WS)).unwrap();
+
+    let state = |e: &Engine| {
+        let proposals = e.list_proposals(Some(WS)).unwrap();
+        let node = e.graph(Some(WS)).unwrap().nodes.into_iter().find(|n| n.name == "Cozo");
+        let p = proposals.iter().map(|p| (p.id.clone(), p.state.clone(), p.verdicts));
+        (p.collect::<Vec<_>>(), node.expect("the entity projects").sources)
+    };
+    let before = state(&engine);
     assert_eq!(
-        store.all_observations(Some(WS)).unwrap().len(),
-        4,
-        "the store holds both the predecessors and their re-keyed successors"
+        before,
+        (vec![("legacy-era-proposal-id".to_string(), "merged".to_string(), 1)], 1),
+        "one merged proposal and one supporting attestation to start with"
+    );
+
+    let rep = engine.migrate_legacy_ids(WS).unwrap();
+    assert_eq!(
+        (rep.migrated, rep.skipped_proposal_events, rep.promotions_left_behind),
+        (1, 2, 1)
+    );
+    engine.reproject(Some(WS)).unwrap();
+    assert_eq!(
+        state(&engine),
+        before,
+        "migrating must not turn one act into two, nor reopen a decided proposal - a doubled \
+         attestation count reads as independent corroboration (P14, P2/P18)"
+    );
+    let successor = store
+        .all_observations(Some(WS))
+        .unwrap()
+        .into_iter()
+        .find(|o| o.derived_from.contains(&"legacy-era-entity-id".to_string()))
+        .expect("the entity row is re-created under the current id, naming its predecessor");
+    assert!(
+        store.get_observation("legacy-era-entity-id").unwrap().is_some(),
+        "the predecessor stays - the successor supersedes it, nothing erases it (P3)"
+    );
+    assert_eq!(
+        engine.migrate_legacy_ids(WS).unwrap().migrated,
+        0,
+        "a second run changes nothing"
+    );
+
+    let node = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([7u8; 32]));
+    node.backfill(store.as_ref(), WS).unwrap();
+    let delta = export_delta(store.as_ref(), WS, &VersionVector::default(), &[WS.to_string()])
+        .expect("export");
+    assert_eq!(
+        delta.iter().map(|e| e.content.as_str()).collect::<Vec<_>>(),
+        vec![successor.content.as_str()],
+        "the successor crosses the wire; the legacy rows never do"
     );
 }
 
@@ -2473,7 +2504,7 @@ fn p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation() {
     );
     legacy.id = "legacy-era-stamped-id".into();
     store.add_observation(legacy).unwrap();
-    assert_eq!(supragnosis_sync::migrate_legacy_ids(store.as_ref(), WS).unwrap(), 1);
+    assert_eq!(engine.migrate_legacy_ids(WS).unwrap().migrated, 1);
     let migrated = store
         .all_observations(Some(WS))
         .unwrap()
@@ -2489,29 +2520,20 @@ fn p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation() {
     );
 }
 
-/// guard (P18; resolution.md Section 3): a re-key leaves the gate events behind, so the grant they
-/// made has to travel as the clamp or not at all. A merged demotion travels: a row quarantined at
-/// Unverified must not evaluate at its claimed tier again because an operator renamed its
-/// workspace. A promotion does not: it was a person's act on the source row, and the target has no
-/// record of it.
+/// guard (P18; resolution.md Section 3): a re-key and a migration both re-create a row under a new
+/// id, and the gate events do not follow it - a re-key leaves them in the source workspace, and a
+/// migrated row's gates name its legacy id. So a grant travels as the clamp or not at all. A merged
+/// demotion travels: a row quarantined at Unverified must not evaluate at its claimed tier again
+/// because an operator re-keyed it. A promotion does not, and the report counts it: it was a
+/// person's act on the old row.
 #[test]
-fn p18_a_rekey_carries_a_demotion_and_leaves_a_promotion_behind() {
-    let (store, engine) = engine();
-    let demoted = kind_obs("cozo", "Tool", 100);
-    let promoted = kind_obs("redb", "Store", 200);
-    let (demoted_id, promoted_id) = (demoted.id.clone(), promoted.id.clone());
-    store.add_observation(demoted).unwrap();
-    store.add_observation(promoted).unwrap();
-    engine.reproject(Some(WS)).expect("reproject");
-    for (kind, target, tier) in [
-        ("claim_demotion", &demoted_id, "unverified"),
-        ("claim_promotion", &promoted_id, "human_confirmed"),
-    ] {
+fn p18_a_rekey_or_a_migration_carries_a_demotion_not_a_promotion() {
+    let gate = |engine: &Engine, kind: &str, target: &str, tier: &str| {
         let pid = engine
             .propose(ProposeInput {
                 workspace: None,
                 kind: kind.into(),
-                targets: vec![target.clone()],
+                targets: vec![target.into()],
                 into: None,
                 tier: Some(tier.into()),
                 rationale: None,
@@ -2523,27 +2545,48 @@ fn p18_a_rekey_carries_a_demotion_and_leaves_a_promotion_behind() {
         engine
             .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
             .expect("console verdict");
-    }
-    let tier_of = |ws: &str, name: &str| {
+    };
+    let tier_of = |engine: &Engine, ws: &str, name: &str| {
         let g = engine.graph(Some(ws)).expect("graph");
         g.nodes.iter().find(|n| n.name == name).expect("node").trust_tier
     };
-    assert_eq!(tier_of(WS, "cozo"), TrustTier::Unverified);
-    assert_eq!(tier_of(WS, "redb"), TrustTier::HumanConfirmed);
+    // Two rows, `cozo` demoted and `redb` promoted, under the given ids; then the tiers they show.
+    let fixture = |ids: Option<(&str, &str)>| {
+        let (store, engine) = engine();
+        let (mut demoted, mut promoted) =
+            (kind_obs("cozo", "Tool", 100), kind_obs("redb", "Store", 200));
+        if let Some((d, p)) = ids {
+            (demoted.id, promoted.id) = (d.into(), p.into()); // a pre-formula id
+        }
+        let (d, p) = (demoted.id.clone(), promoted.id.clone());
+        store.add_observation(demoted).unwrap();
+        store.add_observation(promoted).unwrap();
+        engine.reproject(Some(WS)).expect("reproject");
+        gate(&engine, "claim_demotion", &d, "unverified");
+        gate(&engine, "claim_promotion", &p, "human_confirmed");
+        assert_eq!(tier_of(&engine, WS, "cozo"), TrustTier::Unverified);
+        assert_eq!(tier_of(&engine, WS, "redb"), TrustTier::HumanConfirmed);
+        engine
+    };
+    let after = |engine: &Engine, ws: &str| {
+        engine.reproject(Some(ws)).expect("reproject");
+        (tier_of(engine, ws, "cozo"), tier_of(engine, ws, "redb"))
+    };
+    let carried = (TrustTier::Unverified, TrustTier::AgentExtracted);
 
+    let engine = fixture(None);
     let rep = engine.rekey_workspace(WS, "archive", false).expect("rekey");
-    assert_eq!(rep.moved, 2);
-    engine.reproject(Some("archive")).expect("reproject the target");
+    assert_eq!((rep.moved, rep.promotions_left_behind), (2, 1));
     assert_eq!(
-        tier_of("archive", "cozo"),
-        TrustTier::Unverified,
-        "the quarantine follows the row - a re-key must not raise what it evaluates to"
+        after(&engine, "archive"),
+        carried,
+        "the quarantine follows the row, and the promotion stays with its record in the source"
     );
-    assert_eq!(
-        tier_of("archive", "redb"),
-        TrustTier::AgentExtracted,
-        "the promotion stays with its record in the source workspace"
-    );
+
+    let engine = fixture(Some(("legacy-era-cozo", "legacy-era-redb")));
+    let rep = engine.migrate_legacy_ids(WS).expect("migrate");
+    assert_eq!((rep.migrated, rep.promotions_left_behind), (2, 1));
+    assert_eq!(after(&engine, WS), carried, "the migration path holds the same line");
 }
 
 /// guard (P3 nothing is hidden, P16 scoped and unscoped reads agree): the live-set door supersedes

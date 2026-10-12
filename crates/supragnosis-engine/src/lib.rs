@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use supragnosis_core::{
-    evaluated_tier, hyperedge_id, normalize_relation_kind, ordering_hlc, verdict_grant_ceiling,
-    AssertionStore, Assertions, BeliefCandidate, Clock, EmbeddingProvider, Entity, EntityAssertion,
-    Hlc, KnowledgeStore, Observation, ProposalEventAssertion, ProposalEventKind, Provenance,
-    Relation, RelationAssertion, ResolutionPolicy, SearchHit, SearchHitKind, StoreError,
-    SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier, TypeDefAssertion,
-    VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
+    evaluated_tier, hyperedge_id, normalize_relation_kind, observation_content_id, ordering_hlc,
+    verdict_grant_ceiling, AssertionStore, Assertions, BeliefCandidate, Clock, EmbeddingProvider,
+    Entity, EntityAssertion, Hlc, KnowledgeStore, Observation, ProposalEventAssertion,
+    ProposalEventKind, Provenance, Relation, RelationAssertion, ResolutionPolicy, SearchHit,
+    SearchHitKind, StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier,
+    TypeDefAssertion, VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
@@ -203,6 +203,25 @@ pub struct RekeyReport {
     /// blocked on referential integrity - the disease, not the cure. A merged demotion among them
     /// still reaches the target, as the tier its row is clamped to; a promotion does not.
     pub skipped_proposal_events: usize,
+    /// Moved rows a merged promotion had raised. The promotion stays with its record in the source
+    /// workspace, so in the target the row evaluates at its claim until someone promotes it there.
+    pub promotions_left_behind: usize,
+}
+
+/// What [`Engine::migrate_legacy_ids`] re-created, skipped, and why.
+#[derive(Serialize, Debug, Default)]
+pub struct MigrateReport {
+    /// Rows whose stored id predates the current content-address formula, re-created under the
+    /// current id. Already-migrated rows (the lineage says so) are not counted again.
+    pub migrated: usize,
+    /// Legacy-id rows carrying proposal events, left as they are. An opening row's id is the
+    /// proposal's id, and its verdicts and comments name that id in their payloads, so re-keying it
+    /// would orphan them and reopen a decided proposal. No release wrote one: proposal events and
+    /// the current formula arrived in the same change, so only a hand-built row can be here.
+    pub skipped_proposal_events: usize,
+    /// Migrated rows a merged promotion had raised. The proposal names the legacy id, which the
+    /// live set no longer shows, so the successor evaluates at its claim until promoted again.
+    pub promotions_left_behind: usize,
 }
 
 /// Grab-bag detection threshold: a hyperedge with this many members is flagged as a loose co-occurrence
@@ -962,6 +981,52 @@ fn reject_reserved_source_ref(source_ref: Option<&str>) -> Result<(), ObserveErr
         }
     }
     Ok(())
+}
+
+/// `obs` re-created under `workspace` for a re-key or a migration: every attestation carried, the
+/// sync stamp dropped (it signs the old content id and cannot follow), and the lineage naming
+/// `obs`. The tier is clamped BEFORE the stamp drops: `evaluated_tier` trusts a stamp-less claim at
+/// face value, so a synced claim carried verbatim would evaluate above HostSigned afterwards - a
+/// tier promotion by an operator act (P18: the tier is the receiver's evaluation, and re-keying
+/// must not raise it). `granted` lowers it further when a merged demotion applied to `obs`, since
+/// the gate events do not follow the row. `None` when `obs` has no attestation (P2 forbids it).
+fn recreated(
+    obs: &Observation,
+    workspace: &str,
+    granted: Option<TrustTier>,
+) -> Option<Observation> {
+    let mut provs = obs.provenance.clone();
+    for p in &mut provs {
+        p.workspace = workspace.to_string();
+        p.trust_tier = evaluated_tier(p);
+        if let Some(g) = granted {
+            p.trust_tier = p.trust_tier.min(g);
+        }
+        p.sync = None;
+    }
+    if provs.is_empty() {
+        return None;
+    }
+    let first = provs.remove(0);
+    let mut fresh =
+        Observation::with_assertions(obs.content.clone(), first, obs.assertions.clone());
+    for p in provs {
+        let mut copy = Observation::with_assertions(obs.content.clone(), p, obs.assertions.clone());
+        copy.derived_from = Vec::new();
+        fresh.absorb(copy); // union semantics - the attestation set is preserved whole
+    }
+    fresh.derived_from = obs.derived_from.clone();
+    fresh.derived_from.push(obs.id.clone());
+    fresh.derived_from.sort();
+    fresh.derived_from.dedup();
+    Some(fresh)
+}
+
+/// Whether a merged promotion raised `obs` above its own evaluation - a grant [`recreated`] does
+/// not carry, so the operator act that re-created the row has to say it was left behind.
+fn promotion_left_behind(obs: &Observation, granted: Option<TrustTier>) -> bool {
+    let own = obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default();
+    granted.is_some_and(|g| g > own)
 }
 
 fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> TrustTier {
@@ -3582,7 +3647,8 @@ impl Engine {
     /// **pre-strip evaluation** rather than verbatim (a synced claim stays capped at HostSigned;
     /// P18: dropping the stamp must not raise what the claim evaluates to).
     ///
-    /// Shaped exactly like `migrate_legacy_ids`, which re-keys across a change of id FORMULA; this
+    /// Shaped exactly like [`Engine::migrate_legacy_ids`], which re-keys across a change of id
+    /// FORMULA; this
     /// re-keys across a change of WORKSPACE. Lineage records the origin either way, but the
     /// live-set door treats the two differently on purpose: a migrated pair shares one workspace
     /// and folds to one row, while a re-keyed pair spans two and BOTH rows stay live - each
@@ -3619,35 +3685,9 @@ impl Engine {
                 continue;
             }
             let granted = gates.get(&obs.id).copied();
-            let mut provs = obs.provenance.clone();
-            for p in &mut provs {
-                p.workspace = to.to_string();
-                // Clamp BEFORE the stamp drops: `evaluated_tier` trusts a stamp-less claim at
-                // face value, so a synced claim carried verbatim past this line would evaluate
-                // above HostSigned in the target workspace - a tier promotion by an operator
-                // act (P18: the tier is the receiver's evaluation, and a re-key must not raise it).
-                p.trust_tier = evaluated_tier(p);
-                if let Some(g) = granted {
-                    p.trust_tier = p.trust_tier.min(g);
-                }
-                p.sync = None; // the stamp signs the OLD content id and cannot follow it
-            }
-            if provs.is_empty() {
+            let Some(fresh) = recreated(&obs, to, granted) else {
                 continue; // unreachable by construction (P2), but never panic on a stored row
-            }
-            let first = provs.remove(0);
-            let mut fresh =
-                Observation::with_assertions(obs.content.clone(), first, obs.assertions.clone());
-            for p in provs {
-                let mut copy =
-                    Observation::with_assertions(obs.content.clone(), p, obs.assertions.clone());
-                copy.derived_from = Vec::new();
-                fresh.absorb(copy); // union semantics - the attestation set is preserved whole
-            }
-            fresh.derived_from = obs.derived_from.clone();
-            fresh.derived_from.push(obs.id.clone());
-            fresh.derived_from.sort();
-            fresh.derived_from.dedup();
+            };
             // Idempotent: a second run finds the target already recording this origin and stops.
             if let Some(existing) = self.store.get_observation(&fresh.id)? {
                 if existing.derived_from.contains(&obs.id) {
@@ -3655,12 +3695,60 @@ impl Engine {
                     continue;
                 }
             }
+            if promotion_left_behind(&obs, granted) {
+                report.promotions_left_behind += 1;
+            }
             if !dry_run {
                 self.store.add_observation(fresh)?;
             }
             report.moved += 1;
         }
         if !dry_run && report.moved > 0 {
+            self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(report)
+    }
+
+    /// One-shot legacy-id migration (0.x format evolution): re-creates every observation in
+    /// `workspace` whose stored id predates the current content-address formula under the CURRENT
+    /// id, so it can sync again. The legacy row stays as local history (Principle 3) and never
+    /// exports (the wire guard in `attestations_since` and `backfill`); the successor names it in
+    /// `derived_from`, and the live set folds the pair to one row (see `Engine::observations`).
+    ///
+    /// The twin of [`Engine::rekey_workspace`], which re-keys across a change of WORKSPACE: every
+    /// attestation is carried, the sync stamp drops because it signs the old id, and the tier is
+    /// clamped to the pre-strip evaluation and to a merged demotion's grant. Proposal rows are
+    /// left as they are - see [`MigrateReport::skipped_proposal_events`]. Idempotent.
+    pub fn migrate_legacy_ids(&self, workspace: &str) -> Result<MigrateReport, StoreError> {
+        let _guard = self.write_guard.lock().unwrap_or_else(|e| e.into_inner());
+        // A gate proposal names its target by the legacy id, which the successor does not carry,
+        // so a demotion stops applying unless it travels as the clamp - as in a re-key.
+        let gates = self.gate_grants(Some(workspace), &ReadCtx::default())?;
+        let mut report = MigrateReport::default();
+        for obs in self.store.all_observations(Some(workspace))? {
+            if observation_content_id(workspace, &obs.content, &obs.assertions) == obs.id {
+                continue;
+            }
+            if !obs.assertions.proposal_events.is_empty() {
+                report.skipped_proposal_events += 1;
+                continue;
+            }
+            let granted = gates.get(&obs.id).copied();
+            let Some(fresh) = recreated(&obs, workspace, granted) else {
+                continue; // unreachable in practice (P2: at least one attestation), never panic
+            };
+            if let Some(existing) = self.store.get_observation(&fresh.id)? {
+                if existing.derived_from.contains(&obs.id) {
+                    continue; // already migrated
+                }
+            }
+            if promotion_left_behind(&obs, granted) {
+                report.promotions_left_behind += 1;
+            }
+            self.store.add_observation(fresh)?;
+            report.migrated += 1;
+        }
+        if report.migrated > 0 {
             self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         Ok(report)

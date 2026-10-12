@@ -23,8 +23,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use supragnosis_core::{
-    evaluated_tier, now_millis, observation_content_id, ordering_hlc, verify_attestation,
-    AssertionStore, AttestationEvent, Hlc, NodeIdentity, Observation, StoreError, SyncMeta,
+    now_millis, observation_content_id, ordering_hlc, verify_attestation, AssertionStore,
+    AttestationEvent, Hlc, NodeIdentity, Observation, StoreError, SyncMeta,
 };
 
 /// Sync-layer failure. Store failures propagate (P5: a backend failure is never an empty result);
@@ -374,7 +374,7 @@ impl SyncNode {
         });
         // Legacy-format rows (stored id != current formula) are never stamped: their signature
         // would bind an id no receiver can recompute - permanently rejected on the wire. They stay
-        // local history; `migrate_legacy_ids` re-creates them under the current id.
+        // local history; `Engine::migrate_legacy_ids` re-creates them under the current id.
         obss.retain(|o| observation_content_id(workspace, &o.content, &o.assertions) == o.id);
         let needed =
             obss.iter().flat_map(|o| &o.provenance).filter(|p| p.sync.is_none()).count() as u64;
@@ -603,54 +603,6 @@ fn check_event(
     obs.check_well_formed().map_err(RejectReason::Malformed)?;
     obs.derived_from = meta.lineage.clone();
     Ok(obs)
-}
-
-/// One-shot legacy-id migration (0.x format evolution): re-creates every observation whose stored
-/// id predates the current content-address formula under the CURRENT id - content, assertions, and
-/// provenance preserved (stale sync stamps stripped: they bound the old id), and the old id appended
-/// to `derived_from` so the lineage records the migration. The old row remains local history and
-/// never exports (the wire guard in `attestations_since`/`backfill`). Returns the migrated count.
-pub fn migrate_legacy_ids(store: &dyn AssertionStore, workspace: &str) -> Result<usize, SyncError> {
-    let mut migrated = 0usize;
-    for obs in store.all_observations(Some(workspace))? {
-        let cur_id = observation_content_id(workspace, &obs.content, &obs.assertions);
-        if cur_id == obs.id {
-            continue;
-        }
-        // Idempotence: already migrated when the current-id row exists and records the lineage.
-        if let Some(existing) = store.get_observation(&cur_id)? {
-            if existing.derived_from.contains(&obs.id) {
-                continue;
-            }
-        }
-        let mut provs = obs.provenance.clone();
-        for p in &mut provs {
-            // Clamp BEFORE the stamp drops: `evaluated_tier` trusts a stamp-less claim at face
-            // value, so a synced claim carried verbatim would evaluate above HostSigned after
-            // the migration (P18 - same rule as `rekey_workspace`).
-            p.trust_tier = evaluated_tier(p);
-            p.sync = None; // stale stamps bound the old id - the new row re-stamps at next export
-        }
-        if provs.is_empty() {
-            continue; // unreachable in practice (P2: at least one attestation), but never panic
-        }
-        let first = provs.remove(0);
-        let mut fresh =
-            Observation::with_assertions(obs.content.clone(), first, obs.assertions.clone());
-        for p in provs {
-            let mut copy =
-                Observation::with_assertions(obs.content.clone(), p, obs.assertions.clone());
-            copy.derived_from = Vec::new();
-            fresh.absorb(copy); // union semantics, dedup/order maintained
-        }
-        fresh.derived_from = obs.derived_from.clone();
-        fresh.derived_from.push(obs.id.clone()); // lineage: the migrated row derives from the legacy row
-        fresh.derived_from.sort();
-        fresh.derived_from.dedup();
-        store.add_observation(fresh)?;
-        migrated += 1;
-    }
-    Ok(migrated)
 }
 
 /// The delta a node offers a peer for `workspace`: everything stamped that `since` does not cover -
@@ -1170,10 +1122,11 @@ mod tests {
         );
     }
 
-    /// Legacy-format rows (stored id != current formula) never cross the wire; migration re-creates
-    /// them under the current id with lineage back to the legacy row, idempotently.
+    /// Legacy-format rows (stored id != current formula) never cross the wire: a signature over an
+    /// id no receiver can recompute would be rejected there forever. `Engine::migrate_legacy_ids`
+    /// re-creates them under the current id (p14_migration_rekeys_an_act_without_duplicating_it).
     #[test]
-    fn legacy_id_rows_stay_local_and_migrate() {
+    fn legacy_id_rows_never_cross_the_wire() {
         let store = InMemoryStore::new();
         let a = node(1);
         let mut legacy = Observation::new("old era fact".into(), prov("ws", 3));
@@ -1183,28 +1136,11 @@ mod tests {
             .add_observation(Observation::new("current fact".into(), prov("ws", 5)))
             .unwrap();
 
-        // Backfill skips the legacy row and export never carries it (wire guard).
-        assert_eq!(a.backfill(&store, "ws").unwrap(), 1);
+        assert_eq!(a.backfill(&store, "ws").unwrap(), 1, "backfill stamps the current row only");
         let share = vec!["ws".to_string()];
         let delta = export_delta(&store, "ws", &VersionVector::default(), &share).unwrap();
         assert_eq!(delta.len(), 1);
         assert_eq!(delta[0].content, "current fact");
-
-        // Migration re-creates it under the current formula, lineage pointing at the old id.
-        assert_eq!(migrate_legacy_ids(&store, "ws").unwrap(), 1);
-        assert_eq!(migrate_legacy_ids(&store, "ws").unwrap(), 0, "migration is idempotent");
-        let migrated = store
-            .all_observations(Some("ws"))
-            .unwrap()
-            .into_iter()
-            .find(|o| o.content == "old era fact" && o.id != "legacy-old-formula-id")
-            .expect("migrated row exists under the current id");
-        assert!(migrated.derived_from.contains(&"legacy-old-formula-id".to_string()));
-
-        // After migration + backfill the knowledge crosses the wire.
-        assert_eq!(a.backfill(&store, "ws").unwrap(), 1);
-        let delta = export_delta(&store, "ws", &VersionVector::default(), &share).unwrap();
-        assert_eq!(delta.len(), 2, "the migrated row is now exportable");
     }
 
     /// F5 at the log level: the same event set, delivered in different orders with duplicates and

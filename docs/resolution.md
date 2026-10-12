@@ -102,9 +102,9 @@ effective_tier(observation) =
         writer cannot self-declare above AgentExtracted), and the
         stamp-dropping re-key/migration paths clamp a carried claim
         to its pre-strip evaluation - a stamp-less claim is never a
-        raw wire claim. A re-key leaves the gate events behind, so it
-        also clamps a row to a merged demotion's grant; a promotion
-        stays with its record in the source workspace
+        raw wire claim. The gate events do not follow a re-created
+        row, so both paths also clamp it to a merged demotion's
+        grant; a promotion is not carried, and the report says so
       - a synced attestation (sync stamp present, signature verified):
         min(claimed tier, HostSigned) - a signature proves origin,
         never a human act, so a remote claim can never evaluate to
