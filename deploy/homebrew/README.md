@@ -85,7 +85,7 @@ brew tap ashon/tap
 brew install supragnosis                # desktop app (macOS, pulls the server formula)
 brew install supragnosis-server         # server/CLI only (macOS / Linux)
 supragnosis service install             # always-on daemon (MCP :7373 + viewer socket), now and at login
-                                        # - or Start at Login in the app's tray menu
+                                        # - or Start at Login on the app's Settings page
 ```
 
 ## Dev-channel install (--HEAD server + supragnosis-dev cask)

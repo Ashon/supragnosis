@@ -28,8 +28,8 @@ This script: builds the release -> copies the binary to `~/.local/bin/supragnosi
 manager) -> re-registers Claude Code with the http transport.
 
 With Homebrew there is nothing to build: `brew install supragnosis-server`, then
-`supragnosis service install` - or Start at Login in the desktop app's tray menu, which runs the
-same command.
+`supragnosis service install` - or Start at Login on the desktop app's Settings page, which runs
+the same command.
 
 ## Manual install
 
