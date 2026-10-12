@@ -2,7 +2,7 @@
 # supragnosis standalone daemon install (macOS/launchd).
 # - Copy the release binary to a stable path (~/.local/bin) (so it survives cargo clean)
 # - Generate + load the LaunchAgent (supragnosis service install: auto-start at login, restart if it dies)
-# - Re-register Claude Code with the http transport
+# - Connect Claude Code through `supragnosis bridge`, which relays to the daemon's http MCP
 # Run: bash deploy/install.sh
 set -euo pipefail
 
