@@ -53,17 +53,9 @@ cargo build --release --locked --bin supragnosis
 install -m 755 target/release/supragnosis ~/.local/bin/supragnosis
 ```
 
-**`zstd-sys` fails to build with `'stddef.h' file not found`.** Ubuntu's `libclang1-18` ships the
-shared library but not clang's own resource headers, and bindgen needs those. If you have sudo,
-`apt install libclang-common-18-dev`. If you do not, the headers can be unpacked into `$HOME` -
-`apt-get download` and `dpkg-deb -x` both work unprivileged:
-
-```sh
-mkdir -p ~/opt/clangdev && cd ~/opt/clangdev
-apt-get download libclang-common-18-dev
-dpkg-deb -x libclang-common-18-dev_*.deb root
-export BINDGEN_EXTRA_CLANG_ARGS="-I$HOME/opt/clangdev/root/usr/lib/llvm-18/lib/clang/18/include"
-```
+The build needs a C compiler (`apt install build-essential`, or your distribution's equivalent):
+the TLS stack compiles C. Nothing in it needs libclang or bindgen any more - that, and the
+`zstd-sys` headers it once took, left with the Cozo store in v0.2.0.
 
 ## Two things that bite in a *user* unit
 
