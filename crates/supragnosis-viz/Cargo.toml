@@ -24,7 +24,7 @@ anyhow.workspace = true
 tracing.workspace = true
 # UnixListener + AsyncRead/Write + broadcast(sync). Not in the workspace-wide set, so enabled locally
 # (cargo features are a union, so it is harmless to other crate builds). sync = MCP event broadcast.
-tokio = { workspace = true, features = ["net", "io-util", "sync"] }
+tokio = { workspace = true, features = ["net", "io-util", "sync", "rt"] }
 
 [dev-dependencies]
 # Verifies the HTTP-over-UDS surface in-process with a deterministic Engine assembly (InMemory +
@@ -34,7 +34,7 @@ supragnosis-embed.workspace = true
 # To append a log row the way the sync crate does - through the log handle, unprojected - which is how
 # the health surface's owed count is exercised.
 supragnosis-core.workspace = true
-tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros", "time"] }
 
 [build-dependencies]
 lightningcss = "1.0.0-alpha.72"

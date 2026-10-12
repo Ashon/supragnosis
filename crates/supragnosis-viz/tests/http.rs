@@ -836,3 +836,33 @@ async fn viz_propose_split_opens_a_reversal_without_committing_it() {
     let bad = uds_get(&sock, "/api/propose_split").await;
     assert!(bad.starts_with("HTTP/1.1 400"), "got: {}", bad.lines().next().unwrap_or(""));
 }
+
+/// A slow request holds a blocking thread, not the async worker. The viewer shares its runtime with
+/// the MCP daemon, and its routes are synchronous - a store read, a fold over the log, the merge
+/// band, a config file written - so run on the worker, one slow request stalled every other
+/// connection and tool call on it. Here the narrowing hook takes 800ms, and a health check sent
+/// while it runs is answered long before it ends. The test's runtime has one thread, so a handler
+/// that held it would hold the health check too; elapsed time is wall-clock for the same reason.
+#[tokio::test]
+async fn a_slow_request_holds_no_other_one() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+    let narrow: supragnosis_viz::NarrowShare = Arc::new(|_: &str, keep: &[String]| {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        Ok(keep.to_vec())
+    });
+    let path = serve_uds_with_narrow("slow", engine, ev_channel(), narrow).await;
+    let started = std::time::Instant::now();
+    let slow_path = path.clone();
+    let slow = tokio::spawn(async move {
+        uds_request(&slow_path, "POST", "/api/peer/share?node_id=a&workspaces=alpha").await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let health = uds_get(&path, "/api/health").await;
+    let answered = started.elapsed();
+    assert!(health.starts_with("HTTP/1.1 200"), "{health}");
+    assert!(
+        answered < std::time::Duration::from_millis(500),
+        "the health check waited on the slow request: {answered:?}"
+    );
+    assert!(slow.await.expect("slow request").starts_with("HTTP/1.1 200"));
+}
