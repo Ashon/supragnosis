@@ -1480,3 +1480,133 @@ async fn a_digest_is_the_same_bytes_twice_over_one_store() {
     client.cancel().await.ok();
     server.abort();
 }
+
+/// An InMemoryStore whose enumeration can be made slow - a large store's log scan, on demand.
+struct SlowStore {
+    inner: InMemoryStore,
+    slow: std::sync::atomic::AtomicBool,
+}
+
+impl supragnosis_core::AssertionStore for SlowStore {
+    fn all_observations(
+        &self,
+        workspace: Option<&str>,
+    ) -> Result<Vec<supragnosis_core::Observation>, supragnosis_core::StoreError> {
+        if self.slow.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(800));
+        }
+        self.inner.all_observations(workspace)
+    }
+    fn add_observation(
+        &self,
+        obs: supragnosis_core::Observation,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.add_observation(obs)
+    }
+    fn get_observation(
+        &self,
+        id: &str,
+    ) -> Result<Option<supragnosis_core::Observation>, supragnosis_core::StoreError> {
+        self.inner.get_observation(id)
+    }
+    fn get_entity(
+        &self,
+        id: &str,
+    ) -> Result<Option<supragnosis_core::Entity>, supragnosis_core::StoreError> {
+        self.inner.get_entity(id)
+    }
+    fn relations_of(
+        &self,
+        entity_id: &str,
+    ) -> Result<Vec<supragnosis_core::Relation>, supragnosis_core::StoreError> {
+        self.inner.relations_of(entity_id)
+    }
+    fn search(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<supragnosis_core::SearchHit>, supragnosis_core::StoreError> {
+        self.inner.search(query, workspace, limit)
+    }
+    fn traverse(
+        &self,
+        start_id: &str,
+        max_depth: usize,
+        limit: usize,
+    ) -> Result<Vec<supragnosis_core::TraverseHit>, supragnosis_core::StoreError> {
+        self.inner.traverse(start_id, max_depth, limit)
+    }
+    fn all_entities(
+        &self,
+        workspace: Option<&str>,
+    ) -> Result<Vec<supragnosis_core::Entity>, supragnosis_core::StoreError> {
+        self.inner.all_entities(workspace)
+    }
+    fn all_relations(
+        &self,
+        workspace: Option<&str>,
+    ) -> Result<Vec<supragnosis_core::Relation>, supragnosis_core::StoreError> {
+        self.inner.all_relations(workspace)
+    }
+}
+
+impl supragnosis_core::KnowledgeStore for SlowStore {
+    fn put_entity(
+        &self,
+        entity: supragnosis_core::Entity,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.put_entity(entity)
+    }
+    fn add_relation(
+        &self,
+        rel: supragnosis_core::Relation,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.add_relation(rel)
+    }
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, supragnosis_core::StoreError> {
+        self.inner.owed_projections()
+    }
+    fn clear_owed(&self, ids: &[String]) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.clear_owed(ids)
+    }
+}
+
+/// A resource read folds the log, synchronously, and on a large store that takes a while. It runs
+/// on a blocking thread, as the tools' store work does, so it holds no worker the next request
+/// needs: with the store's scan made 800ms slow, a tools/list sent while the graph is being read
+/// is answered at once. Single-threaded runtime and wall-clock, so a read that held its thread
+/// would hold the listing too.
+#[tokio::test]
+async fn a_slow_resource_read_holds_no_other_request() {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let store = Arc::new(SlowStore { inner: InMemoryStore::new(), slow: false.into() });
+    let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine).serve(server_io).await.expect("handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    store.slow.store(true, Ordering::SeqCst);
+    let started = std::time::Instant::now();
+    let peer = client.peer().clone();
+    let read = tokio::spawn(async move {
+        peer.read_resource(ReadResourceRequestParams::new("supragnosis://workspace/ws/graph"))
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    client.list_tools(None).await.expect("tools/list");
+    let answered = started.elapsed();
+    assert!(
+        answered < Duration::from_millis(500),
+        "tools/list waited on the read: {answered:?}"
+    );
+    read.await.expect("read task").expect("the graph is read");
+
+    client.cancel().await.ok();
+    server.abort();
+}

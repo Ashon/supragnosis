@@ -1665,88 +1665,106 @@ impl ServerHandler for SupragnosisServer {
         context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + Send + '_ {
         let uri = request.uri;
-        if let Some(surface) = &self.remote {
-            if let Err(e) = self.remote_resource_ok(surface, &context, &uri) {
-                return std::future::ready(Err(e));
-            }
+        let gate = match &self.remote {
+            Some(surface) => self.remote_resource_ok(surface, &context, &uri),
+            None => Ok(()),
+        };
+        let (engine, remote, reader) =
+            (self.engine.clone(), self.remote.is_some(), principal_of(&context));
+        async move {
+            gate?;
+            // Every branch reads the store and most fold the whole log (graph, hypergraph,
+            // types): synchronous work that holds a worker thread for as long as it takes, and
+            // the worker is shared with every other tool call. The tools offload theirs; so does
+            // this.
+            let read = tokio::task::spawn_blocking(move || read_uri(&engine, uri, remote, reader))
+                .await
+                .map_err(|e| {
+                    ErrorData::internal_error(format!("resource read failed: {e}"), None)
+                })??;
+            // rmcp 3 wraps the read result in ReadResourceResponse so a server can answer a read
+            // with "I need input first" instead of content. This server never does - every branch
+            // of `read_uri` either has the bytes or has an error - so every Ok is the Complete arm.
+            //
+            // The hints are applied here rather than in each branch so that a new resource URI
+            // cannot be added without them: there is one place that turns a read into a response.
+            Ok(read.with_ttl_ms(0).with_cache_scope(CacheScope::Private).into())
         }
-        let result = match parse_resource_uri(&uri) {
-            // Workspace list (for discovery) - array of workspace names that hold knowledge.
-            Some(ResourceUri::Workspaces) => match self.engine.workspaces() {
-                Ok(list) => {
-                    // Remotely, enumeration is filtered to the grants (R3).
-                    let list: Vec<String> = match principal_of(&context) {
-                        Some(p) if self.remote.is_some() => {
-                            list.into_iter().filter(|w| p.can_read(w)).collect()
-                        }
-                        _ => list,
-                    };
-                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&list), uri)]))
-                }
-                Err(e) => Err(ErrorData::internal_error(
-                    format!("storage backend failure (not a missing resource): {e}"),
-                    None,
-                )),
-            },
-            Some(ResourceUri::Graph(ws)) => match self.engine.graph(Some(ws)) {
-                Ok(graph) => {
-                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&graph), uri)]))
-                }
-                // A backend failure is surfaced as an internal error, not not_found (absence) - preserving the Principle 5 distinction.
-                Err(e) => Err(ErrorData::internal_error(
-                    format!("storage backend failure (not a missing resource): {e}"),
-                    None,
-                )),
-            },
-            // Co-occurrence second-order structure (Principle 11): the entity sets an observation asserted together, as hyperedges.
-            Some(ResourceUri::Hypergraph(ws)) => match self.engine.hypergraph(Some(ws)) {
-                Ok(hg) => {
-                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&hg), uri)]))
-                }
-                Err(e) => Err(ErrorData::internal_error(
-                    format!("storage backend failure (not a missing resource): {e}"),
-                    None,
-                )),
-            },
-            // T-Box glossary (Principle 8/11): the workspace's type definitions (entity + relation types + meanings).
-            Some(ResourceUri::Types(ws)) => match self.engine.types(Some(ws)) {
-                Ok(types) => {
-                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
-                }
-                Err(e) => Err(ErrorData::internal_error(
-                    format!("storage backend failure (not a missing resource): {e}"),
-                    None,
-                )),
-            },
-            // Observation back-reference (Principles 2/14): whoever knows the id can query the substance (raw content/provenance/lineage).
-            Some(ResourceUri::Observation(id)) => match self.engine.get_observation(id) {
-                Ok(Some(obs)) => {
-                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&obs), uri)]))
-                }
-                Ok(None) => Err(unknown_observation(id, self.remote.is_some())),
-                Err(e) => Err(ErrorData::internal_error(
-                    format!("storage backend failure (not a missing resource): {e}"),
-                    None,
-                )),
-            },
-            None => Err(ErrorData::resource_not_found(
-                format!(
-                    "unknown resource URI: {uri} - only the forms \
-                     supragnosis://workspace/{{workspace}}/graph and \
-                     supragnosis://observation/{{id}} are supported"
-                ),
+    }
+}
+
+/// One resource read: the URI's content, or the error that stands for it. `remote` and `reader`
+/// say whether the read came over the hub's agent surface and for which principal; a remote
+/// enumeration is filtered to the reader's grants (R3).
+fn read_uri(
+    engine: &Engine,
+    uri: String,
+    remote: bool,
+    reader: Option<remote::Principal>,
+) -> Result<ReadResourceResult, ErrorData> {
+    match parse_resource_uri(&uri) {
+        // Workspace list (for discovery) - array of workspace names that hold knowledge.
+        Some(ResourceUri::Workspaces) => match engine.workspaces() {
+            Ok(list) => {
+                // Remotely, enumeration is filtered to the grants (R3).
+                let list: Vec<String> = match &reader {
+                    Some(p) if remote => list.into_iter().filter(|w| p.can_read(w)).collect(),
+                    _ => list,
+                };
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&list), uri)]))
+            }
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
                 None,
             )),
-        };
-        // rmcp 3 wraps the read result in ReadResourceResponse so a server can answer a read with
-        // "I need input first" instead of content. This server never does - every branch above
-        // either has the bytes or has an error - so every Ok is the Complete arm.
-        //
-        // The hints are applied here rather than in each branch so that a new resource URI cannot
-        // be added without them: there is one place that turns a read into a response.
-        std::future::ready(
-            result.map(|read| read.with_ttl_ms(0).with_cache_scope(CacheScope::Private).into()),
-        )
+        },
+        Some(ResourceUri::Graph(ws)) => match engine.graph(Some(ws)) {
+            Ok(graph) => {
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&graph), uri)]))
+            }
+            // A backend failure is surfaced as an internal error, not not_found (absence) - preserving the Principle 5 distinction.
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
+        // Co-occurrence second-order structure (Principle 11): the entity sets an observation asserted together, as hyperedges.
+        Some(ResourceUri::Hypergraph(ws)) => match engine.hypergraph(Some(ws)) {
+            Ok(hg) => Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&hg), uri)])),
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
+        // T-Box glossary (Principle 8/11): the workspace's type definitions (entity + relation types + meanings).
+        Some(ResourceUri::Types(ws)) => match engine.types(Some(ws)) {
+            Ok(types) => {
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
+            }
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
+        // Observation back-reference (Principles 2/14): whoever knows the id can query the substance (raw content/provenance/lineage).
+        Some(ResourceUri::Observation(id)) => match engine.get_observation(id) {
+            Ok(Some(obs)) => {
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&obs), uri)]))
+            }
+            Ok(None) => Err(unknown_observation(id, remote)),
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
+        None => Err(ErrorData::resource_not_found(
+            format!(
+                "unknown resource URI: {uri} - only the forms \
+                 supragnosis://workspace/{{workspace}}/graph and \
+                 supragnosis://observation/{{id}} are supported"
+            ),
+            None,
+        )),
     }
 }
 
