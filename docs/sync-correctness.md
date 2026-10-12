@@ -96,14 +96,18 @@ code, not inferred from the design.
   deterministic order;
 - `node` is this node.
 
-The node's clock then merges the stamp (the HLC receive rule), so a later local event still orders
-after it.
+Nothing received is consulted. A node keeps no clock that merges a peer's stamps, so an edit made
+after receiving a peer's stamp orders after it only if its own `observed_at` is later - that is, only
+as far as the two wall clocks agree. A peer whose clock runs ahead can win a last-write-wins field
+with an edit made before yours. Assigning the HLC at authoring from a clock that merges what the node
+receives would order causally related edits regardless of skew; it is not built, because a stamp is
+made at export, after the fact, and the authoring time is what that stamp can honestly carry.
 
 This is the order the node already showed before export: an unstamped row orders by
 `Hlc::legacy(observed_at)`. Stamping no longer reorders anything on the node that stamps. Across
-nodes, two edits now order by when they were made. They order by HLC only as far as the wall clocks
-agree, which is the same assumption every HLC stamp makes. Rows that `rekey` or `migrate` stripped
-keep their `observed_at`, so their restamped order is their original order.
+nodes, two edits order by when they were made, as far as the wall clocks agree (above). Rows that
+`rekey` or `migrate` stripped keep their `observed_at`, so their restamped order is their original
+order.
 
 Stamps already made keep their HLC. They are signed, and the log is append-only.
 

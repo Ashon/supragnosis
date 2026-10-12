@@ -23,8 +23,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use supragnosis_core::{
-    now_millis, observation_content_id, ordering_hlc, verify_attestation, AssertionStore,
-    AttestationEvent, Hlc, NodeIdentity, Observation, StoreError, SyncMeta,
+    observation_content_id, ordering_hlc, verify_attestation, AssertionStore, AttestationEvent,
+    Hlc, NodeIdentity, Observation, StoreError, SyncMeta,
 };
 
 /// Sync-layer failure. Store failures propagate (P5: a backend failure is never an empty result);
@@ -209,14 +209,14 @@ pub struct ApplyReport {
     pub rejected: Vec<Rejection>,
 }
 
-/// Node-local sync state: the node identity plus the HLC clock and per-workspace origin_seq counters.
+/// Node-local sync state: the node identity plus per-workspace origin_seq counters. There is no HLC
+/// clock to keep: a stamp's HLC is its attestation's authoring time (sync-correctness.md Section 3).
 /// Counters are seeded lazily from the store (max own stamped seq) and from the identity's seq mark,
 /// so neither a restart nor a store restored from an older backup issues a seq twice (F7,
 /// sync-correctness.md Section 5).
 pub struct SyncNode {
     identity: NodeIdentity,
     node_id: String,
-    clock: Mutex<Hlc>,
     /// Last origin_seq USED per workspace (next = last + 1). Lazily seeded from the store and mark.
     last_seq: Mutex<HashMap<String, u64>>,
     /// Held from a backfill's snapshot to its last write, so two callers sharing this node cannot
@@ -233,7 +233,6 @@ impl SyncNode {
         Self {
             identity,
             node_id,
-            clock: Mutex::new(Hlc::default()),
             last_seq: Mutex::new(HashMap::new()),
             backfill: Mutex::new(()),
             seq_mark: None,
@@ -254,13 +253,6 @@ impl SyncNode {
 
     pub fn public_key_hex(&self) -> String {
         self.identity.public_key_hex()
-    }
-
-    /// Merge a remote stamp into the local clock (HLC receive rule, I11): after this, everything the
-    /// node authors is causally after what it has seen.
-    pub fn merge_clock(&self, remote: &Hlc) {
-        let mut clock = self.clock.lock().unwrap();
-        *clock = Hlc::merge(&clock, remote, now_millis(), &self.node_id);
     }
 
     /// The seq mark: per workspace, the highest seq this identity has reserved. Absent is empty.
@@ -421,9 +413,9 @@ impl SyncNode {
 
     /// The HLC of an attestation authored at `observed_at` (sync-correctness.md Section 3): the time
     /// it was observed, not the time it is exported. `counter` separates this node's stamps that
-    /// share a wall within one pass, and the clock merges the stamp so later local events still
-    /// order after it. Before stamping, the row ordered by `Hlc::legacy(observed_at)`, so stamping
-    /// reorders nothing on the node that stamps.
+    /// share a wall within one pass. Before stamping, the row ordered by `Hlc::legacy(observed_at)`,
+    /// so stamping reorders nothing on the node that stamps. Nothing received is consulted: an
+    /// edit made after a peer's stamp orders after it only as far as the two wall clocks agree.
     fn authored_hlc(&self, observed_at: u64, prev: Option<&Hlc>) -> Hlc {
         let counter = match prev {
             // Saturating: the wall is the authoring time and cannot carry, and four billion stamps
@@ -431,12 +423,7 @@ impl SyncNode {
             Some(p) if p.wall == observed_at => p.counter.saturating_add(1),
             _ => 0,
         };
-        let hlc = Hlc { wall: observed_at, counter, node: self.node_id.clone() };
-        let mut clock = self.clock.lock().unwrap();
-        if hlc > *clock {
-            *clock = hlc.clone();
-        }
-        hlc
+        Hlc { wall: observed_at, counter, node: self.node_id.clone() }
     }
 
     /// The apply pipeline (F3): per event - verify stamp/origin/signature (F6) and workspace
@@ -514,7 +501,6 @@ impl SyncNode {
                     let meta = ev.attestation.sync.as_ref().expect("checked stamped");
                     store.add_observation(obs)?;
                     vv.advance(&meta.origin_node, workspace, meta.origin_seq);
-                    self.merge_clock(&meta.hlc);
                     if meta.origin_node == self.node_id {
                         // An own event pulled back: the counter continues past it (Section 5).
                         self.floor_seq(store, workspace, meta.origin_seq)?;
@@ -700,9 +686,8 @@ mod tests {
     }
 
     /// sync-correctness.md Section 3 (D1): a stamp carries when the attestation was observed, not
-    /// when it was exported. Node A observed X at t=100 and synced nothing; it has since seen B's
-    /// edit, stamped at t=500, so its clock is far past both. Exporting X must not make it the
-    /// newer edit.
+    /// when it was exported. Node A observed X at t=100 and synced nothing; it has since received
+    /// B's edit, stamped at t=500, and it exports X now. X must not become the newer edit.
     #[test]
     fn a_stamp_carries_the_authoring_time_not_the_export_time() {
         let (a, b) = (node(1), node(2));
@@ -712,7 +697,6 @@ mod tests {
         b.backfill(&store_b, "ws").unwrap();
         let y = store_b.attestations_since("ws", &VersionVector::default()).unwrap();
         a.apply(&store_a, "ws", y, &keys(&[&b]), &mut VersionVector::default()).unwrap();
-        a.merge_clock(&Hlc { wall: 1_000_000, counter: 0, node: "elsewhere".into() });
 
         a.backfill(&store_a, "ws").unwrap();
         let mine = stamps(&store_a, "ws");

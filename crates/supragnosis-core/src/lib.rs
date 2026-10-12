@@ -93,6 +93,10 @@ pub struct SyncMeta {
 /// `(wall, counter, node)` tuple - field declaration order makes `derive(Ord)` give exactly that.
 /// `now_millis()` alone is not a total order across hosts; the HLC is the deterministic order key for
 /// cross-node folds (I11). It does NOT replace `observed_at` (P4 transaction time stays human-facing).
+///
+/// [`Hlc::tick`] and [`Hlc::merge`] are the clock rules Section 4 specifies. No stamp uses them yet:
+/// a stamp carries its attestation's authoring time (sync-correctness.md Section 3), so the causal
+/// update I11 asks for is owed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct Hlc {
     pub wall: u64,

@@ -95,7 +95,7 @@ Knowledge first arrives as an **immutable observation event**. The entity/relati
 | `assertions` | (optional) candidate entities/relations handed over by the client - kept in the log **exactly as spelled** (normalization is the projection's job) and **included in id computation** (assertions, unlike lineage/embedding, are content identity - the same text with different assertions is a different observation) |
 | `provenance` | a **list** of attestations (at least 1): each with `host` (acting), `on_behalf_of` (the delegating principal), `workspace`, `source_ref`, `observed_at` (transaction time), `confidence`, `trust_tier`. Re-arrival under the same content address accumulates as a monotonic union rather than overwriting (the merge norm of Principle 3) |
 | `derived_from` | (optional) the source observation ids this observation was derived from - the recall list for contamination cleanup (Principle 18) |
-| `provenance[].sync` | (optional, **per attestation** - not an observation-level field) the federation stamp of federation.md Section 3: `origin_node` (key-derived node id), `origin_seq` (monotonic per origin+workspace - the version-vector key), `hlc` (Hybrid Logical Clock - a **deterministic causal order** independent of host wall-clock skew), `signature` (ed25519 by the origin - detects forgery/tampering even through relays), and the origin's signed lineage declaration. Excluded from the content address, and one observation can carry several origins' stamps |
+| `provenance[].sync` | (optional, **per attestation** - not an observation-level field) the federation stamp of federation.md Section 3: `origin_node` (key-derived node id), `origin_seq` (monotonic per origin+workspace - the version-vector key), `hlc` (Hybrid Logical Clock - a **deterministic total order**: the attestation's authoring time plus a counter, so every node orders one log alike; causal across nodes only as far as their wall clocks agree, sync-correctness.md Section 3), `signature` (ed25519 by the origin - detects forgery/tampering even through relays), and the origin's signed lineage declaration. Excluded from the content address, and one observation can carry several origins' stamps |
 
 ### 2.4 Provenance - **first-class citizen, delegation chain, trust tier**
 Every fact is stored with a provenance tag. Nothing is destructively overwritten.
@@ -678,8 +678,9 @@ Each concern names what is built and what is owed; the milestone of an owed part
      [impl]).
 6. **M4 - Federation [o] Phases 0-4 and the Phase 3.5 read tier; Phase 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
-   (Principle 17), HLC causal ordering + HLC-ordered re-materialization, federated retrieval, legacy-id
-   migration. Design -> [federation.md](federation.md).
+   (Principle 17), HLC ordering (authoring time; the causal update of I11 is owed) + HLC-ordered
+   re-materialization, federated retrieval, legacy-id migration. Design ->
+   [federation.md](federation.md).
    - Open: peer-to-peer mesh and hybrid topology; browser access to the hub read tier, which waits
      for user keys (remote-viewer.md Section 2);
      multi-principal governance - the `tbox_change` gate and the log-borne canon-policy artifact

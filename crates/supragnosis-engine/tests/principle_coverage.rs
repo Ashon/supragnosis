@@ -1355,12 +1355,20 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["p23_a_blocked_gate_merge_grants_nothing"]),
     )]),
     (11, &[
-        c("the clock is monotonic and a received stamp lands it after both sides",
-          Evidence::Scenario(&[
-            "hlc_is_monotonic_and_merge_lands_after_both",
-            // A stamp carries authoring time, so export reorders nothing.
-            "a_stamp_carries_the_authoring_time_not_the_export_time",
-          ])),
+        // A stamp carries its attestation's authoring time, so export reorders nothing and every
+        // node orders one log the same way - a total order, not a causal one.
+        c("an observation's HLC is its authoring time with a same-wall counter, so export reorders \
+           nothing",
+          Evidence::Scenario(&["a_stamp_carries_the_authoring_time_not_the_export_time"])),
+        c("the HLC is updated causally on ingest and sync: an event authored after a received stamp \
+           orders after it whatever the clocks say",
+          Evidence::Deferred(
+            "no node clock merges received stamps - a stamp is made at export and carries the \
+             authoring time (sync-correctness.md Section 3), so causal order holds only as far as \
+             the wall clocks agree. Hlc::tick and Hlc::merge are the operations federation.md \
+             Section 4 specifies (hlc_is_monotonic_and_merge_lands_after_both), and no stamp uses \
+             them. Revisit when a stamp is assigned at authoring rather than at export",
+          )),
         c("a fold orders by HLC, not arrival, and reaches the same conclusion on every node",
           Evidence::Scenario(&[
             "types_fold_orders_by_hlc_not_observed_at",
