@@ -730,14 +730,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// A file that is not JSON - a comment someone added, a half-written save - is refused, never
-    /// rewritten into something that parses (C3).
     /// A file that exists and cannot be read is not an absent one: read as empty, it would be
     /// rewritten with only the bridge in it. Not UTF-8 here; a file this user may not read is the
     /// same case.
     #[test]
     fn a_file_that_cannot_be_read_is_not_taken_for_an_empty_one() {
-        let dir = std::env::temp_dir().join(format!("supragnosis-connect-{}", std::process::id()));
+        let dir = std::env::temp_dir()
+            .join(format!("supragnosis-connect-unreadable-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let unreadable = dir.join("mcp.json");
         std::fs::write(&unreadable, b"{\"mcpServers\": {\"other\": \"\xff\"}}").unwrap();
@@ -749,6 +748,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A file that is not JSON - a comment someone added, a half-written save - is refused, never
+    /// rewritten into something that parses (C3).
     #[test]
     fn a_file_that_does_not_parse_is_refused() {
         let jsonc = "{\n  // my servers\n  \"mcpServers\": {}\n}";
