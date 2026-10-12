@@ -2315,8 +2315,8 @@ fn p14_migration_rekeys_an_act_without_duplicating_it() {
 /// guard (principles.md P2 provenance first-class, P4 transaction time, P3 nothing is deleted):
 /// `rekey_workspace` re-creates a workspace's knowledge under another name with every attestation
 /// copied verbatim - acting host, `on_behalf_of`, `observed_at`, confidence. (The claimed tier is
-/// the one exception: it is carried as its pre-strip evaluation, not verbatim - see the P18
-/// laundering guard below.)
+/// the one exception: it is carried as its pre-strip evaluation, lowered to a merged demotion's
+/// grant, not verbatim - see the P18 guards below.)
 ///
 /// The distinction this pins is the whole reason the operation exists. Pushing the same text back
 /// through `observe` would look equivalent and is not: the engine stamps its own clock and host, so
@@ -2476,6 +2476,63 @@ fn p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation() {
         evaluated_tier(p),
         TrustTier::HostSigned,
         "the migration path holds the same line as the re-key path"
+    );
+}
+
+/// guard (P18; resolution.md Section 3): a re-key leaves the gate events behind, so the grant they
+/// made has to travel as the clamp or not at all. A merged demotion travels: a row quarantined at
+/// Unverified must not evaluate at its claimed tier again because an operator renamed its
+/// workspace. A promotion does not: it was a person's act on the source row, and the target has no
+/// record of it.
+#[test]
+fn p18_a_rekey_carries_a_demotion_and_leaves_a_promotion_behind() {
+    let (store, engine) = engine();
+    let demoted = kind_obs("cozo", "Tool", 100);
+    let promoted = kind_obs("redb", "Store", 200);
+    let (demoted_id, promoted_id) = (demoted.id.clone(), promoted.id.clone());
+    store.add_observation(demoted).unwrap();
+    store.add_observation(promoted).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    for (kind, target, tier) in [
+        ("claim_demotion", &demoted_id, "unverified"),
+        ("claim_promotion", &promoted_id, "human_confirmed"),
+    ] {
+        let pid = engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: kind.into(),
+                targets: vec![target.clone()],
+                into: None,
+                tier: Some(tier.into()),
+                rationale: None,
+                affected_types: vec![],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("propose");
+        engine
+            .review_proposal(None, pid, "merge".into(), None, None, VerdictSurface::Console)
+            .expect("console verdict");
+    }
+    let tier_of = |ws: &str, name: &str| {
+        let g = engine.graph(Some(ws)).expect("graph");
+        g.nodes.iter().find(|n| n.name == name).expect("node").trust_tier
+    };
+    assert_eq!(tier_of(WS, "cozo"), TrustTier::Unverified);
+    assert_eq!(tier_of(WS, "redb"), TrustTier::HumanConfirmed);
+
+    let rep = engine.rekey_workspace(WS, "archive", false).expect("rekey");
+    assert_eq!(rep.moved, 2);
+    engine.reproject(Some("archive")).expect("reproject the target");
+    assert_eq!(
+        tier_of("archive", "cozo"),
+        TrustTier::Unverified,
+        "the quarantine follows the row - a re-key must not raise what it evaluates to"
+    );
+    assert_eq!(
+        tier_of("archive", "redb"),
+        TrustTier::AgentExtracted,
+        "the promotion stays with its record in the source workspace"
     );
 }
 

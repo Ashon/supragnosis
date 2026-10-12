@@ -200,7 +200,8 @@ pub struct RekeyReport {
     pub already: usize,
     /// Proposal events left behind. Their payloads name SOURCE-workspace entity ids, which do not
     /// exist in the target, so carrying them over would import proposals that are permanently
-    /// blocked on referential integrity - the disease, not the cure.
+    /// blocked on referential integrity - the disease, not the cure. A merged demotion among them
+    /// still reaches the target, as the tier its row is clamped to; a promotion does not.
     pub skipped_proposal_events: usize,
 }
 
@@ -3605,12 +3606,18 @@ impl Engine {
             )));
         }
         let _guard = self.write_guard.lock().unwrap_or_else(|e| e.into_inner());
+        // The gate events stay behind with the rest of the proposal rows, so a merged demotion
+        // would stop applying in the target, and a row quarantined at Unverified would evaluate
+        // at its claimed tier again. A grant below the claim is carried as the clamp; one above
+        // it is not, since a promotion is a person's act on this row and the target never saw it.
+        let gates = self.gate_grants(Some(from), &ReadCtx::default())?;
         let mut report = RekeyReport::default();
         for obs in self.observations(Some(from))? {
             if !obs.assertions.proposal_events.is_empty() {
                 report.skipped_proposal_events += 1;
                 continue;
             }
+            let granted = gates.get(&obs.id).copied();
             let mut provs = obs.provenance.clone();
             for p in &mut provs {
                 p.workspace = to.to_string();
@@ -3619,6 +3626,9 @@ impl Engine {
                 // above HostSigned in the target workspace - a tier promotion by an operator
                 // act (P18: the tier is the receiver's evaluation, and a re-key must not raise it).
                 p.trust_tier = evaluated_tier(p);
+                if let Some(g) = granted {
+                    p.trust_tier = p.trust_tier.min(g);
+                }
                 p.sync = None; // the stamp signs the OLD content id and cannot follow it
             }
             if provs.is_empty() {

@@ -853,9 +853,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   HLC -> id; confidence carried verbatim, never selecting - the Principle 2 combining rule). The
   tier consumed by resolution and display is the **receiver's evaluation** (a wire claim caps at
   HostSigned; the claimed tier stays verbatim in the log for audit). The stamp-dropping re-key and
-  migration paths clamp a carried claim to its pre-strip evaluation, so an operator act cannot
-  raise what a claim evaluates to (guarded by
-  `p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation`). **Contested beliefs are
+  migration paths clamp a carried claim to its pre-strip evaluation, and a re-key to a merged
+  demotion's grant, so an operator act cannot raise what a claim evaluates to (guarded by
+  `p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation` and
+  `p18_a_rekey_carries_a_demotion_and_leaves_a_promotion_behind`). **Contested beliefs are
   surfaced** where trust ties (graph nodes carry contested/competitors; the curation report lists
   all live conflicts and contradictory merge cycles - the Principle 6 introspection query).
   `claim_promotion`/`claim_demotion` have their **commit effects** (a merged verdict sets the gate
