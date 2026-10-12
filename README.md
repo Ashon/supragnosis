@@ -77,6 +77,10 @@ supragnosis connect claude-code
 Prebuilt binaries are keyword search only. For local semantic retrieval (ONNX, no API calls),
 build with `--features fastembed`.
 
+Removing it takes the daemon off login, disconnects each AI app and deletes the binary, and leaves
+the knowledge in `~/.supragnosis` unless you remove that too
+([deploy/README.md, Operations](deploy/README.md#operations)).
+
 ### Your first minute
 
 Ask the agent to remember something, in whatever words you would use:
