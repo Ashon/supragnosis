@@ -237,17 +237,17 @@ observe {
         <div class="terminal">
           <div class="terminal-bar"><span class="terminal-title">host B - weeks later, a different agent recalls it</span></div>
           <pre><code>search_knowledge {
-  "query": "why redb and not a datalog store?"
+  "query": "cozo redb"
 }
 
-<span class="c"># the hit comes back with its receipts:</span>
-<span class="c">#   the original text, plus who observed it,</span>
-<span class="c">#   acting for whom, from which source, when,</span>
-<span class="c">#   at what trust tier - and the mode label</span>
-<span class="c">#   (hybrid vs keyword) that says which recall</span>
-<span class="c">#   surface answered.</span>
+<span class="c"># every term, in any order - or, in a fastembed</span>
+<span class="c"># build, words that only mean the same thing.</span>
+<span class="c"># the hit names what matched, and the mode label</span>
+<span class="c"># (keyword or hybrid) says which surface answered.</span>
 
-<span class="c"># hits carry stable entity ids - pull the thread:</span>
+<span class="c"># the id leads to the receipts: the original text,</span>
+<span class="c"># who observed it, acting for whom, from which</span>
+<span class="c"># source, when, at what trust tier.</span>
 get_entity { "id": "9f41..." }   <span class="c"># id from the hit</span>
 traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
         </div>
@@ -289,13 +289,14 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
            neighbours. -->
       <div class="grid grid-4">
         <article class="card">
-          <h3>Hybrid recall</h3>
+          <h3>Local retrieval</h3>
           <p>
-            Ask in your own words - "why redb and not a datalog store?" - and the
-            fragment comes back. Vector search over local ONNX embeddings
-            (fastembed) fuses with keyword search, deterministically ranked and
-            mode-labeled so you know which surface answered. Without an embedder
-            it degrades to keyword. No cloud calls either way.
+            Ask with the words the knowledge holds - every term, in any order -
+            and the fragments come back, deterministically ranked and
+            mode-labeled so you know which surface answered. That is what the
+            prebuilt binaries do. A build with fastembed adds vector search over
+            local ONNX embeddings, so other wording that means the same thing
+            finds it too. No cloud calls either way.
           </p>
         </article>
         <article class="card">
@@ -388,7 +389,7 @@ supragnosis connect claude-desktop
         </div>
         <dl class="tools">
           <div><dt>observe</dt><dd>load knowledge: entities, relations, and text become observation events</dd></div>
-          <div><dt>search_knowledge</dt><dd>semantic + keyword hybrid recall, deterministically ranked</dd></div>
+          <div><dt>search_knowledge</dt><dd>keyword retrieval, plus semantic in a fastembed build, deterministically ranked</dd></div>
           <div><dt>get_entity</dt><dd>one entity with its relations and full provenance</dd></div>
           <div><dt>traverse</dt><dd>n-hop walks over the relation graph</dd></div>
           <div><dt>workspace_map</dt><dd>what was said together: co-occurrence hyperedges across a workspace</dd></div>
@@ -509,7 +510,7 @@ supragnosis connect claude-desktop
         <div class="ledger-col">
           <h3 class="ledger-head done">Shipped</h3>
           <ul class="checklist">
-            <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid recall.</strong> Semantic (fastembed ONNX) + keyword search, file-backed persistence, stdio MCP + HTTP daemon.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid retrieval.</strong> Keyword search, plus semantic (fastembed ONNX) in a build with that feature; file-backed persistence, stdio MCP + HTTP daemon.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated recall.</div></li>
@@ -569,7 +570,7 @@ brew install supragnosis-server
         <pre id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
 cd supragnosis
 
-<span class="c"># fastembed = local ONNX semantic recall</span>
+<span class="c"># fastembed = local ONNX semantic retrieval</span>
 cargo build -p supragnosis-cli --features fastembed
 
 cargo test</code></pre>
@@ -578,7 +579,7 @@ cargo test</code></pre>
         Whichever route you take, <code>supragnosis service install</code> (or
         Start at Login in the app) keeps the daemon running: MCP on
         <code>127.0.0.1:7373</code> plus the viewer unix socket.
-        Prebuilt binaries ship keyword recall; the fastembed build adds local
+        Prebuilt binaries ship keyword retrieval; the fastembed build adds local
         semantic search. Curious how it is built? The design principles and the
         hexagonal Rust workspace behind all of this live in
         <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a>.
