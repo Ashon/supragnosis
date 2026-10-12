@@ -41,7 +41,8 @@ governed agent surface at `https://<hub>:7420/mcp` (docs/remote-server.md), or u
 **The viewer socket is inside the container.** Its security property is a unix socket in a 0700
 directory - one principal, no port. Bind-mounting it to the host hands it to whoever can read that
 path there, which may be more people than you think. Read it with
-`docker compose exec supragnosis curl -s --unix-socket ~/.supragnosis/viz.sock http://l/api/graph`
+`docker compose exec supragnosis curl -s --unix-socket /var/lib/supragnosis/.supragnosis/viz.sock http://l/api/graph`
+(the container's path - a `~` would expand in your shell, on the host)
 and mount it out only if you have decided who else may reach it.
 
 ## Federation
@@ -151,9 +152,10 @@ script is a sandbox convenience and not a pattern to copy into one.
 
 The browser proxies are the other shortcut. The viewer has no TCP bind because the unix socket's
 mode is the access control; `socat` in front of it puts the viewer's write endpoints
-(`/api/review`, `/api/resolve`, `/api/reify`, `/api/propose_merge`) on a port with nothing
-authenticating them. That is why the real hub answers those four with `403` at the nginx layer, and
-why the sandbox's published ports are bound to `127.0.0.1` rather than every interface.
+(`/api/review`, `/api/resolve`, `/api/reify`, `/api/propose_merge`, `/api/propose_split`, and
+`POST /api/peer/share`) on a port with nothing authenticating them. That is why a hub with a proxy
+in front of its viewer must answer all six with `403`, and why the sandbox's published ports are
+bound to `127.0.0.1` rather than every interface.
 
 ## Building
 
