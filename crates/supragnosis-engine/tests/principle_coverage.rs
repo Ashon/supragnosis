@@ -315,12 +315,25 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "define_type is ungated working-set last-write-wins today, which the invariant itself              says is tolerable only under the solo exception - and so federated deployment stays              single-principal until the M4 Phase 5 gate exists",
         ),
     )]),
-    (19, &[c(
-        "the hub human surface authenticates by enrolled user keys and never accepts an unattributable write",
-        Evidence::Deferred(
-            "there is no human surface yet - the viewer is a local unix socket with no network bind,              so the clause has nothing to govern. Owed the moment that tier opens, which is M4              Phase 3.5 in federation.md Phasing",
-        ),
-    )]),
+    // F19 bundles three demands. The read tier (remote-viewer.md, v0.4.7) built two of them; the
+    // user keys it names are remote-server.md step 5, and the read tier admits bearer principals.
+    (19, &[
+        c("the hub human surface's read tier disables every write and answers only within each \
+           user's workspace grants",
+          Evidence::Scenario(&[
+            "every_viewer_path_has_a_remote_policy",
+            "the_read_tier_answers_only_within_the_grants",
+          ])),
+        c("a workspace is served to users only under the spoke's sync+web-read consent",
+          Evidence::Scenario(&["a_union_with_an_unconsented_workspace_is_refused_whole"])),
+        c("the hub human surface authenticates by enrolled user keys and never accepts an \
+           unattributable write",
+          Evidence::Deferred(
+            "the read tier admits a bearer principal, not an enrolled user key, and has no write \
+             route, so nothing unattributable can arrive yet. Keys are remote-server.md step 5, and \
+             the write tier is M4 Phase 5 with F20's signed acts",
+          )),
+    ]),
     (20, &[c(
         "a recall verdict and a HumanConfirmed promotion require a principal-signed act",
         Evidence::Deferred(
