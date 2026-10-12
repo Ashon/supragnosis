@@ -253,6 +253,9 @@ struct VizCtx {
 /// The read tier's audit (Section 3.8): one line per principal and workspace at most once a minute,
 /// carrying the number of reads since the previous line - "who read what, and when" to the minute,
 /// without a line for every poll of every open window. Never the content.
+///
+/// Keyed by [`audited_workspace`], so the keys are bounded by the configuration - a principal's
+/// grants, plus one key for everything outside them - and not by what a request names.
 #[derive(Default)]
 struct Audit {
     seen: Mutex<std::collections::HashMap<(String, String), (std::time::Instant, u64)>>,
@@ -272,6 +275,18 @@ impl Audit {
         let reads = seen.get(&key).map(|(_, n)| *n).unwrap_or(0);
         tracing::info!(principal, path, workspace, reads_since_last_line = reads, "remote read");
         seen.insert(key, (now, 0));
+    }
+}
+
+/// The key a read is audited under. A workspace the principal may read, or the union and default
+/// forms, is its own key. Any other name - answered as unknown (V3), and free for a caller to vary
+/// on every request - is counted under one key, which keeps the attempts visible without letting
+/// them grow the map and the log without bound.
+fn audited_workspace<'a>(p: &Principal, named: &'a str) -> &'a str {
+    if matches!(named, "-" | "*" | "all") || p.can_read(named) {
+        named
+    } else {
+        "(outside the grants)"
     }
 }
 
@@ -315,7 +330,7 @@ async fn viz_get(
         .find_map(|kv| kv.strip_prefix("workspace="))
         .unwrap_or("-")
         .to_string();
-    ctx.audit.note(&p.name, &path, &named);
+    ctx.audit.note(&p.name, &path, audited_workspace(&p, &named));
     let (engine, servable) = (ctx.engine.clone(), ctx.servable.clone());
     let run = tokio::task::spawn_blocking(move || {
         supragnosis_viz::remote::route(&engine, &reader, &servable, "GET", &path, &query)
@@ -877,6 +892,28 @@ mod tests {
         let tag = tag.expect("a successful answer carries an ETag");
         let (status, _, body) = viz(&base, c, "/api/graph?workspace=team", Some(&tag)).await;
         assert!(status == 304 && body.is_empty(), "an unchanged graph is not sent again");
+    }
+
+    /// remote-viewer.md Section 3.8: the audit's keys are bounded by the grants. A caller varying
+    /// the workspace it names on every request used to add a key, and a log line, for each name.
+    #[test]
+    fn the_audit_counts_names_outside_the_grants_under_one_key() {
+        let p = Principal {
+            name: "reader".into(),
+            read: ["team".to_string()].into(),
+            write: Default::default(),
+        };
+        let audit = Audit::default();
+        for i in 0..1000 {
+            audit.note(&p.name, "/api/graph", audited_workspace(&p, &format!("guess-{i}")));
+        }
+        audit.note(&p.name, "/api/graph", audited_workspace(&p, "team"));
+        audit.note(&p.name, "/api/graph", audited_workspace(&p, "*"));
+        let seen = audit.seen.lock().unwrap();
+        let mut keys: Vec<&str> = seen.keys().map(|(_, w)| w.as_str()).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["(outside the grants)", "*", "team"]);
+        assert_eq!(seen[&("reader".to_string(), "(outside the grants)".to_string())].1, 999);
     }
 
     /// remote-viewer.md V4: a union that includes a workspace the hub may not serve is refused as a
