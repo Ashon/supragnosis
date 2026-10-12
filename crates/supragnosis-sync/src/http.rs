@@ -719,12 +719,14 @@ async fn pull_handler(
     }
     // One page, in (origin, seq) order - the order `attestations_since` returns - so the caller's
     // version vector advances exactly as far as the page went and the next page continues from it.
+    // Encoded one at a time and only up to the page's end: the delta can be the whole workspace
+    // (a fresh peer, or `since` left empty), and the page is at most PAGE_EVENTS of it.
     let limit = req.limit.unwrap_or(PAGE_EVENTS).clamp(1, PAGE_EVENTS);
-    let all = to_wire(events);
-    let total = all.len();
+    let total = events.len();
     let mut page = Vec::new();
     let mut bytes = 0usize;
-    for ev in all {
+    for ev in events {
+        let ev = serde_json::to_value(ev).expect("an event serializes");
         let size = serde_json::to_vec(&ev).map(|v| v.len()).unwrap_or(0);
         if !page.is_empty() && (page.len() >= limit || bytes + size > PAGE_BYTES) {
             break;
