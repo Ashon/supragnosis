@@ -6,8 +6,10 @@
 > viewer and MCP surfaces below are local-only by design, and a container has no local.
 
 Instead of spawning over stdio for each chat, **a single always-on local daemon** holds the db
-and exposes MCP streamable-http. Agents (Claude Code, etc.) just connect over http. Because the
-daemon is the sole holder of the db, the single-process lock problem also disappears.
+and exposes MCP streamable-http. Agents (Claude Code, etc.) reach it through `supragnosis bridge`,
+a stdio relay every client can run that reads the token from its file, so no client configuration
+holds a copy (docs/client-connect.md). Because the daemon is the sole holder of the db, the
+single-process lock problem also disappears.
 
 - MCP: `http://127.0.0.1:7373/mcp` (loopback-only, bearer token from the 0600 `mcp.token` - the
   local trust surface, Principle 17)
@@ -25,7 +27,7 @@ bash deploy/install.sh
 
 This script: builds the release -> copies the binary to `~/.local/bin/supragnosis` ->
 `supragnosis service install --take-over` (generates and loads the LaunchAgent, retiring any other
-manager) -> re-registers Claude Code with the http transport.
+manager) -> connects Claude Code through the bridge.
 
 With Homebrew there is nothing to build: `brew install supragnosis-server`, then
 `supragnosis service install` - or Start at Login on the desktop app's Settings page, which runs
@@ -102,7 +104,8 @@ claude mcp remove supragnosis -s user
   `SUPRAGNOSIS_DATA_DIR`.
 - Only one daemon should run (single ownership of the db + ports), and only one manager should
   run it - `supragnosis status` reports a conflict, and `service install --take-over` resolves it.
-  Do not use stdio registration and http registration at the same time.
+  Register each AI app through `supragnosis connect`, which writes the bridge. An app that runs
+  plain `supragnosis` over stdio opens the store itself, and beside the daemon it fails on the lock.
 
 ## Cutting a release
 
