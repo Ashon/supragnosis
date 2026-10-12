@@ -559,7 +559,7 @@ supragnosis service install
 <span class="c"># to ~/.local/bin (arm64 / x86_64)</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh</code></pre>
         <pre id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># one-line script -> ~/.local/bin</span>
-<span class="c"># (x86_64, checksum-verified)</span>
+<span class="c"># (x86_64 / arm64, checksum-verified)</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh
 
 <span class="c"># or homebrew (server formula)</span>
@@ -577,9 +577,10 @@ cargo build -p supragnosis-cli --features fastembed
 cargo test</code></pre>
       </div>
       <p class="section-note">
-        Whichever route you take, <code>supragnosis service install</code> (or
-        Start at Login in the app) keeps the daemon running: MCP on
-        <code>127.0.0.1:7373</code> plus the viewer unix socket.
+        On macOS, <code>supragnosis service install</code> (or Start at Login in
+        the app) keeps the daemon running; on Linux, the systemd user unit does.
+        Either way it serves MCP on <code>127.0.0.1:7373</code> plus the viewer
+        unix socket.
         Prebuilt binaries ship keyword retrieval; the fastembed build adds local
         semantic search. Curious how it is built? The design principles and the
         hexagonal Rust workspace behind all of this live in
