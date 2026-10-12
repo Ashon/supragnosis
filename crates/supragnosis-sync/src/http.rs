@@ -879,8 +879,9 @@ pub struct TlsPaths {
     pub key_pem: std::path::PathBuf,
 }
 
-/// Serves the sync API. Loopback may run plain (a local trust surface); a non-loopback bind is
-/// refused unless TLS material is provided AND the allowlist is non-empty (F10).
+/// Serves the sync API: [`bind`], then [`Bound::run`]. Loopback may run plain (a local trust
+/// surface); a non-loopback bind is refused unless TLS material is provided AND someone is admitted
+/// (F10).
 pub async fn serve(
     store: Arc<dyn AssertionStore>,
     node: Arc<SyncNode>,
@@ -889,6 +890,29 @@ pub async fn serve(
     peers: Arc<PeerDirectory>,
     hooks: Hooks,
 ) -> Result<(), TransportError> {
+    bind(store, node, listen, tls, peers, hooks).await?.run().await
+}
+
+/// The sync API with every way it can fail to start already tried: the bind rule passed, the TLS
+/// material loaded, the address bound. What is left is accepting connections ([`Bound::run`]).
+pub struct Bound {
+    listener: std::net::TcpListener,
+    tls: Option<axum_server::tls_rustls::RustlsConfig>,
+    app: Router,
+}
+
+/// Prepares the sync API to serve, without serving it. A daemon awaits this and then runs the
+/// result in the background, so a certificate it cannot read, a port already taken or nobody
+/// admitted stops its startup with the reason (P5), instead of ending a spawned task with a log
+/// line while the daemon carries on as a hub with no listener.
+pub async fn bind(
+    store: Arc<dyn AssertionStore>,
+    node: Arc<SyncNode>,
+    listen: SocketAddr,
+    tls: Option<TlsPaths>,
+    peers: Arc<PeerDirectory>,
+    hooks: Hooks,
+) -> Result<Bound, TransportError> {
     // The bind rule is about STARTING an unauthenticated surface, so it is checked against admission
     // as it stands now (F10). Admission may shrink later, including to empty - that rejects every
     // request rather than admitting anyone, which serves the same end (see [`PeerDirectory`]).
@@ -915,8 +939,7 @@ pub async fn serve(
         Some(extra) => router(state).merge(extra.router),
         None => router(state),
     };
-    tracing::info!(%listen, tls = tls.is_some(), "sync API listening");
-    match tls {
+    let tls = match tls {
         Some(paths) => {
             // Pin the process-level CryptoProvider: with both aws-lc-rs (axum-server) and ring
             // (reqwest) compiled in, rustls refuses to auto-select. Idempotent - a second install
@@ -926,13 +949,33 @@ pub async fn serve(
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(paths.cert_pem, paths.key_pem)
                     .await
                     .map_err(|e| TransportError::Tls(e.to_string()))?;
-            axum_server::bind_rustls(listen, cfg).serve(app.into_make_service()).await?;
+            Some(cfg)
         }
-        None => {
-            axum_server::bind(listen).serve(app.into_make_service()).await?;
-        }
+        None => None,
+    };
+    let listener = std::net::TcpListener::bind(listen)?;
+    listener.set_nonblocking(true)?; // what tokio requires of a listener it adopts
+    tracing::info!(%listen, tls = tls.is_some(), "sync API listening");
+    Ok(Bound { listener, tls, app })
+}
+
+impl Bound {
+    /// Where it is bound - the port the OS chose, for an address that named port 0.
+    pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.listener.local_addr()
     }
-    Ok(())
+
+    /// Accepts connections until the server stops.
+    pub async fn run(self) -> Result<(), TransportError> {
+        let service = self.app.into_make_service();
+        match self.tls {
+            Some(cfg) => {
+                axum_server::from_tcp_rustls(self.listener, cfg)?.serve(service).await?;
+            }
+            None => axum_server::from_tcp(self.listener)?.serve(service).await?,
+        }
+        Ok(())
+    }
 }
 
 /// Result of one client sync round against a server.
@@ -1498,6 +1541,33 @@ mod tests {
             "a principal is someone admitted - past the guard, refused only by the OS: {one_principal:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A listener that cannot start fails `bind`, which the daemon awaits, rather than `run`, which
+    /// it spawns: a certificate it cannot read and a port already taken both come back as errors
+    /// here, where they used to end a background task with a log line while the daemon went on
+    /// as a hub with nothing listening.
+    #[tokio::test]
+    async fn a_listener_that_cannot_start_fails_bind() {
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let attempt = |listen: SocketAddr, tls: Option<TlsPaths>| {
+            let peers = PeerDirectory::new(vec![], hub.node_id(), &hub.public_key_hex());
+            bind(store.clone(), hub.clone(), listen, tls, peers.into(), Hooks::default())
+        };
+        let loopback: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let missing = TlsPaths {
+            cert_pem: "/nonexistent/cert.pem".into(),
+            key_pem: "/nonexistent/key.pem".into(),
+        };
+        assert!(matches!(attempt(loopback, Some(missing)).await, Err(TransportError::Tls(_))));
+
+        let taken = std::net::TcpListener::bind(loopback).unwrap();
+        let busy = taken.local_addr().unwrap();
+        assert!(matches!(attempt(busy, None).await, Err(TransportError::Io(_))));
+        drop(taken);
+        let bound = attempt(loopback, None).await.expect("a free loopback port binds");
+        assert_ne!(bound.local_addr().unwrap().port(), 0, "and it is bound before it runs");
     }
 
     /// `ping` answers with the CALLER's grants, never the host's inventory.
