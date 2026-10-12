@@ -1107,12 +1107,24 @@ fn migrate_cmd(a: SyncArgs) -> Result<()> {
     let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
     rt.block_on(async {
         let engine = build_engine(&cfg, None)?;
-        let migrated = supragnosis_sync::migrate_legacy_ids(engine.store().as_ref(), &ws)?;
+        let m = engine.migrate_legacy_ids(&ws)?;
         let r = engine.reproject(Some(&ws))?;
         println!(
             "migrated {} legacy-id observation(s); reprojected {}: {} observations -> {} entities, {} relations",
-            migrated, ws, r.observations, r.entities, r.relations
+            m.migrated, ws, r.observations, r.entities, r.relations
         );
+        if m.skipped_proposal_events > 0 {
+            println!(
+                "left {} legacy-id proposal-event row(s) as they are - re-keying one would orphan its verdicts",
+                m.skipped_proposal_events
+            );
+        }
+        if m.promotions_left_behind > 0 {
+            println!(
+                "{} migrated row(s) had a merged promotion, which names the legacy id - promote them again",
+                m.promotions_left_behind
+            );
+        }
         anyhow::Ok(())
     })
 }
@@ -1136,6 +1148,12 @@ fn rekey_workspace_cmd(a: RekeyArgs) -> Result<()> {
             "{verb} {} observation(s) from {} to {} ({} already there, {} proposal-event row(s) left behind)",
             rep.moved, a.from, a.to, rep.already, rep.skipped_proposal_events
         );
+        if rep.promotions_left_behind > 0 {
+            println!(
+                "{} of them had a merged promotion, which stays in {} - promote them again in {} if they should be",
+                rep.promotions_left_behind, a.from, a.to
+            );
+        }
         if a.dry_run {
             println!("dry run - nothing was written");
         } else if rep.moved > 0 {

@@ -2820,7 +2820,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // Three 0.x eras changed the assertion encoding; `migrate` is that path honored rather
         // than promised.
         c("a change to the core model comes with a migration path",
-          Evidence::Scenario(&["legacy_id_rows_stay_local_and_migrate"])),
+          Evidence::Scenario(&[
+            "legacy_id_rows_never_cross_the_wire",
+            "p14_migration_rekeys_an_act_without_duplicating_it",
+          ])),
     ]),
     (11, "Minimal Commitment, Induced Schema", &[
         c("second-order structure is a derived view identified by its member set, coexisting with \
@@ -2892,7 +2895,6 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // content wears two ids on purpose (the old row stays, P3), so the same rule has to be
             // applied by hand or the folds report one act as two.
             "p14_migration_rekeys_an_act_without_duplicating_it",
-            "legacy_id_rows_stay_local_and_migrate",
         ])),
         c("an identity or a signature, once made, verifies under every later build",
           Evidence::Scenario(&[
@@ -3051,10 +3053,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p18_an_agent_surface_verdict_cannot_grant_human_confirmed",
             // The stamp-dropping operator paths (re-key, migration) clamp a carried claim to its
             // pre-strip evaluation - `evaluated_tier` trusts a stamp-less claim at face value, so
-            // without the clamp one CLI act promotes a synced claim past HostSigned. A re-key also
-            // leaves the gate events behind, so it carries a merged demotion as the clamp.
+            // without the clamp one CLI act promotes a synced claim past HostSigned. The gate events
+            // do not follow a re-created row either, so both carry a merged demotion as the clamp.
             "p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation",
-            "p18_a_rekey_carries_a_demotion_and_leaves_a_promotion_behind",
+            "p18_a_rekey_or_a_migration_carries_a_demotion_not_a_promotion",
         ])),
         c("the reserved surface-marker namespace is refused at every local ingest door",
           Evidence::Scenario(&[

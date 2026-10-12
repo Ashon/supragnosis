@@ -760,7 +760,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   change demands a migration path": the assertion encoding changed three times across 0.x (the
   description field, type_defs, proposal_events), and `migrate` is that path honored rather than
   promised - it re-creates pre-formula rows under the current content address so they can sync again.
-  Guarded by `legacy_id_rows_stay_local_and_migrate`.
+  Guarded by `legacy_id_rows_never_cross_the_wire` and
+  `p14_migration_rekeys_an_act_without_duplicating_it`.
   A **fourth** core change had no path and went unnoticed until a real store was inspected:
   `Observation.provenance` became a LIST of attestations (the Principle 3 merge norm), and rows written
   before it held a single bare object. Those rows failed reconstruction entirely - 23 of 141 in the
@@ -853,10 +854,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   HLC -> id; confidence carried verbatim, never selecting - the Principle 2 combining rule). The
   tier consumed by resolution and display is the **receiver's evaluation** (a wire claim caps at
   HostSigned; the claimed tier stays verbatim in the log for audit). The stamp-dropping re-key and
-  migration paths clamp a carried claim to its pre-strip evaluation, and a re-key to a merged
-  demotion's grant, so an operator act cannot raise what a claim evaluates to (guarded by
+  migration paths clamp a carried claim to its pre-strip evaluation and to a merged demotion's
+  grant, so an operator act cannot raise what a claim evaluates to (guarded by
   `p18_rekey_and_migration_clamp_a_synced_claim_to_its_evaluation` and
-  `p18_a_rekey_carries_a_demotion_and_leaves_a_promotion_behind`). **Contested beliefs are
+  `p18_a_rekey_or_a_migration_carries_a_demotion_not_a_promotion`). **Contested beliefs are
   surfaced** where trust ties (graph nodes carry contested/competitors; the curation report lists
   all live conflicts and contradictory merge cycles - the Principle 6 introspection query).
   `claim_promotion`/`claim_demotion` have their **commit effects** (a merged verdict sets the gate
