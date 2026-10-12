@@ -729,8 +729,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   acting `host` + workspace + `observed_at` + `trust_tier`, and `on_behalf_of`, `source_ref` and `confidence`
   when they were stated;
   under federation each attestation additionally carries `origin_node`/`origin_seq`/`hlc`/`signature`.
-  Unspecified confidence is preserved as unspecified (no 1.0 substitution - 4th revision). *Caveat*: the
-  "reject at ingest, schema-level" clause is still enforced by engine construction only (see deferrals).
+  Unspecified confidence is preserved as unspecified (no 1.0 substitution - 4th revision). An observation
+  with no attestation is refused at ingest and by the store port (Section 14, entry condition 1).
 - Principle 3 (supersede, don't delete + re-arrival merge norm): the log is immutable and content-addressed;
   `absorb` unions attestations and `derived_from` lineage monotonically; the 8th-revision **enrichment
   relation** is implemented element-wise (a sync stamp upgrades an attestation in place rather than
@@ -1035,8 +1035,9 @@ Deferrals are not indefinite. Among the items above, those whose defense rests o
 currently unreachable" are repaid as the **entry conditions** of the milestone that makes that state reachable.
 
 The point of this ledger is that an entry condition comes due **when the state becomes reachable, not when it becomes
-convenient**. One condition below is now overdue: M4 shipped without it. It is recorded as debt, not silently
-re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid - entry 3 below.)
+convenient**. M4 shipped without three of its entry conditions, and they are recorded below as debt, not
+silently re-scheduled. None is overdue now: entries 1 and 3 are repaid, and what remains of entry 2 is
+Phase 5's.
 
 **Repaid [o]**
 - Reprojection (`reproject`) is implemented, and `all_observations` was added to `KnowledgeStore` as its prerequisite -
@@ -1061,10 +1062,13 @@ re-scheduled. (It was two until the cross-adapter `traverse` parity was repaid -
   authorization (Principle 17 at the sync boundary).
 
 **Overdue [x] - declared as M4 entry conditions, but M4 Phases 0-4 shipped without them**
-1. **At least one provenance is still not enforced at the schema level.** It remains a guarantee of engine
-   construction. M4 opened exactly the predicted bypass: `apply` builds an `Observation` from wire events. In practice
-   `check_event` rejects an unstamped attestation, so a zero-provenance observation cannot currently land - but the
-   type still permits one, which is the situation this condition was written to end (Principle 2).
+1. **At least one provenance, enforced at the schema level** - REPAID. It was a guarantee of engine
+   construction only, and M4 opened exactly the predicted bypass: `apply` builds an `Observation` from wire
+   events. The type still permits an empty list, so the shape is refused where an observation enters:
+   `check_well_formed` (the ingest check `apply` runs, which used to pass an empty list vacuously) and
+   every store adapter's `add_observation`, before anything is written (Principle 2; guarded by
+   `p2_an_observation_without_an_attestation_is_refused_at_ingest` and the port conformance case
+   `an_unattested_observation_is_refused`).
 2. **The receiving node does not re-evaluate `trust_tier`.** PARTIALLY REPAID (M3a, read path): every
    read surface now consumes the receiver-evaluated **effective tier** - a synced claim caps at
    HostSigned regardless of what it self-declares, and the representative-tier max-over-claims is

@@ -432,6 +432,7 @@ fn entity_workspace(e: &Entity) -> String {
 
 impl AssertionStore for RedbStore {
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
+        obs.check_attested().map_err(StoreError::Backend)?;
         // Read-absorb-write: a re-arrival at the same content address unions attestations and
         // lineage rather than replacing the row (Principle 3). Reading inside the write transaction
         // is what makes it atomic - redb admits one writer at a time, so no second observe can land

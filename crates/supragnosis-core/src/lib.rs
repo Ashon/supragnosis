@@ -621,6 +621,19 @@ impl Observation {
         self.provenance.first().map(|p| p.workspace.as_str()).unwrap_or("")
     }
 
+    /// Principle 2: knowledge without provenance cannot exist. The constructors take one attestation
+    /// by value, but the type is a list and a literal can leave it empty, so this is checked where
+    /// an observation enters - by [`Observation::check_well_formed`] at ingest and by every store
+    /// adapter's `add_observation` - rather than left to how the value happened to be built.
+    pub fn check_attested(&self) -> Result<(), String> {
+        if self.provenance.is_empty() {
+            return Err("the observation carries no attestation - knowledge without provenance \
+                        cannot exist (Principle 2)"
+                .into());
+        }
+        Ok(())
+    }
+
     /// Well-formedness of a reconstructed observation - the ingest gate every surface must apply before
     /// the permanent, append-only log accepts it (Principle 1: well-formedness only, never content
     /// censorship; Principle 2: the confidence range is schema-enforced at ingest). A signature proves
@@ -629,6 +642,7 @@ impl Observation {
     /// assertion) would contaminate the log even though the local observe path refuses the same shape.
     /// This checks structure only - notation is preserved verbatim and normalization stays the projection's job.
     pub fn check_well_formed(&self) -> Result<(), String> {
+        self.check_attested()?;
         for p in &self.provenance {
             if let Some(c) = p.confidence {
                 // `contains` is false for NaN too, so a non-finite confidence is caught here.
@@ -1157,7 +1171,8 @@ pub trait AssertionStore: Send + Sync {
     /// same store transaction that writes the row records it in the owed-projection ledger, so the
     /// append and the record that its projection is still owed commit together or not at all. The
     /// adapter does it rather than the caller because the sync crate appends through this handle and
-    /// never sees the engine that would otherwise have to remember.
+    /// never sees the engine that would otherwise have to remember. An observation with no
+    /// attestation is refused before anything is written ([`Observation::check_attested`]).
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError>;
     /// Restores an observation by id from the observation log - the back-reference path for search hits / derivation
     /// lineage (Principle 2/14: whoever knows the id can reach the entity and its provenance) and the reference read for

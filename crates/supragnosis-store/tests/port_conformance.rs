@@ -281,6 +281,22 @@ fn reobservation_absorbs_attestations_and_lineage() {
     });
 }
 
+/// Principle 2 at the port: an observation with no attestation is refused, and refused before
+/// anything is written - no row, and no owed-projection entry for a workspace it cannot even name.
+/// The constructors never build one, but a literal can, and the port is the last door every writer
+/// passes through.
+#[test]
+fn an_unattested_observation_is_refused() {
+    for_each_adapter(|store| {
+        let mut unattested = obs("a claim nobody attested");
+        unattested.provenance.clear();
+        let id = unattested.id.clone();
+        store.add_observation(unattested).expect_err("no attestation, no row");
+        assert!(store.get_observation(&id).expect("get").is_none(), "nothing was written");
+        assert!(store.owed_projections().expect("ledger").is_empty(), "and nothing is owed");
+    });
+}
+
 /// crash-recovery.md K1/K2 as the port states them: an append owes its projection until the engine
 /// clears it, and nothing but a clear removes the debt. The atomicity half of K1 (row and entry in
 /// one transaction) is structural in each adapter; what every adapter must show here is that the
