@@ -82,11 +82,11 @@ enum Cmd {
     /// Show this node's federation identity (node id + public key); --hash-token hashes a bearer token for an allowlist entry
     Identity(IdentityArgs),
     /// One-shot federation sync round against the configured servers (requires supragnosis.toml; stop the daemon first - the store is single-process)
-    Sync(SyncArgs),
+    Sync(WorkspaceArgs),
     /// Re-materialize a workspace's entity/relation projection from the observation log (HLC-ordered replay; stop the daemon first)
-    Reproject(SyncArgs),
+    Reproject(WorkspaceArgs),
     /// Migrate legacy-id observations (pre-0.1.x content-address eras) to the current formula so they can sync (stop the daemon first)
-    Migrate(SyncArgs),
+    Migrate(WorkspaceArgs),
     /// Re-create a workspace's knowledge under another name, provenance intact (stop the daemon first)
     RekeyWorkspace(RekeyArgs),
 }
@@ -202,9 +202,10 @@ struct IdentityArgs {
     hash_token: Option<String>,
 }
 
+/// What `sync`, `reproject` and `migrate` take: the workspace each acts on.
 #[derive(Args, Clone, Default)]
-struct SyncArgs {
-    /// Workspace to sync (default: the node default workspace).
+struct WorkspaceArgs {
+    /// Workspace to act on (default: the node default workspace).
     #[arg(long)]
     workspace: Option<String>,
 }
@@ -1100,7 +1101,7 @@ fn identity_cmd(a: IdentityArgs) -> Result<()> {
 /// `supragnosis migrate` - one-shot legacy-id migration (docs/federation.md: a stored id that
 /// predates the current content-address formula cannot verify remotely; the row is re-created under
 /// the current id with lineage back to the legacy row). Re-materializes afterwards.
-fn migrate_cmd(a: SyncArgs) -> Result<()> {
+fn migrate_cmd(a: WorkspaceArgs) -> Result<()> {
     init_tracing();
     let cfg = resolve(RunArgs::default(), false);
     let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
@@ -1170,7 +1171,7 @@ fn rekey_workspace_cmd(a: RekeyArgs) -> Result<()> {
 /// `supragnosis reproject` - one-shot re-materialization (HLC-ordered replay, Prop C). For a node
 /// whose log advanced without projection (e.g. a hub that received pushes before the reproject hook
 /// existed). The store is single-process: stop the daemon first.
-fn reproject_cmd(a: SyncArgs) -> Result<()> {
+fn reproject_cmd(a: WorkspaceArgs) -> Result<()> {
     init_tracing();
     let cfg = resolve(RunArgs::default(), false);
     let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
@@ -1189,7 +1190,7 @@ fn reproject_cmd(a: SyncArgs) -> Result<()> {
 /// `supragnosis sync` - one full sync round (push surplus, pull deficit, re-materialize) against
 /// every configured server. Requires supragnosis.toml with [sync] servers + auth_token. The store
 /// is single-process (RocksDB lock): with a running daemon, use the sync_* MCP tools instead.
-fn sync_cmd(a: SyncArgs) -> Result<()> {
+fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     init_tracing();
     let cfg = resolve(RunArgs::default(), false);
     let fc = fed::load()?.ok_or_else(|| {
