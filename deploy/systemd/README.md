@@ -24,6 +24,25 @@ journalctl --user -u supragnosis -f
 
 Check `loginctl show-user "$USER" | grep Linger` first - it may already be on.
 
+Without a checkout - the binary came from the install script or Homebrew - fetch the unit from the
+release you installed, so the two match:
+
+```sh
+v=X.Y.Z    # `supragnosis --version`
+curl -fsSL -o ~/.config/systemd/user/supragnosis.service \
+  "https://raw.githubusercontent.com/Ashon/supragnosis/v$v/deploy/systemd/supragnosis.service"
+```
+
+The unit runs `~/.local/bin/supragnosis`, which is where the install script puts it. Homebrew on
+Linux puts it under its own prefix, so point the unit there with `systemctl --user edit
+supragnosis`; the empty line clears the shipped command before the new one replaces it:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/home/linuxbrew/.linuxbrew/bin/supragnosis serve --http 127.0.0.1:7373 --viz %h/.supragnosis/viz.sock
+```
+
 ## Getting the binary
 
 Every release ships a Linux tarball for `x86_64-unknown-linux-gnu` and one for
