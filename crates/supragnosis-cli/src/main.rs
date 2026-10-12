@@ -3539,34 +3539,49 @@ mod fed {
             .and_then(|a| a.as_array_of_tables_mut())
             .ok_or_else(|| anyhow::anyhow!("no [[server.allowlist]] in {}", path.display()))?;
 
-        let entry = entries
+        // Every entry for the peer, not the first: a rotated token leaves two, each admitted on
+        // its own bearer, and narrowing one would leave the other reading the old grant.
+        let mut matching: Vec<&mut toml_edit::Table> = entries
             .iter_mut()
-            .find(|t| t.get("node_id").and_then(|v| v.as_str()) == Some(node_id))
-            .ok_or_else(|| anyhow::anyhow!("no allowlist entry for node_id {node_id}"))?;
-
-        let current: Vec<String> = entry
-            .get("shared_workspaces")
-            .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-            .unwrap_or_default();
-
-        let widened: Vec<&String> = keep.iter().filter(|w| !current.contains(w)).collect();
+            .filter(|t| t.get("node_id").and_then(|v| v.as_str()) == Some(node_id))
+            .collect();
+        if matching.is_empty() {
+            anyhow::bail!("no allowlist entry for node_id {node_id}");
+        }
+        let shared = |t: &toml_edit::Table| -> Vec<String> {
+            t.get("shared_workspaces")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default()
+        };
+        let current: Vec<Vec<String>> = matching.iter().map(|t| shared(t)).collect();
+        let union: Vec<&String> = current.iter().flatten().collect();
+        let widened: Vec<&String> = keep.iter().filter(|w| !union.contains(w)).collect();
         if !widened.is_empty() {
             anyhow::bail!(
                 "refusing to widen: {node_id} does not currently share {widened:?} (it shares \
-                 {current:?}). This surface only narrows - grant a workspace by editing {}",
+                 {union:?}). This surface only narrows - grant a workspace by editing {}",
                 path.display()
             );
         }
 
-        let mut arr = toml_edit::Array::new();
-        for w in keep {
-            arr.push(w.as_str());
+        // Each entry keeps what it already had of `keep`, so none is widened by another's grant.
+        let mut now: Vec<String> = Vec::new();
+        for (entry, had) in matching.iter_mut().zip(&current) {
+            let mut arr = toml_edit::Array::new();
+            for w in keep.iter().filter(|w| had.contains(w)) {
+                arr.push(w.as_str());
+                if !now.contains(w) {
+                    now.push(w.clone());
+                }
+            }
+            entry["shared_workspaces"] = toml_edit::value(arr);
         }
-        entry["shared_workspaces"] = toml_edit::value(arr);
-        std::fs::write(&path, doc.to_string())
+        // Through a temp file and a rename: the file holds the node's sync credentials, and a
+        // reader - the daemon re-reads it right after this - must never see half of it.
+        crate::connect::write_replacing(&path, &doc.to_string())
             .with_context(|| format!("writing {}", path.display()))?;
-        Ok(keep.to_vec())
+        Ok(now)
     }
 
     /// Loads (or generates exactly once) the node keypair at ~/.supragnosis/node.key - 32 raw
@@ -3734,7 +3749,7 @@ mod fed {
             );
         }
 
-        /// Narrowing rewrites only the one array it was asked to change, and refuses to widen.
+        /// Narrowing rewrites only the peer's arrays - every one of them - and refuses to widen.
         ///
         /// Comment preservation is not cosmetic here. `supragnosis.toml` is a hand-maintained
         /// declaration - the hub config in the author's own deployment carries paragraphs explaining
@@ -3762,6 +3777,13 @@ node_id = "peer-a"
 public_key_hex = "aa"
 bearer_hash = "hh"
 shared_workspaces = ["alpha", "beta", "gamma"]
+
+# the same peer, after a token rotation left its old entry in place
+[[server.allowlist]]
+node_id = "peer-a"
+public_key_hex = "aa"
+bearer_hash = "h2"
+shared_workspaces = ["alpha", "gamma"]
 "#;
             std::fs::write(&path, original).expect("write fixture");
             let prev = std::env::var("SUPRAGNOSIS_CONFIG").ok();
@@ -3777,13 +3799,17 @@ shared_workspaces = ["alpha", "beta", "gamma"]
                 "a refused request must not touch the file"
             );
 
-            // A subset is applied.
-            let kept = narrow_shared_workspaces("peer-a", &["alpha".into()]).expect("narrow");
-            assert_eq!(kept, vec!["alpha".to_string()]);
+            // A subset is applied to every entry for the peer: each bearer is admitted on its
+            // own, so one left wide would still read what the console says was taken away.
+            let kept = narrow_shared_workspaces("peer-a", &["alpha".into(), "beta".into()])
+                .expect("narrow");
+            assert_eq!(kept, vec!["alpha".to_string(), "beta".to_string()]);
             let after = std::fs::read_to_string(&path).expect("read");
             assert!(
-                after.contains(r#"shared_workspaces = ["alpha"]"#),
-                "the array narrowed: {after}"
+                after.contains(r#"shared_workspaces = ["alpha", "beta"]"#)
+                    && after.contains(r#"shared_workspaces = ["alpha"]"#)
+                    && !after.contains("gamma"),
+                "both entries narrowed, neither widened by the other's grant: {after}"
             );
             assert!(
                 after.contains("# supragnosis hub - explains itself")
@@ -3799,7 +3825,7 @@ shared_workspaces = ["alpha", "beta", "gamma"]
             // Emptying is a legitimate narrowing: admitted, but may read nothing.
             narrow_shared_workspaces("peer-a", &[]).expect("empty is a narrowing");
             let after = std::fs::read_to_string(&path).expect("read");
-            assert!(after.contains("shared_workspaces = []"), "{after}");
+            assert_eq!(after.matches("shared_workspaces = []").count(), 2, "{after}");
 
             // An unknown peer is an error, not a silent no-op.
             assert!(narrow_shared_workspaces("nobody", &[]).is_err());
