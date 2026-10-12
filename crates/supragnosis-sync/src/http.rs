@@ -1333,8 +1333,29 @@ mod tests {
         );
     }
 
-    /// Spawns the sync API on an ephemeral loopback port (plain HTTP - the local trust surface;
-    /// TLS material is exercised in production paths, the F10 guard below pins the policy).
+    /// A self-signed certificate for localhost, written to a fresh temp dir. Marked as a CA, as
+    /// `openssl req -x509` does by default - the shape a self-signed hub's certificate usually has,
+    /// and the one a chain-only verifier refuses as a server's own.
+    fn minted_tls() -> (rcgen::CertifiedKey<rcgen::KeyPair>, TlsPaths) {
+        let mut params =
+            rcgen::CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()])
+                .expect("params");
+        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let signing_key = rcgen::KeyPair::generate().expect("key");
+        let cert = params.self_signed(&signing_key).expect("mint a self-signed certificate");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("supragnosis-tls-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tls = TlsPaths { cert_pem: dir.join("cert.pem"), key_pem: dir.join("key.pem") };
+        std::fs::write(&tls.cert_pem, cert.pem()).unwrap();
+        std::fs::write(&tls.key_pem, signing_key.serialize_pem()).unwrap();
+        (rcgen::CertifiedKey { cert, signing_key }, tls)
+    }
+
     /// F10's "only with TLS enabled", driven end to end rather than read off a flag.
     ///
     /// `bind_guard_enforces_f10` proves the refusal: a non-loopback bind with no TLS material does
@@ -1347,27 +1368,8 @@ mod tests {
     /// branch is the same one a non-loopback bind takes: `serve` matches on `tls`, not on the address.
     #[tokio::test]
     async fn tls_listener_serves_https_and_refuses_plaintext() {
-        // Marked as a CA, as `openssl req -x509` does by default - the shape a self-signed hub's
-        // certificate usually has, and the one a chain-only verifier refuses as a server's own.
-        let minted = {
-            let mut params =
-                rcgen::CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()])
-                    .expect("params");
-            params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-            let signing_key = rcgen::KeyPair::generate().expect("key");
-            let cert = params.self_signed(&signing_key).expect("mint a self-signed certificate");
-            rcgen::CertifiedKey { cert, signing_key }
-        };
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("supragnosis-tls-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let tls = TlsPaths { cert_pem: dir.join("cert.pem"), key_pem: dir.join("key.pem") };
-        std::fs::write(&tls.cert_pem, minted.cert.pem()).unwrap();
-        std::fs::write(&tls.key_pem, minted.signing_key.serialize_pem()).unwrap();
+        let (minted, tls) = minted_tls();
+        let dir = tls.cert_pem.parent().expect("the temp dir").to_path_buf();
 
         let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
         let spoke = SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]));
@@ -1437,6 +1439,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Spawns the sync API on an ephemeral loopback port (plain HTTP - the local trust surface;
+    /// TLS material is exercised in production paths, the F10 guard below pins the policy).
     async fn spawn_server(state: Arc<ServerState>) -> SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -1457,6 +1461,43 @@ mod tests {
             "non-loopback with empty allowlist refused"
         );
         assert!(validate_bind(&pub_addr, true, 1).is_ok());
+    }
+
+    /// F10 / remote-server.md R1: a hub may admit principals and no node, and the bind rule counts
+    /// both. `bind_guard_enforces_f10` drives `validate_bind` with a count; this drives `serve`,
+    /// where the count is assembled (the allowlist plus the agent surface's principals), on an
+    /// address off loopback. It is TEST-NET-1, assigned to no machine, so passing the guard shows
+    /// as failing at the bind itself and nothing listens on a public address in a test.
+    #[tokio::test]
+    async fn a_principals_only_hub_passes_the_bind_guard() {
+        let (_minted, tls) = minted_tls();
+        let dir = tls.cert_pem.parent().expect("the temp dir").to_path_buf();
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let off_loopback: SocketAddr = "192.0.2.1:7420".parse().unwrap();
+        let start = |principals: usize| {
+            let no_nodes = PeerDirectory::new(vec![], hub.node_id(), &hub.public_key_hex());
+            let extra = ExtraSurface { router: Router::new(), admitted: principals };
+            let hooks = Hooks { extra: Some(extra), ..Hooks::default() };
+            serve(
+                store.clone(),
+                hub.clone(),
+                off_loopback,
+                Some(tls.clone()),
+                no_nodes.into(),
+                hooks,
+            )
+        };
+        assert!(
+            matches!(start(0).await, Err(TransportError::Bind { .. })),
+            "no node and no principal: nobody is admitted, so the listener does not start"
+        );
+        let one_principal = start(1).await;
+        assert!(
+            matches!(one_principal, Err(TransportError::Io(_))),
+            "a principal is someone admitted - past the guard, refused only by the OS: {one_principal:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// `ping` answers with the CALLER's grants, never the host's inventory.
