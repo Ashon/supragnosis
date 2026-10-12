@@ -1658,11 +1658,7 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
         c("a narrowed sync_push or sync_pull names the hosts it skipped as not-admitted",
           Evidence::Scenario(&["a_narrowed_round_names_the_hosts_it_skipped"])),
         c("a narrowed federated search names the hosts it skipped",
-          Evidence::Deferred(
-            "the search fan-out consults the same `route` and attaches `skipped`, but the in-process \
-             case drives only sync_push and sync_pull. Revisit when the federated search fan-out next changes - add search_knowledge \
-             scope=remote to a_narrowed_round_names_the_hosts_it_skipped",
-          )),
+          Evidence::Scenario(&["a_narrowed_round_names_the_hosts_it_skipped"])),
     ]),
     (11, &[c(
         "a host is dropped only on an explicit refusal; unknown is consulted",
