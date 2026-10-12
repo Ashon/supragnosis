@@ -144,6 +144,12 @@ does not hold" - so it is a prerequisite of, not an addition to, the proposal wo
   : 0`.
 - On receiving a remote event with stamp `r`: `wall = max(prev.wall, r.wall, now_millis()); counter =
   1 + max(prev.counter-if-equal, r.counter-if-equal)` (standard HLC merge).
+- **Built differently.** A stamp is made at export, not at authoring, and carries the attestation's
+  authoring time: `wall = observed_at`, with a counter for same-wall stamps of one pass
+  (sync-correctness.md Section 3). No node clock merges what it receives, so the two rules above are
+  core operations (`Hlc::tick`, `Hlc::merge`) that no stamp uses. Every node still orders one log the
+  same way, but an event authored after a received stamp orders after it only as far as the wall
+  clocks agree - the causal update I11 asks for is owed.
 - Folds that are currently ordered by log insertion order switch to ordering by HLC (F8), so every node
   computes the same graph regardless of the order events arrived (P16).
 - **HLC does not replace `observed_at`** (P4). `observed_at` stays the human-facing transaction time
