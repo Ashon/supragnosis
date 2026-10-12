@@ -1310,7 +1310,9 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
         Some(argv) => run_client_cli(client, &env, &argv)?,
         None => {
             let (path, section) = client.config(&env);
-            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let text = connect::read_config(&path).with_context(|| {
+                format!("{} could not be read - not touching it", path.display())
+            })?;
             let edited =
                 connect::upsert(&text, section, connect::NAME, &connect::bridge_entry(&program))
                     .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
@@ -1340,7 +1342,9 @@ fn connect_remove(client: connect::Client, env: &connect::Env) -> Result<()> {
         Some(argv) => run_client_cli(client, env, &argv),
         None => {
             let (path, section) = client.config(env);
-            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let text = connect::read_config(&path).with_context(|| {
+                format!("{} could not be read - not touching it", path.display())
+            })?;
             let Some(edited) = connect::remove(&text, section, connect::NAME)
                 .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?
             else {
