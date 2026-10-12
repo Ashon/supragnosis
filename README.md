@@ -124,7 +124,8 @@ Watching it while an agent works is the part that is hard to convey in text:
 13 MCP tools, each one recurring intent:
 
 - `observe` - free text plus optional structured assertions. No schema required up front.
-- `search_knowledge` - hybrid keyword and semantic retrieval, labelled with the mode it used.
+- `search_knowledge` - keyword retrieval (every term, any order), plus semantic in a fastembed
+  build, labelled with the mode it used.
 - `get_entity`, `traverse` - exact lookup and bounded graph walks.
 - `workspace_map` - co-occurrence hyperedges: what tends to get said together.
 - `define_type` - promote a pattern into the workspace glossary.

@@ -1,4 +1,4 @@
-# supragnosis server/CLI formula (prebuilt release binaries; keyword + hashing search -
+# supragnosis server/CLI formula (prebuilt release binaries; keyword search only -
 # build from source with --features fastembed for local semantic search).
 # The tap's Formula/supragnosis-server.rb is rendered from this template by update-tap.sh on every
 # release (version and sha256 filled in), so edit it here, never in the tap. Installs the plain

@@ -8,7 +8,7 @@
 #   SUPRAGNOSIS_VERSION  tag to install (default: latest)
 #   BIN_DIR              install path (default: ~/.local/bin)
 #
-# The prebuilt is the default build (keyword + hashing search). If you need local ONNX
+# The prebuilt is the default build (keyword search only). If you need local ONNX
 # semantic search, build from source with `cargo build --release --features fastembed`.
 set -eu
 
@@ -41,7 +41,7 @@ Examples:
   sh scripts/install.sh --version v0.1.0
   BIN_DIR=/usr/local/bin sh scripts/install.sh
 
-Note: the prebuilt uses keyword + hashing search. For local ONNX semantic search, build from source with
+Note: the prebuilt uses keyword search only. For local ONNX semantic search, build from source with
   cargo build --release --features fastembed.
 USAGE
 }
@@ -150,6 +150,6 @@ ${daemon_hint}
        "${BIN_DIR}/supragnosis" connect claude-code
        # or claude-desktop, cursor, vscode, codex, gemini - \`supragnosis connect\` lists them
 
-  - Search: the prebuilt uses keyword/hashing. For semantic search, build from source with --features fastembed.
+  - Search: the prebuilt uses keyword search only. For semantic search, build from source with --features fastembed.
   - Help: sh install.sh --help   |   Docs/issues: https://github.com/${REPO}
 EOF

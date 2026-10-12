@@ -26,7 +26,7 @@ COPY e2e ./e2e
 # image and CI can disagree about a dependency, which is the kind of difference that only shows up
 # in production.
 #
-# Default features: the prebuilt search path is keyword/hashing. `fastembed` pulls ONNX runtime and
+# Default features: the prebuilt search path is keyword only. `fastembed` pulls ONNX runtime and
 # a model download, which belongs to a deliberate build rather than the default hub image.
 RUN cargo build --release --locked -p supragnosis-cli \
     && strip target/release/supragnosis

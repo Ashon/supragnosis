@@ -171,7 +171,7 @@ the v0.4.3 image was the first thing to notice.
 Runtime is `debian:bookworm-slim`, not Alpine: the binary is dynamically linked against glibc and
 this workspace neither builds nor tests a musl target. The image is around 120MB.
 
-Search is keyword/hashing, as in every prebuilt binary. Semantic search needs `--features fastembed`,
+Search is keyword only, as in every prebuilt binary. Semantic search needs `--features fastembed`,
 which pulls the ONNX runtime and downloads a model - a deliberate build, not the default hub image.
 
 ## Operating
