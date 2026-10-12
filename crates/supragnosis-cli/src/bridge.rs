@@ -158,6 +158,13 @@ async fn relay(bridge: &Bridge, msg: Value, tx: &mpsc::UnboundedSender<String>) 
         bridge.forward(msg).await
     };
     match outcome {
+        // A request is owed an answer. A 200 that carried none - an event stream that closed before
+        // its message - would leave the client waiting on an id nobody will answer.
+        Ok(replies) if is_request && replies.is_empty() => {
+            let id = id.unwrap_or(Value::Null);
+            let why = "the server accepted the request and sent no answer to it - retry it";
+            let _ = tx.send(error_reply(&id, -32000, why));
+        }
         Ok(replies) => {
             for r in replies {
                 let _ = tx.send(r);
@@ -284,7 +291,14 @@ impl Bridge {
                 .get(reqwest::header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|c| c.starts_with("text/event-stream"));
-            let body = resp.text().await.unwrap_or_default();
+            // A body that breaks off (the daemon restarting mid-answer) is a failure to report,
+            // not an empty answer: an empty one carries no reply, and the client would wait forever.
+            let body = match resp.text().await {
+                Ok(body) => body,
+                Err(e) => {
+                    return Err(Failure::Http(status, format!("the answer broke off: {e}")));
+                }
+            };
             return match status {
                 200 if is_sse => Ok((sse_messages(&body), new_session)),
                 200 => Ok((one_line(&body).into_iter().collect(), new_session)),
@@ -524,6 +538,36 @@ mod tests {
         assert_eq!(reply["id"], 0);
         let message = reply["error"]["message"].as_str().expect("an error");
         assert!(message.contains("Start at Login"), "{message}");
+    }
+
+    /// A daemon whose answer breaks off, or carries nothing, still gets the client an answer: an
+    /// error for that id. Before, a body that failed to read became an empty one, an empty one no
+    /// reply at all, and the client waited on the id forever.
+    #[tokio::test]
+    async fn a_request_the_daemon_leaves_unanswered_gets_an_error() {
+        for (response, says) in [
+            (
+                &b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n{\"jsonrpc\""[..],
+                "broke off",
+            ),
+            (&b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 0\r\n\r\n"[..], "no answer"),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let addr = listener.local_addr().expect("addr");
+            tokio::spawn(async move {
+                while let Ok((mut conn, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = tokio::io::AsyncReadExt::read(&mut conn, &mut buf).await;
+                    let _ = conn.write_all(response).await;
+                    // Dropped here: the connection closes with the body short of its length.
+                }
+            });
+            let mut c = Client::start(format!("http://{addr}/mcp"), Duration::from_secs(2), "tok");
+            let reply = c.call(7, "tools/list", serde_json::json!({})).await;
+            assert_eq!(reply["id"], 7, "{reply}");
+            let message = reply["error"]["message"].as_str().expect("an error");
+            assert!(message.contains(says), "{message}");
+        }
     }
 
     /// A token the daemon refuses is reported as such, naming the file it was read from.
