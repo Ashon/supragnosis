@@ -607,7 +607,7 @@ pub struct ReifyInput {
     pub workspace: Option<String>,
     /// The hyperedge to reify (from `workspace_map` / the hypergraph resource).
     pub hyperedge: String,
-    /// Group entity name; defaults to "context: <first member names>".
+    /// Group entity name; defaults to `"context: <first member names>"`.
     pub name: Option<String>,
     /// Group entity type; defaults to "Context".
     pub kind: Option<String>,
@@ -1533,8 +1533,9 @@ impl Engine {
 
     /// Records T-Box type definitions as an observation (Principle 8/11: an explicit define_type act,
     /// scoped to the workspace). It rides the observation log like any other assertion (Principle 1/23:
-    /// no parallel provenance/storage), so the glossary is a deterministic projection ([`types`]) and a
-    /// future proposal gate (Principle 23) can wrap this without rework. Principle 8 is enforced here:
+    /// no parallel provenance/storage), so the glossary is a deterministic projection
+    /// ([`Engine::types`]) and a future proposal gate (Principle 23) can wrap this without rework.
+    /// Principle 8 is enforced here:
     /// a definition with no name or an empty description is rejected before it reaches the permanent log.
     pub fn define_type(&self, input: DefineTypeInput) -> Result<String, ObserveError> {
         reject_reserved_source_ref(input.source_ref.as_deref())?;
@@ -3498,36 +3499,6 @@ impl Engine {
         Ok(count)
     }
 
-    /// Rebuilds the materialized entity/relation projection of a workspace from the observation log,
-    /// replayed in (ordering HLC, id) order - the deterministic re-materialization step after sync
-    /// apply (F1/F3; architecture.md: "orders by HLC, then re-materializes"). Same log -> same replay
-    /// order -> same materialization on every node (P16/F5), unlike observe-time upserts whose
-    /// last-write-wins fields depend on local arrival order. Builds fresh states and upserts them
-    /// (idempotent: a second run writes identical rows); rows with no support in the log are left in
-    /// place - removal is a curation concern, not reprojection's (Principle 3).
-    /// Re-create a workspace's knowledge under another workspace name, provenance intact.
-    ///
-    /// The workspace is part of the content address, so this is not a move and cannot be: a
-    /// re-keyed observation is a NEW observation, and the original stays where it is (Principle 3).
-    /// What makes it a re-key rather than a re-ingest is that **every attestation is copied
-    /// verbatim** - acting host, `on_behalf_of`, `observed_at`, confidence. Pushing the same text
-    /// back through `observe` would restamp all of it with this engine's clock and host, which
-    /// fabricates the two things the log exists to preserve (Principles 2 and 4) and collapses the
-    /// HLC order that last-write-wins fields are decided by. The one field dropped is the sync
-    /// stamp: it is bound to the old content id and signs it, so it cannot follow - and because
-    /// `evaluated_tier` trusts a stamp-less claim at face value, the claimed tier is carried as its
-    /// **pre-strip evaluation** rather than verbatim (a synced claim stays capped at HostSigned;
-    /// P18: dropping the stamp must not raise what the claim evaluates to).
-    ///
-    /// Shaped exactly like `migrate_legacy_ids`, which re-keys across a change of id FORMULA; this
-    /// re-keys across a change of WORKSPACE. Lineage records the origin either way, but the
-    /// live-set door treats the two differently on purpose: a migrated pair shares one workspace
-    /// and folds to one row, while a re-keyed pair spans two and BOTH rows stay live - each
-    /// workspace keeps its own support, and the unscoped view is the union of the scoped ones
-    /// (see [`Engine::observations`]).
-    ///
-    /// Proposal events are left behind deliberately - see [`RekeyReport::skipped_proposal_events`].
-    /// `dry_run` reports what would move and writes nothing.
     /// Projects relations from the log - the edge half of what [`Engine::project_entities`] does for
     /// nodes, and shared by `observe` and `reproject` for the same reason (IR3): if the incremental
     /// write and a fresh replay run different code, they are two answers to one question and the
@@ -3597,6 +3568,29 @@ impl Engine {
         Ok(written)
     }
 
+    /// Re-create a workspace's knowledge under another workspace name, provenance intact.
+    ///
+    /// The workspace is part of the content address, so this is not a move and cannot be: a
+    /// re-keyed observation is a NEW observation, and the original stays where it is (Principle 3).
+    /// What makes it a re-key rather than a re-ingest is that **every attestation is copied
+    /// verbatim** - acting host, `on_behalf_of`, `observed_at`, confidence. Pushing the same text
+    /// back through `observe` would restamp all of it with this engine's clock and host, which
+    /// fabricates the two things the log exists to preserve (Principles 2 and 4) and collapses the
+    /// HLC order that last-write-wins fields are decided by. The one field dropped is the sync
+    /// stamp: it is bound to the old content id and signs it, so it cannot follow - and because
+    /// `evaluated_tier` trusts a stamp-less claim at face value, the claimed tier is carried as its
+    /// **pre-strip evaluation** rather than verbatim (a synced claim stays capped at HostSigned;
+    /// P18: dropping the stamp must not raise what the claim evaluates to).
+    ///
+    /// Shaped exactly like `migrate_legacy_ids`, which re-keys across a change of id FORMULA; this
+    /// re-keys across a change of WORKSPACE. Lineage records the origin either way, but the
+    /// live-set door treats the two differently on purpose: a migrated pair shares one workspace
+    /// and folds to one row, while a re-keyed pair spans two and BOTH rows stay live - each
+    /// workspace keeps its own support, and the unscoped view is the union of the scoped ones
+    /// (see `Engine::observations`).
+    ///
+    /// Proposal events are left behind deliberately - see [`RekeyReport::skipped_proposal_events`].
+    /// `dry_run` reports what would move and writes nothing.
     pub fn rekey_workspace(
         &self,
         from: &str,
@@ -3738,6 +3732,13 @@ impl Engine {
         Ok(out)
     }
 
+    /// Rebuilds the materialized entity/relation projection of a workspace from the observation log,
+    /// replayed in (ordering HLC, id) order - the deterministic re-materialization step after sync
+    /// apply (F1/F3; architecture.md: "orders by HLC, then re-materializes"). Same log -> same replay
+    /// order -> same materialization on every node (P16/F5), unlike observe-time upserts whose
+    /// last-write-wins fields depend on local arrival order. Builds fresh states and upserts them
+    /// (idempotent: a second run writes identical rows); rows with no support in the log are left in
+    /// place - removal is a curation concern, not reprojection's (Principle 3).
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
         // K2: what this reproject repays is what the ledger held BEFORE it read the log. An append
