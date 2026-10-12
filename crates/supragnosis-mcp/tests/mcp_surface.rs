@@ -840,6 +840,82 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
     server.abort();
 }
 
+/// federation.md F11, the half that holds: a sync round never blocks another tool handler. A round
+/// is many requests now - pushes in batches, pulls in pages until the host says there is no more -
+/// so a slow host can keep one `sync_pull` waiting for a long time. While it waits, the same
+/// connection must keep answering: here the host accepts the connection and never replies, and a
+/// `get_entity` sent meanwhile is answered with the pull still pending. (The other half - a round
+/// as a pollable task rather than a call the agent waits on - is the P21 remainder, owed.)
+#[tokio::test]
+async fn a_sync_round_waiting_on_a_host_blocks_no_other_tool() {
+    use std::time::Duration;
+    use supragnosis_core::NodeIdentity;
+    use supragnosis_sync::{ServerLink, SyncNode};
+
+    // A host that takes the connection and never answers it.
+    let silent = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let host = format!("http://{}", silent.local_addr().unwrap());
+    let holder = tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((conn, _)) = silent.accept().await {
+            held.push(conn);
+        }
+    });
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let sync = Arc::new(supragnosis_mcp::SyncContext {
+        node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
+        share_workspaces: vec!["ws".into()],
+        serve_workspaces: Vec::new(),
+        config_notes: Vec::new(),
+        servers: vec![ServerLink { url: host, auth_token: "t".into(), ..Default::default() }],
+        surfaces: Default::default(),
+        origin_keys: Default::default(),
+        peer_registry: None,
+    });
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(engine)
+            .with_sync(sync)
+            .serve(server_io)
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+
+    // Wall-clock, from before the pull is sent: on this single-threaded runtime a handler that
+    // blocked its thread would stall the timer too, so only real elapsed time can show it.
+    let started = std::time::Instant::now();
+    let peer = client.peer().clone();
+    let pull = tokio::spawn(async move {
+        peer.call_tool(
+            CallToolRequestParams::new("sync_pull")
+                .with_arguments(args(json!({"workspace": "ws"}))),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await; // let the pull reach the silent host
+    let answered = client
+        .call_tool(
+            CallToolRequestParams::new("get_entity")
+                .with_arguments(args(json!({"id": "does-not-exist"}))),
+        )
+        .await
+        .expect("get_entity call");
+    assert_eq!(tool_json(&answered)["found"], false);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "another tool is answered while a round waits, not after it: {:?}",
+        started.elapsed()
+    );
+    assert!(!pull.is_finished(), "and the round was still waiting on the host when it was");
+
+    pull.abort();
+    client.cancel().await.ok();
+    server.abort();
+    holder.abort();
+}
+
 /// sync-correctness.md Section 9 (D7): a remote search sends its query only for a workspace this
 /// node shares. For any other workspace no host is asked - the response says why - where it used to
 /// ship the query text to every host regardless of the share list a push already honored.

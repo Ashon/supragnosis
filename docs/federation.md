@@ -760,8 +760,10 @@ input, not nondeterminism - F16).
   pings its hubs on a slow interval for status - the Section 5 `ping`); the server role is started
   alongside `serve`/`start`.
 - MCP tools (administrative): `sync_status`, `sync_pull`, `sync_push`. Specified as P21 pollable
-  tasks; shipped today as ordinary blocking calls - acceptable while a round is one small delta
-  exchange, and recorded as the P21 remainder (architecture.md Section 7).
+  tasks; shipped as ordinary awaited calls. The caller waits out the round, which is many exchanges
+  since rounds batch their pushes and page their pulls, but no other tool waits on it
+  (`a_sync_round_waiting_on_a_host_blocks_no_other_tool`). The pollable task is the P21 remainder
+  (architecture.md Section 7).
 
 ## 10. Phasing
 

@@ -244,12 +244,18 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "tls_listener_serves_https_and_refuses_plaintext",
         ]),
     )]),
-    (11, &[c(
-        "sync is a non-blocking pollable task that never blocks a tool handler",
-        Evidence::Deferred(
-            "the sync_* tools ship as ordinary blocking calls - federation.md Section 9 records this              as the P21 remainder, and store work does offload via spawn_blocking, but no test pins              either half. Revisit when a round grows past one small delta exchange",
-        ),
-    )]),
+    // A round grew past one small delta exchange in 00aae4e (batched pushes, paged pulls), which
+    // was this row's trigger; the two demands it bundles stand apart now.
+    (11, &[
+        c("a sync round never blocks another tool handler",
+          Evidence::Scenario(&["a_sync_round_waiting_on_a_host_blocks_no_other_tool"])),
+        c("sync is a pollable task, not a call the agent waits on",
+          Evidence::Deferred(
+            "M4 remainder - the sync_* tools are ordinary awaited calls, so the caller waits out \
+             the round; MCP Tasks are not exposed (federation.md Section 9, architecture.md \
+             Section 7)",
+          )),
+    ]),
     (12, &[
         c(
             "a transport failure is reported as a failure, never as an empty result",
