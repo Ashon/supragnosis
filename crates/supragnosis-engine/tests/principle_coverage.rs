@@ -3170,9 +3170,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
     (22, "Knowledge as a By-Product", &[
         c("ordinary work induces capture and retrieval without a separate curation chore",
           Evidence::Deferred(
-            "Revisit when the tool descriptions are next revised - the person's side has prompts now (brief, curate, review-proposal), but \
-             nothing yet makes an agent observe and search during its own work unasked, so there is \
-             no agent behavior to assert",
+            "Revisit when a tool description or the server instructions ask an agent to observe \
+             and search during its own work - a wording sweep is not that (b4bef81 renamed recall \
+             to retrieval and asked nothing). The person's side has prompts now (brief, curate, \
+             review-proposal), but nothing yet makes an agent capture or retrieve unasked, so \
+             there is no agent behavior to assert",
         )),
         // docs/prompts.md: curation reaches the person where they already work, as decisions
         // (open proposals, contested points) beside the reading - and the reading is never stored.
