@@ -46,8 +46,8 @@ and mount it out only if you have decided who else may reach it.
 
 ## Federation
 
-The sync API is the only surface allowed to bind non-loopback, and only with TLS **and** a non-empty
-allowlist. The daemon refuses rather than serving in the open, and says which half is missing:
+The sync API is the only surface allowed to bind non-loopback, and only with TLS **and** an admitted
+node or principal. The daemon refuses rather than serving in the open, and says which half is missing:
 
 ```
 Error: refusing to bind 0.0.0.0:7420: TLS is not enabled
@@ -63,11 +63,15 @@ listen = "0.0.0.0:7420"          # inside the container; publish it to the host 
 tls_cert = "/var/lib/supragnosis/tls/cert.pem"
 tls_key  = "/var/lib/supragnosis/tls/key.pem"
 
-[[server.allow]]
-node_id = "..."                  # from `supragnosis identity` on the peer
-public_key = "..."
-share_workspaces = ["..."]
+[[server.allowlist]]
+node_id           = "..."        # `supragnosis identity` on the peer
+public_key_hex    = "..."        # the same command
+bearer_hash       = "..."        # `supragnosis identity --hash-token TOKEN` - the peer presents TOKEN
+shared_workspaces = ["..."]      # what this peer may sync
 ```
+
+Every section refuses a key it does not know, so a typo here stops the daemon with the key named
+rather than starting a hub that admits nobody. deploy/systemd/README.md has the spoke's half.
 
 `0.0.0.0` is the bind address *inside* the container; what peers dial is the host address you map
 `7420` to. Those are different strings and only the second one belongs in a peer's config.
