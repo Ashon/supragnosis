@@ -2615,12 +2615,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         c("a peer's claimed tier is stored verbatim, because the log is audit",
           Evidence::Scenario(&["f13_sync_apply_stores_senders_self_declared_tier_verbatim"])),
         c("at least one attestation, refused at ingest at the schema level",
-          Evidence::Characterized(
-            &["p2_at_least_one_attestation_is_a_constructor_guarantee_not_a_checked_one"],
-            "OVERDUE - declared an M4 entry condition, and M4 Phases 0-4 shipped without it. The \
-             clause holds only because no constructor produces the empty case (architecture.md \
-             Section 14, overdue entry condition 1)",
-        )),
+          Evidence::Scenario(&[
+            "p2_an_observation_without_an_attestation_is_refused_at_ingest",
+            "an_unattested_observation_is_refused",
+          ])),
         // P2's third and fourth Enforcement bullets had no clause (2026-10 closure review).
         c("a query result can carry its provenance: a hit dereferences to its observation, with its \
            attestations and delegation chain",

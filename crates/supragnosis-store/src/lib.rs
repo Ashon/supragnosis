@@ -41,6 +41,7 @@ impl AssertionStore for InMemoryStore {
     }
 
     fn add_observation(&self, obs: Observation) -> Result<(), StoreError> {
+        obs.check_attested().map_err(StoreError::Backend)?;
         // Under the log's write lock, so the row and its ledger entry appear together (K1).
         let mut log = self.observations.write().unwrap();
         self.owed.write().unwrap().insert(obs.id.clone(), obs.workspace().to_string());

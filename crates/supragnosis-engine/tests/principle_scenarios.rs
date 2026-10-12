@@ -1949,18 +1949,14 @@ fn p8_a_type_definition_without_a_description_is_refused_on_both_paths() {
     assert_eq!(types[0].description, "a deployable part");
 }
 
-/// characterization (principles.md P2, architecture.md Section 14 **overdue entry condition 1**):
-/// "every observation carries at least one attestation" is a doc comment on the field and a
-/// guarantee of the constructors - it is NOT checked anywhere. `check_well_formed` loops over
-/// `provenance` to range-check confidence, so an EMPTY list passes it vacuously.
-///
-/// This pins both halves of the ledger's claim: the type permits a zero-provenance observation, and
-/// the reason one cannot currently land is that nothing constructs it that way. That is a
-/// reachability argument, not a guard, which is exactly what the entry condition was written to
-/// end. When it is repaid, this test MUST be rewritten to assert that the empty case is REFUSED.
+/// guard (principles.md P2 "an observation without provenance is rejected at the ingest stage
+/// (schema-level enforcement)"; architecture.md Section 14 entry condition 1): the constructors take
+/// one attestation by value, but `provenance` is a list and a literal can leave it empty. The
+/// ingest check refuses that shape - it used to pass vacuously, since the check only looped over
+/// the list - and the store port refuses it too (`an_unattested_observation_is_refused`), so no
+/// door can persist knowledge without provenance however the value was built.
 #[test]
-fn p2_at_least_one_attestation_is_a_constructor_guarantee_not_a_checked_one() {
-    // The gap: a zero-provenance observation is representable and passes well-formedness.
+fn p2_an_observation_without_an_attestation_is_refused_at_ingest() {
     let unattested = Observation {
         id: "synthetic".into(),
         content: "a claim nobody attested".into(),
@@ -1969,29 +1965,8 @@ fn p2_at_least_one_attestation_is_a_constructor_guarantee_not_a_checked_one() {
         derived_from: vec![],
         embedding: None,
     };
-    assert!(
-        unattested.check_well_formed().is_ok(),
-        "INTERIM: check_well_formed does not require an attestation. If this now fails, overdue \
-         entry condition 1 has been repaid - rewrite this test to assert the refusal (P2)"
-    );
-
-    // Why it is nonetheless unreachable today: every constructor takes one attestation by value, so
-    // the ingest and sync paths cannot produce the empty case. This is the reachability argument the
-    // deferral rests on - if it ever stops holding, the gap above becomes live.
-    let built = Observation::new(
-        "a claim someone attested".into(),
-        Provenance {
-            host: "host-a".into(),
-            on_behalf_of: None,
-            workspace: WS.into(),
-            source_ref: None,
-            observed_at: 100,
-            confidence: None,
-            trust_tier: TrustTier::default(),
-            sync: None,
-        },
-    );
-    assert_eq!(built.provenance.len(), 1, "the constructor is what supplies the guarantee");
+    let err = unattested.check_well_formed().expect_err("no attestation is not well-formed");
+    assert!(err.contains("no attestation"), "{err}");
 }
 
 // --- P23 / P21: the gate surface refuses what it cannot honestly record ------------------------
