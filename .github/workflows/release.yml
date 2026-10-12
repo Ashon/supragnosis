@@ -209,20 +209,31 @@ jobs:
   # registry entry that will not verify.
   #
   # Multi-arch, because a hub is as likely to be an arm64 box as an x86 one, and because an MCP
-  # client on Apple silicon should not emulate.
+  # client on Apple silicon should not emulate. Each architecture builds on a native runner of its
+  # own, as the binaries above do, and is pushed by digest; `image-manifest` then names both digests
+  # under the release's tags. The arm64 half used to build under QEMU on the x86 runner, which held
+  # the release for over an hour.
   image:
-    name: publish container image
+    name: container image (${{ matrix.platform }})
     permissions:
       contents: read
-      packages: write   # push the container image to ghcr.io
+      packages: write   # push the image, by digest, to ghcr.io
     needs: manifest
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux/amd64
+            arch: amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: log in to ghcr
@@ -232,56 +243,110 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Lowercase, because ghcr rejects an uppercase path and the account is `Ashon`. The version
-      # drops the leading v: server.json names `ghcr.io/ashon/supragnosis:0.2.1`, and the tag here
-      # is what that string has to match.
-      - name: derive tags
-        id: tags
+      # Lowercase, because ghcr rejects an uppercase path and the account is `Ashon`.
+      - name: derive the image name
+        id: name
         run: |
           set -euo pipefail
-          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          # A run by hand pushes nothing, but buildx still parses the tag, and a branch name such
-          # as fix/x is not a valid one - so off a tag the version is a fixed placeholder.
-          case "$GITHUB_REF_NAME" in
-            v*) version="${GITHUB_REF_NAME#v}" ;;
-            *) version="dry-run" ;;
-          esac
-          echo "image=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: build and push
+      # Only a tag publishes. workflow_dispatch builds and proves the Dockerfile still works.
+      - name: build, and push by digest
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: deploy/docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          # Only a tag publishes. workflow_dispatch builds and proves the Dockerfile still works.
-          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
-          tags: |
-            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}
-            ${{ steps.tags.outputs.image }}:latest
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: record the digest
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: hand the digest to the manifest job
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # One image, both architectures: a manifest list under the version tag and `latest`, built from
+  # the digests the per-arch jobs pushed. A tag only - a run by hand pushed nothing to name.
+  image-manifest:
+    name: publish container image
+    permissions:
+      contents: read
+      packages: write   # push the manifest list to ghcr.io
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: collect the digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: image-digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: log in to ghcr
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The version drops the leading v: server.json names `ghcr.io/ashon/supragnosis:0.2.1`, and the
+      # tag here is what that string has to match.
+      - name: derive tags
+        id: tags
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: tag both architectures as one image
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(ls | wc -l)" -eq 2 || { echo "expected two digests, found: $(ls)" >&2; exit 1; }
+          # shellcheck disable=SC2046 # one argument per digest file
+          docker buildx imagetools create -t "${IMAGE}:${VERSION}" -t "${IMAGE}:latest" \
+            $(printf "${IMAGE}@sha256:%s " *)
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
 
       # server.json names an exact image tag, so a release whose image and manifest disagree would
       # publish a registry entry pointing at something that does not exist. Checked here rather than
-      # discovered by the first person who tries to install it.
-      #
-      # Tag-guarded like the publish steps, and for the same reason they are: `version` comes from
-      # `${GITHUB_REF_NAME#v}`, which on a workflow_dispatch is the branch name. So this compared
-      # `...:main` against `...:0.3.0` and failed by construction on every dispatch - meaning the
-      # dry-run path this workflow's own header offers ("builds and packages without publishing, so
-      # the pipeline can be exercised without cutting a release") could never come back green, and
-      # the one job it exists to prove - the container build - was the job it reddened. Nothing is
-      # lost by the guard: manifest_consistency.rs holds server.json equal to the workspace version
-      # on every push, and the comparison that genuinely needs a tag still runs on every tag.
+      # discovered by the first person who tries to install it. Tag-only like the job: the version
+      # comes from the tag, and manifest_consistency.rs holds server.json equal to the workspace
+      # version on every push.
       - name: server.json names this image
-        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          VERSION: ${{ steps.tags.outputs.version }}
         run: |
           set -euo pipefail
-          want="${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}"
+          want="${IMAGE}:${VERSION}"
           got=$(python3 -c "import json;print(json.load(open('server.json'))['packages'][0]['identifier'])")
           test "$want" = "$got" || {
             echo "server.json points at $got but this release publishes $want" >&2; exit 1; }
           v=$(python3 -c "import json;print(json.load(open('server.json'))['version'])")
-          test "$v" = "${{ steps.tags.outputs.version }}" || {
+          test "$v" = "$VERSION" || {
             echo "server.json version $v does not match the tag" >&2; exit 1; }
           echo "server.json agrees: $got"
