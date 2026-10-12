@@ -832,45 +832,48 @@ fn p16_search_ties_break_by_id_and_repeat_identically() {
 
 // --- P8 / P3: a description is never erased by omission ----------------------------------------
 
-/// guard (principles.md P8 capture, P3 no destructive overwrite): a re-observation that omits the
-/// description must not erase the one already captured; a supplied kind updates (LWW among
-/// suppliers), an omitted kind leaves the previous one.
+/// guard (principles.md P8 capture, P3 no destructive overwrite; resolution.md Section 2.2): a
+/// re-observation that omits a description must not erase the one already captured, for an entity
+/// and for a relation alike, and a blank description is an omission - agents send `""` for "none".
+/// A supplied kind updates (LWW among suppliers), an omitted kind leaves the previous one.
 #[test]
 fn p8_description_survives_reobservation_without_one() {
     let (_store, engine) = engine();
-    engine
-        .observe(ObserveInput {
-            content: "gizmo is the daemon".into(),
-            workspace: None,
-            source_ref: None,
-            confidence: None,
-            on_behalf_of: None,
-            derived_from: vec![],
-            entities: vec![EntityInput {
-                name: "gizmo".into(),
-                kind: None,
-                description: Some("the background daemon".into()),
-            }],
-            relations: vec![],
-        })
-        .expect("observe 1");
-    // Re-observation: no description, but a kind this time.
-    engine
-        .observe(ObserveInput {
-            content: "gizmo restarted".into(),
-            workspace: None,
-            source_ref: None,
-            confidence: None,
-            on_behalf_of: None,
-            derived_from: vec![],
-            entities: vec![EntityInput {
-                name: "gizmo".into(),
-                kind: Some("Tool".into()),
-                description: None,
-            }],
-            relations: vec![],
-        })
-        .expect("observe 2");
+    let observe =
+        |content: &str, kind: Option<&str>, entity_d: Option<&str>, rel_d: Option<&str>| {
+            engine
+                .observe(ObserveInput {
+                    content: content.into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: "gizmo".into(),
+                        kind: kind.map(Into::into),
+                        description: entity_d.map(Into::into),
+                    }],
+                    relations: vec![RelationInput {
+                        from: "gizmo".into(),
+                        kind: "depends_on".into(),
+                        to: "kernel".into(),
+                        description: rel_d.map(Into::into),
+                        valid_from: None,
+                        valid_to: None,
+                    }],
+                })
+                .expect("observe");
+        };
+    observe(
+        "gizmo is the daemon",
+        None,
+        Some("the background daemon"),
+        Some("it loads a module"),
+    );
+    observe("gizmo restarted", Some("Tool"), None, None);
+    observe("gizmo restarted again", None, Some(""), Some(""));
+    observe("gizmo restarted once more", None, Some("  "), Some("\n"));
 
     let view = engine
         .get_entity(&Entity::make_id(WS, "gizmo"))
@@ -879,10 +882,17 @@ fn p8_description_survives_reobservation_without_one() {
     assert_eq!(
         view.entity.description.as_deref(),
         Some("the background daemon"),
-        "omission must not erase a captured description"
+        "neither an omission nor a blank may erase a captured entity description"
     );
-    assert_eq!(view.entity.kind, "Tool", "a supplied kind updates");
-    assert_eq!(view.entity.provenance.len(), 2, "both observations attested (P2/P3)");
+    assert_eq!(view.entity.kind, "Tool", "a supplied kind updates, an omitted one stays");
+    assert_eq!(view.entity.provenance.len(), 4, "every observation attested (P2/P3)");
+    let g = engine.graph(Some(WS)).expect("graph");
+    let edge = g.edges.iter().find(|e| e.kind == "depends_on").expect("the relation");
+    assert_eq!(
+        edge.description.as_deref(),
+        Some("it loads a module"),
+        "nor a captured relation description"
+    );
 }
 
 // --- P5: absence is unknown, not an error ------------------------------------------------------

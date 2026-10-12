@@ -740,10 +740,10 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   storage failure is never an empty result (the MCP layer returns a store-failure object; the viewer
   returns 500 with "NOT an empty graph").
 - Principle 8 (clarity): `define_type` **rejects a type with no description**; entity/relation descriptions
-  are optional at capture and are never erased by a later omission. The type glossary is a deterministic
-  fold over the log, exposed as `supragnosis://workspace/{ws}/types`. Type definitions ride the
-  observation log like any other assertion (Principles 1/23: no parallel storage). Descriptions are
-  content identity (folded into the observation hash - Principle 14).
+  are optional at capture and are never erased by a later omission or a blank. The type glossary
+  is a deterministic fold over the log, exposed as `supragnosis://workspace/{ws}/types`. Type
+  definitions ride the observation log like any other assertion (Principles 1/23: no parallel
+  storage). Descriptions are content identity (folded into the observation hash - Principle 14).
 - Principles 12/20 (minimal encoding bias/hexagonal): `core` has zero IO dependencies and store
   concepts live only in the `store` adapter. This stopped being a claim about a shape and became one
   that was exercised end to end: a third adapter was added, and then the original backend was
