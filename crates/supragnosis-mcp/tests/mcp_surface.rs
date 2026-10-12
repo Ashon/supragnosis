@@ -253,6 +253,19 @@ async fn mcp_protocol_surface_end_to_end() {
         Some(false),
         "absence must be found:false, not an error (to prevent LLM misreading): {unknown}"
     );
+    let res = client
+        .call_tool(
+            CallToolRequestParams::new("get_proposal")
+                .with_arguments(args(json!({"id": "does-not-exist"}))),
+        )
+        .await
+        .expect("get_proposal unknown call");
+    let unknown = tool_json(&res);
+    assert_eq!(
+        (unknown["found"].as_bool(), unknown.get("error")),
+        (Some(false), None),
+        "a proposal's absence is answered the same way as an entity's: {unknown}"
+    );
 
     // --- 7) workspace_map: survey co-occurrence clusters (Principle 11 second-order structure) ---
     // supragnosis + rmcp are asserted together in a single observation -> one size-2 cluster, exposed by name.
