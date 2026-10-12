@@ -146,8 +146,8 @@ services:
   # systemd-socket-proxyd plus nginx; a sandbox does it with socat and one less moving part.
   #
   # These proxies expose the viewer's WRITE endpoints (/api/review, /api/resolve, /api/reify,
-  # /api/propose_merge) with no authentication in front of them, which is the reason the real hub
-  # puts nginx there to return 403. Acceptable here ONLY because the published port is bound to
+  # /api/propose_merge, /api/propose_split, POST /api/peer/share) with no authentication in front
+  # of them, which is the reason a hub with such a proxy puts nginx there to return 403. Acceptable here ONLY because the published port is bound to
   # 127.0.0.1: reachable by this machine's accounts, never by the network. Do not change the bind.
   hub-viewer:
     image: alpine/socat:latest
