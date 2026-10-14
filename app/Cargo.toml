@@ -11,7 +11,7 @@
 #
 # The one thing membership did give for free is version sync, and it is now manual: the version
 # below has to move with the workspace version above in the same `release:` commit, because the
-# release ships them as one number (Supragnosis-vX.Y.Z-macos-universal.app.zip).
+# release ships them as one number (Supragnosis-vX.Y.Z-macos-arm64.app.zip).
 
 [workspace]
 members = ["."]

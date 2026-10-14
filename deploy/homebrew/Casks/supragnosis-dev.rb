@@ -9,12 +9,13 @@ cask "supragnosis-dev" do
   version :latest
   sha256 :no_check
 
-  url "https://github.com/Ashon/supragnosis/releases/download/dev/Supragnosis-dev-macos-universal.app.zip"
+  url "https://github.com/Ashon/supragnosis/releases/download/dev/Supragnosis-dev-macos-arm64.app.zip"
   name "Supragnosis (dev channel)"
   desc "Desktop shell for the supragnosis knowledge daemon - rolling dev build"
   homepage "https://supragnosis.dev/"
 
   conflicts_with cask: "supragnosis"
+  depends_on arch: :arm64 # Apple silicon only, as the stable cask
   depends_on formula: "supragnosis-server"
   depends_on :macos
 

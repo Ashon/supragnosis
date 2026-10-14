@@ -20,7 +20,7 @@ usage() {
   cat <<'USAGE'
 supragnosis install script
 
-Detects the platform (macOS arm64/x86_64, Linux x86_64/aarch64) and installs the GitHub Release binary
+Detects the platform (macOS on Apple silicon, Linux x86_64/aarch64) and installs the GitHub Release binary
 (with sha256 checksum verification). The default install path is ~/.local/bin.
 
 Usage:
@@ -60,7 +60,17 @@ os="$(uname -s)"
 arch="$(uname -m)"
 case "${os}-${arch}" in
   Darwin-arm64)   target="aarch64-apple-darwin" ;;
-  Darwin-x86_64)  target="x86_64-apple-darwin" ;;
+  Darwin-x86_64)
+    # A shell running under Rosetta on Apple silicon reports x86_64 as well, and the arm64 binary is
+    # the one that machine runs. A real Intel Mac has no release binary to install.
+    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+      target="aarch64-apple-darwin"
+    else
+      echo "Intel Macs have no prebuilt binary: releases build macOS for Apple silicon only." >&2
+      echo "Install via source build: https://github.com/${REPO} (cargo build --release)" >&2
+      exit 1
+    fi
+    ;;
   Linux-x86_64)   target="x86_64-unknown-linux-gnu" ;;
   Linux-aarch64)  target="aarch64-unknown-linux-gnu" ;;
   *)

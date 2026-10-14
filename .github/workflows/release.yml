@@ -69,10 +69,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14        # Apple Silicon (arm64 runner)
+          # Apple silicon only. Intel Macs have no release binary: they build from source
+          # (deploy/homebrew/README.md).
+          - os: macos-14
             target: aarch64-apple-darwin
-          - os: macos-14        # The Intel binary cross-compiles on the arm64 runner, which drops
-            target: x86_64-apple-darwin   # any dependence on the scarce macos-13 Intel runner.
           # build on the oldest supported glibc (22.04 = 2.35) so the binary runs on
           # 22.04+ - ubuntu-latest(24.04) produced GLIBC_2.38+ binaries that fail on
           # 22.04 servers.
@@ -164,10 +164,9 @@ jobs:
   # proven by reinstalling from it and requiring that Homebrew poured it (deploy/homebrew/bottle.sh,
   # which homebrew.yml also runs on pull requests). macos-14 gives arm64_sonoma, which Homebrew also
   # pours on every later macOS;
-  # ubuntu gives x86_64_linux. There is no Intel macOS runner (the Intel binary is cross-compiled),
-  # so Intel Macs keep the source-build path, and so does arm64 Linux, which this matrix does not
-  # bottle. A bottle that fails to build is left out of the tap, not a reason to hold the release
-  # back.
+  # ubuntu gives x86_64_linux. arm64 Linux, which this matrix does not bottle, keeps the
+  # source-build path. A bottle that fails to build is left out of the tap, not a reason to hold the
+  # release back.
   bottle:
     name: homebrew bottle (${{ matrix.os }})
     permissions:

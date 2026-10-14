@@ -26,14 +26,13 @@ class SupragnosisServer < Formula
   # One release tarball per OS and arch, each named for its target triple. on_arm / on_intel, not
   # `if Hardware::CPU.arm?`: brew resolves them for whichever platform it is asked about, not only
   # the machine it runs on. Linux once had a single url, so arm64 Linux installed the x86_64 binary.
+  # macOS is Apple silicon only: the release builds no Intel Mac binary, so an Intel Mac is refused
+  # with that reason and builds from source instead (deploy/homebrew/README.md).
   on_macos do
+    depends_on arch: :arm64
     on_arm do
       url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-aarch64-apple-darwin.tar.gz"
       sha256 "REPLACE_SHA256_AARCH64_APPLE_DARWIN"
-    end
-    on_intel do
-      url "https://github.com/Ashon/supragnosis/releases/download/v#{version}/supragnosis-v#{version}-x86_64-apple-darwin.tar.gz"
-      sha256 "REPLACE_SHA256_X86_64_APPLE_DARWIN"
     end
   end
 

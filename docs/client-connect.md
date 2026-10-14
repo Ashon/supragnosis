@@ -165,7 +165,7 @@ reverses a recorded decision and brings its own problems:
 - A Homebrew install would then have two copies of the binary, and it must be clear which one runs
   the daemon.
 - The bundled CLI and the formula could be different versions.
-- The universal app grows by the size of a second universal binary.
+- The app grows by the size of a second copy of the binary.
 
 That is a release-pipeline decision with its own trade-offs, so it is left out of this document's
 steps.

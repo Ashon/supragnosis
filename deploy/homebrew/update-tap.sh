@@ -36,10 +36,9 @@ RENDERED=("$FORMULA")
 
 # Fetch every sum before writing anything, so a missing asset leaves the tap as it was.
 mac_arm=$(sha_of "supragnosis-${TAG}-aarch64-apple-darwin.tar.gz")
-mac_x86=$(sha_of "supragnosis-${TAG}-x86_64-apple-darwin.tar.gz")
 lin_arm=$(sha_of "supragnosis-${TAG}-aarch64-unknown-linux-gnu.tar.gz")
 lin_x86=$(sha_of "supragnosis-${TAG}-x86_64-unknown-linux-gnu.tar.gz")
-[ -n "${FORMULA_ONLY:-}" ] || app=$(sha_of "Supragnosis-${TAG}-macos-universal.app.zip")
+[ -n "${FORMULA_ONLY:-}" ] || app=$(sha_of "Supragnosis-${TAG}-macos-arm64.app.zip")
 
 # The dev cask has no version or sum (it tracks a rolling asset), so it is copied as-is.
 mkdir -p "${TAP_DIR}/Formula" "${TAP_DIR}/Casks"
@@ -69,7 +68,6 @@ EOF
 }
 fill "$FORMULA" \
   "REPLACE_SHA256_AARCH64_APPLE_DARWIN=${mac_arm}" \
-  "REPLACE_SHA256_X86_64_APPLE_DARWIN=${mac_x86}" \
   "REPLACE_SHA256_AARCH64_UNKNOWN_LINUX_GNU=${lin_arm}" \
   "REPLACE_SHA256_X86_64_UNKNOWN_LINUX_GNU=${lin_x86}"
 [ -n "${FORMULA_ONLY:-}" ] || fill "$CASK" "REPLACE_SHA256_APP_ZIP=${app}"

@@ -267,12 +267,12 @@ tasks:
     cmds: [cargo build --release --locked --bin supragnosis]
 
   build:app:
-    desc: Bundle the macOS universal .app - the same tauri step the release build uses
+    desc: Bundle the Apple silicon macOS .app - the same tauri step the release build uses
     # The CLI is app/package.json's pinned version (package-lock.json holds its integrity), as in CI.
     dir: app
     cmds:
       - npm ci --no-audit --no-fund
-      - npx --no-install tauri build --target universal-apple-darwin
+      - npx --no-install tauri build --target aarch64-apple-darwin
 
   # --- inspecting a running node ----------------------------------------------------------------
 

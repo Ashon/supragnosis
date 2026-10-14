@@ -6,13 +6,15 @@ tap. Contents:
 
 - `Formula/supragnosis-server.rb` - the server/CLI (the installed binary is still named
   `supragnosis`; only the brew token carries `-server`). Installs the release's per-platform
-  tar.gz as-is. It deliberately has no `service do` block: the always-on daemon has one manager,
+  tar.gz as-is. On macOS that is Apple silicon only: the release builds no Intel Mac binary, so the
+  formula and both casks refuse an Intel Mac (`depends_on arch: :arm64`), which builds from source
+  instead (`cargo build --release --locked --bin supragnosis`). It deliberately has no `service do` block: the always-on daemon has one manager,
   the canonical LaunchAgent that `supragnosis service install` (or the app's Start at Login)
   generates - a brew services job beside it would be a second owner of a single-writer store
   (docs/daemon-lifecycle.md). The formula's caveats say how to install it and how to migrate.
 - `Casks/supragnosis.rb` - the desktop shell. It owns the plain token, so
   `brew install supragnosis` resolves to this cask (no formula shares the name). Installs the
-  release's signed/notarized universal `.app.zip`. The cask depends on the `supragnosis-server`
+  release's signed/notarized Apple silicon `.app.zip`. The cask depends on the `supragnosis-server`
   formula, so the app finds the brew daemon binary on PATH (no bundled sidecar). The app is
   tray-resident, so the cask's `uninstall quit:` quits the old instance on upgrade and reopens it.
 - `Casks/supragnosis-dev.rb` - the rolling dev-channel cask (`version :latest`), copied as-is.
@@ -46,10 +48,7 @@ such check.
     minimum, Homebrew installs its glibc and gcc beside any formula it installs - on ubuntu-22.04
     that was twelve formulae before this bottle poured. The bottle does not change that; it only
     spares the source-build checks.
-  - Intel Macs do not: there is no Intel runner to build on, since the release cross-compiles the
-    Intel binary. They keep the source-build path, so an outdated Command Line Tools still stops the
-    install there (`xcode-select --install`, or Software Update).
-  - arm64 Linux does not either: the bottle job has no arm64 Linux runner. It installs the
+  - arm64 Linux does not: the bottle job has no arm64 Linux runner. It installs the
     release's aarch64 tarball through the source-build path.
 - **Pull requests check it.** `.github/workflows/homebrew.yml` runs `bottle.sh` against the latest
   release whenever this directory changes, and weekly, so a change to the formula or to Homebrew
@@ -59,7 +58,7 @@ such check.
 
 1. Create the tap repo: make `Ashon/homebrew-tap` (public) on GitHub. The first release (or a
    manual run of `update-tap.sh`, below) writes `Formula/` and `Casks/` into it.
-2. Every release from then on carries `Supragnosis-v<ver>-macos-universal.app.zip`.
+2. Every release from then on carries `Supragnosis-v<ver>-macos-arm64.app.zip`.
 
 ## Per release
 
