@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.5.1](docs/releases/v0.5.1.md) | Upgrade, restart, fetch the model once; the daemon embeds what it already holds. |
 | [v0.5.0](docs/releases/v0.5.0.md) | Apple silicon and glibc 2.39+ only; then fetch the model once and reproject existing knowledge. |
 | [v0.4.12](docs/releases/v0.4.12.md) | Upgrade, then restart the daemon once; a console merge raises an agent-merged promotion. |
 | [v0.4.11](docs/releases/v0.4.11.md) | Upgrade, then restart the daemon once; a search finds the words you type, in any order. |
