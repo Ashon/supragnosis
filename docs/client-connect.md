@@ -5,6 +5,7 @@
 > [architecture.md](architecture.md) Section 10 (the local surfaces).
 >
 > Status: **built** (Section 9 steps 1-4). What building it changed is recorded in Section 11.
+> Section 12, capture, is **specified** and not built (Section 9 step 5).
 
 ## 1. Why this exists
 
@@ -179,6 +180,7 @@ steps.
 | **C3** | `connect` never replaces an entry it did not write unless `--replace` is given, and never edits a client file without first copying it aside. A file it cannot parse is refused, not rewritten. |
 | **C4** | Through the bridge a client sees the daemon's surface unchanged: the same tool list, the same results, the same errors. |
 | **C5** | `connect` without a client argument only reads. |
+| **C6** | The capture hook never blocks the agent, never writes to the store itself, and speaks only after a commit that landed or at the start of a session. |
 
 ## 9. Ordering
 
@@ -187,6 +189,8 @@ steps.
 3. **The app's AI Apps submenu.**
 4. **Documents.** README, the curl installer and the landing page show `supragnosis connect` and the
    app, rather than the `--header` command or the store-opening stdio line.
+5. **Capture** (Section 12): `supragnosis hook claude-code`, its registration by `connect`, the
+   listing's `capture` field, the P22 registry row, and the README's first minute.
 
 ## 10. Closure map
 
@@ -197,6 +201,7 @@ steps.
 | Outside principles.md's scope (client configuration) - P24's "the operator's file is theirs", followed by analogy | Section 4 (backup, merge, refuse what does not parse, `--replace` to take over); C3 |
 | Outside principles.md's scope - P5's refusal to collapse states, followed by analogy | Section 4's listing distinguishes not installed, not connected, and connected some other way |
 | daemon-lifecycle.md L1 - one owner | C1: the bridge is never a second writer |
+| P22 - knowledge as a by-product of work | Section 12: a commit asks the agent for the decision behind it, and a session starts knowing what the project's workspace holds; C6 |
 
 Guarded by:
 
@@ -238,3 +243,128 @@ Checked end to end:
 - **VS Code keeps its settings in a different place on Linux** (`~/.config/Code/User`). The table in
   Section 4 gives the macOS path.
 
+## 12. Capture - the decision behind a commit
+
+> Status: **specified**, not built. Principle 22's first clause is deferred in the registry with the
+> reason that nothing makes an agent capture or retrieve unasked. This section is the mechanism that
+> repays it. What building it changes goes into Section 11.
+
+### 12.1 Why
+
+Principle 22 says knowledge is a by-product of work. Today that holds only as far as the prompt
+does: the tool descriptions and the server instructions tell an agent what `observe` is for, and
+whether it calls `observe` during a task depends on the agent and on what the person wrote in their
+instructions. The README's first minute begins with the person saying "remember that ...". A memory
+that has to be asked for is a memory that stays mostly empty, and the registry says so: P22's first
+clause, "ordinary work induces capture and retrieval without a separate curation chore", is
+`Deferred`.
+
+Work has one moment where a decision has just been made and the reasoning is still in the context
+window: the commit. The diff records what changed. The message records some of why. What is in
+neither - what was ruled out, what the change depends on, what the person said in the conversation
+that led to it - is the knowledge this project exists to keep, and it is gone when the session ends.
+The same session, at its start, does not know whether the project it is in has any memory here at
+all: the server instructions are generic, and nothing says "this workspace holds 168 entities".
+
+### 12.2 What it is
+
+One CLI command, `supragnosis hook claude-code`, that Claude Code runs as a hook on two events. It
+reads the event's JSON from stdin and answers on stdout with `hookSpecificOutput.additionalContext`,
+the channel that adds a line to the agent's context without refusing anything. It never answers
+with `decision`.
+
+**After a commit** (`PostToolUse`, tool `Bash`). The hook answers only when all three hold:
+`tool_name` is `Bash`; the command names `git commit`; and the repository at `cwd` has a HEAD whose
+committer time is not more than a minute before the hook started. A commit that failed (nothing
+staged, a rejected message), `git commit --help`, and a HEAD another session made minutes ago all
+leave that false, and the hook says nothing. The answer names the commit and asks the question once:
+
+> Commit 9f41c2e "the bridge opens a new connection for every request" landed in supragnosis
+> (author ashon). If it settled a decision, a constraint or a fact about the project that the diff
+> does not show - why it was done this way, what was ruled out, what it depends on - record it now
+> with `observe`: workspace "supragnosis", on_behalf_of "ashon", source_ref "git:9f41c2e...". If it
+> settled nothing, record nothing.
+
+**At the start of a session** (`SessionStart`, every source: startup, resume, clear, compact). The
+hook asks the local daemon over the viewer socket, with the 800 ms budget `status` already uses,
+whether the repository's workspace holds anything, and says so in one line:
+
+> supragnosis: workspace "supragnosis" holds 168 entities and 274 relations on this node. Search it
+> (`search_knowledge`, `workspace_map`) before assuming what this project has decided; `brief` reads
+> it as a whole.
+
+When the workspace is not known here the line says that the first `observe` will create it. When no
+daemon answers, the hook says nothing: the bridge already says what to do when a tool is called,
+and a session start is not the place to repeat it.
+
+The hook never writes to the store. The agent does, through the bridge, with its own judgment and
+under the tool's own rules (C4): the hook names the moment and the facts of the commit, and the
+agent decides whether there is knowledge in it. It exits 0 whenever it has nothing to say. Input it
+cannot parse, or a `git` it cannot run, goes to stderr with exit 1, which Claude Code shows and
+carries on from: Principle 24's degrade loudly, without refusing the agent's work.
+
+### 12.3 The workspace
+
+The hook names the workspace after the repository's top-level directory
+(`git rev-parse --show-toplevel`), because the project is the unit knowledge is organized by (the
+server instructions say so) and a repository is how a project appears on disk.
+`SUPRAGNOSIS_WORKSPACE` in the hook's environment overrides it. The name is a suggestion in both
+lines: the agent may know better (a monorepo, a fork, a workspace the person named differently), and
+the text says "workspace", not "only this workspace".
+
+### 12.4 Registration
+
+- **`supragnosis connect claude-code` registers the hook beside the bridge**, in
+  `~/.claude/settings.json`: one `PostToolUse` entry with matcher `Bash` and one `SessionStart`
+  entry, each with the single command `<program> hook claude-code`, `<program>` chosen as the bridge's
+  is. `--no-capture` registers the bridge alone. `connect --remove claude-code` removes both. The
+  listing (`connect`, `connect --json`) reports `capture: on | off` beside the entry kind - an added
+  field, so the JSON schema stays at its number - and the app's row says it.
+- **The edit follows C3.** The file is copied aside first; only an entry whose command names
+  `supragnosis` and `hook` is added or removed; every other hook and setting stays as written, in its
+  order. A file that does not parse is refused. A file that does not exist is created holding only
+  the two entries.
+- **On by default** because the person asked for Claude Code to be connected to their memory: the
+  bridge gives the agent the tools, the hook gives it the moment. A flag nobody reads is a default
+  for nobody. The user scope, for the reason `connect` passes `--scope user`: "Claude" means
+  everywhere.
+- **It takes effect in the next session.** Claude Code takes its hooks at startup and asks before
+  running one a settings file gained since, so the next-step line stays "start a new Claude Code
+  session".
+- **Claude Code only, for now.** Codex, Gemini CLI, Cursor and VS Code each have hooks of their own
+  shape or none; the listing shows nothing about capture for them. Adding one is a row in the table
+  of Section 4 and a reader for that client's event, not a second mechanism.
+
+### 12.5 What this is NOT
+
+- **Not an extractor.** A hook that read the diff and wrote observations itself would be a second
+  extractor with no judgment and no provenance beyond "a script" (Principle 19: the probabilistic
+  edge drafts, and here the agent is the edge). The hook puts a question in front of the agent; the
+  agent writes an observation, or nothing.
+- **Not a `Stop` hook.** A nudge at the end of every turn is noise, and a blocked `Stop` interrupts
+  the person. A commit happens once and is the moment; a session starts once.
+- **Not a change to the surface.** No tool, resource or prompt is added (Principle 21). The daemon
+  does not know the hook exists.
+- **Not a transcript reader.** The hook decides from the repository and the daemon, never from the
+  session's transcript file, which is written asynchronously and is the person's.
+
+### 12.6 What the tests assert
+
+The tests are named when they exist (the registry refuses a design document that names a test that
+does not run); what each asserts is fixed here.
+
+- **A commit that landed is answered.** A repository with a fresh commit and a `PostToolUse` input
+  naming `git commit`: the answer carries the id, the subject, the author and the workspace, and no
+  `decision`.
+- **A command that landed no commit is not.** A command that is not `git commit`; a `git commit`
+  with nothing staged; a HEAD older than the budget: no output, exit 0.
+- **A session start says what the workspace holds.** Against a daemon serving a seeded store: the
+  counts; against a workspace it has never seen: the line says the first `observe` creates it; with
+  no socket: no output, exit 0.
+- **`connect` registers the hook beside the bridge and removes both.** A `settings.json` with other
+  hooks keeps them byte for byte around the two entries; `--remove` restores it; `--no-capture`
+  leaves it untouched; a file that does not parse is refused (C3).
+- C6 is registered `Deferred` until then, and the registry's P22 first clause moves from
+  `Deferred` to `Scenario` naming the first and third tests, reworded to what is then true: "a
+  commit the agent made asks it for the decision behind the change, and a session starts knowing
+  what the workspace holds, with the person asking for neither".
