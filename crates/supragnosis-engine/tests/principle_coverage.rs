@@ -564,11 +564,14 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
     (6, &[c(
         "the capture hook never blocks the agent, never writes to the store itself, and speaks only after a \
          commit that landed or at the start of a session",
-        Evidence::Deferred(
-            "client-connect.md Section 12 is specified and not built: there is no `hook` command yet. Revisit when \
-             it lands - its tests (a commit that landed is answered, one that did not is not, a session start \
-             reports the workspace, and no answer carries a decision) take this row to Scenario",
-        ),
+        // hook.rs answers with additionalContext and never a decision; it holds no store handle, only
+        // git and the viewer socket; and both silences are tested.
+        Evidence::Scenario(&[
+            "a_commit_that_landed_asks_for_the_decision_behind_it",
+            "a_command_that_landed_no_commit_gets_no_answer",
+            "a_session_start_says_what_the_workspace_holds",
+            "connect_registers_the_hook_beside_the_bridge_and_removes_both",
+        ]),
     )]),
 ];
 
@@ -2580,6 +2583,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/lifecycle.rs"),
     include_str!("../../supragnosis-cli/src/bridge.rs"),
     include_str!("../../supragnosis-cli/src/connect.rs"),
+    include_str!("../../supragnosis-cli/src/hook.rs"),
     include_str!("../../supragnosis-cli/src/profile.rs"),
     include_str!("../../supragnosis-cli/src/principal.rs"),
     include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
@@ -3195,14 +3199,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["the_tool_list_is_the_pinned_contract"])),
     ]),
     (22, "Knowledge as a By-Product", &[
-        c("ordinary work induces capture and retrieval without a separate curation chore",
-          Evidence::Deferred(
-            "Revisit when a tool description or the server instructions ask an agent to observe \
-             and search during its own work - a wording sweep is not that (b4bef81 renamed recall \
-             to retrieval and asked nothing). The person's side has prompts now (brief, curate, \
-             review-proposal), but nothing yet makes an agent capture or retrieve unasked, so \
-             there is no agent behavior to assert",
-        )),
+        // client-connect.md Section 12: the capture hook. After a commit the agent made, Claude
+        // Code hands it the facts of the commit and the question; at a session's start, what the
+        // workspace holds here. The person asks for neither.
+        c("a commit the agent made asks it for the decision behind the change, and a session starts \
+           knowing what the workspace holds, with the person asking for neither",
+          Evidence::Scenario(&[
+            "a_commit_that_landed_asks_for_the_decision_behind_it",
+            "a_session_start_says_what_the_workspace_holds",
+          ])),
         // docs/prompts.md: curation reaches the person where they already work, as decisions
         // (open proposals, contested points) beside the reading - and the reading is never stored.
         c("curation surfaces as decisions where the person reads, never as a document to maintain",

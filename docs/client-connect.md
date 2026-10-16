@@ -4,8 +4,7 @@
 > one. Companion to [daemon-lifecycle.md](daemon-lifecycle.md) (who runs the daemon) and
 > [architecture.md](architecture.md) Section 10 (the local surfaces).
 >
-> Status: **built** (Section 9 steps 1-4). What building it changed is recorded in Section 11.
-> Section 12, capture, is **specified** and not built (Section 9 step 5).
+> Status: **built** (Section 9 steps 1-5, Section 12 included). What building it changed is recorded in Section 11.
 
 ## 1. Why this exists
 
@@ -105,6 +104,8 @@ One command registers the bridge with a client, using whatever mechanism that cl
   with the same backup.
 - **After connecting**, the command says what the person has to do next: restart Claude Desktop, or
   start a new Claude Code session.
+- **Claude Code also gets the capture hook** (Section 12) unless `--no-capture` is given, and the
+  listing says `capture on` or `off` beside its entry.
 
 | Client | Detected by | Registered through | Lands in |
 |---|---|---|---|
@@ -242,12 +243,26 @@ Checked end to end:
   with a copy of the first edit. Names now count up instead.
 - **VS Code keeps its settings in a different place on Linux** (`~/.config/Code/User`). The table in
   Section 4 gives the macOS path.
+- **The hook decides from HEAD's age, not from the Bash tool's result** (Section 12). A failed
+  commit leaves no mark in the command's text, and the tool response's shape is Claude Code's to
+  change; `git log -1` is the same on every version. `git log --grep commit` names `commit` without
+  committing, and HEAD's age is what tells the two apart.
+- **The groups `connect` writes read `hooks` before `matcher`.** serde_json writes object members
+  in key order; the person's own groups are never re-serialized, which is what C3 asks, so only
+  ours have that order.
+- **Removal takes the array and `hooks` with it when only ours were in them.** Otherwise a settings
+  file `connect` created the key in would keep a stray `"hooks": {}` after `--remove`, and "the file
+  as it was" is the promise.
+- **The repository's workspace is usually not the node's `default`.** On the author's node the
+  first session start said that the workspace `supragnosis` was not known there yet, while
+  `default` held 168 entities. That line, not an error, is the point: the agent learns where the
+  project's knowledge is kept, or that it is not kept yet.
 
 ## 12. Capture - the decision behind a commit
 
-> Status: **specified**, not built. Principle 22's first clause is deferred in the registry with the
-> reason that nothing makes an agent capture or retrieve unasked. This section is the mechanism that
-> repays it. What building it changes goes into Section 11.
+> Status: **built**. Principle 22's first clause was deferred in the registry with the reason that
+> nothing makes an agent capture or retrieve unasked; this section is the mechanism that repaid it.
+> What building it changed is in Section 11.
 
 ### 12.1 Why
 
@@ -348,23 +363,31 @@ the text says "workspace", not "only this workspace".
 - **Not a transcript reader.** The hook decides from the repository and the daemon, never from the
   session's transcript file, which is written asynchronously and is the person's.
 
-### 12.6 What the tests assert
+### 12.6 Guarded by
 
-The tests are named when they exist (the registry refuses a design document that names a test that
-does not run); what each asserts is fixed here.
+- `a_commit_that_landed_asks_for_the_decision_behind_it` - a repository with a fresh commit, made
+  by the real git, and a `PostToolUse` input naming `git commit`: the answer carries the id, the
+  subject, the author and the workspace, and no `decision` (C6).
+- `a_command_that_landed_no_commit_gets_no_answer` - a command that is not `git commit`; the same
+  `git commit` once HEAD is older than the budget; a call from another tool; a directory outside
+  any repository: no output. An input with no event is an error, not silence.
+- `git_commit_is_recognised_in_the_shapes_agents_write_it` - the heredoc, the `&&` chain, the
+  `-C` and `-c` forms, a path to git; and not `commit-tree`, not an echo.
+- `a_session_start_says_what_the_workspace_holds` - against a daemon's answers for a seeded store:
+  the counts; for a workspace it has never seen: the first `observe` creates it; with no daemon: no
+  output; a workspace name with a space reaches the daemon encoded.
+- `connect_registers_the_hook_beside_the_bridge_and_removes_both` - a `settings.json` with other
+  hooks keeps them byte for byte around the two groups; removal gives the file back as it was,
+  the arrays and `hooks` included when only ours were in them; twice is once; a file that is not
+  JSON, or whose `hooks` is not the documented shape, is refused (C3).
+- The registry: C6 is `Scenario` over those, and P22's first clause moved from `Deferred` to
+  `Scenario`, reworded to what is now true.
 
-- **A commit that landed is answered.** A repository with a fresh commit and a `PostToolUse` input
-  naming `git commit`: the answer carries the id, the subject, the author and the workspace, and no
-  `decision`.
-- **A command that landed no commit is not.** A command that is not `git commit`; a `git commit`
-  with nothing staged; a HEAD older than the budget: no output, exit 0.
-- **A session start says what the workspace holds.** Against a daemon serving a seeded store: the
-  counts; against a workspace it has never seen: the line says the first `observe` creates it; with
-  no socket: no output, exit 0.
-- **`connect` registers the hook beside the bridge and removes both.** A `settings.json` with other
-  hooks keeps them byte for byte around the two entries; `--remove` restores it; `--no-capture`
-  leaves it untouched; a file that does not parse is refused (C3).
-- C6 is registered `Deferred` until then, and the registry's P22 first clause moves from
-  `Deferred` to `Scenario` naming the first and third tests, reworded to what is then true: "a
-  commit the agent made asks it for the decision behind the change, and a session starts knowing
-  what the workspace holds, with the person asking for neither".
+Checked end to end on the author's machine: the built binary answered a `SessionStart` event from
+this repository against the live daemon ("workspace \"supragnosis\" is not known on this node yet
+(this node holds \"default\", \"folio\")"), and with `SUPRAGNOSIS_WORKSPACE=default` reported 168
+entities and 274 relations; a `PostToolUse` event six minutes after the last commit was silent; a
+non-JSON input and `hook cursor` each exited 1 with the reason on stderr. `connect claude-code`
+under a temporary HOME registered the bridge through the real `claude` CLI and the two groups
+beside an existing `Stop` hook, the listing read `connected (bridge), capture on`, and `--remove`
+gave the settings file back byte for byte with two backups kept.
