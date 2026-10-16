@@ -467,6 +467,48 @@ const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
 ];
 
+// docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).
+const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "the daemon never downloads a model; a missing model degrades the process to keyword retrieval, \
+         labelled on every answer, and never delays or fails a write",
+        Evidence::Deferred(
+            "semantic-retrieval.md is specified, not built. Revisit when Section 9 step 1 lands: the lazy \
+             loader's test (a missing model degrades to keyword and says why) takes this row to Scenario",
+        ),
+    )]),
+    (2, &[c(
+        "the model is loaded at most once per process, on first use, from the cache; a load that found no \
+         files is not retried until files exist",
+        Evidence::Deferred(
+            "Revisit when semantic-retrieval.md Section 9 step 1 lands: the loader's tests (loads once on \
+             first use; not retried until files exist) take this row to Scenario",
+        ),
+    )]),
+    (3, &[c(
+        "status says whether semantic retrieval is on, and when it is off, why and what to run",
+        Evidence::Deferred(
+            "Revisit when semantic-retrieval.md Section 9 step 2 lands: the status test (names the semantic \
+             state in its text and its document) takes this row to Scenario",
+        ),
+    )]),
+    (4, &[c(
+        "vectors from two models never share a store: the embedder's identity is model-specific and the \
+         store refuses a reopen under another",
+        Evidence::Scenario(&["redb_refuses_a_reopen_under_a_different_embedder"]),
+    )]),
+    (5, &[c(
+        "the release binary links no library the operating system does not ship: no OpenSSL, no ONNX \
+         Runtime shared object",
+        Evidence::Structural(
+            "fastembed is taken with default-features = false and only the rustls download features, so no \
+             crate in the release graph asks for native TLS; ort's download-binaries links the runtime as a \
+             static archive verified against the hash pinned in ort-sys; and release.yml's package step lists \
+             the binary's dynamic dependencies and fails on any outside the system (Section 4)",
+        ),
+    )]),
+];
+
 // docs/client-connect.md Section 8 - `connect` and the bridge (C rows).
 const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -2172,6 +2214,12 @@ const FAMILIES: &[Family] = &[
         prefix: "V",
         rows: REMOTE_VIEWER_REGISTRY,
     },
+    Family {
+        doc: "docs/semantic-retrieval.md",
+        text: include_str!("../../../docs/semantic-retrieval.md"),
+        prefix: "SR",
+        rows: SEMANTIC_RETRIEVAL_REGISTRY,
+    },
 ];
 
 /// The invariant numbers a document declares under one prefix, first occurrence of each, in
@@ -2555,6 +2603,10 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     ("docs/compatibility.md", include_str!("../../../docs/compatibility.md")),
     ("docs/sync-correctness.md", include_str!("../../../docs/sync-correctness.md")),
     ("docs/store-migration.md", include_str!("../../../docs/store-migration.md")),
+    (
+        "docs/semantic-retrieval.md",
+        include_str!("../../../docs/semantic-retrieval.md"),
+    ),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
