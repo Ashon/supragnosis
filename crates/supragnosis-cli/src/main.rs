@@ -66,6 +66,10 @@ enum Cmd {
     /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini) to this
     /// node through the bridge; with no app, list them and how each is connected
     Connect(ConnectArgs),
+    /// Answer a Claude Code hook event from stdin: after a commit the agent made, ask it for the
+    /// decision behind the change; at a session's start, say what the workspace holds here.
+    /// Registered by `connect claude-code` (docs/client-connect.md Section 12)
+    Hook(HookArgs),
     /// Which supragnosis server this machine's AI apps use - this machine's daemon, or a remote one
     /// (docs/remote-server.md); with no subcommand, list the profiles and check the active one
     Server(ServerArgs),
@@ -186,6 +190,16 @@ struct ConnectArgs {
     /// Machine-readable listing (the desktop app reads this).
     #[arg(long)]
     json: bool,
+    /// Claude Code only: register the bridge without the capture hook (docs/client-connect.md
+    /// Section 12).
+    #[arg(long)]
+    no_capture: bool,
+}
+
+#[derive(Args)]
+struct HookArgs {
+    /// The client whose hook event is on stdin: claude-code.
+    client: String,
 }
 
 #[derive(Args, Clone, Default)]
@@ -247,6 +261,7 @@ struct RunArgs {
 // compiled and tested (CI runs on Linux) but are never called, which is not dead code to fix.
 mod bridge;
 mod connect;
+mod hook;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
 mod principal;
@@ -261,6 +276,7 @@ fn main() -> Result<()> {
         Cmd::Status(a) => status(a.json),
         Cmd::Bridge => bridge_cmd(),
         Cmd::Connect(a) => connect_cmd(a),
+        Cmd::Hook(a) => hook_cmd(a),
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
@@ -1269,8 +1285,11 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
     let (config, _) = client.config(&env);
     let before = client.entry(&env);
     if a.remove {
+        let hook_gone = client == Client::ClaudeCode && capture_remove(&env)?;
         if before == Entry::None {
-            println!("{} has no supragnosis entry - nothing to remove", client.name());
+            if !hook_gone {
+                println!("{} has no supragnosis entry - nothing to remove", client.name());
+            }
             return Ok(());
         }
         connect_remove(client, &env)?;
@@ -1280,6 +1299,9 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
     match before {
         Entry::Bridge => {
             println!("{} is already connected through the bridge", client.name());
+            if client == Client::ClaudeCode && !a.no_capture {
+                capture_add(&env, &program)?;
+            }
             return Ok(());
         }
         Entry::Unknown => anyhow::bail!(
@@ -1333,7 +1355,118 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
         );
     }
     println!("connected {} -> {program} bridge", client.name());
+    if client == Client::ClaudeCode && !a.no_capture {
+        capture_add(&env, &program)?;
+    }
     println!("  next    {}", client.next_step());
+    Ok(())
+}
+
+/// Claude Code's settings as text, refusing a file that exists and cannot be read (C3).
+fn claude_code_settings_text(env: &connect::Env) -> Result<(std::path::PathBuf, String)> {
+    let path = connect::claude_code_settings(env);
+    let text = connect::read_config(&path)
+        .with_context(|| format!("{} could not be read - not touching it", path.display()))?;
+    Ok((path, text))
+}
+
+/// Registers the capture hook in Claude Code's settings (client-connect.md Section 12.4), unless
+/// it is there already. The file is copied aside first and only the two hook groups are added.
+fn capture_add(env: &connect::Env, program: &str) -> Result<()> {
+    let (path, mut text) = claude_code_settings_text(env)?;
+    match connect::capture_state(&text) {
+        connect::Capture::On => {
+            println!("  capture is on ({})", path.display());
+            return Ok(());
+        }
+        connect::Capture::Unknown => anyhow::bail!(
+            "{} could not be parsed - not touching a file this cannot parse (client-connect.md C3); \
+             re-run with --no-capture to connect without the hook",
+            path.display()
+        ),
+        connect::Capture::Off => {}
+    }
+    for event in connect::HOOK_EVENTS {
+        text = connect::add_hook(&text, event, &connect::hook_group(event, program))
+            .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+    }
+    if let Some(b) = connect::back_up(&path, "claude-code-settings", &env.home, unix_now())? {
+        println!("  backup  {}", b.display());
+    }
+    connect::write_replacing(&path, &text)
+        .with_context(|| format!("writing {}", path.display()))?;
+    println!(
+        "  capture on: after a commit the agent is asked for the decision behind it, and a session \
+         starts knowing what the workspace holds ({})",
+        path.display()
+    );
+    Ok(())
+}
+
+/// Takes the capture hook out of Claude Code's settings. `Ok(true)` when something was removed.
+fn capture_remove(env: &connect::Env) -> Result<bool> {
+    let (path, text) = claude_code_settings_text(env)?;
+    if connect::capture_state(&text) == connect::Capture::Unknown {
+        anyhow::bail!(
+            "{} could not be parsed - not touching a file this cannot parse (client-connect.md C3)",
+            path.display()
+        );
+    }
+    let mut edited: Option<String> = None;
+    for event in connect::HOOK_EVENTS {
+        let current = edited.as_deref().unwrap_or(&text);
+        if let Some(next) = connect::remove_hook(current, event)
+            .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?
+        {
+            edited = Some(next);
+        }
+    }
+    let Some(edited) = edited else {
+        return Ok(false);
+    };
+    if let Some(b) = connect::back_up(&path, "claude-code-settings", &env.home, unix_now())? {
+        println!("  backup  {}", b.display());
+    }
+    connect::write_replacing(&path, &edited)
+        .with_context(|| format!("writing {}", path.display()))?;
+    println!("removed the capture hook from Claude Code's settings");
+    Ok(true)
+}
+
+/// `supragnosis hook <client>`: the hook event on stdin, the answer on stdout, nothing else
+/// (docs/client-connect.md Section 12). Silence is exit 0 with no output; an input this cannot
+/// read is an error on stderr, which Claude Code shows and carries on from.
+fn hook_cmd(a: HookArgs) -> Result<()> {
+    if a.client != "claude-code" {
+        anyhow::bail!(
+            "unknown hook client {:?} - only claude-code has one (docs/client-connect.md Section 12)",
+            a.client
+        );
+    }
+    let mut raw = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut raw)
+        .context("reading the hook event from stdin")?;
+    let input: serde_json::Value =
+        serde_json::from_str(&raw).context("the hook event on stdin is not JSON")?;
+    let git = |dir: &std::path::Path, args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let world = hook::World {
+        now: unix_now(),
+        git: &git,
+        daemon: &viz_get,
+        workspace_override: std::env::var("SUPRAGNOSIS_WORKSPACE").ok(),
+    };
+    if let Some(v) = hook::answer(&input, &world).map_err(|e| anyhow::anyhow!(e))? {
+        println!("{v}");
+    }
     Ok(())
 }
 
@@ -1401,10 +1534,17 @@ fn connect_document(env: &connect::Env, program: &str) -> serde_json::Value {
         .map(|c| {
             let installed = c.installed(env);
             let entry = if installed { c.entry(env) } else { Entry::None };
+            let capture = match c {
+                connect::Client::ClaudeCode => {
+                    serde_json::Value::String(capture_state_of(env).as_str().to_string())
+                }
+                _ => serde_json::Value::Null,
+            };
             serde_json::json!({
                 "id": c.id(), "name": c.name(), "installed": installed,
                 "entry": entry.as_str(), "config": c.config(env).0,
                 "via": match c.via() { connect::Via::Cli => "cli", connect::Via::File => "file" },
+                "capture": capture,
             })
         })
         .collect();
@@ -1428,6 +1568,9 @@ fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
         let state = match (installed, entry) {
             (false, _) => "not installed".to_string(),
             (true, Entry::None) => "not connected".to_string(),
+            (true, Entry::Bridge) if c == connect::Client::ClaudeCode => {
+                format!("connected (bridge), capture {}", capture_state_of(env).as_str())
+            }
             (true, Entry::Bridge) => "connected (bridge)".to_string(),
             (true, Entry::Http) => format!(
                 "connected over HTTP, holding a copy of the token - `supragnosis connect {} --replace` moves it to the bridge",
@@ -1443,6 +1586,14 @@ fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
         println!("  {:<15} {:<15} {state}", c.id(), c.name());
     }
     Ok(())
+}
+
+/// What Claude Code's settings say about the capture hook, read and nothing else (C5).
+fn capture_state_of(env: &connect::Env) -> connect::Capture {
+    match connect::read_config(&connect::claude_code_settings(env)) {
+        Ok(text) => connect::capture_state(&text),
+        Err(_) => connect::Capture::Unknown,
+    }
 }
 
 fn unix_now() -> u64 {

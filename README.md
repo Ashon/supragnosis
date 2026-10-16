@@ -60,6 +60,12 @@ That also reaches Claude Desktop, which takes local servers over stdio only. A c
 URL instead can use `http://127.0.0.1:7373/mcp` with that token; `supragnosis status` prints the
 command, reading the token from its file rather than printing it.
 
+With Claude Code, `connect` also registers a hook, so the memory fills without being asked: after a
+commit the agent made, it is asked for the decision behind the change that the diff does not show,
+and a session starts knowing what the project's workspace holds here. `--no-capture` leaves the
+hook out; the hook never writes anything itself ([docs/client-connect.md](docs/client-connect.md)
+Section 12).
+
 With the desktop app (`brew install --cask supragnosis`), its Settings page (Settings... in the tray,
 or Cmd+,) does both without a terminal: Start at Login keeps the daemon running, and AI apps connects
 Claude Desktop, Claude Code and the others with a click. A server on another machine is added there

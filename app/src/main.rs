@@ -640,7 +640,19 @@ fn app_row(report: Option<&serde_json::Value>) -> (String, Option<&'static str>,
         return ("not installed".into(), None, "absent");
     }
     match r["entry"].as_str().unwrap_or("none") {
-        "bridge" => ("connected through the bridge".into(), Some("Disconnect"), "connected"),
+        "bridge" => {
+            // Claude Code's row also says whether the capture hook is in (client-connect.md 12.4).
+            let capture = match r["capture"].as_str() {
+                Some("on") => ", capture on",
+                Some("off") => ", capture off",
+                _ => "",
+            };
+            (
+                format!("connected through the bridge{capture}"),
+                Some("Disconnect"),
+                "connected",
+            )
+        }
         "http" => (
             "connected over HTTP, with a copy of the token in its settings".into(),
             Some("Switch to the bridge"),
@@ -1833,7 +1845,15 @@ mod cli_contract_tests {
                     "/service/state",
                 ],
             ),
-            (CONNECT, &["/clients/0/id", "/clients/0/installed", "/clients/0/entry"]),
+            (
+                CONNECT,
+                &[
+                    "/clients/0/id",
+                    "/clients/0/installed",
+                    "/clients/0/entry",
+                    "/clients/1/capture",
+                ],
+            ),
             (
                 SERVERS,
                 &[
