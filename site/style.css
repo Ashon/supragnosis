@@ -123,6 +123,8 @@ code {
 
 @media (max-width: 620px) {
   .site-head nav a:not(.nav-gh) { display: none; }
+  /* the heading's forced break is set for two wide lines; on a phone it flows */
+  .hero h1 br { display: none; }
 }
 
 /* ---------------- hero ---------------- */
@@ -220,7 +222,9 @@ code {
   font-family: var(--serif);
   font-optical-sizing: auto;
   font-weight: 420;
-  font-size: clamp(3rem, 8.5vw, 6rem);
+  /* 880px holds "that remembers who said it." on one line up to 5rem; above that the
+     second line wraps and leaves "it." alone on a third. */
+  font-size: clamp(3rem, 7vw, 5rem);
   line-height: 1.02;
   letter-spacing: -0.015em;
   margin: 0 0 26px;
