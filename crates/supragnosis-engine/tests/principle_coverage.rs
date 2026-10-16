@@ -507,20 +507,20 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (6, &[c(
         "a serving process that has the model embeds what was written without one, once, and writes \
          nothing else - no log row, no attestation, no ledger entry",
-        Evidence::Deferred(
-            "semantic-retrieval.md Section 12 is specified, not built. Revisit when Section 9 step 5 \
-             lands: its tests (what was written before the model is embedded and nothing else is \
-             written; the worker waits for the files and runs once) take this row to Scenario",
-        ),
+        Evidence::Scenario(&[
+            "what_was_written_before_the_model_is_embedded_and_nothing_else",
+            "the_worker_waits_for_the_models_files_then_runs_once",
+            "an_attached_vector_lands_only_where_none_is_stored",
+        ]),
     )]),
     (7, &[c(
         "the backfill never replaces a stored vector, never stores one for text that changed while it \
          was embedding, and never holds the write guard while it embeds",
-        Evidence::Deferred(
-            "Revisit when semantic-retrieval.md Section 9 step 5 lands: its tests (a second run embeds \
-             nothing; an entity whose text changed mid-batch is left for the next run) take this row \
-             to Scenario",
-        ),
+        Evidence::Scenario(&[
+            "a_second_backfill_embeds_nothing_and_keeps_a_stored_vector",
+            "an_entity_whose_text_changed_mid_batch_is_left_for_the_next_run",
+            "an_attached_vector_lands_only_where_none_is_stored",
+        ]),
     )]),
 ];
 
