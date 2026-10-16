@@ -1002,10 +1002,6 @@ struct BeliefFold {
     tiers: HashMap<String, TrustTier>,
 }
 
-/// An observation's EFFECTIVE tier (resolution.md Section 3): the tier set by the HLC-latest merged
-/// gate event targeting it, if any (overrides in both directions - a demotion can push below base);
-/// otherwise the max receiver-evaluated tier over its attestations ([`evaluated_tier`] - a wire claim
-/// never evaluates above HostSigned). Never a max over claimed tiers (F13).
 /// Refuses a client-supplied source_ref inside the reserved verdict-marker namespace
 /// (resolution.md Section 6, R8). The ceiling fold trusts a log-borne marker to be engine-stamped,
 /// so every local ingest door except `review_proposal` (which stamps its own marker and accepts no
@@ -1070,6 +1066,11 @@ fn promotion_left_behind(obs: &Observation, granted: Option<TrustTier>) -> bool 
     granted.is_some_and(|g| g > own)
 }
 
+/// An observation's EFFECTIVE tier (resolution.md Section 3): the tier its merged gate events leave it
+/// at, if any target it - applied in verdict order from its base, a demotion only lowering and a
+/// promotion only raising (R5, [`Engine::gate_grants`]); otherwise the max receiver-evaluated tier
+/// over its attestations ([`evaluated_tier`] - a wire claim never evaluates above HostSigned). Never
+/// a max over claimed tiers (F13).
 fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> TrustTier {
     gates
         .get(&obs.id)
@@ -3077,11 +3078,13 @@ impl Engine {
 
         let fwd = self.merge_forwarding(workspace, cx)?;
         let before_gates = self.gate_grants(workspace, cx)?;
-        // The one difference between the two materializations: this proposal's grant applied.
-        let mut after_gates = before_gates.clone();
-        for t in &view.targets {
-            after_gates.insert(t.clone(), tier);
-        }
+        // The one difference between the two materializations: this proposal merged now, from the
+        // console - the Review panel is where the diff is read - so its grant is what that surface
+        // allows, applied after every merged event as a new verdict would be (R5).
+        let grant = tier.min(verdict_grant_ceiling(Some(VERDICT_SURFACE_CONSOLE)));
+        let promotion = view.kind == "claim_promotion";
+        let after_gates =
+            self.gate_tiers(workspace, cx, Some((view.targets.as_slice(), grant, promotion)))?;
 
         let mut tier_changes = Vec::new();
         for t in &view.targets {
@@ -3282,15 +3285,19 @@ impl Engine {
         Ok(cycles.into_iter().map(|(m, p)| (m, p.into_iter().collect())).collect())
     }
 
-    /// Gate-tier grants (resolution.md Section 5): target observation id -> the tier set by the
-    /// HLC-latest merged claim_promotion/claim_demotion verdict targeting it. Per proposal, the
+    /// Gate tiers (resolution.md Section 5, R5 as revised in 2026-10): target observation id -> the
+    /// tier its merged claim_promotion/claim_demotion events leave it at. Per proposal, the
     /// representative verdict is the earliest merge by (ordering HLC, observation id) - the
     /// proposal-workflow 7.1 canonicalization, which orders the proposal's effect among others on
     /// the same target; what it grants is min(requested tier, the highest surface ceiling among the
     /// proposal's merge verdicts) (resolution.md Section 6), so a further merge can raise a grant
-    /// and never lower it, whichever verdict represents. A pure
-    /// fold-projection of the log - converges continuously (F5), and a gate event overrides the base
-    /// evaluation in BOTH directions (a merged demotion can push below base - the fast-path).
+    /// and never lower it, whichever verdict represents. The events on one target then apply in
+    /// that order, by (representative HLC, proposal id), each from the tier the previous one left,
+    /// starting from the target's base evaluation: a promotion leaves max(previous, grant), a
+    /// demotion min(previous, grant). So a demotion can still push below base (the fast-path), and
+    /// neither kind can move a target the other way - a demotion that asked for a higher tier used to
+    /// promote (docs/dreaming.md 5.7). A pure fold-projection of the log, a function of the set of
+    /// merged events, so it converges continuously (F5).
     ///
     /// A grant is a merge's COMMIT EFFECT, so it exists only where [`Engine::fold_proposals`] says
     /// the merge committed (state `merged`) - a verdict on a proposal whose blocking checks fail
@@ -3305,8 +3312,21 @@ impl Engine {
         workspace: Option<&str>,
         cx: &ReadCtx,
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
-        // proposal id -> (targets, requested tier); collected from opened gate-kind events.
-        let mut opened: HashMap<String, (Vec<String>, TrustTier)> = HashMap::new();
+        self.gate_tiers(workspace, cx, None)
+    }
+
+    /// [`Engine::gate_grants`], with one hypothetical event applied after every merged one: the
+    /// belief diff's "what merging this proposal would do" (`extra` = its targets, its grant, and
+    /// whether it is a promotion). The diff and the fold share this, so what a reviewer is shown is
+    /// what the fold will do (P23: no merge without a diff that says so).
+    fn gate_tiers(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+        extra: Option<(&[String], TrustTier, bool)>,
+    ) -> Result<HashMap<String, TrustTier>, StoreError> {
+        // proposal id -> (targets, requested tier, is a promotion); from opened gate-kind events.
+        let mut opened: HashMap<String, (Vec<String>, TrustTier, bool)> = HashMap::new();
         // proposal id -> (representative merge verdict's ordering hlc and obs id, the highest
         // surface ceiling among the proposal's merge verdicts).
         let mut rep_merge: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
@@ -3333,7 +3353,7 @@ impl Engine {
                                 a.iter().filter_map(|s| s.as_str().map(String::from)).collect()
                             })
                             .unwrap_or_default();
-                        opened.insert(obs.id.clone(), (targets, tier));
+                        opened.insert(obs.id.clone(), (targets, tier, kind == "claim_promotion"));
                     }
                     ProposalEventKind::Verdict => {
                         if v.get("decision").and_then(|x| x.as_str()) != Some("merge") {
@@ -3372,9 +3392,9 @@ impl Engine {
         } else {
             self.fold_proposals(workspace, cx)?
         };
-        // Per target, the HLC-latest gate event governs (tie: proposal id) - resolution.md R5.
-        let mut grants: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
-        for (proposal_id, (targets, requested)) in &opened {
+        // Per target, every committed gate event with its order key - resolution.md R5.
+        let mut events: HashMap<String, Vec<(Hlc, String, TrustTier, bool)>> = HashMap::new();
+        for (proposal_id, (targets, requested, promotion)) in &opened {
             let Some((verdict_hlc, _, ceiling)) = rep_merge.get(proposal_id) else {
                 continue; // not merged - grants nothing (the gate, Principle 23)
             };
@@ -3383,18 +3403,54 @@ impl Engine {
             }
             let granted = (*requested).min(*ceiling);
             for target in targets {
-                let cand = (verdict_hlc.clone(), proposal_id.clone(), granted);
-                grants
-                    .entry(target.clone())
-                    .and_modify(|cur| {
-                        if (&cand.0, cand.1.as_str()) > (&cur.0, cur.1.as_str()) {
-                            *cur = cand.clone();
-                        }
-                    })
-                    .or_insert(cand);
+                events.entry(target.clone()).or_default().push((
+                    verdict_hlc.clone(),
+                    proposal_id.clone(),
+                    granted,
+                    *promotion,
+                ));
             }
         }
-        Ok(grants.into_iter().map(|(t, (_, _, tier))| (t, tier)).collect())
+        if let Some((targets, _, _)) = extra {
+            for target in targets {
+                events.entry(target.clone()).or_default();
+            }
+        }
+        if events.is_empty() {
+            return Ok(HashMap::new());
+        }
+        // Each target's base evaluation is where its events start. A target this log does not hold
+        // has nothing to apply to; when it arrives, the next read folds it (the same monotone
+        // direction as a blocked merge turning merged).
+        let mut tiers: HashMap<String, TrustTier> = HashMap::new();
+        for obs in self.log(workspace, cx)?.iter() {
+            let Some(list) = events.get_mut(&obs.id) else {
+                continue;
+            };
+            list.sort_by(|a, b| (&a.0, a.1.as_str()).cmp(&(&b.0, b.1.as_str())));
+            let mut tier = obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default();
+            let apply = |tier: TrustTier, grant: TrustTier, promotion: bool| {
+                if promotion {
+                    tier.max(grant)
+                } else {
+                    tier.min(grant)
+                }
+            };
+            for (_, _, grant, promotion) in list.iter() {
+                tier = apply(tier, *grant, *promotion);
+            }
+            let mut touched = !list.is_empty();
+            if let Some((targets, grant, promotion)) = extra {
+                if targets.contains(&obs.id) {
+                    tier = apply(tier, grant, promotion);
+                    touched = true;
+                }
+            }
+            if touched {
+                tiers.insert(obs.id.clone(), tier);
+            }
+        }
+        Ok(tiers)
     }
 
     /// Per-canonical-entity belief fold over the observation log (resolution.md Sections 2-4):

@@ -492,10 +492,12 @@ const DREAMING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (4, &[c(
         "merged gate events on a target apply in HLC order, each from the tier the previous left - a demotion min, a promotion max, the grant min(requested, ceiling) - and the belief diff uses the same function",
-        Evidence::Deferred(
-            "dreaming.md is specified, not built. Revisit when its Section 12 step 0 lands and \
-             the tests Section 14 describes for this row run",
-        ),
+        Evidence::Scenario(&[
+            "p16_gate_events_apply_in_verdict_order_from_the_tier_each_left",
+            "p18_a_merged_demotion_never_raises_its_target",
+            "p18_a_merged_promotion_never_lowers_its_target",
+            "p23_the_belief_diff_shows_what_the_merge_will_grant",
+        ]),
     )]),
     (5, &[c(
         "a published dream draft is engine-stamped surface:dream at the lowest tier on behalf of the configured operator, and this node counts as its own dream's only what carries the marker with this node as the acting host",
@@ -1668,20 +1670,28 @@ const RESOLUTION_REGISTRY: &[(u8, &[Clause])] = &[
           )),
     ]),
     (5, &[
-        c("a merged gate event overrides the base evaluation in both directions",
+        c("a merged demotion can push a target below its base evaluation and a merged promotion above it",
           Evidence::Scenario(&[
             "p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it",
             "p23_demotion_overrides_below_base",
             // The retrieval weight consumes the same evaluation.
             "p18_a_merged_demotion_lowers_the_recall_weight_of_its_target",
           ])),
-        c("with several merged gate events on one target, the HLC-latest governs",
-          Evidence::Deferred(
-            "`gate_grants` keeps the max over (verdict HLC, proposal id) per target, but no case \
-             stacks two merged gate events on one observation, so the rule holds unchecked. Revisit \
-             with the quorum/revise rules of proposal-workflow.md Section 13 (M4 Phase 5), whose \
-             cases must stack verdicts",
-          )),
+        // R5 as revised in 2026-10 (docs/dreaming.md 5.7): the events stack in verdict order, and a
+        // kind moves a target only its own way - a demotion that asked for a higher tier used to
+        // promote, and a promotion that asked for a lower one used to demote.
+        c("merged gate events on one target apply in the order of their representative merge verdicts, \
+           each from the tier the previous left, and a store fed the log in another order agrees",
+          Evidence::Scenario(&["p16_gate_events_apply_in_verdict_order_from_the_tier_each_left"])),
+        c("a merged demotion never leaves its target above the tier it held, and a merged promotion \
+           never below",
+          Evidence::Scenario(&[
+            "p18_a_merged_demotion_never_raises_its_target",
+            "p18_a_merged_promotion_never_lowers_its_target",
+          ])),
+        c("the belief diff of an open gate proposal shows the tier the fold would grant, not the tier \
+           it requests",
+          Evidence::Scenario(&["p23_the_belief_diff_shows_what_the_merge_will_grant"])),
     ]),
     (6, &[
         c("contested iff distinct values survive at a tied top tier; a higher tier resolves silently in the projection",
