@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.5.0](docs/releases/v0.5.0.md) | Apple silicon and glibc 2.39+ only; then fetch the model once and reproject existing knowledge. |
 | [v0.4.12](docs/releases/v0.4.12.md) | Upgrade, then restart the daemon once; a console merge raises an agent-merged promotion. |
 | [v0.4.11](docs/releases/v0.4.11.md) | Upgrade, then restart the daemon once; a search finds the words you type, in any order. |
 | [v0.4.10](docs/releases/v0.4.10.md) | Upgrade, then restart the daemon once; the recall gate holds, and a brief cites what it reads. |
@@ -56,6 +57,11 @@ A change that breaks a promise in [docs/compatibility.md](docs/compatibility.md)
 listed here, and opens its release note: a store earlier releases can no longer open, a removed or
 renamed MCP tool or argument, a CLI `--json` schema raised.
 
+- **v0.5.0** builds for Apple silicon and for Linux on glibc 2.39 or later only. On an Intel Mac
+  `brew upgrade` refuses on the architecture; on Ubuntu 22.04 or Debian 12 the Linux binary does
+  not start (`GLIBC_2.39 not found`) and `install.sh` refuses before downloading. Both build from
+  source, and Linux can run the container image. See [the v0.5.0 note](docs/releases/v0.5.0.md)
+  and [docs/semantic-retrieval.md](docs/semantic-retrieval.md) Section 4.
 - **v0.4.8** no longer reads `[sync] insecure_tls`: every sync link verifies its hub. A spoke that
   reached a self-signed hub through it fails its rounds until the hub's `tls_cert` is copied over and
   named with `ca = "<pem file>"` in that hub's `[[sync.server]]` entry; its configuration notes say
