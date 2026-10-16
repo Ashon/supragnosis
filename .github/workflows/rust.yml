@@ -238,7 +238,25 @@ jobs:
           key: rust-fastembed
 
       - name: clippy (fastembed)
-        run: cargo clippy --locked -p supragnosis-cli --features fastembed --all-targets -- -D warnings
+        run: cargo clippy --locked -p supragnosis-cli -p supragnosis-embed --features fastembed --all-targets -- -D warnings
+
+      # The adapter's tests that need no model: selection, the lazy load, the empty cache. The
+      # one that downloads stays #[ignore]d.
+      - name: tests (fastembed)
+        run: cargo test --locked -p supragnosis-embed -p supragnosis-cli --features fastembed
+
+      # SR5 on Linux, before a release finds out: the ONNX runtime is a static archive and the
+      # model download goes over rustls, so nothing beyond glibc and the GCC runtime is linked.
+      - name: linked libraries
+        run: |
+          set -euo pipefail
+          libs=$(ldd target/debug/supragnosis | awk '{print $1}')
+          echo "$libs"
+          bad=$(echo "$libs" | grep -vE '^(linux-vdso|libc|libm|libgcc_s|libstdc\+\+|libdl|libpthread|librt|/lib|ld-linux)' || true)
+          if [[ -n "$bad" ]]; then
+            echo "::error::the binary links a library the system does not ship: $bad"
+            exit 1
+          fi
 
   # SECURITY.md states a threat model in detail; a project that does that and gates nothing on what
   # its dependencies carry is asymmetric. deny.toml carries the reasoning, including why an

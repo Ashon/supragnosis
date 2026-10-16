@@ -35,7 +35,8 @@
   [`compatibility.md`](compatibility.md) (pinned contracts between releases, built - the tripwire of
   compatibility.md Section 3.6 waits for its occasion),
   [`unmerge.md`](unmerge.md) (reversing an identity resolution, built),
-  [`prompts.md`](prompts.md) (the MCP prompts, built - Section 8 steps 1-2).
+  [`prompts.md`](prompts.md) (the MCP prompts, built - Section 8 steps 1-2),
+  [`semantic-retrieval.md`](semantic-retrieval.md) (the embedding model in the prebuilt binary, built).
 
 ---
 
@@ -395,7 +396,7 @@ console. The remote surface lists none until digests are scoped to a principal's
 | MCP server SDK | `rmcp` (`server`, `transport-io`, `macros`; `transport-streamable-http-server` in the CLI) |
 | Async runtime | `tokio` |
 | Embedded store | `redb` (pure Rust B-tree) *(documented alternative: `oxigraph`)* |
-| Local embedding (optional) | `fastembed` (ONNX, local model) - if absent, degrade to keyword search |
+| Local embedding | `fastembed` (ONNX, local model, in the release binary - [semantic-retrieval.md](semantic-retrieval.md)); without its files, keyword search |
 | Serialization | `serde`, `serde_json` |
 | Content-address ID | `blake3` |
 | Errors | `thiserror` (library) / `anyhow` (binary) |

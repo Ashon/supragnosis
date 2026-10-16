@@ -97,8 +97,31 @@ jobs:
       # No cargo cache in this workflow: what it publishes is built from the tagged tree alone, and a
       # cache a tag run saves is scoped to that tag, so these per-target ones would never hit.
 
+      # With the embedding model's runtime (docs/semantic-retrieval.md Section 4): ort's build script
+      # fetches a static ONNX Runtime archive for the target and verifies it against the hash
+      # pinned in ort-sys. The model itself is not in the artifact; `supragnosis embed fetch` gets it.
       - name: build
-        run: cargo build --release --locked --bin supragnosis --target ${{ matrix.target }}
+        run: cargo build --release --locked --bin supragnosis --features fastembed --target ${{ matrix.target }}
+
+      # SR5: the binary links only what the operating system ships - no OpenSSL (fastembed is
+      # taken over rustls), no onnxruntime shared object (it is linked statically).
+      - name: linked libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/supragnosis"
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            libs=$(otool -L "$bin" | tail -n +2 | awk '{print $1}')
+            bad=$(echo "$libs" | grep -vE '^/usr/lib/|^/System/' || true)
+          else
+            libs=$(ldd "$bin" | awk '{print $1}')
+            bad=$(echo "$libs" | grep -vE '^(linux-vdso|libc|libm|libgcc_s|libstdc\+\+|libdl|libpthread|librt|/lib|ld-linux)' || true)
+          fi
+          echo "$libs"
+          if [[ -n "$bad" ]]; then
+            echo "::error::the binary links a library the system does not ship: $bad"
+            exit 1
+          fi
 
       - name: package
         shell: bash

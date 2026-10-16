@@ -179,6 +179,19 @@ pub struct ReprojectReport {
     pub relations: usize,
 }
 
+/// Semantic retrieval as `status` and the viewer's health report it (semantic-retrieval.md SR3):
+/// which model, and whether it can answer in this process - with the reason and the remedy when
+/// it cannot.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct SemanticReport {
+    pub model: String,
+    pub dims: usize,
+    /// `on` or `off`.
+    pub state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 /// What [`Engine::repay_owed`] found owed and repaid (crash-recovery.md K3/K5) - kept so the
 /// operator's surfaces can say a recovery happened, instead of leaving it in a startup log.
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
@@ -3804,6 +3817,17 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Semantic retrieval for the operator's surfaces (semantic-retrieval.md SR3): `None` when no
+    /// embedder is configured, otherwise the model and whether it can answer now.
+    pub fn semantic(&self) -> Option<SemanticReport> {
+        let e = self.embedder.as_ref()?;
+        let (state, note) = match e.readiness() {
+            supragnosis_core::Readiness::Ready => ("on", None),
+            supragnosis_core::Readiness::Degraded(note) => ("off", Some(note)),
+        };
+        Some(SemanticReport { model: e.id(), dims: e.dimensions(), state, note })
     }
 
     /// How many log rows still owe their projection right now. Non-zero on a running node means a

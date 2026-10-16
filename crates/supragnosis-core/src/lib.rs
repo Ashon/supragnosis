@@ -1485,6 +1485,21 @@ pub trait EmbeddingProvider: Send + Sync {
         let mut v = self.embed(&[text])?;
         v.pop().ok_or_else(|| EmbedError::Provider("empty embedding result".into()))
     }
+    /// Whether this provider can answer in this process. A provider that loads on first use is
+    /// ready while its files are there; one that cannot load says why and what would change it,
+    /// so a degrade to keyword retrieval is stated, never silent (Principle 24).
+    fn readiness(&self) -> Readiness {
+        Readiness::Ready
+    }
+}
+
+/// What an [`EmbeddingProvider`] says about itself when asked whether it can answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Readiness {
+    /// Loaded, or loads on first use from files that are there.
+    Ready,
+    /// Cannot answer in this process; the string says why and what to run.
+    Degraded(String),
 }
 
 #[derive(Debug, thiserror::Error)]

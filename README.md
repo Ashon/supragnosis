@@ -80,8 +80,11 @@ supragnosis service install                           # macOS; Linux: deploy/sys
 supragnosis connect claude-code
 ```
 
-Prebuilt binaries are keyword search only. For local semantic retrieval (ONNX, no API calls),
-build with `--features fastembed`.
+Retrieval is semantic as well as keyword: a local embedding model (multilingual, 224 MB, no API
+calls) that `service install` fetches once into `~/.supragnosis/models`, or `supragnosis embed
+fetch` does by hand. Until it is there, retrieval is keyword only and `supragnosis status` says
+so. The daemon holds about 1 GB once a tool call has loaded the model; `SUPRAGNOSIS_EMBED=none`
+keeps it keyword only and small ([docs/semantic-retrieval.md](docs/semantic-retrieval.md)).
 
 Removing it takes the daemon off login, disconnects each AI app and deletes the binary, and leaves
 the knowledge in `~/.supragnosis` unless you remove that too
@@ -134,8 +137,8 @@ Watching it while an agent works is the part that is hard to convey in text:
 13 MCP tools, each one recurring intent:
 
 - `observe` - free text plus optional structured assertions. No schema required up front.
-- `search_knowledge` - keyword retrieval (every term, any order), plus semantic in a fastembed
-  build, labelled with the mode it used.
+- `search_knowledge` - keyword retrieval (every term, any order) plus semantic, labelled with the
+  mode it used.
 - `get_entity`, `traverse` - exact lookup and bounded graph walks.
 - `workspace_map` - co-occurrence hyperedges: what tends to get said together.
 - `define_type` - promote a pattern into the workspace glossary.
@@ -225,7 +228,8 @@ Most used:
 
 - `SUPRAGNOSIS_WORKSPACE` - default workspace (default `default`)
 - `SUPRAGNOSIS_DATA_DIR` - store directory (default `~/.supragnosis/redb`)
-- `SUPRAGNOSIS_EMBED` - `fastembed` | `hashing` | `none`. Degrades to keyword search if absent
+- `SUPRAGNOSIS_EMBED` - `fastembed` (default) | `hashing` | `none`. `none` is keyword only
+- `SUPRAGNOSIS_EMBED_MODEL` - `multilingual` (default) | `bge-small-en` (English only, half the size)
 - `SUPRAGNOSIS_CONFIG` - path to `supragnosis.toml`. No file means a standalone node
 - `SUPRAGNOSIS_MCP_AUTH` - `on` (default) | `off`. `off` drops the daemon's bearer check
 

@@ -21,4 +21,11 @@ fastembed = ["dep:fastembed"]
 
 [dependencies]
 supragnosis-core.workspace = true
-fastembed = { version = "7", optional = true }
+# Without its defaults: those pull native TLS for the model download, which on Linux links OpenSSL
+# into a binary that otherwise links none (docs/semantic-retrieval.md Section 4), and the image
+# models this crate never loads. The ONNX runtime is downloaded at build time as a static archive
+# and verified against the hash pinned in ort-sys.
+fastembed = { version = "7", optional = true, default-features = false, features = [
+    "ort-download-binaries-rustls-tls",
+    "hf-hub-rustls-tls",
+] }
