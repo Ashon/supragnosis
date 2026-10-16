@@ -5,9 +5,8 @@
 > Section 6 (hybrid retrieval) and [daemon-lifecycle.md](daemon-lifecycle.md) (who starts the
 > daemon, and so who fetches the model).
 >
-> Status: **built** (Section 9 steps 1-4), with the measurements that decided it (Section 2).
-> Section 12, the backfill, is **specified** and not built (Section 9 step 5). What building it
-> changed is in Section 11.
+> Status: **built** (Section 9 steps 1-5, Section 12 included), with the measurements that decided
+> it (Section 2). What building it changed is in Section 11.
 
 ## 1. Why this exists
 
@@ -226,6 +225,14 @@ Guarded by:
   flavours; the owner chose the floor. With `ORT_CXX_STDLIB=static=stdc++` the binary built on
   24.04 lists glibc, libm and the GCC unwinder and nothing else, references no `GLIBCXX` version,
   and asks for glibc 2.39, measured with `objdump -T` in an ubuntu:24.04 container on arm64.
+- **The backfill, end to end, on a copy of the author's store** (the release build, fastembed on):
+  a daemon started with an empty model directory reported `semantic off`; `embed fetch` while it
+  ran took 28 s, the worker found the files on its next poll and embedded 178 observations in
+  under 6 s, with `owed_projections` at 0 throughout. A second run over a fresh copy, model
+  already present, was caught at `embedding what was written before the model: 8 of 178` and
+  ended `done` at 178. It found no entities: the v0.5.0 `reproject` had given them vectors, and
+  it is the observations that `reproject` never reaches. A `search_knowledge` on the copy then
+  answered with observation hits beside the entity ones.
 - **Checked end to end on the author's machine** with the release build: `embed fetch` into an
   empty directory took 25 s and reported 240 MB, a second run found it; `SUPRAGNOSIS_EMBED_MODEL=gpt`
   was refused naming both models; a stdio server over an empty cache logged the note at start and
@@ -235,7 +242,7 @@ Guarded by:
 
 ## 12. Backfill - what was written before the model
 
-> Status: **specified**, not built (Section 9 step 5).
+> Status: **built** (Section 9 step 5).
 
 ### 12.1 Why
 
@@ -280,6 +287,9 @@ until it succeeds, is written without a vector.
 - **It degrades.** An embed that fails stops the backfill with the reason; the rows it did not
   reach stay keyword only, and the next start tries again (Principle 19). A write that fails
   stops it the same way. Nothing the backfill does can fail a tool call.
+- **It loads the model when there is something to embed.** A daemon with no backlog stays small
+  until a tool call needs the model, as Section 6 says; a daemon with a backlog loads it to embed
+  the backlog, and keeps it, as it would after a first search.
 
 ### 12.3 What it changes for an upgrade
 
@@ -299,20 +309,21 @@ re-materialization of a projection, and it still embeds the entities it projects
   backfill, which is the same promise the log browser makes about a degrade - visible, and
   repaired by the next pass rather than retried in a loop.
 
-### 12.5 What the tests assert
+### 12.5 Guarded by
 
-- **What was written before the model is embedded, and nothing else is written.** Observations
-  and entities written through an engine with no embedder, then a backfill through one with an
-  embedder: every row has a vector, the merge band covers every live entity, a semantic search
-  finds an observation by meaning, the ledger is empty, and the observation rows' attestations are
-  what they were (SR6).
-- **A second run embeds nothing and a stored vector is kept** (SR7).
-- **An entity whose text changed while its batch was embedding is left for the next run** (SR7).
-- **An embed failure stops the backfill and says why**; rows not reached keep no vector, and a
-  later run embeds them.
-- **The worker waits for the model's files and then runs once**; with no embedder it does not
-  start.
-- **The store method attaches a vector only where none is stored**, for an id that has a row,
-  and leaves the row and the ledger alone - on every adapter (port conformance).
-- **`status` shows the backfill's progress and its failure**, and the example document carries
-  the field.
+- `what_was_written_before_the_model_is_embedded_and_nothing_else` - observations and entities
+  written through an engine with no embedder, then a backfill through one with an embedder: every
+  row has a vector, the merge band covers every live entity, a semantic search finds the old
+  observation by meaning, the ledger is empty, and the rows are what they were (SR6).
+- `a_second_backfill_embeds_nothing_and_keeps_a_stored_vector` (SR7).
+- `an_entity_whose_text_changed_mid_batch_is_left_for_the_next_run` - an embedder that renames
+  the entity while its batch embeds; the old text's vector is not stored, and the next run embeds
+  the new text (SR7, IR4).
+- `an_embed_failure_stops_the_backfill_and_says_why` - the report says `stopped` with the reason,
+  the rows not reached keep no vector, and a later run embeds them (Principles 19, 24).
+- `the_worker_waits_for_the_models_files_then_runs_once` - over a lazy provider whose files are
+  missing, then appear; with no embedder it returns at once.
+- `an_attached_vector_lands_only_where_none_is_stored` - the store method on every adapter: a
+  vector only where none is stored, only for an id with a row, the row and the ledger untouched.
+- `status_names_the_semantic_state` - the progress line, the stopped line, and a finished
+  backfill that says nothing more; `status_json_matches_its_example` carries the field (SR3).

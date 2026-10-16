@@ -29,7 +29,12 @@
   "semantic": {
     "model": "paraphrase-multilingual-minilm-l12-v2-q-384",
     "dims": 384,
-    "state": "on"
+    "state": "on",
+    "backfill": {
+      "state": "done",
+      "found": 196,
+      "embedded": 196
+    }
   },
   "server": {
     "name": "lab",

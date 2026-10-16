@@ -325,6 +325,23 @@ impl KnowledgeStore for InMemoryStore {
         }
         Ok(())
     }
+
+    fn attach_observation_embeddings(
+        &self,
+        vectors: &[(String, Vec<f32>)],
+    ) -> Result<usize, StoreError> {
+        let mut observations = self.observations.write().unwrap();
+        let mut attached = 0;
+        for (id, vec) in vectors {
+            if let Some(o) = observations.get_mut(id) {
+                if o.embedding.is_none() {
+                    o.embedding = Some(vec.clone());
+                    attached += 1;
+                }
+            }
+        }
+        Ok(attached)
+    }
 }
 
 #[cfg(test)]

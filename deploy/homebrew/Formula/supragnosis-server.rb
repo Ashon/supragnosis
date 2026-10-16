@@ -72,6 +72,11 @@ class SupragnosisServer < Formula
 
       After an upgrade, load the new binary into the running daemon:
         supragnosis restart
+
+      Semantic retrieval needs the embedding model, fetched once (224 MB):
+        supragnosis embed fetch
+      The running daemon finds it within 30 seconds and embeds what it already holds;
+      `supragnosis status` shows the progress.
     EOS
   end
 

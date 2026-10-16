@@ -1570,6 +1570,12 @@ impl supragnosis_core::KnowledgeStore for SlowStore {
     fn clear_owed(&self, ids: &[String]) -> Result<(), supragnosis_core::StoreError> {
         self.inner.clear_owed(ids)
     }
+    fn attach_observation_embeddings(
+        &self,
+        vectors: &[(String, Vec<f32>)],
+    ) -> Result<usize, supragnosis_core::StoreError> {
+        self.inner.attach_observation_embeddings(vectors)
+    }
 }
 
 /// A resource read folds the log, synchronously, and on a large store that takes a while. It runs

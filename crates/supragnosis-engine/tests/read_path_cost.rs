@@ -171,6 +171,13 @@ impl KnowledgeStore for CountingStore {
         self.inner.owed_projections()
     }
 
+    fn attach_observation_embeddings(
+        &self,
+        vectors: &[(String, Vec<f32>)],
+    ) -> Result<usize, StoreError> {
+        self.inner.attach_observation_embeddings(vectors)
+    }
+
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
         self.inner.clear_owed(ids)
     }
@@ -579,6 +586,12 @@ impl KnowledgeStore for ReversedStore {
     }
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
         self.0.clear_owed(ids)
+    }
+    fn attach_observation_embeddings(
+        &self,
+        vectors: &[(String, Vec<f32>)],
+    ) -> Result<usize, StoreError> {
+        self.0.attach_observation_embeddings(vectors)
     }
 }
 

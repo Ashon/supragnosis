@@ -107,10 +107,12 @@ nothing above touches it. Remove it only if the knowledge should go too.
   says so. Loaded, the model holds about 1 GB; `SUPRAGNOSIS_EMBED=none` keeps the daemon small
   and keyword only, and `SUPRAGNOSIS_EMBED_MODEL=bge-small-en` is the English-only model at half
   the size ([docs/semantic-retrieval.md](../docs/semantic-retrieval.md)).
-- A store written before the model existed has no vectors: `supragnosis reproject` (daemon
-  stopped) gives its entities vectors once, while observations written before stay keyword-only.
-  A store indexed with a different model is refused at open, since two models share no vector
-  space - point that one at a new `SUPRAGNOSIS_DATA_DIR`.
+- What was written before the model has no vectors, and the daemon gives it them by itself: once
+  the model's files are there it embeds every observation and entity that has none, once, and
+  `supragnosis status` shows the progress (`semantic on (...) - embedding what was written before
+  the model: 40 of 120`). No `reproject` is needed for it. A store indexed with a different model
+  is refused at open, since two models share no vector space - point that one at a new
+  `SUPRAGNOSIS_DATA_DIR`.
 - Only one daemon should run (single ownership of the db + ports), and only one manager should
   run it - `supragnosis status` reports a conflict, and `service install --take-over` resolves it.
   Register each AI app through `supragnosis connect`, which writes the bridge. An app that runs

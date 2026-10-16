@@ -726,6 +726,16 @@ async fn run(cfg: Config) -> Result<()> {
     let events =
         (cfg.viz.is_some() || hub).then(|| tokio::sync::broadcast::channel::<String>(256).0);
     let engine = build_engine(&cfg, events.as_ref())?;
+    // What was written before the model gets its vectors once the model is there
+    // (semantic-retrieval.md Section 12): a thread of its own, since it embeds and waits, and only
+    // in a serving process - the one-shot commands that also build an engine do not start it.
+    {
+        let engine = engine.clone();
+        std::thread::Builder::new()
+            .name("embed-backfill".into())
+            .spawn(move || engine.backfill_when_ready(std::time::Duration::from_secs(30), 8))
+            .context("starting the embedding backfill")?;
+    }
 
     // Federation status blob (viewer /api/federation) - exists only when supragnosis.toml does.
     let fed_status: Option<supragnosis_viz::FedStatus> = fedcfg
@@ -2988,7 +2998,22 @@ struct StatusFacts<'a> {
 fn semantic_line(report: Option<&serde_json::Value>) -> String {
     match report {
         Some(r) if r["state"].as_str() == Some("on") => {
-            format!("semantic on ({})", r["model"].as_str().unwrap_or("?"))
+            let model = r["model"].as_str().unwrap_or("?");
+            let b = &r["backfill"];
+            match b["state"].as_str() {
+                Some("running") => format!(
+                    "semantic on ({model}) - embedding what was written before the model: {} of {}",
+                    b["embedded"].as_u64().unwrap_or(0),
+                    b["found"].as_u64().unwrap_or(0)
+                ),
+                Some("stopped") => format!(
+                    "semantic on ({model}) - embedding what was written before the model stopped at {} of {}, the rest is found by keyword until the next start: {}",
+                    b["embedded"].as_u64().unwrap_or(0),
+                    b["found"].as_u64().unwrap_or(0),
+                    b["note"].as_str().unwrap_or("no reason given")
+                ),
+                _ => format!("semantic on ({model})"),
+            }
         }
         Some(r) if r["state"].as_str() == Some("off") => format!(
             "semantic off - {}",
@@ -4370,6 +4395,25 @@ mod json_contract {
         let none = semantic_line(None);
         assert!(none.starts_with("semantic off - keyword only"), "{none}");
         assert_eq!(semantic_line(Some(&serde_json::Value::Null)), none);
+
+        // semantic-retrieval.md Section 12: the backfill's progress and its failure are said; a
+        // finished one says nothing more.
+        let running = serde_json::json!({"model": "m-384", "dims": 384, "state": "on",
+            "backfill": {"state": "running", "found": 120, "embedded": 40}});
+        assert_eq!(
+            semantic_line(Some(&running)),
+            "semantic on (m-384) - embedding what was written before the model: 40 of 120"
+        );
+        let stopped = serde_json::json!({"model": "m-384", "dims": 384, "state": "on",
+            "backfill": {"state": "stopped", "found": 120, "embedded": 40, "note": "an embed failed: x"}});
+        let line = semantic_line(Some(&stopped));
+        assert!(
+            line.contains("stopped at 40 of 120") && line.ends_with("an embed failed: x"),
+            "{line}"
+        );
+        let done = serde_json::json!({"model": "m-384", "dims": 384, "state": "on",
+            "backfill": {"state": "done", "found": 120, "embedded": 120}});
+        assert_eq!(semantic_line(Some(&done)), "semantic on (m-384)");
     }
 
     #[cfg(unix)]
@@ -4394,7 +4438,8 @@ mod json_contract {
             running: Some("0.9.0".into()),
             health: Some(serde_json::json!({
                 "owed_projections": 0, "last_recovery": null,
-                "semantic": {"model": "m-384", "dims": 384, "state": "on"}
+                "semantic": {"model": "m-384", "dims": 384, "state": "on",
+                    "backfill": {"state": "done", "found": 3, "embedded": 3}}
             })),
             server: serde_json::json!({"name": "lab", "url": "https://lab:7420/mcp", "remote": true}),
             plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),

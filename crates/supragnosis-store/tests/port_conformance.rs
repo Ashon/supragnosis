@@ -870,6 +870,58 @@ fn semantic_entity_recall_ranks_by_similarity() {
 /// It is the case that would have caught the redb adapter serializing rows through serde while both
 /// embedding fields carry `#[serde(skip)]` - the vectors were accepted, dropped, and every semantic
 /// read answered "nothing here" in a way that looked exactly like an adapter without vector support.
+/// SR6/SR7: the backfill's write attaches a vector where none is stored and writes nothing else -
+/// the row, its attestations and the owed ledger are as they were - and it neither replaces a stored
+/// vector nor stores one for an id the log does not hold.
+#[test]
+fn an_attached_vector_lands_only_where_none_is_stored() {
+    for_each_adapter_declared(|store, vectors| {
+        if vectors == StoresVectors::No {
+            return;
+        }
+        let bare = obs("written before the model");
+        let bare_id = bare.id.clone();
+        store.add_observation(bare).expect("observe");
+        let mut held = obs("written with a vector");
+        held.embedding = Some(vec![1.0, 0.0, 0.0]);
+        let held_id = held.id.clone();
+        store.add_observation(held).expect("observe");
+        let ids = [bare_id.clone(), held_id.clone()];
+        store.clear_owed(&ids).expect("clear");
+        let row_before = store.get_observation(&bare_id).expect("get").expect("row");
+
+        let attached = store
+            .attach_observation_embeddings(&[
+                (bare_id.clone(), vec![0.0, 1.0, 0.0]),
+                (held_id.clone(), vec![0.0, 0.0, 1.0]),
+                ("no-such-observation".to_string(), vec![1.0, 1.0, 1.0]),
+            ])
+            .expect("attach");
+        assert_eq!(attached, 1, "only the row without a vector takes one");
+
+        let bare_after = store.get_observation(&bare_id).expect("get").expect("row");
+        assert_eq!(bare_after.embedding.as_deref(), Some([0.0f32, 1.0, 0.0].as_slice()));
+        assert_eq!(
+            serde_json::to_value(&bare_after).expect("json"),
+            serde_json::to_value(&row_before).expect("json"),
+            "the row and its attestations are untouched (the vector is not part of the row)"
+        );
+        assert_eq!(bare_after.content, row_before.content);
+        let held_after = store.get_observation(&held_id).expect("get").expect("row");
+        assert_eq!(
+            held_after.embedding.as_deref(),
+            Some([1.0f32, 0.0, 0.0].as_slice()),
+            "a stored vector is never replaced"
+        );
+        assert!(store.get_observation("no-such-observation").expect("get").is_none());
+        assert!(
+            store.owed_projections().expect("ledger").is_empty(),
+            "nothing is owed by an attach"
+        );
+        assert_eq!(store.attach_observation_embeddings(&[]).expect("empty"), 0);
+    });
+}
+
 #[test]
 fn a_stored_vector_survives_the_round_trip() {
     for_each_adapter_declared(|store, vectors| {

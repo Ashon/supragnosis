@@ -761,6 +761,35 @@ impl AssertionStore for RedbStore {
 }
 
 impl KnowledgeStore for RedbStore {
+    fn attach_observation_embeddings(
+        &self,
+        vectors: &[(String, Vec<f32>)],
+    ) -> Result<usize, StoreError> {
+        if vectors.is_empty() {
+            return Ok(0);
+        }
+        // One transaction for the batch, and only the vector table is written: the row, its
+        // attestations and the owed ledger stay as they are (SR6). A row's presence is read in the
+        // same transaction, so no vector is stored for an id the log does not hold.
+        let txn = self.db.begin_write().map_err(backend)?;
+        let mut attached = 0;
+        {
+            let rows = txn.open_table(OBSERVATIONS).map_err(backend)?;
+            let mut vt = txn.open_table(OBS_VEC).map_err(backend)?;
+            for (id, vec) in vectors {
+                if rows.get(id.as_str()).map_err(backend)?.is_none()
+                    || vt.get(id.as_str()).map_err(backend)?.is_some()
+                {
+                    continue;
+                }
+                vt.insert(id.as_str(), encode_vector(vec).as_slice()).map_err(backend)?;
+                attached += 1;
+            }
+        }
+        txn.commit().map_err(backend)?;
+        Ok(attached)
+    }
+
     fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError> {
         let txn = self.db.begin_read().map_err(backend)?;
         let t = txn.open_table(OWED).map_err(backend)?;

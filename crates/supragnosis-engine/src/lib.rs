@@ -190,6 +190,25 @@ pub struct SemanticReport {
     pub state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The backfill of what was written before the model, once it has started in this process
+    /// (semantic-retrieval.md Section 12).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backfill: Option<BackfillProgress>,
+}
+
+/// How far the backfill got (semantic-retrieval.md Section 12): the rows it found without a
+/// vector, how many it embedded, and whether it is running, finished or stopped - with the reason
+/// when it stopped.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct BackfillProgress {
+    /// `running`, `done` or `stopped`.
+    pub state: &'static str,
+    /// Observations and entities that had no vector when the backfill began.
+    pub found: usize,
+    /// Of those, how many now have one.
+    pub embedded: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// What [`Engine::repay_owed`] found owed and repaid (crash-recovery.md K3/K5) - kept so the
@@ -466,8 +485,9 @@ pub struct MergeBandCoverage {
     /// not be computed at all, NOT because no near-name pairs exist.
     pub available: bool,
     /// Live entities carrying a name vector, out of `examined`. Short of it means the band ran but
-    /// under-covered - rows projected before an embedder was configured keep no vector until they
-    /// are re-projected - so an empty result is still not a negation over the whole set.
+    /// under-covered - rows projected before an embedder was configured keep no vector until the
+    /// serving process's backfill or a re-projection gives them one (semantic-retrieval.md Section
+    /// 12) - so an empty result is still not a negation over the whole set.
     pub embedded: usize,
     /// Live entities the band considered (merged-away rows excluded).
     pub examined: usize,
@@ -1328,6 +1348,9 @@ pub struct Engine {
     default_workspace: String,
     /// The last repayment of owed projections this engine ran, if any (crash-recovery.md K5).
     last_recovery: std::sync::Mutex<Option<Recovery>>,
+    /// The backfill's progress, once one has started in this process (semantic-retrieval.md
+    /// Section 12).
+    backfill: std::sync::Mutex<Option<BackfillProgress>>,
 }
 
 impl Engine {
@@ -1349,6 +1372,7 @@ impl Engine {
             host: host.into(),
             default_workspace: default_workspace.into(),
             last_recovery: std::sync::Mutex::new(None),
+            backfill: std::sync::Mutex::new(None),
         }
     }
 
@@ -3827,7 +3851,162 @@ impl Engine {
             supragnosis_core::Readiness::Ready => ("on", None),
             supragnosis_core::Readiness::Degraded(note) => ("off", Some(note)),
         };
-        Some(SemanticReport { model: e.id(), dims: e.dimensions(), state, note })
+        let backfill =
+            self.backfill.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        Some(SemanticReport { model: e.id(), dims: e.dimensions(), state, note, backfill })
+    }
+
+    /// Embeds, once, every observation and entity in the store that carries no vector - what was
+    /// written before the model, or while it was missing (semantic-retrieval.md Section 12). Each
+    /// batch is embedded without the write guard and written under it (SR7). An observation's
+    /// vector is attached and nothing else is written (SR6); an entity's is stored only if the
+    /// entity still has none and its text is the text that was embedded (IR4). An embed or a write
+    /// that fails stops the run with the reason, recorded like the progress. `None` when no
+    /// embedder is configured.
+    pub fn backfill_embeddings(&self, batch: usize) -> Option<BackfillProgress> {
+        let embedder = self.embedder.clone()?;
+        let batch = batch.max(1);
+        let set = |p: &BackfillProgress| {
+            *self.backfill.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(p.clone());
+        };
+        let stop = |mut p: BackfillProgress, why: String| {
+            tracing::warn!(
+                embedded = p.embedded,
+                found = p.found,
+                "the backfill stopped - the rest stays keyword only until the next start: {why}"
+            );
+            p.state = "stopped";
+            p.note = Some(why);
+            set(&p);
+            p
+        };
+        let mut progress = BackfillProgress { state: "running", found: 0, embedded: 0, note: None };
+        let (observations, entities) =
+            match (self.observations(None), self.store.all_entities(None)) {
+                (Ok(o), Ok(e)) => (o, e),
+                (Err(e), _) | (_, Err(e)) => {
+                    return Some(stop(progress, format!("the store could not be read: {e}")))
+                }
+            };
+        let observations: Vec<(String, String)> = observations
+            .into_iter()
+            .filter(|o| o.embedding.is_none())
+            .map(|o| (o.id, o.content))
+            .collect();
+        let entities: Vec<(String, String)> = entities
+            .into_iter()
+            .filter(|e| e.embedding.is_none())
+            .map(|e| {
+                let text = entity_text(&e);
+                (e.id, text)
+            })
+            .collect();
+        progress.found = observations.len() + entities.len();
+        if progress.found == 0 {
+            progress.state = "done";
+            set(&progress);
+            return Some(progress);
+        }
+        tracing::info!(
+            observations = observations.len(),
+            entities = entities.len(),
+            "embedding what was written before the model"
+        );
+        set(&progress);
+        let embed = |chunk: &[(String, String)]| {
+            let texts: Vec<&str> = chunk.iter().map(|(_, t)| t.as_str()).collect();
+            embedder.embed(&texts).and_then(|v| {
+                if v.len() == chunk.len() {
+                    Ok(v)
+                } else {
+                    Err(supragnosis_core::EmbedError::Provider(format!(
+                        "{} texts gave {} vectors",
+                        chunk.len(),
+                        v.len()
+                    )))
+                }
+            })
+        };
+        for chunk in observations.chunks(batch) {
+            let vectors = match embed(chunk) {
+                Ok(v) => v,
+                Err(e) => return Some(stop(progress, format!("an embed failed: {e}"))),
+            };
+            let pairs: Vec<(String, Vec<f32>)> =
+                chunk.iter().map(|(id, _)| id.clone()).zip(vectors).collect();
+            let written = {
+                let _write =
+                    self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                self.store.attach_observation_embeddings(&pairs)
+            };
+            match written {
+                Ok(n) => progress.embedded += n,
+                Err(e) => return Some(stop(progress, format!("a write failed: {e}"))),
+            }
+            set(&progress);
+        }
+        for chunk in entities.chunks(batch) {
+            let vectors = match embed(chunk) {
+                Ok(v) => v,
+                Err(e) => return Some(stop(progress, format!("an embed failed: {e}"))),
+            };
+            let written: Result<usize, StoreError> = {
+                let _write =
+                    self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut n = 0;
+                let mut result = Ok(());
+                for ((id, text), vec) in chunk.iter().zip(vectors) {
+                    // Re-read under the guard: a projection that rewrote the entity since the scan
+                    // wins, and a vector for text it no longer has is never stored (IR4, SR7).
+                    match self.store.get_entity(id) {
+                        Ok(Some(mut e)) if e.embedding.is_none() && entity_text(&e) == *text => {
+                            e.embedding = Some(vec);
+                            if let Err(err) = self.store.put_entity(e) {
+                                result = Err(err);
+                                break;
+                            }
+                            n += 1;
+                        }
+                        Ok(_) => {}
+                        Err(err) => {
+                            result = Err(err);
+                            break;
+                        }
+                    }
+                }
+                result.map(|()| n)
+            };
+            match written {
+                Ok(n) => progress.embedded += n,
+                Err(e) => return Some(stop(progress, format!("a write failed: {e}"))),
+            }
+            set(&progress);
+        }
+        progress.state = "done";
+        tracing::info!(
+            embedded = progress.embedded,
+            found = progress.found,
+            "the backfill finished - what was written before the model is found by meaning too"
+        );
+        set(&progress);
+        Some(progress)
+    }
+
+    /// The serving process's backfill worker (semantic-retrieval.md Section 12): waits until the
+    /// embedder can answer - the model's files are in the cache - checking every `poll`, then runs
+    /// [`Engine::backfill_embeddings`] once. Returns at once, with `None`, when no embedder is
+    /// configured.
+    pub fn backfill_when_ready(
+        &self,
+        poll: std::time::Duration,
+        batch: usize,
+    ) -> Option<BackfillProgress> {
+        let embedder = self.embedder.as_ref()?;
+        while embedder.readiness() != supragnosis_core::Readiness::Ready {
+            std::thread::sleep(poll);
+        }
+        self.backfill_embeddings(batch)
     }
 
     /// How many log rows still owe their projection right now. Non-zero on a running node means a
@@ -6423,6 +6602,248 @@ mod tests {
     /// exhaustively and found nothing. `search_knowledge` already refuses this conflation by
     /// labelling its `mode`; the curation report must too, or a reviewer reads "no duplicates"
     /// off a signal that never looked.
+    /// Observations and entities written through an engine with no embedder - what a node held
+    /// before the model - for the backfill tests (semantic-retrieval.md Section 12).
+    fn written_before_the_model(store: &Arc<InMemoryStore>) -> Vec<String> {
+        let plain = Engine::new(store.clone(), "h", "ws1");
+        let mut ids = Vec::new();
+        for (content, names) in [
+            (
+                "the worker crashed at boot because the connection pool was exhausted",
+                vec!["Alpha"],
+            ),
+            (
+                "deploy rollbacks re-point the image tag and never touch migrations",
+                vec!["Beta"],
+            ),
+            ("the cache is cleared only when a price changes", vec!["Alpha", "Gamma"]),
+        ] {
+            let out = plain
+                .observe(ObserveInput {
+                    content: content.into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: names
+                        .into_iter()
+                        .map(|n| EntityInput { name: n.into(), kind: None, description: None })
+                        .collect(),
+                    relations: vec![],
+                })
+                .expect("observe");
+            ids.push(out.observation_id);
+        }
+        ids
+    }
+
+    fn rows_as_json(store: &InMemoryStore, ids: &[String]) -> Vec<serde_json::Value> {
+        ids.iter()
+            .map(|id| {
+                serde_json::to_value(store.get_observation(id).unwrap().expect("row")).unwrap()
+            })
+            .collect()
+    }
+
+    /// SR6: what was written before the model is embedded - every observation and entity - and
+    /// nothing else is written: the rows and their attestations are what they were, nothing is
+    /// owed, the merge band covers every live entity, and an old observation is found by meaning.
+    #[test]
+    fn what_was_written_before_the_model_is_embedded_and_nothing_else() {
+        let store = Arc::new(InMemoryStore::new());
+        let ids = written_before_the_model(&store);
+        assert!(store.all_entities(None).unwrap().iter().all(|e| e.embedding.is_none()));
+        assert!(store.owed_projections().unwrap().is_empty());
+        let before = rows_as_json(&store, &ids);
+        let embedder = Arc::new(supragnosis_embed::HashingEmbedder::default());
+        let engine = Engine::new(store.clone(), "h", "ws1").with_embedder(embedder.clone());
+        let q = embedder.embed_one("pool exhausted worker").unwrap();
+        assert!(store.search_semantic(&q, None, 3).unwrap().is_empty(), "no vectors yet");
+
+        let p = engine.backfill_embeddings(2).expect("an embedder is configured");
+        let entities = store.all_entities(None).unwrap();
+        assert_eq!(p.state, "done");
+        assert_eq!(p.found, ids.len() + entities.len());
+        assert_eq!(p.embedded, p.found);
+        for id in &ids {
+            assert!(store.get_observation(id).unwrap().unwrap().embedding.is_some(), "{id}");
+        }
+        assert!(entities.iter().all(|e| e.embedding.is_some()));
+        assert_eq!(rows_as_json(&store, &ids), before, "the rows are untouched");
+        assert!(store.owed_projections().unwrap().is_empty(), "nothing is owed");
+        let band = engine.curation(Some("ws1")).unwrap().merge_band;
+        assert_eq!(band.embedded, band.examined, "every live entity is covered");
+        let hits = store.search_semantic(&q, None, 1).unwrap();
+        assert_eq!(hits.first().map(|h| h.id.as_str()), Some(ids[0].as_str()));
+        assert_eq!(engine.semantic().unwrap().backfill, Some(p), "the report carries it");
+    }
+
+    /// SR7: a second run finds nothing to do, and a stored vector is kept as it was.
+    #[test]
+    fn a_second_backfill_embeds_nothing_and_keeps_a_stored_vector() {
+        let store = Arc::new(InMemoryStore::new());
+        written_before_the_model(&store);
+        let engine = Engine::new(store.clone(), "h", "ws1")
+            .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::default()));
+        engine.backfill_embeddings(8).unwrap();
+        let alpha = Entity::make_id("ws1", "Alpha");
+        let vector = store.get_entity(&alpha).unwrap().unwrap().embedding;
+        assert!(vector.is_some());
+        let again = engine.backfill_embeddings(8).unwrap();
+        assert_eq!((again.state, again.found, again.embedded), ("done", 0, 0));
+        assert_eq!(store.get_entity(&alpha).unwrap().unwrap().embedding, vector);
+    }
+
+    /// SR7: an entity whose text changes while its batch is embedding is not given the vector of
+    /// the text it no longer has; the next run embeds it with the text it has.
+    #[test]
+    fn an_entity_whose_text_changed_mid_batch_is_left_for_the_next_run() {
+        use supragnosis_core::{EmbedError, EmbeddingProvider};
+        struct Meddler {
+            store: Arc<InMemoryStore>,
+            inner: supragnosis_embed::HashingEmbedder,
+            done: std::sync::atomic::AtomicBool,
+        }
+        impl EmbeddingProvider for Meddler {
+            fn dimensions(&self) -> usize {
+                self.inner.dimensions()
+            }
+            fn id(&self) -> String {
+                self.inner.id()
+            }
+            fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+                // A projection lands while Alpha's batch embeds: the entity gains an alias.
+                if texts.contains(&"Alpha")
+                    && !self.done.swap(true, std::sync::atomic::Ordering::SeqCst)
+                {
+                    let id = Entity::make_id("ws1", "Alpha");
+                    let mut e = self.store.get_entity(&id).unwrap().unwrap();
+                    e.aliases.push("Alfa".into());
+                    self.store.put_entity(e).unwrap();
+                }
+                self.inner.embed(texts)
+            }
+        }
+        let store = Arc::new(InMemoryStore::new());
+        written_before_the_model(&store);
+        let meddler = Arc::new(Meddler {
+            store: store.clone(),
+            inner: supragnosis_embed::HashingEmbedder::default(),
+            done: std::sync::atomic::AtomicBool::new(false),
+        });
+        let engine = Engine::new(store.clone(), "h", "ws1").with_embedder(meddler);
+        let alpha = Entity::make_id("ws1", "Alpha");
+        let first = engine.backfill_embeddings(8).unwrap();
+        assert_eq!(first.state, "done");
+        assert_eq!(first.embedded, first.found - 1, "Alpha's vector was for the old text");
+        assert!(store.get_entity(&alpha).unwrap().unwrap().embedding.is_none());
+        let second = engine.backfill_embeddings(8).unwrap();
+        assert_eq!((second.found, second.embedded), (1, 1));
+        let e = store.get_entity(&alpha).unwrap().unwrap();
+        let fresh = supragnosis_embed::HashingEmbedder::default()
+            .embed_one(&entity_text(&e))
+            .unwrap();
+        assert_eq!(e.embedding, Some(fresh), "embedded with the text it has now");
+    }
+
+    /// Principle 19 and 24: an embed that fails stops the backfill with the reason, in the report;
+    /// what it did not reach keeps no vector, and a later run embeds it.
+    #[test]
+    fn an_embed_failure_stops_the_backfill_and_says_why() {
+        use supragnosis_core::{EmbedError, EmbeddingProvider};
+        struct FailsSecond {
+            inner: supragnosis_embed::HashingEmbedder,
+            calls: std::sync::atomic::AtomicUsize,
+        }
+        impl EmbeddingProvider for FailsSecond {
+            fn dimensions(&self) -> usize {
+                self.inner.dimensions()
+            }
+            fn id(&self) -> String {
+                self.inner.id()
+            }
+            fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+                if self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                    return Err(EmbedError::Provider("the session went away".into()));
+                }
+                self.inner.embed(texts)
+            }
+        }
+        let store = Arc::new(InMemoryStore::new());
+        let ids = written_before_the_model(&store);
+        let engine = Engine::new(store.clone(), "h", "ws1").with_embedder(Arc::new(FailsSecond {
+            inner: supragnosis_embed::HashingEmbedder::default(),
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }));
+        let p = engine.backfill_embeddings(1).unwrap();
+        assert_eq!((p.state, p.embedded), ("stopped", 1));
+        assert!(p.note.as_deref().unwrap_or("").contains("the session went away"), "{p:?}");
+        assert_eq!(engine.semantic().unwrap().backfill.unwrap().state, "stopped");
+        // The store enumerates in id order, so which observation came first is not the order they
+        // were written in: one has a vector, the rest have none.
+        let with_vector = ids
+            .iter()
+            .filter(|id| store.get_observation(id).unwrap().unwrap().embedding.is_some())
+            .count();
+        assert_eq!(with_vector, 1);
+
+        let later = Engine::new(store.clone(), "h", "ws1")
+            .with_embedder(Arc::new(supragnosis_embed::HashingEmbedder::default()));
+        let rest = later.backfill_embeddings(8).unwrap();
+        assert_eq!(rest.state, "done");
+        assert_eq!(rest.found, p.found - 1);
+        assert_eq!(rest.embedded, rest.found);
+    }
+
+    /// Section 12.2: the worker waits for the model's files, then runs once; with no embedder it
+    /// does not start.
+    #[test]
+    fn the_worker_waits_for_the_models_files_then_runs_once() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use supragnosis_embed::{LazyEmbedder, LoadError, Loader, Present};
+        let store = Arc::new(InMemoryStore::new());
+        let ids = written_before_the_model(&store);
+        let present = Arc::new(AtomicBool::new(false));
+        let loads = Arc::new(AtomicUsize::new(0));
+        let (p1, p2, l) = (present.clone(), present.clone(), loads.clone());
+        let loader: Loader = Box::new(move || {
+            l.fetch_add(1, Ordering::SeqCst);
+            if p1.load(Ordering::SeqCst) {
+                Ok(Box::new(supragnosis_embed::HashingEmbedder::default())
+                    as Box<dyn supragnosis_core::EmbeddingProvider>)
+            } else {
+                Err(LoadError::Missing("no files - run supragnosis embed fetch".into()))
+            }
+        });
+        let present_fn: Present = Box::new(move || p2.load(Ordering::SeqCst));
+        let lazy = LazyEmbedder::new("hashing-256", 256, present_fn, loader);
+        let engine = Arc::new(Engine::new(store.clone(), "h", "ws1").with_embedder(Arc::new(lazy)));
+        let worker = {
+            let engine = engine.clone();
+            std::thread::spawn(move || {
+                engine.backfill_when_ready(std::time::Duration::from_millis(5), 8)
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(!worker.is_finished(), "it waits while the files are missing");
+        assert!(store.get_observation(&ids[0]).unwrap().unwrap().embedding.is_none());
+        assert_eq!(engine.semantic().unwrap().backfill, None, "nothing has started");
+        present.store(true, Ordering::SeqCst);
+        let p = worker.join().unwrap().expect("ran");
+        assert_eq!(p.state, "done");
+        assert!(p.found > 0 && p.embedded == p.found);
+        assert!(ids.iter().all(|id| store
+            .get_observation(id)
+            .unwrap()
+            .unwrap()
+            .embedding
+            .is_some()));
+
+        let none = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
+        assert_eq!(none.backfill_when_ready(std::time::Duration::from_secs(3600), 8), None);
+    }
+
     #[test]
     fn merge_band_reports_whether_it_could_run_and_over_how_much() {
         use supragnosis_core::{EmbedError, EmbeddingProvider};
