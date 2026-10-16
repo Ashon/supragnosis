@@ -5,8 +5,8 @@
 > Section 6 (hybrid retrieval) and [daemon-lifecycle.md](daemon-lifecycle.md) (who starts the
 > daemon, and so who fetches the model).
 >
-> Status: **specified**, with the measurements that decided it (Section 2). Section 9 is the order
-> the work lands in; what building it changes goes into Section 11.
+> Status: **built** (Section 9 steps 1-4), with the measurements that decided it (Section 2).
+> What building it changed is in Section 11.
 
 ## 1. Why this exists
 
@@ -166,19 +166,24 @@ first fetch is 224 MB, and the daemon holds up to about 1 GB once the model is l
 | P19 - an adapter swap must not harm core correctness | SR4 |
 | compatibility.md - a store is never misread | Section 7: an unrecorded embedder is recorded, never assumed |
 
-Guarded by (named when they run; Section 9 step 1 and 2 write them):
+Guarded by:
 
-- a missing model degrades to keyword and says why: the loader is called once, the embed answers
-  the degrade error, a second embed does not call the loader again, and after files appear the
-  next embed loads (SR1, SR2).
-- the model loads once on first use: not at construction, once after two embeds (SR2).
-- the model choice is parsed and identified: the two names map to their identities and
+- `a_missing_model_degrades_to_keyword_and_says_why` - the loader is called once, the embed
+  answers the degrade note, a second embed does not call the loader again, `readiness` carries
+  the note, and after the files appear the next embed loads (SR1, SR2).
+- `an_empty_cache_is_missing_and_never_fetched` - the real adapter over an empty directory: the
+  note names the fetch and its size, nothing is created on disk, and only a file over a megabyte
+  counts as the weights (SR1).
+- `the_model_loads_once_on_first_use` - not at construction, once after two embeds; a load that
+  failed with the files present is not retried (SR2).
+- `the_model_choice_is_parsed_and_identified` - the two names map to their identities and
   dimensions; any other value is refused naming both (Section 5).
-- `status` names the semantic state in its text and its document, and the example carries the
-  field (SR3).
-- SR4 is `redb_refuses_a_reopen_under_a_different_embedder`, already running.
-- SR5 is a release step, not a cargo test: it is `Structural` in the registry, by the features
-  Section 4 names and the step that lists the binary's dependencies on every release.
+- `status_names_the_semantic_state` - on with the model, off with the daemon's reason, off for a
+  node with no embedder; `status_json_matches_its_example` carries the field (SR3).
+- SR4 is `redb_refuses_a_reopen_under_a_different_embedder`.
+- SR5 is a release step, not a cargo test: `Structural` in the registry, by the features Section
+  4 names and the step that lists the binary's dependencies on every release and in CI's feature
+  job.
 
 Deferred, recorded here so it is not forgotten: a daemon that embeds its own backlog after a model
 arrives (Section 3's last point). The need is real for the first upgrade; `reproject` meets it at
@@ -186,4 +191,23 @@ the cost of a stop.
 
 ## 11. What building it changed
 
-Written when it is built.
+- **fastembed has no fetch-only call.** `TextEmbedding::try_new` is what downloads, and it loads
+  the model it fetched. So `embed fetch` loads the model once in the fetching process, and
+  `service install` pays about a gigabyte of memory for the seconds the fetch takes. The
+  provider's own path is unchanged: it never calls `try_new` while the files are absent.
+- **hf-hub keeps each file once and links to it.** The cache holds `blobs` and a `snapshots`
+  directory of symlinks into them; a size that followed the links reported 480 MB for 240. The
+  size and the presence check skip symlinks.
+- **The health report carries `semantic`, and `status --json` keeps it beside `store`, not in
+  it.** The daemon's `/api/health` is what the CLI already read for the store, so the model's
+  state rides on it; the document gives it its own field and strips it from `store`, which the app
+  reads by shape.
+- **The degrade is said at start as well as on use.** `readiness` on an unloaded provider asks
+  the loader once, without keeping the answer, so the daemon's log names the missing model when
+  it starts and `status` names it from then on; the first embed decides for real.
+- **Checked end to end on the author's machine** with the release build: `embed fetch` into an
+  empty directory took 25 s and reported 240 MB, a second run found it; `SUPRAGNOSIS_EMBED_MODEL=gpt`
+  was refused naming both models; a stdio server over an empty cache logged the note at start and
+  answered a search in `keyword` mode; the same server over the fetched cache answered a Korean
+  paraphrase in `hybrid` mode with the right observation first; `status` against the running
+  v0.4.12 daemon, which has no model, read `semantic off - keyword only`.

@@ -472,25 +472,22 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
         "the daemon never downloads a model; a missing model degrades the process to keyword retrieval, \
          labelled on every answer, and never delays or fails a write",
-        Evidence::Deferred(
-            "semantic-retrieval.md is specified, not built. Revisit when Section 9 step 1 lands: the lazy \
-             loader's test (a missing model degrades to keyword and says why) takes this row to Scenario",
-        ),
+        Evidence::Scenario(&[
+            "a_missing_model_degrades_to_keyword_and_says_why",
+            "an_empty_cache_is_missing_and_never_fetched",
+        ]),
     )]),
     (2, &[c(
         "the model is loaded at most once per process, on first use, from the cache; a load that found no \
          files is not retried until files exist",
-        Evidence::Deferred(
-            "Revisit when semantic-retrieval.md Section 9 step 1 lands: the loader's tests (loads once on \
-             first use; not retried until files exist) take this row to Scenario",
-        ),
+        Evidence::Scenario(&[
+            "the_model_loads_once_on_first_use",
+            "a_missing_model_degrades_to_keyword_and_says_why",
+        ]),
     )]),
     (3, &[c(
         "status says whether semantic retrieval is on, and when it is off, why and what to run",
-        Evidence::Deferred(
-            "Revisit when semantic-retrieval.md Section 9 step 2 lands: the status test (names the semantic \
-             state in its text and its document) takes this row to Scenario",
-        ),
+        Evidence::Scenario(&["status_names_the_semantic_state", "status_json_matches_its_example"]),
     )]),
     (4, &[c(
         "vectors from two models never share a store: the embedder's identity is model-specific and the \
@@ -2636,6 +2633,8 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/bridge.rs"),
     include_str!("../../supragnosis-cli/src/connect.rs"),
     include_str!("../../supragnosis-cli/src/hook.rs"),
+    include_str!("../../supragnosis-embed/src/lib.rs"),
+    include_str!("../../supragnosis-embed/src/fastembed_provider.rs"),
     include_str!("../../supragnosis-cli/src/profile.rs"),
     include_str!("../../supragnosis-cli/src/principal.rs"),
     include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
@@ -3198,6 +3197,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
             "embed_failure_degrades_without_blocking_ingest",
             "merge_band_reports_whether_it_could_run_and_over_how_much",
+            // semantic-retrieval.md SR1: a model that is not there is a degrade with a reason.
+            "a_missing_model_degrades_to_keyword_and_says_why",
         ])),
         // The degrade above is only honest if "no vectors" and "vectors lost" are distinguishable.
         // They were not: both embedding fields carry `#[serde(skip)]` - deliberately, so a vector

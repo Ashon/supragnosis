@@ -1037,6 +1037,8 @@ fn health_response(engine: &Engine) -> Response {
             let body = serde_json::json!({
                 "owed_projections": owed,
                 "last_recovery": engine.last_recovery(),
+                // Which model, and whether it answers (semantic-retrieval.md SR3); null without one.
+                "semantic": engine.semantic(),
             });
             Response { status: "200 OK", content_type: "application/json", body: body.to_string() }
         }

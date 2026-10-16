@@ -101,12 +101,16 @@ nothing above touches it. Remove it only if the knowledge should go too.
 - The plist is generated per user (no hand-edited paths). Settings that exist only as environment
   variables - `SUPRAGNOSIS_HOST` (recorded in provenance), `_WORKSPACE`, `_EMBED`, `_DATA_DIR` - go
   in with `supragnosis service install --env KEY=VALUE` and are carried forward on reinstall.
-- To use real semantic embeddings, build with `--features fastembed` (that build makes `fastembed`
-  the default embedder) and reinstall. A store the prebuilt binary wrote has no embedder recorded,
-  so it takes the new one; `supragnosis reproject` then gives its existing entities vectors, while
-  observations written before the switch stay keyword-only. A store indexed with a different model
-  is refused at open, since two models share no vector space - point that one at a new
-  `SUPRAGNOSIS_DATA_DIR`.
+- Semantic retrieval needs the embedding model, which `service install` fetches once into
+  `~/.supragnosis/models` (224 MB; `supragnosis embed fetch` by hand, `SUPRAGNOSIS_MODEL_DIR` to
+  put it elsewhere). The daemon never downloads: without the files it is keyword only and `status`
+  says so. Loaded, the model holds about 1 GB; `SUPRAGNOSIS_EMBED=none` keeps the daemon small
+  and keyword only, and `SUPRAGNOSIS_EMBED_MODEL=bge-small-en` is the English-only model at half
+  the size ([docs/semantic-retrieval.md](../docs/semantic-retrieval.md)).
+- A store written before the model existed has no vectors: `supragnosis reproject` (daemon
+  stopped) gives its entities vectors once, while observations written before stay keyword-only.
+  A store indexed with a different model is refused at open, since two models share no vector
+  space - point that one at a new `SUPRAGNOSIS_DATA_DIR`.
 - Only one daemon should run (single ownership of the db + ports), and only one manager should
   run it - `supragnosis status` reports a conflict, and `service install --take-over` resolves it.
   Register each AI app through `supragnosis connect`, which writes the bridge. An app that runs

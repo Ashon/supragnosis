@@ -66,6 +66,11 @@ enum Cmd {
     /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini) to this
     /// node through the bridge; with no app, list them and how each is connected
     Connect(ConnectArgs),
+    /// The embedding model behind semantic retrieval (docs/semantic-retrieval.md)
+    Embed {
+        #[command(subcommand)]
+        cmd: EmbedCmd,
+    },
     /// Answer a Claude Code hook event from stdin: after a commit the agent made, ask it for the
     /// decision behind the change; at a session's start, say what the workspace holds here.
     /// Registered by `connect claude-code` (docs/client-connect.md Section 12)
@@ -152,6 +157,13 @@ enum PrincipalCmd {
     Remove { name: String },
     /// List the principals and their grants (never their credentials)
     List,
+}
+
+#[derive(Subcommand)]
+enum EmbedCmd {
+    /// Download the model into ~/.supragnosis/models, once. `service install` does this too; the
+    /// daemon never downloads, and says so in `status` while the model is missing
+    Fetch,
 }
 
 #[derive(Subcommand)]
@@ -276,6 +288,7 @@ fn main() -> Result<()> {
         Cmd::Status(a) => status(a.json),
         Cmd::Bridge => bridge_cmd(),
         Cmd::Connect(a) => connect_cmd(a),
+        Cmd::Embed { cmd: EmbedCmd::Fetch } => embed_fetch(true),
         Cmd::Hook(a) => hook_cmd(a),
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
@@ -400,16 +413,18 @@ fn default_embed_kind() -> &'static str {
     }
 }
 
-/// Selects the embedding provider from the SUPRAGNOSIS_EMBED value. Failure/absence yields None (degrade to keyword search).
-fn build_embedder(kind: &str) -> Option<Arc<dyn EmbeddingProvider>> {
-    match kind {
+/// Selects the embedding provider from the SUPRAGNOSIS_EMBED value. Absence yields None (keyword
+/// search); a model that is not there degrades later, loudly (semantic-retrieval.md Section 6).
+/// The one refusal is a `SUPRAGNOSIS_EMBED_MODEL` that names no model (Principle 24).
+fn build_embedder(kind: &str) -> Result<Option<Arc<dyn EmbeddingProvider>>> {
+    Ok(match kind {
         "none" | "" => None,
         // Deterministic but non-semantic (lexical hashing) - a development/offline stand-in.
         "hashing" => {
             tracing::info!("embed=hashing (deterministic/lexical, for development)");
             Some(Arc::new(HashingEmbedder::default()))
         }
-        "fastembed" => build_fastembed(),
+        "fastembed" => build_fastembed()?,
         other => {
             tracing::warn!(
                 kind = other,
@@ -417,27 +432,76 @@ fn build_embedder(kind: &str) -> Option<Arc<dyn EmbeddingProvider>> {
             );
             None
         }
-    }
+    })
 }
 
+/// The model `SUPRAGNOSIS_EMBED_MODEL` names, or the default (semantic-retrieval.md Section 5).
 #[cfg(feature = "fastembed")]
-fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
-    match supragnosis_embed::FastEmbedProvider::try_default() {
-        Ok(p) => {
-            tracing::info!("embed=fastembed (BGE-small-en-v1.5, 384d)");
-            Some(Arc::new(p))
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "fastembed initialization failed - proceeding with keyword search");
-            None
-        }
+fn embed_model() -> Result<supragnosis_embed::Model> {
+    supragnosis_embed::Model::parse(&std::env::var("SUPRAGNOSIS_EMBED_MODEL").unwrap_or_default())
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+/// The lazy provider: identity now, weights on first use from the cache, never a download (SR1,
+/// SR2). A missing model is said once here, at start, and again by `status` for as long as it is.
+#[cfg(feature = "fastembed")]
+fn build_fastembed() -> Result<Option<Arc<dyn EmbeddingProvider>>> {
+    use supragnosis_core::Readiness;
+    use supragnosis_embed::{model_cache_dir, FastEmbedProvider};
+    let model = embed_model()?;
+    let cache = model_cache_dir();
+    let provider = FastEmbedProvider::lazy(model, cache.clone());
+    match provider.readiness() {
+        Readiness::Ready => tracing::info!(
+            model = model.name(),
+            id = model.id(),
+            cache = %cache.display(),
+            "embed=fastembed - the model loads on first use"
+        ),
+        Readiness::Degraded(note) => tracing::warn!("{note}"),
     }
+    Ok(Some(Arc::new(provider)))
 }
 
 #[cfg(not(feature = "fastembed"))]
-fn build_fastembed() -> Option<Arc<dyn EmbeddingProvider>> {
-    tracing::warn!("fastembed feature not compiled in - build with `--features fastembed`. Proceeding with keyword search");
-    None
+fn build_fastembed() -> Result<Option<Arc<dyn EmbeddingProvider>>> {
+    tracing::warn!("this build has no embedding model (built without the fastembed feature) - proceeding with keyword search");
+    Ok(None)
+}
+
+/// `supragnosis embed fetch` (semantic-retrieval.md Section 6): the one download, by the person's
+/// or the installer's command. Idempotent, and says what it found or fetched.
+#[cfg(feature = "fastembed")]
+fn embed_fetch(progress: bool) -> Result<()> {
+    use supragnosis_embed::{model_cache_dir, FastEmbedProvider};
+    let model = embed_model()?;
+    let cache = model_cache_dir();
+    let had = model.present(&cache);
+    if !had {
+        println!(
+            "fetching the embedding model {} ({} MB, once) into {}",
+            model.name(),
+            model.download_mb(),
+            cache.display()
+        );
+    }
+    let bytes = FastEmbedProvider::fetch(model, &cache, progress && !had)
+        .map_err(|e| anyhow::anyhow!("fetching the embedding model {}: {e}", model.name()))?;
+    println!(
+        "{} the embedding model {} ({} MB on disk) in {}",
+        if had { "found" } else { "fetched" },
+        model.name(),
+        bytes >> 20,
+        cache.display()
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "fastembed"))]
+fn embed_fetch(_progress: bool) -> Result<()> {
+    anyhow::bail!(
+        "this build has no embedding model (built without the fastembed feature); retrieval is keyword only"
+    )
 }
 
 /// The last release that could read a Cozo (RocksDB) store was v0.1.21. This build cannot, so an
@@ -591,7 +655,7 @@ fn build_engine(
     refuse_unmigrated_store(cfg)?;
     // Every writer passes here, so this is where the state directory is closed if it was found open.
     private_dir(&fed::fed_base_dir())?;
-    let embedder = build_embedder(&cfg.embed_kind);
+    let embedder = build_embedder(&cfg.embed_kind)?;
     let embed_dim = embedder.as_ref().map(|e| e.dimensions());
     let store: Arc<dyn KnowledgeStore> = match cfg.store_kind.as_str() {
         "mem" | "memory" => {
@@ -2918,6 +2982,23 @@ struct StatusFacts<'a> {
     plist_state: &'static str,
 }
 
+/// One line on semantic retrieval, from the daemon's health report (semantic-retrieval.md SR3):
+/// on with the model, or off with the reason and what to run. No report at all is a node with no
+/// embedder - a build without the model, or `SUPRAGNOSIS_EMBED=none`.
+fn semantic_line(report: Option<&serde_json::Value>) -> String {
+    match report {
+        Some(r) if r["state"].as_str() == Some("on") => {
+            format!("semantic on ({})", r["model"].as_str().unwrap_or("?"))
+        }
+        Some(r) if r["state"].as_str() == Some("off") => format!(
+            "semantic off - {}",
+            r["note"].as_str().unwrap_or("the daemon gave no reason")
+        ),
+        _ => "semantic off - keyword only (no embedding model in this build, or SUPRAGNOSIS_EMBED=none)"
+            .to_string(),
+    }
+}
+
 /// `status --json`, which the desktop app reads for its tray line and its Settings page.
 #[cfg(unix)]
 fn status_document(f: &StatusFacts) -> serde_json::Value {
@@ -2954,7 +3035,16 @@ fn status_document(f: &StatusFacts) -> serde_json::Value {
         "store_held": f.store_held,
         "mcp": format!("http://{}/mcp", f.http),
         "version": { "here": f.here, "running": f.running },
-        "store": f.health,
+        // The health report minus the semantic part, which has its own field below.
+        "store": f.health.as_ref().map(|h| {
+            let mut s = h.clone();
+            if let Some(o) = s.as_object_mut() {
+                o.remove("semantic");
+            }
+            s
+        }),
+        // The daemon's own report on semantic retrieval (SR3); null when it is not answering.
+        "semantic": f.health.as_ref().and_then(|h| h.get("semantic")).cloned(),
         "server": f.server,
         "service": {
             "label": lifecycle::CANONICAL_LABEL,
@@ -3071,6 +3161,7 @@ fn status(json: bool) -> Result<()> {
                 r.get("observations").and_then(|v| v.as_u64()).unwrap_or(0)
             );
         }
+        println!("  {}", semantic_line(h.get("semantic")));
     }
     if observed.answering {
         // The connect line is reported for a RUNNING daemon whose token file exists. Read, never
@@ -3322,6 +3413,11 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
         println!("  env     {k}={v}");
     }
     println!("  the daemon starts now and at every login (supragnosis service uninstall to undo)");
+    // The model, so the first tool call does not find it missing (semantic-retrieval.md Section
+    // 6). A failure is reported and does not fail the install: the daemon is useful without it.
+    if let Err(e) = embed_fetch(true) {
+        println!("  model   not fetched: {e:#} - run `supragnosis embed fetch` when online");
+    }
     await_daemon(lifecycle::CANONICAL_LABEL)
 }
 
@@ -4258,6 +4354,24 @@ mod json_contract {
         }
     }
 
+    /// SR3: the line says on with the model, off with the daemon's reason, and off for a node
+    /// with no embedder at all; the document carries the daemon's report as it came.
+    #[test]
+    fn status_names_the_semantic_state() {
+        let on = serde_json::json!({"model": "paraphrase-multilingual-minilm-l12-v2-q-384", "dims": 384, "state": "on"});
+        assert_eq!(
+            semantic_line(Some(&on)),
+            "semantic on (paraphrase-multilingual-minilm-l12-v2-q-384)"
+        );
+        let off = serde_json::json!({"model": "m-384", "dims": 384, "state": "off",
+            "note": "semantic retrieval is off: the embedding model multilingual is not in /x - run `supragnosis embed fetch` once (224 MB); retrieval is keyword only until then"});
+        let line = semantic_line(Some(&off));
+        assert!(line.starts_with("semantic off - ") && line.contains("embed fetch"), "{line}");
+        let none = semantic_line(None);
+        assert!(none.starts_with("semantic off - keyword only"), "{none}");
+        assert_eq!(semantic_line(Some(&serde_json::Value::Null)), none);
+    }
+
     #[cfg(unix)]
     #[test]
     fn status_json_matches_its_example() {
@@ -4278,7 +4392,10 @@ mod json_contract {
             http: "127.0.0.1:7373".into(),
             here: "1.0.0",
             running: Some("0.9.0".into()),
-            health: Some(serde_json::json!({"owed_projections": 0, "last_recovery": null})),
+            health: Some(serde_json::json!({
+                "owed_projections": 0, "last_recovery": null,
+                "semantic": {"model": "m-384", "dims": 384, "state": "on"}
+            })),
             server: serde_json::json!({"name": "lab", "url": "https://lab:7420/mcp", "remote": true}),
             plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),
             plist_state: "generated",

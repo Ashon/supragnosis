@@ -26,10 +26,13 @@ COPY e2e ./e2e
 # image and CI can disagree about a dependency, which is the kind of difference that only shows up
 # in production.
 #
-# Default features: the prebuilt search path is keyword only. `fastembed` pulls ONNX runtime and
-# a model download, which belongs to a deliberate build rather than the default hub image.
-RUN cargo build --release --locked -p supragnosis-cli \
-    && strip target/release/supragnosis
+# With the embedding model's runtime, as the release binaries are built (docs/semantic-retrieval.md).
+# The model is fetched here, into a directory the runtime stage copies: a container never
+# downloads, and the state volume mounted over $HOME/.supragnosis cannot hide it. It is 240 MB of
+# image, and the daemon holds about 1 GB once a tool call has loaded it.
+RUN cargo build --release --locked -p supragnosis-cli --features fastembed \
+    && strip target/release/supragnosis \
+    && SUPRAGNOSIS_MODEL_DIR=/usr/share/supragnosis/models target/release/supragnosis embed fetch
 
 # Bookworm slim, not Alpine: the binary is dynamically linked against glibc, and a musl target is
 # not something this workspace builds or tests. ca-certificates is for the federation client half -
@@ -52,6 +55,8 @@ ENV HOME=/var/lib/supragnosis
 WORKDIR /var/lib/supragnosis
 
 COPY --from=build /src/target/release/supragnosis /usr/local/bin/supragnosis
+COPY --from=build /usr/share/supragnosis/models /usr/share/supragnosis/models
+ENV SUPRAGNOSIS_MODEL_DIR=/usr/share/supragnosis/models
 
 # How the MCP Registry verifies that this image is ours: the annotation has to match the `name` in
 # server.json exactly. It is the whole of the ownership proof for an OCI package, so it moves only

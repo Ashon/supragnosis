@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use supragnosis_core::EmbeddingProvider;
-use supragnosis_embed::FastEmbedProvider;
+use supragnosis_embed::{model_cache_dir, FastEmbedProvider, Model};
 use supragnosis_engine::{Engine, ObserveInput};
 use supragnosis_store::RedbStore;
 
@@ -30,7 +30,9 @@ fn observe(engine: &Engine, content: &str) {
 #[test]
 #[ignore = "fastembed model download + ONNX inference - for manual verification"]
 fn fastembed_semantic_recall_end_to_end() {
-    let embedder = Arc::new(FastEmbedProvider::try_default().expect("fastembed init"));
+    let cache = model_cache_dir();
+    FastEmbedProvider::fetch(Model::DEFAULT, &cache, false).expect("fastembed fetch");
+    let embedder = Arc::new(FastEmbedProvider::lazy(Model::DEFAULT, cache));
     let dim = embedder.dimensions();
     assert_eq!(dim, 384);
 

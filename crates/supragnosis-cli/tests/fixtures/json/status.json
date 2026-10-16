@@ -26,6 +26,11 @@
     "owed_projections": 0,
     "last_recovery": null
   },
+  "semantic": {
+    "model": "paraphrase-multilingual-minilm-l12-v2-q-384",
+    "dims": 384,
+    "state": "on"
+  },
   "server": {
     "name": "lab",
     "url": "https://lab.example:7420/mcp",

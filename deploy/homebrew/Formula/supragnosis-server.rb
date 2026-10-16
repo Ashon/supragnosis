@@ -1,5 +1,5 @@
-# supragnosis server/CLI formula (prebuilt release binaries; keyword search only -
-# build from source with --features fastembed for local semantic search).
+# supragnosis server/CLI formula (prebuilt release binaries, with local semantic retrieval: the
+# model is fetched once by `supragnosis service install` or `supragnosis embed fetch`).
 # The tap's Formula/supragnosis-server.rb is rendered from this template by update-tap.sh on every
 # release (version and sha256 filled in), so edit it here, never in the tap. Installs the plain
 # `supragnosis` binary - only the brew token carries the -server suffix (the desktop-app cask owns
