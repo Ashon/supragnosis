@@ -56,6 +56,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# The oldest glibc the Linux binaries run on: the one they are built against, Ubuntu 24.04's
+# (Debian 13 and Fedora 40 and later have it too). The release checks the binary it built against
+# this line, so the number here is the number the binary asks for. Older hosts build from source
+# or run the container image.
+GLIBC_MIN=2.39
+
 os="$(uname -s)"
 arch="$(uname -m)"
 case "${os}-${arch}" in
@@ -79,6 +85,17 @@ case "${os}-${arch}" in
     exit 1
     ;;
 esac
+
+# A Linux host older than the binary's glibc would fail at the first run with a message about a
+# missing GLIBC_ version; say it here instead, with the two ways out.
+if [ "${os}" = "Linux" ]; then
+  have="$(ldd --version 2>/dev/null | sed -n '1s/.* \([0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')"
+  if [ -n "${have}" ] && [ "$(printf '%s\n%s\n' "${GLIBC_MIN}" "${have}" | sort -V | head -n1)" != "${GLIBC_MIN}" ]; then
+    echo "This host has glibc ${have}; the Linux binaries need ${GLIBC_MIN} or newer (Ubuntu 24.04, Debian 13, Fedora 40 and later)." >&2
+    echo "Build from source (deploy/systemd/README.md), or run the container image ghcr.io/ashon/supragnosis (deploy/docker/README.md): https://github.com/${REPO}" >&2
+    exit 1
+  fi
+fi
 
 # Look up the latest release tag (or use the specified version).
 if [ "${VERSION}" = "latest" ]; then

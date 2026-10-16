@@ -34,7 +34,7 @@ app, whose cask depends on the formula, came to ask for Xcode. A bottle is poure
 such check.
 
 - **The release builds them.** The release.yml bottle job runs `bottle.sh` on macos-14 and
-  ubuntu-22.04:
+  ubuntu-24.04 (the Linux binary needs glibc 2.39, and the job runs it):
   - it installs the rendered formula from a local tap with `--build-bottle`;
   - `brew bottle` makes the bottle;
   - it reinstalls from that bottle and requires that Homebrew poured it.
@@ -46,7 +46,8 @@ such check.
     macOS on every newer one, which is why it is built on the oldest arm64 runner.
   - x86_64 Linux (`x86_64_linux`). On a distribution whose glibc is older than Homebrew's own
     minimum, Homebrew installs its glibc and gcc beside any formula it installs - on ubuntu-22.04
-    that was twelve formulae before this bottle poured. The bottle does not change that; it only
+    that was twelve formulae before this bottle poured. The binary itself needs the host's glibc
+    at 2.39 or newer (docs/semantic-retrieval.md Section 4), whatever Homebrew installs beside it. The bottle does not change that; it only
     spares the source-build checks.
   - arm64 Linux does not: the bottle job has no arm64 Linux runner. It installs the
     release's aarch64 tarball through the source-build path.

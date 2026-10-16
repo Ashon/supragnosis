@@ -223,7 +223,10 @@ jobs:
   # download weights, so this holds the API boundary, not the embeddings themselves.
   fastembed:
     name: fastembed feature builds
-    runs-on: ubuntu-22.04
+    # 24.04, not 22.04 like the rest: this job links test binaries against the static ONNX runtime,
+    # which was compiled against GCC 13's libstdc++; 22.04's GCC 12 cannot link it. The release
+    # builds the Linux binaries in a manylinux container for the same reason (release.yml).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
