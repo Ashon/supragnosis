@@ -504,6 +504,24 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
              the binary's dynamic dependencies and fails on any outside the system (Section 4)",
         ),
     )]),
+    (6, &[c(
+        "a serving process that has the model embeds what was written without one, once, and writes \
+         nothing else - no log row, no attestation, no ledger entry",
+        Evidence::Deferred(
+            "semantic-retrieval.md Section 12 is specified, not built. Revisit when Section 9 step 5 \
+             lands: its tests (what was written before the model is embedded and nothing else is \
+             written; the worker waits for the files and runs once) take this row to Scenario",
+        ),
+    )]),
+    (7, &[c(
+        "the backfill never replaces a stored vector, never stores one for text that changed while it \
+         was embedding, and never holds the write guard while it embeds",
+        Evidence::Deferred(
+            "Revisit when semantic-retrieval.md Section 9 step 5 lands: its tests (a second run embeds \
+             nothing; an entity whose text changed mid-batch is left for the next run) take this row \
+             to Scenario",
+        ),
+    )]),
 ];
 
 // docs/client-connect.md Section 8 - `connect` and the bridge (C rows).

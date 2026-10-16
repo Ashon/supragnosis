@@ -6,7 +6,8 @@
 > daemon, and so who fetches the model).
 >
 > Status: **built** (Section 9 steps 1-4), with the measurements that decided it (Section 2).
-> What building it changed is in Section 11.
+> Section 12, the backfill, is **specified** and not built (Section 9 step 5). What building it
+> changed is in Section 11.
 
 ## 1. Why this exists
 
@@ -69,9 +70,9 @@ Other facts the design rests on:
 - **Not a remote embedder.** Nothing leaves the machine (Principle 17). The one network act is
   the download of the model files from Hugging Face, by the person's command, never by the daemon
   (SR1).
-- **Not automatic backfill.** Knowledge written before this release has no vectors; `reproject`
-  gives it them, once, and the release note says so. A daemon that embeds its backlog on start is
-  a later decision, recorded in Section 10.
+- **Not a re-projection.** Knowledge written before the model has no vectors. The daemon gives
+  it them by itself once the model is there (Section 12); it attaches vectors and writes nothing
+  else - no log row, no attestation, no owed-projection entry.
 
 ## 4. The build
 
@@ -155,6 +156,8 @@ first fetch is 224 MB, and the daemon holds up to about 1 GB once the model is l
 | **SR3** | `status` says whether semantic retrieval is on, and when it is off, why and what to run. |
 | **SR4** | Vectors from two models never share a store: the embedder's identity is model-specific and the store refuses a reopen under another. |
 | **SR5** | The release binary links no library the operating system does not ship: no OpenSSL, no ONNX Runtime shared object. |
+| **SR6** | A serving process that has the model embeds what was written without one, once: every observation and entity that carries no vector gets one, and nothing else is written - no log row, no attestation, no ledger entry. |
+| **SR7** | The backfill never replaces a stored vector, never stores one for text that changed while it was embedding, and never holds the write guard while it embeds. |
 
 ## 9. Ordering
 
@@ -166,6 +169,9 @@ first fetch is 224 MB, and the daemon holds up to about 1 GB once the model is l
    with the baked model, `rust.yml`'s feature job.
 4. **Documents.** README, the landing page, `deploy/README.md`, `architecture.md`'s retrieval
    section, and the release note of the release that ships it.
+5. **The backfill** (Section 12): the store method that attaches observation vectors, the
+   engine's backfill and its progress in the semantic report, the serving process's worker, and
+   the documents that stop asking for a `reproject`.
 
 ## 10. Closure map
 
@@ -196,9 +202,6 @@ Guarded by:
   4 names and the step that lists the binary's dependencies on every release and in CI's feature
   job.
 
-Deferred, recorded here so it is not forgotten: a daemon that embeds its own backlog after a model
-arrives (Section 3's last point). The need is real for the first upgrade; `reproject` meets it at
-the cost of a stop.
 
 ## 11. What building it changed
 
@@ -229,3 +232,87 @@ the cost of a stop.
   answered a search in `keyword` mode; the same server over the fetched cache answered a Korean
   paraphrase in `hybrid` mode with the right observation first; `status` against the running
   v0.4.12 daemon, which has no model, read `semantic off - keyword only`.
+
+## 12. Backfill - what was written before the model
+
+> Status: **specified**, not built (Section 9 step 5).
+
+### 12.1 Why
+
+v0.5.0 asked every existing node for two steps after the upgrade: `embed fetch`, and `reproject`
+with the daemon stopped, once per workspace - the release note left the "per workspace" out, and
+the author's own node needed two runs. Even then only entities got vectors: an observation's
+vector is attached when it is written, and `reproject` rebuilds the projection, not the log, so
+every observation written before the model stayed keyword only for good. A node that never runs
+`reproject` keeps whatever it held before the upgrade out of semantic retrieval, and nothing says so.
+
+The same gap opens on a fresh install: `service install` starts the daemon before it fetches the
+model, so whatever is observed in that window, and everything observed on a node whose fetch failed
+until it succeeds, is written without a vector.
+
+### 12.2 What it is
+
+- **A worker in the serving process.** `supragnosis serve`, the daemon and the stdio server, starts
+  one background thread when an embedder is configured. The one-shot commands (`reproject`,
+  `migrate`, `rekey-workspace`, `sync`) do not. The thread waits until the provider is ready -
+  the model's files are in the cache - checking every 30 seconds while they are not, so a fetch
+  made while the daemon runs is found without a restart. Then it runs the backfill once and ends.
+- **The backfill.** It enumerates every observation and every entity, in every workspace, that
+  carries no vector. It embeds them in batches of eight - an observation's text is its content, an
+  entity's the text the projection embeds (the canonical name and its aliases) - and writes each
+  batch:
+  - an observation's vector through a projection-side store method that attaches a vector where
+    none is stored and writes nothing else (SR6). Re-appending the row would attach it too, but it
+    rewrites the row and records the row as owed a projection, which the next start would repay
+    for every row in the store;
+  - an entity's vector by re-reading the entity under the write guard and storing it with the
+    vector only if it still has none and its text is the text that was embedded (SR7, IR4: never
+    stale). A projection that rewrote the entity meanwhile wins; the next start's backfill finds
+    the row again if the projection left it without a vector.
+- **Outside the guard, then inside it.** The embedding runs without the write guard; only the
+  write of a batch takes it (SR7). An `observe` waits for at most one batch's write, and its own
+  embed waits for at most one batch's embed: the model is one session behind a mutex.
+- **It is said.** The semantic report carries the backfill while it runs and after it: how many
+  rows it found, how many it embedded, and whether it finished or stopped on an embed failure,
+  with the failure. `status` reads `semantic on (<model>) - embedding what was written before the
+  model: 40 of 120` while it runs, and names the failure if it stopped (Principle 24). A finished
+  backfill says nothing more in the text form.
+- **It degrades.** An embed that fails stops the backfill with the reason; the rows it did not
+  reach stay keyword only, and the next start tries again (Principle 19). A write that fails
+  stops it the same way. Nothing the backfill does can fail a tool call.
+
+### 12.3 What it changes for an upgrade
+
+`brew upgrade`, `supragnosis restart`, `supragnosis embed fetch`. The fetch is the last step: the
+running daemon notices the files within 30 seconds, loads the model and embeds the store, and
+`status` shows it doing so. `reproject` is no longer part of an upgrade; it stays what it was, the
+re-materialization of a projection, and it still embeds the entities it projects.
+
+### 12.4 What this is NOT
+
+- **Not replicated.** A vector is node-local and never on the wire (Principle 16 is untouched: two
+  nodes holding the same log hold the same graph, with or without vectors).
+- **Not a re-embed.** A row that has a vector keeps it. A model change is still refused at open
+  (SR4), so there is never a vector from another model to replace.
+- **Not continuous.** The backfill runs once per process. Rows written later get their vector at
+  write time, as before; one whose embed fails at write time is found by the next start's
+  backfill, which is the same promise the log browser makes about a degrade - visible, and
+  repaired by the next pass rather than retried in a loop.
+
+### 12.5 What the tests assert
+
+- **What was written before the model is embedded, and nothing else is written.** Observations
+  and entities written through an engine with no embedder, then a backfill through one with an
+  embedder: every row has a vector, the merge band covers every live entity, a semantic search
+  finds an observation by meaning, the ledger is empty, and the observation rows' attestations are
+  what they were (SR6).
+- **A second run embeds nothing and a stored vector is kept** (SR7).
+- **An entity whose text changed while its batch was embedding is left for the next run** (SR7).
+- **An embed failure stops the backfill and says why**; rows not reached keep no vector, and a
+  later run embeds them.
+- **The worker waits for the model's files and then runs once**; with no embedder it does not
+  start.
+- **The store method attaches a vector only where none is stored**, for an id that has a row,
+  and leaves the row and the ledger alone - on every adapter (port conformance).
+- **`status` shows the backfill's progress and its failure**, and the example document carries
+  the field.
