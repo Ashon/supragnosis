@@ -10,8 +10,8 @@
 > and [remote-server.md](remote-server.md) Section 4.3 (the per-tool policy the dream surface
 > copies).
 >
-> Status: **specified**, not built. Section 12 is the order the work lands in; what building it
-> changes goes into Section 15. Two adversarial reviews against the principles and the code shaped
+> Status: **specified**; Section 12 step 0 is **built**, the rest is not. Section 12 is the order the
+> work lands in; what building it changes goes into Section 15. Two adversarial reviews against the principles and the code shaped
 > this document before it was committed; what they changed is in Section 16.
 
 ## 1. Why this exists
@@ -289,7 +289,7 @@ an earlier HLC now changes the result of every later event on the target, not on
 the registry clause for R5 and its tests say so. The belief diff calls the same function, ceiling
 included, so what the Review panel shows is what the fold will do. The dream surface's "below every
 target's current tier" check (5.2) is then a courtesy that refuses a draft the fold would ignore.
-This is step 0 of Section 12, and worth landing before anything else here.
+This is step 0 of Section 12, and it has landed (Section 15).
 
 ## 6. The dream run
 
@@ -611,7 +611,21 @@ The tests are named when they exist; what each asserts is fixed here.
 
 ## 15. What building it changed
 
-Written when it is built.
+- **Step 0, the R5 revision, landed first and on its own.** `gate_grants` now folds each target's
+  merged gate events in order from its base evaluation, and the belief diff applies the proposal
+  under review through the same function as one more event, at the console's ceiling - the Review
+  panel is where the diff is read. resolution.md R5 is revised in place. Four tests pin it, written
+  before the fix and failing against the old rule: a demotion asking for `human_confirmed` had
+  promoted its target, a promotion asking for `unverified` had demoted it, stacked events had obeyed
+  only the latest, and the diff had shown the raw requested tier. The registry's R5 clause "with
+  several merged gate events on one target, the HLC-latest governs", deferred because no case
+  stacked two events, is replaced by the revised rule with that case.
+- **Verdicts cast in one millisecond order by proposal id.** A local observation's ordering key is
+  its `observed_at` in milliseconds, so two verdicts the engine stamps in the same millisecond fall
+  through to the id tiebreak - deterministic and convergent, but not the order they were cast in.
+  The order test first passed by luck in a parallel run and failed alone; it now runs on the
+  stepped test clock the other ordering tests use. A person's verdicts are seconds apart, so this is
+  a property of the key, recorded rather than changed.
 
 ## 16. What the reviews changed
 

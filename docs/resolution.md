@@ -93,9 +93,11 @@ an **effective tier** the receiving node computes:
 
 ```
 effective_tier(observation) =
-  if any merged gate event targets it: tier set by the HLC-latest merged
-      claim_promotion / claim_demotion verdict (Section 5), capped by the
-      verdict's surface ceiling (Section 6)
+  if any merged gate event targets it: the base below, then each merged
+      claim_promotion / claim_demotion in the order of its representative
+      verdict (Section 5) - a promotion max(previous, grant), a demotion
+      min(previous, grant), grant = min(requested, the verdict's surface
+      ceiling) (Section 6, R5)
   else: max over attestations of per-attestation evaluated tier, where
       - a stamp-less attestation: the stored tier. Every stamp-less
         producer holds the line: observe forces the default (a local
@@ -119,7 +121,9 @@ Notes:
   computation, never a rewrite (Principle 3).
 - A gate event **overrides** the base evaluation in both directions: a merged demotion can push
   an observation below its base tier (contamination response - the fast-path of
-  proposal-workflow.md Section 9), which a max-only formula could not express.
+  proposal-workflow.md Section 9), which a max-only formula could not express, and a merged
+  promotion can lift it above. Each kind moves a target only its own way, and several events on one
+  target apply in order (R5).
 - The gate-event fold is a fold-projection (converges continuously - F5); the per-attestation
   evaluation is a pure function of the stored event. Both are deterministic, so effective tier
   converges across nodes on the same log and canon policy.
@@ -278,9 +282,15 @@ defend against the local user's own processes.
   evaluate above `HostSigned`; only a human's direct act reaches `HumanConfirmed` - at full
   strength a principal-signed act (F20), and until principals sign their acts, a gate event
   under a `Console` ceiling (Section 6) (P18, F13).
-- **R5** A gate event overrides the base evaluation in both directions; the HLC-latest merged
-  gate event per target governs, ordered by each proposal's representative merge verdict (P23,
-  fast-path demotion).
+- **R5** The merged gate events on a target apply in the order of their representative merge
+  verdicts - by ordering HLC, then proposal id - each from the tier the previous one left, starting
+  from the base evaluation: a promotion leaves `max(previous, grant)`, a demotion
+  `min(previous, grant)`, where `grant` is `min(requested, ceiling)` (R8). A demotion can still push a
+  target below its base and a promotion lift it above (P23, fast-path demotion); neither can move it
+  the other way, and the belief diff applies the same rule. The result is a function of the set of
+  merged events, so it converges. *(Revised 2026-10, [dreaming.md](dreaming.md) Section 5.7: the
+  earlier rule let the HLC-latest event govern in both directions, so a demotion that requested a
+  higher tier than its target held promoted it, and the diff showed the raw requested tier.)*
 - **R6** Contested = distinct surviving values whose effective tiers tie at the top. Contested
   status is part of the projection and subject to the P16 convergence obligation (P6).
 - **R7** Conflicts are never suppressed: tier-resolved conflicts remain queryable in the
@@ -308,6 +318,9 @@ had been renamed out from under it, which is the failure mode the sweep exists t
 | `p6_contradictory_merge_cycle_is_convergent_and_surfaced` | guard | converges AND reports contested (was a characterization test, rewritten in M3a) | landed |
 | `evaluated_tier_caps_remote_claimed` / `f13_read_path_evaluates_remote_claim_at_host_signed` | guard | R4 - a remote `HumanConfirmed` claim evaluates to `HostSigned`, at the policy and again at the read surface. Sibling of `f13_sync_apply_stores_senders_self_declared_tier_verbatim`, which keeps pinning that the log stores the claim verbatim | landed |
 | `p6_kind_conflict_surfaces_contested_and_console_confirm_settles_it` / `p23_demotion_overrides_below_base` | guard | R5 - a merged promotion sets the gate tier the policy consumes; a merged demotion overrides below base | landed |
+| `p18_a_merged_demotion_never_raises_its_target` / `p18_a_merged_promotion_never_lowers_its_target` | guard | R5 - each kind moves a target only its own way, from the console and the agent surface | landed |
+| `p16_gate_events_apply_in_verdict_order_from_the_tier_each_left` | guard | R5 - stacked events apply in verdict order from the tier each left; a store fed the log in reverse agrees | landed |
+| `p23_the_belief_diff_shows_what_the_merge_will_grant` | guard | R5 - the diff shows the grant the fold would make, not the requested tier | landed |
 | `verdict_ceiling_by_surface_marker` / `p18_agent_surface_promotion_caps_at_host_signed` | guard | R8 - Agent-surface merge of a `HumanConfirmed` request grants `HostSigned`, checked at the marker and end to end | landed |
 | `cross_node_reprojection_converges` | property | R6/R7 + Section 7 - the compared graph is serialized whole, so belief values, contested flags and effective tiers are inside the equality | landed |
 | `p16_canonical_name_selection_is_arrival_order_free` | guard | retires the latent condition (Section 2.2) | landed |

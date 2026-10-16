@@ -533,6 +533,169 @@ fn p23_demotion_overrides_below_base() {
     assert!(!n.contested, "tiers differ now - not contested");
 }
 
+/// The effective tier the log browser reports for one observation (resolution.md Section 3).
+fn tier_of(engine: &Engine, id: &str) -> TrustTier {
+    engine
+        .observation_log(Some(WS), None, None)
+        .expect("log")
+        .into_iter()
+        .find(|o| o.id == id)
+        .expect("in the log")
+        .effective_tier
+}
+
+/// An engine whose every act lands 10 ms after the last, so two verdicts never share the
+/// millisecond a local observation is ordered by (the tie [`ScriptedClock`] exists to avoid).
+fn stepped_engine() -> (Arc<InMemoryStore>, Engine) {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS)
+        .with_clock(Arc::new(ScriptedClock::new(1_000, 10)));
+    (store, engine)
+}
+
+/// Opens a gate proposal on one target and merges it from `surface`; returns the proposal id.
+fn gate(engine: &Engine, kind: &str, target: &str, tier: &str, surface: VerdictSurface) -> String {
+    let pid = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: kind.into(),
+            targets: vec![target.into()],
+            into: None,
+            tier: Some(tier.into()),
+            rationale: Some(format!("{kind} to {tier} from {surface:?}")),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose");
+    engine
+        .review_proposal(None, pid.clone(), "merge".into(), None, None, surface)
+        .expect("verdict");
+    pid
+}
+
+/// guard (R5 revised, docs/dreaming.md 5.7; P18 - trust rises only explicitly): a merged
+/// claim_demotion that requests a higher tier than its target holds leaves the target where it was.
+/// It used to promote it - from the console up to human_confirmed, from the agent surface up to
+/// host_signed - because a grant had no direction and the latest gate event governed both ways.
+#[test]
+fn p18_a_merged_demotion_never_raises_its_target() {
+    let (store, engine) = stepped_engine();
+    let o = kind_obs("cozo", "Tool", 100);
+    let id = o.id.clone();
+    store.add_observation(o).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    assert_eq!(tier_of(&engine, &id), TrustTier::AgentExtracted);
+
+    gate(&engine, "claim_demotion", &id, "human_confirmed", VerdictSurface::Console);
+    assert_eq!(tier_of(&engine, &id), TrustTier::AgentExtracted, "a demotion raised its target");
+    gate(&engine, "claim_demotion", &id, "host_signed", VerdictSurface::Agent);
+    assert_eq!(tier_of(&engine, &id), TrustTier::AgentExtracted, "a demotion raised its target");
+}
+
+/// guard (R5 revised): a merged claim_promotion that requests a lower tier than its target holds
+/// leaves the target where it was - a promotion is not a way to demote.
+#[test]
+fn p18_a_merged_promotion_never_lowers_its_target() {
+    let (store, engine) = stepped_engine();
+    let o = kind_obs("cozo", "Tool", 100);
+    let id = o.id.clone();
+    store.add_observation(o).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+
+    gate(&engine, "claim_promotion", &id, "human_confirmed", VerdictSurface::Console);
+    assert_eq!(tier_of(&engine, &id), TrustTier::HumanConfirmed);
+    gate(&engine, "claim_promotion", &id, "unverified", VerdictSurface::Console);
+    assert_eq!(
+        tier_of(&engine, &id),
+        TrustTier::HumanConfirmed,
+        "a promotion lowered its target"
+    );
+}
+
+/// guard (R5 revised; P16): merged gate events on one target apply in the order of their
+/// representative merge verdicts, each from the tier the previous left; a demotion still pushes
+/// below base (the fast-path); and a store fed the same log in the opposite order agrees.
+#[test]
+fn p16_gate_events_apply_in_verdict_order_from_the_tier_each_left() {
+    let (store, engine) = stepped_engine();
+    let o = kind_obs("cozo", "Tool", 100);
+    let id = o.id.clone();
+    store.add_observation(o).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+
+    gate(&engine, "claim_promotion", &id, "human_confirmed", VerdictSurface::Console);
+    gate(&engine, "claim_demotion", &id, "host_signed", VerdictSurface::Console);
+    assert_eq!(
+        tier_of(&engine, &id),
+        TrustTier::HostSigned,
+        "min(human_confirmed, host_signed)"
+    );
+    gate(&engine, "claim_promotion", &id, "agent_extracted", VerdictSurface::Console);
+    assert_eq!(
+        tier_of(&engine, &id),
+        TrustTier::HostSigned,
+        "max(host_signed, agent_extracted)"
+    );
+    gate(&engine, "claim_demotion", &id, "unverified", VerdictSurface::Console);
+    assert_eq!(tier_of(&engine, &id), TrustTier::Unverified, "a demotion still goes below base");
+
+    let mut rows = store.all_observations(None).expect("log");
+    rows.reverse();
+    let replayed = Arc::new(InMemoryStore::new());
+    for r in rows {
+        replayed.add_observation(r).unwrap();
+    }
+    let other = Engine::new(replayed, "host-a", WS);
+    other.reproject(Some(WS)).expect("reproject");
+    assert_eq!(
+        tier_of(&other, &id),
+        TrustTier::Unverified,
+        "the order is the verdicts', not arrival's"
+    );
+}
+
+/// guard (R5 revised; P23 - no merge without a diff that says what it does): the belief diff of an
+/// open gate proposal shows the tier the fold would grant, not the tier it requests - a demotion
+/// that asks to raise its target shows no change.
+#[test]
+fn p23_the_belief_diff_shows_what_the_merge_will_grant() {
+    let (store, engine) = stepped_engine();
+    let o = kind_obs("cozo", "Tool", 100);
+    let id = o.id.clone();
+    store.add_observation(o).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    let open = |tier: &str| {
+        engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: "claim_demotion".into(),
+                targets: vec![id.clone()],
+                into: None,
+                tier: Some(tier.into()),
+                rationale: Some(format!("demote to {tier}")),
+                affected_types: vec![],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("propose")
+    };
+    let raising = open("human_confirmed");
+    let diff = engine.get_proposal(None, &raising).unwrap().unwrap().belief_diff.unwrap();
+    assert!(
+        diff.tier_changes.is_empty(),
+        "a demotion that would raise shows no change: {:?}",
+        diff.tier_changes.iter().map(|c| (c.from, c.to)).collect::<Vec<_>>()
+    );
+    let lowering = open("unverified");
+    let diff = engine.get_proposal(None, &lowering).unwrap().unwrap().belief_diff.unwrap();
+    assert_eq!(diff.tier_changes.len(), 1);
+    assert_eq!(
+        (diff.tier_changes[0].from, diff.tier_changes[0].to),
+        (TrustTier::AgentExtracted, TrustTier::Unverified)
+    );
+}
+
 /// guard (resolution.md Section 2.2; the architecture.md Section 14 latent condition): the
 /// representative spelling is the policy's choice over the log, not first-write-wins by arrival -
 /// two stores fed the same observations in opposite orders re-materialize the same canonical_name.
