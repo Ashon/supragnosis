@@ -12,7 +12,7 @@
 # rust.yml tests that number and never reads this file, so this line drifted: Cargo.toml moved to
 # 1.96 and the v0.4.3 image failed to build at release, the one place this Dockerfile runs.
 # manifest_consistency.rs (supragnosis-cli) now holds the two equal on every push.
-FROM rust:1.96-bookworm AS build
+FROM rust:1.96-trixie AS build
 WORKDIR /src
 
 # Manifests first, so the dependency build is cached against everything but a dependency change.
@@ -34,12 +34,15 @@ RUN cargo build --release --locked -p supragnosis-cli --features fastembed \
     && strip target/release/supragnosis \
     && SUPRAGNOSIS_MODEL_DIR=/usr/share/supragnosis/models target/release/supragnosis embed fetch
 
-# Bookworm slim, not Alpine: the binary is dynamically linked against glibc, and a musl target is
-# not something this workspace builds or tests. ca-certificates is for the federation client half -
+# Trixie slim, not Alpine: the binary is dynamically linked against glibc, and a musl target is
+# not something this workspace builds or tests. Trixie rather than bookworm because the static ONNX
+# runtime the build links was compiled against GCC 13's libstdc++ (docs/semantic-retrieval.md
+# Section 11); bookworm's GCC 12 cannot link it, and both stages share one release so the runtime
+# has the libstdc++ the build linked against. ca-certificates is for the federation client half -
 # a hub pulls from its peers as well as serving them, over TLS. curl is for the healthcheck, which
 # asks the viewer socket a question only a working store can answer; without it the check fails
 # closed and every container reads as unhealthy forever, which is worse than having no check.
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*

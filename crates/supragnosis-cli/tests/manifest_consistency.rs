@@ -159,6 +159,6 @@ fn the_container_builds_with_the_declared_floor() {
         got, want,
         "\ndeploy/docker/Dockerfile builds with rust:{got} but Cargo.toml declares rust-version \
          {want:?}.\nThe image is built only by the release workflow, so nothing else would notice \
-         before a tag. Fix: FROM rust:{want}-bookworm."
+         before a tag. Fix: FROM rust:{want}-trixie."
     );
 }

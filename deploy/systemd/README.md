@@ -47,7 +47,9 @@ ExecStart=/home/linuxbrew/.linuxbrew/bin/supragnosis serve --http 127.0.0.1:7373
 
 Every release ships a Linux tarball for `x86_64-unknown-linux-gnu` and one for
 `aarch64-unknown-linux-gnu`; arm64 hosts, Grace/GH200 boxes among them, take the second. Both are
-built on Ubuntu 22.04, so they need glibc 2.35 or newer:
+built on Ubuntu 24.04 and need glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40 and later;
+the embedding model's runtime sets that floor, [docs/semantic-retrieval.md](../../docs/semantic-retrieval.md)
+Section 4). An older host builds from source below, or runs the container image:
 
 ```sh
 v=X.Y.Z                         # the release to install
@@ -60,10 +62,12 @@ tar -xzf "supragnosis-v$v-$t.tar.gz"
 install -m 755 "supragnosis-v$v-$t/supragnosis" ~/.local/bin/supragnosis
 ```
 
-The release binary is built without `--features fastembed`, which is what a pure hub wants. The hub
-relays and stores; retrieval happens on the spokes, so the ONNX runtime buys nothing there.
+The release binary carries the embedding model's runtime. A pure hub relays and stores, and
+retrieval happens on the spokes, so a hub can leave the model unloaded: `SUPRAGNOSIS_EMBED=none`
+in the unit's environment keeps it keyword only and small. A hub that also answers agents over
+its own MCP listener wants the model: `supragnosis embed fetch` once, as the user the unit runs as.
 
-Build from source for an older glibc or for a feature the release leaves out:
+Build from source for an older glibc:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal

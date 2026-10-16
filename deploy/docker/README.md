@@ -170,8 +170,12 @@ builds at the declared version, and `manifest_consistency.rs` holds the Dockerfi
 it. The second check exists because the first never read this file: the floor moved to 1.96 and
 the v0.4.3 image was the first thing to notice.
 
-Runtime is `debian:bookworm-slim`, not Alpine: the binary is dynamically linked against glibc and
-this workspace neither builds nor tests a musl target. The image is around 120MB.
+Runtime is `debian:trixie-slim`, not Alpine: the binary is dynamically linked against glibc and
+this workspace neither builds nor tests a musl target; trixie rather than bookworm because the
+static ONNX Runtime the build links wants GCC 13's libstdc++, which bookworm's GCC 12 lacks. The
+image is around 400MB, of which the embedding model is 240MB: it is fetched in the build stage into
+`/usr/share/supragnosis/models` and named by `SUPRAGNOSIS_MODEL_DIR`, so a container never
+downloads and the state volume cannot hide it ([docs/semantic-retrieval.md](../../docs/semantic-retrieval.md)).
 
 Search is keyword only, as in every prebuilt binary. Semantic search needs `--features fastembed`,
 which pulls the ONNX runtime and downloads a model - a deliberate build, not the default hub image.

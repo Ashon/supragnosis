@@ -82,10 +82,21 @@ Other facts the design rests on:
   time and of the model at run time both go over rustls, as every other connection the binary
   makes, and the image-model code is left out. A release step lists the binary's dynamic
   dependencies and fails on anything outside the system (SR5).
-- The container image builds with the feature and runs `supragnosis embed fetch` in the build
-  stage into `/usr/share/supragnosis/models`, which `SUPRAGNOSIS_MODEL_DIR` names in the image.
-  The state volume holds the knowledge and the node key as before; the model is part of the image,
-  so a container never downloads.
+- **The Linux floor is glibc 2.39.** The static ONNX Runtime ort downloads for Linux references
+  glibc 2.38 symbols (`__isoc23_strtol`) and GCC 13's libstdc++ (`_M_replace_cold`,
+  `__cxa_call_terminate`); Ubuntu 22.04 (glibc 2.35, GCC 12) cannot link it, and a manylinux
+  2.28 container with GCC 14 cannot either, for the glibc half. So the Linux binaries build on
+  Ubuntu 24.04, with libstdc++ linked statically through `ORT_CXX_STDLIB=static=stdc++` (and
+  GCC's library directory on rustc's search path) so the host is asked for glibc alone; built
+  there, they ask for 2.39, the runner's own, and run on Ubuntu 24.04, Debian 13, Fedora 40 and
+  later.
+  `install.sh` refuses an older host naming the floor, the source build and the container
+  image, and the release checks the binary it built against the floor the installer states. The
+  v0.4.12 binaries, built on 22.04, were the last to run on glibc 2.35.
+- The container image builds with the feature on `rust:1.96-trixie` (GCC 14) and runs
+  `supragnosis embed fetch` in the build stage into `/usr/share/supragnosis/models`, which
+  `SUPRAGNOSIS_MODEL_DIR` names in the image. The state volume holds the knowledge and the node
+  key as before; the model is part of the image, so a container never downloads.
 - CI keeps the keyword path tested: `cargo test` without the feature stays as it is. The
   `fastembed feature builds` job becomes what the release does, and runs clippy under the feature.
 
@@ -205,6 +216,13 @@ the cost of a stop.
 - **The degrade is said at start as well as on use.** `readiness` on an unloaded provider asks
   the loader once, without keeping the answer, so the daemon's log names the missing model when
   it starts and `status` names it from then on; the first embed decides for real.
+- **The prebuilt runtime chose the Linux floor, not this project.** The first container build
+  (bookworm, GCC 12) and CI's feature job on 22.04 failed at link time on symbols from glibc 2.38
+  and GCC 13's libstdc++, which is how the runtime's own build platform became visible. Keeping
+  22.04 would have meant shipping ONNX Runtime as a shared library beside the binary, or two Linux
+  flavours; the owner chose the floor. With `ORT_CXX_STDLIB=static=stdc++` the binary built on
+  24.04 lists glibc, libm and the GCC unwinder and nothing else, references no `GLIBCXX` version,
+  and asks for glibc 2.39, measured with `objdump -T` in an ubuntu:24.04 container on arm64.
 - **Checked end to end on the author's machine** with the release build: `embed fetch` into an
   empty directory took 25 s and reported 240 MB, a second run found it; `SUPRAGNOSIS_EMBED_MODEL=gpt`
   was refused naming both models; a stdio server over an empty cache logged the note at start and

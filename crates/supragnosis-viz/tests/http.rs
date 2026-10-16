@@ -396,7 +396,11 @@ async fn health_reports_owed_projections_and_the_last_recovery() {
     let sock = serve_uds("health", engine.clone(), ev_channel()).await;
 
     let before = json_get(&uds_get(&sock, "/api/health").await);
-    assert_eq!(before, serde_json::json!({"owed_projections": 1, "last_recovery": null}));
+    // `semantic` is null here: the test engine has no embedder (semantic-retrieval.md SR3).
+    assert_eq!(
+        before,
+        serde_json::json!({"owed_projections": 1, "last_recovery": null, "semantic": null})
+    );
     engine.repay_owed().unwrap();
     let after = json_get(&uds_get(&sock, "/api/health").await);
     assert_eq!(after["owed_projections"], 0);

@@ -73,15 +73,16 @@ jobs:
           # (deploy/homebrew/README.md).
           - os: macos-14
             target: aarch64-apple-darwin
-          # build on the oldest supported glibc (22.04 = 2.35) so the binary runs on
-          # 22.04+ - ubuntu-latest(24.04) produced GLIBC_2.38+ binaries that fail on
-          # 22.04 servers.
-          - os: ubuntu-22.04
+          # 24.04, which sets the Linux floor at its glibc, 2.39 (docs/semantic-retrieval.md Section
+          # 4): the static ONNX Runtime ort downloads references glibc 2.38 symbols and GCC 13's
+          # libstdc++, so 22.04 (2.35, GCC 12) cannot link it. Until v0.4.12 the binaries were built
+          # on 22.04 for its servers; those now build from source or run the container image.
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           # For ARM Linux servers (Graviton, Raspberry Pi). A native arm64 runner, so no cross
           # toolchain. The tap formula installs this tarball on arm64 Linux, so rendering the
           # formula (the bottle job below, and the tap update after this run) needs its sum.
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,10 +102,24 @@ jobs:
       # fetches a static ONNX Runtime archive for the target and verifies it against the hash
       # pinned in ort-sys. The model itself is not in the artifact; `supragnosis embed fetch` gets it.
       - name: build
-        run: cargo build --release --locked --bin supragnosis --features fastembed --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            # libstdc++ linked statically, through the variable ort-sys reads for the C++ runtime
+            # it names, so the binary asks the host for glibc alone (SR5): the runtime it was
+            # compiled against is GCC 13's, which a host on GCC 12 would not have. rustc looks for
+            # the static archive on its own search path, so GCC's library directory joins it.
+            export ORT_CXX_STDLIB=static=stdc++
+            libdir=$(dirname "$(g++ -print-file-name=libstdc++.a)")
+            export RUSTFLAGS="-L native=${libdir}"
+          fi
+          cargo build --release --locked --bin supragnosis --features fastembed --target "${{ matrix.target }}"
 
       # SR5: the binary links only what the operating system ships - no OpenSSL (fastembed is
-      # taken over rustls), no onnxruntime shared object (it is linked statically).
+      # taken over rustls), no onnxruntime shared object (it is linked statically), and on Linux
+      # no libstdc++ either (static, above). The Linux floor install.sh enforces is checked
+      # against what the binary asks for, so the two cannot drift apart.
       - name: linked libraries
         shell: bash
         run: |
@@ -115,7 +130,14 @@ jobs:
             bad=$(echo "$libs" | grep -vE '^/usr/lib/|^/System/' || true)
           else
             libs=$(ldd "$bin" | awk '{print $1}')
-            bad=$(echo "$libs" | grep -vE '^(linux-vdso|libc|libm|libgcc_s|libstdc\+\+|libdl|libpthread|librt|/lib|ld-linux)' || true)
+            bad=$(echo "$libs" | grep -vE '^(linux-vdso|libc|libm|libgcc_s|libdl|libpthread|librt|/lib|ld-linux)' || true)
+            needs=$(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -V | tail -1)
+            floor=$(sed -n 's/^GLIBC_MIN=//p' scripts/install.sh)
+            echo "glibc: the binary needs $needs, install.sh requires $floor"
+            if [[ "$(printf '%s\n%s\n' "$needs" "$floor" | sort -V | tail -1)" != "$floor" ]]; then
+              echo "::error::the binary needs glibc $needs but scripts/install.sh admits $floor - raise GLIBC_MIN"
+              exit 1
+            fi
           fi
           echo "$libs"
           if [[ -n "$bad" ]]; then
@@ -199,7 +221,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-22.04]
+        # 24.04 for Linux: the bottle installs and runs the release binary, whose floor is glibc
+        # 2.39 (the build matrix above).
+        os: [macos-14, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -244,10 +268,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             platform: linux/amd64
             arch: amd64
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             platform: linux/arm64
             arch: arm64
     runs-on: ${{ matrix.os }}
