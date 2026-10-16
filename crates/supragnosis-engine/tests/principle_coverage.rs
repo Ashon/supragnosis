@@ -561,6 +561,15 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
              without checking. Revisit when that test asserts the temp HOME is still absent afterwards",
         ),
     )]),
+    (6, &[c(
+        "the capture hook never blocks the agent, never writes to the store itself, and speaks only after a \
+         commit that landed or at the start of a session",
+        Evidence::Deferred(
+            "client-connect.md Section 12 is specified and not built: there is no `hook` command yet. Revisit when \
+             it lands - its tests (a commit that landed is answered, one that did not is not, a session start \
+             reports the workspace, and no answer carries a decision) take this row to Scenario",
+        ),
+    )]),
 ];
 
 // docs/daemon-lifecycle.md Section 9 - the daemon's managers (L rows).
