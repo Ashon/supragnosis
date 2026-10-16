@@ -404,16 +404,35 @@ mod tests {
         );
     }
 
-    /// The daemon's own router on an ephemeral port, as `serve` builds it.
+    /// The daemon's own router on an ephemeral port, as `serve` builds it - or, for a restart, on the
+    /// port the first one had. That port was just released, and under load another process can
+    /// hold it for a moment (an ephemeral bind elsewhere is handed the freed number), so a restart
+    /// binds with SO_REUSEADDR and retries `AddrInUse` for up to two seconds instead of failing the
+    /// test on the first try; measured 7 failures in 40 runs with four test binaries at once before.
     async fn daemon(
         at: Option<std::net::SocketAddr>,
         store: Arc<InMemoryStore>,
     ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
         let engine = Arc::new(Engine::new(store, "h", "ws"));
         let router = crate::mcp_router(engine, None, Some("tok".to_string()));
-        let listener = tokio::net::TcpListener::bind(at.unwrap_or(([127, 0, 0, 1], 0).into()))
-            .await
-            .expect("bind");
+        let listener = match at {
+            None => tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.expect("bind"),
+            Some(addr) => {
+                let mut tries = 0;
+                loop {
+                    let socket = tokio::net::TcpSocket::new_v4().expect("socket");
+                    socket.set_reuseaddr(true).expect("reuseaddr");
+                    match socket.bind(addr).and_then(|()| socket.listen(1024)) {
+                        Ok(listener) => break listener,
+                        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && tries < 100 => {
+                            tries += 1;
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
+                        Err(e) => panic!("rebinding {addr} for the restart: {e}"),
+                    }
+                }
+            }
+        };
         let addr = listener.local_addr().expect("addr");
         let handle = tokio::spawn(async move {
             let _ = axum::serve(listener, router).await;
