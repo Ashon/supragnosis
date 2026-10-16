@@ -36,7 +36,8 @@
   compatibility.md Section 3.6 waits for its occasion),
   [`unmerge.md`](unmerge.md) (reversing an identity resolution, built),
   [`prompts.md`](prompts.md) (the MCP prompts, built - Section 8 steps 1-2),
-  [`semantic-retrieval.md`](semantic-retrieval.md) (the embedding model in the prebuilt binary, built).
+  [`semantic-retrieval.md`](semantic-retrieval.md) (the embedding model in the prebuilt binary, built),
+  [`dreaming.md`](dreaming.md) (idle consolidation by a model, behind the gate, specified).
 
 ---
 

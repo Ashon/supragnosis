@@ -467,6 +467,80 @@ const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
 ];
 
+// docs/dreaming.md Section 11 - idle consolidation by a model, behind the gate (DR rows).
+const DREAMING_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "a dream writes nothing to the log; its propose writes a node-local draft, and only the person's publish or accept in the console enters the log",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (2, &[c(
+        "a verdict or withdrawal event every attestation of which carries surface:dream decides nothing in the fold, however it reached the log",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (3, &[c(
+        "a dream drafts only entity_merge, entity_split and claim_demotion, each with evidence and a confidence that become derived_from and confidence, and a demotion draft asks for a tier below every target's current one",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (4, &[c(
+        "merged gate events on a target apply in HLC order, each from the tier the previous left - a demotion min, a promotion max, the grant min(requested, ceiling) - and the belief diff uses the same function",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 0 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (5, &[c(
+        "a published dream draft is engine-stamped surface:dream at the lowest tier on behalf of the configured operator, and this node counts as its own dream's only what carries the marker with this node as the acting host",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (6, &[c(
+        "a dream session is bound to the workspace of its first request; other workspaces, star, and ids outside it answer as refused or absent for the rest of the session",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (7, &[c(
+        "at most the cap of dream items wait on a node, and a draft equal to a pending draft or an open or merged proposal, or matching a no of the person's with no change since, is refused, as is a publish equal to an existing proposal",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (8, &[c(
+        "a dream run calls no model when the frontier is unchanged, the person worked in the last 15 minutes, a scheduled run is more than three hours late, or the cap is full",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 4 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (9, &[c(
+        "a dream session has no tool but the dream surface, and the run sends nothing from the knowledge until mcp_status shows only the dream bridge and its tools and the init event shows exactly the dream tools and only built-in plugins",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 4 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+    (10, &[c(
+        "a dream run never opens the store, and the dream surface exists only on loopback, with authentication on, and only while dream.toml and its credential exist, read on every request",
+        Evidence::Deferred(
+            "dreaming.md is specified, not built. Revisit when its Section 12 step 2 lands and \
+             the tests Section 14 describes for this row run",
+        ),
+    )]),
+];
+
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).
 const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -2235,6 +2309,12 @@ const FAMILIES: &[Family] = &[
         prefix: "SR",
         rows: SEMANTIC_RETRIEVAL_REGISTRY,
     },
+    Family {
+        doc: "docs/dreaming.md",
+        text: include_str!("../../../docs/dreaming.md"),
+        prefix: "DR",
+        rows: DREAMING_REGISTRY,
+    },
 ];
 
 /// The invariant numbers a document declares under one prefix, first occurrence of each, in
@@ -2622,6 +2702,7 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
         "docs/semantic-retrieval.md",
         include_str!("../../../docs/semantic-retrieval.md"),
     ),
+    ("docs/dreaming.md", include_str!("../../../docs/dreaming.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
