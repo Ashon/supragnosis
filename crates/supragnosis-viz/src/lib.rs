@@ -1191,6 +1191,7 @@ mod tests {
             ("<header", "the header the shell makes its title bar"),
             ("<h1", "the title it makes part of the drag region"),
             (r#"id="settingsBtn""#, "the gear it routes to the app's Settings page"),
+            (r#"id="syncPill""#, "the sync pill it routes to Settings > Sync"),
         ] {
             assert!(html.contains(needle), "viewer.html lost {what} ({needle})");
         }

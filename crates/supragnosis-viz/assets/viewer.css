@@ -504,12 +504,13 @@
   #proposalsBody .pacts button[data-act="merge"] { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
   #proposalsBody .pacts button[data-act="merge"]:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
   #proposalsBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 0; }
-  #peersBody .fsec { color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:.14em; margin:8px 0 4px; }
-  #peersBody .fed { display:flex; align-items:center; gap:6px; padding:3px 2px; font-size:11px; color:var(--ink2); min-width:0; }
-  #peersBody .fed .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
-  #peersBody .fed .furl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #peersBody .fws { color:var(--muted); font-size:11px; margin:0 0 2px 15px; }
-  #peersBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); }
+  /* The type definitions in the filters dock (moved from the Types tab): a disclosure under the
+     legend, its summary styled as the section heads around it. */
+  #defsBox summary { cursor:pointer; list-style:none; }
+  #defsBox summary::-webkit-details-marker { display:none; }
+  #defsBox summary::before { content:"+ "; color:var(--faint); }
+  #defsBox[open] summary::before { content:"- "; }
+  #settings .bad { color:var(--bad); }
 
 /* A proposal event is bookkeeping about the canon, not knowledge someone observed - dimmed and
    italic so a log scan separates the two at a glance without having to read either. */
@@ -608,7 +609,9 @@
   #statusbar .spill { margin-left:8px; padding:1px 9px; border-radius:999px; font:500 11px/1.5 var(--sans);
                       background:none; border:1px solid var(--line); color:var(--ink2); white-space:nowrap; }
   #statusbar .spill.bad { color:var(--bad); border-color:rgba(224,122,95,0.45); }
-  #statusbar .spill:hover { border-color:var(--bad); color:var(--bad); }
+  #statusbar .spill.warn { color:var(--gold-bright); border-color:var(--gold-dim); }
+  #statusbar .spill.ok { color:var(--ok); border-color:rgba(86,179,162,0.4); }
+  #statusbar .spill:hover { border-color:currentColor; }
   /* Narrow windows (design-system.md Section 6). Under 1200px the script keeps one panel open at a
      time. Under 760px a panel is a sheet from the bottom, the full width less a margin, and the
      inspector takes the same place; the minimap gives the corner back to the canvas. */

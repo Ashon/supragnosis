@@ -332,6 +332,15 @@ function renderSync() {
           const ahead = (w.local_ahead | 0) || (w.hub_ahead | 0);
           return w.workspace + ": " + (ahead ? "this Mac +" + (w.local_ahead | 0) + ", hub +" + (w.hub_ahead | 0) : "in sync");
         });
+        // The rows the viewer's Peers tab had (docs/design-system.md Section 6): a workspace this Mac
+        // shares that the hub does not admit, one the hub admits that this Mac does not share, and
+        // whether the hub has answered what it shares - unknown is not "nothing".
+        const extra = [
+          ...(hub.local_only || []).map((w) => w + ": not admitted by the hub"),
+          ...(hub.peer_only || []).map((w) => w + ": admitted, not shared from this Mac"),
+          !hub.negotiated_at ? "What it shares: unknown - no answer yet"
+            : state.federation.updated_ms ? "What it shares: agreed " + Math.max(0, Math.round((state.federation.updated_ms - hub.negotiated_at) / 1000)) + "s ago" : null,
+        ].filter(Boolean);
         return h("div", { class: "row" },
           h("div", { class: "body" },
             h("div", { class: "title" }, String(hub.url || "").replace(/^https?:\/\//, ""),
@@ -339,8 +348,22 @@ function renderSync() {
                 ? h("span", { class: "pill ok" }, h("span", { class: "dot" }), "Reachable")
                 : h("span", { class: "pill bad" }, h("span", { class: "dot" }), "Unreachable")),
             hub.version ? h("div", { class: "sub mono", text: "v" + hub.version }) : null,
-            ws.map((line) => h("div", { class: "sub", text: line }))));
+            ws.map((line) => h("div", { class: "sub", text: line })),
+            extra.map((line) => h("div", { class: "sub", text: line }))));
       })));
+  }
+
+  const known = f.known_peers || [];
+  if (known.length || f.role === "hub") {
+    out.push(h("div", { class: "group-title", text: "Peers that have checked in" }),
+      h("div", { class: "card" }, known.length ? known.map((p) => {
+        const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
+        return h("div", { class: "row" },
+          h("div", { class: "body" },
+            h("div", { class: "title mono selectable", text: String(p.node_id || "").slice(0, 16) }),
+            h("div", { class: "sub", text: p.last_action + (ago !== null ? " " + ago + "s ago" : "") + " (" + (p.hits | 0) + "), "
+              + (p.release ? "v" + p.release : "release not known") + ", sync " + (p.protocol | 0) })));
+      }) : [h("div", { class: "row" }, h("div", { class: "body" }, h("div", { class: "sub", text: "No peer has checked in yet." })))]));
   }
 
   if (f.role === "hub") {

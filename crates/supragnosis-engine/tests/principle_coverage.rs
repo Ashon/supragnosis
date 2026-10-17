@@ -566,7 +566,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (4, &[c(
         "on the Review page a decision control appears only with its item's diff and checks on screen and decides that item alone; every open proposal is listed, and a generated candidate is left out only when its diff is computable and empty",
         Evidence::Deferred(
-            "design-system.md is specified, not built. Revisit when its Section 13 step 3 lands and \
+            "design-system.md is specified, not built. Revisit when its Section 13 step 4 lands and \
              the Review page has a tripwire on its decision controls",
         ),
     )]),
@@ -580,7 +580,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (6, &[c(
         "the viewer's search answers with the engine's ranking and mode label over a Read path: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, entity hits are canonical, and the MCP surface is unchanged",
         Evidence::Deferred(
-            "design-system.md is specified, not built. Revisit when its Section 13 step 4 lands; the \
+            "design-system.md is specified, not built. Revisit when its Section 13 step 5 lands; the \
              path is then in the read tier's policy table, which every_viewer_path_has_a_remote_policy \
              holds to the router",
         ),
@@ -595,10 +595,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
-        Evidence::Deferred(
-            "design-system.md is specified, not built: the status bar has no pills yet. Revisit when \
-             its Section 13 step 3 lands with the pills",
-        ),
+        // crates/supragnosis-viz/tests/http.rs: the contested pill hides only at zero, the sync pill
+        // only off the local console or where sync is not configured, and draws "unavailable".
+        Evidence::Scenario(&["a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up"]),
     )]),
 ];
 
