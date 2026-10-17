@@ -137,6 +137,15 @@ The tray gains an **AI Apps** submenu built from `connect --json`:
 The app decides nothing itself. It calls the CLI it already finds and shows the answer, the same
 rule as daemon-lifecycle.md Section 6, so the logic lives once, in the code that is tested.
 
+**The CLI runs with the person's `PATH`, not the app's.** An app opened from the Finder gets
+`/usr/bin:/bin:/usr/sbin:/sbin`, and a client installed through a Node version manager (nvm, fnm,
+volta, mise) or a package manager's own directory is on the login shell's `PATH` and nowhere else.
+"On `PATH`" in Section 4's table means the shell's `PATH`, as in a terminal. The app reads it once
+per launch, by asking the login shell (`$SHELL -l -i -c`) to print its environment, and gives it to
+every CLI call it makes, ahead of its own. When the shell cannot be asked - no `SHELL`, no answer
+within five seconds, nothing to read - the app's own `PATH` stands, and the CLI's fixed list of
+directories (Homebrew, `~/.local/bin` and the like) still applies.
+
 ## 6. Decisions
 
 - **A bridge, not a token handed out.** The bridge is the only option that reaches every client in
@@ -253,6 +262,11 @@ Checked end to end:
 - **Removal takes the array and `hooks` with it when only ours were in them.** Otherwise a settings
   file `connect` created the key in would keep a stray `"hooks": {}` after `--remove`, and "the file
   as it was" is the promise.
+- **A client installed through nvm read "Not installed" in the app.** The CLI searched the app's
+  `PATH` plus a fixed list of directories, so `codex` and `gemini` under
+  `~/.nvm/versions/node/<version>/bin` were found in a terminal and missed from the Settings page.
+  The app now hands the CLI the login shell's `PATH` (Section 5); listing more directories would
+  have chased every version manager in turn.
 - **The repository's workspace is usually not the node's `default`.** On the author's node the
   first session start said that the workspace `supragnosis` was not known there yet, while
   `default` held 168 entities. That line, not an error, is the point: the agent learns where the
