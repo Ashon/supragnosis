@@ -261,14 +261,31 @@ function centerOn(n) {
   camT.y = (innerHeight + TOP_INSET - insetB()) / 2 - n.y * camT.s; userMoved = true;   // above the detail panel
 }
 
+// A type's color is keyed by its NAME, not by its place in the view. It used to be the index into
+// the view's sorted type list, so a workspace holding fewer types shifted every later hue: Concept
+// was purple in one workspace and red in the next. A name hash now picks a slot in a fixed band of
+// generated colors; a slot already taken in this view probes forward, in name order, so two types
+// never share a color on one screen, and a type keeps its slot in every view where no earlier name
+// collides with it. Relation kinds take the same rule in the edge band.
+const COLOR_SLOTS = 48;
+function nameSlot(name) {
+  let h = 2166136261;   // FNV-1a
+  for (let i = 0; i < name.length; i++) { h ^= name.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h % COLOR_SLOTS;
+}
+function stableColors(names, edge) {
+  const out = {}, used = new Set();
+  for (const t of [...names].sort()) {
+    let slot = nameSlot(t);
+    if (used.size < COLOR_SLOTS) while (used.has(slot)) slot = (slot + 1) % COLOR_SLOTS;
+    used.add(slot);
+    out[t] = catColor(slot, edge);
+  }
+  return out;
+}
 function assignColors() {
-  const types = [...new Set(nodes.map(n => n.type))].sort();
-  typeColor = {};
-  types.forEach((t, i) => { typeColor[t] = catColor(i, false); });
-  // Color per edge kind (relation kind) - deterministic (in sorted kind order), generated in the edge band.
-  const ek = [...new Set(edges.map(e => e.type))].sort();
-  edgeTypeColor = {};
-  ek.forEach((t, i) => { edgeTypeColor[t] = catColor(i, true); });
+  typeColor = stableColors(new Set(nodes.map(n => n.type)), false);
+  edgeTypeColor = stableColors(new Set(edges.map(e => e.type)), true);
 }
 
 function applyGraph(g) {
