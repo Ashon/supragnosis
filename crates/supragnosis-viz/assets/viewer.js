@@ -248,13 +248,19 @@ const TOP_INSET = 52;      // height occluded by the top header - compensated in
 const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
 const DOCK_L = 262, DOCK_R = 312;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
 function insetL() { return dockLEl.classList.contains("on") && !sheetWindow() ? DOCK_L : 0; }
-function insetR() { return dockREl.classList.contains("on") && !sheetWindow() ? DOCK_R : 0; }
+function insetR() {
+  if (sheetWindow()) return 0;
+  if (detailEl.classList.contains("on")) return SHEET_R;   // the inspector sheet takes the right side
+  return dockREl.classList.contains("on") ? DOCK_R : 0;
+}
+const SHEET_R = 384;   // 12 + the sheet's 360 + 12 (viewer.css #detail)
 // Under 760px a dock is a sheet from the bottom (viewer.css), so it occludes the bottom, not a side.
 function sheetWindow() { return innerWidth < 760; }
 // Bottom occlusion: the status bar, plus the detail panel when it is open (panel sits at bottom:30,
 // measured live so centering keeps the focused node visible above it). Render detail before centerOn.
 function insetB() {
-  const sheet = sheetWindow() && [dockLEl, dockREl].find(d => d.classList.contains("on"));
+  if (!sheetWindow()) return BOTTOM_INSET;   // wide: the inspector is a side sheet, nothing at the bottom
+  const sheet = [dockLEl, dockREl].find(d => d.classList.contains("on"));
   const panel = detailEl.classList.contains("on") ? detailEl : sheet;
   if (!panel) return BOTTOM_INSET;
   const h = panel.getBoundingClientRect().height;
@@ -2145,6 +2151,8 @@ function relationGroupHtml(g, open) {
 
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
 function renderDetail(node) {
+  // The inspector is a sheet on the right; the Log and the corner controls step aside (viewer.css).
+  document.body.classList.toggle("sheet", !!node);
   if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
   // One panel at a time under 1200px: the inspector closes the docks (not remembered).
   if (narrowWindow()) { applyDock(true, false, false); applyDock(false, false, false); }
