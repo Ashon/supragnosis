@@ -328,10 +328,12 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/about" => about_response(),
         // Which surface the page is on (remote-viewer.md Section 3.5): this socket is the owner's
         // full console. The hub's read tier answers the same path with the principal and its grants.
+        // `node` is this node's host id: the page keys what it remembers locally - the layout - by it
+        // (design-system.md Section 5), and names a host "this node" only when it matches (Section 9).
         "/api/surface" => Response {
             status: "200 OK",
             content_type: "application/json",
-            body: r#"{"surface":"local"}"#.to_string(),
+            body: serde_json::json!({ "surface": "local", "node": engine.host() }).to_string(),
         },
         // What this node's store owes and last repaid (crash-recovery.md K5) - runtime state, kept
         // apart from /api/about, which describes the build.

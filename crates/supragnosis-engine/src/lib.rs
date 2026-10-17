@@ -4565,6 +4565,11 @@ impl Engine {
         &self.default_workspace
     }
 
+    /// This node's host id, the one its provenance carries (`localhost` unless configured).
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
     /// The list of workspaces where knowledge exists (sorted, deterministic - Principle 16). Derived from the
     /// provenance.workspace of the projected graph (entities/relations) - the set of workspaces for which a graph can
     /// be drawn. Computed with the existing read ports alone, without a separate store enumeration.

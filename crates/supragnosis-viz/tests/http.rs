@@ -107,6 +107,21 @@ fn observe_depends(engine: &Engine) {
         .expect("observe succeeds");
 }
 
+/// The local console says which node it is (design-system.md Sections 5 and 9): the page keys the
+/// layout it remembers by this id, and calls a host "this node" only when the id matches - every
+/// unconfigured node's host id is `localhost`, so the name alone would claim other machines' hosts.
+#[tokio::test]
+async fn the_local_surface_names_its_node() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
+    let sock = serve_uds("surface", engine, ev_channel()).await;
+    let s = json_get(&uds_get(&sock, "/api/surface").await);
+    assert_eq!(s["surface"], "local", "surface: {s}");
+    assert_eq!(s["node"], "h", "the node's host id: {s}");
+    let _ = std::fs::remove_file(&sock);
+}
+
 #[tokio::test]
 async fn viz_serves_graph_index_and_404() {
     let store = Arc::new(InMemoryStore::new());
