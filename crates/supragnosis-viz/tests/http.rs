@@ -216,6 +216,39 @@ async fn the_viewer_search_answers_with_canonical_hits() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// design-system.md Section 6: the panels sit beside the map, so the camera frames, pans and zooms in
+/// the map's window between them. v0.6.0 framed the whole canvas, as when the docks floated over it,
+/// and a seven-node workspace zoomed to the cap ran under both panels.
+#[test]
+fn the_camera_works_in_the_map_window() {
+    let js = include_str!("../assets/viewer.js");
+    let body = |name: &str| {
+        let start = js
+            .find(&format!("\nfunction {name}("))
+            .unwrap_or_else(|| panic!("viewer.js no longer defines {name}"));
+        let rest = &js[start + 1..];
+        rest[..rest.find("\n}\n").expect("the function closes")].to_string()
+    };
+    let fit = body("fitView");
+    assert!(fit.contains("mapWindow()"), "fitView frames the map's window");
+    assert!(
+        !fit.contains("frameBox(box, 0, innerWidth, TOP_INSET, innerHeight - BOTTOM_INSET"),
+        "fitView no longer frames the whole canvas on a wide window"
+    );
+    assert!(
+        body("miniPan").contains("mapWindow()"),
+        "the minimap pans to the window's centre"
+    );
+    assert!(
+        body("zoomWindow").contains("mapWindow()"),
+        "the zoom buttons zoom about the window"
+    );
+    assert!(
+        js.contains(r#"getElementById("zin").onclick = () => zoomWindow("#),
+        "the zoom-in button uses the window's centre"
+    );
+}
+
 /// The bar shows the engine's answer and makes none of its own (design-system.md Section 8): it asks
 /// /api/search, the map lights the entity ids that answer returned, and no name is matched against
 /// the typed text in the page - a second ranking would answer a person differently from the agent.

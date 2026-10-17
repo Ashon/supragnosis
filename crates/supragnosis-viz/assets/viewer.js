@@ -2407,13 +2407,14 @@ function drawMinimap() {
     mctx.strokeStyle = SURFACE;
     mctx.stroke();
   }
-  // Viewport rectangle: the screen corners in world coords, mapped in and clamped to the frame.
+  // Viewport rectangle: the map window's corners in world coords, mapped in and clamped to the frame.
   // A corner that is clamped onto the frame corner takes the PANEL's radius (the rect then traces
   // the rounded outline instead of slicing through it); free corners keep a small radius.
-  const x1 = Math.max(0.5, Math.min(MINI_W - 0.5, (-cam.x / cam.s) * k + ox));
-  const y1 = Math.max(0.5, Math.min(MINI_H - 0.5, (-cam.y / cam.s) * k + oy));
-  const x2 = Math.max(0.5, Math.min(MINI_W - 0.5, ((innerWidth - cam.x) / cam.s) * k + ox));
-  const y2 = Math.max(0.5, Math.min(MINI_H - 0.5, ((innerHeight - cam.y) / cam.s) * k + oy));
+  const vw = mapWindow();
+  const x1 = Math.max(0.5, Math.min(MINI_W - 0.5, ((vw.l - cam.x) / cam.s) * k + ox));
+  const y1 = Math.max(0.5, Math.min(MINI_H - 0.5, ((vw.t - cam.y) / cam.s) * k + oy));
+  const x2 = Math.max(0.5, Math.min(MINI_W - 0.5, ((vw.r - cam.x) / cam.s) * k + ox));
+  const y2 = Math.max(0.5, Math.min(MINI_H - 0.5, ((vw.b - cam.y) / cam.s) * k + oy));
   const w = Math.max(2, x2 - x1), h = Math.max(2, y2 - y1);
   mctx.strokeStyle = GOLD; mctx.lineWidth = 1;
   if (round) {
@@ -2437,8 +2438,9 @@ function miniPan(ev) {
   const r = miniEl.getBoundingClientRect();
   const wx = (ev.clientX - r.left - miniT.ox) / miniT.k;
   const wy = (ev.clientY - r.top - miniT.oy) / miniT.k;
-  camT.x = innerWidth/2 - wx * camT.s;
-  camT.y = innerHeight/2 - wy * camT.s;
+  const w = mapWindow();   // centred in the map's window, not under a panel
+  camT.x = (w.l + w.r)/2 - wx * camT.s;
+  camT.y = (w.t + w.b)/2 - wy * camT.s;
   userMoved = true;
 }
 miniEl.addEventListener("mousedown", ev => {
@@ -2464,7 +2466,17 @@ function fitView(list, pad = 90) {
   if (!box) return;
   // Under 760px a panel is a sheet over the bottom of the canvas: frame above it, with less margin.
   if (sheetWindow()) { frameBox(box, 0, innerWidth, TOP_INSET, innerHeight - insetB(), Math.min(pad, 36), 2.5); return; }
-  frameBox(box, 0, innerWidth, TOP_INSET, innerHeight - BOTTOM_INSET, pad, 2.5);
+  // The panels sit beside the map, not over it (docs/design-system.md Section 6), so the frame is the
+  // map's window between them. Framed to the whole canvas, as when the docks floated, a small graph
+  // zoomed to the cap ran under both panels. A node's label hangs to its right, so the frame keeps
+  // room for one there: the window's edge is hard now, and it cut the rightmost names.
+  const w = mapWindow();
+  frameBox(box, w.l, w.r - LABEL_ROOM, w.t, w.b, pad, 2.5);
+}
+const LABEL_ROOM = 110;   // screen pixels a right-hand node label needs beyond the frame's padding
+// The map's window in screen coordinates: the canvas less the panels, the header and the status bar.
+function mapWindow() {
+  return { l: insetL(), r: innerWidth - insetR(), t: TOP_INSET, b: innerHeight - insetB() };
 }
 
 // World-space bounding box of the visible members of a node list. Types the filter hides are dropped:
@@ -3561,8 +3573,10 @@ searchEl.addEventListener("keydown", ev => {
   }
 });
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
-document.getElementById("zin").onclick = () => zoomAt(innerWidth/2, innerHeight/2, 1.2);
-document.getElementById("zout").onclick = () => zoomAt(innerWidth/2, innerHeight/2, 1/1.2);
+// The zoom buttons zoom about the map window's centre, which is not the canvas's when a panel is open.
+function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); }
+document.getElementById("zin").onclick = () => zoomWindow(1.2);
+document.getElementById("zout").onclick = () => zoomWindow(1/1.2);
 document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
 const followBtn = document.getElementById("followBtn");
 followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", follow); };
