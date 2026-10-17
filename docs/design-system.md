@@ -633,3 +633,8 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   shadows; a field takes the focus outline every control takes.
 - **Step 8: the landing keeps its uppercase eyebrows** (Section 4). They are its display type, like
   its faces; the rule against uppercase is about the tools.
+- **After step 7: the camera framed the canvas, not the map's window.** `fitView` still framed the
+  whole canvas, as when the docks floated over it, and in v0.6.0 a seven-node workspace zoomed to the
+  cap and ran under both panels. Framing, the zoom buttons and the minimap's pan work in the window
+  now, and the frame keeps room for the label that hangs right of a node, since the window's edge is
+  hard.
