@@ -7,11 +7,10 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **Section 13 steps 0-7 built, step 8 specified**: the fixes that needed no document, the
-> tokens and the foundations, the map, the places, the Review page, search, the landing's picture and
-> the viewer drawn with surfaces instead of lines (Section 4) are built; step 8 does the same for the
-> Settings page and the landing. Dream drafts join the Review page with dreaming.md Section 12 step 5
-> (U5).
+> Status: **built - Section 13 steps 0-8**: the fixes that needed no document, the tokens and the
+> foundations, the map, the places, the Review page, search, the landing's picture, and the three
+> surfaces drawn with surfaces instead of lines (Section 4). Dream drafts join the Review page with
+> dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -126,7 +125,9 @@ surface token, `--select` among them.
   hashes, counts. The app and the viewer load no web font; the landing keeps its own display faces.
 - **Six sizes**: 24 (page title), 18 (sheet title), 15 (section), 13 (body), 12 (secondary) and 11
   (labels). Nothing is drawn below 11px. A heading on a panel is 12px sans, semibold, in `--muted`
-  and in sentence case, and nothing is set in uppercase.
+  and in sentence case, and nothing in the viewer or on the Settings page is set in uppercase. The
+  landing keeps its uppercase eyebrows with its own display faces: a page about the product, set in
+  the product's type, not a tool.
 - **Focus is visible on every control**: a 2px `--gold-bright` outline, offset 2px - an outline on
   `:focus-visible`, not a border.
 - **A selected item sits on `--select`**, its text `--gold-bright` when it is a choice (a chip, a
@@ -438,12 +439,12 @@ draws "sync unavailable" when the daemon does not answer.
 U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
 in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
 
-U9 is guarded by `no_border_draws_an_area` in the same file, which reads each stylesheet's rules and
-fails, outside a short list of selectors each listed with the fact its line carries, on a border that
-draws, a `border-color` that is not transparent, an outline, or a ring-shaped `box-shadow`; it also
-fails on a border the viewer's script sets outside the boundaries' legend. Step 7 brought it for
-viewer.css, where it finds 85 such declarations in the stylesheet step 7 replaced; step 8 extends it
-to the other two.
+U9 is guarded by `no_border_draws_an_area` in the same file, which reads the three stylesheets' rules
+and fails, outside keyboard focus and a short list of selectors each listed with the fact its line
+carries, on a border that draws, a `border-color` that is not transparent, an outline, or a
+ring-shaped `box-shadow`; it also fails on a border the viewer's script sets outside the boundaries'
+legend. In the stylesheets steps 7 and 8 replaced it finds 85 such declarations in the viewer's and 26
+in the landing's.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -478,7 +479,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    window, the panel toggles, the strip, the camera toolbar, the minimap off, and the boundaries'
    control in View (Section 6); region names at 13px (Section 5). The Review page, the search list,
    the observation card, the activity feed and the settings dialog take the same surfaces.
-8. **Surfaces, not lines: the Settings page and the landing** (U9): the rest of the rule on both.
+8. **Surfaces, not lines: the Settings page and the landing** [built] (U9): the rest of the rule on both.
    On the Settings page, cards, rows and fields become surfaces, and the sidebar's 10.5px uppercase
    group labels become 12px sentence-case headings. On the landing, the code, terminal and picture
    frames become surfaces and the steps' gold rules go. Then the landing's picture is retaken.
@@ -625,3 +626,10 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   otherwise sat on the Log's last rows.
 - **Step 7: the workspaces' label became the panel's first heading**, "Workspace", like the headings
   under it.
+- **Step 8: a card is a stack of surfaces.** The Settings page's rows, the About page's pairs and the
+  landing's tool list and roadmap were ruled apart; each row is its own surface now, with two pixels
+  of the ground between rows.
+- **Step 8: the status dots lost their halos and the fields their focus glow.** Both were ring-shaped
+  shadows; a field takes the focus outline every control takes.
+- **Step 8: the landing keeps its uppercase eyebrows** (Section 4). They are its display type, like
+  its faces; the rule against uppercase is about the tools.

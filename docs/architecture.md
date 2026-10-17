@@ -39,7 +39,7 @@
   [`semantic-retrieval.md`](semantic-retrieval.md) (the embedding model in the prebuilt binary, built),
   [`dreaming.md`](dreaming.md) (idle consolidation by a model, behind the gate, specified),
   [`design-system.md`](design-system.md) (one look and one set of parts for the viewer, the app
-  and the landing, built - Section 13 steps 0-7, step 8 specified).
+  and the landing, built - Section 13 steps 0-8).
 
 ---
 
