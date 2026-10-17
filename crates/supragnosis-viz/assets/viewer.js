@@ -294,15 +294,54 @@ function assignColors() {
   edgeTypeColor = stableColors(new Set(edges.map(e => e.type)), true);
 }
 
+// --- Remembered layout (docs/design-system.md Section 5) ------------------------------------------
+// The local console keeps each workspace's node positions in this browser, keyed by the node's host id
+// from /api/surface and the workspace, and the next load starts from them: a workspace seen before
+// appears at once instead of behind the settling loader. The read tier remembers nothing - the app
+// shows every server from one origin, and a principal's positions would outlive a revoked grant - so
+// the key exists only when /api/surface says "local". A position is a convenience; losing one costs a
+// settling.
+let surfaceNode = null;     // this node's host id on the local console, null elsewhere
+let layoutScope = null;     // the storage key the current positions belong to
+let storedLayout = null;    // {id: [x, y]} read for the scope being loaded
+let layoutFresh = true;     // the next graph is the first of its scope
+let layoutDirty = false;    // positions moved since the last save
+async function loadSurface() {
+  try {
+    const s = await (await fetch("/api/surface", { cache: "no-store" })).json();
+    if (s && s.surface === "local" && s.node) surfaceNode = String(s.node);
+  } catch (_) { /* no surface answer - nothing is remembered */ }
+}
+function loadLayout() {
+  storedLayout = null;
+  layoutScope = surfaceNode ? "supra.layout:" + surfaceNode + ":" + (currentWs() || "") : null;
+  if (!layoutScope) return;
+  try { storedLayout = JSON.parse(localStorage.getItem(layoutScope) || "null"); } catch (_) { storedLayout = null; }
+}
+function saveLayout() {
+  if (!layoutScope || !nodes.length) return;
+  const at = {};
+  for (const n of nodes) at[n.id] = [Math.round(n.x * 10) / 10, Math.round(n.y * 10) / 10];
+  try { localStorage.setItem(layoutScope, JSON.stringify(at)); } catch (_) { /* full or private - nothing kept */ }
+}
+addEventListener("pagehide", saveLayout);
+
 function applyGraph(g) {
   const seen = new Set();
-  let added = false;
+  let added = false, restored = 0;
+  if (layoutFresh) loadLayout();
   nodes = g.nodes.map(n => {
     let p = posById.get(n.id);
     if (!p) {
       added = true;
-      const i = spiralN++, a = i * 2.39996, r = 60 + 30 * Math.sqrt(i);
-      p = { x: innerWidth/2 + r*Math.cos(a), y: innerHeight/2 + r*Math.sin(a), vx:0, vy:0 };
+      const at = storedLayout && storedLayout[n.id];
+      if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) {
+        p = { x: at[0], y: at[1], vx: 0, vy: 0 };
+        restored++;
+      } else {
+        const i = spiralN++, a = i * 2.39996, r = 60 + 30 * Math.sqrt(i);
+        p = { x: innerWidth/2 + r*Math.cos(a), y: innerHeight/2 + r*Math.sin(a), vx:0, vy:0 };
+      }
       posById.set(n.id, p);
     }
     seen.add(n.id);
@@ -318,8 +357,23 @@ function applyGraph(g) {
   // First data = full settle behind the loader (the initial layout is violent). Later add/remove
   // (an agent observing, a peer pushing) warms the sim BELOW the loader threshold so the graph stays
   // on screen and new nodes ease in - hiding the whole graph on every incremental hit was wrong, and it
-  // hid the very peer-marker tour that a push triggers.
-  if (added || removed) wake(firstData ? 0.7 : 0.4);
+  // hid the very peer-marker tour that a push triggers. A scope whose layout was remembered (most of
+  // its nodes restored) skips the settle: the known picture shows at once and the rest eases in.
+  const warm = layoutFresh && nodes.length > 0 && restored >= 0.8 * nodes.length;
+  if (layoutFresh && nodes.length) layoutFresh = false;
+  if (warm) {
+    // Positions saved under another window size have another centre, and the sim's anchor pulls the
+    // centroid to this window's world centre every frame - so move the picture there first, or the
+    // frame below would chase it.
+    let cx = 0, cy = 0;
+    for (const n of nodes) { cx += n.x; cy += n.y; }
+    const dx = innerWidth / 2 - cx / nodes.length, dy = innerHeight / 2 - cy / nodes.length;
+    for (const n of nodes) { n.x += dx; n.y += dy; }
+    alpha = Math.min(alpha, REVEAL_ALPHA);
+    // Frame the remembered picture now: the reveal that fits a fresh layout may already have passed
+    // while the page waited for its first graph.
+    if (!userMoved) { fitView(); cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; needFit = false; }
+  } else if (added || removed) wake(firstData ? 0.7 : 0.4);
 
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
   edges = g.edges.map(e => Object.assign({}, e, { a: byId[e.from], b: byId[e.to] }))
@@ -349,7 +403,7 @@ function applyGraph(g) {
   if (focus) { if (nodes.includes(focus)) renderDetail(focus); else { focus = null; renderDetail(null); } }
 
   // Initial auto-fit: once after the layout settles (cooling done), and only before user interaction (in draw).
-  if (firstData && nodes.length) { firstData = false; needFit = true; }
+  if (firstData && nodes.length) { firstData = false; needFit = !warm; }
   // wake() only fires when the node set changed; a tier, kind or contested flag that moved
   // repaints without moving anything, so it has to ask for the frame itself.
   requestFrame();
@@ -804,6 +858,8 @@ function syncUrlWorkspace() {
 }
 
 function beginWorkspaceTransition() {
+  saveLayout();          // the scope being left, under its own key
+  layoutFresh = true;    // the next graph reads the new scope's
   syncUrlWorkspace();
   focus = null; hover = null; renderDetail(null);
   proposalSel = null;
@@ -3052,7 +3108,8 @@ function draw() {
   // Peer cursor-dots (server mode) - drawn last so they float above the graph and labels.
   stepPeers(); drawPeers();
   drawMinimap();
-  if (animating(act)) requestFrame();
+  if (animating(act)) { layoutDirty = true; requestFrame(); }
+  else if (layoutDirty) { layoutDirty = false; saveLayout(); }   // the picture came to rest - keep it
 }
 
 function nodeAt(sx, sy) {
@@ -3289,5 +3346,5 @@ document.getElementById("contestedPill").onclick = () => {
   const qws = new URLSearchParams(location.search).get("workspace");
   if (qws !== null) wsInput.value = qws;
 }
-resize(); loadWorkspaces(); poll(); connectEvents(); detectServerMode();
+resize(); loadWorkspaces(); loadSurface().finally(poll); connectEvents(); detectServerMode();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); setInterval(refreshPeerRoster, 5000); draw();
