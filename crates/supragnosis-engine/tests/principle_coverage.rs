@@ -577,11 +577,14 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (6, &[c(
         "the viewer's search answers with the engine's ranking and mode label over a Read path: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, entity hits are canonical, and the MCP surface is unchanged",
-        Evidence::Deferred(
-            "design-system.md is specified, not built. Revisit when its Section 13 step 5 lands; the \
-             path is then in the read tier's policy table, which every_viewer_path_has_a_remote_policy \
-             holds to the router",
-        ),
+        // crates/supragnosis-viz/tests/http.rs and src/lib.rs: the local path, the read tier's
+        // merge over the grants, the bar, and the policy table held to the router.
+        Evidence::Scenario(&[
+            "the_viewer_search_answers_with_canonical_hits",
+            "the_read_tier_search_reads_only_the_grants",
+            "the_search_bar_lights_only_what_the_engine_answered",
+            "every_viewer_path_has_a_remote_policy",
+        ]),
     )]),
     (7, &[c(
         "the viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token",
