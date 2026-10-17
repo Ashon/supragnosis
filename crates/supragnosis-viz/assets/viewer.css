@@ -64,12 +64,25 @@
   /* The inline asterisk mark. pointer-events:none keeps the shell's drag-region hit on the h1
      itself (the drag handler only fires when the mousedown target carries the attribute). */
   h1 svg { color:var(--accent); flex:none; pointer-events:none; }
-  input,button { background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
-                 padding:5px 9px; border-radius:5px; font:inherit; font-size:12px; }
+  /* The base for every input and button, at zero specificity (:where), so any component class
+     overrides it whole: chips, legend entries, proposal and log rows are buttons now, and each keeps
+     its own look (docs/design-system.md Section 10). */
+  :where(input, button) { background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+                          padding:5px 9px; border-radius:5px; font:inherit; font-size:12px; }
   input::placeholder { color:var(--faint); }
-  input:focus { outline:none; border-color:var(--gold-dim); }
-  button { cursor:pointer; transition:border-color 0.15s ease, color 0.15s ease; }
-  button:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  :where(input):focus { outline:none; border-color:var(--gold-dim); }
+  :where(button) { cursor:pointer; transition:border-color 0.15s ease, color 0.15s ease; }
+  :where(button):hover { border-color:var(--gold-dim); color:var(--gold-bright); }
+  /* Controls drawn as chips and rows: no box of the base's own, and no hover color they did not ask
+     for. Their own rules (.chip, .nchip, .ohead...) draw them. */
+  :where(.chip, .lg, .nchip, .rchip, .echip, .wsc, .ohead, .phead) {
+    background:none; border:0; padding:0; margin:0; border-radius:0; font:inherit; color:inherit;
+    text-align:inherit; }
+  :where(.lg, .ohead, .phead):hover { color:inherit; }
+  /* Focus is visible on every control, the same ring wherever the keyboard lands (Section 4). After
+     the rules above so :where(input):focus cannot take it away. */
+  :focus-visible { outline:2px solid var(--gold-bright); outline-offset:2px; }
+  input:focus-visible { outline-offset:1px; }
   /* "/" hint riding inside the search field (see viewer.html). pointer-events:none so a click at the
      badge still lands on the input - it advertises the shortcut, it is not a control. */
   .searchwrap { position:relative; display:inline-flex; align-items:center; }
@@ -403,7 +416,7 @@
      not boxed cards, so the log reads as a stream and stays in tone with the edge columns. */
   #logBody .obs, .logcol .obs { border-bottom:1px solid var(--line-soft); }
   #logBody .obs:last-child, .logcol .obs:last-child { border-bottom:none; }
-  .obs .ohead { padding:5px; cursor:pointer; border-radius:5px; }
+  .obs .ohead { display:block; width:100%; padding:5px; cursor:pointer; border-radius:5px; }
   .obs .ohead:hover { background:var(--gold-glass); }
   .obs .ometa { display:flex; align-items:center; gap:6px; margin-bottom:2px; }
   .obs .owhen { color:var(--faint); font-size:11px; white-space:nowrap; }
@@ -471,7 +484,7 @@
   #proposalsBody .prop:first-of-type { border-top:none; }
   #proposalsBody .prop:hover { background:rgba(217,165,68,0.05); }
   #proposalsBody .prop.sel { background:var(--gold-glass); border-left-color:var(--accent); }
-  #proposalsBody .phead { display:flex; align-items:center; gap:6px; }
+  #proposalsBody .phead { display:flex; align-items:center; gap:6px; width:100%; cursor:pointer; }
   #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11px; }
   #proposalsBody .pstate { font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:1px 7px;
                            border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:auto; }

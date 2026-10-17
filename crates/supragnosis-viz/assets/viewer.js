@@ -535,9 +535,9 @@ async function renderFedSection(host) {
       } else {
         for (const w of ws) {
           const armed = fedCfgArmed === a.node_id + "\u0000" + w;
-          parts.push(html`<span class="wsc${armed ? " armed" : ""}" data-node="${a.node_id}" `,
+          parts.push(html`<button type="button" class="wsc${armed ? " armed" : ""}" data-node="${a.node_id}" `,
             html`data-ws="${w}" title="${armed ? "click again to stop sharing" : "stop sharing this workspace with this peer"}">`,
-            html`${w}<span class="x">${armed ? "confirm" : "x"}</span></span>`);
+            html`${w}<span class="x">${armed ? "confirm" : "x"}</span></button>`);
         }
       }
       parts.push(html`</div></div>`);
@@ -594,7 +594,8 @@ function renderLegend() {
     host.innerHTML = "";
     if (!keys.length) { host.innerHTML = '<span class="lbl">none</span>'; return; }
     for (const t of keys) {
-      const el = document.createElement("span");
+      const el = document.createElement("button");
+      el.type = "button";
       el.className = "lg" + (offSet.has(t) ? " off" : "");
       const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(t);
       if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // line-like look
@@ -726,7 +727,8 @@ async function loadWorkspaces() {
     const list = await r.json();
     const cur = currentWs();
     const mk = (label, val) => {
-      const c = document.createElement("span");
+      const c = document.createElement("button");
+      c.type = "button";
       c.className = "chip" + (val === cur ? " on" : "");
       c.dataset.ws = val; c.textContent = label;
       c.onclick = () => {
@@ -870,7 +872,7 @@ function bandEmptyReason(band) {
 // Clicking a node chip only focuses it - the panel commits nothing (no gate).
 function renderCuration() {
   if (!curation) { curationBodyEl.innerHTML = '<div class="empty">no signals yet</div>'; reviewCtEl.textContent = ""; return; }
-  const nchip = n => html`<span class="nchip" data-id="${n.id}" title="focus ${n.name} (deg ${n.degree}, ${n.sources} src)">${n.name}<span class="ty">${n.type}</span></span>`;
+  const nchip = n => html`<button type="button" class="nchip" data-id="${n.id}" title="focus ${n.name} (deg ${n.degree}, ${n.sources} src)">${n.name}<span class="ty">${n.type}</span></button>`;
   const dup = curation.duplicates || [], gb = curation.grab_bags || [], orph = curation.orphans || [];
   const con = curation.contradictions || [];
   // Suspected secrets go above everything, and only when there are any. Every other signal here is
@@ -884,8 +886,8 @@ function renderCuration() {
       html`<div class="hint">the log is append-only - these cannot be removed yet. Stop the leak `,
       html`spreading by narrowing what this workspace shares (settings), and rotate the credential.</div>`);
     for (const f of sec) {
-      parts.push(html`<div class="grp secret"><span class="nchip" data-obs="${f.observation}" `,
-        html`title="open this observation">${f.observation.slice(0, 12)}</span>`,
+      parts.push(html`<div class="grp secret"><button type="button" class="nchip" data-obs="${f.observation}" `,
+        html`title="open this observation">${f.observation.slice(0, 12)}</button>`,
         html`<span class="ty">${f.pattern}</span>`,
         html`<div class="hint">in ${f.field}, at byte ${f.at | 0} - not shown here on purpose</div></div>`);
     }
@@ -895,7 +897,7 @@ function renderCuration() {
   parts.push(html`<div class="csec">contested beliefs (${con.length})</div>`);
   parts.push(con.length
     ? con.map(c => [
-        html`<div class="grp"><span class="nchip" data-id="${c.id}" title="focus ${c.name}">${c.name}</span>`,
+        html`<div class="grp"><button type="button" class="nchip" data-id="${c.id}" title="focus ${c.name}">${c.name}</button>`,
         html`<div class="contested${c.contested ? " hot" : ""}">`,
         contestedRows(c.current, "", c.kind_source, c.competitors || [], c.contested),
         html`</div></div>`])
@@ -917,9 +919,9 @@ function renderCuration() {
   parts.push(ms.length
     ? ms.map(m => [
         html`<div class="ms" data-a="${m.a}" data-b="${m.b}">`,
-        html`<span class="nchip" data-id="${m.a}" title="focus ${m.a_name}">${m.a_name}</span>`,
+        html`<button type="button" class="nchip" data-id="${m.a}" title="focus ${m.a_name}">${m.a_name}</button>`,
         html`<span class="msx">~</span>`,
-        html`<span class="nchip" data-id="${m.b}" title="focus ${m.b_name}">${m.b_name}</span>`,
+        html`<button type="button" class="nchip" data-id="${m.b}" title="focus ${m.b_name}">${m.b_name}</button>`,
         html`<span class="mssim" title="embedding similarity (retrieval aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`,
         html`<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`,
         html`</div>`])
@@ -939,9 +941,9 @@ function renderCuration() {
           // data-src tells the server which surface produced this, so the proposal records the real
           // evidence instead of inheriting the merge band's "embedding-near" rationale.
           return [html`<div class="ms" data-a="${m[0].id}" data-b="${m[1].id}" data-src="variant:${v.rung}">`,
-            html`<span class="nchip" data-id="${m[0].id}" title="focus ${m[0].name}">${m[0].name}</span>`,
+            html`<button type="button" class="nchip" data-id="${m[0].id}" title="focus ${m[0].name}">${m[0].name}</button>`,
             html`<span class="msx">~</span>`,
-            html`<span class="nchip" data-id="${m[1].id}" title="focus ${m[1].name}">${m[1].name}</span>`,
+            html`<button type="button" class="nchip" data-id="${m[1].id}" title="focus ${m[1].name}">${m[1].name}</button>`,
             meta,
             html`<button class="propmerge" title="open an entity_merge proposal for this pair (folds the first into the second) - reviewed in the Proposals tab">propose</button>`,
             html`</div>`];
@@ -1061,13 +1063,13 @@ function renderProposals() {
       .flatMap(p => p.targets || []));
   propCtEl.textContent = open.length || (proposals.length ? proposals.length : "");
   if (!proposals.length) { proposalsBodyEl.innerHTML = '<div class="empty">no proposals - open one with the propose tool, or from a merge candidate</div>'; return; }
-  const chip = (id, into) => html`<span class="nchip${id === into ? " into" : ""}" data-id="${id}" title="focus ${nameOf(id)}${id === into ? " (canonical / into)" : ""}">${nameOf(id)}</span>`;
+  const chip = (id, into) => html`<button type="button" class="nchip${id === into ? " into" : ""}" data-id="${id}" title="focus ${nameOf(id)}${id === into ? " (canonical / into)" : ""}">${nameOf(id)}</button>`;
   const parts = [html`<div class="hint">click a proposal to preview the change on the graph; accept records a gated verdict</div>`];
   for (const p of proposals) {
     const st = p.state;
     const sel = proposalSel && proposalSel.id === p.id ? " sel" : "";
-    parts.push(html`<div class="prop${sel}" data-pid="${p.id}"><div class="phead"><span class="pkind">${p.kind}</span>`,
-      html`<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></div>`);
+    parts.push(html`<div class="prop${sel}" data-pid="${p.id}"><button type="button" class="phead"><span class="pkind">${p.kind}</span>`,
+      html`<span class="pstate ${st}">${st}${p.verdicts ? " " + p.verdicts + "v" : ""}</span></button>`);
     if (p.rationale) parts.push(html`<div class="prat">${p.rationale}</div>`);
     parts.push(html`<div class="ptargets">${(p.targets || []).map(id => chip(id, p.into))}</div>`);
     if (p.affected_types && p.affected_types.length) {   // tbox_change scope - what lights up on the graph
@@ -1177,7 +1179,7 @@ function diffHtml(d) {
     const flag = settled ? html`<span class="dsettled">settles a contradiction</span>`
                : created ? html`<span class="dcreated">creates a contradiction</span>` : "";
     return [html`<div class="drow"><span class="dk">${b.field}</span>`,
-      html`<span class="nchip" data-id="${b.entity}" title="focus ${b.name}">${b.name}</span>`,
+      html`<button type="button" class="nchip" data-id="${b.entity}" title="focus ${b.name}">${b.name}</button>`,
       html`<span class="dfrom">${b.from || "(none)"}</span><span class="darr">-&gt;</span>`,
       html`<span class="dto">${b.to || "(none)"}</span>${flag}</div>`];
   });
@@ -1303,11 +1305,11 @@ function obsRowHtml(o) {
   const cls = o.proposal ? "otext ev" : "otext";
   return html`${[
     html`<div class="obs" data-id="${o.id}">`,
-    html`<div class="ohead" title="open observation detail">`,
-      html`<div class="ometa">${tierDot(o.effective_tier)}`,
-        html`<span class="owhen">${obsWhen(a0.observed_at)}</span></div>`,
-      html`<div class="${cls}">${text}</div>`,
-    html`</div></div>`]}`;
+    html`<button type="button" class="ohead" title="open observation detail">`,
+      html`<span class="ometa">${tierDot(o.effective_tier)}`,
+        html`<span class="owhen">${obsWhen(a0.observed_at)}</span></span>`,
+      html`<span class="${cls}">${text}</span>`,
+    html`</button></div>`]}`;
 }
 
 // The observation detail CARD: a focused, dismissable view of one observation - full content plus
@@ -1354,7 +1356,7 @@ function obsCardHtml(o) {
         const into = p.into && t.id === p.into.id;
         const label = html`${t.name || String(t.id).slice(0, 8)}${into ? html` <span class="rk">kept</span>` : ""}`;
         return live
-          ? html`<span class="echip" data-id="${t.id}" title="focus ${t.name || t.id}">${label}</span>`
+          ? html`<button type="button" class="echip" data-id="${t.id}" title="focus ${t.name || t.id}">${label}</button>`
           : html`<span class="echip off" title="folded away by this merge - no node to focus">${label}</span>`;
       };
       parts.push(html`<div class="osec">targets</div><div class="echips">${ts.map(chip)}</div>`);
@@ -1362,7 +1364,7 @@ function obsCardHtml(o) {
   }
   if (o.entities && o.entities.length)
     parts.push(html`<div class="osec">entities</div><div class="echips">${
-      o.entities.map(e => html`<span class="echip" data-id="${e.id}" title="focus ${e.name}">${e.name}</span>`)}</div>`);
+      o.entities.map(e => html`<button type="button" class="echip" data-id="${e.id}" title="focus ${e.name}">${e.name}</button>`)}</div>`);
   if (o.relations && o.relations.length)
     parts.push(html`<div class="osec">relations</div>`,
       o.relations.map(r => html`<div class="ocrel">${r.from} <span class="rk">${r.type}</span> ${r.to}</div>`));
@@ -1836,9 +1838,9 @@ function relationGroupHtml(g, open) {
   const rest = g.items.length - shown.length;
   // The edge's description stays one hover away, as it was on the row; a superseded edge says so.
   const chip = ({ other, e }) => html`${[
-    html`<span class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
+    html`<button type="button" class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
     html`title="${e.description || ((e.valid_to ? "superseded - " : "") + "focus " + other.name)}">`,
-    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}</span>`]}`;
+    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}</button>`]}`;
   return html`${[
     html`<div class="rgroup"><div class="rghead"><span class="rdir">${g.out ? "->" : "<-"}</span>`,
     html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
@@ -2259,7 +2261,8 @@ function renderBoundaryChips() {
   if (!legendBoundaryEl) return;
   legendBoundaryEl.innerHTML = "";
   for (const [mode, why] of BOUNDARY_MODES) {
-    const el = document.createElement("span");
+    const el = document.createElement("button");
+    el.type = "button";
     el.className = "lg" + (boundaryMode === mode ? "" : " off");
     const sw = document.createElement("span");
     sw.className = "sw";
