@@ -1805,6 +1805,18 @@ mod settings_tests {
         assert!(html.contains("Content-Security-Policy"), "the page carries its own policy");
         assert!(!html.contains("<script>"), "no inline script");
     }
+
+    /// Settings > About names where the source lives, and its hint points there for the dependency
+    /// licences. The value is the package manifest's `repository`, which this crate has to inherit
+    /// from its own workspace by name; when the shell left the server workspace it stopped doing
+    /// so, and every build until 0.5.2 showed "-" in that row.
+    #[test]
+    fn the_about_section_names_the_source() {
+        assert!(
+            env!("CARGO_PKG_REPOSITORY").starts_with("https://github.com/"),
+            "app/Cargo.toml [package] must inherit repository from [workspace.package]"
+        );
+    }
 }
 
 /// docs/compatibility.md Section 6, the app's side. The CLI's own tests hold its `--json` output

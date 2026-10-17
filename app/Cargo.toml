@@ -40,6 +40,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+# Settings > About reads this as the source link (env!("CARGO_PKG_REPOSITORY")). It went missing
+# when the shell left the server workspace and read "-" until 0.5.2; a settings test holds it.
+repository.workspace = true
 # The desktop shell is not a library and needs platform webview toolchains; it ships as a
 # signed bundle from the release workflow, not from crates.io.
 publish = false
