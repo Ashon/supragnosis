@@ -67,7 +67,6 @@ code {
   font-family: var(--mono);
   font-size: 0.86em;
   background: var(--panel-2);
-  border: 1px solid var(--line-soft);
   border-radius: 4px;
   padding: 0.08em 0.35em;
   color: var(--ink);
@@ -118,12 +117,12 @@ code {
 .site-head nav a:hover { color: var(--gold-bright); text-decoration: none; }
 .site-head nav a.nav-gh {
   color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  background: var(--panel-2);
+  border-radius: 6px;
   padding: 3px 10px;
   margin: -4px 0;
 }
-.site-head nav a.nav-gh:hover { border-color: var(--gold-dim); color: var(--gold-bright); }
+.site-head nav a.nav-gh:hover { background: var(--panel-3); color: var(--gold-bright); }
 
 @media (max-width: 620px) {
   .site-head nav a:not(.nav-gh) { display: none; }
@@ -257,9 +256,9 @@ code {
   font-weight: 500;
   letter-spacing: 0.03em;
   padding: 12px 22px;
-  border-radius: 5px;
-  border: 1px solid transparent;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  border-radius: 6px;
+  border: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .btn:hover { text-decoration: none; transform: translateY(-1px); }
 .btn-gold {
@@ -271,19 +270,18 @@ code {
   box-shadow: 0 6px 24px rgba(217, 165, 68, 0.25);
 }
 .btn-ghost {
-  border-color: var(--line);
+  background: var(--panel-2);
   color: var(--ink);
 }
-.btn-ghost:hover { border-color: var(--gold-dim); color: var(--gold-bright); }
+.btn-ghost:hover { background: var(--panel-3); color: var(--gold-bright); }
 
 .install {
   display: flex;
   align-items: center;
   gap: 0;
   max-width: 760px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(16, 19, 27, 0.85);
+  border-radius: 8px;
+  background: var(--panel);
   overflow: hidden;
   margin-bottom: 26px;
 }
@@ -294,7 +292,7 @@ code {
   text-transform: uppercase;
   color: var(--accent);
   padding: 12px 14px;
-  border-right: 1px solid var(--line-soft);
+  background: var(--panel-2);
   flex-shrink: 0;
 }
 .install code {
@@ -312,9 +310,8 @@ code {
   font-size: 11.5px;
   letter-spacing: 0.06em;
   color: var(--muted);
-  background: none;
+  background: var(--panel-2);
   border: none;
-  border-left: 1px solid var(--line-soft);
   padding: 12px 16px;
   cursor: pointer;
   flex-shrink: 0;
@@ -336,11 +333,11 @@ code {
   font-size: 11.5px;
   letter-spacing: 0.04em;
   color: var(--muted);
-  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
   border-radius: 999px;
   padding: 4px 12px;
 }
-.badges li:first-child { color: var(--gold-bright); border-color: var(--gold-dim); }
+.badges li:first-child { color: var(--gold-bright); background: var(--gold-glass); }
 
 /* ---------------- sections ---------------- */
 
@@ -348,7 +345,6 @@ code {
   max-width: 1060px;
   margin: 0 auto;
   padding: clamp(48px, 7vw, 88px) clamp(20px, 5vw, 56px);
-  border-top: 1px solid var(--line-soft);
 }
 /* Argument sections hold the 1060 rail; the two that show evidence rather than make a claim -
    the viewer capture and the capability grid - break wider on purpose. It gives the page a
@@ -411,14 +407,13 @@ code {
 
 .card {
   background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 26px 24px;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 .card:hover {
   transform: translateY(-3px);
-  border-color: var(--gold-dim);
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
 }
 .card h3 {
@@ -433,11 +428,10 @@ code {
 /* ---------------- triptych (division of labour) ---------------- */
 
 /* Section 01 states who does what, and section 02 states what is guaranteed. Both are three
-   abreast, so they were reading as one long run of identical cards. This one drops the box
-   and hangs off a rule instead - same grid, visibly different register. */
+   abreast, so they were reading as one long run of identical cards. This one has no box and no
+   rule - same grid, visibly different register (design-system.md Section 4: surfaces, not lines). */
 .triptych { gap: 30px 34px; }
-.step { padding-top: 20px; border-top: 1px solid var(--gold-dim); }
-.step.human { border-top-color: var(--accent); }
+.step { padding-top: 4px; }
 .step-actor {
   font-family: var(--mono);
   font-size: 11px;
@@ -466,8 +460,7 @@ code {
 }
 .flow-step {
   background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
@@ -495,12 +488,10 @@ code {
 
 .terminal {
   background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .terminal-bar {
-  border-bottom: 1px solid var(--line-soft);
   padding: 9px 16px;
   background: var(--panel-2);
 }
@@ -542,8 +533,7 @@ code {
 .shot {
   margin: 0;
   background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .shot img {
@@ -553,7 +543,6 @@ code {
 }
 .shot figcaption {
   padding: 12px 16px;
-  border-top: 1px solid var(--line-soft);
   font-family: var(--mono);
   font-size: 12px;
   line-height: 1.6;
@@ -573,9 +562,8 @@ code {
   text-transform: uppercase;
   color: var(--faint);
   background: none;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
+  border: 0;
+  border-radius: 8px 8px 0 0;
   padding: 8px 14px;
   cursor: pointer;
 }
@@ -583,9 +571,6 @@ code {
 .tab[aria-selected="true"] {
   color: var(--accent);
   background: var(--panel);
-  border-color: var(--line-soft);
-  position: relative;
-  top: 1px;
 }
 
 /* ---------------- mcp ---------------- */
@@ -598,10 +583,10 @@ code {
   display: grid;
   grid-template-columns: 170px 1fr;
   gap: 14px;
-  padding: 11px 4px;
-  border-bottom: 1px solid var(--line-soft);
+  padding: 11px 12px;
+  background: var(--panel);
+  border-radius: 8px;
 }
-.tools > div:last-child { border-bottom: none; }
 .tools dt {
   font-family: var(--mono);
   font-size: 13px;
@@ -620,8 +605,7 @@ code {
 .topo {
   margin: 0;
   background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 18px 18px 12px;
   text-align: center;
 }
@@ -659,7 +643,6 @@ code {
   text-transform: uppercase;
   margin: 0 0 4px;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
 }
 .ledger-head.done { color: var(--ok); }
 .ledger-head.open { color: var(--faint); }
@@ -670,15 +653,17 @@ code {
   margin: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 .checklist li {
   display: flex;
   gap: 16px;
-  padding: 14px 4px;
-  border-bottom: 1px solid var(--line-soft);
+  padding: 14px 16px;
+  background: var(--panel);
   align-items: baseline;
 }
-.checklist li:last-child { border-bottom: none; }
+.checklist li:first-child { border-top-left-radius: 10px; border-top-right-radius: 10px; }
+.checklist li:last-child { border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }
 .checklist .mark {
   font-family: var(--mono);
   font-size: 14px;
@@ -693,7 +678,7 @@ code {
 /* ---------------- footer ---------------- */
 
 .site-foot {
-  border-top: 1px solid var(--line-soft);
+  background: var(--panel);
   text-align: center;
   padding: 56px clamp(20px, 5vw, 56px) 64px;
 }

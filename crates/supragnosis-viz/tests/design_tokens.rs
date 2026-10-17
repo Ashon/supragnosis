@@ -179,9 +179,9 @@ fn draws_a_line(name: &str, value: &str) -> bool {
     }
 }
 
-/// The viewer's lines and the fact each one carries (design-system.md Section 4).
+/// The lines each stylesheet keeps, and the fact each one carries (design-system.md Section 4). An
+/// outline under `:focus-visible` is keyboard focus wherever it is, so the lists leave it out.
 const VIEWER_LINES: &[(&str, &str)] = &[
-    (":focus-visible", "keyboard focus"),
     (".contested", "a contested value, in --bad"),
     ("#detail .rchip.past", "a superseded relation, dashed"),
     (".tsw.t-unverified", "the Trust legend's swatch of the unverified ring"),
@@ -193,38 +193,58 @@ const VIEWER_LINES: &[(&str, &str)] = &[
     ("#loader .spin", "a control's own glyph: the loader's spinner"),
     ("#mapwin", "paints the frame around the map's window: a surface, not a line"),
 ];
+const SETTINGS_LINES: &[(&str, &str)] = &[
+    (".radio", "a control's own glyph: the radio's circle"),
+    (".radio.on", "a control's own glyph: the chosen radio's circle"),
+];
+const LANDING_LINES: &[(&str, &str)] = &[];
 
-/// U9 (design-system.md Section 4): areas are told apart by surface. viewer.css draws a line only for
-/// a selector listed with the fact its line carries, and the script sets a border only on the
-/// boundaries' legend swatches, which show the dashes the map draws. Before step 7 viewer.css drew 53
-/// lines: every dock, chip, row, pill and camera button had a border of its own.
-#[test]
-fn no_border_draws_an_area() {
+/// The declarations of a stylesheet that draw a line outside its list, and the listed selectors
+/// that drew one.
+fn stray_lines<'a>(css: &str, listed: &'a [(&'a str, &'a str)]) -> (Vec<String>, Vec<&'a str>) {
     let mut stray = Vec::new();
-    let mut used = std::collections::HashSet::new();
-    for (selector, body) in rules(VIEWER) {
+    let mut used = Vec::new();
+    for (selector, body) in rules(css) {
         for decl in body.split(';') {
             let Some((name, value)) = decl.split_once(':') else {
                 continue;
             };
-            if !draws_a_line(name.trim(), value) {
+            let name = name.trim();
+            if !draws_a_line(name, value)
+                || (name == "outline" && selector.contains(":focus-visible"))
+            {
                 continue;
             }
-            match VIEWER_LINES.iter().find(|(s, _)| *s == selector) {
-                Some((s, _)) => {
-                    used.insert(*s);
-                }
-                None => stray.push(format!("{selector} {{ {}:{} }}", name.trim(), value.trim())),
+            match listed.iter().find(|(s, _)| *s == selector) {
+                Some((s, _)) => used.push(*s),
+                None => stray.push(format!("{selector} {{ {name}:{} }}", value.trim())),
             }
         }
     }
-    assert!(
-        stray.is_empty(),
-        "viewer.css draws lines no fact asks for (U9):\n  {}",
-        stray.join("\n  ")
-    );
-    let unused: Vec<_> = VIEWER_LINES.iter().filter(|(s, _)| !used.contains(s)).collect();
-    assert!(unused.is_empty(), "listed lines that viewer.css no longer draws: {unused:?}");
+    (stray, used)
+}
+
+/// U9 (design-system.md Section 4): areas are told apart by surface. Each of the three stylesheets
+/// draws a line only for keyboard focus or a selector listed with the fact its line carries, and
+/// the viewer's script sets a border only on the boundaries' legend swatches, which show the dashes
+/// the map draws. Before step 7 viewer.css drew 85 such lines; every dock, chip, row, pill and camera
+/// button had a border of its own.
+#[test]
+fn no_border_draws_an_area() {
+    for (file, css, listed) in [
+        ("viewer.css", VIEWER, VIEWER_LINES),
+        ("settings.css", SETTINGS, SETTINGS_LINES),
+        ("site/style.css", LANDING, LANDING_LINES),
+    ] {
+        let (stray, used) = stray_lines(css, listed);
+        assert!(
+            stray.is_empty(),
+            "{file} draws lines no fact asks for (U9):\n  {}",
+            stray.join("\n  ")
+        );
+        let unused: Vec<_> = listed.iter().filter(|(s, _)| !used.contains(s)).collect();
+        assert!(unused.is_empty(), "{file}: listed lines it no longer draws: {unused:?}");
+    }
 
     let js = include_str!("../assets/viewer.js");
     let start = js
