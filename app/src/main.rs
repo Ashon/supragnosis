@@ -78,6 +78,38 @@ struct AppsHint(Mutex<Option<String>>);
 /// pointing at, if any (docs/settings-page.md Section 3.0).
 struct Attention(Mutex<Option<&'static str>>);
 
+/// The tray's "Review (N)..." item (docs/design-system.md Section 7): in the menu while proposals wait
+/// on this Mac's daemon, out of it otherwise. The menu and whether the item is in it are kept with it.
+struct TrayReview {
+    menu: Menu<tauri::Wry>,
+    item: MenuItem<tauri::Wry>,
+    shown: Mutex<bool>,
+}
+
+/// How many proposals wait for a decision on this Mac's daemon, across its workspaces: the open ones
+/// and the blocked ones, which wait for a person to reject them. None when the daemon does not answer.
+async fn waiting_proposals(sock: &Path) -> Option<usize> {
+    let f =
+        tokio::time::timeout(Duration::from_secs(5), uds_fetch(sock, "/api/proposals?workspace=*"))
+            .await
+            .ok()?
+            .ok()?;
+    if f.status != 200 {
+        return None;
+    }
+    let list: serde_json::Value = serde_json::from_slice(&f.body).ok()?;
+    Some(review_count(&list))
+}
+
+/// The count `waiting_proposals` reports, from the daemon's proposal list.
+fn review_count(list: &serde_json::Value) -> usize {
+    list.as_array().map_or(0, |a| {
+        a.iter()
+            .filter(|p| matches!(p["state"].as_str(), Some("open" | "blocked")))
+            .count()
+    })
+}
+
 #[derive(Clone)]
 struct RemoteServer {
     name: String,
@@ -621,6 +653,24 @@ async fn refresh_status(app: &tauri::AppHandle) {
     }
     if let Some(a) = app.try_state::<Attention>() {
         *a.0.lock().unwrap() = attention;
+    }
+    // The review item counts this Mac's daemon only; on a remote profile the tray stays as
+    // remote-viewer.md Section 6 has it.
+    let waiting = if active_remote(app).is_none() {
+        waiting_proposals(&app.state::<VizSock>().0).await.unwrap_or(0)
+    } else {
+        0
+    };
+    if let Some(r) = app.try_state::<TrayReview>() {
+        let mut shown = r.shown.lock().unwrap();
+        if waiting > 0 {
+            let _ = r.item.set_text(format!("Review ({waiting})..."));
+            if !*shown && r.menu.insert(&r.item, 2).is_ok() {
+                *shown = true;
+            }
+        } else if *shown && r.menu.remove(&r.item).is_ok() {
+            *shown = false;
+        }
     }
 }
 
@@ -1232,6 +1282,23 @@ fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result
     Ok(())
 }
 
+/// Turns the main window to the Review page (docs/design-system.md Section 7): a route of the viewer's
+/// own page, `#review`. From the settings page that is a navigation; on the viewer it is the hash, so
+/// the graph's state is kept.
+fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
+    show_viewer(app)?;
+    if let Some(w) = app.get_webview_window("main") {
+        if w.url().is_ok_and(|u| settings_caller_ok("main", &u)) {
+            let mut url = graph_url();
+            url.set_fragment(Some("review"));
+            w.navigate(url)?;
+        } else {
+            w.eval("location.hash = '#review'")?;
+        }
+    }
+    Ok(())
+}
+
 /// Turns the main window to the graph, creating it first if needed.
 fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
@@ -1458,6 +1525,9 @@ fn main() {
                 ],
             )?;
             app.manage(TrayStatus(status));
+            // Out of the menu until something waits (refresh_status inserts it).
+            let review = MenuItem::with_id(app, "review", "Review...", true, None::<&str>)?;
+            app.manage(TrayReview { menu: menu.clone(), item: review, shown: Mutex::new(false) });
             app.manage(ActiveRemote(Mutex::new(None)));
             app.manage(AppsHint(Mutex::new(None)));
             app.manage(Attention(Mutex::new(None)));
@@ -1472,8 +1542,11 @@ fn main() {
                 if text == "View" {
                     let graph =
                         MenuItem::with_id(app, "graph", "Graph", true, Some("CmdOrCtrl+1"))?;
+                    let review =
+                        MenuItem::with_id(app, "review", "Review", true, Some("CmdOrCtrl+2"))?;
                     sub.insert(&graph, 0)?;
-                    sub.insert(&PredefinedMenuItem::separator(app)?, 1)?;
+                    sub.insert(&review, 1)?;
+                    sub.insert(&PredefinedMenuItem::separator(app)?, 2)?;
                 } else if text == name {
                     let item = MenuItem::with_id(
                         app,
@@ -1490,6 +1563,7 @@ fn main() {
                 let shown = match event.id().as_ref() {
                     "settings" => show_settings(app, None),
                     "graph" => show_graph(app),
+                    "review" => show_review(app),
                     _ => Ok(()),
                 };
                 if let Err(e) = shown {
@@ -1508,6 +1582,11 @@ fn main() {
                     "open" => {
                         if let Err(e) = show_graph(app) {
                             tracing::error!(error = %e, "failed to open the graph");
+                        }
+                    }
+                    "review" => {
+                        if let Err(e) = show_review(app) {
+                            tracing::error!(error = %e, "failed to open the review page");
                         }
                     }
                     "settings" => {
@@ -1812,6 +1891,18 @@ mod settings_tests {
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing
     /// so, and every build until 0.5.2 showed "-" in that row.
+    /// The tray's Review item counts what waits for a person (docs/design-system.md Section 7): open
+    /// proposals and blocked ones, which wait to be rejected - never merged, rejected or withdrawn ones.
+    #[test]
+    fn the_review_item_counts_open_and_blocked_proposals() {
+        let list = serde_json::json!([
+            {"state": "open"}, {"state": "blocked"}, {"state": "blocked"},
+            {"state": "merged"}, {"state": "rejected"}, {"state": "withdrawn"}
+        ]);
+        assert_eq!(super::review_count(&list), 3);
+        assert_eq!(super::review_count(&serde_json::json!({"error": "x"})), 0);
+    }
+
     #[test]
     fn the_about_section_names_the_source() {
         assert!(
