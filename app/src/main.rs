@@ -26,7 +26,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -474,7 +474,88 @@ async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
 /// Runs the CLI the shell found, blocking. `None` when there is no CLI to run.
 fn run_cli(args: &[&str]) -> Option<std::process::Output> {
     let bin = find_server_bin()?;
-    Command::new(bin).args(args).stdin(Stdio::null()).output().ok()
+    let mut cmd = Command::new(bin);
+    cmd.args(args).stdin(Stdio::null());
+    if let Some(path) = cli_path(login_path(), std::env::var_os("PATH").as_deref()) {
+        cmd.env("PATH", path);
+    }
+    cmd.output().ok()
+}
+
+/// The person's `PATH` as their login shell sets it, read once per launch (docs/client-connect.md
+/// Section 5). An app opened from the Finder gets `/usr/bin:/bin:/usr/sbin:/sbin`, so a client
+/// installed through nvm, fnm, volta or mise is on the shell's `PATH` only, and the CLI called it not
+/// installed. `None` when the shell could not be asked; the app's own `PATH` then stands.
+fn login_path() -> Option<&'static str> {
+    static LOGIN_PATH: OnceLock<Option<String>> = OnceLock::new();
+    LOGIN_PATH
+        .get_or_init(|| {
+            let shell = std::env::var_os("SHELL").filter(|s| !s.is_empty())?;
+            read_login_path(Path::new(&shell), Duration::from_secs(5))
+        })
+        .as_deref()
+}
+
+/// The line `read_login_path` prints before the environment, so whatever the shell's startup files
+/// print first is skipped.
+const ENV_MARK: &str = "__supragnosis_env__";
+
+/// Asks `shell`, as a login and interactive shell, for its environment, and returns its `PATH`.
+/// `None` when it does not answer within `within`, or answers without one. Interactive, because nvm
+/// and its kind are set up in `.zshrc` and `.bashrc`, which a login shell alone does not read.
+fn read_login_path(shell: &Path, within: Duration) -> Option<String> {
+    let mut child = Command::new(shell)
+        .args(["-l", "-i", "-c", &format!("echo {ENV_MARK}; /usr/bin/env")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Read on a thread: a startup file that leaves a process holding the pipe must not hang the app.
+    let mut stdout = child.stdout.take()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut out = String::new();
+        let _ = std::io::Read::read_to_string(&mut stdout, &mut out);
+        let _ = tx.send(out);
+    });
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() < within => std::thread::sleep(Duration::from_millis(25)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let out = rx.recv_timeout(within.saturating_sub(started.elapsed())).ok()?;
+    path_from_env_output(&out)
+}
+
+/// The `PATH=` line of `env`'s output after [`ENV_MARK`]; anything printed before the mark is not
+/// the environment.
+fn path_from_env_output(out: &str) -> Option<String> {
+    let after = out.split_once(&format!("{ENV_MARK}\n"))?.1;
+    after
+        .lines()
+        .find_map(|l| l.strip_prefix("PATH="))
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+}
+
+/// The `PATH` the app's CLI calls run with: the login shell's directories first, then those of the
+/// app's own that the shell's did not name. `None` leaves the app's `PATH` as it is.
+fn cli_path(login: Option<&str>, own: Option<&std::ffi::OsStr>) -> Option<std::ffi::OsString> {
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(login?).collect();
+    for dir in own.map(std::env::split_paths).into_iter().flatten() {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    std::env::join_paths(dirs).ok()
 }
 
 /// The highest schema of the CLI's machine-read answers this app reads (docs/compatibility.md
@@ -1504,6 +1585,11 @@ fn main() {
             _ => {}
         })
         .setup(move |app| {
+            // The login shell's PATH, asked once in the background, so the first CLI call the
+            // Settings page makes does not wait for the shell to start (client-connect.md Section 5).
+            std::thread::spawn(|| {
+                let _ = login_path();
+            });
             // Tray: says what state this Mac is in and opens the windows that change it
             // (docs/settings-page.md Section 5). The settings themselves live on that page.
             let status = MenuItem::with_id(app, "status", "daemon: starting...", false, None::<&str>)?;
@@ -1717,7 +1803,8 @@ mod csp_tests {
 
 #[cfg(test)]
 mod status_text_tests {
-    use super::{app_row, status_text, Daemon};
+    use super::{app_row, cli_path, path_from_env_output, read_login_path, status_text, Daemon};
+    use std::time::Duration;
 
     /// An AI app's row in the settings window says its state and labels its one button with what a
     /// click will do - naming any entry other than the bridge, since the click replaces it - and has
@@ -1739,6 +1826,53 @@ mod status_text_tests {
             app_row(Some(&r(true, "none"))),
             ("not connected".into(), Some("Connect"), "off")
         );
+    }
+
+    /// client-connect.md Section 5: the CLI runs with the login shell's `PATH`. From the Finder the app
+    /// has `/usr/bin:/bin:/usr/sbin:/sbin`, and `codex` under `~/.nvm/versions/node/<v>/bin` read
+    /// "Not installed" on the Settings page while a terminal's `supragnosis connect` found it.
+    #[test]
+    fn the_cli_runs_with_the_login_shells_path() {
+        // What the startup files print is skipped: only the environment after the mark counts.
+        let out = "Last login: today\nPATH=/printed/by/zshrc\n__supragnosis_env__\nHOME=/Users/x\n\
+                   PATH=/Users/x/.nvm/versions/node/v24/bin:/usr/bin\n";
+        assert_eq!(
+            path_from_env_output(out).as_deref(),
+            Some("/Users/x/.nvm/versions/node/v24/bin:/usr/bin")
+        );
+        assert_eq!(path_from_env_output("PATH=/usr/bin\n"), None, "no mark, no environment");
+
+        // A shell that prints first, sets PATH in its startup, then runs the command it is given.
+        let dir = std::env::temp_dir().join(format!("sg-login-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, body: &str| {
+            use std::os::unix::fs::PermissionsExt;
+            let p = dir.join(name);
+            std::fs::write(&p, body).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let shell = write(
+            "shell",
+            "#!/bin/sh\necho 'welcome PATH=/not/this'\nPATH=/opt/nvm/bin:/usr/bin\nexport PATH\neval \"$4\"\n",
+        );
+        assert_eq!(
+            read_login_path(&shell, Duration::from_secs(5)).as_deref(),
+            Some("/opt/nvm/bin:/usr/bin")
+        );
+        // A shell that never answers leaves the app's PATH alone, and does not hold the app up.
+        let hangs = write("hangs", "#!/bin/sh\nsleep 30\n");
+        let started = std::time::Instant::now();
+        assert_eq!(read_login_path(&hangs, Duration::from_millis(300)), None);
+        assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // The shell's directories lead; the app's own follow, without repeats.
+        assert_eq!(
+            cli_path(Some("/opt/nvm/bin:/usr/bin"), Some(std::ffi::OsStr::new("/usr/bin:/bin"))),
+            Some(std::ffi::OsString::from("/opt/nvm/bin:/usr/bin:/bin"))
+        );
+        assert_eq!(cli_path(None, Some(std::ffi::OsStr::new("/usr/bin"))), None);
     }
 
     fn st(
