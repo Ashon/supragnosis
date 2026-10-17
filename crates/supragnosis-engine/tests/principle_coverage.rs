@@ -571,8 +571,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (5, &[c(
         "dream drafts are listed apart from published proposals and marked as this node's; only the person's act publishes or accepts one, and none is shown on a read tier",
         Evidence::Deferred(
-            "design-system.md is specified, not built. Revisit when dreaming.md Section 12 step 5 \
-             lands, with the drafts in the Review page",
+            "the Review page is built and dream drafts are not yet made. Revisit when dreaming.md \
+             Section 12 step 5 lands, with the drafts in the Review page",
         ),
     )]),
     (6, &[c(
