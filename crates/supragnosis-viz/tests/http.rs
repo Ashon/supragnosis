@@ -257,6 +257,56 @@ fn inspector_never_folds_a_contested_belief() {
     );
 }
 
+/// design-system.md U2 (Principle 18): the map draws trust from the effective tier the server
+/// computed, never anything else, and says what it reads. A tripwire on the shape: the ring reads
+/// `n.trust_tier` and the scope's uniformity, the uniformity is taken over every loaded node (never the
+/// legend-filtered subset, inspector.md D4), and the legend states what a ring means.
+#[test]
+fn the_map_rings_read_the_effective_tier() {
+    let js = include_str!("../assets/viewer.js");
+    let body = |name: &str| -> &str {
+        let start = js
+            .find(&format!("\nfunction {name}("))
+            .unwrap_or_else(|| panic!("viewer.js no longer defines {name}"));
+        let rest = &js[start + 1..];
+        &rest[..rest.find("\n}\n").unwrap_or_else(|| panic!("{name} has no closing brace"))]
+    };
+    let ring = body("trustRing");
+    assert!(ring.contains("n.trust_tier"), "the ring must read the node's effective tier");
+    assert!(ring.contains("trustUniform"), "a scope of one tier draws no ring (U2)");
+    let note = body("noteTrustAndContest");
+    assert!(
+        note.contains("nodes.map(n => n.trust_tier)") && !note.contains("typeOff"),
+        "uniformity is decided over every loaded node, never the legend-filtered subset"
+    );
+    let legend = body("renderTrustLegend");
+    assert!(
+        legend.contains("highest trust among the sources"),
+        "the legend states what a ring reads"
+    );
+}
+
+/// design-system.md U3 (Principle 6): a contested node is marked wherever it is drawn, and counted
+/// whatever hides it. The badge pass runs after the nodes at full strength, skipping only a type the
+/// legend does not draw at all, and the status bar's count is taken over every loaded node.
+#[test]
+fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
+    let js = include_str!("../assets/viewer.js");
+    let pass = "ctx.globalAlpha = 1;\n  for (const n of nodes) {\n    if (!n.contested || typeOff.has(n.type)) continue;";
+    assert!(
+        js.contains(pass),
+        "the contested badge is drawn in its own full-strength pass, skipping only undrawn types"
+    );
+    let count = js
+        .lines()
+        .find(|l| l.contains("contestedCount = ") && !l.contains("let "))
+        .expect("viewer.js no longer counts contested nodes");
+    assert!(
+        count.contains("nodes.reduce") && !count.contains("typeOff"),
+        "the contested count is over every loaded node, whatever the legend hides: {count}"
+    );
+}
+
 /// design-system.md U1 (Principle 24): every console write reports what happened. The writes used to
 /// be bare fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403,
 /// a merge the fold would block answering 400 with its reason - looked exactly like a success that had

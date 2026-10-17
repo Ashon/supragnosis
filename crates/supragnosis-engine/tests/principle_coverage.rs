@@ -553,17 +553,15 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (2, &[c(
         "the map draws a node's trust from its effective tier, never a claimed one; the legend states what the ring reads, and a scope of one tier draws no rings and states the tier",
-        Evidence::Deferred(
-            "design-system.md is specified; the map draws no trust today. Revisit when its Section 13 \
-             step 2 lands with a source tripwire that the ring reads trust_tier",
-        ),
+        // crates/supragnosis-viz/tests/http.rs: the ring reads n.trust_tier and the scope's
+        // uniformity over every loaded node, and the legend says what a ring reads.
+        Evidence::Scenario(&["the_map_rings_read_the_effective_tier"]),
     )]),
     (3, &[c(
         "a contested node is marked wherever it is drawn, at every zoom, label and focus state, and the status bar counts the loaded scope's contested nodes whatever the legend hides",
-        Evidence::Deferred(
-            "design-system.md is specified, not built. Revisit when its Section 13 step 2 lands with \
-             a tripwire that the badge and the count read `contested` outside every filter",
-        ),
+        // crates/supragnosis-viz/tests/http.rs: the badge pass at full strength, the count over
+        // every loaded node.
+        Evidence::Scenario(&["a_contested_node_is_marked_and_counted_whatever_hides_it"]),
     )]),
     (4, &[c(
         "on the Review page a decision control appears only with its item's diff and checks on screen and decides that item alone; every open proposal is listed, and a generated candidate is left out only when its diff is computable and empty",
