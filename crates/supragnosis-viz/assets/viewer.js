@@ -221,14 +221,15 @@ function animating(act) {
     || pulses.size > 0 || peerEdgeFlash.size > 0                  // ring/flash effects still decaying
     || (peersOn && peerMarkers.size > 0)                          // markers ease asymptotically, never arrive
     // The flow animation is the only per-frame part of a highlight, and it only runs on edges that
-    // are hot - so a search term matching nodes but no edges is a still picture, not motion.
-    || (act !== null && act.es.size > 0);
+    // are hot - so a search term matching nodes but no edges is a still picture, not motion. Under
+    // reduced motion the dashes stand still, so a highlight is a still picture too.
+    || (!REDUCED_MOTION && act !== null && act.es.size > 0);
 }
 
 // --- Camera (canvas is fullscreen, mouse uses client coordinates) ----------------------------
 function toWorld(sx, sy) { return [(sx - cam.x) / cam.s, (sy - cam.y) / cam.s]; }
 function easeCam() {
-  const k = 0.22;
+  const k = REDUCED_MOTION ? 1 : 0.22;   // reduced motion: the camera arrives, it does not travel
   cam.s += (camT.s - cam.s) * k; cam.x += (camT.x - cam.x) * k; cam.y += (camT.y - cam.y) * k;
   if (Math.abs(camT.s - cam.s) < 0.001) cam.s = camT.s;
   if (Math.abs(camT.x - cam.x) < 0.25) cam.x = camT.x;
@@ -2768,7 +2769,7 @@ function draw() {
       // Active edges show flow direction: marching dashes travel source -> target. Screen-constant
       // dash/speed (divide by cam.s) so it reads the same at any zoom. Negative offset -> forward flow.
       ctx.setLineDash([7/cam.s, 6/cam.s]);
-      ctx.lineDashOffset = -(flowPhase * 0.6) / cam.s;
+      ctx.lineDashOffset = REDUCED_MOTION ? 0 : -(flowPhase * 0.6) / cam.s;
     } else {
       ctx.setLineDash(e.valid_to ? [5/cam.s, 5/cam.s] : []);
       ctx.lineDashOffset = 0;
@@ -2825,7 +2826,7 @@ function draw() {
   for (const [id, ttl] of pulses) {
     const n = nodeById(id);
     if (!n || ttl <= 0 || typeOff.has(n.type)) { pulses.delete(id); continue; }
-    if (showPulses) {
+    if (showPulses && !REDUCED_MOTION) {
       const t = 1 - ttl/60;
       ctx.globalAlpha = (1 - t) * 0.85;
       ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n) + 3 + t*22, 0, 7);

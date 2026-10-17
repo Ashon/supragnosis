@@ -362,6 +362,11 @@ code {
   .reveal, .hero-inner > * { opacity: 1 !important; transform: none !important; animation: none !important; }
   .constellation .e { stroke-dashoffset: 0; animation: none; }
   .constellation .n { opacity: 1; animation: none; }
+  /* The rest that moved under reduced motion: the hub's pulse, the topology's marching dashes, and
+     the lift of a card or a button on hover. */
+  .constellation .n.pulse circle { animation: none; }
+  .t-edge { animation: none; }
+  .card:hover, .btn:hover { transform: none; }
   html { scroll-behavior: auto; }
 }
 
