@@ -29,7 +29,7 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
   body { background:var(--surface); color:var(--ink2); overflow:hidden;
-         font:12.5px/1.5 var(--mono);
+         font:13px/1.5 var(--mono);
          /* Light text on near-black. macOS's default smoothing dilates glyph stems, which on a dark
             ground reads as bold and soft - most visibly at 1x, under the 10-13px this panel lives at.
             Grayscale antialiasing draws them at their designed weight. The same two lines the landing
@@ -75,13 +75,13 @@
   .searchwrap { position:relative; display:inline-flex; align-items:center; }
   #search { padding-right:26px; }
   .slashkey { position:absolute; right:6px; pointer-events:none;
-              font:600 10.5px/1 var(--mono); color:var(--faint);
+              font:600 11px/1 var(--mono); color:var(--faint);
               background:var(--panel); border:1px solid var(--line); border-radius:3px;
               padding:2px 5px; transition:opacity 0.12s ease; }
   /* Out of the way as soon as the field is in use - focused, or already carrying a term. */
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
   /* A key that works where it is shown (b beside Boundaries) - the same badge as "/", inline. */
-  .keyhint { font:600 9.5px/1 var(--mono); color:var(--faint); background:var(--panel);
+  .keyhint { font:600 11px/1 var(--mono); color:var(--faint); background:var(--panel);
              border:1px solid var(--line); border-radius:3px; padding:1px 4px; margin-left:6px;
              letter-spacing:0; text-transform:none; vertical-align:1px; }
   /* Notices: what a write did. Bottom centre, clear of both docks and the HUD; the same shape as the
@@ -96,34 +96,34 @@
   .toast.bad .tk { background:var(--bad); }
   .toast .tb { flex:1; min-width:0; }
   .toast .tt { font-weight:500; }
-  .toast .td { color:var(--muted); font-size:11.5px; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
+  .toast .td { color:var(--muted); font-size:12px; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
   .toast button { padding:0 6px; font-size:13px; line-height:18px; color:var(--muted); background:none; border-color:transparent; }
   /* Computed belief diff on the selected proposal - a before -> after row per change, so accepting
      is a decision about a visible delta rather than about a proposal's title. */
   .ddiff { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
   .drow { display:flex; align-items:center; gap:5px; flex-wrap:wrap; font-size:11px; }
-  .dk { color:var(--faint); text-transform:uppercase; letter-spacing:0.04em; font-size:9.5px; }
+  .dk { color:var(--faint); text-transform:uppercase; letter-spacing:0.04em; font-size:11px; }
   .dfrom { color:var(--muted); text-decoration:line-through; }
   .darr { color:var(--faint); }
   .dto { color:var(--gold-bright); }
-  .dsettled { color:var(--ok); font-size:10px; }
-  .dcreated { color:var(--accent); font-size:10px; }
+  .dsettled { color:var(--ok); font-size:11px; }
+  .dcreated { color:var(--accent); font-size:11px; }
   .dother { color:var(--muted); }
   /* Blocking check failures. Red-adjacent on purpose: this is the one thing in the panel that
      means "accepting will not work", as opposed to "here is what accepting would do". */
   .cblock { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
   .crow { display:flex; align-items:baseline; gap:5px; flex-wrap:wrap; font-size:11px; }
-  .cbad { color:var(--accent); font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; }
+  .cbad { color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
   .ck { color:var(--ink); }
   .cd { color:var(--muted); }
   .pacts button[disabled] { opacity:0.45; cursor:not-allowed; }
-  .dnote { color:var(--faint); font-size:10.5px; font-style:italic; margin:4px 0 2px; }
-  .hint { color:var(--muted); font-size:11.5px; }
-  #status { color:var(--muted); font-size:11.5px; margin-left:auto; white-space:nowrap; }
+  .dnote { color:var(--faint); font-size:11px; font-style:italic; margin:4px 0 2px; }
+  .hint { color:var(--muted); font-size:12px; }
+  #status { color:var(--muted); font-size:12px; margin-left:auto; white-space:nowrap; }
   #wschips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }
   .lbl { color:var(--muted); font-size:11px; margin-right:2px; }
   .chip,.lg { padding:2px 10px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line-soft);
-              cursor:pointer; font-size:11.5px; letter-spacing:0.03em; color:var(--ink2); user-select:none;
+              cursor:pointer; font-size:12px; letter-spacing:0.03em; color:var(--ink2); user-select:none;
               transition:border-color 0.15s ease, color 0.15s ease; }
   .chip:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
   .chip.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
@@ -138,7 +138,7 @@
   #tip b { color:var(--ink); font-family:var(--sans); }
   #tip .k { color:var(--faint); }
   /* Type-definition tooltip (legend chips): the definition reads as prose, like the glossary. */
-  #tip .tdef { font:12.5px/1.45 var(--sans); color:var(--ink); margin:3px 0 2px; }
+  #tip .tdef { font:13px/1.45 var(--sans); color:var(--ink); margin:3px 0 2px; }
   #tip .tdef.none { font-style:italic; color:var(--muted); }
   /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
      above the statusbar. The right island grows downward from the top and the detail panel stops
@@ -167,12 +167,12 @@
      the only anchor telling you where it came from). */
   #hud button.on { border-color:var(--gold-dim); color:var(--gold-bright); }
   #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-           color:var(--muted); font:italic 14px/1.5 var(--sans); pointer-events:none; }
+           color:var(--muted); font:italic 15px/1.5 var(--sans); pointer-events:none; }
   /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
      hidden until it settles, so the user sees a calm spinner instead of nodes flying around. */
   #loader { position:fixed; inset:0; display:none; flex-direction:column; align-items:center;
             justify-content:center; gap:13px; z-index:6; pointer-events:none;
-            color:var(--muted); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; }
+            color:var(--muted); font-size:12px; letter-spacing:.14em; text-transform:uppercase; }
   #loader.on { display:flex; }
   #loader .spin { width:34px; height:34px; border-radius:50%; border:2px solid var(--line);
                   border-top-color:var(--accent); animation:ldspin 0.8s linear infinite; }
@@ -200,12 +200,12 @@
             padding:11px 15px 13px; font-size:12px; color:var(--ink2);
             box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
   #detail.on { display:flex; flex-direction:column; }
-  #detail h2 { font:600 14.5px/1.4 var(--sans); margin:0 52px 2px 0; color:var(--gold-bright); }
+  #detail h2 { font:600 15px/1.4 var(--sans); margin:0 52px 2px 0; color:var(--gold-bright); }
   #detail .meta { color:var(--faint); font-size:11px; margin-bottom:4px; display:flex; align-items:center;
                   gap:6px; flex-wrap:wrap; }
   /* The values the whole scope shares, stated once instead of on every node (docs/inspector.md D3).
      Quiet and pushed right: it qualifies the line rather than competing with the node's own fields. */
-  #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:10.5px; }
+  #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:11px; }
   #detail .desc { color:var(--ink); font:13px/1.45 var(--sans); margin:2px 0 6px; opacity:.9; }
   /* Two regions (docs/inspector.md Section 6): relations, grouped by kind, and the evidence log. The
      relation side gets the larger share - its chips wrap, so width is what it turns into rows saved. */
@@ -216,22 +216,22 @@
   #detail.tall { max-height:72vh; }
   /* No own background: the panel is translucent glass, so any child fill reads as a dark box
      (the old sticky-header mask). Headers scroll with their list instead. */
-  #detail .sec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  #detail .sec { color:var(--accent); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
                  margin:0 0 4px; padding-bottom:3px; }
   /* A relation group: the kind said once (mono - it is an identifier), then its members as chips
      (sans - they are names). A superseded edge stays listed, dashed and dimmed, never dropped (P4). */
   #detail .rgroup { margin:0 0 7px; }
-  #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:10.5px; color:var(--muted); margin:0 0 3px; }
+  #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:11px; color:var(--muted); margin:0 0 3px; }
   #detail .rghead .rkind { color:var(--ink2); }
   #detail .rghead .rct { color:var(--faint); }
   #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
   #detail .rchip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-                   font:11.5px/1.55 var(--sans); color:var(--ink); background:var(--panel);
+                   font:12px/1.55 var(--sans); color:var(--ink); background:var(--panel);
                    border:1px solid var(--line-soft); border-radius:5px; padding:0 7px; cursor:pointer; }
   #detail .rchip:hover { color:var(--gold-bright); border-color:var(--gold-dim); }
   #detail .rchip.past { opacity:.55; border-style:dashed; }
   #detail .rchip .dot { width:7px; height:7px; border-radius:2px; margin-right:5px; vertical-align:0; }
-  #detail .rmore { font:10.5px/1.55 var(--mono); color:var(--muted); background:none;
+  #detail .rmore { font:11px/1.55 var(--mono); color:var(--muted); background:none;
                    border:1px dashed var(--line); border-radius:5px; padding:0 7px; }
   #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
   /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
@@ -249,7 +249,7 @@
                   transition:color 0.15s ease, background 0.15s ease; }
   #detail .grow:hover { color:var(--gold-bright); background:var(--gold-glass); }
   #detail .grow svg { display:block; }
-  #detail .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); padding:2px 5px; }
+  #detail .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 5px; }
   /* Control dock (left) - collapsible sections for layers/legend/glossary. detail panel stays on the
      right, so the two never collide. Toggled open/closed by the header 'panels' button. */
   /* Two full-height side rails: left = observe the graph (Layers + legends + stats), right = manage
@@ -268,7 +268,7 @@
   .docktab.left { left:0; border-left:none; border-radius:0 7px 7px 0; }
   .docktab.left.open { left:262px; }
   .docktab.right { right:0; border-right:none; border-radius:7px 0 0 7px; }
-  .docktab.right.open { right:312px; }
+  .docktab.right.open { right:348px; }
   /* Docks slide off-screen instead of popping (visibility flips after the transform settles,
      so a hidden dock takes no clicks). The handles above share the motion curve. */
   .dock { position:fixed; top:56px; z-index:7; display:flex; flex-direction:column;
@@ -285,17 +285,19 @@
      at bottom:36) is the tallest element there - taller than the HUD - so the height cap reserves for
      IT (56 top + 36 bottom + 154 minimap + 12 gap = 258), keeping a full list from sliding under the
      minimap / zoom buttons. The minimap is on by default; when off, this just leaves a little slack. */
-  #dockR { right:12px; width:300px; max-height:calc(100vh - 258px); }
+  /* 336 wide: at the 11px floor the five tabs with their counts measure 300px, and the rest holds a
+     three-digit count. */
+  #dockR { right:12px; width:336px; max-height:calc(100vh - 258px); }
   .dock.on { visibility:visible; opacity:1; transition:transform .18s ease, opacity .18s ease; }
   .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
   /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
   .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
-  .rsec { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.14em;
+  .rsec { color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:.14em;
           margin:11px 0 4px; padding-top:8px; border-top:1px solid var(--line-soft); }
   /* IDE-style bottom status bar (full width, below the rails). */
   #statusbar { position:fixed; left:0; right:0; bottom:0; height:24px; z-index:9; display:flex;
                align-items:center; gap:14px; padding:0 12px; background:var(--glass-deep);
-               border-top:1px solid var(--line-soft); font-size:10.5px; letter-spacing:.03em; color:var(--muted);
+               border-top:1px solid var(--line-soft); font-size:11px; letter-spacing:.03em; color:var(--muted);
                backdrop-filter:blur(7px); }
   #statusbar #stats { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #statusbar #status { margin-left:auto; white-space:nowrap; }
@@ -303,11 +305,10 @@
   /* Tabs instead of accordions: one section shows at a time in a fixed-height body, so expanding never
      pushes the bottom-anchored panel upward. */
   /* A tab is as wide as its name and count. Equal shares cut "Proposals 48" to "PROPOS..." while
-     "Log" kept room to spare; content-sized tabs share the row by what they hold. Five named tabs
-     with two-digit counts measure 268px against the 274px row, so the padding and tracking are
-     the tight ones; the ellipsis stays only as the last resort for a longer count. */
+     "Log" kept room to spare; content-sized tabs share the row by what they hold, and the dock is
+     wide enough for all five (#dockR). The ellipsis stays only as the last resort. */
   .dock .tabs { display:flex; gap:3px; margin:3px 0 5px; }
-  .dock .tab { flex:1 1 auto; min-width:0; padding:5px 3px; font-size:9.5px; letter-spacing:0;
+  .dock .tab { flex:1 1 auto; min-width:0; padding:5px 3px; font-size:11px; letter-spacing:0;
                text-transform:uppercase; border:1px solid var(--line-soft); background:var(--panel-2);
                color:var(--muted); border-radius:5px; cursor:pointer; white-space:nowrap;
                overflow:hidden; text-overflow:ellipsis; }
@@ -320,7 +321,7 @@
   /* Grouped toggles inside the Layers section. */
   .grp { margin-bottom:7px; }
   .grp:last-child { margin-bottom:2px; }
-  .ghdr { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; display:block; margin:2px 0 4px; }
+  .ghdr { color:var(--accent); font-size:11px; letter-spacing:.14em; text-transform:uppercase; display:block; margin:2px 0 4px; }
   /* View options popover: preferences live off the primary panels, behind the HUD's view
      button (map-tool convention). Options render as compact monospace checkbox rows -
      "[x] labels" - because they are on/off view state, not actions. */
@@ -330,7 +331,7 @@
   #viewpop.on { display:flex; }
   #viewpop .btns { display:flex; flex-direction:column; gap:1px; }
   #viewpop button.tog { text-align:left; background:none; border:none; padding:2.5px 3px;
-                        font-size:11.5px; color:var(--muted); border-radius:4px; }
+                        font-size:12px; color:var(--muted); border-radius:4px; }
   #viewpop button.tog::before { content:"[ ] "; color:var(--faint); }
   #viewpop button.tog.on { color:var(--ink); background:none; border:none; }
   #viewpop button.tog.on::before { content:"[x] "; color:var(--accent); }
@@ -341,36 +342,36 @@
   /* Glossary entries. */
   #glossaryBody .item { padding:4px 0 5px; border-top:1px solid var(--line-soft); }
   #glossaryBody .item:first-child { border-top:none; }
-  #glossaryBody .gsec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:6px 0 3px; }
+  #glossaryBody .gsec { color:var(--accent); font-size:11px; letter-spacing:.14em; text-transform:uppercase; margin:6px 0 3px; }
   #glossaryBody .gsec:first-child { margin-top:0; }
-  #glossaryBody .nm { color:var(--gold-bright); font-weight:600; font-size:11.5px; }
-  #glossaryBody .src { color:var(--faint); font-size:10px; margin-left:5px; }
-  #glossaryBody .def { color:var(--ink2); font:12.5px/1.45 var(--sans); margin-top:1px; opacity:.95; }
-  #glossaryBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); padding:2px 0; }
+  #glossaryBody .nm { color:var(--gold-bright); font-weight:600; font-size:12px; }
+  #glossaryBody .src { color:var(--faint); font-size:11px; margin-left:5px; }
+  #glossaryBody .def { color:var(--ink2); font:13px/1.45 var(--sans); margin-top:1px; opacity:.95; }
+  #glossaryBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 0; }
   /* Curation (read-only signals). */
-  #curationBody .csec { color:var(--accent); font-size:10px; letter-spacing:.14em; text-transform:uppercase; margin:8px 0 3px; }
+  #curationBody .csec { color:var(--accent); font-size:11px; letter-spacing:.14em; text-transform:uppercase; margin:8px 0 3px; }
   #curationBody .csec:first-child { margin-top:0; }
   #curationBody .grp { border-top:1px solid var(--line-soft); padding:4px 0; }
   #curationBody .grp:first-of-type { border-top:none; }
-  #curationBody .gk { color:var(--ink); font-size:11.5px; }
+  #curationBody .gk { color:var(--ink); font-size:12px; }
   #curationBody .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
   #curationBody .nchip { padding:1px 8px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line-soft);
-                         cursor:pointer; font-size:10.5px; color:var(--ink2); }
+                         cursor:pointer; font-size:11px; color:var(--ink2); }
   #curationBody .nchip:hover { border-color:var(--gold-dim); color:var(--gold-bright); }
-  #curationBody .nchip .ty { color:var(--faint); font-size:9.5px; margin-left:3px; }
+  #curationBody .nchip .ty { color:var(--faint); font-size:11px; margin-left:3px; }
   #curationBody .gb { padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; color:var(--ink2); }
   #curationBody .gb .sz { color:var(--gold-bright); font-weight:600; margin-right:5px; }
-  #curationBody .gb .reify { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; margin-left:6px; }
+  #curationBody .gb .reify { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; margin-left:6px; }
   /* Merge band suggestions: a ~ b pair with the similarity/shared-neighbor score and a propose action. */
   #curationBody .ms { display:flex; align-items:center; gap:5px; padding:3px 0; border-top:1px solid var(--line-soft); font-size:11px; flex-wrap:wrap; }
   #curationBody .ms:first-of-type { border-top:none; }
   #curationBody .ms .msx { color:var(--faint); }
-  #curationBody .ms .mssim { color:var(--muted); font-size:9.5px; margin-left:auto; }
-  #curationBody .ms .propmerge { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; }
+  #curationBody .ms .mssim { color:var(--muted); font-size:11px; margin-left:auto; }
+  #curationBody .ms .propmerge { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; }
   #curationBody .reifyform { display:inline-flex; gap:4px; margin-left:6px; }
-  #curationBody .reifyform input { width:140px; padding:0 6px; font-size:10.5px; border-radius:5px; }
-  #curationBody .reifyform button { padding:0 8px; font-size:9.5px; border-radius:5px; }
-  #curationBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); padding:2px 0; }
+  #curationBody .reifyform input { width:140px; padding:0 6px; font-size:11px; border-radius:5px; }
+  #curationBody .reifyform button { padding:0 8px; font-size:11px; border-radius:5px; }
+  #curationBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 0; }
   /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
      .hot = tier-tied (the dashed amber ring on the canvas): mediation invited; otherwise the list is
      informational (the conflict was resolved by trust but stays queryable). */
@@ -381,19 +382,19 @@
   .contested.folded { padding:2px 7px; }
   .contested.folded .cbody { display:none; padding-top:2px; }
   .contested.folded.open .cbody { display:block; }
-  .contested .cfold { width:100%; text-align:left; padding:2px 0; font-size:10.5px; letter-spacing:.04em;
+  .contested .cfold { width:100%; text-align:left; padding:2px 0; font-size:11px; letter-spacing:.04em;
                       color:var(--muted); background:none; border:none; cursor:pointer; }
   .contested .cfold:hover { color:var(--gold-bright); }
-  .contested .chead { color:var(--accent); font-size:10px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:2px; }
-  .contested .crow { display:flex; align-items:center; gap:6px; padding:1.5px 0; font-size:11.5px; color:var(--ink2); }
+  .contested .chead { color:var(--accent); font-size:11px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:2px; }
+  .contested .crow { display:flex; align-items:center; gap:6px; padding:1.5px 0; font-size:12px; color:var(--ink2); }
   .contested .crow.cur .cv { color:var(--ink); font-weight:600; }
   .contested .crow .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .contested .crow .ctier { color:var(--faint); font-size:9.5px; margin-left:auto; }
+  .contested .crow .ctier { color:var(--faint); font-size:11px; margin-left:auto; }
   /* "current" tag on the winning row - marks which value is shown now, so "keep" vs "use this" read clearly. */
-  .contested .crow .curtag { color:var(--accent); font-size:9px; letter-spacing:.06em; text-transform:uppercase; margin-left:auto; }
+  .contested .crow .curtag { color:var(--accent); font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin-left:auto; }
   /* Committed (human-confirmed) belief: a filled chip, not the plain "current" text - reads as settled. */
   .contested .crow .curtag.confirmed { color:#171204; background:var(--accent); border-radius:4px; padding:0 6px; }
-  .contested .confirm { padding:0 8px; font-size:9.5px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; }
+  .contested .confirm { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; }
   .contested .crow.cur .confirm { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
   .contested .crow.cur .confirm:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
   /* Observation log rows - the workspace Log tab and the node inspector's log column share one row
@@ -405,7 +406,7 @@
   .obs .ohead { padding:5px; cursor:pointer; border-radius:5px; }
   .obs .ohead:hover { background:var(--gold-glass); }
   .obs .ometa { display:flex; align-items:center; gap:6px; margin-bottom:2px; }
-  .obs .owhen { color:var(--faint); font-size:10px; white-space:nowrap; }
+  .obs .owhen { color:var(--faint); font-size:11px; white-space:nowrap; }
   /* Trust tier as a quiet color ramp: dim (unverified) -> neutral -> teal (host-signed) -> gold. */
   .tdot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:var(--muted); }
   .tdot.t-unverified { background:#5c6472; }
@@ -414,15 +415,15 @@
   .tdot.t-human_confirmed { background:var(--gold-bright); }
   .obs .otext { color:var(--ink); font:12px/1.45 var(--sans); opacity:.92;
                 overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; }
-  .osec { color:var(--accent); font-size:9px; letter-spacing:.12em; text-transform:uppercase; margin:6px 0 3px; }
-  .prow { display:flex; gap:6px; align-items:center; font-size:10.5px; color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
+  .osec { color:var(--accent); font-size:11px; letter-spacing:.12em; text-transform:uppercase; margin:6px 0 3px; }
+  .prow { display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
   .prow .phost { color:var(--ink); }
   .prow .pobo { color:var(--muted); }
-  .prow .ptier { color:var(--gold-bright); font-size:9.5px; }
-  .prow .pconf { color:var(--faint); font-size:9.5px; }
-  .prow .pwhen { color:var(--faint); font-size:9.5px; margin-left:auto; }
+  .prow .ptier { color:var(--gold-bright); font-size:11px; }
+  .prow .pconf { color:var(--faint); font-size:11px; }
+  .prow .pwhen { color:var(--faint); font-size:11px; margin-left:auto; }
   .oids, .echips { display:flex; gap:4px; flex-wrap:wrap; }
-  .oid { font:9.5px var(--mono); color:var(--muted); background:var(--panel); border:1px solid var(--line-soft); border-radius:4px; padding:1px 4px; }
+  .oid { font:11px var(--mono); color:var(--muted); background:var(--panel); border:1px solid var(--line-soft); border-radius:4px; padding:1px 4px; }
   .echip { font:11px/1.45 var(--sans); color:var(--ink2); background:var(--panel); border:1px solid var(--line-soft); border-radius:4px; padding:1px 6px; cursor:pointer; }
   .echip:hover { color:var(--gold-bright); border-color:var(--gold-dim); }
   /* Observation detail card: a focused, dismissable view of one observation (full content +
@@ -442,59 +443,59 @@
   .oc-meta .octier { color:var(--ink2); }
   .oc-meta .ocwhen { margin-left:auto; }
   .oc-content { color:var(--ink); font:13px/1.5 var(--sans); white-space:pre-wrap; }
-  .ocrel { font:11.5px/1.45 var(--sans); color:var(--ink2); padding:1px 0; }
-  .ocrel .rk { color:var(--muted); font:10.5px var(--mono); }
-  .prow .poid { color:var(--muted); font:9px var(--mono); }
-  .ocid { margin-top:10px; padding-top:6px; border-top:1px solid var(--line-soft); font:9px var(--mono); color:var(--muted); }
+  .ocrel { font:12px/1.45 var(--sans); color:var(--ink2); padding:1px 0; }
+  .ocrel .rk { color:var(--muted); font:11px var(--mono); }
+  .prow .poid { color:var(--muted); font:11px var(--mono); }
+  .ocid { margin-top:10px; padding-top:6px; border-top:1px solid var(--line-soft); font:11px var(--mono); color:var(--muted); }
   /* Inspector "why (evidence & decision)" disclosure: per-field decision + supporting log. */
   #detail .why { margin:4px 0 2px; }
-  #detail .whytoggle { width:100%; text-align:left; padding:4px 8px; font-size:10.5px; letter-spacing:.04em;
+  #detail .whytoggle { width:100%; text-align:left; padding:4px 8px; font-size:11px; letter-spacing:.04em;
                        color:var(--muted); background:var(--panel-2); border:1px solid var(--line-soft); border-radius:6px; cursor:pointer; }
   #detail .whytoggle:hover { color:var(--gold-bright); border-color:var(--gold-dim); }
   #detail .why .whybody { display:none; margin-top:5px; max-height:230px; overflow-y:auto; }
   #detail .why.open .whybody { display:block; }
   .wfield { border:1px solid var(--line-soft); border-radius:6px; padding:4px 7px; margin-bottom:5px; }
   .wfield.hot { border-color:var(--gold-dim); background:var(--gold-glass); }
-  .wfhead { color:var(--accent); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:2px; }
+  .wfhead { color:var(--accent); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:2px; }
   .wfhead .wtag { color:var(--gold-bright); margin-left:4px; }
   .cand { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink2); padding:1.5px 0; }
   .cand .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cand.winner .cv { color:var(--ink); font-weight:600; }
-  .cand .crole { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--faint); }
+  .cand .crole { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--faint); }
   .cand.winner .crole { color:var(--accent); }
-  .cand .ctier { color:var(--faint); font-size:9.5px; margin-left:auto; }
-  .cand .cobs { font:9px var(--mono); color:var(--muted); flex:0 0 auto; }
+  .cand .ctier { color:var(--faint); font-size:11px; margin-left:auto; }
+  .cand .cobs { font:11px var(--mono); color:var(--muted); flex:0 0 auto; }
   /* Proposals (the gated curation console). */
-  #proposalsBody .hint { color:var(--muted); font:italic 11.5px/1.4 var(--sans); margin-bottom:5px; }
+  #proposalsBody .hint { color:var(--muted); font:italic 12px/1.4 var(--sans); margin-bottom:5px; }
   #proposalsBody .prop { border-top:1px solid var(--line-soft); padding:5px 4px 5px 6px; cursor:pointer; border-left:2px solid transparent; }
   #proposalsBody .prop:first-of-type { border-top:none; }
   #proposalsBody .prop:hover { background:rgba(217,165,68,0.05); }
   #proposalsBody .prop.sel { background:var(--gold-glass); border-left-color:var(--accent); }
   #proposalsBody .phead { display:flex; align-items:center; gap:6px; }
   #proposalsBody .pkind { color:var(--ink); font-weight:600; font-size:11px; }
-  #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.06em; padding:1px 7px;
+  #proposalsBody .pstate { font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:1px 7px;
                            border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:auto; }
   #proposalsBody .pstate.open { color:var(--gold-bright); border-color:var(--gold-dim); }
   #proposalsBody .pstate.merged { color:var(--ok); border-color:rgba(86,179,162,0.4); }
   #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--sans); margin:2px 0; opacity:.9; }
   #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
   #proposalsBody .atypes { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0 1px; }
-  #proposalsBody .atype { font:10px var(--mono); color:var(--gold-bright); border:1px solid var(--gold-dim);
+  #proposalsBody .atype { font:11px var(--mono); color:var(--gold-bright); border:1px solid var(--gold-dim);
     border-radius:5px; padding:1px 6px; opacity:.92; }
   #proposalsBody .atype .ax { color:var(--muted); margin-left:5px; letter-spacing:.04em; }
   #proposalsBody .nchip.into { border-color:var(--gold-dim); color:var(--gold-bright); }
   #proposalsBody .pacts { display:flex; gap:5px; margin-top:3px; }
-  #proposalsBody .pacts button { padding:1px 10px; font-size:10px; letter-spacing:.04em; border-radius:5px; }
+  #proposalsBody .pacts button { padding:1px 10px; font-size:11px; letter-spacing:.04em; border-radius:5px; }
   /* Accept is the gate's primary act - it gets the landing's solid-gold button voice. */
   #proposalsBody .pacts button[data-act="merge"] { background:var(--accent); border-color:var(--accent); color:#171204; font-weight:600; }
   #proposalsBody .pacts button[data-act="merge"]:hover { background:var(--gold-bright); border-color:var(--gold-bright); color:#171204; }
-  #proposalsBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); padding:2px 0; }
-  #peersBody .fsec { color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.14em; margin:8px 0 4px; }
+  #proposalsBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 0; }
+  #peersBody .fsec { color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:.14em; margin:8px 0 4px; }
   #peersBody .fed { display:flex; align-items:center; gap:6px; padding:3px 2px; font-size:11px; color:var(--ink2); min-width:0; }
   #peersBody .fed .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
   #peersBody .fed .furl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #peersBody .fws { color:var(--muted); font-size:10.5px; margin:0 0 2px 15px; }
-  #peersBody .empty { color:var(--muted); font:italic 12.5px/1.5 var(--sans); }
+  #peersBody .fws { color:var(--muted); font-size:11px; margin:0 0 2px 15px; }
+  #peersBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); }
 
 /* A proposal event is bookkeeping about the canon, not knowledge someone observed - dimmed and
    italic so a log scan separates the two at a glance without having to read either. */
@@ -505,7 +506,7 @@
 .card .ocraw { font:11px/1.4 var(--mono); color:var(--faint); word-break:break-all; margin:2px 0 4px; }
 .card .ocprop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:12px/1.4 var(--sans); }
 .card .ocprop .pkind { color:var(--ink); }
-.card .ocprop .pstate { font:10px/1 var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.card .ocprop .pstate { font:11px/1 var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 .card .ocprop .pstate.merged { color:var(--ok); }
 .card .ocprop .pstate.blocked { color:var(--accent); }
 .card .echip.off { opacity:.5; cursor:default; text-decoration:line-through; }
@@ -534,11 +535,11 @@
   #curationBody .csec.hot { color:var(--bad); }
   #curationBody .grp.secret { border-left:2px solid var(--bad); padding-left:7px; }
   #glossaryBody .gws { margin-left:6px; padding:0 4px; border:1px solid var(--line-soft);
-                       border-radius:8px; color:var(--faint); font-size:9.5px; }
+                       border-radius:8px; color:var(--faint); font-size:11px; }
   /* Same visual language as the dock tabs, so the dialog reads as this application rather than a
      form that wandered in. */
   #settings .stabs { display:flex; gap:3px; padding:8px 12px 0; }
-  #settings .stab { flex:0 0 auto; padding:5px 11px; font:600 9.5px/1.5 var(--mono);
+  #settings .stab { flex:0 0 auto; padding:5px 11px; font:600 11px/1.5 var(--mono);
                     letter-spacing:.03em; text-transform:uppercase; border:1px solid var(--line-soft);
                     background:var(--panel-2); color:var(--muted); border-radius:5px; cursor:pointer; }
   #settings .stab:hover { color:var(--gold-bright); }
@@ -550,7 +551,7 @@
   #settings .kv dd { margin:0; color:var(--ink); }
   #settings .kv dd a { color:var(--accent); }
   #settings .fsec { margin:12px 0 5px; color:var(--muted); font-weight:600; letter-spacing:0.05em;
-                  text-transform:uppercase; font-size:10px; }
+                  text-transform:uppercase; font-size:11px; }
   #settings .fsec:first-child { margin-top:0; }
   #settings .prow { padding:7px 8px; margin-bottom:5px; border:1px solid var(--line-soft);
                   border-radius:4px; background:var(--panel-2); }

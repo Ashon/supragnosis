@@ -242,7 +242,7 @@ function zoomAt(sx, sy, f) {
 }
 const TOP_INSET = 52;      // height occluded by the top header - compensated in centering/fit
 const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
-const DOCK_L = 262, DOCK_R = 312;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
+const DOCK_L = 262, DOCK_R = 348;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
 function insetL() { return dockLEl.classList.contains("on") ? DOCK_L : 0; }
 function insetR() { return dockREl.classList.contains("on") ? DOCK_R : 0; }
 // Bottom occlusion: the status bar, plus the detail panel when it is open (panel sits at bottom:30,
@@ -2888,7 +2888,7 @@ function draw() {
       edgeLabels.sort((p, q) => p.len - q.len);
       const shown = Math.min(edgeLabels.length, EDGE_LABEL_MAX);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "10.5px " + LABEL_FAMILY;
+      ctx.font = "11px " + LABEL_FAMILY;   // the scale's floor (docs/design-system.md Section 4)
       // Pill and text on whole device pixels: fillText snaps to the grid and the pill path does not, so
       // at a fractional point the text sits off-centre in its pill by a different amount every frame.
       const snap = v => Math.round(v * DPR) / DPR;
@@ -2906,7 +2906,7 @@ function draw() {
       }
       const omitted = edgeLabels.length - shown, an = focus || hover;
       if (omitted > 0 && an) {
-        ctx.font = "10px " + LABEL_FAMILY;
+        ctx.font = "11px " + LABEL_FAMILY;
         const t = "+" + omitted + " more", px = snap(an.x*cam.s + cam.x), py = snap(an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15), w = ctx.measureText(t).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);
