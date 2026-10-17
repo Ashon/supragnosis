@@ -3159,9 +3159,15 @@ function draw() {
       ctx.globalAlpha = base * 0.2; ctx.fillStyle = INK;
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 8, 0, 7); ctx.fill();
     }
+    // The footprint is a light centred on the node that fades out. It was a disc dropped below the
+    // node, which read as a circle out of place; a crisp disc on the centre would read as a ring, and
+    // rings belong to trust.
     if (showFootprint && footprint.has(n.id)) {
-      ctx.globalAlpha = base * 0.35; ctx.fillStyle = TEAL;
-      ctx.beginPath(); ctx.arc(n.x, n.y + r * 0.35, r + 4, 0, 7); ctx.fill();
+      const glow = ctx.createRadialGradient(n.x, n.y, r * 0.8, n.x, n.y, r + 13);
+      glow.addColorStop(0, "rgba(86,179,162,0.55)");   // --ok
+      glow.addColorStop(1, "rgba(86,179,162,0)");
+      ctx.globalAlpha = base; ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 13, 0, 7); ctx.fill();
     }
     ctx.globalAlpha = base;
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);

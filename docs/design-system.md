@@ -164,7 +164,7 @@ One channel, one meaning:
 | ring | trust of the best support | Unverified: dashed, `--muted`. Agent: none. Host signed: thin, `--ink`. Human confirmed: solid, `--gold-bright` |
 | badge | contested | a `--bad` disc with "!" at the node's upper right |
 | halo | selected | a soft `--ink` disc behind the node, replacing the selection ring |
-| glow | this session's footprint | a soft `--ok` light under the node, replacing the teal ring |
+| glow | this session's footprint | a soft `--ok` light centred on the node and fading out, drawn beneath it, replacing the teal ring |
 | pulse | activity | one expanding ring, none under reduced motion |
 | edge | relation | neutral by default; kind color and label only on the active node's edges |
 | region | context (hyperedge) | only the active node's contexts by default |
@@ -638,3 +638,6 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   cap and ran under both panels. Framing, the zoom buttons and the minimap's pan work in the window
   now, and the frame keeps room for the label that hangs right of a node, since the window's edge is
   hard.
+- **After step 7: the footprint glow is centred on its node.** It was a disc dropped below the node,
+  which read as a circle out of place. It is a light that fades out from the node's edge, which no
+  one mistakes for a trust ring.
