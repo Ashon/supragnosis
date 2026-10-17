@@ -6,9 +6,9 @@
 > made, what the viewer's search answers with, what an absent indicator means, and how a write reports
 > back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
 >
-> Status: **specification, with Section 13 steps 0-4 built** - the fixes that needed no document,
-> the tokens and the foundations, the map, the places, then the Review page. Dream drafts join the
-> Review page with dreaming.md Section 12 step 5.
+> Status: **specification, with Section 13 steps 0-5 built** - the fixes that needed no document,
+> the tokens and the foundations, the map, the places, the Review page, then search. Dream drafts
+> join the Review page with dreaming.md Section 12 step 5.
 
 ## 1. Why this exists
 
@@ -375,7 +375,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 4. **The Review page** [built]: the page itself (U4); the inspector as a sheet; the review pill, View
    > Review (Cmd+2) and the tray's Review item. Dream drafts join it when dreaming.md Section 12 step 5
    lands (U5).
-5. **Search** (U6): the read path, its policy and the server-side forwarding, then the bar.
+5. **Search** [built] (U6): the read path, its policy and the server-side forwarding, then the bar.
 6. **The landing's picture of the viewer**, retaken once the map has changed.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
@@ -468,3 +468,10 @@ had not written it. Thirteen findings changed it:
 - **Step 4: the Review page redraws only when what it shows changes.** Redrawn on every 2.5-second
   poll, it replaced the button under the pointer and took the keyboard focus away.
 - **Step 4: the tray counts proposals only** (Section 7), and the right dock is the Log alone.
+- **Step 5: an absent scope reads as the map's.** With no workspace parameter the search path searched
+  every workspace while `/api/graph` read the default one, so the list could name what the map did not
+  load. It reads as the graph does now, and an answer is shown only for the scope it was asked in.
+- **Step 5: an entity the map does not draw stays listed.** A hit whose type is switched off is part
+  of the answer; its row says it is not on the map in this view instead of dropping out of the list.
+- **Step 5: the header sits above the docks and the Review page.** It overlaps neither, and the list
+  it holds drops over both.
