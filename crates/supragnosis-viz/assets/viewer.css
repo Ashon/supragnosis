@@ -13,7 +13,10 @@
     color-scheme: dark;
     --surface:#08090d; --panel:#10131b; --panel-2:#131722;
     --glass:rgba(13,16,23,0.92); --glass-deep:rgba(9,11,16,0.95);
-    --ink:#e9e4d6; --ink2:#aab1bd; --muted:#8e96a5; --faint:#5c6472;
+    /* --faint is text - placeholders, timestamps, meta lines. #5c6472 drew it at 3.3:1 on the
+       surface, under the 4.5:1 body text needs; #7b8494 is the landing's value (site/style.css),
+       5.3:1 here, and the settings page carries the same one. */
+    --ink:#e9e4d6; --ink2:#aab1bd; --muted:#8e96a5; --faint:#7b8494;
     --line:#222836; --line-soft:#1a1f2b; --border:#1e2431;
     --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
     --gold-glass:rgba(217,165,68,0.12); --teal:#56b3a2;
