@@ -4472,6 +4472,32 @@ impl Engine {
         Ok(SearchOutput { mode, hits })
     }
 
+    /// Search as the viewer asks it (design-system.md Section 8): the function `search_knowledge`
+    /// answers with, its ranking and mode unchanged, with entity hits forwarded through accepted
+    /// merges, so a hit names the entity the graph draws and never a merged-away id the viewer would
+    /// otherwise have to resolve itself (inspector.md D5). Two hits that forward to one entity keep
+    /// the first, the higher ranked. The MCP tool's own answer is untouched.
+    pub fn search_canonical(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<SearchOutput, StoreError> {
+        let mut out = self.search(query, workspace, limit)?;
+        let fwd = self.merge_forwarding(workspace, &ReadCtx::default())?;
+        let mut seen = HashSet::new();
+        out.hits.retain_mut(|h| {
+            if h.kind != SearchHitKind::Entity {
+                return true;
+            }
+            if let Some(c) = fwd.get(&h.id) {
+                h.id = c.clone();
+            }
+            seen.insert(h.id.clone())
+        });
+        Ok(out)
+    }
+
     /// Graph enrichment: adds the 1-hop neighbors of the top entity hits (seeds) to the results. A neighbor is a weaker
     /// signal than a seed's direct match, so it is ranked with the seed score decayed - a primary hit stronger than a
     /// neighbor stays above it, and the neighbor of a strong seed can rise above a weak primary hit (reflecting graph proximity).

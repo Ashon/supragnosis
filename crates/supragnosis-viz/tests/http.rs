@@ -122,6 +122,140 @@ async fn the_local_surface_names_its_node() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// design-system.md U6 (Principles 5, 19, 21; inspector.md D5): the viewer's search answers with the
+/// engine's ranking and mode label, and an entity hit is the entity the graph draws - an id an accepted
+/// merge folded away forwards to its canonical one, so the page never re-resolves identity. A missing
+/// query is refused, and an empty answer says absence is unknown.
+#[tokio::test]
+async fn the_viewer_search_answers_with_canonical_hits() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
+    observe_depends(&engine);
+    engine
+        .observe(ObserveInput {
+            content: "rmcp lib is the MCP client library".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                description: None,
+                name: "rmcp lib".into(),
+                kind: Some("Tool".into()),
+            }],
+            relations: vec![],
+        })
+        .expect("observe succeeds");
+    let sock = serve_uds("search", engine.clone(), ev_channel()).await;
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    let id_of = |name: &str| {
+        g["nodes"].as_array().unwrap().iter().find(|n| n["name"] == name).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (lib, rmcp) = (id_of("rmcp lib"), id_of("rmcp"));
+    let proposal = engine
+        .propose(supragnosis_engine::ProposeInput {
+            workspace: Some("ws".into()),
+            kind: "entity_merge".into(),
+            targets: vec![lib.clone(), rmcp.clone()],
+            into: Some(rmcp.clone()),
+            tier: None,
+            rationale: Some("one library, two names".into()),
+            affected_types: Vec::new(),
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose succeeds");
+    engine
+        .review_proposal(
+            Some("ws".into()),
+            proposal,
+            "merge".into(),
+            None,
+            None,
+            supragnosis_engine::VerdictSurface::Console,
+        )
+        .expect("the merge is accepted");
+
+    let r = json_get(&uds_get(&sock, "/api/search?q=rmcp%20lib&workspace=ws").await);
+    assert!(r["mode"].is_string(), "the mode label rides the answer: {r}");
+    let ids: Vec<&str> = r["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|h| h["kind"] == "entity")
+        .map(|h| h["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        ids.contains(&rmcp.as_str()),
+        "the merged entity is found by its canonical id: {r}"
+    );
+    assert!(!ids.contains(&lib.as_str()), "a merged-away id never reaches the page: {r}");
+    let mut seen = std::collections::HashSet::new();
+    assert!(ids.iter().all(|id| seen.insert(*id)), "one hit per canonical entity: {r}");
+
+    assert!(uds_get(&sock, "/api/search").await.starts_with("HTTP/1.1 400"));
+    let _ = std::fs::remove_file(&sock);
+
+    // Absence, on a keyword-only node: the semantic surface answers every query with its nearest
+    // vectors, so an empty answer is the keyword surface's.
+    let bare = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+    observe_depends(&bare);
+    let sock = serve_uds("search-bare", bare, ev_channel()).await;
+    let none = json_get(&uds_get(&sock, "/api/search?q=zzqxwv&workspace=ws").await);
+    assert_eq!(none["mode"], "keyword", "{none}");
+    assert_eq!(none["hits"].as_array().map(Vec::len), Some(0), "{none}");
+    assert!(
+        none["note"].as_str().is_some_and(|n| n.contains("absence is unknown")),
+        "{none}"
+    );
+    let _ = std::fs::remove_file(&sock);
+}
+
+/// The read tier's search covers the reader's grants and nothing else (design-system.md U6,
+/// remote-viewer.md V3): `*` searches each granted workspace on its own and merges, so a workspace the
+/// reader may not read contributes no hit.
+#[test]
+fn the_read_tier_search_reads_only_the_grants() {
+    use supragnosis_viz::remote::{route, Reader, Servable};
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store, "h", "a").with_embedder(Arc::new(HashingEmbedder::default()));
+    for (ws, name) in [("a", "granted lantern"), ("b", "hidden lantern")] {
+        engine
+            .observe(ObserveInput {
+                content: format!("{name} is a lantern"),
+                workspace: Some(ws.into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    description: None,
+                    name: name.into(),
+                    kind: Some("Thing".into()),
+                }],
+                relations: vec![],
+            })
+            .expect("observe succeeds");
+    }
+    let reader = Reader { name: "alice".into(), readable: ["a".to_string()].into_iter().collect() };
+    let servable: Servable = Arc::new(|_| Ok(()));
+    let a = route(&engine, &reader, &servable, "GET", "/api/search", "q=lantern&workspace=*");
+    assert_eq!(a.status, 200, "{}", a.body);
+    assert!(a.body.contains("granted lantern") || a.body.contains("lantern"), "{}", a.body);
+    assert!(
+        !a.body.contains("hidden lantern"),
+        "a workspace outside the grants is not searched: {}",
+        a.body
+    );
+    let refused = route(&engine, &reader, &servable, "GET", "/api/search", "q=lantern&workspace=b");
+    assert_eq!(refused.status, 403, "{}", refused.body);
+}
+
 #[tokio::test]
 async fn viz_serves_graph_index_and_404() {
     let store = Arc::new(InMemoryStore::new());

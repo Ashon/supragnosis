@@ -344,6 +344,9 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // "Why is this node projected this way" (resolution.md): per-field belief resolution
         // (evidence + decision) + the supporting log for one entity. Read-only, consistent with graph.
         "/api/explain" => explain_response(engine, query),
+        // The viewer's search (design-system.md Section 8): the engine's own ranking and mode label,
+        // entity hits forwarded through accepted merges. A read, with a read-tier policy (V2).
+        "/api/search" => search_response(engine, query),
         _ => Response {
             status: "404 Not Found",
             content_type: "application/json",
@@ -544,6 +547,47 @@ fn observations_response(engine: &Engine, query: &str) -> Response {
 /// entity. The workspace is derived from the entity itself, so only the id is needed.
 /// Consistent-by-construction with `/api/graph` (built on `get_entity`). A missing `entity` is 400;
 /// an id that resolves to no entity is 404 (absence, Principle 5); a storage failure is 500.
+/// `/api/search?q=...&workspace=...&limit=...` (design-system.md Section 8, U6). An omitted, `*` or
+/// `all` workspace searches the node, as the local trust surface may; an empty answer says what the
+/// agent surface says - absence in what was searched is unknown, not a negation (P5).
+fn search_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let Some(q) = param("q").filter(|s| !s.trim().is_empty()) else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("search needs ?q=<words>"),
+        };
+    };
+    // The scope reads as /api/graph reads it, so the list and the map answer over one set: no
+    // parameter is the default workspace, and an empty one or "*" is every workspace.
+    let ws: Option<String> = match param("workspace").as_deref() {
+        None => Some(engine.default_workspace().to_string()),
+        Some("") | Some("*") | Some("all") => None,
+        Some(s) => Some(s.to_string()),
+    };
+    let limit = param("limit").and_then(|s| s.parse::<usize>().ok()).unwrap_or(20).clamp(1, 50);
+    match engine.search_canonical(&q, ws.as_deref(), limit) {
+        Ok(out) => {
+            let mut v = serde_json::json!({ "mode": out.mode, "hits": out.hits });
+            if out.hits.is_empty() {
+                v["note"] = "no hits here - absence is unknown, not a negation".into();
+            }
+            Response { status: "200 OK", content_type: "application/json", body: v.to_string() }
+        }
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: err_body(&format!("store error: {e}")),
+        },
+    }
+}
+
 fn explain_response(engine: &Engine, query: &str) -> Response {
     let param = |k: &str| {
         query

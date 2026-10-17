@@ -64,6 +64,7 @@ pub const POLICY: &[(&str, Policy)] = &[
     ("/api/observations", Policy::Read),
     ("/api/proposal", Policy::Read),
     ("/api/explain", Policy::Read),
+    ("/api/search", Policy::Read),
     ("/api/events", Policy::Read),
     ("/api/federation", Policy::Refused(NODE_OP)),
     ("/api/peer/share", Policy::Refused(NODE_OP)),
@@ -296,6 +297,40 @@ fn read_value(
         "/api/workspaces" => {
             let held = engine.workspaces().map_err(|e| failure(&e))?;
             to_value(held.into_iter().filter(|w| reader.readable.contains(w)).collect::<Vec<_>>())
+        }
+        // The viewer's search (design-system.md U6): each granted workspace searched on its own and the
+        // hits merged by score then id and cut to the limit - the rule MCP's remote search uses - never
+        // a node-wide search ranking across workspaces the reader may not read.
+        "/api/search" => {
+            let Some(q) = param(query, "q").filter(|s| !s.trim().is_empty()) else {
+                return Err(Answer::error(400, "search needs ?q=<words>"));
+            };
+            let limit = limit.unwrap_or(20).clamp(1, 50);
+            let wss = match resolve(reader, servable, param(query, "workspace").as_deref())? {
+                Scope::One(ws) => vec![ws],
+                Scope::Union(all) => all,
+            };
+            let mut hits = Vec::new();
+            let mut mode = None;
+            for ws in &wss {
+                let out = engine.search_canonical(&q, Some(ws), limit).map_err(|e| failure(&e))?;
+                mode = Some(out.mode);
+                hits.extend(out.hits);
+            }
+            hits.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+            hits.truncate(limit);
+            let mut v = serde_json::json!({ "mode": mode, "hits": hits });
+            if hits.is_empty() {
+                v["note"] =
+                    "no hits in the workspaces granted to you - absence is unknown, not a negation"
+                        .into();
+            }
+            Ok(v)
         }
         "/api/explain" => {
             let Some(id) = param(query, "entity").filter(|s| !s.is_empty()) else {
