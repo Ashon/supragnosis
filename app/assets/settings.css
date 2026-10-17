@@ -45,7 +45,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   color: var(--muted); transition: background-color 0.12s ease, color 0.12s ease;
 }
 .hclose:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
-.hclose:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: 1px; }
+.hclose:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
 .hclose .i { width: 15px; height: 15px; }
 
 /* ---- Layout: a section sidebar beside one content pane, as the platform's own settings are laid out. */
@@ -63,7 +63,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 }
 .navitem:hover { background: rgba(255,255,255,0.035); color: var(--ink); }
 .navitem[aria-current="page"] { background: var(--gold-glass); color: var(--gold-bright); }
-.navitem:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: -2px; }
+.navitem:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
 .navitem .tile {
   width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
   background: var(--panel-3); color: var(--ink2); flex: none;
@@ -135,7 +135,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 .btn:hover:not(:disabled) { border-color: var(--gold-dim); color: var(--gold-bright); }
-.btn:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: 2px; }
+.btn:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #17130a; }
 .btn.primary:hover:not(:disabled) { background: var(--gold-bright); border-color: var(--gold-bright); color: #17130a; }
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted); padding: 0 8px; }
@@ -159,7 +159,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track::after { transform: translateX(16px); background: #17130a; }
-.switch input:focus-visible + .track { outline: 2px solid var(--gold-dim); outline-offset: 2px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
 .switch input:disabled { cursor: default; }
 .switch input:disabled + .track { opacity: 0.4; }
 
