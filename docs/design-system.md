@@ -6,7 +6,8 @@
 > made, what the viewer's search answers with, what an absent indicator means, and how a write reports
 > back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
 >
-> Status: **specification, with Section 13 step 0 built** - the fixes that needed no document.
+> Status: **specification, with Section 13 steps 0-1 built** - the fixes that needed no document,
+> then the tokens and the foundations.
 
 ## 1. Why this exists
 
@@ -331,6 +332,9 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 | **U7** | The viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 
+U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
+in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
+
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
 the read tier's own policy table, so a write added later is covered without anyone extending a list,
@@ -343,8 +347,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    by name, faint text at 4.5:1 on the surfaces then in use, Esc closes the inspector, the b key is
    shown, dock tabs fit their names, the shell's splash points at Settings, Settings > About names
    the source, and the landing's phone heading keeps its space.
-1. **Tokens and foundations**: the shared vocabulary and its test (U7), the six sizes, focus rings,
-   buttons for every control, tab roles, reduced motion everywhere, and view toggles that persist.
+1. **Tokens and foundations** [built]: the shared vocabulary and its test (U7), the six sizes, focus
+   rings, buttons for every control, tab roles, reduced motion everywhere, and view toggles that
+   persist.
 2. **The map**: trust rings and their legend (U2), the other marks off rings, the contested badge and
    pill (U3), neutral edges, regions for the active node with their new names, label avoidance,
    remembered layout on the local console, and the three widths.
@@ -410,3 +415,13 @@ had not written it. Thirteen findings changed it:
   principal's positions past a revoked grant. It is the local console's alone.
 - **U1 named a hand-kept list**, U7 missed the settings page's `--panel-3`, and a pill's absence could
   mean four things. U1 now reads the policy table, `--faint` moves to `#7f8898`, and U8 is new.
+
+## 17. What building it changed
+
+- **Step 1: the floor widened the right dock.** At 11px its five tabs with their counts measure 300
+  pixels against a 274-pixel row, so the dock went from 300 to 336 pixels wide and its tabs stopped
+  clipping. Step 3 takes four of the five tabs away, and the width is revisited there.
+- **Step 1: the base rule for inputs and buttons moved to zero specificity.** Chips, legend entries
+  and proposal and log rows became buttons, and the old base rule outranked nothing but element
+  selectors, so it would have drawn its own box and hover color over each of them. At zero
+  specificity every component class overrides it whole.
