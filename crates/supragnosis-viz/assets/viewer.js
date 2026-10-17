@@ -2268,7 +2268,7 @@ function renderBoundaryChips() {
     else { sw.style.background = "transparent"; sw.style.border = "1px dashed " + hyperColor(mode + ":swatch"); }
     el.appendChild(sw);
     el.appendChild(document.createTextNode(mode));
-    el.title = why;
+    el.title = why + " (b cycles the three)";
     el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); requestFrame(); };
     legendBoundaryEl.appendChild(el);
   }
@@ -3074,7 +3074,12 @@ window.addEventListener("keydown", e => {
     renderBoundaryChips();
     requestFrame();
   }
-  else if (e.key === "Escape") { if (obscardEl.classList.contains("on")) hideObsCard(); else setViewPop(false); }
+  // Esc closes the topmost thing: the observation card, then the view menu, then the inspector.
+  else if (e.key === "Escape") {
+    if (obscardEl.classList.contains("on")) hideObsCard();
+    else if (viewPop.classList.contains("on")) setViewPop(false);
+    else if (focus) { focus = null; renderDetail(null); requestFrame(); }
+  }
 });
 // Restore the persisted state (default: both open).
 try {

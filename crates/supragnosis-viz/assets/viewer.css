@@ -79,6 +79,10 @@
               padding:2px 5px; transition:opacity 0.12s ease; }
   /* Out of the way as soon as the field is in use - focused, or already carrying a term. */
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
+  /* A key that works where it is shown (b beside Boundaries) - the same badge as "/", inline. */
+  .keyhint { font:600 9.5px/1 var(--mono); color:var(--faint); background:var(--panel);
+             border:1px solid var(--line); border-radius:3px; padding:1px 4px; margin-left:6px;
+             letter-spacing:0; text-transform:none; vertical-align:1px; }
   /* Notices: what a write did. Bottom centre, clear of both docks and the HUD; the same shape as the
      settings page's toasts - a success leaves by itself, an error stays until it is dismissed. */
   #toasts { position:fixed; left:50%; bottom:36px; transform:translateX(-50%); z-index:12;
