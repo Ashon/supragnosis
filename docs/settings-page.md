@@ -57,7 +57,7 @@ been, and the graph keeps its title bar to itself.
   its peers. Both are on this page - About and Sync - so in the app the gear leads to one place, not
   two.
 - **The title bar is the viewer's on both pages.** Same row height, surface and mark, with the
-  traffic lights over it in the same place. Since design-system.md Section 13 step 7 the title bar is
+  traffic lights over it in the same place. Since design-system.md Section 14 step 7 the title bar is
   the frame's `--panel` with no glass and no rule under it, on both pages. The settings page says its name after the app's:
   `supragnosis / settings`. One stylesheet draws that chrome on both pages (`assets/shell.css`):
   - the settings page links it from the app's own origin;

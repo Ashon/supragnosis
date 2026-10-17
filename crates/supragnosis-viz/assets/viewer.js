@@ -3714,7 +3714,7 @@ document.getElementById("regionsBtn").onclick = e => { allRegions = !allRegions;
 // Needs you.
 document.getElementById("contestedPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
 document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
-// The view menu's choices persist, as the docks' open state does (docs/design-system.md Section 13
+// The view menu's choices persist, as the docks' open state does (docs/design-system.md Section 14
 // step 1): a choice made once stays made. A preference, so it lives in this browser and nowhere else.
 // peers is left out on purpose: it switches itself on for a hub, so a stored "off" would fight that.
 {

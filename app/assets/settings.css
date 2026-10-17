@@ -27,7 +27,7 @@ body {
 }
 
 /* ---- Title bar: the viewer's (viewer.css "header" and "h1"), so moving changes content, not chrome.
-   The frame's surface with no rule under it (docs/design-system.md Section 13 step 7). */
+   The frame's surface with no rule under it (docs/design-system.md Section 14 step 7). */
 header {
   flex: none; height: 49px; display: flex; gap: 9px; align-items: center; padding: 0 14px;
   background: var(--panel); position: relative; z-index: 3;
