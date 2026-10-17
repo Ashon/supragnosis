@@ -19,8 +19,8 @@ export default [
       // does not otherwise need. Exactly what the viewer uses: adding a browser API here is a
       // deliberate line, and anything NOT here that fails to resolve is the mistake being hunted.
       globals: {
-        addEventListener: "readonly", document: "readonly", EventSource: "readonly",
-        fetch: "readonly", history: "readonly", innerHeight: "readonly",
+        addEventListener: "readonly", clearTimeout: "readonly", document: "readonly",
+        EventSource: "readonly", fetch: "readonly", history: "readonly", innerHeight: "readonly",
         innerWidth: "readonly", localStorage: "readonly", location: "readonly",
         matchMedia: "readonly", performance: "readonly", removeEventListener: "readonly",
         requestAnimationFrame: "readonly", setInterval: "readonly", setTimeout: "readonly",

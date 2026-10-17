@@ -55,7 +55,9 @@
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
   canvas { display:block; position:fixed; inset:0; cursor:grab; }
   canvas.grabbing { cursor:grabbing; }
-  header { position:fixed; top:0; left:0; right:0; z-index:5; padding:9px 14px;
+  /* Above the docks and the Review page (it overlaps neither) so the search list it holds drops over
+     them; only the observation card sits higher. */
+  header { position:fixed; top:0; left:0; right:0; z-index:13; padding:9px 14px;
            display:flex; gap:9px; align-items:center; flex-wrap:wrap;
            background:rgba(8,9,13,0.88); border-bottom:1px solid var(--line-soft);
            backdrop-filter:blur(7px); }
@@ -93,6 +95,30 @@
               padding:2px 5px; transition:opacity 0.12s ease; }
   /* Out of the way as soon as the field is in use - focused, or already carrying a term. */
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
+  /* The search answer (Section 8): a list under the field, over the canvas. Rows are buttons; the
+     selected one is tinted with a full border, never a rail down one side (Section 4). */
+  .searchpop { position:absolute; top:calc(100% + 6px); left:0;
+               width:min(420px, calc(100vw - 32px)); max-height:min(60vh, 460px); overflow-y:auto;
+               background:var(--glass); border:1px solid var(--line); border-radius:10px; padding:6px;
+               box-shadow:0 18px 40px #000a, 0 2px 8px #0006; backdrop-filter:blur(7px); }
+  .searchpop[hidden] { display:none; }
+  .sp-head { display:flex; justify-content:space-between; gap:10px; padding:3px 6px 6px;
+             color:var(--muted); font:11px/1.3 var(--mono); }
+  .sp-mode { color:var(--faint); }
+  .sp-sec { padding:8px 6px 4px; color:var(--accent); font:500 11px/1 var(--mono); letter-spacing:.12em;
+            text-transform:uppercase; }
+  .sp-row { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:6px 8px;
+            border:1px solid transparent; border-radius:7px; background:none; color:var(--ink2);
+            font:13px/1.4 var(--sans); }
+  .sp-row:hover { background:var(--panel-2); border-color:var(--line); color:var(--ink); }
+  .sp-row.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--ink); }
+  .sp-row .dot { width:8px; height:8px; border-radius:2px; flex:none; align-self:center; }
+  .sp-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sp-k { flex:none; color:var(--faint); font:11px/1.3 var(--mono); }
+  .sp-row.off .sp-name { color:var(--muted); }
+  .sp-snip { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .sp-note { padding:6px 8px 8px; color:var(--muted); font-size:12px; line-height:1.45; }
+  .sp-note.bad { color:var(--bad); }
   /* A key that works where it is shown (b beside Boundaries) - the same badge as "/", inline. */
   .keyhint { font:600 11px/1 var(--mono); color:var(--faint); background:var(--panel);
              border:1px solid var(--line); border-radius:3px; padding:1px 4px; margin-left:6px;
@@ -669,6 +695,7 @@
      time. Under 760px a panel is a sheet from the bottom, the full width less a margin, and the
      inspector takes the same place; the minimap gives the corner back to the canvas. */
   @media (max-width: 759px) {
+    .searchpop { position:fixed; top:52px; left:16px; right:16px; width:auto; }
     #dockL, #dockR { top:auto; bottom:32px; left:8px; right:8px; width:auto; max-height:55vh; }
     #dockL:not(.on), #dockR:not(.on) { transform:translateY(110%); }
     .docktab.left.open { left:0; }
