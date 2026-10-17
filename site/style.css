@@ -123,7 +123,9 @@ code {
 
 @media (max-width: 620px) {
   .site-head nav a:not(.nav-gh) { display: none; }
-  /* the heading's forced break is set for two wide lines; on a phone it flows */
+  /* the heading's forced break is set for two wide lines; on a phone it flows. The space after
+     the <br> in the markup is what separates the two words then - a break that is not drawn is
+     not whitespace, and without it the phone read "agentsthat". */
   .hero h1 br { display: none; }
 }
 
