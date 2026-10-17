@@ -79,7 +79,8 @@ let showLabels = true, showEdges = true, showArrows = true;
 let flowPhase = 0;   // per-frame counter driving the marching-dash flow animation on active edges
 let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
-let showFootprint = true, showPulses = true, showSuperseded = true, showMini = true;
+// The minimap is off until View turns it on (docs/design-system.md Section 6).
+let showFootprint = true, showPulses = true, showSuperseded = true, showMini = false;
 let allRegions = false;   // draw every context region, not only the active node's (design-system.md Section 5)
 // Workspace boundaries: a DASHED outline per workspace, drawn only in the all-workspaces view.
 //
@@ -244,16 +245,16 @@ function zoomAt(sx, sy, f) {
   camT.s = Math.max(0.15, Math.min(4, camT.s * f));
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
-const TOP_INSET = 52;      // height occluded by the top header - compensated in centering/fit
-const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
-const DOCK_L = 262, DOCK_R = 312;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
+const TOP_INSET = 49;      // the frame's header (viewer.css) - compensated in centering/fit
+const BOTTOM_INSET = 28;   // the frame's status bar
+const DOCK_L = 260, DOCK_R = 300;   // the panels' widths (viewer.css) - reserved so content stays in the map's window
 function insetL() { return dockLEl.classList.contains("on") && !sheetWindow() ? DOCK_L : 0; }
 function insetR() {
   if (sheetWindow()) return 0;
   if (detailEl.classList.contains("on")) return SHEET_R;   // the inspector sheet takes the right side
   return dockREl.classList.contains("on") ? DOCK_R : 0;
 }
-const SHEET_R = 384;   // 12 + the sheet's 360 + 12 (viewer.css #detail)
+const SHEET_R = 360;   // the sheet's width (viewer.css #detail), in the right panel's place
 // Under 760px a dock is a sheet from the bottom (viewer.css), so it occludes the bottom, not a side.
 function sheetWindow() { return innerWidth < 760; }
 // Bottom occlusion: the status bar, plus the detail panel when it is open (panel sits at bottom:30,
@@ -765,6 +766,7 @@ function noteTrustAndContest() {
   trustUniform = nodes.length && tiers.size === 1 ? [...tiers][0] : null;
   contestedCount = nodes.reduce((k, n) => k + (n.contested ? 1 : 0), 0);
   renderTrustLegend();
+  renderTierNote();
   const pill = document.getElementById("contestedPill");
   if (pill) {
     pill.hidden = contestedCount === 0;   // absent only for a known zero (U8)
@@ -788,6 +790,15 @@ function renderTrustLegend() {
     ? "All here: " + TIER_NAME[trustUniform] + ", so no node is ringed."
     : "A ring is the highest trust among the sources that support a node. Agent has none.";
   host.appendChild(note);
+}
+// With the left panel closed the Trust legend is out of sight, so the status bar says what it would
+// when the map draws no ring: the scope's one tier (U2).
+function renderTierNote() {
+  const el = document.getElementById("tierNote");
+  if (!el) return;
+  const show = !!trustUniform && !dockLEl.classList.contains("on");
+  el.hidden = !show;
+  el.textContent = show ? "All here: " + TIER_NAME[trustUniform] : "";
 }
 function trustRing(n, r) {
   const t = trustUniform ? null : n.trust_tier;
@@ -832,6 +843,7 @@ async function poll() {
     refreshCuration();
     refreshProposals();
     refreshLog();
+    refreshStrip();
   } catch (e) { statusEl.textContent = "connection failed - check the server is running"; }
 }
 
@@ -883,7 +895,8 @@ async function loadWorkspaces() {
       };
       return c;
     };
-    const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "workspaces:";
+    // A panel heading like the ones below it (docs/design-system.md Section 4).
+    const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = "Workspace";
     chipBar.replaceChildren(lbl, mk("(all)", "*"), ...list.map(w => mk(w, w)));
   } catch (e) { /* server not up - retry next cycle */ }
 }
@@ -1405,7 +1418,7 @@ function stepReview(by) {
   recallArmed = null;
   renderReview();
 }
-window.addEventListener("hashchange", () => { recallArmed = null; renderReview(); if (reviewOpen()) refreshCuration(); requestFrame(); });
+window.addEventListener("hashchange", () => { recallArmed = null; renderReview(); if (reviewOpen()) refreshCuration(); refreshStrip(); requestFrame(); });
 window.addEventListener("keydown", e => {
   if (!reviewOpen()) return;
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
@@ -1706,6 +1719,50 @@ function renderLog() {
   obsLogSig = sig;
   wireObsList(logBodyEl, obsLog);
 }
+
+// --- The strip: the Log folded (docs/design-system.md Section 6) ----------------------------------
+// While the right side is empty - no Log, no sheet - the window's lower left shows the scope's newest
+// observation. It reads one row on its own, because the Log loads only while it is open, and says so
+// when there is none or the server does not answer rather than keeping a stale line (P5, P24).
+const stripEl = document.getElementById("strip");
+let stripState = null;   // { o } | { empty: true } | { failed: true }; null until first read
+function stripShown() {
+  return !dockREl.classList.contains("on") && !detailEl.classList.contains("on") && !reviewOpen();
+}
+// Who wrote it: the person it was written for, else the host by id - "this node" only for the id
+// /api/surface reports (Section 9).
+function writerOf(a) {
+  if (a.on_behalf_of) return a.on_behalf_of;
+  if (a.host && surfaceNode && a.host === surfaceNode) return "this node";
+  return a.host || "";
+}
+async function refreshStrip() {
+  if (!stripShown()) { renderStrip(); return; }
+  const ws = currentWs();
+  try {
+    const r = await fetch("/api/observations?limit=1" + (ws ? "&workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    if (!r.ok) throw new Error("status " + r.status);
+    const l = await r.json();
+    stripState = Array.isArray(l) && l.length ? { o: l[0] } : { empty: true };
+  } catch (e) { stripState = { failed: true }; }
+  renderStrip();
+}
+function renderStrip() {
+  if (!stripEl) return;
+  const on = stripShown() && !!stripState;
+  stripEl.classList.toggle("on", on);
+  if (!on) return;
+  if (stripState.o) {
+    const o = stripState.o, a = (o.attestations || [])[0] || {};
+    const first = String(o.content || "").split("\n")[0];
+    stripEl.innerHTML = html`${tierDot(o.effective_tier)}<span class="w">${writerOf(a)} ${obsWhen(a.observed_at)}</span><span class="t">${o.proposal ? proposalLine(o.proposal) : first}</span>`;
+  } else if (stripState.empty) {
+    stripEl.innerHTML = html`<span class="t">Nothing observed in this scope yet</span>`;
+  } else {
+    stripEl.innerHTML = html`<span class="t bad">The Log is unavailable - the server did not answer</span>`;
+  }
+}
+if (stripEl) stripEl.onclick = () => applyDock(false, true);
 
 async function refreshLog() {
   if (!panelOn("log")) return;
@@ -2151,7 +2208,8 @@ function relationGroupHtml(g, open) {
 function renderDetail(node) {
   // The inspector is a sheet on the right; the Log and the corner controls step aside (viewer.css).
   document.body.classList.toggle("sheet", !!node);
-  if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
+  renderStrip();
+  if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; renderStrip(); return; }
   // One panel at a time under 1200px: the inspector closes the docks (not remembered).
   if (narrowWindow()) { applyDock(true, false, false); applyDock(false, false, false); }
   const groups = relationGroups(node);
@@ -2957,19 +3015,19 @@ function draw() {
     if (showLabels && hullLabels.length) {
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      if ("letterSpacing" in ctx) ctx.letterSpacing = "0.3px";
-      // Region-name style: font scales with context size (bigger domain -> bigger name), sorted so the
-      // largest / active contexts win placement; anything overlapping an already-placed one is skipped.
+      // Region names are 13px at medium weight whatever the region's size (design-system.md Section 5):
+      // scaled up to 30px in bold they ran over one another and the nodes they named. Sorted so the
+      // active and the largest contexts win placement; one overlapping a placed name is skipped.
       const cand = hullLabels
         .map(l => {
-          const fs = Math.min(30, Math.round(12 + Math.sqrt(l.size) * 2.2));
+          const fs = 13;
           return { l, px: l.cx*cam.s + cam.x, py: l.cy*cam.s + cam.y - fs * 0.8, fs };
         })
         .filter(o => o.px > -80 && o.px < innerWidth + 80 && o.py > -30 && o.py < innerHeight + 30)
         .sort((a, b) => (b.l.hot - a.l.hot) || (b.l.size - a.l.size));
       for (const o of cand) {
         const l = o.l;
-        ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px " + LABEL_FAMILY;   // measures the placement box
+        ctx.font = "500 " + o.fs + "px " + LABEL_FAMILY;   // measures the placement box
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
         if (labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
         labelBoxes.push({ x, y, w, h });
@@ -2978,7 +3036,7 @@ function draw() {
         // The label fades as one unit (drawLabel), so the halo no longer darkens its own glyphs.
         ctx.globalAlpha = lgActive ? (l.lgHit ? 0.75 : HULL_LABEL_HOVER_FADE)
           : hlAnchor ? (l.hot ? 1 : HULL_LABEL_HOVER_FADE) : 0.6;
-        drawLabel(l.text, l.hot ? "600" : "500", o.fs, l.col, "0.3px", Math.max(1.5, o.fs * 0.08), o.px, o.py, "center");
+        drawLabel(l.text, "500", o.fs, l.col, "0px", 2, o.px, o.py, "center");
       }
       if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
       ctx.globalAlpha = 1; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
@@ -3516,16 +3574,18 @@ const hyperBtn = document.getElementById("hyperBtn");
 // Overlay is render-only (the draw loop shows it next frame) - do not reheat the sim. Fetch hyperedge
 // data only if we do not already have it (e.g. when leaving group mode, where it was cleared).
 hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); if (hyperMode && !hyperedges.length) poll(); };
-// Per-dock drawer handles (screen-edge tabs) replace the old all-or-nothing header toggle: each
-// dock collapses independently, the header stays a pure title/search bar, and the choice persists
-// across reloads. The docks are side panels (not canvas layers) - toggling never reheats the sim.
-// Chevron points where clicking will move the edge: outward "<" collapses, inward ">" expands.
-const dockLTab = document.getElementById("dockLTab"), dockRTab = document.getElementById("dockRTab");
+// The panels and their title-bar toggles (docs/design-system.md Section 6): each panel opens and
+// closes on its own, with its toggle or [ and ], and the choice persists across reloads. A panel is
+// part of the frame beside the map's window - body.dl / body.dr move the window's edges - and
+// toggling one never reheats the sim.
+const panelLBtn = document.getElementById("panelL"), panelRBtn = document.getElementById("panelR");
 function applyDock(isLeft, on, remember = true) {
   (isLeft ? dockLEl : dockREl).classList.toggle("on", on);
-  const tab = isLeft ? dockLTab : dockRTab;
-  tab.classList.toggle("open", on); // the handle slides with its dock (CSS .docktab.open)
-  tab.textContent = (isLeft ? on : !on) ? "<" : ">";
+  (isLeft ? panelLBtn : panelRBtn).setAttribute("aria-pressed", on ? "true" : "false");
+  document.body.classList.toggle(isLeft ? "dl" : "dr", on);
+  if (isLeft) renderTierNote();
+  else if (on) refreshLog();
+  renderStrip();
   if (remember) {
     try { localStorage.setItem(isLeft ? "supra.dockL" : "supra.dockR", on ? "1" : "0"); } catch (_) { /* private mode */ }
   }
@@ -3538,8 +3598,8 @@ function applyDock(isLeft, on, remember = true) {
 }
 function narrowWindow() { return innerWidth < 1200; }
 function toggleDock(isLeft) { applyDock(isLeft, !(isLeft ? dockLEl : dockREl).classList.contains("on")); }
-dockLTab.onclick = () => toggleDock(true);
-dockRTab.onclick = () => toggleDock(false);
+panelLBtn.onclick = () => toggleDock(true);
+panelRBtn.onclick = () => toggleDock(false);
 // View options popover (HUD "view" button): preferences stay off the data rails; a click
 // elsewhere or Escape dismisses it.
 const viewBtn = document.getElementById("viewBtn"), viewPop = document.getElementById("viewpop");
@@ -3582,10 +3642,15 @@ window.addEventListener("keydown", e => {
   }
 });
 // Restore the persisted state (default: both open).
-try {
-  applyDock(true, localStorage.getItem("supra.dockL") !== "0");
-  applyDock(false, localStorage.getItem("supra.dockR") !== "0");
-} catch (_) { /* private mode - defaults stand */ }
+{
+  let keptL = true, keptR = true;
+  try {
+    keptL = localStorage.getItem("supra.dockL") !== "0";
+    keptR = localStorage.getItem("supra.dockR") !== "0";
+  } catch (_) { /* private mode - the defaults stand */ }
+  applyDock(true, keptL, false);
+  applyDock(false, keptR, false);
+}
 // Fetch the glossary lazily when its section is expanded (and keep it fresh via poll while open).
 // Dock tabs: clicking a tab shows only that panel (one at a time, fixed-height body - no upward growth),
 // and refreshes the newly active data panel.
@@ -3635,13 +3700,16 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
     "arrowsBtn", "footBtn", "pulseBtn", "histBtn", "miniBtn"];
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("supra.view") || "{}") || {}; } catch (_) { saved = {}; }
+  // Any click stored every choice, so a stored minimap is rarely one anyone made: forget it once,
+  // when the minimap started off (docs/design-system.md Section 6), and keep it from the next click.
+  if (saved.v !== 2) delete saved.miniBtn;
   for (const id of VIEW_PREFS) {
     const b = document.getElementById(id);
     if (!b) continue;
     // Replay a stored choice through the button's own handler, so its state and side effects agree.
     if (typeof saved[id] === "boolean" && saved[id] !== b.classList.contains("on")) b.click();
     b.addEventListener("click", () => {
-      const now = {};
+      const now = { v: 2 };
       for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
       try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
     });

@@ -3,8 +3,8 @@
    draws the page below the bar. Self-contained: the page's policy allows no remote style or font. */
 
 :root {
-  --surface: #08090d; --panel: #10131b; --panel-2: #131722; --panel-3: #181d2a;
-  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #7f8898; /* text: 4.7:1 on --panel-3, the lowest pair (docs/design-system.md Section 3) */
+  --surface: #08090d; --panel: #10131b; --panel-2: #161a23; --panel-3: #1d222d;
+  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #868f9f; /* text: 4.89:1 on --panel-3, this page's lowest pair (docs/design-system.md Section 3) */
   --line: #222836; --line-soft: #1a1f2b;
   --accent: #d9a544; --gold-bright: #f0c469; --gold-glass: rgba(217,165,68,0.12);
   --gold-dim: rgba(217,165,68,0.35);
@@ -26,11 +26,11 @@ body {
   font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Title bar: the viewer's (viewer.css "header" and "h1"), so moving changes content, not chrome. */
+/* ---- Title bar: the viewer's (viewer.css "header" and "h1"), so moving changes content, not chrome.
+   The frame's surface with no rule under it (docs/design-system.md Section 13 step 7). */
 header {
-  flex: none; height: 49px; display: flex; gap: 9px; align-items: center; padding: 9px 14px;
-  background: rgba(8,9,13,0.88); border-bottom: 1px solid var(--line-soft); backdrop-filter: blur(7px);
-  position: relative; z-index: 3;
+  flex: none; height: 49px; display: flex; gap: 9px; align-items: center; padding: 0 14px;
+  background: var(--panel); position: relative; z-index: 3;
 }
 header h1 {
   display: flex; align-items: center; gap: 7px; margin: 0 6px 0 0;

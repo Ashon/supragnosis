@@ -5,14 +5,14 @@
      (docs/design-system.md Section 3); a test in the viz crate holds the three files together. */
   --surface: #08090d;
   --panel: #10131b;
-  --panel-2: #131722;
+  --panel-2: #161a23;
   --line: #222836;
   --line-soft: #1a1f2b;
   --ink: #e9e4d6;
   --muted: #8e96a5;
   /* the quietest tier still carries real content (code comments, captions, flow subtitles),
      so it is held at >= 4.5:1 on every surface token rather than tuned purely by eye */
-  --faint: #7f8898;
+  --faint: #868f9f;
   --accent: #d9a544;
   --gold-bright: #f0c469;
   --gold-dim: rgba(217, 165, 68, 0.35);

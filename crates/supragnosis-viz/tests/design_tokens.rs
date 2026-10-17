@@ -14,7 +14,7 @@ const CORE: &[&str] =
     &["--surface", "--panel", "--line", "--ink", "--muted", "--faint", "--accent"];
 /// What text is drawn in, and what it is drawn on.
 const TEXT: &[&str] = &["--ink", "--ink2", "--muted", "--faint"];
-const SURFACES: &[&str] = &["--surface", "--panel", "--panel-2", "--panel-3"];
+const SURFACES: &[&str] = &["--surface", "--panel", "--panel-2", "--panel-3", "--select"];
 
 /// The custom properties of a stylesheet's first `:root` block, comments removed, each value with its
 /// whitespace dropped and lowercased so `rgba(217, 165, 68, 0.35)` and `rgba(217,165,68,0.35)` agree.
@@ -127,4 +127,121 @@ fn every_text_token_meets_4_5_on_every_surface() {
     }
     assert!(pairs >= 20, "the pairs were read ({pairs})");
     assert!(low.is_empty(), "text under 4.5:1:\n  {}", low.join("\n  "));
+}
+
+/// The leaf rules of a stylesheet as (selector, declarations), comments removed and whitespace in the
+/// selector collapsed. A rule inside `@media` is returned with its own selector.
+fn rules(css: &str) -> Vec<(String, String)> {
+    let mut clean = String::new();
+    let mut rest = css;
+    while let Some(i) = rest.find("/*") {
+        clean.push_str(&rest[..i]);
+        rest = rest[i..].find("*/").map_or("", |j| &rest[i + j + 2..]);
+    }
+    clean.push_str(rest);
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut open: Option<(String, usize)> = None;
+    for (i, ch) in clean.char_indices() {
+        match ch {
+            '{' => {
+                let prelude = clean[start..i].split_whitespace().collect::<Vec<_>>().join(" ");
+                open = Some((prelude, i + 1));
+                start = i + 1;
+            }
+            '}' => {
+                if let Some((sel, body)) = open.take() {
+                    out.push((sel, clean[body..i].to_string()));
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// What a declaration draws as a line, if anything: a border that draws, a border color that is
+/// not transparent, an outline, or a box-shadow shaped as a ring (no offset, no blur, a spread).
+fn draws_a_line(name: &str, value: &str) -> bool {
+    let v = value.trim().to_lowercase();
+    let invisible = v == "none" || v == "0" || v == "0px" || v.contains("transparent");
+    match name {
+        "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => !invisible,
+        n if n.starts_with("border") && n.ends_with("-color") => !v.contains("transparent"),
+        "outline" => !invisible,
+        "box-shadow" => v.split(',').any(|shadow| {
+            let parts: Vec<&str> = shadow.split_whitespace().filter(|p| *p != "inset").collect();
+            let zero = |p: &&str| matches!(*p, "0" | "0px");
+            parts.len() >= 4 && parts[..3].iter().all(zero) && !zero(&parts[3])
+        }),
+        _ => false,
+    }
+}
+
+/// The viewer's lines and the fact each one carries (design-system.md Section 4).
+const VIEWER_LINES: &[(&str, &str)] = &[
+    (":focus-visible", "keyboard focus"),
+    (".contested", "a contested value, in --bad"),
+    ("#detail .rchip.past", "a superseded relation, dashed"),
+    (".tsw.t-unverified", "the Trust legend's swatch of the unverified ring"),
+    (".tsw.t-host_signed", "the Trust legend's swatch of the host-signed ring"),
+    (
+        ".tsw.t-human_confirmed",
+        "the Trust legend's swatch of the human-confirmed ring",
+    ),
+    ("#loader .spin", "a control's own glyph: the loader's spinner"),
+    ("#mapwin", "paints the frame around the map's window: a surface, not a line"),
+];
+
+/// U9 (design-system.md Section 4): areas are told apart by surface. viewer.css draws a line only for
+/// a selector listed with the fact its line carries, and the script sets a border only on the
+/// boundaries' legend swatches, which show the dashes the map draws. Before step 7 viewer.css drew 53
+/// lines: every dock, chip, row, pill and camera button had a border of its own.
+#[test]
+fn no_border_draws_an_area() {
+    let mut stray = Vec::new();
+    let mut used = std::collections::HashSet::new();
+    for (selector, body) in rules(VIEWER) {
+        for decl in body.split(';') {
+            let Some((name, value)) = decl.split_once(':') else {
+                continue;
+            };
+            if !draws_a_line(name.trim(), value) {
+                continue;
+            }
+            match VIEWER_LINES.iter().find(|(s, _)| *s == selector) {
+                Some((s, _)) => {
+                    used.insert(*s);
+                }
+                None => stray.push(format!("{selector} {{ {}:{} }}", name.trim(), value.trim())),
+            }
+        }
+    }
+    assert!(
+        stray.is_empty(),
+        "viewer.css draws lines no fact asks for (U9):\n  {}",
+        stray.join("\n  ")
+    );
+    let unused: Vec<_> = VIEWER_LINES.iter().filter(|(s, _)| !used.contains(s)).collect();
+    assert!(unused.is_empty(), "listed lines that viewer.css no longer draws: {unused:?}");
+
+    let js = include_str!("../assets/viewer.js");
+    let start = js
+        .find("\nfunction renderBoundaryChips(")
+        .expect("viewer.js no longer defines renderBoundaryChips");
+    let swatches = &js[start..];
+    let swatches = &swatches[..swatches.find("\n}\n").expect("renderBoundaryChips closes")];
+    // A border the script sets, not a corner it rounds.
+    let borders = |src: &str| {
+        src.match_indices("style.border")
+            .filter(|(i, m)| !src[i + m.len()..].starts_with("Radius"))
+            .count()
+    };
+    assert_eq!(
+        borders(js),
+        borders(swatches),
+        "the script sets a border outside the boundaries' legend swatches (U9)"
+    );
+    assert!(!js.contains("style=\"border"), "a template sets a border inline (U9)");
 }
