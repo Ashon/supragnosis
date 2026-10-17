@@ -82,6 +82,7 @@ let flowPhase = 0;   // per-frame counter driving the marching-dash flow animati
 let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
 let showFootprint = true, showPulses = true, showSuperseded = true, showMini = true;
+let allRegions = false;   // draw every context region, not only the active node's (design-system.md Section 5)
 // Workspace boundaries: a DASHED outline per workspace, drawn only in the all-workspaces view.
 //
 // A separate layer from the hyperedge hulls above, and deliberately a different shape language -
@@ -2701,22 +2702,34 @@ function draw() {
   // not N large drawImage copies). Overlapping hulls blend naturally (C1: overlap = connective tissue).
   // While a node is active, its own hulls are emphasized and the rest fade. Labels are collected per hull.
   let hullLabels = [];
+  // Every label placed this frame - region names first, then node names - so the second pass avoids
+  // the first. Screen-space boxes {x, y, w, h}.
+  const labelBoxes = [];
   if (hyperMode && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
     const items = [];
     for (const h of hyperedges) {
+      const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
+      // Regions are the active node's contexts (design-system.md Section 5): drawn all at once they
+      // overlap into one blur, and a hub's five contexts all wore the hub's name. "all regions" in
+      // the view menu draws every one.
+      if (!allRegions && !hot) continue;
       const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
       if (ms.length < 3) continue;
       const g = hullGeom(ms);
       if (!g) continue;
-      const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
       // Legend-chip hover: does this context contain any highlighted member? Hulls without one fade,
       // so the highlighted type/relation stands out against the hull layer too (same inspection language).
       const lgHit = typeHl ? ms.some(m => m.type === typeHl)
         : edgeTypeHl ? ms.some(m => lgEndpoints.has(m.id))
         : false;
-      const rep = ms.reduce((a, m) => (m.degree||0) > (a.degree||0) ? m : a, ms[0]);   // hub = highest-degree member
-      items.push({ g, col: hyperColor(h.id), hot, lgHit, rep, size: ms.length });
+      // Named by its two best-connected members other than the active node, with the count, so the
+      // regions around one node read as what else is in them rather than as that node five times.
+      const named = ms.filter(m => !hlAnchor || m.id !== hlAnchor.id)
+        .sort((a, b) => (b.degree || 0) - (a.degree || 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .slice(0, 2).map(m => m.name);
+      const top = Math.min(...g.hull.map(p => p.y)) - g.r;
+      items.push({ g, col: hyperColor(h.id), hot, lgHit, text: named.join(", ") + " (" + ms.length + ")", top, size: ms.length });
     }
     const lgActive = !!(typeHl || edgeTypeHl);
     const paint = (it) => {
@@ -2724,7 +2737,8 @@ function draw() {
       ctx.globalAlpha = lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
         : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
       ctx.fillStyle = it.col; ctx.fill();
-      hullLabels.push({ cx: it.g.cx, cy: it.g.cy, text: it.rep.name + " (" + it.size + ")", col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
+      // The name sits above the region's upper edge, outside it, where no member's label is.
+      hullLabels.push({ cx: it.g.cx, cy: it.top, text: it.text, col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
     };
     for (const it of items) if (!it.hot) paint(it);   // active hulls painted last so they sit on top
     for (const it of items) if (it.hot) paint(it);
@@ -2741,16 +2755,18 @@ function draw() {
       // Region-name style: font scales with context size (bigger domain -> bigger name), sorted so the
       // largest / active contexts win placement; anything overlapping an already-placed one is skipped.
       const cand = hullLabels
-        .map(l => ({ l, px: l.cx*cam.s + cam.x, py: l.cy*cam.s + cam.y, fs: Math.min(30, Math.round(12 + Math.sqrt(l.size) * 2.2)) }))
+        .map(l => {
+          const fs = Math.min(30, Math.round(12 + Math.sqrt(l.size) * 2.2));
+          return { l, px: l.cx*cam.s + cam.x, py: l.cy*cam.s + cam.y - fs * 0.8, fs };
+        })
         .filter(o => o.px > -80 && o.px < innerWidth + 80 && o.py > -30 && o.py < innerHeight + 30)
         .sort((a, b) => (b.l.hot - a.l.hot) || (b.l.size - a.l.size));
-      const placed = [];
       for (const o of cand) {
         const l = o.l;
         ctx.font = (l.hot ? "600 " : "500 ") + o.fs + "px " + LABEL_FAMILY;   // measures the placement box
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
-        if (placed.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
-        placed.push({ x, y, w, h });
+        if (labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
+        labelBoxes.push({ x, y, w, h });
         // Blend into the map without a chip: a crisp background-color halo (a cutout that matches the
         // canvas) keeps the group-color name sharp over the hull fills; lower idle opacity lets it recede.
         // The label fades as one unit (drawLabel), so the halo no longer darkens its own glyphs.
@@ -2973,6 +2989,7 @@ function draw() {
     // Label thinning: everything when small (<=40) or zoomed in enough (cam.s>1.4); on a large graph,
     // only hubs (high degree >= cut) + hover/focus/active. Removes the hairball's wall of labels.
     const cut = (nodes.length <= 40 || cam.s > 1.4) ? 0 : Math.max(4, Math.round(nodes.length / 25));
+    const want = [];
     for (const n of nodes) {
       if (typeOff.has(n.type)) continue;
       // Legend hover: label exactly the highlighted set (bypasses the degree cut - hover is transient).
@@ -2983,8 +3000,20 @@ function draw() {
       if (!show) continue;
       const px = n.x*cam.s + cam.x, py = n.y*cam.s + cam.y, r = nodeRadius(n)*cam.s;
       if (px + r + 5 > innerWidth || px + r + 5 + 600 < 0 || py < -20 || py > innerHeight + 20) continue;   // off screen
-      ctx.globalAlpha = on ? 1 : 0.25;
-      drawLabel(n.name, "400", 12, (n === focus || n === hover) ? INK : INK2, "0px", 1.5, px + r + 5, py, "left");
+      want.push({ n, on, px: px + r + 5, py });
+    }
+    // Labels avoid each other and the region names (design-system.md Section 5): the focused and
+    // hovered node first, then by degree, and a label that would overlap one already placed is left
+    // out - its node is still there, and hovering it names it.
+    const rank = o => (o.n === focus ? 2 : 0) + (o.n === hover ? 1 : 0);
+    want.sort((a, b) => rank(b) - rank(a) || (b.n.degree || 0) - (a.n.degree || 0));
+    ctx.font = "400 12px " + LABEL_FAMILY;
+    for (const o of want) {
+      const w = ctx.measureText(o.n.name).width + 4, h = 15, x = o.px - 2, y = o.py - h / 2;
+      if (rank(o) === 0 && labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
+      labelBoxes.push({ x, y, w, h });
+      ctx.globalAlpha = o.on ? 1 : 0.25;
+      drawLabel(o.n.name, "400", 12, (o.n === focus || o.n === hover) ? INK : INK2, "0px", 1.5, o.px, o.py, "left");
     }
     ctx.globalAlpha = 1;
     // (Group / hull labels are drawn in their own pass right after the hulls - see drawHullLabels below.)
@@ -3227,6 +3256,7 @@ document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
+document.getElementById("regionsBtn").onclick = e => { allRegions = !allRegions; e.currentTarget.classList.toggle("on", allRegions); };
 // The contested pill opens the list of contested beliefs (the Review tab's first section).
 document.getElementById("contestedPill").onclick = () => {
   if (!dockREl.classList.contains("on")) toggleDock(false);
@@ -3237,8 +3267,8 @@ document.getElementById("contestedPill").onclick = () => {
 // step 1): a choice made once stays made. A preference, so it lives in this browser and nowhere else.
 // peers is left out on purpose: it switches itself on for a hub, so a stored "off" would fight that.
 {
-  const VIEW_PREFS = ["followBtn", "clusterBtn", "hyperBtn", "labelsBtn", "edgesBtn", "arrowsBtn",
-    "footBtn", "pulseBtn", "histBtn", "miniBtn"];
+  const VIEW_PREFS = ["followBtn", "clusterBtn", "hyperBtn", "regionsBtn", "labelsBtn", "edgesBtn",
+    "arrowsBtn", "footBtn", "pulseBtn", "histBtn", "miniBtn"];
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("supra.view") || "{}") || {}; } catch (_) { saved = {}; }
   for (const id of VIEW_PREFS) {
