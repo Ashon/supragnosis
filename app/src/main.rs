@@ -396,6 +396,8 @@ fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Ve
 /// What the viewer shows while a remote profile is active: which server the AI apps use, and that
 /// browsing it arrives with the network read tier (remote-server.md Section 5). Not an empty graph,
 /// which would read as "no knowledge" (P5).
+/// Its way back names the settings page, where the server choice lives (settings-page.md S4); the
+/// tray kept a Server submenu once and this line still pointed at it after the move.
 fn remote_html(r: &RemoteServer) -> String {
     let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let state = match (r.answering, r.credential_refused) {
@@ -404,7 +406,7 @@ fn remote_html(r: &RemoteServer) -> String {
         (false, _) => "it does not answer right now",
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#5c6472;margin-top:14px;font-size:11px">browsing a remote server's knowledge here arrives with a later release / tray: Server &gt; This Mac to switch back</div></div></body>"#,
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#7b8494;margin-top:14px;font-size:11px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
         name = esc(&r.name),
         url = esc(&r.url),
     )
@@ -413,7 +415,7 @@ fn remote_html(r: &RemoteServer) -> String {
 fn starting_html(status: &str) -> String {
     let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#5c6472;margin-top:6px;font-size:11px">log: ~/.supragnosis/log/app-daemon.err.log / tray: Restart Daemon</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#7b8494;margin-top:6px;font-size:11px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
     )
 }
 
