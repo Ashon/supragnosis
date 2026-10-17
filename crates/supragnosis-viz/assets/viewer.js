@@ -750,6 +750,46 @@ function markupOf(v) {
   return esc(String(v));
 }
 
+// --- Notices: every write answers (Principle 24) -------------------------------------------------
+// The console's writes used to drop the server's answer and wait for the next poll to change the
+// panel, so a refusal - a merge the fold blocks, the hub's read tier answering 403 - looked exactly
+// like a success that had not arrived yet. Each one now reports here. The settings page's toasts in
+// shape: a success leaves by itself, an error stays until it is dismissed, at most four at a time.
+// Built from text nodes, never markup: an error string can carry an entity name.
+const toastsEl = document.getElementById("toasts");
+function toast(kind, title, detail) {
+  if (!toastsEl) return;
+  const el = document.createElement("div");
+  el.className = "toast " + kind;
+  const tick = document.createElement("span"); tick.className = "tk";
+  const body = document.createElement("div"); body.className = "tb";
+  const t = document.createElement("div"); t.className = "tt"; t.textContent = title;
+  body.appendChild(t);
+  if (detail) { const d = document.createElement("div"); d.className = "td"; d.textContent = detail; body.appendChild(d); }
+  const close = document.createElement("button"); close.textContent = "x"; close.setAttribute("aria-label", "dismiss");
+  close.onclick = () => el.remove();
+  el.append(tick, body, close);
+  toastsEl.prepend(el);
+  if (kind === "ok") setTimeout(() => el.remove(), 4500);
+  while (toastsEl.children.length > 4) toastsEl.lastChild.remove();
+}
+// One console write: GET path+query (the viewer's writes are GETs on the 0600 socket - see the review
+// handler below), then a notice saying what happened. Returns the parsed answer, or null when the
+// write did not land.
+async function consoleWrite(path, query, said) {
+  let r;
+  try { r = await fetch(path + query, { cache: "no-store" }); }
+  catch (e) { toast("bad", "Could not reach the server", "Nothing was changed. Is the daemon running?"); return null; }
+  let body = null;
+  try { body = await r.json(); } catch (_) { /* a refusal without a JSON body */ }
+  if (!r.ok) {
+    toast("bad", r.status === 403 ? "This view is read-only" : "Refused", (body && body.error) || ("HTTP " + r.status));
+    return null;
+  }
+  toast("ok", said);
+  return body || {};
+}
+
 // Type glossary (T-Box) section body: entity types and relation types with their define_type
 // definitions. A type whose definition is contested (distinct definitions tie at the top tier -
 // IR5) shows the competing definitions with a confirm action, the same mediation as an entity kind.
@@ -954,7 +994,7 @@ function renderCuration() {
         let q = "?hyperedge=" + encodeURIComponent(row.dataset.hid);
         if (inp.value.trim()) q += "&name=" + encodeURIComponent(inp.value.trim());
         if (ws) q += "&workspace=" + encodeURIComponent(ws);
-        try { await fetch("/api/reify" + q, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
+        await consoleWrite("/api/reify", q, "Group named - it is a node now, linked to its members");
         await poll();   // the group node + member_of edges appear; the panel re-renders
       };
       form.append(inp, ok);
@@ -976,7 +1016,7 @@ function renderCuration() {
       // file the proposal into a workspace literally called "*" (the read endpoints normalize it,
       // the write endpoints do not).
       if (ws && ws !== "*" && ws !== "all") q += "&workspace=" + encodeURIComponent(ws);
-      try { await fetch("/api/propose_merge" + q, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
+      await consoleWrite("/api/propose_merge", q, "Merge proposed - it waits in Proposals for a verdict");
       await poll();   // the suggestion drops (now open); the proposal shows in the Proposals tab
     };
   });
@@ -1047,7 +1087,7 @@ function renderProposals() {
       const ws = wsInput.value.trim();
       if (b.dataset.act === "split") {
         const sq = "?merge=" + encodeURIComponent(b.dataset.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-        try { await fetch("/api/propose_split" + sq, { cache: "no-store" }); } catch (e) { /* poll re-syncs */ }
+        await consoleWrite("/api/propose_split", sq, "Un-merge proposed - it waits in Proposals for a verdict");
         refreshProposals();
         return;
       }
@@ -1055,7 +1095,8 @@ function renderProposals() {
       // No CSRF header needed: the socket (0600) admits no third-party origin - this page, proxied
       // into the desktop shell, is the only one on the surface - so there is no attacker origin for
       // a forged request to come from. The transport itself is the write gate.
-      try { await fetch("/api/review" + q, { cache: "no-store" }); } catch (e) { /* ignore */ }
+      await consoleWrite("/api/review", q, b.dataset.act === "merge"
+        ? "Accepted - your verdict is recorded" : "Rejected - your verdict is recorded");
       refreshProposals();
     };
   });
@@ -1647,7 +1688,7 @@ async function resolveBelief(obs) {
   const ws = wsInput.value.trim();
   const q = "?observation=" + encodeURIComponent(obs) + "&tier=human_confirmed"
     + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-  try { await fetch("/api/resolve" + q, { cache: "no-store" }); } catch (e) { /* transport hiccup - poll re-syncs */ }
+  await consoleWrite("/api/resolve", q, "Confirmed - this value is now human confirmed");
   await poll();   // re-fold: the ring drops, the panel updates, the proposal shows as merged
 }
 
