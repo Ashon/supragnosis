@@ -17,6 +17,10 @@ function catColor(i, edge) {
 }
 const OTHER = "#8e96a5", EDGE_OTHER = "#5c6472";   // defensive neutral color for types not in the map
 const EDGE = "#2b3345", EDGE_HI = "#f0c469", EDGE_OLD = "#4d4340";
+// A relation at rest is drawn in one neutral; its kind's color is for the active node's edges and a
+// relation kind the legend points at (docs/design-system.md Section 5). Thirty kinds in thirty hues
+// say nothing at a glance; one hue says "connected".
+const EDGE_NEUTRAL = "#6b7383";
 const EDGE_ALPHA = 0.42;         // edge base opacity (low - recedes in a dense graph; raised for the darker ink). On hover/focus, connected edges activate to 1.0
 // The node stroke is proportional to the marker radius (scales with the marker on zoom - a
 // consistent ratio) + a screen-px floor (so it does not vanish on zoom-out). It is a background-color
@@ -2824,7 +2828,8 @@ function draw() {
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
     // Color is by relation kind - it reveals what kind of connection this is. A superseded edge is EDGE_OLD (a past signal, dashed).
-    ctx.strokeStyle = e.valid_to ? EDGE_OLD : (edgeTypeColor[e.type] || EDGE_OTHER);
+    ctx.strokeStyle = e.valid_to ? EDGE_OLD
+      : (hot || edgeTypeHl === e.type) ? (edgeTypeColor[e.type] || EDGE_OTHER) : EDGE_NEUTRAL;
     ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // constant thickness on screen
     if (hot) {
       // Active edges show flow direction: marching dashes travel source -> target. Screen-constant
