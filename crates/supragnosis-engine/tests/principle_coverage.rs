@@ -589,10 +589,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (7, &[c(
         "the viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token",
-        Evidence::Deferred(
-            "design-system.md is specified, not built: the three files still differ in names and two \
-             values. Revisit when its Section 13 step 1 lands with the token test",
-        ),
+        // crates/supragnosis-viz/tests/design_tokens.rs: reads the three :root blocks.
+        Evidence::Scenario(&[
+            "the_surfaces_share_one_token_set",
+            "every_text_token_meets_4_5_on_every_surface",
+        ]),
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
@@ -2804,6 +2805,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
+    include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

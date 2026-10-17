@@ -13,13 +13,14 @@
     color-scheme: dark;
     --surface:#08090d; --panel:#10131b; --panel-2:#131722;
     --glass:rgba(13,16,23,0.92); --glass-deep:rgba(9,11,16,0.95);
-    /* --faint is text - placeholders, timestamps, meta lines. #5c6472 drew it at 3.3:1 on the
-       surface, under the 4.5:1 body text needs; #7b8494 is the landing's value (site/style.css),
-       5.3:1 here, and the settings page carries the same one. */
-    --ink:#e9e4d6; --ink2:#aab1bd; --muted:#8e96a5; --faint:#7b8494;
+    /* One vocabulary and one value per token with the settings page and the landing
+       (docs/design-system.md Section 3); the_surfaces_share_one_token_set holds the three together.
+       --faint is text - placeholders, timestamps, meta lines - so it meets 4.5:1 on every surface
+       token, --panel-3 on the settings page included. */
+    --ink:#e9e4d6; --ink2:#aab1bd; --muted:#8e96a5; --faint:#7f8898;
     --line:#222836; --line-soft:#1a1f2b; --border:#1e2431;
     --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
-    --gold-glass:rgba(217,165,68,0.12); --teal:#56b3a2;
+    --gold-glass:rgba(217,165,68,0.12); --ok:#56b3a2; --bad:#e07a5f;
     --line-hi:var(--gold-dim);
     --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",
@@ -90,9 +91,9 @@
   .toast { display:flex; gap:9px; align-items:flex-start; padding:9px 10px 9px 12px; border-radius:10px;
            border:1px solid var(--line); background:rgba(19,23,34,0.97); color:var(--ink);
            box-shadow:0 12px 32px rgba(0,0,0,0.45); font:12px/1.45 var(--sans); pointer-events:auto; }
-  .toast .tk { width:7px; height:7px; border-radius:50%; background:var(--teal); flex:none; margin-top:5px; }
-  .toast.bad { border-color:rgba(217,106,95,0.4); }
-  .toast.bad .tk { background:#d96a5f; }
+  .toast .tk { width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none; margin-top:5px; }
+  .toast.bad { border-color:rgba(224,122,95,0.4); }
+  .toast.bad .tk { background:var(--bad); }
   .toast .tb { flex:1; min-width:0; }
   .toast .tt { font-weight:500; }
   .toast .td { color:var(--muted); font-size:11.5px; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
@@ -105,7 +106,7 @@
   .dfrom { color:var(--muted); text-decoration:line-through; }
   .darr { color:var(--faint); }
   .dto { color:var(--gold-bright); }
-  .dsettled { color:var(--teal); font-size:10px; }
+  .dsettled { color:var(--ok); font-size:10px; }
   .dcreated { color:var(--accent); font-size:10px; }
   .dother { color:var(--muted); }
   /* Blocking check failures. Red-adjacent on purpose: this is the one thing in the panel that
@@ -409,7 +410,7 @@
   .tdot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:var(--muted); }
   .tdot.t-unverified { background:#5c6472; }
   .tdot.t-agent_extracted { background:var(--ink2); }
-  .tdot.t-host_signed { background:var(--teal); }
+  .tdot.t-host_signed { background:var(--ok); }
   .tdot.t-human_confirmed { background:var(--gold-bright); }
   .obs .otext { color:var(--ink); font:12px/1.45 var(--sans); opacity:.92;
                 overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; }
@@ -474,7 +475,7 @@
   #proposalsBody .pstate { font-size:9px; text-transform:uppercase; letter-spacing:.06em; padding:1px 7px;
                            border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:auto; }
   #proposalsBody .pstate.open { color:var(--gold-bright); border-color:var(--gold-dim); }
-  #proposalsBody .pstate.merged { color:var(--teal); border-color:rgba(86,179,162,0.4); }
+  #proposalsBody .pstate.merged { color:var(--ok); border-color:rgba(86,179,162,0.4); }
   #proposalsBody .prat { color:var(--ink2); font:12px/1.4 var(--sans); margin:2px 0; opacity:.9; }
   #proposalsBody .ptargets { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0; }
   #proposalsBody .atypes { display:flex; gap:4px; flex-wrap:wrap; margin:3px 0 1px; }
@@ -505,7 +506,7 @@
 .card .ocprop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:12px/1.4 var(--sans); }
 .card .ocprop .pkind { color:var(--ink); }
 .card .ocprop .pstate { font:10px/1 var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-.card .ocprop .pstate.merged { color:var(--teal); }
+.card .ocprop .pstate.merged { color:var(--ok); }
 .card .ocprop .pstate.blocked { color:var(--accent); }
 .card .echip.off { opacity:.5; cursor:default; text-decoration:line-through; }
 
@@ -530,8 +531,8 @@
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */
   /* A suspected secret is not housekeeping - it reads as an alert, above the hygiene signals. */
-  #curationBody .csec.hot { color:#d96a5f; }
-  #curationBody .grp.secret { border-left:2px solid #d96a5f; padding-left:7px; }
+  #curationBody .csec.hot { color:var(--bad); }
+  #curationBody .grp.secret { border-left:2px solid var(--bad); padding-left:7px; }
   #glossaryBody .gws { margin-left:6px; padding:0 4px; border:1px solid var(--line-soft);
                        border-radius:8px; color:var(--faint); font-size:9.5px; }
   /* Same visual language as the dock tabs, so the dialog reads as this application rather than a
@@ -563,12 +564,12 @@
   #settings .wsc:hover { border-color:var(--gold-dim); color:var(--ink); }
   #settings .wsc .x { color:var(--faint); }
   #settings .wsc:hover .x { color:var(--accent); }
-  #settings .wsc.armed { border-color:#d96a5f; color:#d96a5f; }
-  #settings .wsc.armed .x { color:#d96a5f; }
+  #settings .wsc.armed { border-color:var(--bad); color:var(--bad); }
+  #settings .wsc.armed .x { color:var(--bad); }
   #settings .none { color:var(--faint); font-style:italic; }
   #settings .note { margin-top:10px; padding-top:9px; border-top:1px solid var(--line-soft);
                   color:var(--faint); }
-  #settings .err { color:#d96a5f; margin-top:6px; }
+  #settings .err { color:var(--bad); margin-top:6px; }
   /* The entry point: a gear at the right end of the status bar, after the status text. */
   #statusbar #settingsBtn { margin-left:10px; width:18px; height:18px; padding:0; flex:none;
                             display:flex; align-items:center; justify-content:center;

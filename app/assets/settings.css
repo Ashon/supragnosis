@@ -3,16 +3,16 @@
    draws the page below the bar. Self-contained: the page's policy allows no remote style or font. */
 
 :root {
-  --surface: #08090d; --panel: #0e1118; --panel-2: #131722; --panel-3: #181d2a;
-  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #7b8494; /* text: 5.3:1, as the viewer and the landing */
+  --surface: #08090d; --panel: #10131b; --panel-2: #131722; --panel-3: #181d2a;
+  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #7f8898; /* text: 4.7:1 on --panel-3, the lowest pair (docs/design-system.md Section 3) */
   --line: #222836; --line-soft: #1a1f2b;
   --accent: #d9a544; --gold-bright: #f0c469; --gold-glass: rgba(217,165,68,0.12);
-  --gold-ring: rgba(217,165,68,0.35);
+  --gold-dim: rgba(217,165,68,0.35);
   --ok: #56b3a2; --ok-glass: rgba(86,179,162,0.12);
   --warn: #e0a24a; --warn-glass: rgba(224,162,74,0.12);
   --bad: #e07a5f; --bad-glass: rgba(224,122,95,0.12);
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  --sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
   --radius: 12px;
   color-scheme: dark;
 }
@@ -45,7 +45,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   color: var(--muted); transition: background-color 0.12s ease, color 0.12s ease;
 }
 .hclose:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
-.hclose:focus-visible { outline: 2px solid var(--gold-ring); outline-offset: 1px; }
+.hclose:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: 1px; }
 .hclose .i { width: 15px; height: 15px; }
 
 /* ---- Layout: a section sidebar beside one content pane, as the platform's own settings are laid out. */
@@ -63,7 +63,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 }
 .navitem:hover { background: rgba(255,255,255,0.035); color: var(--ink); }
 .navitem[aria-current="page"] { background: var(--gold-glass); color: var(--gold-bright); }
-.navitem:focus-visible { outline: 2px solid var(--gold-ring); outline-offset: -2px; }
+.navitem:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: -2px; }
 .navitem .tile {
   width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
   background: var(--panel-3); color: var(--ink2); flex: none;
@@ -134,8 +134,8 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   font: 500 12.5px/1 var(--sans); cursor: pointer; white-space: nowrap;
   transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
-.btn:hover:not(:disabled) { border-color: var(--gold-ring); color: var(--gold-bright); }
-.btn:focus-visible { outline: 2px solid var(--gold-ring); outline-offset: 2px; }
+.btn:hover:not(:disabled) { border-color: var(--gold-dim); color: var(--gold-bright); }
+.btn:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: 2px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #17130a; }
 .btn.primary:hover:not(:disabled) { background: var(--gold-bright); border-color: var(--gold-bright); color: #17130a; }
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted); padding: 0 8px; }
@@ -159,7 +159,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track::after { transform: translateX(16px); background: #17130a; }
-.switch input:focus-visible + .track { outline: 2px solid var(--gold-ring); outline-offset: 2px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--gold-dim); outline-offset: 2px; }
 .switch input:disabled { cursor: default; }
 .switch input:disabled + .track { opacity: 0.4; }
 
@@ -239,7 +239,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .input input::placeholder { color: var(--faint); }
-.input input:focus { border-color: var(--gold-ring); box-shadow: 0 0 0 3px rgba(217,165,68,0.12); }
+.input input:focus { border-color: var(--gold-dim); box-shadow: 0 0 0 3px rgba(217,165,68,0.12); }
 .field.invalid .input input { border-color: rgba(224,122,95,0.6); }
 .input .reveal { position: absolute; right: 4px; }
 .input input.with-reveal { padding-right: 38px; }
