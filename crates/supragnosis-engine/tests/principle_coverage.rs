@@ -543,6 +543,66 @@ const DREAMING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
 ];
 
+// docs/design-system.md Section 12 - one look, one set of parts, a map that shows who said it (U rows).
+const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "every console write - each path the read tier refuses as a verdict or a write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed",
+        // crates/supragnosis-viz/tests/http.rs: a source tripwire that reads the writes from the read
+        // tier's policy table and requires each to go through consoleWrite, which reports every branch.
+        Evidence::Scenario(&["every_console_write_reports_its_outcome"]),
+    )]),
+    (2, &[c(
+        "the map draws a node's trust from its effective tier, never a claimed one; the legend states what the ring reads, and a scope of one tier draws no rings and states the tier",
+        Evidence::Deferred(
+            "design-system.md is specified; the map draws no trust today. Revisit when its Section 13 \
+             step 2 lands with a source tripwire that the ring reads trust_tier",
+        ),
+    )]),
+    (3, &[c(
+        "a contested node is marked wherever it is drawn, at every zoom, label and focus state, and the status bar counts the loaded scope's contested nodes whatever the legend hides",
+        Evidence::Deferred(
+            "design-system.md is specified, not built. Revisit when its Section 13 step 2 lands with \
+             a tripwire that the badge and the count read `contested` outside every filter",
+        ),
+    )]),
+    (4, &[c(
+        "on the Review page a decision control appears only with its item's diff and checks on screen and decides that item alone; every open proposal is listed, and a generated candidate is left out only when its diff is computable and empty",
+        Evidence::Deferred(
+            "design-system.md is specified, not built. Revisit when its Section 13 step 3 lands and \
+             the Review page has a tripwire on its decision controls",
+        ),
+    )]),
+    (5, &[c(
+        "dream drafts are listed apart from published proposals and marked as this node's; only the person's act publishes or accepts one, and none is shown on a read tier",
+        Evidence::Deferred(
+            "design-system.md is specified, not built. Revisit when dreaming.md Section 12 step 5 \
+             lands, with the drafts in the Review page",
+        ),
+    )]),
+    (6, &[c(
+        "the viewer's search answers with the engine's ranking and mode label over a Read path: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, entity hits are canonical, and the MCP surface is unchanged",
+        Evidence::Deferred(
+            "design-system.md is specified, not built. Revisit when its Section 13 step 4 lands; the \
+             path is then in the read tier's policy table, which every_viewer_path_has_a_remote_policy \
+             holds to the router",
+        ),
+    )]),
+    (7, &[c(
+        "the viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token",
+        Evidence::Deferred(
+            "design-system.md is specified, not built: the three files still differ in names and two \
+             values. Revisit when its Section 13 step 1 lands with the token test",
+        ),
+    )]),
+    (8, &[c(
+        "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
+        Evidence::Deferred(
+            "design-system.md is specified, not built: the status bar has no pills yet. Revisit when \
+             its Section 13 step 3 lands with the pills",
+        ),
+    )]),
+];
+
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).
 const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -2325,6 +2385,12 @@ const FAMILIES: &[Family] = &[
         prefix: "DR",
         rows: DREAMING_REGISTRY,
     },
+    Family {
+        doc: "docs/design-system.md",
+        text: include_str!("../../../docs/design-system.md"),
+        prefix: "U",
+        rows: DESIGN_SYSTEM_REGISTRY,
+    },
 ];
 
 /// The invariant numbers a document declares under one prefix, first occurrence of each, in
@@ -2713,6 +2779,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
         include_str!("../../../docs/semantic-retrieval.md"),
     ),
     ("docs/dreaming.md", include_str!("../../../docs/dreaming.md")),
+    // Listed the day it was written. Its guards are source tripwires in the viz crate, the kind
+    // inspector.md's D1 guard set, plus a token test that reads the three stylesheets.
+    ("docs/design-system.md", include_str!("../../../docs/design-system.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no

@@ -37,7 +37,9 @@
   [`unmerge.md`](unmerge.md) (reversing an identity resolution, built),
   [`prompts.md`](prompts.md) (the MCP prompts, built - Section 8 steps 1-2),
   [`semantic-retrieval.md`](semantic-retrieval.md) (the embedding model in the prebuilt binary, built),
-  [`dreaming.md`](dreaming.md) (idle consolidation by a model, behind the gate, specified).
+  [`dreaming.md`](dreaming.md) (idle consolidation by a model, behind the gate, specified),
+  [`design-system.md`](design-system.md) (one look and one set of parts for the viewer, the app
+  and the landing, specified - Section 13 step 0 built).
 
 ---
 
