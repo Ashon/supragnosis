@@ -242,27 +242,33 @@ fn inspector_never_folds_a_contested_belief() {
     );
 }
 
-/// Every console write reports what happened (Principle 24). The five write paths used to be bare
-/// fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403, a merge
-/// the fold would block answering 400 with its reason - looked exactly like a success that had not
-/// arrived yet. A tripwire on the shape, like the two guards above: each write path the console calls
-/// appears in the source only as the first argument of `consoleWrite`, and `consoleWrite` reads the
-/// status and shows a notice on the refusal branch, the unreachable branch and the success branch.
-/// The settings dialog's `POST /api/peer/share` keeps its own inline error and is not one of these.
+/// design-system.md U1 (Principle 24): every console write reports what happened. The writes used to
+/// be bare fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403,
+/// a merge the fold would block answering 400 with its reason - looked exactly like a success that had
+/// not arrived yet. A tripwire on the shape, like the two guards above. The writes are read from the
+/// read tier's own policy table - every path it refuses as a verdict or a write - so a write added
+/// later is covered without anyone extending a list here. Each must appear in the viewer's source only
+/// as the first argument of `consoleWrite`, which reads the status and shows a notice on its refusal,
+/// unreachable and success branches. The node's own operations (the settings dialog's peer narrowing
+/// among them) are refused for another reason and keep their own error display.
 #[test]
 fn every_console_write_reports_its_outcome() {
+    use supragnosis_viz::remote::{Policy, POLICY, VERDICT, WRITE};
     let js = include_str!("../assets/viewer.js");
-    for path in [
-        "/api/review",
-        "/api/resolve",
-        "/api/reify",
-        "/api/propose_merge",
-        "/api/propose_split",
-    ] {
+    let writes: Vec<&str> = POLICY
+        .iter()
+        .filter(|(_, p)| matches!(p, Policy::Refused(r) if *r == VERDICT || *r == WRITE))
+        .map(|(path, _)| *path)
+        .collect();
+    assert!(writes.len() >= 5, "the policy table names the console's writes: {writes:?}");
+    for path in writes {
         let quoted = format!("\"{path}\"");
         let total = js.matches(&quoted).count();
         let reported = js.matches(&format!("consoleWrite({quoted}")).count();
-        assert!(total > 0, "viewer.js no longer calls {path}; update this list");
+        assert!(
+            total > 0,
+            "the read tier refuses {path} as a write, but viewer.js never calls it"
+        );
         assert_eq!(
             total, reported,
             "{path} must be written through consoleWrite, which reports the outcome - a bare fetch \
