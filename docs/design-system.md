@@ -252,9 +252,11 @@ On the Graph page:
   does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
   activity feed's passing rows sit inside the window at its upper left.
 - **The camera is one toolbar** at the window's lower right: view, zoom in, zoom out, fit. Under 760
-  pixels it stays at the top right, out of the sheets' way (Section 17). The minimap is off until View
-  turns it on. View's stored choices forget the minimap's once - any click stored every choice, so
-  most were never made - and View remembers it from then on.
+  pixels it stays at the top right, out of the sheets' way (Section 17). The minimap is on, above the
+  toolbar, until View turns it off; between 760 and 1200 pixels it gives way to a panel floating over
+  the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
+  once, since any click stored every choice and most were never made, and View remembers it from then
+  on.
 - **The status bar is the window's state**: the scope and its counts on the left; on the right,
   pills for what waits, what is contested, sync and semantic search, then the gear. A pill is tinted,
   not outlined.
@@ -500,8 +502,8 @@ proposal and the read tier.
 - **settings-page.md Section 3.0**: the title bar is still the viewer's on both pages, now without
   the glass and the rule; both drop them in step 7.
 - **The viewer's chrome** (steps 7-8): the docks stop floating and join the frame, their edge
-  handles become the title bar's panel toggles, the minimap starts off, and the boundaries' legend
-  moves into View.
+  handles become the title bar's panel toggles, the minimap moves above the camera toolbar, and the
+  boundaries' legend moves into View.
 - **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
   "this node" (Section 9). The read tier's answer is unchanged.
@@ -638,6 +640,10 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   cap and ran under both panels. Framing, the zoom buttons and the minimap's pan work in the window
   now, and the frame keeps room for the label that hangs right of a node, since the window's edge is
   hard.
+- **After step 7: the minimap starts on again.** Step 7 started it off to clear the corner; at the
+  author's request it starts on, above the toolbar, and View still turns it off. Stored choices from
+  0.6.0 and 0.6.1 held "off" for anyone who had clicked any View toggle, so they forget the minimap's
+  once more.
 - **After step 7: the footprint glow is centred on its node.** It was a disc dropped below the node,
   which read as a circle out of place. It is a light that fades out from the node's edge, which no
   one mistakes for a trust ring.

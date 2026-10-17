@@ -79,8 +79,8 @@ let showLabels = true, showEdges = true, showArrows = true;
 let flowPhase = 0;   // per-frame counter driving the marching-dash flow animation on active edges
 let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
-// The minimap is off until View turns it on (docs/design-system.md Section 6).
-let showFootprint = true, showPulses = true, showSuperseded = true, showMini = false;
+// The minimap is on until View turns it off (docs/design-system.md Section 6).
+let showFootprint = true, showPulses = true, showSuperseded = true, showMini = true;
 let allRegions = false;   // draw every context region, not only the active node's (design-system.md Section 5)
 // Workspace boundaries: a DASHED outline per workspace, drawn only in the all-workspaces view.
 //
@@ -2416,7 +2416,9 @@ function drawMinimap() {
   const x2 = Math.max(0.5, Math.min(MINI_W - 0.5, ((vw.r - cam.x) / cam.s) * k + ox));
   const y2 = Math.max(0.5, Math.min(MINI_H - 0.5, ((vw.b - cam.y) / cam.s) * k + oy));
   const w = Math.max(2, x2 - x1), h = Math.max(2, y2 - y1);
-  mctx.strokeStyle = GOLD; mctx.lineWidth = 1;
+  // Ink, not gold: with the whole graph in view the rect lies on the minimap's edge, and a gold frame
+  // is the decoration gold is not for (docs/design-system.md Section 4).
+  mctx.strokeStyle = INK; mctx.globalAlpha = 0.55; mctx.lineWidth = 1;
   if (round) {
     const lc = x1 <= 1, tc = y1 <= 1, rc = x2 >= MINI_W - 1, bc = y2 >= MINI_H - 1;
     const radii = [
@@ -3720,16 +3722,17 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
     "arrowsBtn", "footBtn", "pulseBtn", "histBtn", "miniBtn"];
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("supra.view") || "{}") || {}; } catch (_) { saved = {}; }
-  // Any click stored every choice, so a stored minimap is rarely one anyone made: forget it once,
-  // when the minimap started off (docs/design-system.md Section 6), and keep it from the next click.
-  if (saved.v !== 2) delete saved.miniBtn;
+  // Any click stored every choice, so a stored minimap is rarely one anyone made: 0.6.0 and 0.6.1
+  // started it off and stored that on the first click of any toggle. Forget it once more now that it
+  // starts on (docs/design-system.md Section 6), and keep it from the next click.
+  if (saved.v !== 3) delete saved.miniBtn;
   for (const id of VIEW_PREFS) {
     const b = document.getElementById(id);
     if (!b) continue;
     // Replay a stored choice through the button's own handler, so its state and side effects agree.
     if (typeof saved[id] === "boolean" && saved[id] !== b.classList.contains("on")) b.click();
     b.addEventListener("click", () => {
-      const now = { v: 2 };
+      const now = { v: 3 };
       for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
       try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
     });
