@@ -444,17 +444,48 @@ const SETTINGS_TABS = [
 ];
 let settingsTab = "about";
 
+// Tab lists (docs/design-system.md Section 10): the roles a screen reader announces, aria-selected on
+// the shown tab, and only that tab in the Tab order - the arrow keys, Home and End move between tabs.
+function markTabs(list, tabs, selected) {
+  list.setAttribute("role", "tablist");
+  for (const t of tabs) {
+    const on = t === selected;
+    t.setAttribute("role", "tab");
+    t.setAttribute("aria-selected", on ? "true" : "false");
+    t.tabIndex = on ? 0 : -1;
+  }
+}
+function arrowTabs(list) {
+  list.addEventListener("keydown", ev => {
+    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(ev.key)) return;
+    const tabs = [...list.querySelectorAll('[role="tab"]')];
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = ev.key === "Home" ? 0 : ev.key === "End" ? tabs.length - 1
+      : (i + (ev.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    ev.preventDefault();
+    tabs[j].click();
+    // A strip that re-renders on click replaces its buttons, so focus the selected one afresh.
+    (list.querySelector('[aria-selected="true"]') || tabs[j]).focus();
+  });
+}
+
 async function renderSettings() {
   const strip = document.getElementById("settingsTabs");
   const host = document.getElementById("settingsBody");
   strip.textContent = "";
+  let selected = null;
   for (const t of SETTINGS_TABS) {
     const b = document.createElement("button");
+    b.type = "button";
     b.className = "stab" + (t.id === settingsTab ? " on" : "");
     b.textContent = t.label;
     b.onclick = () => { settingsTab = t.id; renderSettings(); };
     strip.appendChild(b);
+    if (t.id === settingsTab) selected = b;
   }
+  markTabs(strip, [...strip.children], selected);
+  host.setAttribute("role", "tabpanel");
   host.textContent = "";
   const tab = SETTINGS_TABS.find(t => t.id === settingsTab) || SETTINGS_TABS[0];
   // The tab owns its own fetch and its own failure, so an unreachable surface empties one tab rather
@@ -3093,11 +3124,19 @@ try {
 // Dock tabs: clicking a tab shows only that panel (one at a time, fixed-height body - no upward growth),
 // and refreshes the newly active data panel.
 document.querySelectorAll(".dock .tabs").forEach(tabs => {
+  const dock = tabs.closest(".dock");
+  for (const t of tabs.querySelectorAll(".tab")) {
+    t.id = "tab-" + t.dataset.tab;
+    const panel = dock.querySelector(`.tabpanel[data-panel="${t.dataset.tab}"]`);
+    if (panel) { panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", t.id); }
+  }
+  markTabs(tabs, [...tabs.querySelectorAll(".tab")], tabs.querySelector(".tab.on"));
+  arrowTabs(tabs);
   tabs.addEventListener("click", ev => {
     const btn = ev.target.closest(".tab");
     if (!btn) return;
-    const dock = tabs.closest(".dock");
     tabs.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === btn));
+    markTabs(tabs, [...tabs.querySelectorAll(".tab")], btn);
     dock.querySelectorAll(".tabpanel").forEach(p => p.classList.toggle("on", p.dataset.panel === btn.dataset.tab));
     if (btn.dataset.tab === "glossary") refreshGlossary();
     else if (btn.dataset.tab === "peers") refreshPeers();
@@ -3106,6 +3145,7 @@ document.querySelectorAll(".dock .tabs").forEach(tabs => {
     else if (btn.dataset.tab === "log") refreshLog();
   });
 });
+arrowTabs(document.getElementById("settingsTabs"));
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
