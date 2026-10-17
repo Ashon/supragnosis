@@ -372,6 +372,9 @@ proposal and the read tier.
   words change. Its rules and D1-D7 do not.
 - **The viewer's dock**: Proposals and Review leave for the Review page; the Types tab's rows join the
   filters dock and the Peers tab's join Settings > Sync before those tabs go. The Log stays.
+- **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
+  remembered layout is keyed by (Section 5) and which a host is compared with before it is called
+  "this node" (Section 9). The read tier's answer is unchanged.
 
 ## 15. Closure map
 

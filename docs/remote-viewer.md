@@ -136,7 +136,8 @@ The page needs to know whether it is the local console or a principal's read-onl
 principal needs to know what they can see, and why some of it is closed. `/api/surface` answers
 both:
 
-- **Locally** it answers `{"surface": "local"}`, and the page behaves exactly as today.
+- **Locally** it answers `{"surface": "local", "node": "<host id>"}`, and the page behaves exactly as
+  today; the node was added for the layout the local console remembers (design-system.md Section 5).
 - **On the read tier** it gives:
   - the principal's name, and that the surface is read-only;
   - the workspace an omitted one resolves to;
