@@ -144,7 +144,7 @@
           <p>
             Ingest is free; canon is governed. Entity merges, trust promotions,
             and vocabulary changes travel through PR-like proposals that a human
-            reviews in the curation console - and the tier a verdict may grant
+            decides on the viewer's Review page - and the tier a verdict may grant
             depends on the surface it arrives on, so an agent-cast verdict cannot
             reach human-confirmed.
           </p>
@@ -260,21 +260,25 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
       <h2>Watch your agents learn.</h2>
       <figure class="shot">
         <div class="terminal-bar"><span class="terminal-title">supragnosis viewer - http over ~/.supragnosis/viz.sock</span></div>
-        <!-- Refreshing this capture: seed a workspace, run
-             `supragnosis serve --viz <sock>`, proxy the socket to TCP, then
-             screenshot 1600x900 @2x (headless Chromium works) and encode webp
-             into assets/viewer.webp. -->
+        <!-- Refreshing this capture: in a fresh HOME, run `supragnosis serve
+             --http <addr> --viz <sock>`, seed one workspace through MCP observe
+             (made-up content only - never a real store), open an entity_merge,
+             confirm a few observations from the viewer so rings show, proxy the
+             socket to TCP, then screenshot 1600x900 @2x (headless Chromium
+             works) and encode webp into assets/viewer.webp. -->
         <img src="assets/viewer.webp" width="1600" height="900" loading="lazy"
-             alt="The live ontology viewer: a force graph of entities and relations
-                  with labeled co-occurrence hulls, a legend of node and edge types
-                  on the left, and the curation console on the right showing an open
-                  entity_merge proposal with accept and reject buttons.">
+             alt="The live ontology viewer: a force graph of entities and relations,
+                  gold rings on the nodes a person has confirmed and a mark on one
+                  whose type is contested; node and edge types and the trust legend
+                  on the left, the Log of observations on the right, and a status
+                  bar counting two items to review and one contested node.">
         <figcaption>
           A seeded workspace in the live viewer: entities land as agents
-          observe, hulls shade co-occurrence contexts, and an entity_merge
-          proposal - two spelling variants of the same store - waits in the
-          curation console for a human verdict. All served on an owner-only
-          unix socket.
+          observe, and the Log lists each observation as it arrives. A ring
+          marks what a person has confirmed, a type two agents disagree on is
+          flagged, and the status bar counts what waits on the Review page -
+          here a merge of two spellings of one library. All served on an
+          owner-only unix socket.
         </figcaption>
       </figure>
     </section>
@@ -342,7 +346,7 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
             Ingest is free; promotion is gated. Changes to canon - tier
             promotions, entity merges, T-Box edits, recalls - flow through
             PR-like proposals, and a proposal is itself an observation:
-            signed, replayable, reviewed in the curation console.
+            signed, replayable, decided on the Review page.
           </p>
         </article>
         <article class="card">
@@ -511,7 +515,7 @@ supragnosis connect claude-desktop
           <ul class="checklist">
             <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid retrieval.</strong> Keyword search, plus semantic (fastembed ONNX) in a build with that feature; file-backed persistence, stdio MCP + HTTP daemon.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review in the curation console, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
+            <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review on the viewer's Review page, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated retrieval.</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>Remote servers and the read tier.</strong> One client setup for any server: AI apps reach this machine's daemon or a hub through the bridge. A hub admits principals with per-workspace grants over MCP, and serves its viewer read-only within them (phase 3.5, server side).</div></li>
             <li class="done"><span class="mark">[o]</span><div><strong>MCP prompts.</strong> <code>brief</code>, <code>what-do-we-know-about</code>, <code>curate</code> and <code>review-proposal</code>: a reading of the graph for the person, with the open decisions beside it, cited and never stored.</div></li>
