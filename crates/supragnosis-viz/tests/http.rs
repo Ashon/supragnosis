@@ -216,6 +216,30 @@ async fn the_viewer_search_answers_with_canonical_hits() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// The bar shows the engine's answer and makes none of its own (design-system.md Section 8): it asks
+/// /api/search, the map lights the entity ids that answer returned, and no name is matched against
+/// the typed text in the page - a second ranking would answer a person differently from the agent.
+#[test]
+fn the_search_bar_lights_only_what_the_engine_answered() {
+    let js = include_str!("../assets/viewer.js");
+    assert!(js.contains(r#"fetch("/api/search?q=""#), "the bar asks the search path");
+    let start = js.find("\nfunction activeSet(").expect("viewer.js no longer defines activeSet");
+    let rest = &js[start + 1..];
+    let body = &rest[..rest.find("\n}\n").expect("activeSet has no closing brace")];
+    assert!(
+        body.contains("if (searchLit) return { ns: searchLit, es: new Set() };"),
+        "the open search lights the answer's ids"
+    );
+    assert!(
+        !js.contains(".toLowerCase().includes(search"),
+        "no name is matched against the typed text in the page"
+    );
+    assert!(
+        js.contains(r#"searchAns.hits.filter(h => h.kind === "entity").map(h => h.id)"#),
+        "the lit ids are the answer's entity hits"
+    );
+}
+
 /// The read tier's search covers the reader's grants and nothing else (design-system.md U6,
 /// remote-viewer.md V3): `*` searches each granted workspace on its own and merges, so a workspace the
 /// reader may not read contributes no hit.

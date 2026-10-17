@@ -136,7 +136,7 @@ const typeOff = new Set();       // node types hidden from the legend
 const edgeTypeOff = new Set();   // edge kinds (relation kind) hidden from the legend
 let spiralN = 0;
 let drag = null, hover = null, focus = null;
-let searchTerm = "";
+let searchLit = null;   // the entity ids the open search answered with (Section 8); null while closed
 // Camera: cam = current (drawn), camT = target. Each frame, ease cam toward camT to make
 // zoom/pan/focus/fit smooth (removing instant jumps). Coordinates are CSS pixels (same system as mouse events).
 let DPR = 1;
@@ -733,11 +733,9 @@ function activeSet() {
     }
     return { ns, es };
   }
-  if (searchTerm) {
-    const ns = new Set();
-    for (const n of nodes) if (n.name.toLowerCase().includes(searchTerm)) ns.add(n.id);
-    return { ns, es: new Set() };
-  }
+  // The open search lights what the engine answered, not names that contain the typed text, so the
+  // list and the map give one answer (docs/design-system.md Section 8).
+  if (searchLit) return { ns: searchLit, es: new Set() };
   // A selected proposal's preview dims everything it does not touch, instead of ringing its
   // targets: rings belong to trust (docs/design-system.md Section 5). Its own overlay - the fold
   // arrows, the accented edges - is drawn on top.
@@ -3343,23 +3341,165 @@ addEventListener("mouseup", ev => {
   downPos = null;
 });
 
+// --- Search (docs/design-system.md Section 8, U6) -------------------------------------------------
+// The field asks /api/search, which calls the engine function behind MCP's search_knowledge, and the
+// list is what it answers, in its order: entities, then observations, under the label of the surface
+// that answered (P19). No ranking is made here - a second one would answer a person differently from
+// the agent beside them. Entity ids arrive canonical, so a hit is always a node the map can draw.
 const searchWrap = searchEl.closest(".searchwrap");
+const searchPop = document.getElementById("searchPop");
+const SEARCH_MODE = {
+  hybrid: ["keyword + meaning", "answered by the keyword and the semantic surface together"],
+  keyword: ["keyword only", "answered by the keyword surface alone - no semantic index here, so a miss is more likely a recall miss"],
+};
+let searchAns = null;    // { q, ws, mode, hits, note } or { q, ws, error }
+let searchRows = [];     // the hits in the order the list shows them
+let searchSel = 0, searchSeq = 0, searchTimer = 0;
+
+function searchQuery() { return searchEl.value.trim(); }
+// An answer is shown only for the text in the field and the scope on the map; a workspace switch
+// asks again rather than listing what another scope held.
+function searchFresh() { return !!searchAns && searchAns.q === searchQuery() && searchAns.ws === currentWs(); }
+function setSearchOpen(on) {
+  on = on && searchFresh();
+  searchPop.hidden = !on;
+  searchEl.setAttribute("aria-expanded", on ? "true" : "false");
+  searchLit = on && searchAns.hits
+    ? new Set(searchAns.hits.filter(h => h.kind === "entity").map(h => h.id))
+    : null;
+  requestFrame();
+}
+async function runSearch() {
+  const q = searchQuery();
+  const seq = ++searchSeq;
+  if (!q) { searchAns = null; renderSearch(); setSearchOpen(false); return; }
+  // The scope reads as the map's: the same workspace parameter /api/graph is asked with.
+  const ws = currentWs();
+  let ans;
+  try {
+    const r = await fetch("/api/search?q=" + encodeURIComponent(q) + (ws ? "&workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    const body = await r.json().catch(() => ({}));
+    ans = r.ok ? { q, ws, mode: body.mode, hits: body.hits || [], note: body.note }
+      : { q, ws, error: "search failed (" + r.status + ")" + (body.error ? " - " + body.error : "") };
+  } catch (e) {
+    ans = { q, ws, error: "search failed - the daemon did not answer" };
+  }
+  if (seq !== searchSeq) return;   // a newer query is on its way; this answer is for text no longer there
+  searchAns = ans;
+  searchSel = 0;
+  renderSearch();
+  setSearchOpen(document.activeElement === searchEl);
+}
+function searchNode(h) {
+  const n = h.kind === "entity" ? nodeById(h.id) : null;
+  return n && !typeOff.has(n.type) ? n : null;
+}
+function renderSearch() {
+  if (!searchAns) { searchRows = []; searchPop.innerHTML = html``; return; }
+  if (searchAns.error) {
+    searchRows = [];
+    searchPop.innerHTML = html`<div class="sp-note bad">${searchAns.error}</div>`;
+    return;
+  }
+  const ents = searchAns.hits.filter(h => h.kind === "entity");
+  const obs = searchAns.hits.filter(h => h.kind === "observation");
+  searchRows = [...ents, ...obs];
+  const [modeWord, modeWhy] = SEARCH_MODE[searchAns.mode] || [String(searchAns.mode || "?"), ""];
+  const row = (h, i) => {
+    const on = i === searchSel ? " on" : "";
+    if (h.kind === "observation")
+      return html`<button type="button" class="sp-row${on}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}"><span class="sp-snip">${h.snippet}</span></button>`;
+    const n = searchNode(h);
+    // An entity the answer holds but this view does not draw (its type is switched off, or the loaded
+    // graph predates it) stays listed - it is part of the answer - and says why it cannot be focused.
+    return html`<button type="button" class="sp-row${on}${n ? "" : " off"}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}">${
+      n ? html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>` : ""}<span class="sp-name">${n ? n.name : h.snippet}</span>${
+      n ? html`<span class="sp-k">${n.type}</span>` : html`<span class="sp-k">not on the map in this view</span>`}</button>`;
+  };
+  const count = searchAns.hits.length;
+  searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode" title="${modeWhy}">${modeWord}</span></div>${
+    ents.length ? [html`<div class="sp-sec">Entities</div>`, ents.map((h, i) => row(h, i))] : ""}${
+    obs.length ? [html`<div class="sp-sec">Observations</div>`, obs.map((h, i) => row(h, ents.length + i))] : ""}${
+    count ? "" : html`<div class="sp-note">${searchAns.note || "no hits - absence is unknown, not a negation"}</div>`}`;
+  searchPop.querySelectorAll(".sp-row").forEach(b => {
+    // mousedown keeps the field focused, so the click below is the choice and not a blur first.
+    b.onmousedown = ev => ev.preventDefault();
+    b.onclick = () => chooseSearch(Number(b.dataset.i));
+  });
+  searchEl.setAttribute("aria-activedescendant", searchRows.length ? "sp" + searchSel : "");
+}
+function moveSearch(d) {
+  if (!searchRows.length) return;
+  searchSel = (searchSel + d + searchRows.length) % searchRows.length;
+  searchPop.querySelectorAll(".sp-row").forEach(b => {
+    const on = Number(b.dataset.i) === searchSel;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+    if (on) b.scrollIntoView({ block: "nearest" });
+  });
+  searchEl.setAttribute("aria-activedescendant", "sp" + searchSel);
+}
+async function chooseSearch(i) {
+  const h = searchRows[i];
+  if (!h) return;
+  if (h.kind === "entity") {
+    const n = searchNode(h);
+    if (!n) return;   // listed, not drawn: the row already says so
+    closeSearch();
+    if (reviewOpen()) location.hash = "";
+    focus = n; renderDetail(n); focusView(n);
+    return;
+  }
+  // An observation opens its card - from the Log's rows when they hold it, else read once - and the
+  // canvas frames the entities it asserts.
+  let o = (obsLog || []).find(x => x.id === h.id);
+  if (!o) {
+    const ws = currentWs();
+    try {
+      const r = await fetch("/api/observations" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+      if (r.ok) { const l = await r.json(); if (Array.isArray(l)) o = l.find(x => x.id === h.id); }
+    } catch (e) { /* reported below */ }
+  }
+  if (!o) { toast("bad", "Could not open the observation", "the log of this scope did not hold " + h.id.slice(0, 10)); return; }
+  closeSearch();
+  if (reviewOpen()) location.hash = "";
+  showObsCard(o);
+  const asserted = (o.entities || []).map(e => nodeById(e.id)).filter(Boolean);
+  if (asserted.length) { fitView(asserted, 140); userMoved = true; }
+}
+function closeSearch() { setSearchOpen(false); searchEl.blur(); }
+
 searchEl.addEventListener("input", () => {
-  searchTerm = searchEl.value.trim().toLowerCase();
   // Keep the "/" badge clear of the text once the field carries a term (CSS .searchwrap.filled).
   // Optional: the badge is decoration, so losing its wrapper must never break search itself.
   searchWrap?.classList.toggle("filled", searchEl.value !== "");
+  // The list of a query no longer in the field is not shown, and the map stops lighting it.
+  setSearchOpen(false);
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 160);
 });
+searchEl.addEventListener("focus", () => {
+  if (searchQuery() && !searchFresh()) runSearch(); else setSearchOpen(true);
+});
+searchEl.addEventListener("blur", () => setSearchOpen(false));
 searchEl.addEventListener("keydown", ev => {
-  if (ev.key === "Enter" && searchTerm) {
-    const hits = nodes.filter(n => n.name.toLowerCase().includes(searchTerm));
-    if (hits.length) { fitView(hits, 140); userMoved = true; }
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    if (!searchPop.hidden) moveSearch(ev.key === "ArrowDown" ? 1 : -1);
+    else if (searchFresh()) setSearchOpen(true);
+    else if (searchQuery()) runSearch();
+  } else if (ev.key === "Enter") {
+    ev.preventDefault();
+    clearTimeout(searchTimer);
+    // Enter on text the list has not answered yet asks first, then takes the top row.
+    if (searchFresh()) chooseSearch(searchSel);
+    else if (searchQuery()) runSearch().then(() => { if (searchFresh()) chooseSearch(0); });
   } else if (ev.key === "Escape") {
     // Hand the keyboard back to the canvas, so "/" -> type -> Escape is a closed loop.
     // stopPropagation: the window handler reads Escape as "dismiss the obs card / view popover",
     // which is not what leaving the search field should do.
     ev.stopPropagation();
-    searchEl.blur();
+    closeSearch();
   }
 });
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
@@ -3408,6 +3548,13 @@ viewBtn.onclick = ev => { ev.stopPropagation(); setViewPop(!viewPop.classList.co
 document.addEventListener("click", ev => { if (viewPop.classList.contains("on") && !viewPop.contains(ev.target)) setViewPop(false); });
 // [ / ] toggle the docks, "/" jumps to search - but never while typing in a field.
 window.addEventListener("keydown", e => {
+  // Cmd+K (Ctrl+K off the Mac) opens search from anywhere, a field included - it types nothing.
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    searchEl.focus();
+    searchEl.select();
+    return;
+  }
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.key === "[") toggleDock(true);
   else if (e.key === "]") toggleDock(false);
