@@ -565,10 +565,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (4, &[c(
         "on the Review page a decision control appears only with its item's diff and checks on screen and decides that item alone; every open proposal is listed, and a generated candidate is left out only when its diff is computable and empty",
-        Evidence::Deferred(
-            "design-system.md is specified, not built. Revisit when its Section 13 step 4 lands and \
-             the Review page has a tripwire on its decision controls",
-        ),
+        // crates/supragnosis-viz/tests/http.rs: reviewDecide's guards and its call sites.
+        Evidence::Scenario(&["a_review_decision_takes_one_item_with_its_diff_on_screen"]),
     )]),
     (5, &[c(
         "dream drafts are listed apart from published proposals and marked as this node's; only the person's act publishes or accepts one, and none is shown on a read tier",
