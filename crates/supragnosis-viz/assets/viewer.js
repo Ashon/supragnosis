@@ -324,6 +324,7 @@ function applyGraph(g) {
   for (const e of edges) if (e.a.type !== e.b.type) { bridgeSet.add(e.a.id); bridgeSet.add(e.b.id); }
   assignColors();
   renderLegend();
+  noteTrustAndContest();
   // Keep the federation panel fresh while it is open (hub health / diff / peers move on their own).
   const peersPanel = document.querySelector('.tabpanel[data-panel="peers"]');
   if (peersPanel && peersPanel.classList.contains("on")) refreshPeers();
@@ -684,7 +685,67 @@ function activeSet() {
     for (const n of nodes) if (n.name.toLowerCase().includes(searchTerm)) ns.add(n.id);
     return { ns, es: new Set() };
   }
+  // A selected proposal's preview dims everything it does not touch, instead of ringing its
+  // targets: rings belong to trust (docs/design-system.md Section 5). Its own overlay - the fold
+  // arrows, the accented edges - is drawn on top.
+  if (proposalSel) {
+    const touched = proposalSel.kind === "entity_merge"
+      ? [proposalSel.into, ...(proposalSel.targets || [])].map(nodeById).filter(Boolean)
+      : affectedNodes(proposalSel);
+    if (touched.length) {
+      const ns = new Set(touched.map(n => n.id)), es = new Set();
+      for (let i = 0; i < edges.length; i++) if (ns.has(edges[i].a.id) || ns.has(edges[i].b.id)) es.add(i);
+      return { ns, es };
+    }
+  }
   return null;
+}
+
+// --- Trust and contest on the map (docs/design-system.md Section 5, U2 and U3) -------------------
+// The ring is the node's trust_tier: the highest EFFECTIVE tier among the observations supporting it,
+// receiver-evaluated (resolution.md Section 3) - the trust of its best support, not of its winning
+// value. When the loaded scope has one tier the map draws no ring and the legend says which, as the
+// inspector's scope line does; otherwise every node shows its tier and Agent, the default, is no ring.
+const TIER_NAME = { unverified: "Unverified", agent_extracted: "Agent", host_signed: "Host signed", human_confirmed: "Human confirmed" };
+let trustUniform = null;     // the one tier of the loaded scope, or null when tiers differ
+let contestedCount = 0;      // contested nodes in the loaded scope, whatever the legend hides (U3)
+function noteTrustAndContest() {
+  const tiers = new Set(nodes.map(n => n.trust_tier));
+  trustUniform = nodes.length && tiers.size === 1 ? [...tiers][0] : null;
+  contestedCount = nodes.reduce((k, n) => k + (n.contested ? 1 : 0), 0);
+  renderTrustLegend();
+  const pill = document.getElementById("contestedPill");
+  if (pill) {
+    pill.hidden = contestedCount === 0;   // absent only for a known zero (U8)
+    pill.textContent = contestedCount + " contested";
+  }
+}
+function renderTrustLegend() {
+  const host = document.getElementById("legendTrust");
+  if (!host) return;
+  host.textContent = "";
+  for (const t of ["unverified", "agent_extracted", "host_signed", "human_confirmed"]) {
+    const el = document.createElement("span");
+    el.className = "tlg" + (trustUniform && trustUniform !== t ? " off" : "");
+    const sw = document.createElement("span"); sw.className = "tsw t-" + t;
+    el.append(sw, document.createTextNode(TIER_NAME[t]));
+    host.appendChild(el);
+  }
+  const note = document.createElement("div");
+  note.className = "tnote";
+  note.textContent = trustUniform
+    ? "All here: " + TIER_NAME[trustUniform] + ", so no node is ringed."
+    : "A ring is the highest trust among the sources that support a node. Agent has none.";
+  host.appendChild(note);
+}
+function trustRing(n, r) {
+  const t = trustUniform ? null : n.trust_tier;
+  if (!t || t === "agent_extracted") return;
+  ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
+  if (t === "unverified") { ctx.setLineDash([3/cam.s, 3/cam.s]); ctx.lineWidth = 1.4/cam.s; ctx.strokeStyle = OTHER; }
+  else if (t === "host_signed") { ctx.lineWidth = 1.2/cam.s; ctx.strokeStyle = INK; }
+  else { ctx.lineWidth = 2.2/cam.s; ctx.strokeStyle = EDGE_HI; }
+  ctx.stroke(); ctx.setLineDash([]);
 }
 
 async function poll() {
@@ -2793,33 +2854,45 @@ function draw() {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : true;
-    ctx.globalAlpha = on ? 1 : 0.12;
+    const base = on ? 1 : 0.12;
     const r = nodeRadius(n);
+    // Under the node: the selection's halo and this session's footprint glow - soft discs, so the
+    // rings stay trust's alone (docs/design-system.md Section 5).
+    if (n === anchor) {
+      ctx.globalAlpha = base * 0.2; ctx.fillStyle = INK;
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 8, 0, 7); ctx.fill();
+    }
+    if (showFootprint && footprint.has(n.id)) {
+      ctx.globalAlpha = base * 0.35; ctx.fillStyle = TEAL;
+      ctx.beginPath(); ctx.arc(n.x, n.y + r * 0.35, r + 4, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = base;
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
     ctx.fillStyle = typeColor[n.type] || OTHER; ctx.fill();
     // Default stroke (background-color halo): sharpens the node boundary and separates it from edges/neighbors (visibility).
     // Being the background color, it stays a cutout that matches the background even when the theme changes.
     ctx.lineWidth = nodeStrokeW(n); ctx.strokeStyle = SURFACE; ctx.stroke();
-    if (n === anchor) { ctx.lineWidth = 2.5/cam.s; ctx.strokeStyle = INK; ctx.stroke(); }
-    // Conversation footprint: nodes this session touched are marked with a persistent thin teal ring (footprint toggle).
-    if (showFootprint && footprint.has(n.id)) {
-      ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
-      ctx.lineWidth = 1.5/cam.s; ctx.strokeStyle = TEAL; ctx.stroke();
-    }
-    // Group mode: bridge nodes (connected to another group) are marked with a faint ring - cross-group transit points.
+    trustRing(n, r);
+    // Group mode: a bridge node (linked to another group) carries a small square at its upper left -
+    // a cross-group transit point, marked without a ring.
     if (clusterMode && bridgeSet.has(n.id)) {
-      ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, 7);
-      ctx.lineWidth = 2/cam.s; ctx.strokeStyle = INK; ctx.stroke();
+      const q = 5 / cam.s;
+      ctx.fillStyle = INK; ctx.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
     }
-    // Contested belief (resolution.md R6): distinct kind values tie at the top trust tier, so the
-    // current winner stands on recency alone - a dashed amber ring invites mediation (click the node,
-    // the inspector shows the competing values with a confirm action).
-    if (n.contested) {
-      ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, 7);
-      ctx.setLineDash([4/cam.s, 3/cam.s]);
-      ctx.lineWidth = 2/cam.s; ctx.strokeStyle = GOLD; ctx.stroke();
-      ctx.setLineDash([]);
-    }
+  }
+  // Contested beliefs (resolution.md R6): a badge at the node's upper right, drawn in its own pass at
+  // full strength, so neither focus dimming nor label thinning can mute it (U3). The inspector shows
+  // the competing values with the mediation act.
+  ctx.globalAlpha = 1;
+  for (const n of nodes) {
+    if (!n.contested || typeOff.has(n.type)) continue;
+    const r = nodeRadius(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
+    ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
+    ctx.fillStyle = SURFACE; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "700 " + (11 / cam.s) + "px " + LABEL_FAMILY;
+    ctx.fillText("!", bx, by + 0.5 / cam.s);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
   // Event pulses (nodes the agent touched) - an expanding, fading ring. rAF always runs, so it keeps
   // animating even after cooling.
@@ -2838,14 +2911,14 @@ function draw() {
 
   // Proposal preview (belief-diff visualization): when a proposal is selected, show on the graph what it
   // would change. For entity_merge: a dashed arrow from each fold-away target to the canonical `into`,
-  // the target's incident edges accented (they rewire), a ring on each target and a canonical ring on
-  // `into`. For an open proposal both nodes are still present (a before-preview); for a merged one the
+  // and the target's incident edges accented (they rewire); everything the merge does not touch is
+  // dimmed by activeSet, and no node is ringed - rings are trust's (design-system.md Section 5). For an open proposal both nodes are still present (a before-preview); for a merged one the
   // targets are already folded away, so only the canonical is highlighted (the result).
   if (proposalSel && proposalSel.kind === "entity_merge") {
     const into = nodeById(proposalSel.into);
     const tgts = (proposalSel.targets || []).map(nodeById).filter(n => n && (!into || n.id !== into.id));
     const tgtIds = new Set(tgts.map(n => n.id));
-    const ACC = GOLD, CANON = TEAL;
+    const ACC = GOLD;
     ctx.setLineDash([5/cam.s, 4/cam.s]);
     for (const e of edges) {   // edges that will rewire onto the canonical
       if (tgtIds.has(e.a.id) || tgtIds.has(e.b.id)) {
@@ -2856,7 +2929,6 @@ function draw() {
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     for (const t of tgts) {
-      ctx.beginPath(); ctx.arc(t.x, t.y, nodeRadius(t) + 4, 0, 7); ctx.lineWidth = 2.5/cam.s; ctx.strokeStyle = ACC; ctx.stroke();
       if (into) {   // fold arrow target -> into, with an arrowhead near into
         const dx = into.x - t.x, dy = into.y - t.y, d = Math.hypot(dx, dy) || 1, ux = dx/d, uy = dy/d;
         const tipx = into.x - ux*(nodeRadius(into) + 6), tipy = into.y - uy*(nodeRadius(into) + 6);
@@ -2870,28 +2942,22 @@ function draw() {
         ctx.closePath(); ctx.fill();
       }
     }
-    if (into) {
-      ctx.beginPath(); ctx.arc(into.x, into.y, nodeRadius(into) + 6, 0, 7); ctx.lineWidth = 3/cam.s; ctx.strokeStyle = CANON; ctx.stroke();
-    }
     ctx.globalAlpha = 1;
   }
 
   // Proposal preview - T-Box change (belief-diff hint via affected_types): accent every edge whose
-  // relation kind is being (re)defined and ring every node whose entity type is. A tbox_change edits
+  // relation kind is being (re)defined; the nodes whose entity type is stay lit while activeSet dims the
+  // rest, and none is ringed (design-system.md Section 5). A tbox_change edits
   // type definitions, which are edge kinds / node types (not first-class nodes), so the change shows as
   // a highlight over the members of those types rather than as a fold arrow. Kinds hidden via the legend
   // stay hidden (respect typeOff/edgeTypeOff) so the preview never contradicts the visible graph.
   if (proposalSel && proposalSel.affected_types && proposalSel.affected_types.length) {
-    const { rel, ent } = affectedTypeSets(proposalSel);
+    const { rel } = affectedTypeSets(proposalSel);
     const ACC = GOLD;
     ctx.strokeStyle = ACC; ctx.globalAlpha = 0.95; ctx.lineWidth = 2.5/cam.s;
     if (rel.size) for (const e of edges) {
       if (typeOff.has(e.a.type) || typeOff.has(e.b.type) || edgeTypeOff.has(e.type)) continue;
       if (rel.has(e.type)) { ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke(); }
-    }
-    if (ent.size) for (const n of nodes) {
-      if (typeOff.has(n.type)) continue;
-      if (ent.has(n.type)) { ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n) + 4, 0, 7); ctx.stroke(); }
     }
     ctx.globalAlpha = 1;
   }
@@ -3156,6 +3222,12 @@ document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
+// The contested pill opens the list of contested beliefs (the Review tab's first section).
+document.getElementById("contestedPill").onclick = () => {
+  if (!dockREl.classList.contains("on")) toggleDock(false);
+  const tab = document.getElementById("tab-review");
+  if (tab) tab.click();
+};
 // The view menu's choices persist, as the docks' open state does (docs/design-system.md Section 13
 // step 1): a choice made once stays made. A preference, so it lives in this browser and nowhere else.
 // peers is left out on purpose: it switches itself on for a hub, so a stored "off" would fight that.

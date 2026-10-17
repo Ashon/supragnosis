@@ -592,6 +592,22 @@
   #statusbar #settingsBtn svg { width:14px; height:14px; fill:none; stroke:currentColor;
                                 stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   #statusbar #settingsBtn:hover { color:var(--gold-bright); }
+  /* The Trust legend: the four ring styles the map draws (design-system.md Section 5), and what a
+     ring reads. A tier the scope does not hold is dimmed when the scope holds only one. */
+  #legendTrust { display:flex; flex-wrap:wrap; gap:4px 12px; margin:2px 0 6px; }
+  .tlg { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink2); }
+  .tlg.off { opacity:0.38; }
+  .tsw { width:12px; height:12px; border-radius:50%; background:var(--panel-2); box-sizing:border-box; }
+  .tsw.t-unverified { border:1.5px dashed var(--muted); }
+  .tsw.t-agent_extracted { border:1px solid transparent; }
+  .tsw.t-host_signed { border:1.5px solid var(--ink); }
+  .tsw.t-human_confirmed { border:2px solid var(--gold-bright); }
+  .tnote { flex-basis:100%; color:var(--faint); font:12px/1.4 var(--sans); }
+  /* A status pill: a count that needs reading, on the status bar's right (Section 6). */
+  #statusbar .spill { margin-left:8px; padding:1px 9px; border-radius:999px; font:500 11px/1.5 var(--sans);
+                      background:none; border:1px solid var(--line); color:var(--ink2); white-space:nowrap; }
+  #statusbar .spill.bad { color:var(--bad); border-color:rgba(224,122,95,0.45); }
+  #statusbar .spill:hover { border-color:var(--bad); color:var(--bad); }
   /* Reduced motion (docs/design-system.md Section 10): nothing moves - no spinner turning, no docks
      sliding, no feed rows fading in and out (a row simply stays until it is removed). The canvas half -
      pulses, marching dashes, the camera - is in viewer.js under REDUCED_MOTION, and the layout already

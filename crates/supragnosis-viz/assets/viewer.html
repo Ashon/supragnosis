@@ -38,6 +38,8 @@
     <div id="legendNodes"></div>
     <div class="rsec">Edge types <span class="ct" id="edgeCt"></span></div>
     <div id="legendEdges"></div>
+    <div class="rsec">Trust</div>
+    <div id="legendTrust"></div>
     <div class="rsec">Boundaries<kbd class="keyhint" title="press b to cycle workspace / origin / off">b</kbd></div>
     <div id="legendBoundary"></div>
   </div>
@@ -64,6 +66,9 @@
      answers here, success or refusal. Polite, so a screen reader hears it without losing its place. -->
 <div id="toasts" role="status" aria-live="polite"></div>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span>
+  <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (design-system.md
+       U3); absent only when there are none (U8). Opens the Review tab, which lists them. -->
+  <button id="contestedPill" class="spill bad" type="button" hidden title="contested beliefs in this scope - open the list"></button>
   <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
        being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->
   <!-- The gear is Lucide's "settings" icon (ISC, https://lucide.dev), the set the desktop app uses.
