@@ -3,12 +3,14 @@
 > The viewer, the desktop shell's own pages and the landing are one product drawn three ways. This
 > document fixes what they share - the tokens, the type, the parts - and the places where a rendering
 > choice carries a principle stake: how the map draws trust and contradiction, where a decision is
-> made, what the viewer's search answers with, what an absent indicator means, and how a write reports
-> back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
+> made, what the viewer's search answers with, what an absent indicator means, how a write reports
+> back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
+> for the detail panel stand unchanged.
 >
-> Status: **built - Section 13 steps 0-6**: the fixes that needed no document, the tokens and the
-> foundations, the map, the places, the Review page, search, and the landing's picture. Dream drafts
-> join the Review page with dreaming.md Section 12 step 5 (U5).
+> Status: **Section 13 steps 0-6 built, steps 7-8 specified**: the fixes that needed no document, the
+> tokens and the foundations, the map, the places, the Review page, search, and the landing's picture
+> are built; steps 7 and 8 draw the three surfaces with surfaces instead of lines (Section 4). Dream
+> drafts join the Review page with dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -44,6 +46,22 @@ reported nothing, type colors followed the view's order, faint text measured 3.3
 the inspector, the dock's tab names were cut, and the shell's splash pointed at tray items that had
 moved. What remains carries principle stakes, which is why it is written down before it is built.
 
+**Measured again after step 6**, on the landing's seeded store at 1600x900: the parts were right and
+the drawing was heavy.
+
+- **Lines everywhere.** viewer.css drew a visible line in 53 declarations (a border whose value is
+  not none, zero or transparent): every dock, chip, legend entry, row, pill and camera button and the
+  minimap had a border of its own, inside a bordered dock. The settings page drew 12 and the landing
+  19.
+- **Gold everywhere.** Six section headings, the minimap's frame, every hover and the pills' outlines
+  were the gold of the human-confirmed ring, and a gold glow lit the map's top, so the one gold that
+  says something about knowledge did not stand out. The headings were 11px uppercase mono with wide
+  tracking.
+- **The map surrounded.** Six objects sat around and over it: the header, two floating docks, the
+  status bar, four stacked camera buttons and the minimap. At 1440 pixels the docks left the map 866.
+- **Region names shouted.** A focused hub's region names were drawn at up to 30px, the active node's
+  in bold, and ran over one another and over the nodes they named.
+
 ## 2. What this is NOT
 
 **It is not a change to what the server decides.** No fold, check, tier or verdict changes. One read
@@ -64,14 +82,15 @@ One vocabulary, the one the viewer and the settings page already share, with one
 | Token | Value | For |
 |---|---|---|
 | `--surface` | `#08090d` | the canvas and the page ground |
-| `--panel` | `#10131b` | panels, sheets, cards |
-| `--panel-2` | `#131722` | raised controls, hover |
-| `--panel-3` | `#181d2a` | icon wells and badges on a raised control |
-| `--line` / `--line-soft` | `#222836` / `#1a1f2b` | rules and borders; never text |
+| `--panel` | `#10131b` | the frame: the header, the panels, the sheets and the status bar |
+| `--panel-2` | `#161a23` | controls, chips and rows on a panel |
+| `--panel-3` | `#1d222d` | hover, and wells on a control |
+| `--select` | `#2a2826` | a selected item: the accent at 10% over `--panel-2`, opaque so its text is measured |
+| `--line` / `--line-soft` | `#222836` / `#1a1f2b` | the few lines Section 4 keeps; never text, never an area's edge |
 | `--ink` | `#e9e4d6` | primary text |
 | `--ink2` | `#aab1bd` | body text |
 | `--muted` | `#8e96a5` | secondary text |
-| `--faint` | `#7f8898` | meta text, placeholders |
+| `--faint` | `#868f9f` | meta text, placeholders |
 | `--accent` / `--gold-bright` | `#d9a544` / `#f0c469` | the accent, and human-confirmed |
 | `--ok` | `#56b3a2` | success, connected, healthy |
 | `--warn` | `#e0a24a` | needs attention |
@@ -82,18 +101,22 @@ the viewer's `--teal` becomes `--ok`, and its literal `#d96a5f` becomes `--bad`.
 the tokens it uses; the core - `--surface`, `--panel`, `--line`, `--ink`, `--muted`, `--faint`,
 `--accent` - is declared by all three. Every text token measures at least 4.5:1 on every surface
 token. `--faint` moves once more for that, from step 0's `#7b8494` (4.46:1 on `--panel-3`) to
-`#7f8898`, whose lowest pair is 4.71:1.
+`#7f8898`, whose lowest pair is 4.71:1. Step 7 raises `--panel-2` and `--panel-3` so that a step of
+tone can do what a border did (Section 4), adds `--select`, and moves `--faint` to `#868f9f`, whose
+lowest pair, on `--select`, is 4.51:1. `--panel` stays: darker, its edge against the map would
+vanish. Because U7's test holds the shared values equal, step 7 changes them in all three
+stylesheets at once, and step 8 changes how the other two draw.
 
-Space runs on a 4px step (4, 8, 12, 16, 24, 32, 48). Corners are 4px for chips, 8 for controls, 12
-for panels and fully round for pills. Layers are named, lowest first: canvas, HUD, dock, sheet,
-popover, dialog, notice. Motion uses three durations (120, 200 and 320ms) and one ease-out curve.
+Space runs on a 4px step (4, 8, 12, 16, 24, 32, 48). Corners are 8px for chips, controls and rows,
+12 for a surface that floats, 16 for the map's window (Section 6) and fully round for pills. Layers
+are named, lowest first: canvas, HUD, dock, sheet, popover, dialog, notice. Motion uses three durations (120, 200 and 320ms) and one ease-out curve.
 
 **Each surface keeps its own copy, and a test holds them together** (U7). The viewer's three files
 are compiled into the binary and served under a policy that names no other style source, the
 settings page carries its own policy, and the landing is a static site. A generated shared file would
 add a build step to all three for what one test gives: it reads the three `:root` blocks, fails when
 a token declared in more than one differs, and computes the contrast of every text token on every
-surface token.
+surface token, `--select` among them.
 
 ## 4. Type, focus and the selected state
 
@@ -101,12 +124,32 @@ surface token.
   Hangul faces named early in the stack, and IBM Plex Mono for identifiers: relation kinds, ids,
   hashes, counts. The app and the viewer load no web font; the landing keeps its own display faces.
 - **Six sizes**: 24 (page title), 18 (sheet title), 15 (section), 13 (body), 12 (secondary) and 11
-  (labels). Nothing is drawn below 11px. An uppercase label is 11px mono with 0.08em tracking.
-- **Focus is visible on every control**: a 2px `--gold-bright` ring, offset 2px. Today only the
-  inputs show one.
-- **A selected or highlighted item is tinted and bordered all round.** A rounded box never takes a
-  rail on one side: the rail bends around the corners and reads as a bracket. A rail is drawn only on
-  a square-cornered row.
+  (labels). Nothing is drawn below 11px. A heading on a panel is 12px sans, semibold, in `--muted`
+  and in sentence case, and nothing is set in uppercase.
+- **Focus is visible on every control**: a 2px `--gold-bright` outline, offset 2px - an outline on
+  `:focus-visible`, not a border.
+- **A selected item sits on `--select`**, its text `--gold-bright` when it is a choice (a chip, a
+  segment). It takes no border, and a rounded box never takes a rail on one side: the rail bends
+  around the corners and reads as a bracket. Hover lightens a control to `--panel-3` and its text to
+  `--ink`; hover is not gold.
+- **Surfaces, not lines** (U9). One area is told from another by its surface: the map on
+  `--surface`, the frame on `--panel`, a control, chip or row on `--panel-2`, hover on `--panel-3`, a
+  selection on `--select`. No border, outline or ring-shaped shadow draws the edge of an area, a
+  panel, a control, a chip or a row. A text field is a filled well named by its label or placeholder;
+  its old edge measured 1.2:1, short of the 3:1 a boundary needs, so the line was not doing that work
+  either. A key cap is filled too. A line is drawn only where it carries a fact:
+  - keyboard focus, the outline above;
+  - a legend swatch of a line the map draws: the Trust legend's rings and the boundaries' dashes;
+  - the dashed chip of a superseded relation, in `--muted`;
+  - the dashed box around a contested value, in `--bad`, the contested color;
+  - a control's own glyph: a radio's circle, a switch's track, the loader's spinner.
+
+  On the canvas the rings, edges and boundaries are the data and stay.
+- **Gold says one of four things** in the viewer and on the Settings page: selected, human confirmed,
+  waiting for a person (the review pill and the one action a decision asks for), and keyboard focus.
+  The mark keeps its gold. Headings, frames, hover, counts and the map's ground are not gold. The
+  landing presents the product rather than operating it, and also keeps gold for its links and its
+  one call to action.
 
 ## 5. The map
 
@@ -154,6 +197,8 @@ which is not every view, and the legend is what names a color.
 count: "proposal gate, claim_demotion defect (4)". Today every context of a hub is named after the
 hub, so selecting one titles five regions alike. A view toggle still draws them all. Region names
 sit outside the region's upper edge, and node labels avoid them and each other, larger degree first.
+A region's name is 13px at medium weight whatever the region's size, the active node's at full
+strength and the rest faded.
 
 **The layout is remembered on the local console.** Node positions are kept per workspace in the
 browser's storage, keyed by the node's id from `/api/surface` as well as the workspace, and the next
@@ -169,19 +214,48 @@ are routes of the viewer's own page (`#review`), so they work in the app, on a h
 a browser alike; Settings is the app's page (settings-page.md Section 6). The app's View menu holds
 Graph (Cmd+1) and Review (Cmd+2), and the status bar's gear opens Settings, as it does today. In a
 browser, where those keys belong to the browser, the review pill and the address reach the page. The
-title bar holds the name and the search and no navigation.
+title bar holds the name, the search at its centre and the two panel toggles at its right, and no
+navigation.
+
+**The frame and the map's window.** The header, the two panels and the status bar are one surface,
+`--panel`, and the map is a window cut into it with 16px corners: the panels sit beside the map, not
+over it, and nothing divides them but the change of tone. The left panel is 260 pixels wide and the
+right 300; the inspector's sheet, 360, takes the right panel's place. The canvas stays the size of
+the window and the frame is drawn over it, so the pointer and camera code keep reading window
+coordinates, and the camera's insets keep the content inside the window. With both panels open at
+1440 pixels the window is 880 wide, 820 with the sheet: about what the floating docks left. What
+changes is that nothing floats over it, and closing a panel gives its width back. The map's ground is
+plain `--surface`: the gold glow that lit its top made the window's edge vanish where it was
+brightest, about 1.00:1 against the frame.
 
 On the Graph page:
 
-- **The left dock is the filters**: workspaces, types, relations, boundaries. The Types tab's rows
-  move here before the tab goes: a contested type definition with its confirm act, an axis
+- **The left panel is the filters**: workspaces, types, relations, the type definitions, and the
+  Trust legend, which says what a ring reads (Section 5). The boundaries' legend is a view mode: it
+  moves into View as a three-way control (workspace, origin, off), which b still cycles. The Types
+  tab's rows move here before the tab goes: a contested type definition with its confirm act, an axis
   collision, and the types that are defined but have no node in the loaded graph. The legend's hover
   shows only the winning definition; the full entry opens in place.
 - **The right side shows one thing at a time**: the inspector as a sheet while a node is focused,
   otherwise the Log. The inspector moves there from the bottom, where it covered the part of the map
   being inspected. Its two regions, relations then evidence, stack in the sheet (inspector.md Section 6).
+- **Either panel closes from its toggle**, or with [ and ], and the choice is remembered; the edge
+  handles go. With both closed the map's window takes the frame. With the left panel closed and a
+  scope of one tier, the status bar's scope line says the tier, as the Trust legend would (U2).
+- **The strip is the Log folded.** While the right side is empty - no Log, no sheet - a one-line
+  strip at the window's lower left shows the scope's newest observation: its tier dot, who (the
+  on-behalf-of name, else the host by id, called "this node" only as Section 9 allows), when, and its
+  first line. It reads `/api/observations` with `limit=1`, a `Read` path on the read tier, refreshed
+  with the graph. With nothing observed it says "Nothing observed in this scope yet"; when the server
+  does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
+  activity feed's passing rows sit inside the window at its upper left.
+- **The camera is one toolbar** at the window's lower right: view, zoom in, zoom out, fit. Under 760
+  pixels it stays at the top right, out of the sheets' way (Section 17). The minimap is off until View
+  turns it on. View's stored choices forget the minimap's once - any click stored every choice, so
+  most were never made - and View remembers it from then on.
 - **The status bar is the window's state**: the scope and its counts on the left; on the right,
-  pills for what waits, what is contested, sync and semantic search, then the gear.
+  pills for what waits, what is contested, sync and semantic search, then the gear. A pill is tinted,
+  not outlined.
 
 The dock's Peers tab is the only place that lists known peers with "not admitted", "admitted, not
 shared" and "surface unknown". Those rows move into Settings > Sync, and into the viewer's own
@@ -193,8 +267,9 @@ up. Unavailable, refused and not yet known are states the pill draws, never reas
 (P5, P24). The review pill is absent on the read tier, where nothing can be decided, and the read
 tier's banner already says why.
 
-By width: from 1200 pixels the filters, the canvas and the sheet sit side by side; from 760 one panel
-shows at a time over the canvas; below 760 the panel is a sheet from the bottom.
+By width: from 1200 pixels the filters, the map's window and the right panel sit side by side; from
+760 the frame keeps its header and status bar and one panel at a time lies over the map, a surface
+with a shadow; below 760 the panel is a sheet from the bottom.
 
 ## 7. The Review page
 
@@ -300,11 +375,11 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 - The map is reached through search, and from a focused node its relations are a Tab away in the
   sheet. Esc closes the topmost card, menu or sheet (step 0).
 - Under reduced motion nothing moves: no pulse, no marching dashes, no sliding docks, no spinner, and
-  the layout settles in one frame. Today only the settling obeys it.
-- Text drawn at full strength on a token surface meets 4.5:1 (U7). Two things are outside the pairs
-  on purpose: labels the map dims to put the focus forward, and text over the panels' translucent
-  glass, whose ground is whatever the canvas shows through. The glass is dark enough that `--muted`
-  stays above 4.5:1 over the canvas's own ground, and that is checked by measurement, not by the test.
+  the layout settles in one frame.
+- Text drawn at full strength on a token surface meets 4.5:1 (U7). One thing is outside the pairs on
+  purpose: labels the map dims to put the focus forward. Until step 7 the panels were translucent
+  glass whose ground was whatever the canvas showed through; they are opaque `--panel` from step 7,
+  so their text is inside the pairs.
 
 ## 11. Decisions
 
@@ -320,6 +395,16 @@ node serving the page, since every unconfigured node calls itself `localhost`.
   nobody else, and the store holds knowledge.
 - **The same English words everywhere.** The landing, the app and the viewer say Sync, Review,
   Spoke; the documents keep their own terms and the tooltips point to them.
+- **Areas are told apart by surface, not by line.** A border around every part made each one an
+  object to read before the map; a step of tone separates an area without asking to be read. Lines
+  stay where they carry a fact (U9).
+- **The map alone is the panels closed, not a mode.** Two toggles reach it and the strip is the Log
+  folded, so nothing new is learned and nothing moves where it lives. A map-first layout with both
+  panels closed by default was drawn and set aside: it hid the Log, the view of agents writing, until
+  someone asked for it.
+- **The Trust legend stays beside the filters.** Section 5 has the legend say what a ring reads, and
+  the scope's one tier when it draws no ring; inside a menu that would be read by no one. With the
+  left panel closed, the status bar says the one tier instead.
 
 ## 12. Invariants
 
@@ -333,6 +418,7 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 | **U6** | The viewer's search answers with the engine's ranking and mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
 | **U7** | The viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
+| **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph. |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -350,6 +436,12 @@ draws "sync unavailable" when the daemon does not answer.
 
 U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
 in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
+
+U9 is to be guarded by a test in the same file that reads each stylesheet's rules and fails, outside
+a short list of selectors each listed with the fact its line carries, on a border that draws, a
+`border-color` that is not transparent, an outline outside `:focus-visible`, or a ring-shaped
+`box-shadow`; it also fails on a border the viewer's script sets outside the boundaries' legend.
+Step 7 brings it for viewer.css and step 8 extends it to the other two.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -377,6 +469,17 @@ and it fails when one of them appears in the viewer's source other than as an ar
    lands (U5).
 5. **Search** [built] (U6): the read path, its policy and the server-side forwarding, then the bar.
 6. **The landing's picture of the viewer** [built], retaken once the map has changed.
+7. **Surfaces, not lines: the viewer** (U9): the token values in all three stylesheets (Section 3,
+   held equal by U7), and the Settings page's title bar with the viewer's (settings-page.md Section
+   3.0); every line the list does not name removed from the viewer; headings in sentence case, hover
+   off gold, the contested box in `--bad` and the glow gone (Section 4); the frame and the map's
+   window, the panel toggles, the strip, the camera toolbar, the minimap off, and the boundaries'
+   control in View (Section 6); region names at 13px (Section 5). The Review page, the search list,
+   the observation card, the activity feed and the settings dialog take the same surfaces.
+8. **Surfaces, not lines: the Settings page and the landing** (U9): the rest of the rule on both.
+   On the Settings page, cards, rows and fields become surfaces, and the sidebar's 10.5px uppercase
+   group labels become 12px sentence-case headings. On the landing, the code, terminal and picture
+   frames become surfaces and the steps' gold rules go. Then the landing's picture is retaken.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
@@ -391,6 +494,11 @@ proposal and the read tier.
   words change. Its rules and D1-D7 do not.
 - **The viewer's dock**: Proposals and Review leave for the Review page; the Types tab's rows join the
   filters dock and the Peers tab's join Settings > Sync before those tabs go. The Log stays.
+- **settings-page.md Section 3.0**: the title bar is still the viewer's on both pages, now without
+  the glass and the rule; both drop them in step 7.
+- **The viewer's chrome** (steps 7-8): the docks stop floating and join the frame, their edge
+  handles become the title bar's panel toggles, the minimap starts off, and the boundaries' legend
+  moves into View.
 - **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
   "this node" (Section 9). The read tier's answer is unchanged.
@@ -400,7 +508,7 @@ proposal and the read tier.
 | Demand | Where it is answered |
 |---|---|
 | P2 - a claim says where it came from | Sections 5, 7 (who said it on every evidence row), 9 (hosts named by id) |
-| P5 - absence is not negation | Section 6 (rows moved before tabs go); Section 8 (empty search); U8 |
+| P5 - absence is not negation | Section 6 (rows moved before tabs go, the strip's empty state); Section 8 (empty search); U8 |
 | P6 - a contradiction is surfaced | Section 5; U3 |
 | P17 - the read tier reads what it was granted | Sections 5 (no remembered layout there), 8; U6 |
 | P18 - trust is the receiver's evaluation | Section 5; U2 |
@@ -437,6 +545,31 @@ had not written it. Thirteen findings changed it:
   principal's positions past a revoked grant. It is the local console's alone.
 - **U1 named a hand-kept list**, U7 missed the settings page's `--panel-3`, and a pill's absence could
   mean four things. U1 now reads the policy table, `--faint` moves to `#7f8898`, and U8 is new.
+
+Steps 7 and 8 were read the same way before they were built, and eleven findings changed them:
+
+- **The token change has to land in all three files at once**, or U7's test fails between the steps.
+- **`--panel` would have darkened**, and under the gold glow the window's top edge measured about
+  1.00:1 against the frame. `--panel` stays and the glow goes.
+- **A selection on a translucent tint fell below 4.5:1** (`--faint` at 4.18:1). It is the opaque
+  `--select` now, inside the test's pairs.
+- **The Settings page shares the title bar** (settings-page.md Section 3.0), so it changes with the
+  viewer's.
+- **Gold's rule contradicted its own complaint** about the selected chip, the contested box was
+  dashed in gold though contested is `--bad`, and hover, the mark and the landing were not accounted
+  for.
+- **U9 was not testable as written.** Focus is an outline; lines also came from `border-color`, ring
+  shadows and the script; text fields, key caps, the spinner and the boundaries' swatches were missing
+  from the list; and by the stated rule the counts were 53, 12 and 19, not 58, 13 and 21.
+- **The strip had no data while it shows**: the Log loads only while it is open. The strip reads one
+  observation on its own, with its empty and failed states.
+- **Most stored View choices would have kept the minimap on**, since any click stored them all.
+- **A closed left panel hid the scope's one tier**, which U2 has the legend say; the status bar says
+  it then. View had no boundaries control to sit beside, so it gains one.
+- **The geometry was unstated**: the canvas stays the window's size, and the window is about as wide
+  as the docks left.
+- Smaller: two notes that said "today" of things already built, a clause that would have changed the
+  body font, the U9 deferral's trigger, and the Settings page's 10.5px labels.
 
 ## 17. What building it changed
 

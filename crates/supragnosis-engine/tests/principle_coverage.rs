@@ -600,6 +600,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // only off the local console or where sync is not configured, and draws "unavailable".
         Evidence::Scenario(&["a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up"]),
     )]),
+    (9, &[c(
+        "the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact: keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph",
+        Evidence::Deferred(
+            "design-system.md Section 13 steps 7-8 are specified, not built. Revisit when step 8 \
+             lands and the border test reads all three stylesheets",
+        ),
+    )]),
 ];
 
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).

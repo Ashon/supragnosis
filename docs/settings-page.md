@@ -56,8 +56,9 @@ been, and the graph keeps its title bar to itself.
 - **One place called Settings.** The viewer's own dialog held its build information and, on a hub,
   its peers. Both are on this page - About and Sync - so in the app the gear leads to one place, not
   two.
-- **The title bar is the viewer's on both pages.** Same row height, glass, rule and mark, with the
-  traffic lights over it in the same place. The settings page says its name after the app's:
+- **The title bar is the viewer's on both pages.** Same row height, surface and mark, with the
+  traffic lights over it in the same place. Since design-system.md Section 13 step 7 the title bar is
+  the frame's `--panel` with no glass and no rule under it, on both pages. The settings page says its name after the app's:
   `supragnosis / settings`. One stylesheet draws that chrome on both pages (`assets/shell.css`):
   - the settings page links it from the app's own origin;
   - the viewer is the daemon's page, so the shell serves the same file on the viewer's origin, at
