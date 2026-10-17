@@ -40,10 +40,15 @@
     gear.title = "Settings (\u2318,)";
     gear.setAttribute("aria-label", "Settings");
     document.addEventListener("click", function (e) {
-      if (!e.target.closest || !e.target.closest("#settingsBtn")) return;
+      if (!e.target.closest) return;
+      // The status bar's sync pill opens the same page at its Sync section - the place sync lives in
+      // the app (docs/design-system.md Section 6).
+      var to = e.target.closest("#settingsBtn") ? SETTINGS
+        : e.target.closest("#syncPill") ? SETTINGS + "#sync" : null;
+      if (!to) return;
       e.preventDefault();
       e.stopPropagation();
-      location.href = SETTINGS;
+      location.href = to;
     }, true);
   }
 

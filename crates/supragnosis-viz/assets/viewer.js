@@ -313,6 +313,7 @@ let layoutDirty = false;    // positions moved since the last save
 async function loadSurface() {
   try {
     const s = await (await fetch("/api/surface", { cache: "no-store" })).json();
+    if (s && s.surface) surfaceKind = String(s.surface);
     if (s && s.surface === "local" && s.node) surfaceNode = String(s.node);
   } catch (_) { /* no surface answer - nothing is remembered */ }
 }
@@ -388,9 +389,6 @@ function applyGraph(g) {
   assignColors();
   renderLegend();
   noteTrustAndContest();
-  // Keep the federation panel fresh while it is open (hub health / diff / peers move on their own).
-  const peersPanel = document.querySelector('.tabpanel[data-panel="peers"]');
-  if (peersPanel && peersPanel.classList.contains("on")) refreshPeers();
   const s = g.stats || {};
   statusEl.textContent = "updated " + new Date().toLocaleTimeString();
   // Current workspace leads the stats line - the selection UI is the left rail's chips, and this
@@ -415,73 +413,38 @@ function applyGraph(g) {
 
 // Federation panel: hubs (health + per-workspace diff vs this node) and, on a hub, the known-peer
 // registry (who checked in, what they did, how long ago). Data = /api/federation (wiring-layer blob).
-async function refreshPeers() {
-  const host = document.getElementById("peersBody");
-  const ct = document.getElementById("peersCt");
+// The status bar's sync pill (docs/design-system.md Section 6, U8): one line for what sync is doing,
+// opening Settings > Sync. It replaces the dock's Peers tab, whose rows now live in that section (and
+// in the viewer's own settings dialog outside the app). Absent only where sync is not set up, or on a
+// read tier, which has no peers view; unavailable and not-yet-answered are states it draws.
+let surfaceKind = null;     // "local" on the owner's console, another word on a read tier, null unknown
+async function refreshSyncPill() {
+  const pill = document.getElementById("syncPill");
+  if (!pill) return;
+  if (surfaceKind !== "local") { pill.hidden = true; return; }
+  let f = null;
   try {
     const r = await fetch("/api/federation", { cache: "no-store" });
-    const f = await r.json();
-    if (!f || f.configured === false) {
-      host.innerHTML = '<div class="empty">federation is not configured on this node</div>';
-      ct.textContent = "";
-      return;
-    }
-    const parts = [html`<div class="hint">this node: ${String(f.node_id || "").slice(0, 16)} (${f.role || "client"})</div>`];
+    if (r.ok) f = await r.json();
+  } catch (_) { f = null; }
+  let text, tone;
+  if (!f) { text = "sync unavailable"; tone = "bad"; }
+  else if (f.configured === false) { pill.hidden = true; return; }
+  else {
     const hubs = f.servers || [];
-    if (hubs.length) {
-      parts.push(html`<div class="fsec">Hubs</div>`);
-      for (const s of hubs) {
-        const dot = s.healthy ? TEAL : BAD;
-        parts.push(html`<div class="fed"><span class="dot" style="background:${dot}"></span>`,
-          html`<span class="furl" title="${s.url}">${s.url.replace(/^https?:\/\//, "")}</span>`,
-          s.version
-            ? html`<span class="hint">v${s.version}${s.protocol != null ? ` - sync ${s.protocol}` : ""}</span>`
-            : "",
-          html`</div>`);
-        for (const w of (s.workspaces || [])) {
-          const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
-          parts.push(html`<div class="fws">${w.workspace}: ${insync
-            ? html`<span style="color:${TEAL}">in sync</span>`
-            : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`}</div>`);
-        }
-        // The two buckets the old view had no way to state. Listed here but not admitted there is a
-        // setup error that used to just vanish from this panel; admitted there but not shared here
-        // is knowledge left on the table. Intersecting the two lists would have hidden both.
-        for (const w of (s.local_only || [])) {
-          parts.push(html`<div class="fws">${w}: <span style="color:${BAD}">not admitted</span></div>`);
-        }
-        for (const w of (s.peer_only || [])) {
-          parts.push(html`<div class="fws">${w}: <span class="hint">admitted, not shared</span></div>`);
-        }
-        // Unknown is not an empty grant set: a host that has not answered must not read as one that
-        // revoked everything.
-        if (!s.negotiated_at) {
-          parts.push(html`<div class="fws"><span class="hint">surface unknown - no answer yet</span></div>`);
-        } else if (f.updated_ms) {
-          const age = Math.max(0, Math.round((f.updated_ms - s.negotiated_at) / 1000));
-          parts.push(html`<div class="fws"><span class="hint">surface negotiated ${age}s ago</span></div>`);
-        }
-      }
-    }
-    const peers = f.known_peers || [];
-    if (peers.length) {
-      parts.push(html`<div class="fsec">Known peers</div>`);
-      for (const p of peers) {
-        const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
-        parts.push(html`<div class="fed"><span class="dot" style="background:${GOLD}"></span>`,
-          html`<span class="furl" title="${p.node_id}">${p.node_id.slice(0, 16)}</span>`,
-          html`<span class="hint">${p.last_action}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits})`,
-          html` - ${p.release ? "v" + p.release : "release not known"}, sync ${p.protocol | 0}</span></div>`);
-      }
-    } else if (f.role === "hub") {
-      parts.push(html`<div class="fsec">Known peers</div><div class="empty">no peer has checked in yet</div>`);
-    }
-    host.innerHTML = html`${parts}`;
-    const healthy = hubs.filter(s => s.healthy).length;
-    ct.textContent = hubs.length ? `${healthy}/${hubs.length}` : (peers.length || "");
-  } catch (e) {
-    host.innerHTML = '<div class="empty">federation status unavailable</div>';
+    const down = hubs.filter(s => !s.healthy).length;
+    const unknown = hubs.filter(s => !s.negotiated_at).length;
+    let mine = 0, theirs = 0;
+    for (const s of hubs) for (const w of (s.workspaces || [])) { mine += w.local_ahead | 0; theirs += w.hub_ahead | 0; }
+    if (down) { text = down === hubs.length ? "hub unreachable" : `${down} of ${hubs.length} hubs unreachable`; tone = "bad"; }
+    else if (unknown) { text = "sync: no answer yet"; tone = "warn"; }
+    else if (mine || theirs) { text = `syncing: this node +${mine}, hub +${theirs}`; tone = "warn"; }
+    else if (hubs.length) { text = "in sync"; tone = "ok"; }
+    else { const k = (f.known_peers || []).length; text = `hub: ${k} peer${k === 1 ? "" : "s"}`; tone = "ok"; }
   }
+  pill.hidden = false;
+  pill.className = "spill " + tone;
+  pill.textContent = text;
 }
 
 // Settings dialog. One composer, one section per topic - federation is the first, and adding the next
@@ -505,7 +468,7 @@ let fedCfgArmed = null;   // "<node_id>\u0000<workspace>" of the chip awaiting i
 // topic is adding an entry rather than markup here plus styling there plus a branch somewhere else.
 const SETTINGS_TABS = [
   { id: "about", label: "About", render: renderAboutSection },
-  { id: "peers", label: "Peers", render: renderFedSection },
+  { id: "sync", label: "Sync", render: renderFedSection },
 ];
 let settingsTab = "about";
 
@@ -596,7 +559,7 @@ async function renderFedSection(host) {
 
   const parts = [html`<div class="fsec">This node</div>`,
     html`<div class="prow"><span class="pid">${String(f.node_id || "")}</span>`,
-    html`<span class="hint"> ${f.role || "client"}</span></div>`];
+    html`<span class="hint"> ${f.role === "hub" ? "hub" : "spoke"}</span></div>`];
 
   const hubs = f.servers || [];
   if (hubs.length) {
@@ -611,9 +574,32 @@ async function renderFedSection(host) {
         const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
         parts.push(html`<div class="hint">${w.workspace}: ${insync
           ? "in sync"
-          : `local +${w.local_ahead | 0} / hub +${w.hub_ahead | 0}`}</div>`);
+          : `this node +${w.local_ahead | 0}, hub +${w.hub_ahead | 0}`}</div>`);
+      }
+      // The two buckets only this section names, moved from the dock's Peers tab. Listed here but
+      // not admitted there is a setup error that would otherwise just vanish; admitted there but not
+      // shared here is knowledge left on the table. Intersecting the two lists would hide both.
+      for (const w of (s.local_only || [])) parts.push(html`<div class="hint">${w}: <span class="bad">not admitted by the hub</span></div>`);
+      for (const w of (s.peer_only || [])) parts.push(html`<div class="hint">${w}: admitted, not shared from this node</div>`);
+      // Unknown is not an empty grant set: a hub that has not answered must not read as one that
+      // revoked everything.
+      if (!s.negotiated_at) parts.push(html`<div class="hint">what it shares: unknown - no answer yet</div>`);
+      else if (f.updated_ms) {
+        const age = Math.max(0, Math.round((f.updated_ms - s.negotiated_at) / 1000));
+        parts.push(html`<div class="hint">what it shares: agreed ${age}s ago</div>`);
       }
       parts.push(html`</div>`);
+    }
+  }
+  const known = f.known_peers || [];
+  if (known.length || f.role === "hub") {
+    parts.push(html`<div class="fsec">Peers that have checked in</div>`);
+    if (!known.length) parts.push(html`<div class="prow none">no peer has checked in yet</div>`);
+    for (const p of known) {
+      const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
+      parts.push(html`<div class="prow"><span class="pid">${String(p.node_id || "").slice(0, 16)}</span>`,
+        html`<span class="hint"> ${p.last_action}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits | 0}) - `,
+        html`${p.release ? "v" + p.release : "release not known"}, sync ${p.protocol | 0}</span></div>`);
     }
   }
 
@@ -665,7 +651,7 @@ async function renderFedSection(host) {
         }
       } catch (e) { /* the re-render below shows the unchanged state */ }
       renderSettings();
-      refreshPeers();
+      refreshSyncPill();
     };
   });
 }
@@ -699,7 +685,7 @@ function renderLegend() {
       el.onclick = () => { if (offSet.has(t)) offSet.delete(t); else offSet.add(t); renderLegend(); };
       // Hovering a chip highlights its nodes/edges on the graph (render-only - no sim wake) and
       // shows the type's T-Box definition in the styled tooltip (Principle 8: a type has a stated
-      // meaning - surfaced right where the type is read, not only in the Types tab).
+      // meaning - surfaced right where the type is read, not only in the definitions below).
       el.onmouseenter = () => { if (isEdge) edgeTypeHl = t; else typeHl = t; showTypeTip(el, t, isEdge); };
       el.onmouseleave = () => {
         if (isEdge) { if (edgeTypeHl === t) edgeTypeHl = null; }
@@ -995,6 +981,9 @@ function renderGlossary() {
   glossaryBodyEl.innerHTML =
     html`${section("entity types", group("entity"))}${section("relation types", group("relation"))}`;
   glossCtEl.textContent = glossaryTypes.length || "";
+  // A contested definition opens the list, so its mediation act is in view (P6); otherwise the list
+  // stays as the person left it.
+  if (glossaryTypes.some(x => x.contested)) document.getElementById("defsBox").open = true;
   glossaryBodyEl.querySelectorAll(".confirm").forEach(b => {
     b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
   });
@@ -1120,12 +1109,12 @@ function renderCuration() {
   parts.push(html`<div class="csec">orphans (${orph.length})</div>`);
   parts.push(orph.length ? html`<div class="chips">${orph.map(nchip)}</div>` : html`<div class="empty">none - all nodes linked</div>`);
   // T-Box axis collisions (Principle 9): a name defined on both the entity and relation axes -
-  // informative, usually a mistake. Mediation lives in the Types tab (per-definition confirm).
+  // informative, usually a mistake. Mediation lives in the filters dock's definitions (per-definition confirm).
   const ax = curation.type_axis_collisions || [];
   if (ax.length) {
     parts.push(html`<div class="csec">type axis collisions (${ax.length})</div>`);
     // The ", " separators go in as array items: joining the chips into one string would escape them.
-    parts.push(html`<div class="gb">${ax.map((n, i) => [i ? ", " : "", html`<span class="gk">${n}</span>`])}<div class="hint">defined as both an entity type and a relation type - see the Types tab</div></div>`);
+    parts.push(html`<div class="gb">${ax.map((n, i) => [i ? ", " : "", html`<span class="gk">${n}</span>`])}<div class="hint">defined as both an entity type and a relation type - see Definitions in the filters</div></div>`);
   }
   curationBodyEl.innerHTML = html`${parts}`;
   // The finding names the row without showing its text; clicking is the separate, deliberate act of
@@ -3313,9 +3302,7 @@ document.querySelectorAll(".dock .tabs").forEach(tabs => {
     tabs.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === btn));
     markTabs(tabs, [...tabs.querySelectorAll(".tab")], btn);
     dock.querySelectorAll(".tabpanel").forEach(p => p.classList.toggle("on", p.dataset.panel === btn.dataset.tab));
-    if (btn.dataset.tab === "glossary") refreshGlossary();
-    else if (btn.dataset.tab === "peers") refreshPeers();
-    else if (btn.dataset.tab === "review") refreshCuration();
+    if (btn.dataset.tab === "review") refreshCuration();
     else if (btn.dataset.tab === "proposals") refreshProposals();
     else if (btn.dataset.tab === "log") refreshLog();
   });
@@ -3329,6 +3316,9 @@ document.getElementById("footBtn").onclick = e => { showFootprint = !showFootpri
 document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e.currentTarget.classList.toggle("on", showPulses); };
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
+// The sync pill opens the settings at Sync. In the app the shell takes this click to the app's own
+// Settings > Sync page, as it takes the gear's.
+document.getElementById("syncPill").onclick = () => { settingsTab = "sync"; openSettings(); };
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
 document.getElementById("regionsBtn").onclick = e => { allRegions = !allRegions; e.currentTarget.classList.toggle("on", allRegions); };
 // The contested pill opens the list of contested beliefs (the Review tab's first section).
@@ -3365,3 +3355,4 @@ document.getElementById("contestedPill").onclick = () => {
 }
 resize(); loadWorkspaces(); loadSurface().finally(poll); connectEvents(); detectServerMode();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); setInterval(refreshPeerRoster, 5000); draw();
+loadSurface().then(refreshSyncPill); setInterval(refreshSyncPill, 5000);

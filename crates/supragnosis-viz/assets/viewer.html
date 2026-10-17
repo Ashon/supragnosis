@@ -38,6 +38,11 @@
     <div id="legendNodes"></div>
     <div class="rsec">Edge types <span class="ct" id="edgeCt"></span></div>
     <div id="legendEdges"></div>
+    <!-- The type definitions, moved from the dock's Types tab (design-system.md Section 6): every
+         defined type with its definition, a contested one with its mediation act, and the types defined
+         here with no node in the graph. Opens by itself when a definition is contested. -->
+    <details id="defsBox"><summary class="rsec">Definitions <span class="ct" id="glossCt"></span></summary>
+      <div id="glossaryBody"></div></details>
     <div class="rsec">Trust</div>
     <div id="legendTrust"></div>
     <div class="rsec">Boundaries<kbd class="keyhint" title="press b to cycle workspace / origin / off">b</kbd></div>
@@ -48,15 +53,11 @@
   <div class="tabs">
     <button class="tab on" data-tab="proposals">Proposals<span class="ct" id="propCt"></span></button>
     <button class="tab" data-tab="review">Review<span class="ct" id="reviewCt"></span></button>
-    <button class="tab" data-tab="glossary">Types<span class="ct" id="glossCt"></span></button>
-    <button class="tab" data-tab="peers">Peers<span class="ct" id="peersCt"></span></button>
     <button class="tab" data-tab="log">Log<span class="ct" id="logCt"></span></button>
   </div>
   <div class="panels">
     <div class="tabpanel on" data-panel="proposals"><div id="proposalsBody"></div></div>
     <div class="tabpanel" data-panel="review"><div id="curationBody"></div></div>
-    <div class="tabpanel" data-panel="glossary"><div id="glossaryBody"></div></div>
-    <div class="tabpanel" data-panel="peers"><div id="peersBody"></div></div>
     <!-- The observation log: the source of truth (Principle 1). The graph is a projection OF this
          log; this tab reads the raw events workspace-wide, newest-first, with their provenance. -->
     <div class="tabpanel" data-panel="log"><div id="logBody"></div></div>
@@ -69,6 +70,9 @@
   <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (design-system.md
        U3); absent only when there are none (U8). Opens the Review tab, which lists them. -->
   <button id="contestedPill" class="spill bad" type="button" hidden title="contested beliefs in this scope - open the list"></button>
+  <!-- What sync is doing (design-system.md Section 6, U8); opens Settings > Sync. Absent where sync is
+       not set up and on a read tier. -->
+  <button id="syncPill" class="spill" type="button" hidden title="sync - open its settings"></button>
   <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
        being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->
   <!-- The gear is Lucide's "settings" icon (ISC, https://lucide.dev), the set the desktop app uses.
