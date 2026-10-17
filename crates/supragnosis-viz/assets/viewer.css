@@ -156,7 +156,7 @@
   #tip .tdef.none { font-style:italic; color:var(--muted); }
   /* Camera controls: a vertical stack in the canvas's bottom-right corner (map-tool convention),
      above the statusbar. The right island grows downward from the top and the detail panel stops
-     at right:360 (clear of the island, 12 + 336 + 12), so this corner is the stable empty spot. */
+     at right:324 (clear of the island, 12 + 300 + 12), so this corner is the stable empty spot. */
   /* Minimap: the bottom-right corner anchor of one aligned control block - [HUD column][minimap],
      bottom edges flush, minimap height = the HUD column (4 x 34px buttons + 3 x 6px gaps = 154px;
      recalibrate if the button count changes). While the minimap is visible (.on), sibling rules
@@ -208,7 +208,7 @@
   /* Node detail: a wide panel docked center-bottom (between the rails, above the status bar). Header block
      (name / meta / description) stays put; the relations split into two scrolling columns (out | in). */
   /* Same material as the docks/popover: one glass system across every floating surface. */
-  #detail { position:fixed; left:274px; right:360px; bottom:36px; margin:0 auto; max-width:960px;
+  #detail { position:fixed; left:274px; right:324px; bottom:36px; margin:0 auto; max-width:960px;
             z-index:8; max-height:36vh; overflow:hidden; display:none;
             background:var(--glass); border:1px solid var(--line); border-radius:10px;
             padding:11px 15px 13px; font-size:12px; color:var(--ink2);
@@ -282,7 +282,7 @@
   .docktab.left { left:0; border-left:none; border-radius:0 7px 7px 0; }
   .docktab.left.open { left:262px; }
   .docktab.right { right:0; border-right:none; border-radius:7px 0 0 7px; }
-  .docktab.right.open { right:348px; }
+  .docktab.right.open { right:312px; }
   /* Docks slide off-screen instead of popping (visibility flips after the transform settles,
      so a hidden dock takes no clicks). The handles above share the motion curve. */
   .dock { position:fixed; top:56px; z-index:7; display:flex; flex-direction:column;
@@ -299,9 +299,9 @@
      at bottom:36) is the tallest element there - taller than the HUD - so the height cap reserves for
      IT (56 top + 36 bottom + 154 minimap + 12 gap = 258), keeping a full list from sliding under the
      minimap / zoom buttons. The minimap is on by default; when off, this just leaves a little slack. */
-  /* 336 wide: at the 11px floor the five tabs with their counts measure 300px, and the rest holds a
-     three-digit count. */
-  #dockR { right:12px; width:336px; max-height:calc(100vh - 258px); }
+  /* 300 wide: three tabs with their counts measure under 200px at the 11px floor. Five needed 336px
+     (design-system.md Section 17); Types and Peers moved to the filters and to Settings > Sync. */
+  #dockR { right:12px; width:300px; max-height:calc(100vh - 258px); }
   .dock.on { visibility:visible; opacity:1; transition:transform .18s ease, opacity .18s ease; }
   .dock > #wschips, .dock > .tabs { flex:0 0 auto; }
   /* Left rail: Layers + type legends stacked (no tabs), scrolling as one column. */
