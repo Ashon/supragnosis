@@ -6,8 +6,8 @@
 > made, what the viewer's search answers with, what an absent indicator means, and how a write reports
 > back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
 >
-> Status: **specification, with Section 13 steps 0-1 built** - the fixes that needed no document,
-> then the tokens and the foundations.
+> Status: **specification, with Section 13 steps 0-2 built** - the fixes that needed no document,
+> the tokens and the foundations, then the map.
 
 ## 1. Why this exists
 
@@ -332,6 +332,12 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 | **U7** | The viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 
+U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
+`a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
+`crates/supragnosis-viz/tests/http.rs`: the ring reads `trust_tier` and the scope's uniformity over
+every loaded node, the legend says what a ring reads, the badge is drawn in its own full-strength pass
+that skips only an undrawn type, and the count is taken over every loaded node.
+
 U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
 in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
 
@@ -350,9 +356,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 1. **Tokens and foundations** [built]: the shared vocabulary and its test (U7), the six sizes, focus
    rings, buttons for every control, tab roles, reduced motion everywhere, and view toggles that
    persist.
-2. **The map**: trust rings and their legend (U2), the other marks off rings, the contested badge and
-   pill (U3), neutral edges, regions for the active node with their new names, label avoidance,
-   remembered layout on the local console, and the three widths.
+2. **The map** [built]: trust rings and their legend (U2), the other marks off rings, the contested
+   badge and pill (U3), neutral edges, regions for the active node with their new names, label
+   avoidance, remembered layout on the local console, and the three widths.
 3. **Places and the Review page**: the Types and Peers rows moved first, then the tabs folded; the
    Review page (U4), with dream drafts when dreaming.md Section 12 step 5 lands (U5); the inspector
    as a sheet; the status bar's pills (U8) and the tray's Review item.
@@ -428,3 +434,12 @@ had not written it. Thirteen findings changed it:
   and proposal and log rows became buttons, and the old base rule outranked nothing but element
   selectors, so it would have drawn its own box and hover color over each of them. At zero
   specificity every component class overrides it whole.
+- **Step 2: the remembered layout had to move to this window's centre.** The sim's anchor pulls the
+  centroid to the window's world centre every frame, so positions saved under another window size
+  drifted out of the frame fitted around them. They are moved to the centre first, then framed at
+  once: the reveal that frames a fresh layout may already have passed while the page waited for its
+  first graph.
+- **Step 2: notices moved to the top centre.** At the bottom they covered the inspector, where most
+  of the acts they answer are made.
+- **Step 2: under 760 pixels the camera buttons moved to the top right**, out of the sheets' way, and
+  framing leaves out the sheet's height.
