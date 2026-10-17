@@ -242,6 +242,45 @@ fn inspector_never_folds_a_contested_belief() {
     );
 }
 
+/// Every console write reports what happened (Principle 24). The five write paths used to be bare
+/// fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403, a merge
+/// the fold would block answering 400 with its reason - looked exactly like a success that had not
+/// arrived yet. A tripwire on the shape, like the two guards above: each write path the console calls
+/// appears in the source only as the first argument of `consoleWrite`, and `consoleWrite` reads the
+/// status and shows a notice on the refusal branch, the unreachable branch and the success branch.
+/// The settings dialog's `POST /api/peer/share` keeps its own inline error and is not one of these.
+#[test]
+fn every_console_write_reports_its_outcome() {
+    let js = include_str!("../assets/viewer.js");
+    for path in [
+        "/api/review",
+        "/api/resolve",
+        "/api/reify",
+        "/api/propose_merge",
+        "/api/propose_split",
+    ] {
+        let quoted = format!("\"{path}\"");
+        let total = js.matches(&quoted).count();
+        let reported = js.matches(&format!("consoleWrite({quoted}")).count();
+        assert!(total > 0, "viewer.js no longer calls {path}; update this list");
+        assert_eq!(
+            total, reported,
+            "{path} must be written through consoleWrite, which reports the outcome - a bare fetch \
+             drops the server's answer"
+        );
+    }
+    let start = js
+        .find("\nasync function consoleWrite(")
+        .expect("viewer.js no longer defines consoleWrite");
+    let rest = &js[start + 1..];
+    let body = &rest[..rest.find("\n}\n").expect("consoleWrite has no closing brace")];
+    assert!(body.contains("!r.ok"), "consoleWrite must read the response status");
+    assert!(
+        body.matches("toast(").count() >= 3,
+        "consoleWrite must show a notice for success, refusal and an unreachable server"
+    );
+}
+
 /// Every response carries a Content-Security-Policy, and the script half of it stays strict.
 ///
 /// Escaping is the first defence and it is guarded by the test above; this is the one that survives
