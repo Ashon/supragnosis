@@ -603,8 +603,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (9, &[c(
         "the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact: keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph",
         Evidence::Deferred(
-            "design-system.md Section 13 steps 7-8 are specified, not built. Revisit when step 8 \
-             lands and the border test reads all three stylesheets",
+            "step 7 guards viewer.css with no_border_draws_an_area; the Settings page and the \
+             landing are step 8. Revisit when step 8 lands and the test reads all three stylesheets",
         ),
     )]),
 ];

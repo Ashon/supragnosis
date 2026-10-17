@@ -7,10 +7,11 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **Section 13 steps 0-6 built, steps 7-8 specified**: the fixes that needed no document, the
-> tokens and the foundations, the map, the places, the Review page, search, and the landing's picture
-> are built; steps 7 and 8 draw the three surfaces with surfaces instead of lines (Section 4). Dream
-> drafts join the Review page with dreaming.md Section 12 step 5 (U5).
+> Status: **Section 13 steps 0-7 built, step 8 specified**: the fixes that needed no document, the
+> tokens and the foundations, the map, the places, the Review page, search, the landing's picture and
+> the viewer drawn with surfaces instead of lines (Section 4) are built; step 8 does the same for the
+> Settings page and the landing. Dream drafts join the Review page with dreaming.md Section 12 step 5
+> (U5).
 
 ## 1. Why this exists
 
@@ -437,11 +438,12 @@ draws "sync unavailable" when the daemon does not answer.
 U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
 in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
 
-U9 is to be guarded by a test in the same file that reads each stylesheet's rules and fails, outside
-a short list of selectors each listed with the fact its line carries, on a border that draws, a
-`border-color` that is not transparent, an outline outside `:focus-visible`, or a ring-shaped
-`box-shadow`; it also fails on a border the viewer's script sets outside the boundaries' legend.
-Step 7 brings it for viewer.css and step 8 extends it to the other two.
+U9 is guarded by `no_border_draws_an_area` in the same file, which reads each stylesheet's rules and
+fails, outside a short list of selectors each listed with the fact its line carries, on a border that
+draws, a `border-color` that is not transparent, an outline, or a ring-shaped `box-shadow`; it also
+fails on a border the viewer's script sets outside the boundaries' legend. Step 7 brought it for
+viewer.css, where it finds 85 such declarations in the stylesheet step 7 replaced; step 8 extends it
+to the other two.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -469,7 +471,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    lands (U5).
 5. **Search** [built] (U6): the read path, its policy and the server-side forwarding, then the bar.
 6. **The landing's picture of the viewer** [built], retaken once the map has changed.
-7. **Surfaces, not lines: the viewer** (U9): the token values in all three stylesheets (Section 3,
+7. **Surfaces, not lines: the viewer** [built] (U9): the token values in all three stylesheets (Section 3,
    held equal by U7), and the Settings page's title bar with the viewer's (settings-page.md Section
    3.0); every line the list does not name removed from the viewer; headings in sentence case, hover
    off gold, the contested box in `--bad` and the glow gone (Section 4); the frame and the map's
@@ -613,3 +615,13 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   says how to retake it.
 - **Step 6: the landing says Review.** It still sent the reader to the curation console, a place the
   viewer no longer has, in three places (Section 11).
+- **Step 7: the curation rows had been unstyled since step 4.** Their rules were scoped to the
+  curation panel's container, which left the page with the Review page; the rows render inside the
+  Review page's detail now, and their rules moved there. The proposals list's rules and the dock's
+  tab rules, whose markup had gone too, were removed.
+- **Step 7: a panel toggle that is on is not gold.** Both panels are open by default, so a gold
+  pressed state would have put two gold marks in the title bar at all times; it is drawn in `--ink`.
+- **Step 7: between 760 and 1200 pixels a floating panel ends above the camera toolbar**, which
+  otherwise sat on the Log's last rows.
+- **Step 7: the workspaces' label became the panel's first heading**, "Workspace", like the headings
+  under it.
