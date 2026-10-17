@@ -248,7 +248,7 @@ function zoomAt(sx, sy, f) {
 }
 const TOP_INSET = 52;      // height occluded by the top header - compensated in centering/fit
 const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
-const DOCK_L = 262, DOCK_R = 348;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
+const DOCK_L = 262, DOCK_R = 312;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
 function insetL() { return dockLEl.classList.contains("on") && !sheetWindow() ? DOCK_L : 0; }
 function insetR() { return dockREl.classList.contains("on") && !sheetWindow() ? DOCK_R : 0; }
 // Under 760px a dock is a sheet from the bottom (viewer.css), so it occludes the bottom, not a side.
