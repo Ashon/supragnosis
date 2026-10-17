@@ -301,14 +301,18 @@
   #statusbar #session { white-space:nowrap; }
   /* Tabs instead of accordions: one section shows at a time in a fixed-height body, so expanding never
      pushes the bottom-anchored panel upward. */
+  /* A tab is as wide as its name and count. Equal shares cut "Proposals 48" to "PROPOS..." while
+     "Log" kept room to spare; content-sized tabs share the row by what they hold. Five named tabs
+     with two-digit counts measure 268px against the 274px row, so the padding and tracking are
+     the tight ones; the ellipsis stays only as the last resort for a longer count. */
   .dock .tabs { display:flex; gap:3px; margin:3px 0 5px; }
-  .dock .tab { flex:1 1 0; min-width:0; padding:5px 3px; font-size:9.5px; letter-spacing:.03em;
+  .dock .tab { flex:1 1 auto; min-width:0; padding:5px 3px; font-size:9.5px; letter-spacing:0;
                text-transform:uppercase; border:1px solid var(--line-soft); background:var(--panel-2);
                color:var(--muted); border-radius:5px; cursor:pointer; white-space:nowrap;
                overflow:hidden; text-overflow:ellipsis; }
   .dock .tab:hover { color:var(--gold-bright); }
   .dock .tab.on { background:var(--gold-glass); border-color:var(--gold-dim); color:var(--gold-bright); }
-  .dock .tab .ct { opacity:.75; margin-left:3px; }
+  .dock .tab .ct { opacity:.75; margin-left:2px; }
   .dock .panels { flex:1 1 auto; min-height:0; overflow-y:auto; }
   .dock .tabpanel { display:none; padding:2px; }
   .dock .tabpanel.on { display:block; }
