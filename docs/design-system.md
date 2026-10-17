@@ -6,8 +6,9 @@
 > made, what the viewer's search answers with, what an absent indicator means, and how a write reports
 > back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
 >
-> Status: **specification, with Section 13 steps 0-3 built** - the fixes that needed no document,
-> the tokens and the foundations, the map, then the places.
+> Status: **specification, with Section 13 steps 0-4 built** - the fixes that needed no document,
+> the tokens and the foundations, the map, the places, then the Review page. Dream drafts join the
+> Review page with dreaming.md Section 12 step 5.
 
 ## 1. Why this exists
 
@@ -235,9 +236,10 @@ person's no.
 is, under D1: it is the mediation act at the point of reading, and it is listed on the Review page
 too. U4 governs the Review page's controls.
 
-The count of items under Needs you is the status bar's review pill and, on this Mac's daemon when it
-is not zero, a "Review (N)..." item in the tray menu. On a remote profile the tray stays as
-remote-viewer.md Section 6 has it.
+The count of items under Needs you is the status bar's review pill. The tray menu's "Review (N)..."
+item counts the proposals that wait on this Mac's daemon, across its workspaces, and is in the menu
+only while some do; contested beliefs and suspected secrets need the curation read, which the tray
+does not make every minute. On a remote profile the tray stays as remote-viewer.md Section 6 has it.
 
 On the read tier the page lists and explains, shows no dream draft (dreaming.md Section 5.3 serves
 none there) and offers no control the tier refuses, as remote-viewer.md Section 6 requires of the
@@ -338,6 +340,10 @@ U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 every loaded node, the legend says what a ring reads, the badge is drawn in its own full-strength pass
 that skips only an undrawn type, and the count is taken over every loaded node.
 
+U4 is guarded by `a_review_decision_takes_one_item_with_its_diff_on_screen`: the decision returns unless
+the view it holds is the item's, refuses a merge a blocking check fails, asks a recall twice, and is
+never called over a list of items; every open or blocked proposal is listed.
+
 U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the contested pill hides
 only at zero, and the sync pill hides only off the local console or where sync is not configured, and
 draws "sync unavailable" when the daemon does not answer.
@@ -366,8 +372,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 3. **Places** [built]: the Types tab's rows moved into the filters dock and the Peers tab's into
    Settings > Sync, then both tabs folded; the right dock back to its width; the sync pill beside the
    contested one (U8).
-4. **The Review page**: the page itself (U4), with dream drafts when dreaming.md Section 12 step 5
-   lands (U5); the inspector as a sheet; the review pill and the tray's Review item.
+4. **The Review page** [built]: the page itself (U4); the inspector as a sheet; the review pill, View
+   > Review (Cmd+2) and the tray's Review item. Dream drafts join it when dreaming.md Section 12 step 5
+   lands (U5).
 5. **Search** (U6): the read path, its policy and the server-side forwarding, then the bar.
 6. **The landing's picture of the viewer**, retaken once the map has changed.
 
@@ -455,3 +462,9 @@ had not written it. Thirteen findings changed it:
   settings dialog and on the app's Settings > Sync alike, and the dialog's tab is called Sync.
 - **Step 3: the ordering was split.** Places and the Review page were one step; the places shipped
   first, so the Review page is step 4, search step 5 and the landing's picture step 6.
+- **Step 4: blocked proposals wait under Needs you.** A merge whose verdict is cast but that a check
+  blocks is not decided until someone rejects it, so it is listed with its reason and offered only
+  Reject; on the author's store that is 38 of them.
+- **Step 4: the Review page redraws only when what it shows changes.** Redrawn on every 2.5-second
+  poll, it replaced the button under the pointer and took the keyboard focus away.
+- **Step 4: the tray counts proposals only** (Section 7), and the right dock is the Log alone.
