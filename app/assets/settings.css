@@ -4,7 +4,7 @@
 
 :root {
   --surface: #08090d; --panel: #0e1118; --panel-2: #131722; --panel-3: #181d2a;
-  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #5c6472;
+  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #7b8494; /* text: 5.3:1, as the viewer and the landing */
   --line: #222836; --line-soft: #1a1f2b;
   --accent: #d9a544; --gold-bright: #f0c469; --gold-glass: rgba(217,165,68,0.12);
   --gold-ring: rgba(217,165,68,0.35);
