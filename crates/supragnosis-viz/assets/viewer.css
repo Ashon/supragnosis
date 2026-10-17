@@ -647,6 +647,8 @@
     #dockL { left:12px; }
     #dockR { right:12px; }
     #detail { top:61px; right:12px; bottom:90px; border-radius:12px; box-shadow:0 16px 40px #0009; }
+    /* A panel floats over the map's right side here, where the minimap sits: the minimap gives way. */
+    body.dr #minimap, body.sheet #minimap { display:none !important; }
   }
   /* Narrow windows (design-system.md Section 6). Under 1200px the script keeps one panel open at a
      time. Under 760px a panel is a sheet from the bottom, the full width less a margin, and the
