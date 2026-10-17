@@ -3156,6 +3156,26 @@ document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
+// The view menu's choices persist, as the docks' open state does (docs/design-system.md Section 13
+// step 1): a choice made once stays made. A preference, so it lives in this browser and nowhere else.
+// peers is left out on purpose: it switches itself on for a hub, so a stored "off" would fight that.
+{
+  const VIEW_PREFS = ["followBtn", "clusterBtn", "hyperBtn", "labelsBtn", "edgesBtn", "arrowsBtn",
+    "footBtn", "pulseBtn", "histBtn", "miniBtn"];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("supra.view") || "{}") || {}; } catch (_) { saved = {}; }
+  for (const id of VIEW_PREFS) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    // Replay a stored choice through the button's own handler, so its state and side effects agree.
+    if (typeof saved[id] === "boolean" && saved[id] !== b.classList.contains("on")) b.click();
+    b.addEventListener("click", () => {
+      const now = {};
+      for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
+      try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
+    });
+  }
+}
 
 // Restore the workspace selection from the URL (deep link / reload) before the first poll.
 {
