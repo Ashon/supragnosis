@@ -339,6 +339,47 @@ fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
     );
 }
 
+/// design-system.md U4 (Principle 23): on the Review page a decision acts on one item, and only once
+/// that item's diff and checks are on screen. A tripwire on the shape: reviewDecide returns unless the
+/// view it holds is the item's, refuses a merge a blocking check fails, asks a recall twice, and every
+/// call of it names one item - no loop over items decides; and every open or blocked proposal is listed.
+#[test]
+fn a_review_decision_takes_one_item_with_its_diff_on_screen() {
+    let js = include_str!("../assets/viewer.js");
+    let start = js
+        .find("\nasync function reviewDecide(")
+        .expect("viewer.js no longer defines reviewDecide");
+    let rest = &js[start + 1..];
+    let body = &rest[..rest.find("\n}\n").expect("reviewDecide has no closing brace")];
+    for (needle, what) in [
+        (
+            "if (!reviewView || reviewView.id !== p.id) return;",
+            "the diff and checks on screen are the item's",
+        ),
+        (
+            "reviewView.checks.some(c => c.blocking && !c.passed)",
+            "a merge a blocking check fails is refused",
+        ),
+        (r#"p.kind === "recall" && recallArmed !== p.id"#, "a recall asks twice"),
+    ] {
+        assert!(body.contains(needle), "reviewDecide: {what}");
+    }
+    for line in js
+        .lines()
+        .filter(|l| l.contains("reviewDecide(") && !l.contains("function reviewDecide("))
+    {
+        assert!(
+            !line.contains("forEach(") || line.contains("b.onclick = () => reviewDecide(item"),
+            "a call of reviewDecide must name one item, never loop over items: {line}"
+        );
+        assert!(!line.contains(".map("), "no decide-all: {line}");
+    }
+    assert!(
+        js.contains(r#"proposals.filter(p => p.state === "open" || p.state === "blocked")"#),
+        "every open or blocked proposal is listed, whatever its diff"
+    );
+}
+
 /// design-system.md U1 (Principle 24): every console write reports what happened. The writes used to
 /// be bare fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403,
 /// a merge the fold would block answering 400 with its reason - looked exactly like a success that had

@@ -308,6 +308,8 @@
   .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
   .rsec { color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:.14em;
           margin:11px 0 4px; padding-top:8px; border-top:1px solid var(--line-soft); }
+  /* The Log dock opens on its heading: no section rule above the first one. */
+  #dockR > .rsec:first-child { margin-top:2px; padding-top:0; border-top:none; }
   /* IDE-style bottom status bar (full width, below the rails). */
   #statusbar { position:fixed; left:0; right:0; bottom:0; height:24px; z-index:9; display:flex;
                align-items:center; gap:14px; padding:0 12px; background:var(--glass-deep);
@@ -612,6 +614,50 @@
   #statusbar .spill.warn { color:var(--gold-bright); border-color:var(--gold-dim); }
   #statusbar .spill.ok { color:var(--ok); border-color:rgba(86,179,162,0.4); }
   #statusbar .spill:hover { border-color:currentColor; }
+  /* The Review page (design-system.md Section 7): over the canvas, between the header and the status
+     bar - a queue on the left, the selected item on the right. */
+  #reviewPage { position:fixed; top:48px; bottom:24px; left:0; right:0; z-index:11; display:grid;
+                grid-template-columns:320px minmax(0,1fr); background:var(--surface); font-family:var(--sans); }
+  #reviewPage[hidden] { display:none; }
+  .rv-queue { display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--line);
+              background:var(--panel); padding:14px 12px; gap:10px; }
+  .rv-head { display:flex; align-items:baseline; gap:10px; }
+  .rv-head h2 { margin:0; font:600 18px/1.2 var(--sans); color:var(--ink); }
+  .rv-scope { color:var(--faint); font:11px var(--mono); }
+  .rv-close { margin-left:auto; color:var(--muted); font-size:12px; text-decoration:none; }
+  .rv-close:hover { color:var(--gold-bright); }
+  .rv-seg { display:flex; flex-wrap:wrap; gap:4px; }
+  .rv-segb { padding:4px 9px; border-radius:999px; font-size:12px; color:var(--muted);
+             background:var(--panel-2); border:1px solid var(--line-soft); }
+  .rv-segb.on { color:var(--gold-bright); background:var(--gold-glass); border-color:var(--gold-dim); }
+  .rv-list { overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:4px; }
+  .rv-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:8px; font:13px/1.4 var(--sans);
+             color:var(--ink); background:none; border:1px solid transparent; }
+  .rv-item:hover { background:var(--panel-2); color:var(--ink); border-color:var(--line); }
+  .rv-item.on { background:var(--gold-glass); border-color:var(--gold-dim); }
+  .rv-k { display:inline-block; margin-right:6px; font:500 11px/1 var(--mono); letter-spacing:.06em;
+          text-transform:uppercase; color:var(--muted); }
+  .rv-k.bad { color:var(--bad); }
+  .rv-st { display:inline-block; margin-right:6px; padding:1px 6px; border-radius:999px; font:11px/1.4 var(--mono);
+           color:var(--muted); border:1px solid var(--line); }
+  .rv-st.blocked { color:var(--bad); border-color:rgba(224,122,95,0.45); }
+  .rv-st.merged { color:var(--ok); border-color:rgba(86,179,162,0.4); }
+  .rv-t { display:block; margin-top:3px; }
+  .rv-detail { overflow-y:auto; padding:18px 24px 28px; color:var(--ink2); font-size:13px; max-width:820px; }
+  .rv-detail h3 { margin:0 0 6px; font:600 18px/1.3 var(--sans); color:var(--ink); }
+  .rv-detail .why { margin:4px 0 8px; line-height:1.5; }
+  .rv-detail .sec { color:var(--accent); font:500 11px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; margin:16px 0 6px; }
+  .rv-detail .hint { color:var(--faint); }
+  .rv-block { border:1px solid rgba(224,122,95,0.45); background:rgba(224,122,95,0.08); border-radius:8px;
+              padding:8px 10px; color:var(--ink); line-height:1.5; }
+  .rv-block b { color:var(--bad); }
+  .rv-acts { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 8px; }
+  .rv-acts .btn { padding:6px 12px; border-radius:8px; font:500 13px/1 var(--sans); }
+  .rv-acts .btn.p { background:var(--accent); color:#171204; border-color:var(--accent); }
+  .rv-acts .btn.p:hover { color:#171204; }
+  .rv-acts .btn[disabled] { opacity:.45; cursor:not-allowed; }
+  .rv-detail kbd, .rv-acts kbd { font:500 11px/1 var(--mono); border:1px solid currentColor; border-bottom-width:2px;
+                                 border-radius:3px; padding:0 4px; margin-left:4px; opacity:.7; }
   /* Narrow windows (design-system.md Section 6). Under 1200px the script keeps one panel open at a
      time. Under 760px a panel is a sheet from the bottom, the full width less a margin, and the
      inspector takes the same place; the minimap gives the corner back to the canvas. */
@@ -621,6 +667,8 @@
     .docktab.left.open { left:0; }
     .docktab.right.open { right:0; }
     #detail { left:8px; right:8px; bottom:32px; max-height:55vh; }
+    #reviewPage { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+    .rv-queue { max-height:40vh; border-right:0; border-bottom:1px solid var(--line); }
     #minimap { display:none !important; }
     /* The camera buttons move to the top right, out of the sheets' way. */
     #hud, #minimap.on ~ #hud { right:24px; top:56px; bottom:auto; }

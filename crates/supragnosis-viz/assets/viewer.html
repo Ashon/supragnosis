@@ -50,25 +50,34 @@
   </div>
 </aside>
 <aside id="dockR" class="dock on">
-  <div class="tabs">
-    <button class="tab on" data-tab="proposals">Proposals<span class="ct" id="propCt"></span></button>
-    <button class="tab" data-tab="review">Review<span class="ct" id="reviewCt"></span></button>
-    <button class="tab" data-tab="log">Log<span class="ct" id="logCt"></span></button>
-  </div>
+  <!-- The observation log: the source of truth (Principle 1). The graph is a projection OF this log;
+       this dock reads the raw events workspace-wide, newest-first, with their provenance. Proposals and
+       the curation signals moved to the Review page (design-system.md Section 7). -->
+  <div class="rsec">Log <span class="ct" id="logCt"></span></div>
   <div class="panels">
-    <div class="tabpanel on" data-panel="proposals"><div id="proposalsBody"></div></div>
-    <div class="tabpanel" data-panel="review"><div id="curationBody"></div></div>
-    <!-- The observation log: the source of truth (Principle 1). The graph is a projection OF this
-         log; this tab reads the raw events workspace-wide, newest-first, with their provenance. -->
-    <div class="tabpanel" data-panel="log"><div id="logBody"></div></div>
+    <div class="tabpanel on" data-panel="log"><div id="logBody"></div></div>
   </div>
 </aside>
+<!-- The Review page (design-system.md Section 7): everything that waits for a decision, one item at a
+     time. A route of this page, #review, over the canvas. -->
+<section id="reviewPage" hidden aria-label="Review">
+  <div class="rv-queue">
+    <div class="rv-head"><h2>Review</h2><span class="rv-scope" id="rvScope"></span>
+      <a class="rv-close" href="#" title="back to the graph (Esc)">Graph</a></div>
+    <div class="rv-seg" id="rvSeg"></div>
+    <div class="rv-list" id="rvList"></div>
+  </div>
+  <div class="rv-detail" id="rvDetail"></div>
+</section>
 <!-- What a write did (accept, reject, un-merge, propose, name a group, confirm a value): every one
      answers here, success or refusal. Polite, so a screen reader hears it without losing its place. -->
 <div id="toasts" role="status" aria-live="polite"></div>
 <div id="statusbar"><span id="stats"></span><span id="session" class="hint"></span><span id="status"></span>
   <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (design-system.md
        U3); absent only when there are none (U8). Opens the Review tab, which lists them. -->
+  <!-- What waits for a decision in this scope (design-system.md Section 7); opens the Review page.
+       Absent at zero and on a read tier (U8). -->
+  <button id="reviewPill" class="spill warn" type="button" hidden title="open the Review page"></button>
   <button id="contestedPill" class="spill bad" type="button" hidden title="contested beliefs in this scope - open the list"></button>
   <!-- What sync is doing (design-system.md Section 6, U8); opens Settings > Sync. Absent where sync is
        not set up and on a read tier. -->
