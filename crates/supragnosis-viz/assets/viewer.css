@@ -97,9 +97,10 @@
   .keyhint { font:600 11px/1 var(--mono); color:var(--faint); background:var(--panel);
              border:1px solid var(--line); border-radius:3px; padding:1px 4px; margin-left:6px;
              letter-spacing:0; text-transform:none; vertical-align:1px; }
-  /* Notices: what a write did. Bottom centre, clear of both docks and the HUD; the same shape as the
-     settings page's toasts - a success leaves by itself, an error stays until it is dismissed. */
-  #toasts { position:fixed; left:50%; bottom:36px; transform:translateX(-50%); z-index:12;
+  /* Notices: what a write did. Top centre, under the header and clear of both docks, the HUD and the
+     inspector at the bottom (whose acts most writes come from); the same shape as the settings page's
+     toasts - a success leaves by itself, an error stays until it is dismissed. */
+  #toasts { position:fixed; left:50%; top:56px; transform:translateX(-50%); z-index:12;
             display:grid; gap:6px; width:min(420px, calc(100vw - 32px)); pointer-events:none; }
   .toast { display:flex; gap:9px; align-items:flex-start; padding:9px 10px 9px 12px; border-radius:10px;
            border:1px solid var(--line); background:rgba(19,23,34,0.97); color:var(--ink);
