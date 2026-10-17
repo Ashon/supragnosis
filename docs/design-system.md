@@ -6,8 +6,8 @@
 > made, what the viewer's search answers with, what an absent indicator means, and how a write reports
 > back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
 >
-> Status: **specification, with Section 13 steps 0-2 built** - the fixes that needed no document,
-> the tokens and the foundations, then the map.
+> Status: **specification, with Section 13 steps 0-3 built** - the fixes that needed no document,
+> the tokens and the foundations, the map, then the places.
 
 ## 1. Why this exists
 
@@ -338,6 +338,10 @@ U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 every loaded node, the legend says what a ring reads, the badge is drawn in its own full-strength pass
 that skips only an undrawn type, and the count is taken over every loaded node.
 
+U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the contested pill hides
+only at zero, and the sync pill hides only off the local console or where sync is not configured, and
+draws "sync unavailable" when the daemon does not answer.
+
 U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
 in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
 
@@ -359,11 +363,13 @@ and it fails when one of them appears in the viewer's source other than as an ar
 2. **The map** [built]: trust rings and their legend (U2), the other marks off rings, the contested
    badge and pill (U3), neutral edges, regions for the active node with their new names, label
    avoidance, remembered layout on the local console, and the three widths.
-3. **Places and the Review page**: the Types and Peers rows moved first, then the tabs folded; the
-   Review page (U4), with dream drafts when dreaming.md Section 12 step 5 lands (U5); the inspector
-   as a sheet; the status bar's pills (U8) and the tray's Review item.
-4. **Search** (U6): the read path, its policy and the server-side forwarding, then the bar.
-5. **The landing's picture of the viewer**, retaken once the map has changed.
+3. **Places** [built]: the Types tab's rows moved into the filters dock and the Peers tab's into
+   Settings > Sync, then both tabs folded; the right dock back to its width; the sync pill beside the
+   contested one (U8).
+4. **The Review page**: the page itself (U4), with dream drafts when dreaming.md Section 12 step 5
+   lands (U5); the inspector as a sheet; the review pill and the tray's Review item.
+5. **Search** (U6): the read path, its policy and the server-side forwarding, then the bar.
+6. **The landing's picture of the viewer**, retaken once the map has changed.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
@@ -429,7 +435,8 @@ had not written it. Thirteen findings changed it:
 
 - **Step 1: the floor widened the right dock.** At 11px its five tabs with their counts measure 300
   pixels against a 274-pixel row, so the dock went from 300 to 336 pixels wide and its tabs stopped
-  clipping. Step 3 takes four of the five tabs away, and the width is revisited there.
+  clipping. Step 3 took two of the five away, and the dock went back to 300 pixels; step 4 takes two
+  more.
 - **Step 1: the base rule for inputs and buttons moved to zero specificity.** Chips, legend entries
   and proposal and log rows became buttons, and the old base rule outranked nothing but element
   selectors, so it would have drawn its own box and hover color over each of them. At zero
@@ -443,3 +450,8 @@ had not written it. Thirteen findings changed it:
   of the acts they answer are made.
 - **Step 2: under 760 pixels the camera buttons moved to the top right**, out of the sheets' way, and
   framing leaves out the sheet's height.
+- **Step 3: the moved rows read in plain words.** The Peers tab's "local +N / hub +N" and "surface
+  unknown" became "this node +N, hub +N" and "what it shares: unknown - no answer yet", in the viewer's
+  settings dialog and on the app's Settings > Sync alike, and the dialog's tab is called Sync.
+- **Step 3: the ordering was split.** Places and the Review page were one step; the places shipped
+  first, so the Review page is step 4, search step 5 and the landing's picture step 6.
