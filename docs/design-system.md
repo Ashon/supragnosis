@@ -6,9 +6,9 @@
 > made, what the viewer's search answers with, what an absent indicator means, and how a write reports
 > back. Companion to [inspector.md](inspector.md), whose rules for the detail panel stand unchanged.
 >
-> Status: **specification, with Section 13 steps 0-5 built** - the fixes that needed no document,
-> the tokens and the foundations, the map, the places, the Review page, then search. Dream drafts
-> join the Review page with dreaming.md Section 12 step 5.
+> Status: **built - Section 13 steps 0-6**: the fixes that needed no document, the tokens and the
+> foundations, the map, the places, the Review page, search, and the landing's picture. Dream drafts
+> join the Review page with dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -376,7 +376,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    > Review (Cmd+2) and the tray's Review item. Dream drafts join it when dreaming.md Section 12 step 5
    lands (U5).
 5. **Search** [built] (U6): the read path, its policy and the server-side forwarding, then the bar.
-6. **The landing's picture of the viewer**, retaken once the map has changed.
+6. **The landing's picture of the viewer** [built], retaken once the map has changed.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
@@ -475,3 +475,8 @@ had not written it. Thirteen findings changed it:
   of the answer; its row says it is not on the map in this view instead of dropping out of the list.
 - **Step 5: the header sits above the docks and the Review page.** It overlaps neither, and the list
   it holds drops over both.
+- **Step 6: the picture is of a made-up store.** The old one showed a seeded workspace too; the new
+  one is seeded the same way, in a fresh home, with nothing from a real store. The landing's comment
+  says how to retake it.
+- **Step 6: the landing says Review.** It still sent the reader to the curation console, a place the
+  viewer no longer has, in three places (Section 11).
