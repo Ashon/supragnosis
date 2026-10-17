@@ -27,7 +27,7 @@ const NODE_STROKE_MAX = 5;       // maximum stroke thickness (screen px) - so a 
 // Canvas palette - mirrors the CSS tokens (the landing's candlelight theme). SURFACE doubles as the
 // halo/cutout color, so it must match the body background exactly.
 const INK = "#e9e4d6", INK2 = "#aab1bd", SURFACE = "#08090d";
-const GOLD = "#d9a544", TEAL = "#56b3a2";
+const GOLD = "#d9a544", TEAL = "#56b3a2", BAD = "#e07a5f";   // --accent, --ok, --bad
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
@@ -366,7 +366,7 @@ async function refreshPeers() {
     if (hubs.length) {
       parts.push(html`<div class="fsec">Hubs</div>`);
       for (const s of hubs) {
-        const dot = s.healthy ? TEAL : "#d96a5f";
+        const dot = s.healthy ? TEAL : BAD;
         parts.push(html`<div class="fed"><span class="dot" style="background:${dot}"></span>`,
           html`<span class="furl" title="${s.url}">${s.url.replace(/^https?:\/\//, "")}</span>`,
           s.version
@@ -383,7 +383,7 @@ async function refreshPeers() {
         // setup error that used to just vanish from this panel; admitted there but not shared here
         // is knowledge left on the table. Intersecting the two lists would have hidden both.
         for (const w of (s.local_only || [])) {
-          parts.push(html`<div class="fws">${w}: <span style="color:#d96a5f">not admitted</span></div>`);
+          parts.push(html`<div class="fws">${w}: <span style="color:${BAD}">not admitted</span></div>`);
         }
         for (const w of (s.peer_only || [])) {
           parts.push(html`<div class="fws">${w}: <span class="hint">admitted, not shared</span></div>`);
@@ -506,7 +506,7 @@ async function renderFedSection(host) {
   if (hubs.length) {
     parts.push(html`<div class="fsec">Hubs this node syncs to</div>`);
     for (const s of hubs) {
-      const dot = s.healthy ? TEAL : "#d96a5f";
+      const dot = s.healthy ? TEAL : BAD;
       parts.push(html`<div class="prow"><span class="dot" style="background:${dot}"></span> `,
         html`<span class="pid">${String(s.url || "").replace(/^https?:\/\//, "")}</span>`,
         s.version ? html`<span class="hint"> v${s.version}</span>` : "",
