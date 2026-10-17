@@ -543,7 +543,7 @@ const DREAMING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
 ];
 
-// docs/design-system.md Section 12 - one look, one set of parts, a map that shows who said it (U rows).
+// docs/design-system.md Section 13 - one look, one set of parts, a map that shows who said it (U rows).
 const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
         "every console write - each path the read tier refuses as a verdict or a write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed",
@@ -593,6 +593,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "the_surfaces_share_one_token_set",
             "every_text_token_meets_4_5_on_every_surface",
         ]),
+    ), c(
+        "each of the three stylesheets declares every token it reads",
+        Evidence::Deferred(
+            "the landing reads --panel-3 and --gold-glass and the settings page --select from no \
+             :root. Revisit when design-system.md Section 14 step 9 lands with \
+             its test that every var() names a declared token",
+        ),
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
@@ -605,6 +612,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // crates/supragnosis-viz/tests/design_tokens.rs: the three stylesheets' rules, and the borders
         // the viewer's script sets.
         Evidence::Scenario(&["no_border_draws_an_area"]),
+    )]),
+    (10, &[c(
+        "the landing's stage draws the viewer's marks with the viewer's meanings - type color by the viewer's function, gold ring human confirmed, thin ring host signed, coral badge contested, a confirmation that reaches another machine drawn as that machine evaluates it - and every scene's meaning is in its step's words, with nothing moving at rest, under reduced motion or without script",
+        Evidence::Deferred(
+            "design-system.md Section 11 is specified, not built. Revisit when Section 14 step 9 \
+             lands with the stage's source tripwire",
+        ),
     )]),
 ];
 

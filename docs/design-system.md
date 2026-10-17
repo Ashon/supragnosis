@@ -7,10 +7,11 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **built - Section 13 steps 0-8**: the fixes that needed no document, the tokens and the
-> foundations, the map, the places, the Review page, search, the landing's picture, and the three
-> surfaces drawn with surfaces instead of lines (Section 4). Dream drafts join the Review page with
-> dreaming.md Section 12 step 5 (U5).
+> Status: **built - Section 14 steps 0-8; step 9 specified**: the fixes that needed no document, the
+> tokens and the foundations, the map, the places, the Review page, search, the landing's picture, and
+> the three surfaces drawn with surfaces instead of lines (Section 4). Step 9, the landing that shows
+> how knowledge moves (Section 11, U10), is specified and not built. Dream drafts join the Review page
+> with dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -41,7 +42,7 @@ the desktop shell at its default size:
 - **System words on human surfaces.** "grab-bag contexts", "reify", "BLOCKED 1V", "same across this
   scope: agent_extracted / from localhost", "accepted entity_merge [blocked]: c9a66148 -> T2".
 
-Six defects needed no design to fix and shipped first (Section 13 step 0): the console's writes
+Six defects needed no design to fix and shipped first (Section 14 step 0): the console's writes
 reported nothing, type colors followed the view's order, faint text measured 3.3:1, Esc did not close
 the inspector, the dock's tab names were cut, and the shell's splash pointed at tray items that had
 moved. What remains carries principle stakes, which is why it is written down before it is built.
@@ -61,6 +62,25 @@ the drawing was heavy.
   status bar, four stacked camera buttons and the minimap. At 1440 pixels the docks left the map 866.
 - **Region names shouted.** A focused hub's region names were drawn at up to 30px, the active node's
   in bold, and ran over one another and over the nodes they named.
+
+**Measured again for the landing**, on 2026-10-18 after step 8, at 1440 and 390 pixels wide:
+
+- **The model told four times and shown once.** The agent-first triptych, the three guarantees, the
+  pipeline with its two terminals and the eight capability cards each explain observe, the log, the
+  gate and trust in prose: 1,937 words in nine numbered sections, eleven screens tall at 1440. The
+  one picture of the product is the viewer's screenshot in the fourth section; the hero's
+  constellation is decoration.
+- **A 76-word lede** under the heading, about four times the subhead of the developer-tool pages it
+  was compared with, and two buttons that both leave the page, with the install command below them.
+- **Hidden until scrolled.** Every section starts invisible and fades in when an observer sees it,
+  and the hero rises in on load, so a link preview, a capture or a reader who follows an anchor
+  meets blank space until a script has run.
+- **Three tokens used and never declared.** The landing reads `--panel-3` and `--gold-glass`, and the
+  Settings page `--select`, from no `:root`, so the landing's GitHub and secondary buttons lose their
+  hover, its version badge its ground, and the Settings page's selected section its surface. U7's
+  test compares the tokens a stylesheet declares and never saw the ones it only reads.
+- **Sixteen font sizes and three web fonts**, the body set in a serif that neither the viewer nor the
+  app uses.
 
 ## 2. What this is NOT
 
@@ -252,7 +272,7 @@ On the Graph page:
   does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
   activity feed's passing rows sit inside the window at its upper left.
 - **The camera is one toolbar** at the window's lower right: view, zoom in, zoom out, fit. Under 760
-  pixels it stays at the top right, out of the sheets' way (Section 17). The minimap is on, above the
+  pixels it stays at the top right, out of the sheets' way (Section 18). The minimap is on, above the
   toolbar, until View turns it off; between 760 and 1200 pixels it gives way to a panel floating over
   the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
   once, since any click stored every choice and most were never made, and View remembers it from then
@@ -385,7 +405,99 @@ node serving the page, since every unconfigured node calls itself `localhost`.
   glass whose ground was whatever the canvas showed through; they are opaque `--panel` from step 7,
   so their text is inside the pairs.
 
-## 11. Decisions
+## 11. The landing
+
+The landing presents the product to someone who has not installed it, and it is held to two rules
+the product keeps: what it says the product does, the binary it offers does today, and a mark it
+draws means what the same mark means in the viewer. Everything else on it serves the question a
+visitor brings - what happens to what my agents learn - and answers it by showing one fact travel
+from a note to an answer instead of describing the model again.
+
+**Seven sections**, in this order and about 850 words:
+
+| Section | What it does | What it replaces |
+|---|---|---|
+| Hero | Says what it is in the heading and a subhead of at most 25 words, and offers the install command as the one act | the 76-word lede, the constellation, two buttons and six badges |
+| How it works | Follows one fact through five steps beside the stage | agent-first, the guarantees, the pipeline and its two terminals |
+| The viewer | The screenshot, told in the marks the stage taught | the viewer section |
+| Connect | The apps, the one command that connects them, the tools | the MCP surface |
+| Under the hood | Six one-line properties | the eight capability cards |
+| Status and questions | Shipped, next, who it is not for yet, four questions | the status ledger |
+| Get started | Three steps, with the install tabs | get started |
+
+The portability section goes with its three topology drawings, two of which drew meshes that have
+not shipped; moving between machines is the stage's fifth step.
+
+**The hero.** The heading stays: memory for AI agents that remembers who said it. The subhead names
+the clients and the split of the work - agents write as they work, a person decides what becomes
+canon. The act is the install command in two tabs, the macOS app (`brew install --cask
+ashon/tap/supragnosis`) and the script for macOS and Linux, with a copy button; beside it are the
+install script's source, GitHub and the docs. One line of facts follows: the version, stamped on
+deploy as today, Rust, the licenses, the platforms, and no account. Nothing in the hero waits for a
+script or an animation to be seen.
+
+**The stage** is one canvas beside the five steps. Each step is a sentence, a short paragraph and one
+snippet of the product's own text, and the scene beside it shows the same thing happen to a made-up
+project - a payments service, its webhooks and their idempotency, nothing from a real store:
+
+1. **Write.** Three agents' entries fly into one log; the first shows who wrote it, for whom and how
+   sure. It answers "who said this?".
+2. **Structure.** Each entry rises into the entities it names and draws its relations, and what was
+   said together gathers into a region.
+3. **Govern.** A second type for one entity raises the contested badge. Two names for one thing
+   become a merge proposal, a dashed gold link; a person accepts it and confirms one fact, both acts
+   land in the log in gold, and the confirmed entity takes the gold ring. It answers "has anyone
+   checked it?".
+4. **Recall.** Another agent searches; what matches lights, and a dashed line runs from the answer
+   back to the log entries it rests on - the receipts.
+5. **Travel.** The log crosses a hub to a second machine and replays into the same graph, with the
+   same contested badge and the same merge. The person's confirmation arrives as what the receiving
+   node can prove: signed by the laptop, a thin ring and not gold, because a tier never rises by
+   crossing the wire (federation.md Section 6b, resolution.md R4). It answers "does my other machine
+   know?".
+
+The words carry the whole meaning. The canvas is hidden from assistive technology and the page reads
+complete without it; what is worth reading - an entry's provenance, a Review row, a search answer's
+receipt, the two machines' tiers - is a snippet in the step, and the canvas draws only names and
+short labels, at 11 to 12 pixels.
+
+**The stage's marks are the viewer's** (U10). An entity is filled with its type's color, computed by
+the viewer's own function of the type's name, with a halo of the ground; a gold ring is human
+confirmed and a thin ink ring host signed, at the viewer's widths; the coral badge at the upper right
+is contested; a relation is the viewer's neutral line. Teal is an agent at work and gold a person, as
+`--ok` and `--accent` are elsewhere. The stage's colors are the landing's tokens.
+
+**Motion.** A scene plays when its step reaches the middle of the window, once, in at most five
+seconds, and then rests: at rest nothing moves and no frame is drawn. The page's scroll is never
+captured or tied to the drawing; a rail of step numbers under the stage moves to a step, and a scene
+that is not the next one cuts to its resting frame. Under reduced motion every scene is its resting
+frame, and a change of the setting while the page is open is followed. A hidden tab stops the stage.
+The hero has no entrance, and no section waits to be scrolled into view to be shown (Section 10).
+
+**Drawing.** The canvas's backing store is its CSS size times the device pixel ratio, capped at 2:
+measured from the device-pixel content box where the browser reports it, and redrawn when the ratio
+changes, as when a window moves to another screen. Its box has a fixed aspect ratio, 16:10 beside the
+steps and 4:5 on a phone, so nothing shifts when it draws. A glow is a sprite drawn once per color,
+not a blur on every frame. Without script, the stage is a still picture of the third scene's resting
+frame, and the steps read the same.
+
+**By width.** From 900 pixels the steps and the stage sit side by side, and the stage stays in view
+while the steps scroll past it. Below 900 each step carries its own 4:5 frame above its words, which
+plays when the frame comes into view, and the stage's column is not drawn.
+
+**Type and surface.** Headings in Fraunces, reading in the system sans at 18 pixels (the subhead at
+20), commands, identifiers and labels in IBM Plex Mono: Newsreader goes, and sixteen sizes become six.
+The grain, the two glows, the constellation, the hero's entrance, the scroll reveal, the numbered
+eyebrows and the cards' hover lift go. Surfaces follow Section 4 (U9), and every token a stylesheet
+reads is one it declares (U7).
+
+**Trust is earned with what can be checked.** The landing has no adoption to show yet, so it shows
+the status - what shipped, what is next and who it is not for yet - and answers four questions:
+whether anything leaves the machine, whether it needs a key or a model, what happens if you stop
+using it, and how it differs from a notes file. It names no other product: a claim about one would be
+ours to keep true, and we could not.
+
+## 12. Decisions
 
 - **Review is a page, not a wider dock.** A decision deserves the window, and the dock cut its own
   labels with five tabs. What the dock had - deciding beside the map - is kept by the preview on the
@@ -409,8 +521,20 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 - **The Trust legend stays beside the filters.** Section 5 has the legend say what a ring reads, and
   the scope's one tier when it draws no ring; inside a menu that would be read by no one. With the
   left panel closed, the status bar says the one tier instead.
+- **The landing's picture of how knowledge moves is drawn live, not filmed.** A video would hold
+  the viewer's marks as they were on the day it was recorded, scale by resampling on a dense screen,
+  and play whether or not anyone is reading. The stage draws with the viewer's color function and the
+  landing's tokens, at the screen's own density, from a pure function of the scene and the time, so
+  every load draws the same frames and a test can hold its marks to the viewer's.
+- **Scenes play on arrival, not on scroll position.** A drawing tied to the scrollbar moves while the
+  reader is still reading, and stops halfway when they stop. A scene that plays once and rests leaves
+  the step's words still, and the rail lets a reader see any scene again.
+- **The install command is the hero's act, not GitHub.** The page is for people who run tools from a
+  terminal; the command, with its script one click away, is the shortest true path to trying it.
+- **No comparison with other products.** A table of someone else's features is a claim we cannot keep
+  true; the status and the questions are claims about this product, kept in this repository.
 
-## 12. Invariants
+## 13. Invariants
 
 | | Invariant |
 |---|---|
@@ -420,9 +544,10 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 | **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision. Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
 | **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
 | **U6** | The viewer's search answers with the engine's ranking and mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
-| **U7** | The viewer, the settings page and the landing give every token they share one value, and every text token meets 4.5:1 on every surface token. |
+| **U7** | The viewer, the settings page and the landing give every token they share one value and declare every token they read, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 | **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph. |
+| **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's function, a gold ring is human confirmed and a thin ring host signed, the coral badge is contested, and a confirmation that reaches another machine is drawn as that machine evaluates it. Every scene's meaning is in its step's words, and at rest, under reduced motion and without script nothing on the stage moves (P2, P6, P18). |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -438,8 +563,12 @@ U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the
 only at zero, and the sync pill hides only off the local console or where sync is not configured, and
 draws "sync unavailable" when the daemon does not answer.
 
-U7 is guarded by `the_surfaces_share_one_token_set` and `every_text_token_meets_4_5_on_every_surface`
-in `crates/supragnosis-viz/tests/design_tokens.rs`, which read the three stylesheets' `:root` blocks.
+U7 is guarded by `the_surfaces_share_one_token_set` and
+`every_text_token_meets_4_5_on_every_surface` in `crates/supragnosis-viz/tests/design_tokens.rs`,
+which read the three stylesheets' `:root` blocks. Step 9 adds a third test to the same file, which
+fails unless each `var(--name)` in the three stylesheets names a custom property the same file
+declares, outside a short list of properties a page's markup or script sets, each listed with its
+setter.
 
 U9 is guarded by `no_border_draws_an_area` in the same file, which reads the three stylesheets' rules
 and fails, outside keyboard focus and a short list of selectors each listed with the fact its line
@@ -448,13 +577,21 @@ ring-shaped `box-shadow`; it also fails on a border the viewer's script sets out
 legend. In the stylesheets steps 7 and 8 replaced it finds 85 such declarations in the viewer's and 26
 in the landing's.
 
+U10 is to be guarded, from step 9, by a source tripwire in `crates/supragnosis-viz/tests/landing.rs`
+that reads `site/stage.js` beside the viewer's script and the landing's stylesheet: the stage's
+type-color and name-slot functions are the viewer's, character for character; each of its palette
+colors is a landing token's value; its rings are the viewer's widths and colors for the two tiers it
+draws; the travel scene's receiving machine draws the confirmed entity's ring as host signed; the
+stage reads the reduced-motion setting and follows its change; and the page hides the canvas from
+assistive technology while every step carries its own words.
+
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
 the read tier's own policy table, so a write added later is covered without anyone extending a list,
 and it fails when one of them appears in the viewer's source other than as an argument of
 `consoleWrite`, which reads the status and shows a notice on every branch.
 
-## 13. Ordering
+## 14. Ordering
 
 0. **The fixes that needed no document** [built]: the console's writes report (U1), type colors keyed
    by name, faint text at 4.5:1 on the surfaces then in use, Esc closes the inspector, the b key is
@@ -485,12 +622,16 @@ and it fails when one of them appears in the viewer's source other than as an ar
    On the Settings page, cards, rows and fields become surfaces, and the sidebar's 10.5px uppercase
    group labels become 12px sentence-case headings. On the landing, the code, terminal and picture
    frames become surfaces and the steps' gold rules go. Then the landing's picture is retaken.
+9. **The landing tells how knowledge moves** (Section 11, U10, and U7's declared tokens): the seven
+   sections and their words, the stage with its five scenes, the phone's frames and the still picture
+   for a page without script, the three undeclared tokens declared, and the tests. Merging it
+   publishes the site, so it merges on the author's word, not on a green check.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
 proposal and the read tier.
 
-## 14. What this revises
+## 15. What this revises
 
 - **settings-page.md Section 5**: the tray menu gains "Review (N)..." while something waits on this
   Mac's daemon. The status line is unchanged, and on a remote profile the tray is as remote-viewer.md
@@ -508,15 +649,15 @@ proposal and the read tier.
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
   "this node" (Section 9). The read tier's answer is unchanged.
 
-## 15. Closure map
+## 16. Closure map
 
 | Demand | Where it is answered |
 |---|---|
-| P2 - a claim says where it came from | Sections 5, 7 (who said it on every evidence row), 9 (hosts named by id) |
+| P2 - a claim says where it came from | Sections 5, 7 (who said it on every evidence row), 9 (hosts named by id), 11 (the stage's provenance and receipts); U10 |
 | P5 - absence is not negation | Section 6 (rows moved before tabs go, the strip's empty state); Section 8 (empty search); U8 |
-| P6 - a contradiction is surfaced | Section 5; U3 |
+| P6 - a contradiction is surfaced | Sections 5, 11; U3, U10 |
 | P17 - the read tier reads what it was granted | Sections 5 (no remembered layout there), 8; U6 |
-| P18 - trust is the receiver's evaluation | Section 5; U2 |
+| P18 - trust is the receiver's evaluation | Sections 5, 11 (the travel scene); U2, U10 |
 | P19 - a deterministic core, the edge labelled | Section 8; U6 |
 | P21 - the MCP surface stays narrow | Section 2; U6 |
 | P22 - curation where the reader already is | Section 7 (Health folded, the review count where the person looks) |
@@ -527,7 +668,7 @@ proposal and the read tier.
 | remote-viewer.md Section 6 - the read tier offers nothing it refuses | Sections 6, 7 |
 | dreaming.md Section 8 - drafts wait apart, decided by the person | Section 7; U5 |
 
-## 16. What the review changed
+## 17. What the review changed
 
 The draft was read once against the principles, the sibling documents and the code by a reviewer who
 had not written it. Thirteen findings changed it:
@@ -576,7 +717,7 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
 - Smaller: two notes that said "today" of things already built, a clause that would have changed the
   body font, the U9 deferral's trigger, and the Settings page's 10.5px labels.
 
-## 17. What building it changed
+## 18. What building it changed
 
 - **Step 1: the floor widened the right dock.** At 11px its five tabs with their counts measure 300
   pixels against a 274-pixel row, so the dock went from 300 to 336 pixels wide and its tabs stopped
@@ -617,7 +758,7 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   one is seeded the same way, in a fresh home, with nothing from a real store. The landing's comment
   says how to retake it.
 - **Step 6: the landing says Review.** It still sent the reader to the curation console, a place the
-  viewer no longer has, in three places (Section 11).
+  viewer no longer has, in three places (Section 12).
 - **Step 7: the curation rows had been unstyled since step 4.** Their rules were scoped to the
   curation panel's container, which left the page with the Review page; the rows render inside the
   Review page's detail now, and their rules moved there. The proposals list's rules and the dock's
