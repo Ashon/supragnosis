@@ -592,3 +592,10 @@
   #statusbar #settingsBtn svg { width:14px; height:14px; fill:none; stroke:currentColor;
                                 stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   #statusbar #settingsBtn:hover { color:var(--gold-bright); }
+  /* Reduced motion (docs/design-system.md Section 10): nothing moves - no spinner turning, no docks
+     sliding, no feed rows fading in and out (a row simply stays until it is removed). The canvas half -
+     pulses, marching dashes, the camera - is in viewer.js under REDUCED_MOTION, and the layout already
+     settles in one frame. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
