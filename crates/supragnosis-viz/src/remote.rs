@@ -38,9 +38,12 @@ pub enum Policy {
 
 const NODE_OP: &str = "a node's own operations and state - its peers, its sharing boundary, its \
      store's ledger - are not a principal's (docs/remote-viewer.md Section 3.2)";
-const VERDICT: &str = "verdicts are cast from a node's own console, and the read tier changes \
+/// The refusal of a verdict path. Public, with [`WRITE`], so the viewer's tests can tell the console's
+/// writes from the node's own operations by the reason the read tier gives (design-system.md U1).
+pub const VERDICT: &str = "verdicts are cast from a node's own console, and the read tier changes \
      nothing (docs/remote-viewer.md V2)";
-const WRITE: &str = "the read tier changes nothing - a principal with a write grant reaches \
+/// The refusal of a write path.
+pub const WRITE: &str = "the read tier changes nothing - a principal with a write grant reaches \
      `observe` and `propose` through MCP at /mcp (docs/remote-viewer.md Section 2)";
 
 /// Every path the viewer serves, and what it may do here. A path missing from this list is not
