@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.6.0](docs/releases/v0.6.0.md) | Upgrade the daemon and the app together, then restart once; the viewer is redrawn. |
 | [v0.5.2](docs/releases/v0.5.2.md) | Upgrade, then restart the daemon once; a demotion never raises a claim. |
 | [v0.5.1](docs/releases/v0.5.1.md) | Upgrade, restart, fetch the model once; the daemon embeds what it already holds. |
 | [v0.5.0](docs/releases/v0.5.0.md) | Apple silicon and glibc 2.39+ only; then fetch the model once and reproject existing knowledge. |
