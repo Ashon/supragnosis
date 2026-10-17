@@ -608,6 +608,19 @@
                       background:none; border:1px solid var(--line); color:var(--ink2); white-space:nowrap; }
   #statusbar .spill.bad { color:var(--bad); border-color:rgba(224,122,95,0.45); }
   #statusbar .spill:hover { border-color:var(--bad); color:var(--bad); }
+  /* Narrow windows (design-system.md Section 6). Under 1200px the script keeps one panel open at a
+     time. Under 760px a panel is a sheet from the bottom, the full width less a margin, and the
+     inspector takes the same place; the minimap gives the corner back to the canvas. */
+  @media (max-width: 759px) {
+    #dockL, #dockR { top:auto; bottom:32px; left:8px; right:8px; width:auto; max-height:55vh; }
+    #dockL:not(.on), #dockR:not(.on) { transform:translateY(110%); }
+    .docktab.left.open { left:0; }
+    .docktab.right.open { right:0; }
+    #detail { left:8px; right:8px; bottom:32px; max-height:55vh; }
+    #minimap { display:none !important; }
+    /* The camera buttons move to the top right, out of the sheets' way. */
+    #hud, #minimap.on ~ #hud { right:24px; top:56px; bottom:auto; }
+  }
   /* Reduced motion (docs/design-system.md Section 10): nothing moves - no spinner turning, no docks
      sliding, no feed rows fading in and out (a row simply stays until it is removed). The canvas half -
      pulses, marching dashes, the camera - is in viewer.js under REDUCED_MOTION, and the layout already

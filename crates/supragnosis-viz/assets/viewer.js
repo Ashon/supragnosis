@@ -249,14 +249,18 @@ function zoomAt(sx, sy, f) {
 const TOP_INSET = 52;      // height occluded by the top header - compensated in centering/fit
 const BOTTOM_INSET = 24;   // height occluded by the bottom status bar
 const DOCK_L = 262, DOCK_R = 348;   // island inset (12) + card width (match the CSS) - reserved so content is not hidden under them
-function insetL() { return dockLEl.classList.contains("on") ? DOCK_L : 0; }
-function insetR() { return dockREl.classList.contains("on") ? DOCK_R : 0; }
+function insetL() { return dockLEl.classList.contains("on") && !sheetWindow() ? DOCK_L : 0; }
+function insetR() { return dockREl.classList.contains("on") && !sheetWindow() ? DOCK_R : 0; }
+// Under 760px a dock is a sheet from the bottom (viewer.css), so it occludes the bottom, not a side.
+function sheetWindow() { return innerWidth < 760; }
 // Bottom occlusion: the status bar, plus the detail panel when it is open (panel sits at bottom:30,
 // measured live so centering keeps the focused node visible above it). Render detail before centerOn.
 function insetB() {
-  if (!detailEl.classList.contains("on")) return BOTTOM_INSET;
-  const h = detailEl.getBoundingClientRect().height;
-  return h ? 36 + h + 8 : BOTTOM_INSET;   // 36 = the detail panel's bottom offset (match the CSS)
+  const sheet = sheetWindow() && [dockLEl, dockREl].find(d => d.classList.contains("on"));
+  const panel = detailEl.classList.contains("on") ? detailEl : sheet;
+  if (!panel) return BOTTOM_INSET;
+  const h = panel.getBoundingClientRect().height;
+  return h ? 36 + h + 8 : BOTTOM_INSET;   // 36 = the panel's bottom offset (match the CSS)
 }
 // Smoothly bring ONE node to the screen center (focus-to-zoom). If zoomed too far out, zoom in
 // slightly. Used where there is nothing but the node to frame: the activity feed following a single
@@ -2006,6 +2010,8 @@ function relationGroupHtml(g, open) {
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
 function renderDetail(node) {
   if (!node) { detailEl.className = ""; detailEl.innerHTML = ""; return; }
+  // One panel at a time under 1200px: the inspector closes the docks (not remembered).
+  if (narrowWindow()) { applyDock(true, false, false); applyDock(false, false, false); }
   const groups = relationGroups(node);
   if (relOpen.id !== node.id) relOpen = { id: node.id, keys: new Set() };
   const nrel = groups.reduce((n, g) => n + g.items.length, 0);
@@ -2256,6 +2262,8 @@ miniEl.addEventListener("mousedown", ev => {
 function fitView(list, pad = 90) {
   const box = boundsOf(list || nodes);
   if (!box) return;
+  // Under 760px a panel is a sheet over the bottom of the canvas: frame above it, with less margin.
+  if (sheetWindow()) { frameBox(box, 0, innerWidth, TOP_INSET, innerHeight - insetB(), Math.min(pad, 36), 2.5); return; }
   frameBox(box, 0, innerWidth, TOP_INSET, innerHeight - BOTTOM_INSET, pad, 2.5);
 }
 
@@ -3229,13 +3237,22 @@ hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on
 // across reloads. The docks are side panels (not canvas layers) - toggling never reheats the sim.
 // Chevron points where clicking will move the edge: outward "<" collapses, inward ">" expands.
 const dockLTab = document.getElementById("dockLTab"), dockRTab = document.getElementById("dockRTab");
-function applyDock(isLeft, on) {
+function applyDock(isLeft, on, remember = true) {
   (isLeft ? dockLEl : dockREl).classList.toggle("on", on);
   const tab = isLeft ? dockLTab : dockRTab;
   tab.classList.toggle("open", on); // the handle slides with its dock (CSS .docktab.open)
   tab.textContent = (isLeft ? on : !on) ? "<" : ">";
-  try { localStorage.setItem(isLeft ? "supra.dockL" : "supra.dockR", on ? "1" : "0"); } catch (_) { /* private mode */ }
+  if (remember) {
+    try { localStorage.setItem(isLeft ? "supra.dockL" : "supra.dockR", on ? "1" : "0"); } catch (_) { /* private mode */ }
+  }
+  // Under 1200px the canvas holds one panel at a time (design-system.md Section 6): opening a dock
+  // closes the other and the inspector. Not remembered - the wide window's choice stands.
+  if (on && narrowWindow()) {
+    applyDock(!isLeft, false, false);
+    if (focus) { focus = null; renderDetail(null); }
+  }
 }
+function narrowWindow() { return innerWidth < 1200; }
 function toggleDock(isLeft) { applyDock(isLeft, !(isLeft ? dockLEl : dockREl).classList.contains("on")); }
 dockLTab.onclick = () => toggleDock(true);
 dockRTab.onclick = () => toggleDock(false);
