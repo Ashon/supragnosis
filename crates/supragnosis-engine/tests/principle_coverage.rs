@@ -3029,7 +3029,9 @@ fn design_docs_cross_references_resolve() {
             let start = flat[..at]
                 .char_indices()
                 .rev()
-                .find(|(_, c)| !(c.is_ascii_lowercase() || *c == '-'))
+                // Digits too: e2e.md is a document, and reading it as "e.md" let its sections be
+                // checked against whichever document mentioned it.
+                .find(|(_, c)| !(c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-'))
                 .map_or(0, |(i, c)| i + c.len_utf8());
             if start == at {
                 continue;
@@ -3215,6 +3217,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/profile.rs"),
     include_str!("../../supragnosis-cli/src/principal.rs"),
     include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
+    include_str!("../../supragnosis-cli/tests/daemon_exit.rs"),
     include_str!("../../supragnosis-mcp/src/remote.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
     // daemon-lifecycle.md like any other guard, so its source is scanned too.

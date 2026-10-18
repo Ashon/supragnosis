@@ -8,7 +8,7 @@
 > Section 14 (what guards what), [compatibility.md](compatibility.md) Section 6 (the CLI's
 > machine-read answers) and [onboarding.md](onboarding.md) (the first run).
 >
-> Status: **specified, not built** (Section 11).
+> Status: **specified; the daemon's half is built** (Section 11 step 2), the scenarios are not.
 
 ## 1. Why this exists
 
@@ -305,7 +305,8 @@ browser. `task test:e2e` stays the model evaluations.
 ## 11. Ordering
 
 1. **This document**, and its registry rows (J1-J8, deferred).
-2. **The daemon's half:** the bound-address file and a normal exit on SIGTERM, each with a unit test.
+2. **The daemon's half:** the bound-address file and a normal exit on SIGTERM, each with a test.
+   [built; the hub's sync listener writes its line with A6]
 3. **The Rust harness, A1-A4 and A8**, behind the `scenarios` feature, and the scenario check with
    its badge (J8).
 4. **The browser harness and B1-B6:** the proxy, the Node MCP seed, and Playwright on the system

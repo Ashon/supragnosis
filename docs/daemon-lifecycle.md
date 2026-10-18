@@ -145,6 +145,18 @@ person. `install` will not overwrite it, and `--take-over` moves it aside to
 whatever environment it carried can be recovered. `uninstall` treats it the same way. A generated
 plist is removed outright; there is nothing in it the generator cannot write again.
 
+**Stopping is a normal exit.** Every manager stops the daemon with SIGTERM: `supragnosis stop`,
+launchd's `bootout` and `kickstart -k`, and the desktop app. The daemon answers it instead of dying
+on it. It stops accepting connections, gives requests in flight up to three seconds, and exits 0.
+MCP sessions hold their event streams open, so waiting for every connection would never end.
+An instrumented build can then write its coverage profile (e2e.md Section 7).
+
+**A daemon asked for port 0 says which port it got.** With `--http 127.0.0.1:0` the system chooses
+the port. The daemon writes the address it bound to `~/.supragnosis/listening` as `mcp <address>`,
+replacing the file whole, for the test harness that asked (e2e.md Section 3.1). A daemon given a
+fixed address writes nothing, since its address is already known. Guarded by
+`a_daemon_on_port_zero_says_where_it_listens_and_exits_normally_on_sigterm`.
+
 ## 5. Version drift is reported where it is read
 
 The daemon answers `/api/about` with its version over the viewer socket, and the CLI knows its own.

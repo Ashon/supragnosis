@@ -2806,9 +2806,59 @@ async fn serve_http_daemon(
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
-    tracing::info!(%host, %workspace, %session, %addr, auth, "supragnosis / MCP streamable-http daemon: http://{addr}/mcp");
-    axum::serve(listener, router).await?;
+    // The address it got, which differs from the one it was asked for when that was port 0.
+    let bound = listener.local_addr().context("the MCP listener's address")?;
+    tracing::info!(%host, %workspace, %session, addr = %bound, auth, "supragnosis / MCP streamable-http daemon: http://{bound}/mcp");
+    if addr.port() == 0 {
+        write_listening(&fed::fed_base_dir(), &[("mcp", bound)])?;
+    }
+    axum::serve(listener, router).with_graceful_shutdown(sigterm()).await?;
     Ok(())
+}
+
+/// Tells whoever asked for port 0 which port they got (docs/e2e.md Section 3.1): one line per
+/// listener, `<name> <address>`, in `<base>/listening`. Written once the listener is bound, by
+/// replacing the file whole, so a reader never sees half of it. A daemon given a fixed address
+/// writes nothing - that one is already known.
+fn write_listening(
+    base: &std::path::Path,
+    listeners: &[(&str, std::net::SocketAddr)],
+) -> Result<()> {
+    std::fs::create_dir_all(base).with_context(|| format!("creating {}", base.display()))?;
+    let text: String = listeners.iter().map(|(name, addr)| format!("{name} {addr}\n")).collect();
+    let path = base.join("listening");
+    let tmp = base.join("listening.tmp");
+    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+/// Resolves when the process is asked to stop - SIGTERM, which `supragnosis stop`, launchd and the
+/// desktop app send - and then gives requests in flight three seconds before the server stops waiting
+/// for them. MCP sessions hold their event streams open, so a shutdown that waited for every
+/// connection would never end. The daemon then exits normally, which is also what lets an
+/// instrumented build write its coverage profile (docs/e2e.md Section 7).
+async fn sigterm() {
+    #[cfg(unix)]
+    {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+                tracing::info!("SIGTERM - no longer accepting; exiting once requests in flight end, at most in 3s");
+                tokio::spawn(async {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    tracing::info!("exiting with connections still open");
+                    std::process::exit(0);
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "SIGTERM cannot be caught - the daemon stops as the signal's default");
+                std::future::pending::<()>().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    std::future::pending::<()>().await;
 }
 
 /// First contact (docs/onboarding.md Section 5): the one log this daemon process keeps of which AI
@@ -5387,6 +5437,29 @@ mod key_spelling {
         assert!(notes[0].contains("peer") && notes[1].contains("loud"));
         let keys = trusted_origin_keys(&fc.sync);
         assert_eq!(keys.keys().collect::<Vec<_>>(), vec!["hub"]);
+    }
+}
+
+/// docs/e2e.md Section 3.1: the listening file names each listener with the address it got, and is
+/// replaced whole.
+#[cfg(test)]
+mod listening_file {
+    #[test]
+    fn the_listening_file_names_each_listener_and_is_replaced_whole() {
+        let base = std::env::temp_dir().join(format!("sg-listening-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let a: std::net::SocketAddr = "127.0.0.1:41234".parse().unwrap();
+        let b: std::net::SocketAddr = "127.0.0.1:41235".parse().unwrap();
+        super::write_listening(&base, &[("mcp", a), ("sync", b)]).unwrap();
+        let text = std::fs::read_to_string(base.join("listening")).unwrap();
+        assert_eq!(text, "mcp 127.0.0.1:41234\nsync 127.0.0.1:41235\n");
+        super::write_listening(&base, &[("mcp", b)]).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(base.join("listening")).unwrap(),
+            "mcp 127.0.0.1:41235\n"
+        );
+        assert!(!base.join("listening.tmp").exists(), "no half-written file is left beside it");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
 
