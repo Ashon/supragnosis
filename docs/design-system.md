@@ -260,15 +260,17 @@ and a slot already taken in the view probes forward in name order. Two types nev
 one screen, and a type keeps its color in every view where no earlier name collides with its slot -
 which is not every view, and the legend is what names a color.
 
-**Regions are drawn for the active node** and named by two of their members other than it, with the
-count: "proposal gate, claim_demotion defect (4)". Today every context of a hub is named after the
-hub, so selecting one titles five regions alike. A view toggle still draws them all. Region names
-sit outside the region's upper edge, and node labels avoid them and each other, larger degree first.
-A region's name is 13px at medium weight whatever the region's size, the active node's at full
-strength and the rest faded. A region is a cloud in its context's color: one ellipse laid along its
-members, densest over them and fading to nothing past the outermost, with no edge. A region says what
-was said together, which is a looser fact than a boundary, and an edge would read as a line no fact
-asks for (Section 4). The minimap draws the same clouds.
+**Every region is drawn, and the active node's are named.** A region is a cloud in its context's
+color: one ellipse laid along its members, densest over them and fading to nothing past the
+outermost, with no edge. A region says what was said together, which is a looser fact than a
+boundary, and an edge would read as a line no fact asks for (Section 4). At rest every region is
+drawn, faint; while a node is active its own regions are drawn at full strength and the rest fade.
+View's "all regions" off draws the active node's alone. Only the active node's regions are named, by
+two of their members other than it, with the count: "proposal gate, claim_demotion defect (4)" -
+every context of a hub was once named after the hub, so selecting one titled five regions alike.
+Region names are placed before node labels, which avoid them, so names for every region at rest
+would push the map's own names out. A region's name sits outside its upper edge, 13px at medium
+weight whatever the region's size. The minimap draws the same clouds.
 
 **The layout is remembered on the local console.** Node positions are kept per workspace in the
 browser's storage, keyed by the node's id from `/api/surface` as well as the workspace, and the next
@@ -976,3 +978,8 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
 - **Step 10: the Settings page's off-scale sizes rounded to the nearest step** - 11.5 to 12 (11 for
   its pill), 12.5 to 13, 15.5 to 15 - and the viewer's observation text, which is often Korean, runs
   at 1.55 and its card at 1.6.
+- **After step 10: every region is drawn by default.** As flat hulls, regions drawn all at once
+  overlapped into one slab, which is why only the active node's were drawn. As clouds they read as a
+  faint field (0.10 at the core at rest), so the author asked for them on by default. Their names are
+  still the active node's alone: on the author's store, twenty region names at rest took the places
+  of the node labels. A stored "off" from before is forgotten once, as the minimap's was.
