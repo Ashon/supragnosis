@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- The Welcome page (docs/onboarding.md Section 6): the first run, from install to the first entry.
+     The app's own page, shown in the main window in place of the graph - nothing here is served by a
+     daemon or a hub - and one of the two pages the app's commands answer. Every step's state on it
+     is what `supragnosis setup --events` reported (O4). The policy is the settings page's. Everything
+     below the header is built by welcome.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome - supragnosis</title>
+<link rel="stylesheet" href="fonts/pretendard-1.3.9/pretendard-latin.css">
+<link rel="stylesheet" href="shell.css" data-shell>
+<link rel="stylesheet" href="settings.css">
+<link rel="stylesheet" href="welcome.css">
+</head>
+<body>
+<header>
+  <h1><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg>supragnosis<span class="crumb">welcome</span></h1>
+  <a id="close" class="hclose" href="viz://localhost/" title="Back to the graph (Esc)" aria-label="Back to the graph"><span class="i i-x" aria-hidden="true"></span></a>
+</header>
+<main id="page" class="wpage" tabindex="-1"></main>
+<!-- O6: what setup does stays on this Mac, and the page says so where every step can be seen. -->
+<footer class="wfoot">
+  <p class="privacy">Nothing leaves this Mac. Sync stays off until you add a server in Settings.</p>
+  <div id="actions" class="wactions"></div>
+</footer>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+<script src="kit.js"></script>
+<script src="welcome.js"></script>
+</body>
+</html>

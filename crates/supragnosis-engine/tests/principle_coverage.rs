@@ -695,9 +695,11 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
         4,
         &[c(
             "every state the Welcome page draws comes from setup's events, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, and asking setup again",
-            Evidence::Deferred(
-                "docs/onboarding.md Section 13 step 3 (the app) is not built. Revisit when it lands",
-            ),
+            Evidence::Scenario(&[
+                "the_welcome_page_calls_only_its_own_acts",
+                "setup_events_read_as_the_clis_example_has_them",
+                "only_the_apps_own_page_may_change_a_setting",
+            ]),
         )],
     ),
     (
@@ -721,9 +723,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
             ),
             c(
                 "the Welcome page says that nothing leaves the machine",
-                Evidence::Deferred(
-                    "docs/onboarding.md Section 13 step 3 (the app) is not built. Revisit when it lands",
-                ),
+                Evidence::Scenario(&["the_welcome_page_calls_only_its_own_acts"]),
             ),
         ],
     ),

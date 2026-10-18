@@ -1,7 +1,9 @@
 {
   "identifier": "settings",
-  "description": "The settings page (docs/settings-page.md). It opens in the main window, which also shows the viewer a daemon - or later a hub - serves, and a capability cannot tell two pages of one window apart. So these commands are granted to the main window here, and each one refuses unless the window is showing the app's own settings page at the top level (S1).",
-  "windows": ["main"],
+  "description": "The app's own pages: Settings (docs/settings-page.md) and Welcome (docs/onboarding.md Section 6). They open in the main window, which also shows the viewer a daemon - or later a hub - serves, and a capability cannot tell two pages of one window apart. So these commands are granted to the main window here, and each one refuses unless the window is showing one of the app's own pages at the top level (S1).",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "allow-settings-state",
     "allow-server-use",
@@ -10,6 +12,14 @@
     "allow-app-toggle",
     "allow-login-set",
     "allow-daemon-restart",
-    "allow-peer-narrow"
+    "allow-peer-narrow",
+    "allow-setup-check",
+    "allow-setup-run",
+    "allow-setup-stop",
+    "allow-welcome-state",
+    "allow-welcome-set",
+    "allow-app-helper",
+    "allow-clipboard-copy",
+    "allow-diagnostics"
   ]
 }

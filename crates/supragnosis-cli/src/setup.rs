@@ -331,9 +331,10 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
         (Some(_), _) => {
             Event::new("first", None, State::Skipped, "Entries go to the remote server.")
         }
+        // The workspace rides as the event's id, so the app can open the graph there.
         (None, FirstEntry::Some { workspace: Some(ws), ago, .. }) => Event::new(
             "first",
-            None,
+            Some(ws),
             State::Done,
             format!("The store holds an entry: workspace \"{ws}\", {ago}."),
         ),
@@ -551,7 +552,7 @@ mod tests {
         };
         o.model = Model::On;
         let l = checklist(&o);
-        assert_eq!(state(&l, "first", None), State::Done);
+        assert_eq!(state(&l, "first", Some("web")), State::Done, "the workspace is the event's id");
         assert_eq!(summary(&l), Event::new("summary", None, State::Done, "Every step is done."));
     }
 

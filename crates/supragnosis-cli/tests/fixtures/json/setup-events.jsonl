@@ -11,4 +11,5 @@
 {"step":"model","state":"working","say":"40 of 224 MB. Search matches words until it is here."}
 {"step":"model","state":"failed","say":"`supragnosis embed fetch --events` failed: the download failed (connection reset). Search matches words until the model is here; run setup again when online."}
 {"step":"first","state":"working","say":"Ask a connected app: \"Remember one decision we made in this project today, and why.\""}
+{"step":"first","id":"billing","state":"done","say":"The store holds an entry: workspace \"billing\", just now."}
 {"step":"summary","state":"failed","say":"Set up. Still going: Search by meaning, Try it."}

@@ -8,8 +8,8 @@
 > [settings-page.md](settings-page.md) (the app's own pages) and
 > [semantic-retrieval.md](semantic-retrieval.md) (the search model).
 >
-> Status: **the daemon and the CLI are built** (Section 13 step 2); the app, Linux and the clean run
-> are not. The choices it records were made by the author on 2026-10-18 from a storyboard.
+> Status: **the daemon, the CLI and the app are built** (Section 13 steps 2 and 3); Linux and the
+> clean run are not. The choices it records were made by the author on 2026-10-18 from a storyboard.
 
 ## 1. Why this exists
 
@@ -156,11 +156,13 @@ After connecting, an app still has to load the change, and setup says how for ea
 `connect` prints today. Two of them the app can do for the person (D9):
 
 - **Claude Desktop:** "Restart Claude Desktop" asks it to quit as the Dock's Quit does, waits for it to
-  exit and opens it again, through the running-application and workspace interfaces macOS offers any
-  app (`NSRunningApplication.terminate`, then `NSWorkspace`). If that needs the Automation permission
-  on the signed app, the app declares it (an `NSAppleEventsUsageDescription` and the
-  `com.apple.security.automation.apple-events` entitlement) and macOS asks the person once; a refusal
-  leaves the instruction in place.
+  exit and opens it again. The app forbids `unsafe` code, so it does not call the running-application
+  interface itself: it sends the same quit Apple event through `osascript` and opens the app with
+  `open -b`. Sending an Apple event needs the Automation permission, so the app declares it - an
+  `NSAppleEventsUsageDescription` in `app/Info.plist` and the
+  `com.apple.security.automation.apple-events` entitlement in `app/Entitlements.plist`, both of which
+  the bundler signs into the release - and macOS asks the person once; a refusal leaves the
+  instruction in place. The page offers it on a row it connected itself.
 - **Cursor:** "Open Cursor" opens it, with where to turn the server on.
 - **Claude Code, Codex, Gemini and VS Code** load it in their next session or chat, which only the
   person can start.
@@ -257,6 +259,17 @@ are declared and granted the same way.
 
 **Settings** gains the search state in This Mac's daemon section (settings-page.md Section 3.3):
 "Search by meaning" or "Keyword only - the model is not downloaded", with the download.
+
+**What building it settled.**
+- The two remembered choices, and whether the page was ever shown, are one small file in the app's
+  settings directory (`~/Library/Application Support/dev.supragnosis.desktop/welcome.json`).
+  Closing the page with its x is navigation, not "Finish later": the page comes back at the next
+  launch while a step is not done.
+- The page reads `setup --check` again every 15 seconds while it is shown, after each act, and once
+  shortly after the viewer's event stream reports anything until the first entry is in.
+- Each act runs as its own process group, so "Not now" stops the download `setup --step model`
+  started as well as setup itself, and the next run fetches what is missing.
+- A command a sentence names is set in code type on the page; the sentence is still setup's.
 
 ## 7. Words where people land
 

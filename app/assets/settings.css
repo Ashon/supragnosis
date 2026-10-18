@@ -309,6 +309,11 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 .i-desktop { --i: url(icons/app-window.svg); }
 .i-editor { --i: url(icons/code.svg); }
 .i-terminal { --i: url(icons/square-terminal.svg); }
+.i-search { --i: url(icons/search.svg); }
+.i-download { --i: url(icons/download.svg); }
+.row .lead.ok { background: var(--ok-glass); color: var(--ok); }
+.row .lead.warn { background: var(--warn-glass); color: var(--warn); }
+a.btn { text-decoration: none; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }

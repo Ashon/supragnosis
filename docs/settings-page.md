@@ -121,6 +121,9 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
 - **Start at Login** is a switch, with the behaviour daemon-lifecycle.md Section 6 gave the tray's
   check item: on is `service install --take-over`, off is `service uninstall`.
 - **Restart Daemon** restarts it, and the CLI's answer shows at the foot of the page.
+- **Search by meaning** shows the daemon's own report (semantic-retrieval.md SR3): on, with its
+  model, or "Keyword only - the model is not downloaded" with a Download button, which runs setup's
+  model step and shows its progress (onboarding.md Section 4.3).
 - **While a remote profile is active** these controls are disabled, with the reason: this Mac's
   daemon is not what the AI apps use (remote-server.md Section 5).
 
@@ -143,7 +146,8 @@ Peers tab showed, read from this Mac's daemon, and not shown while a remote prof
 ### 3.5 About
 
 The app's, the CLI's and the daemon's versions, where the CLI and the data live, the license and the
-source. It is the viewer dialog's About, with the app's own facts added.
+source. It is the viewer dialog's About, with the app's own facts added. **Run setup again** opens
+the Welcome page (onboarding.md Section 6), which shows only what is not done.
 
 ## 4. Who may change a setting
 
@@ -159,7 +163,9 @@ at a different server.
 - **The capability cannot be the lock.** It is scoped to windows, and the settings page and the
   viewer are two pages of one window. So it grants the commands to the main window.
 - **Each command checks its caller, and that is the lock.** It refuses unless the calling window
-  is showing the app's own settings page - its scheme, host and path - at the top level (S1).
+  is showing one of the app's own pages - its scheme, host and path - at the top level (S1). Those
+  are this page and the Welcome page (onboarding.md Section 6), both bundled with the app; their
+  commands are declared and granted together.
   - A viewer page that frames the settings page cannot call through the frame, because the top
     level is still the viewer.
   - Navigating away from the settings page, to the viewer or anywhere else, takes the commands with
@@ -177,6 +183,8 @@ The tray keeps what a menu does well - glancing and opening:
   its version. If something needs doing - version drift, a refused credential, an unanswering
   server, no AI app connected - the line says so and points to Settings.
 - **Open Viewer.**
+- **Finish setup...**, while the daemon is not kept running or no AI app is connected (onboarding.md
+  Section 6). Turning Start at Login off by choice settles the daemon's half.
 - **Settings...**
 - **Quit Supragnosis.**
 

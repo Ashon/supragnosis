@@ -12,30 +12,6 @@ const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 // Windows' webview reaches as http://viz.localhost.
 const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
 
-// ---- DOM helpers ---------------------------------------------------------------------------
-
-// h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.
-function h(tag, props, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (v === null || v === undefined) continue;
-    // false omits a boolean attribute - except spellcheck, whose false has to be said.
-    if (v === false && k !== "spellcheck") continue;
-    if (k === "class") el.className = v;
-    else if (k === "text") el.textContent = String(v);
-    else if (k === "on") for (const [ev, fn] of Object.entries(v)) el.addEventListener(ev, fn);
-    else if (k in el && typeof el[k] !== "function" && k !== "list") el[k] = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) {
-    if (c === null || c === undefined || c === false) continue;
-    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  }
-  return el;
-}
-
-const icon = (name, extra) => h("span", { class: "i i-" + name + (extra ? " " + extra : ""), "aria-hidden": "true" });
-
 // ---- State -----------------------------------------------------------------------------------
 
 const SECTIONS = [
@@ -284,6 +260,8 @@ function renderDaemon() {
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
         h("div", { class: "end" }, remote ? null :
           actionButton("restart", "Restart", "restart", "", () => act("restart", "daemon_restart", null, { title: "Daemon restarted" }))))),
+    h("div", { class: "group-title", text: "Search" }),
+    h("div", { class: "card" }, searchRow(d, remote)),
     h("div", { class: "group-title", text: "Store" }),
     h("div", { class: "card" },
       h("div", { class: "row" },
@@ -293,6 +271,38 @@ function renderDaemon() {
           recovery ? h("div", { class: "sub", text: "Last recovery re-projected " + (recovery.observations || 0) + " observations" }) : null))));
   return out;
 }
+
+// Search by meaning (docs/settings-page.md Section 3.3): the daemon's report, and the download when
+// the model is not here. The download is setup's model step, its progress the lines it streams.
+let modelProgress = null;
+
+function searchRow(d, remote) {
+  const s = d.semantic;
+  let title, sub, kind;
+  if (remote) { title = "Not in use"; sub = "The server in use searches with its own model."; kind = ""; }
+  else if (!s) { title = "Keyword only"; sub = d.answering === false ? "Known once the daemon answers." : "This daemon runs without a search model, so search matches words."; kind = ""; }
+  else if (s.state === "on") { title = "Search by meaning"; sub = "Multilingual, on this Mac (" + s.model + ")"; kind = "ok"; }
+  else { title = "Keyword only - the model is not downloaded"; sub = s.note || "Search matches words until the model (224 MB) is here."; kind = "warn"; }
+  const downloading = pending.has("model");
+  const end = !remote && s && s.state !== "on"
+    ? actionButton("model", downloading && modelProgress ? modelProgress : "Download", "download", "",
+      () => act("model", "setup_run", { step: "model" }, { title: "Search by meaning is on", failTitle: "The model did not download" }))
+    : null;
+  return h("div", { class: "row" },
+    h("span", { class: "lead " + kind }, icon("search")),
+    h("div", { class: "body" }, h("div", { class: "title", text: title }), h("div", { class: "sub", text: sub })),
+    h("div", { class: "end" }, end));
+}
+
+// The download's progress, from the lines setup streams for it.
+if (window.__TAURI__) window.__TAURI__.event.listen("setup-line", (e) => {
+  const p = e.payload || {};
+  if (p.key !== "model") return;
+  let ev = null;
+  try { ev = JSON.parse(p.line); } catch (_) { return; }
+  const m = ev && /^(\d+) of (\d+) MB/.exec(ev.say || "");
+  if (m) { modelProgress = m[1] + " of " + m[2] + " MB"; render(); }
+});
 
 // Sync (docs/settings-page.md Section 3.4): what the viewer's Peers tab showed, and its one act -
 // narrowing what an admitted peer may read. Read from this Mac's daemon; a remote profile has none.
@@ -422,6 +432,14 @@ function renderAbout() {
   ];
   return [
     h("div", { class: "card kv selectable" }, pairs.flatMap(([k, v]) => [h("div", { class: "k", text: k }), h("div", { class: "v", text: v || "-" })])),
+    // The first run's page, again (docs/onboarding.md Section 6): it shows only what is not done.
+    h("div", { class: "group-title", text: "Setup" }),
+    h("div", { class: "card" },
+      h("div", { class: "row" },
+        h("div", { class: "body" },
+          h("div", { class: "title", text: "Run setup again" }),
+          h("div", { class: "sub", text: "The four steps of the first run: what is done, and what is left." })),
+        h("div", { class: "end" }, h("a", { class: "btn", href: "welcome.html" }, "Open")))),
     h("p", { class: "hint", text: "Dependency licences are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
   ];
 }
@@ -466,22 +484,6 @@ function render() {
   pane.replaceChildren(h("section", { class: "section", "aria-labelledby": "h-" + id }, sectionHead(id), body));
   const h2 = pane.querySelector("h2");
   if (h2) h2.id = "h-" + id;
-}
-
-// ---- Notices --------------------------------------------------------------------------------
-
-function toast(kind, title, detail) {
-  const host = document.getElementById("toasts");
-  const close = h("button", { class: "btn quiet iconbtn", "aria-label": "Dismiss" }, icon("x"));
-  const el = h("div", { class: "toast " + kind },
-    icon(kind === "ok" ? "ok" : "alert"),
-    h("div", { class: "grow" }, h("div", { class: "t-title", text: title }), detail ? h("div", { class: "t-detail", text: detail }) : null),
-    close);
-  close.addEventListener("click", () => el.remove());
-  host.prepend(el);
-  // A success needs no reading twice; an error stays until it is dismissed.
-  if (kind === "ok") setTimeout(() => el.remove(), 4500);
-  while (host.children.length > 4) host.lastChild.remove();
 }
 
 // ---- Dialogs --------------------------------------------------------------------------------

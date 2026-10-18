@@ -429,6 +429,7 @@ function applyGraph(g) {
     + (clusterMode ? ` / groups ${Object.keys(typeColor).length}, bridges ${bridgeSet.size}` : "")
     + (s.type_counts ? " / " + Object.entries(s.type_counts).map(([t,c]) => `${t} ${c}`).join(", ") : "");
   emptyEl.style.display = nodes.length ? "none" : "flex";
+  if (!nodes.length) refreshEmpty();
 
   // If focused, refresh the detail inspector (reflect connection changes). If the focus node is gone, clear it.
   if (focus) { if (nodes.includes(focus)) renderDetail(focus); else { focus = null; renderDetail(null); } }
@@ -923,6 +924,41 @@ async function loadWorkspaces() {
     const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = "Workspace";
     chipBar.replaceChildren(lbl, mk("(all)", "*"), ...list.map(w => mk(w, w)));
   } catch (e) { /* server not up - retry next cycle */ }
+}
+
+// An empty workspace says it is empty, not that knowledge is missing (docs/onboarding.md Section 7):
+// what fills it, and the workspaces that hold knowledge, each with its count, one click away. The
+// counts are read across every workspace at most every 30 seconds, and only while this shows.
+let wsCounts = null, wsCountsAt = 0;
+async function refreshEmpty() {
+  if (Date.now() - wsCountsAt > 30000) {
+    wsCountsAt = Date.now();
+    try {
+      const r = await fetch("/api/graph?workspace=*", { cache: "no-store" });
+      if (r.ok) {
+        const counts = {};
+        for (const n of (await r.json()).nodes || []) counts[n.workspace] = (counts[n.workspace] || 0) + 1;
+        wsCounts = counts;
+      }
+    } catch (_) { /* the daemon is not answering - the sentence stands without the list */ }
+  }
+  const cur = currentWs();
+  const others = Object.entries(wsCounts || {}).filter(([w]) => w !== cur).sort((a, b) => b[1] - a[1]);
+  const line = (text, cls) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; };
+  const kids = [line("Nothing here yet.", "e-title"),
+    line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
+  if (others.length) {
+    const row = document.createElement("div");
+    row.className = "e-ws";
+    for (const [w, c] of others.slice(0, 8)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.textContent = w + " (" + c + ")";
+      b.onclick = () => { wsInput.value = w; beginWorkspaceTransition(); renderChipsActive(); poll(); };
+      row.append(b);
+    }
+    kids.push(row);
+  }
+  emptyEl.replaceChildren(...kids);
 }
 
 // --- Live MCP activity (SSE) --------------------------------------------------------

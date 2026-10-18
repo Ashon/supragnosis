@@ -86,6 +86,29 @@ struct TrayReview {
     shown: Mutex<bool>,
 }
 
+/// The tray's "Finish setup..." item (docs/onboarding.md Section 6): in the menu while the daemon or the
+/// AI apps are not set up, out of it otherwise.
+struct TraySetup {
+    menu: Menu<tauri::Wry>,
+    item: MenuItem<tauri::Wry>,
+    shown: Mutex<bool>,
+}
+
+/// Puts an optional tray item in the menu, below the status line, or takes it out.
+fn tray_item_shown(
+    menu: &Menu<tauri::Wry>,
+    item: &MenuItem<tauri::Wry>,
+    shown: &Mutex<bool>,
+    on: bool,
+) {
+    let mut shown = shown.lock().unwrap();
+    if on && !*shown && menu.insert(item, 2).is_ok() {
+        *shown = true;
+    } else if !on && *shown && menu.remove(item).is_ok() {
+        *shown = false;
+    }
+}
+
 /// How many proposals wait for a decision on this Mac's daemon, across its workspaces: the open ones
 /// and the blocked ones, which wait for a person to reject them. None when the daemon does not answer.
 async fn waiting_proposals(sock: &Path) -> Option<usize> {
@@ -743,15 +766,21 @@ async fn refresh_status(app: &tauri::AppHandle) {
         0
     };
     if let Some(r) = app.try_state::<TrayReview>() {
-        let mut shown = r.shown.lock().unwrap();
         if waiting > 0 {
             let _ = r.item.set_text(format!("Review ({waiting})..."));
-            if !*shown && r.menu.insert(&r.item, 2).is_ok() {
-                *shown = true;
-            }
-        } else if *shown && r.menu.remove(&r.item).is_ok() {
-            *shown = false;
         }
+        tray_item_shown(&r.menu, &r.item, &r.shown, waiting > 0);
+    }
+    // "Finish setup..." while the daemon or the AI apps are not set up (docs/onboarding.md
+    // Section 6), from setup's own checklist. A CLI that predates setup offers nothing.
+    let pid = spawned_pid(app);
+    let steps = tokio::task::spawn_blocking(move || setup_check_blocking(pid))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .map(|events| essentials(&events));
+    if let Some(t) = app.try_state::<TraySetup>() {
+        tray_item_shown(&t.menu, &t.item, &t.shown, finish_setup_offered(read_prefs(app), steps));
     }
 }
 
@@ -1032,12 +1061,12 @@ async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> String {
 
 // --- The settings page (docs/settings-page.md) ---------------------------------------------
 
-/// The commands the settings page calls - the list `generate_handler!` registers below. build.rs
+/// The commands the app's own pages call - the list `generate_handler!` registers below. build.rs
 /// declares the same list in the app manifest, so none of them is open to any page by default;
 /// capabilities/settings.json grants them to the main window, and each one refuses unless that
-/// window is showing the app's own settings page (S1). A test holds the lists together.
+/// window is showing one of the app's own pages (S1). A test holds the lists together.
 #[cfg(test)]
-const SETTINGS_COMMANDS: &[&str] = &[
+const APP_COMMANDS: &[&str] = &[
     "settings_state",
     "server_use",
     "server_add",
@@ -1046,42 +1075,60 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "login_set",
     "daemon_restart",
     "peer_narrow",
+    "setup_check",
+    "setup_run",
+    "setup_stop",
+    "welcome_state",
+    "welcome_set",
+    "app_helper",
+    "clipboard_copy",
+    "diagnostics",
 ];
 
-/// The settings page's address: the app's own page, bundled with it - never one a daemon or a hub
-/// serves.
-fn settings_url() -> tauri::Url {
+/// The app's own pages: bundled with it, never served by a daemon or a hub, and the only pages its
+/// commands answer - Settings (docs/settings-page.md) and Welcome (docs/onboarding.md Section 6).
+const OWN_PAGES: &[&str] = &["settings.html", "welcome.html"];
+
+/// The address of one of the app's own pages.
+fn own_page(name: &str) -> tauri::Url {
     let url = if cfg!(windows) {
-        "http://tauri.localhost/settings.html"
+        format!("http://tauri.localhost/{name}")
     } else {
-        "tauri://localhost/settings.html"
+        format!("tauri://localhost/{name}")
     };
     url.parse().expect("static url")
 }
 
-/// Whether a caller may change a setting (docs/settings-page.md S1): the main window, while its page
-/// is the app's own settings page. The capability cannot tell the pages of one window apart - the
-/// same window shows the viewer, which a daemon or a hub serves - so this check is the lock. It reads
-/// the webview's top-level address, so a viewer page that frames the settings page cannot call
-/// through the frame either.
-fn settings_caller_ok(label: &str, url: &tauri::Url) -> bool {
-    let own = settings_url();
-    label == "main"
-        && url.scheme() == own.scheme()
-        && url.host_str() == own.host_str()
-        && url.path() == own.path()
+fn settings_url() -> tauri::Url {
+    own_page("settings.html")
 }
 
-fn settings_caller(webview: &tauri::Webview) -> Result<(), String> {
+fn welcome_url() -> tauri::Url {
+    own_page("welcome.html")
+}
+
+/// Whether `url` is the app's own page `name`: its scheme, host and path.
+fn is_page(url: &tauri::Url, name: &str) -> bool {
+    let own = own_page(name);
+    url.scheme() == own.scheme() && url.host_str() == own.host_str() && url.path() == own.path()
+}
+
+/// Whether a caller may run the app's commands (docs/settings-page.md S1, docs/onboarding.md
+/// Section 6): the main window, while its page is one of the app's own. The capability cannot tell
+/// the pages of one window apart, since the same window shows the viewer a daemon or a hub serves,
+/// so this check is the lock. It reads the webview's top-level address, so a viewer page that frames
+/// an app page cannot call through the frame either.
+fn own_page_ok(label: &str, url: &tauri::Url) -> bool {
+    label == "main" && OWN_PAGES.iter().any(|p| is_page(url, p))
+}
+
+fn own_page_caller(webview: &tauri::Webview) -> Result<(), String> {
     let url = webview.url().map_err(|e| e.to_string())?;
-    if settings_caller_ok(webview.label(), &url) {
+    if own_page_ok(webview.label(), &url) {
         Ok(())
     } else {
-        tracing::warn!(label = webview.label(), page = %url, "a settings command was refused: not the settings page");
-        Err(
-            "only the app's own Settings page may change a setting (docs/settings-page.md S1)"
-                .into(),
-        )
+        tracing::warn!(label = webview.label(), page = %url, "an app command was refused: not one of the app's own pages");
+        Err("only the app's own pages - Settings and Welcome - may change a setting (docs/settings-page.md S1)".into())
     }
 }
 
@@ -1182,6 +1229,9 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             "running": status.as_ref().map(|v| v["version"]["running"].clone()),
             "installed": status.as_ref().map(|v| v["version"]["here"].clone()),
             "store": status.as_ref().map(|v| v["store"].clone()),
+            // The daemon's own report on search by meaning (docs/onboarding.md Section 6): null when
+            // it runs without a model or does not answer.
+            "semantic": status.as_ref().map(|v| v["semantic"].clone()),
             "login": login,
             "remote": remote.map(|r| r.name),
         },
@@ -1201,7 +1251,7 @@ async fn settings_state(
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     Ok(settings_state_of(&app).await)
 }
 
@@ -1211,7 +1261,7 @@ async fn server_use(
     app: tauri::AppHandle,
     name: String,
 ) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     let sock = app.state::<VizSock>().0.clone();
     Ok(use_server(&app, sock, &name).await)
 }
@@ -1225,7 +1275,7 @@ async fn server_add(
     credential: String,
     ca: Option<String>,
 ) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     let result =
         tokio::task::spawn_blocking(move || add_server(&name, &url, &credential, ca.as_deref()))
             .await
@@ -1240,7 +1290,7 @@ async fn server_remove(
     app: tauri::AppHandle,
     name: String,
 ) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     let sock = app.state::<VizSock>().0.clone();
     Ok(remove_server(&app, sock, &name).await)
 }
@@ -1251,7 +1301,7 @@ async fn app_toggle(
     app: tauri::AppHandle,
     id: String,
 ) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     if !AI_APPS.iter().any(|(i, _)| *i == id) {
         return Err(format!("{id:?} is not an app supragnosis connects"));
     }
@@ -1264,12 +1314,17 @@ async fn login_set(
     app: tauri::AppHandle,
     on: bool,
 ) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     if active_remote(&app).is_some() {
         return Err(
             "a remote server is active - this Mac's daemon is not what the AI apps use".into()
         );
     }
+    // Turning it off is a choice the app remembers, so Welcome and the tray stop asking
+    // (docs/onboarding.md Section 4.1); turning it on forgets it.
+    let mut p = read_prefs(&app);
+    p.login_off = !on;
+    let _ = write_prefs(&app, p);
     let sock = app.state::<VizSock>().0.clone();
     Ok(set_login(&app, sock, on).await)
 }
@@ -1297,7 +1352,7 @@ async fn peer_narrow(
     node: String,
     keep: Vec<String>,
 ) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     if active_remote(&app).is_some() {
         return Err("a remote server is active - sync settings are this Mac's daemon's".into());
     }
@@ -1331,7 +1386,7 @@ async fn peer_narrow(
 
 #[tauri::command]
 async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
-    settings_caller(&webview)?;
+    own_page_caller(&webview)?;
     if active_remote(&app).is_some() {
         return Err(
             "a remote server is active - this Mac's daemon is not what the AI apps use".into()
@@ -1339,6 +1394,508 @@ async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Resul
     }
     let sock = app.state::<VizSock>().0.clone();
     Ok(restart_daemon(&app, sock).await)
+}
+
+// --- The Welcome page (docs/onboarding.md Section 6) ----------------------------------------
+// The page draws only what `supragnosis setup --events` says (O4). The shell runs setup for it, passes
+// each line on as it arrives, and keeps three things of its own: stopping the daemon it spawned
+// before the server step, the two helpers that restart or open an AI app, and what the person chose.
+
+/// What the CLI says when it does not know `setup`: it predates this app's Welcome page.
+const SETUP_TOO_OLD: &str =
+    "This supragnosis-server predates setup. Update it: brew upgrade supragnosis-server";
+
+/// What the app remembers about the Welcome page, and nothing else (Section 6): that it was shown,
+/// that the person chose "Finish later", and that they turned Start at Login off.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct WelcomePrefs {
+    seen: bool,
+    later: bool,
+    login_off: bool,
+}
+
+impl WelcomePrefs {
+    fn from_json(v: &serde_json::Value) -> Self {
+        let b = |k: &str| v[k].as_bool().unwrap_or(false);
+        WelcomePrefs { seen: b("seen"), later: b("later"), login_off: b("login_off") }
+    }
+    fn to_json(self) -> serde_json::Value {
+        serde_json::json!({ "seen": self.seen, "later": self.later, "login_off": self.login_off })
+    }
+}
+
+fn prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("welcome.json"))
+}
+
+/// The remembered choices. A file that is missing or unreadable is a first launch.
+fn read_prefs(app: &tauri::AppHandle) -> WelcomePrefs {
+    prefs_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .map(|v| WelcomePrefs::from_json(&v))
+        .unwrap_or_default()
+}
+
+fn write_prefs(app: &tauri::AppHandle, p: WelcomePrefs) -> Result<(), String> {
+    let path = prefs_path(app).ok_or("the app's settings directory is not known")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    }
+    std::fs::write(&path, p.to_json().to_string())
+        .map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+/// The two steps the launch and the tray wait on (Section 6), from a checklist: whether the daemon is
+/// kept running, and whether an AI app is connected. A step that does not apply here counts as done.
+fn essentials(events: &[serde_json::Value]) -> (bool, bool) {
+    let state = |step: &str| {
+        events
+            .iter()
+            .find(|e| e["step"].as_str() == Some(step) && e.get("id").is_none())
+            .and_then(|e| e["state"].as_str())
+    };
+    let done = |s: Option<&str>| matches!(s, Some("done" | "skipped"));
+    (done(state("server")), done(state("apps")))
+}
+
+/// Whether the Welcome page opens at launch (Section 6): on the first launch, and on a later one
+/// while the daemon or the apps step is not done - unless the person chose "Finish later", or turned
+/// Start at Login off, which settles the daemon step their way. Unknown steps open nothing.
+fn welcome_at_launch(p: WelcomePrefs, steps: Option<(bool, bool)>) -> bool {
+    if !p.seen {
+        return true;
+    }
+    !p.later && finish_setup_offered(p, steps)
+}
+
+/// Whether the tray offers "Finish setup..." (Section 6): while either step is not done, the daemon
+/// step only until the person turned Start at Login off by choice.
+fn finish_setup_offered(p: WelcomePrefs, steps: Option<(bool, bool)>) -> bool {
+    steps.is_some_and(|(server, apps)| !apps || (!server && !p.login_off))
+}
+
+/// The events of one `setup --events` run: the lines after its schema line. `Err` says why there are
+/// none - a CLI before `setup`, one newer than this app, or a run that failed before writing any.
+fn setup_events(out: &std::process::Output) -> Result<Vec<serde_json::Value>, String> {
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+    let head = lines.next().and_then(|l| serde_json::from_str::<serde_json::Value>(l).ok());
+    match head.as_ref().and_then(|h| h["schema"].as_u64()) {
+        Some(s) if s > CLI_SCHEMA => {
+            Err("This supragnosis-server is newer than the app. Update the app: brew upgrade --cask supragnosis".into())
+        }
+        Some(_) => Ok(lines.filter_map(|l| serde_json::from_str(l).ok()).collect()),
+        None if String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand") => {
+            Err(SETUP_TOO_OLD.into())
+        }
+        None => Err(cli_outcome(out).1),
+    }
+}
+
+/// The pid of the daemon this app spawned, which setup cannot see on its own (Section 3).
+fn spawned_pid(app: &tauri::AppHandle) -> Option<u32> {
+    match &*app.state::<DaemonGuard>().0.lock().unwrap() {
+        Daemon::Spawned(c) => Some(c.id()),
+        _ => None,
+    }
+}
+
+/// `setup <args> --events`, with the app's child named when there is one.
+fn setup_args(base: &[&str], app_daemon: Option<u32>) -> Vec<String> {
+    let mut args: Vec<String> = std::iter::once("setup")
+        .chain(base.iter().copied())
+        .chain(std::iter::once("--events"))
+        .map(str::to_string)
+        .collect();
+    if let Some(pid) = app_daemon {
+        args.push("--app-daemon".into());
+        args.push(pid.to_string());
+    }
+    args
+}
+
+/// `setup --check --events`: the checklist, read only (O3).
+fn setup_check_blocking(app_daemon: Option<u32>) -> Result<Vec<serde_json::Value>, String> {
+    let args = setup_args(&["--check"], app_daemon);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = run_cli(&args).ok_or_else(cli_missing)?;
+    setup_events(&out)
+}
+
+/// What to say when there is no CLI: the formula for an app the cask installed, which depends on it,
+/// and the install script otherwise (docs/onboarding.md Section 7).
+fn cli_missing() -> String {
+    let cask = ["/opt/homebrew/Caskroom/supragnosis", "/usr/local/Caskroom/supragnosis"]
+        .iter()
+        .any(|p| Path::new(p).exists());
+    if cask {
+        "The supragnosis CLI was not found. Install it: brew install ashon/tap/supragnosis-server"
+            .into()
+    } else {
+        "The supragnosis CLI was not found. Install it: curl -fsSL https://supragnosis.dev/install.sh | sh".into()
+    }
+}
+
+/// The CLI runs the Welcome page started that have not ended, by the page's key, with each one's pid -
+/// which is also its process group, so stopping it stops what it started.
+struct RunningSteps(Mutex<std::collections::HashMap<String, u32>>);
+
+/// Runs `supragnosis <args>` for an app page and passes every line it writes on as a `setup-line`
+/// event under `key`: a JSON event from `--events`, or a line of plain output (`err` marks stderr).
+/// Answers how it ended. The child leads its own process group, so `setup_stop` can stop the
+/// download `setup --step model` started as well as setup itself.
+async fn run_streamed(
+    app: &tauri::AppHandle,
+    key: &str,
+    args: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let bin = find_server_bin().ok_or_else(cli_missing)?;
+    let app = app.clone();
+    let key = key.to_string();
+    tokio::task::spawn_blocking(move || {
+        use std::io::BufRead;
+        let mut cmd = Command::new(&bin);
+        cmd.args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        if let Some(path) = cli_path(login_path(), std::env::var_os("PATH").as_deref()) {
+            cmd.env("PATH", path);
+        }
+        let mut child =
+            cmd.spawn().map_err(|e| format!("could not run the supragnosis CLI: {e}"))?;
+        app.state::<RunningSteps>().0.lock().unwrap().insert(key.clone(), child.id());
+        let emit = {
+            let app = app.clone();
+            let key = key.clone();
+            move |line: String, err: bool| {
+                let _ = app.emit(
+                    "setup-line",
+                    serde_json::json!({ "key": key, "line": line, "err": err }),
+                );
+            }
+        };
+        let last_err = std::sync::Arc::new(Mutex::new(String::new()));
+        let err_reader = child.stderr.take().map(|pipe| {
+            let emit = emit.clone();
+            let last_err = last_err.clone();
+            std::thread::spawn(move || {
+                for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                    if !line.trim().is_empty() {
+                        *last_err.lock().unwrap() =
+                            line.trim().trim_start_matches("Error: ").to_string();
+                        emit(line, true);
+                    }
+                }
+            })
+        });
+        if let Some(pipe) = child.stdout.take() {
+            for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                if !line.trim().is_empty() {
+                    emit(line, false);
+                }
+            }
+        }
+        if let Some(t) = err_reader {
+            let _ = t.join();
+        }
+        let status = child.wait().map_err(|e| format!("the CLI did not finish: {e}"))?;
+        app.state::<RunningSteps>().0.lock().unwrap().remove(&key);
+        let why = last_err.lock().unwrap().clone();
+        Ok(serde_json::json!({
+            "key": key,
+            "ok": status.success(),
+            "code": status.code(),
+            "why": (!status.success()).then_some(why),
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The checklist, for an app page. The app's own child is named, so setup reads it as the app's
+/// daemon rather than as a process it does not know.
+#[tauri::command]
+async fn setup_check(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    own_page_caller(&webview)?;
+    let pid = spawned_pid(&app);
+    let events = tokio::task::spawn_blocking(move || setup_check_blocking(pid))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(serde_json::json!({ "events": events }))
+}
+
+/// One act of an app page (Sections 4.1-4.3): `server`, `app=<id>`, `model`, or `takeover` - the
+/// consent Section 4.1 asks for before a manager setup only reports is replaced. The daemon this app
+/// spawned is stopped first for the two that install the login job, since setup cannot stop it.
+#[tauri::command]
+async fn setup_run(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    step: String,
+    no_capture: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    own_page_caller(&webview)?;
+    let installs = matches!(step.as_str(), "server" | "takeover");
+    if installs && active_remote(&app).is_some() {
+        return Err(
+            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
+        );
+    }
+    let args: Vec<String> = match step.as_str() {
+        "server" => setup_args(&["--step", "server"], None),
+        "takeover" => {
+            ["service", "install", "--take-over", "--no-model"].map(String::from).to_vec()
+        }
+        "model" => setup_args(&["--step", "model"], None),
+        s => {
+            let id = s.strip_prefix("app=").unwrap_or_default();
+            if !AI_APPS.iter().any(|(i, _)| *i == id) {
+                return Err(format!("{step:?} is not a setup step"));
+            }
+            let mut a = setup_args(&["--step", s], None);
+            if no_capture == Some(true) && id == "claude-code" {
+                a.push("--no-capture".into());
+            }
+            a
+        }
+    };
+    if app.state::<RunningSteps>().0.lock().unwrap().contains_key(&step) {
+        return Err(format!("{step} is already running"));
+    }
+    if installs {
+        let prev =
+            std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
+        if let Daemon::Spawned(mut child) = prev {
+            let _ = child.kill();
+            let _ = child.wait();
+        } else {
+            *app.state::<DaemonGuard>().0.lock().unwrap() = prev;
+        }
+    }
+    let outcome = run_streamed(&app, &step, args).await;
+    if installs {
+        let sock = app.state::<VizSock>().0.clone();
+        if outcome.as_ref().is_ok_and(|o| o["ok"].as_bool() == Some(true)) {
+            let mut p = read_prefs(&app);
+            p.login_off = false;
+            let _ = write_prefs(&app, p);
+            wait_for_socket(&sock, Duration::from_secs(10)).await;
+        }
+        bring_up(app.clone(), sock).await;
+    } else {
+        refresh_status(&app).await;
+    }
+    outcome
+}
+
+/// Stops a running act of an app page: "Not now" on the download (Section 4.3). The whole process
+/// group goes, so the download setup started stops with it, and the next run fetches what is missing.
+#[tauri::command]
+async fn setup_stop(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    step: String,
+) -> Result<String, String> {
+    own_page_caller(&webview)?;
+    let Some(pid) = app.state::<RunningSteps>().0.lock().unwrap().get(&step).copied() else {
+        return Ok(format!("{step} is not running"));
+    };
+    let ok = Command::new("kill")
+        .args(["-s", "TERM", "--", &format!("-{pid}")])
+        .stdin(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if ok {
+        Ok(format!("stopped {step}"))
+    } else {
+        Err(format!("{step} could not be stopped"))
+    }
+}
+
+/// What the Welcome page needs besides the checklist: what the app remembers, and its own facts.
+#[tauri::command]
+async fn welcome_state(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    own_page_caller(&webview)?;
+    let p = read_prefs(&app);
+    Ok(serde_json::json!({
+        "prefs": p.to_json(),
+        "app": env!("CARGO_PKG_VERSION"),
+        "cli": find_server_bin().map(|b| b.display().to_string()),
+        "remote": active_remote(&app).map(|r| r.name),
+        "spawned": spawned_pid(&app).is_some(),
+    }))
+}
+
+/// Records a choice the Welcome page asks the app to remember: "Finish later", or Start at Login left
+/// off in its plan.
+#[tauri::command]
+async fn welcome_set(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    later: Option<bool>,
+    login_off: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    own_page_caller(&webview)?;
+    let mut p = read_prefs(&app);
+    if let Some(v) = later {
+        p.later = v;
+    }
+    if let Some(v) = login_off {
+        p.login_off = v;
+    }
+    write_prefs(&app, p)?;
+    refresh_status(&app).await;
+    Ok(p.to_json())
+}
+
+/// The two acts an app page takes on another app (Section 4.2, D9): Claude Desktop is asked to quit
+/// as the Dock's Quit asks, waited for, and opened again; Cursor is opened. A refusal - macOS asks the
+/// person once whether this app may control Claude - leaves the instruction to do it by hand.
+#[tauri::command]
+async fn app_helper(webview: tauri::Webview, id: String) -> Result<String, String> {
+    own_page_caller(&webview)?;
+    tokio::task::spawn_blocking(move || match id.as_str() {
+        "claude-desktop" => restart_claude_desktop(),
+        "cursor" => open_app(&["-a", "Cursor"]).map(|_| {
+            "Cursor is open. Turn supragnosis on under Settings > MCP if it is off.".to_string()
+        }),
+        other => Err(format!("{other:?} has no helper")),
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Claude Desktop's bundle identifier, which names it to the quit request and to `open`.
+const CLAUDE_DESKTOP: &str = "com.anthropic.claudefordesktop";
+
+fn restart_claude_desktop() -> Result<String, String> {
+    let by_hand = "Quit Claude Desktop (Cmd+Q) and open it again - it reads its servers at launch.";
+    let running = || {
+        Command::new("osascript")
+            .args(["-e", &format!("application id \"{CLAUDE_DESKTOP}\" is running")])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+    };
+    if running() {
+        let quit = Command::new("osascript")
+            .args(["-e", &format!("tell application id \"{CLAUDE_DESKTOP}\" to quit")])
+            .output()
+            .map_err(|e| format!("{by_hand} ({e})"))?;
+        if !quit.status.success() {
+            return Err(format!(
+                "{by_hand} macOS did not let Supragnosis ask it to quit: {}",
+                String::from_utf8_lossy(&quit.stderr).trim()
+            ));
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while running() {
+            if std::time::Instant::now() > deadline {
+                return Err(format!("{by_hand} It is still running - it may be asking something."));
+            }
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+    open_app(&["-b", CLAUDE_DESKTOP]).map_err(|e| format!("{by_hand} ({e})"))?;
+    Ok("Claude Desktop restarted and loaded supragnosis.".into())
+}
+
+fn open_app(args: &[&str]) -> Result<(), String> {
+    let out = Command::new("open").args(args).output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+/// "Copy log" and "Copy diagnostics": the page hands the text to the system clipboard.
+#[tauri::command]
+async fn clipboard_copy(webview: tauri::Webview, text: String) -> Result<(), String> {
+    own_page_caller(&webview)?;
+    use std::io::Write;
+    let mut child = Command::new("pbcopy")
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("the clipboard is not reachable: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    child.wait().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// "Copy diagnostics" (Section 6): `setup --check --events` and `status --json` together, for a
+/// report. Both are read only, and neither carries the token.
+#[tauri::command]
+async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
+    own_page_caller(&webview)?;
+    let pid = spawned_pid(&app);
+    tokio::task::spawn_blocking(move || {
+        let args = setup_args(&["--check"], pid);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let text = |o: Option<std::process::Output>| {
+            o.map(|o| {
+                let mut t = String::from_utf8_lossy(&o.stdout).into_owned();
+                t.push_str(&String::from_utf8_lossy(&o.stderr));
+                t
+            })
+            .unwrap_or_else(cli_missing)
+        };
+        format!(
+            "supragnosis app {}\n\n$ supragnosis {}\n{}\n$ supragnosis status --json\n{}",
+            env!("CARGO_PKG_VERSION"),
+            args.join(" "),
+            text(run_cli(&args)),
+            text(run_cli(&["status", "--json"])),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Turns the main window to the Welcome page, creating the window first if needed.
+fn show_welcome(app: &tauri::AppHandle) -> tauri::Result<()> {
+    show_viewer(app)?;
+    if let Some(w) = app.get_webview_window("main") {
+        if !w.url().is_ok_and(|u| is_page(&u, "welcome.html")) {
+            w.navigate(welcome_url())?;
+        }
+    }
+    Ok(())
+}
+
+/// At launch, after the daemon is up: the Welcome page opens if Section 6 says it should, and is
+/// then remembered as seen.
+async fn welcome_at_start(app: tauri::AppHandle) {
+    let p = read_prefs(&app);
+    let steps = if p.seen {
+        let pid = spawned_pid(&app);
+        tokio::task::spawn_blocking(move || setup_check_blocking(pid))
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .map(|events| essentials(&events))
+    } else {
+        None
+    };
+    if welcome_at_launch(p, steps) {
+        if let Err(e) = show_welcome(&app) {
+            tracing::error!(error = %e, "failed to open the welcome page");
+        }
+        if !p.seen {
+            let _ = write_prefs(&app, WelcomePrefs { seen: true, ..p });
+        }
+    }
 }
 
 /// The graph's address: the viewer, which the shell's `viz://` proxy serves.
@@ -1353,7 +1910,7 @@ fn graph_url() -> tauri::Url {
 fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        let there = w.url().is_ok_and(|u| settings_caller_ok("main", &u));
+        let there = w.url().is_ok_and(|u| is_page(&u, "settings.html"));
         if !there || section.is_some() {
             let mut url = settings_url();
             url.set_fragment(section);
@@ -1369,7 +1926,7 @@ fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result
 fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        if w.url().is_ok_and(|u| settings_caller_ok("main", &u)) {
+        if w.url().is_ok_and(|u| own_page_ok("main", &u)) {
             let mut url = graph_url();
             url.set_fragment(Some("review"));
             w.navigate(url)?;
@@ -1384,7 +1941,7 @@ fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        if w.url().is_ok_and(|u| settings_caller_ok("main", &u)) {
+        if w.url().is_ok_and(|u| own_page_ok("main", &u)) {
             w.navigate(graph_url())?;
         }
     }
@@ -1483,6 +2040,7 @@ fn main() {
     let proxy_sock = sock.clone();
     tauri::Builder::default()
         .manage(DaemonGuard(Mutex::new(Daemon::Starting)))
+        .manage(RunningSteps(Mutex::new(std::collections::HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             settings_state,
             server_use,
@@ -1491,7 +2049,15 @@ fn main() {
             app_toggle,
             login_set,
             daemon_restart,
-            peer_narrow
+            peer_narrow,
+            setup_check,
+            setup_run,
+            setup_stop,
+            welcome_state,
+            welcome_set,
+            app_helper,
+            clipboard_copy,
+            diagnostics
         ])
         .register_asynchronous_uri_scheme_protocol("viz", move |ctx, request, responder| {
             let sock = proxy_sock.clone();
@@ -1614,6 +2180,8 @@ fn main() {
             // Out of the menu until something waits (refresh_status inserts it).
             let review = MenuItem::with_id(app, "review", "Review...", true, None::<&str>)?;
             app.manage(TrayReview { menu: menu.clone(), item: review, shown: Mutex::new(false) });
+            let finish = MenuItem::with_id(app, "finish-setup", "Finish setup...", true, None::<&str>)?;
+            app.manage(TraySetup { menu: menu.clone(), item: finish, shown: Mutex::new(false) });
             app.manage(ActiveRemote(Mutex::new(None)));
             app.manage(AppsHint(Mutex::new(None)));
             app.manage(Attention(Mutex::new(None)));
@@ -1675,6 +2243,11 @@ fn main() {
                             tracing::error!(error = %e, "failed to open the review page");
                         }
                     }
+                    "finish-setup" => {
+                        if let Err(e) = show_welcome(app) {
+                            tracing::error!(error = %e, "failed to open the welcome page");
+                        }
+                    }
                     "settings" => {
                         // Straight to the section the status line is pointing at, if any.
                         let section =
@@ -1688,7 +2261,17 @@ fn main() {
                 })
                 .build(app)?;
 
-            tauri::async_runtime::spawn(bring_up(app.handle().clone(), sock.clone()));
+            // The Welcome page opens at once on the first launch; on a later one, once the daemon is
+            // up and setup has said whether the daemon and the apps are set up (Section 6).
+            let first = !read_prefs(app.handle()).seen;
+            let up = app.handle().clone();
+            let up_sock = sock.clone();
+            tauri::async_runtime::spawn(async move {
+                bring_up(up.clone(), up_sock).await;
+                if !first {
+                    welcome_at_start(up).await;
+                }
+            });
             // An upgrade replaces the binary under a running daemon without telling anyone; the
             // status line is where that becomes visible (docs/daemon-lifecycle.md Section 5), so it
             // is re-read on a slow beat rather than only when the shell itself acts.
@@ -1707,6 +2290,11 @@ fn main() {
                 tracing::info!(page = %event.payload(), "webview page loaded");
             });
             show_viewer(app.handle())?;
+            if first {
+                show_welcome(app.handle())?;
+                let p = read_prefs(app.handle());
+                let _ = write_prefs(app.handle(), WelcomePrefs { seen: true, ..p });
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -1936,24 +2524,28 @@ mod status_text_tests {
 
 #[cfg(test)]
 mod settings_tests {
-    use super::{server_add_args, settings_caller_ok, settings_url, SETTINGS_COMMANDS};
+    use super::{own_page_ok, server_add_args, settings_url, welcome_url, APP_COMMANDS};
 
-    /// docs/settings-page.md S1: a setting changes only from the app's own settings page - not from
-    /// the viewer the same window shows, which a daemon or a hub serves, and not from any other
-    /// address, a hub's page or a lookalike path included.
+    /// docs/settings-page.md S1 and docs/onboarding.md Section 6: a setting changes only from the
+    /// app's own pages, Settings and Welcome - not from the viewer the same window shows, which a
+    /// daemon or a hub serves, and not from any other address, a hub's page or a lookalike path
+    /// included.
     #[test]
     fn only_the_apps_own_page_may_change_a_setting() {
-        let own = settings_url();
         let viewer: tauri::Url = "viz://localhost/".parse().unwrap();
         let hub: tauri::Url = "https://hub.example/viz/".parse().unwrap();
         let other_page: tauri::Url = "tauri://localhost/index.html".parse().unwrap();
         let windows_viewer: tauri::Url = "http://viz.localhost/settings.html".parse().unwrap();
-        assert!(settings_caller_ok("main", &own));
-        assert!(!settings_caller_ok("main", &viewer), "the viewer in the same window");
-        assert!(!settings_caller_ok("main", &hub));
-        assert!(!settings_caller_ok("main", &other_page), "another page of the app");
-        assert!(!settings_caller_ok("main", &windows_viewer), "a viewer path that looks alike");
-        assert!(!settings_caller_ok("other", &own), "a window that is not the main one");
+        let hub_welcome: tauri::Url = "https://hub.example/welcome.html".parse().unwrap();
+        for own in [settings_url(), welcome_url()] {
+            assert!(own_page_ok("main", &own), "{own}");
+            assert!(!own_page_ok("other", &own), "a window that is not the main one");
+        }
+        assert!(!own_page_ok("main", &viewer), "the viewer in the same window");
+        assert!(!own_page_ok("main", &hub));
+        assert!(!own_page_ok("main", &other_page), "another page of the app");
+        assert!(!own_page_ok("main", &windows_viewer), "a viewer path that looks alike");
+        assert!(!own_page_ok("main", &hub_welcome), "a hub's page named like the app's");
     }
 
     /// S1, the other half: build.rs declares the commands so none is open by default, and the one
@@ -1970,7 +2562,7 @@ mod settings_tests {
         let granted = |cap: &serde_json::Value, perm: &str| {
             cap["permissions"].as_array().unwrap().iter().any(|p| p.as_str() == Some(perm))
         };
-        for cmd in SETTINGS_COMMANDS {
+        for cmd in APP_COMMANDS {
             assert!(build.contains(&format!("\"{cmd}\"")), "build.rs must declare {cmd}");
             let perm = format!("allow-{}", cmd.replace('_', "-"));
             assert!(granted(&settings, &perm), "the settings capability needs {perm}");
@@ -2009,6 +2601,8 @@ mod settings_tests {
         // the page navigation there, so it is held to the same rule.
         for (file, js) in [
             ("settings.js", include_str!("../assets/settings.js")),
+            ("welcome.js", include_str!("../assets/welcome.js")),
+            ("kit.js", include_str!("../assets/kit.js")),
             ("shell-init.js", include_str!("../assets/shell-init.js")),
         ] {
             for sink in ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("]
@@ -2043,6 +2637,127 @@ mod settings_tests {
             env!("CARGO_PKG_REPOSITORY").starts_with("https://github.com/"),
             "app/Cargo.toml [package] must inherit repository from [workspace.package]"
         );
+    }
+}
+
+/// docs/onboarding.md Section 6: when the Welcome page opens, when the tray offers to finish, what
+/// the page reads from setup, and which acts are the page's own (O4, O6).
+#[cfg(test)]
+mod welcome_tests {
+    use super::{
+        essentials, finish_setup_offered, setup_events, welcome_at_launch, WelcomePrefs,
+        APP_COMMANDS, SETUP_TOO_OLD,
+    };
+
+    fn output(stdout: &str, stderr: &str, code: i32) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    /// The first launch opens the page; a later one opens it while the daemon or the apps step waits,
+    /// unless the person chose "Finish later". Start at Login turned off settles the daemon step their
+    /// way, for the launch and the tray alike. Steps setup could not report open nothing.
+    #[test]
+    fn the_welcome_page_opens_on_the_first_launch_and_while_a_step_waits() {
+        let first = WelcomePrefs::default();
+        let seen = WelcomePrefs { seen: true, ..first };
+        assert!(welcome_at_launch(first, None), "the first launch");
+        assert!(!welcome_at_launch(seen, None), "setup did not answer");
+        assert!(!welcome_at_launch(seen, Some((true, true))), "both steps done");
+        assert!(welcome_at_launch(seen, Some((false, true))), "the daemon is not kept running");
+        assert!(welcome_at_launch(seen, Some((true, false))), "no app is connected");
+        let later = WelcomePrefs { later: true, ..seen };
+        assert!(!welcome_at_launch(later, Some((false, false))), "Finish later");
+        assert!(finish_setup_offered(later, Some((false, false))), "the tray still offers it");
+        let off = WelcomePrefs { login_off: true, ..seen };
+        assert!(!welcome_at_launch(off, Some((false, true))), "Start at Login off by choice");
+        assert!(!finish_setup_offered(off, Some((false, true))));
+        assert!(finish_setup_offered(off, Some((false, false))), "the apps step still waits");
+        assert!(!finish_setup_offered(seen, None));
+        assert_eq!(WelcomePrefs::from_json(&off.to_json()), off, "what is remembered reads back");
+    }
+
+    /// The page reads setup's events as the CLI's example has them, and the two steps the launch and
+    /// the tray wait on come from the step rows, never from an app's row or the summary.
+    #[test]
+    fn setup_events_read_as_the_clis_example_has_them() {
+        let example =
+            include_str!("../../crates/supragnosis-cli/tests/fixtures/json/setup-events.jsonl");
+        let events = setup_events(&output(example, "", 0)).expect("the example reads");
+        assert_eq!(events.len(), example.lines().count() - 1, "every line after the schema");
+        assert!(events.iter().any(|e| e["step"] == "first" && e["id"] == "billing"));
+        // The example is a stream, a step's lines in the order they came; a checklist has each step
+        // once, as it stands at the end.
+        let mut checklist: Vec<serde_json::Value> = Vec::new();
+        for e in events.iter().rev() {
+            if !checklist.iter().any(|c| c["step"] == e["step"] && c.get("id") == e.get("id")) {
+                checklist.push(e.clone());
+            }
+        }
+        assert_eq!(essentials(&checklist), (true, false), "the daemon kept running, no app done");
+        let first_seen: Vec<serde_json::Value> = events
+            .iter()
+            .filter(|e| e["step"] == "server" && e["state"] == "todo")
+            .cloned()
+            .collect();
+        assert!(!essentials(&first_seen).0, "a server step that is not done");
+    }
+
+    /// A CLI before setup, one newer than the app, and one that failed each say so, and none is read.
+    #[test]
+    fn setup_events_say_why_there_are_none() {
+        assert_eq!(
+            setup_events(&output("", "error: unrecognized subcommand 'setup'", 2)),
+            Err(SETUP_TOO_OLD.to_string())
+        );
+        let newer = setup_events(&output("{\"schema\": 2}\n{\"step\":\"server\"}\n", "", 0));
+        assert!(newer.is_err_and(|e| e.contains("newer than the app")));
+        assert_eq!(
+            setup_events(&output("", "Error: the server profile could not be read: x", 1)),
+            Err("the server profile could not be read: x".to_string())
+        );
+    }
+
+    /// O4: the Welcome page's acts are setup's steps, the two helpers, asking setup again, and the
+    /// choices the app remembers - every command it calls is one of those, and every command either
+    /// page calls is one the app declares. O6: the page says that nothing leaves this Mac.
+    #[test]
+    fn the_welcome_page_calls_only_its_own_acts() {
+        let called = |js: &str| -> Vec<String> {
+            js.split("invoke(\"")
+                .skip(1)
+                .map(|rest| rest[..rest.find('"').expect("a closing quote")].to_string())
+                .collect()
+        };
+        let welcome = called(include_str!("../assets/welcome.js"));
+        let own = [
+            "setup_check",
+            "setup_run",
+            "setup_stop",
+            "welcome_state",
+            "welcome_set",
+            "app_helper",
+            "app_toggle",
+            "clipboard_copy",
+            "diagnostics",
+        ];
+        assert!(welcome.len() >= 8, "the page's calls were read: {welcome:?}");
+        for cmd in &welcome {
+            assert!(
+                own.contains(&cmd.as_str()),
+                "welcome.js calls {cmd}, which is not one of its acts"
+            );
+        }
+        for cmd in welcome.iter().chain(&called(include_str!("../assets/settings.js"))) {
+            assert!(APP_COMMANDS.contains(&cmd.as_str()), "{cmd} is called but not declared");
+        }
+        assert!(include_str!("../assets/welcome.html").contains(
+            "Nothing leaves this Mac. Sync stays off until you add a server in Settings."
+        ));
     }
 }
 

@@ -23,6 +23,13 @@ cask "supragnosis" do
 
   app "Supragnosis.app"
 
+  # The app finishes the first run itself: its Welcome page keeps the daemon running, connects the AI
+  # apps and downloads the search model (docs/onboarding.md Section 8).
+  caveats <<~EOS
+    Open Supragnosis to finish setting up:
+      open -a Supragnosis
+  EOS
+
   # Tray-resident app: brew never quits a running instance on uninstall/upgrade, which
   # leaves the old process serving from a deleted bundle. quit is upgrade-aware (brew
   # reopens the app after the swap).

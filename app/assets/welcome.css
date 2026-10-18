@@ -1,0 +1,93 @@
+/* The Welcome page (docs/onboarding.md Section 6). The title bar, tokens, rows, pills, buttons,
+   switches, callouts and notices are settings.css's; this file lays out the four steps and their log
+   drawers. As on the settings page, surfaces are told apart by tone, not by a rule, and no rounded
+   box carries a line on one side (docs/design-system.md Section 4). */
+
+body { background: var(--panel); }
+.wpage { flex: 1; overflow-y: auto; outline: none; background: var(--surface); border-radius: 16px 16px 0 0; }
+.wcol { max-width: 680px; margin: 0 auto; padding: 34px 32px 28px; }
+.wintro h2 { margin: 0 0 6px; color: var(--ink); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.wintro p { margin: 0 0 22px; color: var(--muted); max-width: 60ch; }
+
+/* A step: its number (a check once done), its name and state, the sentence setup said, its controls,
+   and a drawer with what it ran. */
+.step { display: grid; grid-template-columns: 28px 1fr; gap: 4px 14px; padding: 18px 20px; border-radius: var(--radius); background: var(--panel); }
+.step + .step { margin-top: 10px; }
+.step .num {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; grid-row: span 3;
+  background: var(--panel-3); color: var(--ink2); font: 600 12px/1 var(--mono);
+}
+.step .num.done { background: var(--ok-glass); color: var(--ok); }
+.step .num.attention, .step .num.failed { background: var(--warn-glass); color: var(--warn); }
+.step .num .i { width: 14px; height: 14px; }
+.step .shead { display: flex; align-items: center; gap: 9px; min-height: 28px; flex-wrap: wrap; }
+.step .shead h3 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; }
+.step .say { margin: 2px 0 0; color: var(--ink2); }
+.step .say.quiet { color: var(--muted); }
+.step .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.step .controls:empty { display: none; }
+.step .switchrow { display: flex; align-items: center; gap: 10px; color: var(--ink); }
+
+/* The AI apps, one row each, inside their step. */
+.apps { margin-top: 12px; display: grid; gap: 2px; border-radius: 10px; overflow: hidden; }
+.apps .row { background: var(--panel-2); min-height: 50px; padding: 9px 12px; }
+.apps .row .lead { width: 28px; height: 28px; background: var(--panel-3); }
+.apps .row .lead .i { width: 15px; height: 15px; }
+.apps .row.muted { min-height: 40px; }
+.apps .check input { width: 15px; height: 15px; }
+.apps .sub.option { margin-top: 5px; }
+/* A button inside a row takes the next tone up, or it would be the row's own color. */
+.apps .row .btn:not(.primary) { background: var(--panel-3); }
+.apps .row .btn:not(.primary):hover:not(:disabled) { background: var(--select); }
+.pill .i-spin { width: 11px; height: 11px; animation: spin 0.8s linear infinite; }
+/* A command a sentence names: mono, and kept on one line. */
+.step code { font: 12px/1.4 var(--mono); color: var(--ink); white-space: nowrap; }
+
+/* The download's progress. */
+.bar { height: 6px; border-radius: 999px; background: var(--panel-3); overflow: hidden; margin-top: 12px; }
+.bar > span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.4s ease; }
+.bar.busy > span { width: 35%; animation: slide 1.2s ease-in-out infinite; }
+.barnote { margin-top: 6px; color: var(--muted); font-size: 12px; }
+
+/* What to ask a connected app. */
+.ask { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 10px 10px 14px; border-radius: 10px; background: var(--panel-2); }
+.ask q { flex: 1; color: var(--ink); font: 13px/1.5 var(--mono); quotes: none; }
+
+/* A step's log drawer (D8): the commands it ran, their output, the files they changed, and how
+   each run ended - text a person can select and copy. */
+.drawer-toggle {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; padding: 2px 4px 2px 0; border: 0;
+  background: none; color: var(--faint); font: 500 12px/1.4 var(--sans); cursor: pointer;
+}
+.drawer-toggle:hover { color: var(--ink2); }
+.drawer-toggle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; border-radius: 4px; }
+.drawer-toggle .i { width: 12px; height: 12px; transition: transform 0.12s ease; }
+.drawer-toggle[aria-expanded="true"] .i { transform: rotate(90deg); }
+.drawer {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface); max-height: 260px; overflow: auto;
+  font: 12px/1.6 var(--mono); color: var(--ink2); -webkit-user-select: text; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.drawer .l-cmd { color: var(--gold-bright); }
+.drawer .l-cmd::before { content: "$ "; color: var(--faint); }
+.drawer .l-out { color: var(--ink2); }
+.drawer .l-err { color: var(--bad); }
+.drawer .l-event { color: var(--muted); }
+.drawer .l-exit { color: var(--faint); }
+.drawer .l-none { color: var(--faint); font-family: var(--sans); }
+
+/* The foot: the privacy line, and the page's own acts. */
+.wfoot {
+  flex: none; display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+  background: var(--panel);
+}
+.wfoot .privacy { flex: 1; margin: 0; color: var(--muted); font-size: 12px; }
+.wactions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+
+/* Icons this page adds (icons/README.md); .i and the mask are in shell.css. */
+.i-copy { --i: url(icons/copy.svg); }
+.i-ask { --i: url(icons/message-square-text.svg); }
+.i-chevron { --i: url(icons/chevron-right.svg); }
+.i-arrow { --i: url(icons/arrow-right.svg); }
+.i-open { --i: url(icons/external-link.svg); }
