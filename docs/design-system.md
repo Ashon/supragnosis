@@ -283,6 +283,12 @@ spreads overlap are pushed apart as wholes, and the repulsion between nodes of d
 is turned down to a quarter, since the workspaces already keep their distance. Inside the radius
 nothing pulls, so a large workspace keeps the shape its edges give it.
 
+**Links fit the density around them.** A link's rest length grows with the smaller degree of its two
+ends - a leaf sits close to its hub, two hubs keep room for their leaves between them - and with how
+crowded its ends are against the graph's average, so a crowded patch spreads and a sparse one
+gathers. Its pull falls with that degree, as d3's links do, so a hub is not held by every link at
+once, and the end with fewer links does more of the moving.
+
 **The layout is remembered on the local console.** Node positions are kept per workspace in the
 browser's storage, keyed by the node's id from `/api/surface` as well as the workspace, and the next
 load starts from them: a known workspace appears at once, instead of behind a loader that, for 168
@@ -1009,3 +1015,9 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   of a frame are now mixed in one field at a quarter of the screen's resolution - a cloud has no
   detail to lose - and drawn smoothed up: 1.7ms a frame at 1600 by 900 on the author's store. The
   minimap, too small to show a mix, keeps the canvas's compositing with the same colours.
+- **After step 10: links fit their density.** Every link had one rest length (120) and one strength,
+  and the repulsion a large graph needs held linked nodes about twice that far apart, so long links
+  crossed a cluster from side to side. On the author's store, one workspace's median link went from
+  235 to 158 and its 90th percentile from 380 to 259, with the spacing between neighbours nearly
+  unchanged (76 to 69); in the view of every workspace, the two large ones' medians went from 230
+  and 251 to 176 and 191. Leaves now gather around their hubs instead of lying anywhere in the disk.
