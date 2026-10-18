@@ -226,6 +226,13 @@ fn the_principles_page_plays_once_can_stop_and_rests() {
         !SCRIPT.contains(".style.border") && !SCRIPT.contains(".style.outline"),
         "the script draws a line on an area"
     );
+    // The page's words are copied as nodes, never reparsed as markup.
+    assert!(
+        !SCRIPT.contains("innerHTML")
+            && !SCRIPT.contains("outerHTML")
+            && !SCRIPT.contains("insertAdjacentHTML"),
+        "the script writes markup"
+    );
 }
 
 #[test]
