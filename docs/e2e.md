@@ -108,8 +108,8 @@ one starts a proxy for its own lifetime. What keeps it from being that viewer:
 - the store behind it is the scenario's throwaway one, so a verdict cast through it confirms nothing
   anyone keeps;
 - it binds a loopback port the system chooses, and answers only requests whose `Host` is that
-  address and whose `Origin`, when present, is the page's own;
-- every path is under a prefix chosen at random for the run, so another page cannot guess one;
+  address and whose `Origin`, when present, is the page's own. A page on another origin is refused
+  before anything reaches the socket, and a name rebound to loopback fails the `Host` check;
 - no task, script or document outside the suite starts it.
 
 A browser scenario that casts a verdict through the proxy therefore proves the page's controls work.
@@ -382,3 +382,9 @@ it. Sixteen findings changed it:
 16. **Missing scenarios.** A9 (a crash), A8's secret refusal and B6 (a contested value settled in
     the viewer) were added. The hub's read tier is named as left out, with where it is held
     (Section 6).
+
+## 15. What building it changed
+
+- **No random path prefix on the proxy.** The draft put every proxied path under a prefix chosen per
+  run. The viewer's page fetches its API by root-relative paths (`/api/graph`), so a prefix breaks
+  the page. The `Host` and `Origin` checks carry what the prefix was for.
