@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.6.4](docs/releases/v0.6.4.md) | Upgrade the server, then restart once; every region drawn, workspaces together, links untangled. |
 | [v0.6.3](docs/releases/v0.6.3.md) | Upgrade the server and the app, then restart once; one typeface everywhere, and regions are clouds. |
 | [v0.6.2](docs/releases/v0.6.2.md) | Upgrade the server, then restart once; the minimap is back, and the footprint glow sits on its node. |
 | [v0.6.1](docs/releases/v0.6.1.md) | Upgrade, then restart once; the map fits its window, and the app finds apps installed through nvm. |
