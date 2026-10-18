@@ -30,7 +30,9 @@ code at 0.6.4, a new person meets this:
   machine prints "stopped" and nothing else.
 - **The first screen reads as empty.** The viewer opens on the default workspace, which is empty by
   design, while the session hook names a workspace after the repository.
-- **Linux has no always-on daemon**: the install script prints a `serve` command and a link.
+- **Linux has no always-on daemon by default**: the install script prints a `serve` command and a
+  link to a systemd user unit to copy by hand (deploy/systemd/README.md), which also needs lingering
+  turned on to survive a logout.
 
 The install script lists the steps under "Onboarding:", and the Homebrew formula's caveats name two
 of them, but both scroll past in the installer's output and are gone by the time the app opens.
@@ -53,8 +55,8 @@ the path to it.
 - **Not a second place for settings.** The Welcome page uses the Settings page's parts and its acts.
   Changing a choice later happens in Settings, which already has each of them.
 - **Not for a remote profile.** When this Mac's AI apps use a remote server (settings-page.md Section
-  3.1), the steps about this Mac's daemon and model say so and stand down; connecting apps still
-  applies, since the bridge follows the profile.
+  3.1), the daemon, model and first-entry steps are `skipped`, since contacts and entries go to the
+  hub; connecting apps still applies, since the bridge follows the profile.
 
 ## 3. One procedure, two faces
 
@@ -65,19 +67,32 @@ and does only that.
 
 - `supragnosis setup` - prints the plan, asks "Proceed? [Y/n, c to choose]", applies it and says what
   each step did. The text face, for a terminal and for Linux, where there is no app.
-- `supragnosis setup --yes` - applies the plan with its defaults, asking nothing.
+- `supragnosis setup --yes` - applies the plan with its defaults, asking nothing. It never replaces an
+  entry `connect` did not write (client-connect.md C3), and never takes over a manager setup would
+  only report (Section 4.1).
 - `supragnosis setup --check` - only reads, and prints the checklist (like `connect` with no app,
   client-connect.md C5).
-- `supragnosis setup --step <step>` - applies one step: `server`, `app=<id>`, `model`, or `wait` (wait
-  for a first contact or a first entry, with a timeout).
-- `--events` - with any of the above, writes one JSON object per line instead of text: the step, its
-  state (`todo`, `working`, `done`, `attention`, `failed`, `skipped`), one sentence saying what
-  happened, and where a command ran, the command as text, each line of its output, and every file it
-  changed with the copy it made first. A last object summarizes.
+- `supragnosis setup --step <step>` - applies one step: `server`, `app=<id>`, `model`, or `wait`.
+  `wait` waits for the first entry (Section 4.4) for up to ten minutes, or `--timeout <seconds>`, and
+  exits 0 when it arrives and 2 when it does not, which is not a failure.
+- `--events` - with any of the above, writes one JSON object per line instead of text. The first line
+  names the schema (`{"schema": 1}`); each after it carries the step, its state, one sentence saying
+  what happened, and while an act runs, the command it ran as text, a line of that command's output,
+  or a file it changed. A last line summarizes.
 
-**The app decides nothing itself** (O4). The Welcome page draws its cards from `setup --check
---events`, and each button runs `setup --step ... --events`; the log drawer under a card is that
-step's events. The app and the CLI therefore cannot disagree about what is set up.
+**States.** `todo` - not done, and setup can do it. `working` - under way: an app connected and not
+yet heard from, a download running. `done`. `attention` - not done, and setup will not do it without
+being asked; the sentence names the command that would. `failed` - an act failed; the sentence says
+why and what to do. `skipped` - does not apply here: a remote profile (Section 2), an app that is not
+installed, or a node with no search model to fetch (`SUPRAGNOSIS_EMBED=none`, or a build without one).
+
+**The Welcome page draws only what setup says** (O4). Its cards come from `setup --check --events`,
+each act it offers runs `setup --step ... --events`, and the log drawer under a card is that step's
+events. Its own acts are few and named: it stops the daemon it spawned before the server step runs
+(the CLI cannot see that child, which is why the Start at Login switch stops it first today), it
+restarts or opens an AI app (Section 4.2), and it runs `--check` again when the viewer's event stream
+reports an entry. An app whose CLI is too old to know `setup` says so, and names `brew upgrade
+supragnosis-server`.
 
 Failures follow the lifecycle's rule (daemon-lifecycle.md L4): a step that fails exits non-zero and
 says why and what to do, in its events and in its text (O2).
@@ -87,104 +102,139 @@ says why and what to do, in its events and in its text (O2).
 ### 4.1 Keep it running
 
 **State:** who manages the daemon, whether it answers, and whether it starts at login (`status
---json`). **Done** when the canonical login job owns a daemon that answers.
+--json`). **Done** when a daemon answers and a manager that outlives the app keeps it: the canonical
+login job, or another manager the lifecycle recognizes (daemon-lifecycle.md L2). A daemon only the app
+or `supragnosis start` runs is `todo`.
 
-**Act:** `service install` with the take-over the Start at Login switch already uses
-(daemon-lifecycle.md Section 4, L1, L6): an app-spawned child is taken over; Homebrew's service or a
-manager the lifecycle cannot name is reported as `attention`, with what owns it and the command that
-would take over, and setup does not take it over without being asked (O8). Setup asks
-`service install` not to fetch the model (`--no-model`): the model is step 4.3, and the daemon does
-not wait for it.
+**Act:** `service install` (daemon-lifecycle.md Section 4), asked not to fetch the model
+(`--no-model`): the model is step 4.3, and the daemon does not wait for it. What setup takes over, and
+what it only reports (O8):
 
-**Default:** on (D2). The Welcome page shows the Start at Login switch already on, and turning it off
-is the Settings page's act (settings-page.md Section 3.3).
+- **Taken over:** a daemon the app spawned (the app stops it first, Section 3), a pidfile daemon from
+  `supragnosis start`, and a retired label - the cases where nobody chose a manager.
+- **Reported as `attention`:** a Homebrew service, a hand-written plist and anything answering that
+  the lifecycle cannot name. The sentence names `supragnosis service install --take-over`; in the app
+  the card offers "Take over", and the click is the consent the Start at Login switch asks for today
+  (L1, L6).
 
-**On Linux** `service install` writes a systemd user unit (`~/.config/systemd/user/supragnosis.service`)
-and enables it with `systemctl --user`. It keeps the lifecycle's rules: the unit is generated and an
-operator's own file is never overwritten (L5), it binds and authenticates exactly as the daemon does
-by default (L7), and it needs no administrator rights (L8). Where `systemctl --user` is unavailable,
-as in many containers, the step is `attention` and names the `serve` command.
+**Default:** on (D2). Nothing is applied until the person acts: the Welcome page shows the plan with
+Start at Login checked, and one "Set up" click applies it, as rustup's "Proceed" does. Turning it off
+there, or later in Settings (settings-page.md Section 3.3), is a choice the app remembers, so Welcome
+and the tray do not ask again; `setup` itself still reports the step as `todo`.
+
+**On Linux** `service install` generates a systemd user unit at
+`~/.config/systemd/user/supragnosis.service`, enables it with `systemctl --user`, and asks
+`loginctl enable-linger` so it survives a logout; a refused linger is `attention`, since it may need
+an administrator. A unit already at that path that setup did not generate - the one
+deploy/systemd/README.md tells people to copy - is never overwritten (L5) and counts as done when it
+is enabled and answering. `status`, `restart` and `stop` recognize the unit as they recognize the
+LaunchAgent (L2). The unit binds and authenticates as the daemon does by default (L7) and needs no
+administrator rights (L8). Where `systemctl --user` is unavailable, as in many containers, the step
+is `attention` and names the `serve` command.
 
 ### 4.2 Connect your AI apps
 
 **State:** each app's row from `connect --json` (installed, connected, capture), and the first
-contacts of Section 5. **Done** when at least one connected app has reached the daemon.
+contacts of Section 5. **Done** when at least one installed app is connected through the bridge.
+Whether a connected app has reached the daemon is shown on its row, as "reached" with the time or as
+waiting, but does not hold the step open: first contact lives in the daemon's memory and is gone
+after a restart, which the server step itself may cause.
 
-**Act:** `connect <id>` for each app the person chooses (client-connect.md Section 4), which backs up
-the app's file first (C3) and, for Claude Code, registers the capture hook unless the person turns
-it off (client-connect.md Section 12.4). The default choice is every installed app.
+**Act:** `connect <id>` for each app the person chooses (client-connect.md Section 4). For an app
+configured by file it backs the file up first (C3); for one registered through the app's own CLI the
+event says which command it ran. For Claude Code it registers the capture hook unless the person
+turns it off (client-connect.md Section 12.4). The default choice is every installed app without an
+entry; an entry `connect` did not write is `attention`, and setup leaves it (C3).
 
 After connecting, an app still has to load the change, and setup says how for each one, in the words
 `connect` prints today. Two of them the app can do for the person (D9):
 
-- **Claude Desktop:** "Restart Claude Desktop" asks Claude Desktop to quit through Apple Events, waits
-  for it to exit and opens it again. macOS asks the person once to allow the app to control Claude
-  Desktop; a refusal leaves the instruction in place.
+- **Claude Desktop:** "Restart Claude Desktop" asks it to quit as the Dock's Quit does, waits for it to
+  exit and opens it again, through the running-application and workspace interfaces macOS offers any
+  app (`NSRunningApplication.terminate`, then `NSWorkspace`). If that needs the Automation permission
+  on the signed app, the app declares it (an `NSAppleEventsUsageDescription` and the
+  `com.apple.security.automation.apple-events` entitlement) and macOS asks the person once; a refusal
+  leaves the instruction in place.
 - **Cursor:** "Open Cursor" opens it, with where to turn the server on.
 - **Claude Code, Codex, Gemini and VS Code** load it in their next session or chat, which only the
   person can start.
 
-A connected app becomes **reached** when its first contact arrives (Section 5). Until then its row
-says it is waiting, and why that is normal. `connect` itself warns, in its own output, when no daemon
-answers: the entry is written, and the app will fail until a daemon runs.
+`connect` itself warns, in its own output, when the server the active profile names does not answer:
+the entry is written, and the app will fail until a server runs.
 
 ### 4.3 Search by meaning
 
-**State:** the search mode `status` reports (semantic on, or keyword only and why). **Done** when the
-model is present.
+**State:** whether the model the daemon is configured with is complete in the cache the daemon reads
+(the model and directory `status` reports when the daemon answers, otherwise the login job's
+environment). **Complete** means every file the model needs is linked under the cache's `snapshots`
+directory; a file still downloading (`.part`) never counts. Today's check counts any file over a
+megabyte, so a half-finished download reads as present, the daemon tries to load it, the load fails,
+and a failed load is not retried until a restart; this document revises that (Section 12). **Done**
+when complete; `skipped` on a node with nothing to fetch (Section 3).
 
-**Act:** `embed fetch --events`, which reports progress as the bytes the model's directory holds
-against the model's size, about twice a second, and ends by checking the files. The daemon loads the
-model on its next search, without a restart (semantic-retrieval.md Section 6).
+**Act:** `embed fetch --events`, which turns off the terminal progress bar and instead reports the
+bytes the model's directory holds against the model's size, about twice a second, and ends by
+checking the files. The daemon loads the model on its next search, without a restart
+(semantic-retrieval.md Section 6).
 
-**Default:** the app starts the download when the Welcome page opens, in the background (D3); "Not
-now" stops it, and the model step stays `todo`. Nothing waits for it (O5): the other steps and the
-first entry go on, and every search answer says it is keyword only until the model is there. In the
-terminal, `setup` runs it last, with a progress line; interrupting it leaves keyword search, and the
-next run fetches what is missing.
+**Default:** the app starts the download in the background as part of "Set up" (D3); "Not now" stops
+it, and the model step stays `todo`. Nothing waits for it (O5): the other steps and the first entry go
+on, and every search answer says it is keyword only until the model is complete. In the terminal,
+`setup` runs it last, with a progress line; interrupting it leaves keyword search, and the next run
+fetches what is missing.
 
 ### 4.4 Try it
 
-**State:** whether an entry has arrived since setup began. **Done** when one has.
+**State:** whether the store holds an observation. **Done** when it does; `skipped` on a remote
+profile.
 
-**Act:** none on the store (O1). The step shows a sentence to ask in a connected app ("Remember that
-billing deploys on Fridays, and why."), with a copy button, and waits: the app listens to the viewer's
-event stream for the first observation (remote-viewer.md Section 3.6 describes the stream), and
-`setup --step wait` polls for one. When it arrives the step shows what it said and in which
-workspace, and the app offers "Open the graph" at that workspace.
+**Act:** none on the store (O1). The step suggests what to ask in a connected app, about the person's
+real work: "Remember one decision we made in this project today, and why." It is not a sample sentence
+to paste, since a made-up fact would stay in the log for good (P3). Then it waits: the app, on the
+viewer's event stream (remote-viewer.md Section 3.6), for the next observation, which it reads by
+the id the event carries; `setup --step wait`, by polling the workspaces' counts for a rise from their
+values when it started. When the entry arrives the step shows what it said and in which workspace,
+and the app offers "Open the graph" at that workspace.
 
 ## 5. First contact
 
-An AI app announces itself when it starts an MCP session: the `initialize` request carries the
-client's name and version. The daemon records, for each name, the version and the first and last
-time it arrived, in memory only.
+When an AI app talks to the local daemon, the daemon notes who it was. The name is the client's own:
+the `clientInfo` of the session's `initialize`, or, in a session that skips `initialize` as newer
+protocol versions allow, the client information a request carries in its metadata. A session that
+gives neither counts as "an unnamed client". For each name the daemon keeps the version, the time of
+the first request and of the last, in memory only.
 
 - **Where it is seen:** on the viewer's local socket at `/api/clients`, and in `status --json` as
-  `clients`. Not on the read tier: `/api/clients` is refused there (remote-viewer.md Section 3.2), and
-  nothing about it reaches a peer (O7).
-- **Through the bridge** the app's own `initialize` reaches the daemon unchanged (client-connect.md
-  C4), so the name is the app's, not the bridge's.
+  `clients`. Not on the read tier: `/api/clients` is refused there (remote-viewer.md Section 3.2). A
+  hub's listener for remote principals records nothing, and nothing about it reaches a peer (O7).
+- **Through the bridge** the app's requests reach the daemon as the app sent them (client-connect.md
+  Section 3: the bridge does not read or rewrite them), so the name is the app's, not the bridge's.
 - **Which app it is:** setup maps the names it knows to the apps `connect` lists, in a table kept
   beside the client table of client-connect.md Section 4, and shows a name it does not know as sent.
-- **What it is not:** a record of what an app did. It says an app reached the daemon since the daemon
-  started. A daemon restart forgets it, and the app keeps what it saw for its own checklist.
+- **What it is not:** a record of what an app did, or a condition any step waits on. It says an app
+  reached the daemon since the daemon started; a restart forgets it.
 
 ## 6. The app: Welcome
 
 **A page in the main window**, `assets/welcome.html`, under the same title bar with the crumb
 `supragnosis / welcome` (settings-page.md Section 3.0): no new window, no navigation in the title bar.
 
-**When it shows.** On the first launch, and on any launch while step 4.1 or 4.2 is not done, until the
-person closes it with "Finish later". While either is not done, the tray offers "Finish setup...",
+**When it shows.** On the first launch, and on a later launch while step 4.1 or 4.2 is not done,
+unless the person closed it with "Finish later" or turned Start at Login off by choice. The app
+remembers only those two things. While either step is not done, the tray offers "Finish setup...",
 and the Settings page's About section offers "Run setup again" at any time
 (settings-page.md Section 3.5).
+
+**Before anything is applied** the page shows the plan with its defaults - Start at Login on, every
+installed app without an entry checked, the model to download - and one "Set up" button applies them.
+Each card keeps its own act for later: the switch, a row's Connect or Disconnect, "Not now".
 
 **What it shows.** Four cards, one per step, each with its state, its sentence, and its act: the
 Start at Login switch, a row per AI app with Connect and its helper, the model's progress with "Not
 now", and the sentence to try with the first entry when it comes. Under each card a **log drawer**
 holds that step's events as they arrive: the command, its output, every file changed and the copy
-made first, and the exit status (D8). "Copy log" copies every drawer; "Copy diagnostics" copies `setup
---check --json` and `status --json` together, for a report.
+where one is made, and the exit status (D8). "Copy log" copies every drawer; "Copy diagnostics" copies
+`setup --check --events` and `status --json` together, for a report.
 
 **Why a log drawer and not a terminal.** A terminal shows the same output, but as text the page
 cannot read, so the cards could not follow it; it puts a shell inside the app and invites typing into
@@ -193,6 +243,10 @@ what it changed, and the cards stay the truth about state.
 
 **The privacy line** at the foot: nothing leaves this Mac, and sync stays off until a server is added
 in Settings (O6).
+
+**Who may act.** The page is the app's own, and it changes settings the way the Settings page does:
+it joins that page as a caller the app's commands admit (settings-page.md Section 4), and its commands
+are declared and granted the same way.
 
 **Settings** gains the search state in This Mac's daemon section (settings-page.md Section 3.3):
 "Search by meaning" or "Keyword only - the model is not downloaded", with the download.
@@ -206,7 +260,7 @@ The places a person meets without the Welcome page say what to do next:
 | The viewer, an empty workspace | no nodes in this workspace - observe knowledge, or pick another workspace | Nothing here yet. Ask a connected AI app to remember something, or pick a workspace that holds knowledge, each named with its count. |
 | `status`, daemon stopped | stopped | stopped, then how to start it now, how to keep it running, and `supragnosis setup` for a first run |
 | `connect`, no daemon | (no check) | the connection is made, and the app will fail until a daemon runs: `supragnosis setup` |
-| The `brief` prompt, an empty workspace | counts of zero | says the workspace holds nothing yet, and that recording decisions as work happens is what fills it (prompts.md Section 3) |
+| The `brief` prompt, an empty workspace | counts of zero | says the workspace holds nothing yet, and that recording decisions as work happens is what fills it (prompts.md Section 4) |
 | The app, CLI not found | points at the install script | names the Homebrew formula for a cask install, and the install script otherwise |
 
 ## 8. The installers and the landing
@@ -214,26 +268,29 @@ The places a person meets without the Welcome page say what to do next:
 - **The landing's install command** becomes `brew install --cask ashon/tap/supragnosis && open -a
   Supragnosis` (design-system.md Section 11), so one line ends with the Welcome page open.
 - **The cask's caveats** say to open the app to finish setting up.
-- **The install script** ends with "Next: supragnosis setup" instead of its own list, and when it runs
-  in a terminal it asks whether to run it now.
+- **The install script** ends with "Next: supragnosis setup" instead of its own list, and when a
+  terminal is attached it asks whether to run it now, reading the answer from `/dev/tty`, since under
+  `curl | sh` its standard input is the script.
 
 ## 9. Decisions
 
 - **D1. First contact, not a test entry.** A test entry would prove the pipe and stay in the log
   forever (P3). The `initialize` an app sends anyway proves the same pipe and costs nothing.
 - **D2. Start at Login on by default in Welcome.** An app that is connected but finds no daemon the
-  next morning is the failure the product most needs to avoid; the switch is visible and one click.
+  next morning is the failure the product most needs to avoid. It is a default in a plan the person
+  applies with one click, not something done before they click.
 - **D3. The model downloads by itself, in the background.** It is what makes search work across
   languages and phrasing, and it blocks nothing; "Not now" is one click.
 - **D4. The app leads; the CLI is the same procedure.** The app is where a non-developer is; the CLI
   is where a developer and Linux are. One decision procedure keeps them the same.
 - **D5. Linux gets a user unit.** The only always-on path today is a hand-run command.
-- **D6. A "Try it" step.** The first useful moment is an entry, not a green check.
+- **D6. A "Try it" step.** The first useful moment is an entry, not a green check, and the entry is
+  the person's own: the step suggests what to ask, never what to write.
 - **D7. Homebrew stays the installer for now.** One line installs and opens the app; carrying the
   server inside the app is Section 10.
 - **D8. A log drawer, not a terminal** (Section 6).
-- **D9. The app restarts Claude Desktop for the person,** with macOS's permission; other apps are told
-  how, or opened.
+- **D9. The app restarts Claude Desktop for the person,** as the Dock would; other apps are told how,
+  or opened.
 
 ## 10. Later: an app with the server inside - recorded, not decided
 
@@ -247,41 +304,51 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
 
 | | Invariant |
 |---|---|
-| **O1** | Setup writes nothing to the knowledge store: its checks read, its acts change the daemon's manager, the apps' configuration and the model cache only, and its first-entry step waits for an entry the person's own work makes. |
-| **O2** | Every step reports its outcome where it ran - what it did, every file it changed with the copy made first, or why it failed and what to do - and a failed step exits non-zero (P24). |
+| **O1** | Setup appends nothing to the knowledge log: its checks read, its first-entry step waits for an entry the person's own work makes, and every path it changes is named in its events. |
+| **O2** | Every step reports its outcome where it ran - what it did, each file it changed and the copy where client-connect.md C3 or daemon-lifecycle.md L5 makes one, or why it failed and what to do - and a failed step exits non-zero (P24). |
 | **O3** | The checklist is computed from the live state each time it is shown; `setup --check` only reads, and running setup again changes only what is not done. |
-| **O4** | The app's Welcome page decides nothing itself: every state it draws and every change it makes comes from `setup`'s events, so the app and the CLI cannot disagree. |
-| **O5** | The model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only meanwhile, and stopping the download leaves nothing broken. |
+| **O4** | Every state the Welcome page draws comes from `setup`'s events. Its own acts are only stopping the daemon it spawned before the server step, restarting or opening an AI app, and asking `setup` again when an entry arrives. |
+| **O5** | The model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only until the model is complete, a download in progress never reads as complete, and stopping it leaves nothing broken. |
 | **O6** | Nothing leaves the machine during setup: it never configures sync or a remote server, and the page says so. |
-| **O7** | First contact is the app's own `initialize`, kept in the daemon's memory: never written to the store, never served on the read tier, never sent to a peer. |
-| **O8** | Setup takes over a running manager only as the Start at Login switch does, and reports any other manager instead (daemon-lifecycle.md L1, L6); a Linux user unit adds no exposure and needs no privilege (L7, L8). |
+| **O7** | First contact is the client's own name, kept in the local daemon's memory: never written to the store, never served on the read tier, never recorded by a hub's remote listener, never sent to a peer. |
+| **O8** | Setup takes over only a daemon nobody chose a manager for - the app's child, a `start` daemon, a retired label - and reports a Homebrew service, a hand-written plist or an unnamed holder until the person asks (daemon-lifecycle.md L1, L6); a Linux user unit overwrites no unit it did not generate (L5), adds no exposure and needs no privilege (L7, L8). |
 
 ## 12. What this revises
 
-- **client-connect.md Section 4**: `connect` warns when no daemon answers.
-- **daemon-lifecycle.md Section 4**: `service install` takes `--no-model`, and on Linux writes and
-  enables a systemd user unit.
-- **semantic-retrieval.md Section 6**: `embed fetch` takes `--events` and reports progress.
+- **client-connect.md Section 4**: `connect` warns when the server the active profile names does not
+  answer.
+- **daemon-lifecycle.md Section 4**: `service install` takes `--no-model`; on Linux it generates and
+  enables a systemd user unit and asks for lingering. **L2** recognizes that unit on Linux, and **L7**
+  and **L8** read for a user unit as they do for a LaunchAgent.
+- **semantic-retrieval.md Section 6**: the model is present when every file it needs is linked under
+  `snapshots`, never because a partial file is large; a load that finds a download in progress is
+  missing, not failed, and is tried again (**SR2**); `embed fetch` takes `--events`.
 - **settings-page.md Section 3.3**: This Mac's daemon section shows the search state and offers the
   download.
 - **settings-page.md Section 3.5**: About offers "Run setup again".
+- **settings-page.md Section 4**: the Welcome page is a caller the app's commands admit, alongside the
+  Settings page, with its commands declared and granted the same way.
 - **settings-page.md Section 5**: the tray offers "Finish setup..." while the daemon or the apps are not
   set up.
 - **remote-viewer.md Section 3.2**: `/api/clients` is refused on the read tier.
-- **prompts.md Section 3**: `brief` says what an empty workspace means.
+- **prompts.md Section 4**: `brief` says what an empty workspace means.
 - **design-system.md Section 11**: the landing's install command opens the app.
 
 ## 13. Ordering
 
 1. **This document** and its registry rows.
 2. **The daemon and the CLI**: first contact (`/api/clients`, `status --json`), `setup` with
-   `--check`, `--step`, `--yes` and `--events`, `embed fetch --events`, `service install --no-model`,
-   the Linux user unit, `connect`'s warning, `status`'s stopped wording, `brief`'s empty wording and
-   the install script's ending. It ships in a release, since the app reads it.
-3. **The app**: the Welcome page and its log drawers, the two helpers, "Finish setup..." in the tray,
-   the search row and "Run setup again" in Settings, the viewer's empty state, the CLI-not-found
-   message, the cask's caveats and the landing's install command.
-4. **A clean run**: both install paths from an empty home directory to the first entry. The app's run
+   `--check`, `--step`, `--yes` and `--events`, the complete-model check and the loader's retry,
+   `embed fetch --events`, `service install --no-model`, `connect`'s warning, `status`'s stopped
+   wording, `brief`'s empty wording and the install script's ending. It ships in a release, since the
+   app reads it.
+3. **The app**: the Welcome page and its log drawers, the two helpers (and, if restarting Claude
+   Desktop needs it, the usage description and the entitlement, which the signing step outside this
+   repository must carry), "Finish setup..." in the tray, the search row and "Run setup again" in
+   Settings, the caller rule, the viewer's empty state, the CLI-not-found message, the cask's caveats
+   and the landing's install command.
+4. **Linux**: the generated user unit, lingering, and the lifecycle's recognition of the unit.
+5. **A clean run**: both install paths from an empty home directory to the first entry. The app's run
    opens windows on the person's screen, so it is announced before it starts.
 
 ## 14. Closure map
@@ -294,4 +361,40 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
 | P19 - the model widens search and never blocks | Section 4.3; O5 |
 | P24 - fail loudly, where it is read | Sections 3, 6, 7; O2 |
 | daemon-lifecycle.md L1, L5-L8 - one owner, the operator's file, no exposure, no privilege | Section 4.1; O8 |
-| client-connect.md C3, C4, C5 - backups, an unchanged surface, a read-only listing | Sections 3, 4.2, 5 |
+| client-connect.md C3, C5 - backups, a read-only listing | Sections 3, 4.2 |
+
+## 15. What the review changed
+
+The draft was read once against the principles, the sibling documents and the code by a reviewer who
+had not written it. Twelve findings changed it:
+
+1. **The app is not a pure renderer.** The CLI cannot see the daemon the app spawned, so the app has to
+   stop it before the server step, as the Start at Login switch already does; O4 now names the app's
+   own acts instead of claiming it has none.
+2. **The Welcome page must be an admitted caller.** The app's commands admit only the Settings page
+   today; Section 12 adds the Welcome page under settings-page.md Section 4.
+3. **A default is not consent.** Showing Start at Login already on and applying it would take over
+   without the click L6 relies on. The plan is shown, and one "Set up" click applies it; Homebrew's
+   service, a hand-written plist and an unnamed holder are reported, not taken over (O8).
+4. **A half-downloaded model read as present.** The presence check counts any file over a megabyte,
+   `.part` files included, and a failed load is not retried, so a background download could leave
+   search keyword only until a restart. Section 4.3 defines a complete model, and Section 12 revises
+   the check and the loader.
+5. **Not every session sends `initialize`.** First contact also reads the client information a request
+   carries, and an unnamed client still counts.
+6. **"Reached" cannot gate a step.** It lives in memory and the server step may restart the daemon, so
+   step 4.2 is done when an app is connected, and reached is shown, not waited on.
+7. **A remote profile skips more.** Contacts and entries go to the hub, so the first-entry step is
+   skipped too.
+8. **"Try it" must not write a made-up fact.** The suggested question is about the person's real work,
+   and the step waits for a rise in the store's counts instead of a baseline nobody recorded.
+9. **O1 and O2 overclaimed.** Setup changes more paths than the three named, and apps registered
+   through their own CLI make no backup. O1 is now about the log, and O2 names the copies where they
+   exist.
+10. **Linux already has a unit to copy, and lingering.** Setup must not overwrite a hand-copied unit,
+    has to ask for lingering, and the lifecycle has to recognize the unit; Linux is its own step.
+11. **Restarting Claude Desktop** is specified through the running-application interface first, with the
+    Automation permission and its entitlement named if that is what it takes.
+12. **Smaller gaps:** `--events` names its schema, `--yes` never implies `--replace`, `wait` has a
+    timeout and an exit status, `skipped` is defined, the install script reads its answer from
+    `/dev/tty`, and an app whose CLI predates `setup` says to upgrade it.
