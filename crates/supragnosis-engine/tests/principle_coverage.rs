@@ -623,21 +623,21 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["every_face_ships_with_its_surface"]),
     )]),
     (12, &[c(
-        "the principles page states only what the code states: ledger, counts and clause lists written from the registry, every principle and every Appendix A tension present, and every behavior a demo or scene shows a case a test replays against the code that owns it, with no resolution rule in the page's script",
+        "the principles page states only what the code states: ledger, counts and clause lists written from the registry, every principle and every Appendix A row present, every case naming held clauses and replayed or held by their tests, and the script taking every behavior value from the cases and naming no trust tier",
         Evidence::Deferred(
             "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
              lands with the page's tests",
         ),
     )]),
     (13, &[c(
-        "the principles page never draws an owed clause as working: a beat or branch showing one names it, draws it owed and says owed, and a principle's line states only what its held clauses say",
+        "the principles page never draws an owed clause as working: every owed beat or branch names a clause the registry does not hold and is drawn owed, and every tension's owed tag is derived from its clauses",
         Evidence::Deferred(
             "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
              lands with the page's tests",
         ),
     )]),
     (14, &[c(
-        "the principles page draws the viewer's marks with the viewer's meanings and landing tokens, each demo and scene plays at most once on its own, can be stopped and rests, reduced motion draws resting frames, and canvases are hidden while each beat's caption is announced",
+        "the principles page draws the viewer's marks with the viewer's meanings and its own marks as its own, each demo and scene plays at most once on its own, can be stopped and rests, reduced motion draws resting frames, canvases are hidden, captions are announced only after the reader acts, and no script draws no empty frame",
         Evidence::Deferred(
             "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
              lands with the page's tests",
