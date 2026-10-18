@@ -1,0 +1,108 @@
+# Line coverage of the server workspace, published as the README's badge.
+#
+# What the number is: the share of Rust lines in crates/* that `cargo test` runs, measured by
+# cargo-llvm-cov on the same default members and features the rust.yml gate tests. What it is not:
+# the viewer's JavaScript, the desktop shell (its own workspace), and the e2e harness, whose
+# real-model tests are #[ignore]d and so would only count as lines nothing runs. It is a reading,
+# not a gate: no threshold fails a build, because a number held as a target gets tests written for
+# the number.
+#
+# The badge is a shields.io endpoint document on the `badges` branch, which holds that one file and
+# nothing else. Measuring and publishing are separate jobs so that the token that can write to the
+# repository never sits in a job that compiles and runs the code under test.
+name: coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "e2e/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/coverage.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: line coverage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: install rust
+        run: rustup toolchain install stable --profile minimal -c llvm-tools-preview && rustup default stable
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: coverage
+
+      # Built from source at a pinned version, like every other tool here, rather than through a
+      # third-party installer action; the cache above keeps ~/.cargo/bin, so it is built once.
+      - name: install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+
+      - name: measure
+        run: cargo llvm-cov --locked --ignore-filename-regex '(^|/)e2e/' --json --summary-only --output-path coverage.json
+
+      - name: write the badge
+        run: |
+          set -euo pipefail
+          pct=$(jq -r '.data[0].totals.lines.percent' coverage.json)
+          shown=$(printf '%.1f' "$pct")
+          color=$(awk -v p="$pct" 'BEGIN { print (p >= 90 ? "brightgreen" : p >= 80 ? "green" : p >= 70 ? "yellowgreen" : p >= 60 ? "yellow" : "orange") }')
+          jq -n --arg m "${shown}%" --arg c "$color" \
+            '{schemaVersion: 1, label: "coverage", message: $m, color: $c}' > badge.json
+          cat badge.json
+          {
+            echo "### Line coverage: ${shown}%"
+            echo
+            echo "| File | Lines | Covered |"
+            echo "|---|---:|---:|"
+            jq -r '.data[0].files[] | [(.filename | sub(".*/(?<p>(crates|e2e)/)"; "\(.p)")), .summary.lines.count, (.summary.lines.percent * 10 | round / 10 | tostring + "%")] | "| \(.[0]) | \(.[1]) | \(.[2]) |"' coverage.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-badge
+          path: badge.json
+          retention-days: 7
+
+  publish:
+    name: publish the badge
+    needs: measure
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    # The one job that writes: it replaces the badges branch with a single commit holding the
+    # endpoint document. It checks out nothing and runs no code from the tree.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-badge
+
+      - name: push to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir out && mv badge.json out/coverage.json && cd out
+          git init -q -b badges
+          git add coverage.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "coverage $(jq -r .message coverage.json) at ${SHA}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" HEAD:refs/heads/badges

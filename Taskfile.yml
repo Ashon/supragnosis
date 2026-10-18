@@ -216,6 +216,13 @@ tasks:
       - cargo deny --all-features check
       - cargo deny --manifest-path app/Cargo.toml --config deny.toml --all-features check
 
+  coverage:
+    desc: Line coverage of the server workspace - what coverage.yml measures for the README badge
+    # Needs `cargo install cargo-llvm-cov` and rustup's llvm-tools-preview component. Not part of
+    # `task check`: the number is a reading, not a gate. `task coverage -- --html` writes a report.
+    cmds:
+      - cargo llvm-cov --locked --ignore-filename-regex '(^|/)e2e/' {{.CLI_ARGS}}
+
   lint:actions:
     desc: zizmor over the workflows and Dependabot config - mirrors the actions-lint workflow
     # Needs uv and gh: uvx fetches zizmor, and gh's token lets the online audits ask GitHub whether a
