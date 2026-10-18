@@ -7,7 +7,6 @@
 "use strict";
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 function el(tag, attrs, text) { const e = document.createElement(tag); if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
 // Reduced motion is read when a scene starts, so a change of the setting is followed (Section 11a).
 const RM = matchMedia("(prefers-reduced-motion: reduce)");
@@ -153,7 +152,17 @@ function animate(dur, frame, done) {
 document.addEventListener("visibilitychange", () => { if (document.hidden) [...RUNNING].forEach(f => f()); });
 const MOUNT = {};
 // A demo's sentences are the page's (Section 11a); the script picks the one for the state it draws.
-const capOf = (fig, k) => { const li = $(`.caps li[data-k="${k}"]`, fig); return li ? li.innerHTML : ""; };
+// Copied as nodes, never as markup: the page's own words are moved, not reparsed.
+const cloneKids = node => { const f = document.createDocumentFragment(); if (node) node.childNodes.forEach(n => f.append(n.cloneNode(true))); return f; };
+const capOf = (fig, k) => cloneKids($(`.caps li[data-k="${k}"]`, fig));
+const capText = (fig, k) => { const li = $(`.caps li[data-k="${k}"]`, fig); return li ? li.textContent : ""; };
+// A demo's row: who said it (one line each), what, and the state it is in.
+function rowEl(who, what, chip, cls, dim) {
+  const r = el("div", dim ? {class: "dim"} : null), w = el("span", {class: "who"});
+  who.forEach((line, i) => { if (i) w.append(el("br")); w.append(line); });
+  r.append(w, el("span", {class: "what"}, what), el("span", {class: ("chip " + cls).trim()}, chip));
+  return r;
+}
 // The values a demo or scene presents as the product's behavior are the cases' (U12).
 const CASES = (() => { try { return JSON.parse($("#cases").textContent); } catch (e) { return {}; } })();
 // A figure's case, keyed by its principle: the values the figure draws as the product's behavior.
@@ -248,10 +257,11 @@ MOUNT[16] = function (fig) {
     label(ctx, st.got.size === 6 ? "graph " + FP : "graph", x + 12, y + h - 15, {mono: true, size: 11, color: same ? C.ink : C.muted, halo: false});
     if (same) label(ctx, "identical", x + lw - 12, y + h - 15, {align: "right", size: 11, color: C.ink, halo: false});
   }
-  function capRunning() { cap.innerHTML = capOf(fig, mode); }
+  function capRunning() { cap.replaceChildren(capOf(fig, mode)); }
   function capDone() {
     const orders = plan.map(p => p.arr.filter(a => !a.dup).map(a => a.k + 1).join(" ")).join(" / ");
-    cap.innerHTML = capOf(fig, "done").replace("{orders}", orders).replace("{fp}", `<code>${FP}</code>`) + (mode === "plain" ? "" : " " + capOf(fig, "done-" + mode));
+    const [a, rest] = capText(fig, "done").split("{orders}"), [b, c] = (rest || "").split("{fp}");
+    cap.replaceChildren(a + orders + (b || ""), el("code", null, FP), (c || "") + (mode === "plain" ? "" : " " + capText(fig, "done-" + mode)));
   }
   function run() { stop(); capRunning(); stop = animate(end(), tt => { t = tt; S.redraw(); }, capDone); }
   build();
@@ -289,14 +299,13 @@ MOUNT[6] = function (fig) {
     label(ctx, "Redis", R[0] + r + 10, R[1] - 1, {size: 13, weight: 600, color: C.ink});
     label(ctx, (kk > .5 ? nowB : prevB) + (contested > .5 ? ", contested" : ""), R[0] + r + 10, R[1] + 16, {size: 11, mono: true, color: contested > .5 ? C.bad : C.muted});
   }
-  function row(who, what, chip, cls, dim) { return `<div${dim ? ' class="dim"' : ""}><span class="who">${who}</span><span class="what">${what}</span><span class="chip ${cls}">${chip}</span></div>`; }
   function render() {
     const r = [];
-    r.push(row("laptop, for you<br>Mon 10:02", "Redis is a Database", ...(step === 0 ? ["believed", "ink"] : step === 1 ? ["contested", "bad"] : ["believed, by trust", "gold"])));
-    if (step >= 1) r.push(row("ci-runner<br>Tue 16:40", "Redis is a Cache", ...(step === 1 ? ["contested", "bad"] : ["defeated, kept", ""]), step === 2));
-    if (step === 2) r.push(row("you, in the console<br>Wed 09:15", `confirm "${V(6).after}"`, V(6).tier, "gold"));
-    rows.innerHTML = r.join("");
-    cap.innerHTML = capOf(fig, step);
+    r.push(rowEl(["laptop, for you", "Mon 10:02"], "Redis is a Database", ...(step === 0 ? ["believed", "ink"] : step === 1 ? ["contested", "bad"] : ["believed, by trust", "gold"])));
+    if (step >= 1) r.push(rowEl(["ci-runner", "Tue 16:40"], "Redis is a Cache", ...(step === 1 ? ["contested", "bad"] : ["defeated, kept", ""]), step === 2));
+    if (step === 2) r.push(rowEl(["you, in the console", "Wed 09:15"], `confirm "${V(6).after}"`, V(6).tier, "gold"));
+    rows.replaceChildren(...r);
+    cap.replaceChildren(capOf(fig, step));
     bConfirm.disabled = step !== 1;
   }
   function go(to) { stop(); from = step; step = to; k = 0; render(); stop = animate(.7, tt => { k = tt === Infinity ? 1 : clamp(tt / .7, 0, 1); S.redraw(); }, () => { from = step; k = 1; S.redraw(); }); }
@@ -327,12 +336,11 @@ MOUNT[18] = function (fig) {
     label(ctx, "billing-api", R[0], R[1] + r + 15, {align: "center", size: 11.5});
     label(ctx, mode === "claim" ? V(18).evaluated : V(18).verdict_evaluated, R[0], R[1] + r + 32, {align: "center", mono: true, size: 11, color: mode === "claim" ? C.ink : C.goldHi, alpha: rk});
   }
-  function row(who, what, chip, cls) { return `<div><span class="who">${who}</span><span class="what">${what}</span><span class="chip ${cls}">${chip}</span></div>`; }
   function render() {
-    rows.innerHTML = mode === "claim"
-      ? row("claimed", `trust: "${V(18).claimed}"`, "stored as sent", "") + row("evaluated", "signed by desk-2, no verdict behind it", V(18).evaluated, "ink")
-      : row("claimed", `trust: ${V(18).verdict_claimed}`, "stored as sent", "") + row("verdict", "a person merged a promotion in desk-2's console", "console", "") + row("evaluated", "the console verdict, replayed from the log", V(18).verdict_evaluated, "gold");
-    cap.innerHTML = capOf(fig, mode);
+    rows.replaceChildren(...(mode === "claim"
+      ? [rowEl(["claimed"], `trust: "${V(18).claimed}"`, "stored as sent", ""), rowEl(["evaluated"], "signed by desk-2, no verdict behind it", V(18).evaluated, "ink")]
+      : [rowEl(["claimed"], `trust: ${V(18).verdict_claimed}`, "stored as sent", ""), rowEl(["verdict"], "a person merged a promotion in desk-2's console", "console", ""), rowEl(["evaluated"], "the console verdict, replayed from the log", V(18).verdict_evaluated, "gold")]));
+    cap.replaceChildren(capOf(fig, mode));
     [[bA, "claim"], [bB, "verdict"]].forEach(([b, m]) => { b.classList.toggle("on", mode === m); b.setAttribute("aria-pressed", String(mode === m)); });
   }
   function set(m) { stop(); mode = m; k = 0; render(); stop = animate(1.1, tt => { k = tt === Infinity ? 1 : clamp(tt / 1.1, 0, 1); S.redraw(); }, () => { k = 1; S.redraw(); }); }
@@ -374,7 +382,7 @@ MOUNT[23] = function (fig) {
     const L = V(23).log || {}, K = V(23).canon || {};
     $('[data-k="log"]', fig).textContent = (L.base || 0) + (st.proposed ? L.propose || 0 : 0) + (st.note ? L.note || 0 : 0) + (st.verdict ? L.verdict || 0 : 0);
     $('[data-k="canon"]', fig).textContent = st.verdict ? K[st.verdict] || 0 : K.base || 0;
-    cap.innerHTML = capOf(fig, st.verdict || (st.note ? "note" : st.proposed ? "proposed" : "base"));
+    cap.replaceChildren(capOf(fig, st.verdict || (st.note ? "note" : st.proposed ? "proposed" : "base")));
   }
   function go(next) { stop(); prev = st; st = next; k = 0; sync(); stop = animate(.8, tt => { k = tt === Infinity ? 1 : clamp(tt / .8, 0, 1); S.redraw(); }, () => { prev = st; k = 1; S.redraw(); }); }
   B("propose").addEventListener("click", () => go({...st, proposed: true}));
@@ -554,9 +562,9 @@ const SCENE = {};
 // list becomes a row of buttons and one caption beneath them, announced as each beat begins.
 function mountScene(p, fig) {
   const sc = SCENE[p], cv = $("canvas", fig), items = $$(".beats li", fig);
-  const B = items.map(li => ({t: +li.dataset.t, k: $(".bk", li).textContent, cap: $(".bc", li).innerHTML})), END = B[B.length - 1].t;
+  const B = items.map(li => ({t: +li.dataset.t, k: $(".bk", li).textContent, cap: $(".bc", li)})), END = B[B.length - 1].t;
   const bar = el("div", {class: "beatbar", role: "group", "aria-label": "Steps"}), cap = el("p", {class: "cap", "aria-live": "off"});
-  const btns = B.map((b, i) => { const btn = el("button", {type: "button", class: "beat"}); btn.innerHTML = `<b>${i + 1}</b>`; btn.append(b.k); bar.append(btn); return btn; });
+  const btns = B.map((b, i) => { const btn = el("button", {type: "button", class: "beat"}); btn.append(el("b", null, String(i + 1)), b.k); bar.append(btn); return btn; });
   const play = el("button", {type: "button", class: "beat play"}, "Replay");
   bar.append(play); $(".beats", fig).after(bar, cap);
   let t = END, shown = -1, stop = () => {}, playing = false;
@@ -564,7 +572,7 @@ function mountScene(p, fig) {
   const beatAt = tt => { for (let i = 0; i < B.length; i++) if (tt <= B[i].t) return i; return B.length - 1; };
   function show(i) {
     if (i === shown) return; shown = i;
-    cap.innerHTML = B[i].cap;
+    cap.replaceChildren(cloneKids(B[i].cap));
     btns.forEach((b, j) => b.setAttribute("aria-current", j === i ? "step" : "false"));
   }
   const rest = () => { playing = false; play.textContent = "Replay"; };
@@ -1152,7 +1160,9 @@ function ledger() {
     const p = a.dataset.p, art = $("#p" + p);
     if (!art) return;
     const tally = $(".clauses .tally", art), list = $(".clauses ul", art);
-    detail.innerHTML = `<span class="dn">P${p}</span><h3>${esc($("h3", art).textContent)}</h3><p class="dl">${tally ? esc(tally.textContent) + ". " : ""}<a href="#p${p}">Read the principle</a></p>` + (list ? list.outerHTML : "");
+    const dl = el("p", {class: "dl"}, tally ? tally.textContent + ". " : ""), link = el("a", {href: "#p" + p}, "Read the principle");
+    dl.append(link);
+    detail.replaceChildren(el("span", {class: "dn"}, "P" + p), el("h3", null, $("h3", art).textContent), dl, ...(list ? [list.cloneNode(true)] : []));
   }
   cols.forEach(a => a.addEventListener("click", e => { e.preventDefault(); pick(a); }));
   pick(cols.find(c => c.dataset.p === "3") || cols[0]);
@@ -1220,7 +1230,8 @@ function tensions() {
     TEN.forEach((T, j) => $("button", T.li).setAttribute("aria-pressed", String(j === i)));
     const li = TEN[i].li;
     if (pressed) jd.setAttribute("aria-live", "polite");
-    jd.innerHTML = `<span class="vs">${$(".vs", li).innerHTML}</span><h3>${$(".tn", li).innerHTML}</h3>${$(".win", li).outerHTML}`;
+    const h = el("h3"); h.append(cloneKids($(".tn", li)));
+    jd.replaceChildren($(".vs", li).cloneNode(true), h, $(".win", li).cloneNode(true));
     S.redraw();
   }
   cv.addEventListener("click", e => {

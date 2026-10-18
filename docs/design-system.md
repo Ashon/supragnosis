@@ -838,7 +838,8 @@ which read the page's script beside the viewer's and the landing's stylesheet: t
 the palette, the edge line and the rings are the viewer's; no tier is named in the script; a frame is
 requested only while a figure plays, reduced motion draws the resting frame, a hidden tab stops it,
 a scene plays once and can be stopped, a caption is announced only after a press; every canvas is
-hidden and every beat is text in the page; and the page carries no style of its own. U9 and U11 hold
+hidden and every beat is text in the page; the script copies the page's words as nodes and writes no
+markup; and the page carries no style of its own. U9 and U11 hold
 it through `no_border_draws_an_area` and `every_face_ships_with_its_surface`, which reads the page's
 links. `the_landing_links_the_principles_page` holds the landing's four links to it.
 
