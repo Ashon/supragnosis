@@ -894,6 +894,82 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     ),
 ];
 
+// docs/e2e.md Section 7 - the end-to-end scenarios (J rows).
+const E2E_REGISTRY: &[(u8, &[Clause])] = &[
+    (
+        1,
+        &[c(
+            "a scenario runs the product's binary built from the tree, through its users' entry points - serve, MCP over HTTP with the bearer, the stdio bridge, the viewer's socket and the page the daemon serves, the browser on a release build - never an engine built inside the test",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+            ),
+        )],
+    ),
+    (
+        2,
+        &[c(
+            "a scenario is hermetic: its processes start from an environment built for them, with their own home, socket, address and embedder, nothing of the person's read or written, no network beyond loopback",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+            ),
+        )],
+    ),
+    (
+        3,
+        &[c(
+            "a scenario waits on observable state with a deadline and, when it passes, fails with what it last observed; it never sleeps to synchronise",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+            ),
+        )],
+    ),
+    (
+        4,
+        &[c(
+            "a scenario asserts what a person or an agent sees - a tool's answer, an API field, the page's text; screenshots are evidence on failure, never compared",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+            ),
+        )],
+    ),
+    (
+        5,
+        &[c(
+            "every process a scenario starts is stopped when it ends, passed, failed or panicked",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+            ),
+        )],
+    ),
+    (
+        6,
+        &[c(
+            "the browser reaches the viewer only through the harness's proxy, for a throwaway store, on a port the system chose, refusing a foreign Host or Origin; the product opens no viewer port and nothing outside the suite starts the proxy",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 4 lands",
+            ),
+        )],
+    ),
+    (
+        7,
+        &[c(
+            "the app's pages are tested with commands answered from examples the app's own tests produce from the CLI's example documents",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 5 lands",
+            ),
+        )],
+    ),
+    (
+        8,
+        &[c(
+            "every scenario in Section 5 is told by a test that names its id or counted as unbuilt, every test names a scenario, and the badge is that count",
+            Evidence::Deferred(
+                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+            ),
+        )],
+    ),
+];
+
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).
 const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -2688,6 +2764,12 @@ const FAMILIES: &[Family] = &[
         prefix: "O",
         rows: ONBOARDING_REGISTRY,
     },
+    Family {
+        doc: "docs/e2e.md",
+        text: include_str!("../../../docs/e2e.md"),
+        prefix: "J",
+        rows: E2E_REGISTRY,
+    },
 ];
 
 /// The invariant numbers a document declares under one prefix, first occurrence of each, in
@@ -3074,6 +3156,7 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards will split between the CLI (setup, first contact on
     // the daemon) and the app workspace, whose source SOURCES already scans.
     ("docs/onboarding.md", include_str!("../../../docs/onboarding.md")),
+    ("docs/e2e.md", include_str!("../../../docs/e2e.md")),
     (
         "docs/semantic-retrieval.md",
         include_str!("../../../docs/semantic-retrieval.md"),
