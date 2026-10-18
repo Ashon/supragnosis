@@ -321,8 +321,61 @@ pub struct SyncContext {
     pub peer_registry: Option<std::sync::Arc<supragnosis_sync::http::PeerRegistry>>,
 }
 
+/// First contact (docs/onboarding.md Section 5): which AI apps have talked to this daemon since it
+/// started, by the name each client gives itself. Kept in memory only - never in the store, never on
+/// the read tier, never sent to a peer (O7) - so that setup can say an app reached the daemon without
+/// writing anything to learn it.
+#[derive(Default)]
+pub struct ClientLog {
+    seen: std::sync::Mutex<std::collections::BTreeMap<String, ClientSeen>>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ClientSeen {
+    pub version: String,
+    /// Milliseconds since the epoch, of the first request and of the last.
+    pub first: u64,
+    pub last: u64,
+}
+
+impl ClientLog {
+    /// The name a client that gave none is listed under.
+    pub const UNNAMED: &'static str = "an unnamed client";
+
+    pub fn note(&self, name: &str, version: &str) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let name = if name.trim().is_empty() { Self::UNNAMED } else { name.trim() };
+        let mut seen = self.seen.lock().unwrap_or_else(|p| p.into_inner());
+        seen.entry(name.to_string())
+            .and_modify(|s| {
+                s.last = now;
+                if !version.is_empty() {
+                    s.version = version.to_string();
+                }
+            })
+            .or_insert(ClientSeen { version: version.to_string(), first: now, last: now });
+    }
+
+    /// `{"clients": [{"name", "version", "first", "last"}]}`, in name order.
+    pub fn snapshot(&self) -> serde_json::Value {
+        let seen = self.seen.lock().unwrap_or_else(|p| p.into_inner());
+        let list: Vec<serde_json::Value> = seen
+            .iter()
+            .map(|(name, s)| {
+                serde_json::json!({ "name": name, "version": s.version, "first": s.first, "last": s.last })
+            })
+            .collect();
+        serde_json::json!({ "clients": list })
+    }
+}
+
 pub struct SupragnosisServer {
     engine: Arc<Engine>,
+    /// First contact, recorded on the local daemon's surface only (docs/onboarding.md Section 5).
+    clients: Option<Arc<ClientLog>>,
     sync: Option<Arc<SyncContext>>,
     /// Set when this server serves principals over the network (docs/remote-server.md Section 4):
     /// every call is then admitted per principal, and one with no principal is refused (R2).
@@ -332,7 +385,36 @@ pub struct SupragnosisServer {
 
 impl SupragnosisServer {
     pub fn new(engine: Arc<Engine>) -> Self {
-        Self { engine, sync: None, remote: None, tool_router: Self::tool_router() }
+        Self {
+            engine,
+            clients: None,
+            sync: None,
+            remote: None,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Records which clients talk to this server (docs/onboarding.md Section 5). Ignored on a remote
+    /// surface: a hub's listener for principals records nothing (O7).
+    pub fn with_clients(mut self, log: Arc<ClientLog>) -> Self {
+        self.clients = Some(log);
+        self
+    }
+
+    /// Notes a request's client in the first-contact log: the name its session's `initialize` gave,
+    /// or - in a session that skipped `initialize`, as newer protocol versions allow - the client
+    /// information the request carries in its metadata, or an unnamed client.
+    fn note_contact(&self, context: &RequestContext<RoleServer>) {
+        let (Some(log), None) = (&self.clients, &self.remote) else {
+            return;
+        };
+        if let Some(info) = context.peer.peer_info() {
+            log.note(&info.client_info.name, &info.client_info.version);
+        } else if let Some(info) = context.meta.client_info() {
+            log.note(&info.name, &info.version);
+        } else {
+            log.note(ClientLog::UNNAMED, "");
+        }
     }
 
     /// Serves principals instead of this machine (docs/remote-server.md). The listener in front
@@ -1336,6 +1418,20 @@ fn sync_unconfigured() -> String {
 // tools/call - and leaves the field dead, which is how the change would announce itself.
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SupragnosisServer {
+    /// rmcp's own `initialize`, plus first contact: the session's client name is recorded before
+    /// the negotiation (docs/onboarding.md Section 5).
+    fn initialize(
+        &self,
+        request: rmcp::model::InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<rmcp::model::InitializeResult, ErrorData>> + Send + '_ {
+        if let (Some(log), None) = (&self.clients, &self.remote) {
+            log.note(&request.client_info.name, &request.client_info.version);
+        }
+        context.peer.set_peer_info(request.clone());
+        std::future::ready(self.negotiate_initialize(&request))
+    }
+
     fn get_info(&self) -> ServerConfig {
         // Built through the constructor rather than a struct literal: rmcp marks this
         // #[non_exhaustive], so a literal - even one ending in `..Default::default()` - does not
@@ -1386,6 +1482,7 @@ impl ServerHandler for SupragnosisServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        self.note_contact(&context);
         let Some(surface) = &self.remote else {
             let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
             return self.tool_router.call(tcc).await;
@@ -1456,8 +1553,9 @@ impl ServerHandler for SupragnosisServer {
     fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
+        self.note_contact(&context);
         std::future::ready(Ok(ListToolsResult::with_all_items(self.tool_router.list_all())
             .with_ttl_ms(0)
             .with_cache_scope(CacheScope::Private)))

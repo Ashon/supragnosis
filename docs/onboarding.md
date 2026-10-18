@@ -8,8 +8,8 @@
 > [settings-page.md](settings-page.md) (the app's own pages) and
 > [semantic-retrieval.md](semantic-retrieval.md) (the search model).
 >
-> Status: **specified, not built** (Section 13). The choices it records were made by the author on
-> 2026-10-18 from a storyboard.
+> Status: **the daemon and the CLI are built** (Section 13 step 2); the app, Linux and the clean run
+> are not. The choices it records were made by the author on 2026-10-18 from a storyboard.
 
 ## 1. Why this exists
 
@@ -91,8 +91,10 @@ each act it offers runs `setup --step ... --events`, and the log drawer under a 
 events. Its own acts are few and named: it stops the daemon it spawned before the server step runs
 (the CLI cannot see that child, which is why the Start at Login switch stops it first today), it
 restarts or opens an AI app (Section 4.2), and it runs `--check` again when the viewer's event stream
-reports an entry. An app whose CLI is too old to know `setup` says so, and names `brew upgrade
-supragnosis-server`.
+reports an entry. Since the CLI cannot tell the app's child from any other process it does not
+manage, the app passes that child's pid (`--app-daemon <pid>`), and setup reads it as the app's
+daemon only while that pid is alive and is supragnosis. An app whose CLI is too old to know `setup`
+says so, and names `brew upgrade supragnosis-server`.
 
 Failures follow the lifecycle's rule (daemon-lifecycle.md L4): a step that fails exits non-zero and
 says why and what to do, in its events and in its text (O2).
@@ -112,10 +114,13 @@ what it only reports (O8):
 
 - **Taken over:** a daemon the app spawned (the app stops it first, Section 3), a pidfile daemon from
   `supragnosis start`, and a retired label - the cases where nobody chose a manager.
-- **Reported as `attention`:** a Homebrew service, a hand-written plist and anything answering that
-  the lifecycle cannot name. The sentence names `supragnosis service install --take-over`; in the app
-  the card offers "Take over", and the click is the consent the Start at Login switch asks for today
-  (L1, L6).
+- **Reported as `attention`:** a Homebrew service that does not answer, a hand-written plist that
+  nothing has loaded or that a take-over would move aside, two managers at once, and anything
+  answering that the lifecycle cannot name. The sentence names the command that would act, most
+  often `supragnosis service install --take-over`; in the app the card offers "Take over", and the
+  click is the consent the Start at Login switch asks for today (L1, L6). A Homebrew service or a
+  hand-written login job that keeps the daemon answering is a manager that outlives the app, so the
+  step is done and setup leaves it as it is.
 
 **Default:** on (D2). Nothing is applied until the person acts: the Welcome page shows the plan with
 Start at Login checked, and one "Set up" click applies it, as rustup's "Proceed" does. Turning it off
@@ -130,7 +135,8 @@ deploy/systemd/README.md tells people to copy - is never overwritten (L5) and co
 is enabled and answering. `status`, `restart` and `stop` recognize the unit as they recognize the
 LaunchAgent (L2). The unit binds and authenticates as the daemon does by default (L7) and needs no
 administrator rights (L8). Where `systemctl --user` is unavailable, as in many containers, the step
-is `attention` and names the `serve` command.
+is `attention` and names the `serve` command. Until Section 13 step 4 lands, setup installs nothing
+on Linux: the step is `attention` and names the unit deploy/systemd/README.md has to copy.
 
 ### 4.2 Connect your AI apps
 
@@ -165,8 +171,9 @@ the entry is written, and the app will fail until a server runs.
 ### 4.3 Search by meaning
 
 **State:** whether the model the daemon is configured with is complete in the cache the daemon reads
-(the model and directory `status` reports when the daemon answers, otherwise the login job's
-environment). **Complete** means every file the model needs is linked under the cache's `snapshots`
+(the daemon's own report when it answers, otherwise the model and directory this command's
+environment names). A model that is complete on disk and that the daemon still reports off did not
+load: that is `attention`, with the daemon's reason, not `todo`. **Complete** means every file the model needs is linked under the cache's `snapshots`
 directory; a file still downloading (`.part`) never counts. Today's check counts any file over a
 megabyte, so a half-finished download reads as present, the daemon tries to load it, the load fails,
 and a failed load is not retried until a restart; this document revises that (Section 12). **Done**
@@ -192,8 +199,8 @@ profile.
 real work: "Remember one decision we made in this project today, and why." It is not a sample sentence
 to paste, since a made-up fact would stay in the log for good (P3). Then it waits: the app, on the
 viewer's event stream (remote-viewer.md Section 3.6), for the next observation, which it reads by
-the id the event carries; `setup --step wait`, by polling the workspaces' counts for a rise from their
-values when it started. When the entry arrives the step shows what it said and in which workspace,
+the id the event carries; `setup --step wait`, by reading the newest entry across every workspace
+every two seconds until there is one (a store that already holds one is done at once). When the entry arrives the step shows what it said and in which workspace,
 and the app offers "Open the graph" at that workspace.
 
 ## 5. First contact

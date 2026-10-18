@@ -135,6 +135,10 @@ name, and something answering with no manager has none to retire it by. Guarded 
 > app's switch handles it, and checks again after retiring the others that the address actually
 > went quiet before it writes anything.
 
+**The model.** `install` fetches the search model after the job is loaded (semantic-retrieval.md
+Section 6) and reports a failure without failing. `--no-model` leaves the fetch out: `supragnosis
+setup` runs it as its own step, which nothing waits on (onboarding.md Section 4.1).
+
 **The operator's file is theirs** (P24). A canonical-label plist without the marker was written by a
 person. `install` will not overwrite it, and `--take-over` moves it aside to
 `~/.supragnosis/launchd/com.supragnosis.daemon.plist.<timestamp>` instead of deleting it, so

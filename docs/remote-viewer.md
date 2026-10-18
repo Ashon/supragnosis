@@ -84,7 +84,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | `/api/proposal` | read | The named workspace must be granted and servable. `*` is refused, because a proposal lives in one workspace. |
 | `/api/explain?entity=`, `/api/observations?entity=` | read | The entity's own workspace must be granted and servable. An id outside the grants is answered exactly as an unknown id is (Section 3.4). |
 | `/api/events` | read | Filtered as Section 3.6 says. |
-| `/api/federation`, `/api/peer/share`, `/api/health` | refused | A node's own operations and state - its peers, its sharing boundary, its store's ledger. They are not a principal's. |
+| `/api/federation`, `/api/peer/share`, `/api/health`, `/api/clients` | refused | A node's own operations and state - its peers, its sharing boundary, its store's ledger, the AI apps on its own machine (onboarding.md O7). They are not a principal's. |
 | `/api/review`, `/api/resolve` | refused | Verdicts. These stamp the console surface, the one that records a human's direct act (V2). |
 | `/api/reify`, `/api/propose_merge`, `/api/propose_split` | refused | Writes. A principal with a write grant reaches `observe` and `propose` through MCP. |
 

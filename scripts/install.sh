@@ -167,6 +167,29 @@ else
        # To keep it running, see the systemd user unit in the repository's deploy/systemd/."
 fi
 
+# The first run is one command now (docs/onboarding.md Section 8): `setup` shows its plan and asks
+# before it acts. A binary from before `setup` existed gets the steps written out below instead.
+if "${BIN_DIR}/supragnosis" setup --help >/dev/null 2>&1; then
+  cat <<EOF
+
+Next: supragnosis setup
+  It keeps the daemon running, connects your AI apps and downloads the search model (224 MB),
+  showing the plan and asking before it changes anything.
+  Help: sh install.sh --help   |   Docs/issues: https://github.com/${REPO}
+EOF
+  # Under `curl | sh` standard input is this script, so the answer is read from the terminal itself,
+  # and only when there is one to read from.
+  if (exec </dev/tty) 2>/dev/null; then
+    printf "Run it now? [Y/n] " >/dev/tty
+    answer=n
+    read -r answer </dev/tty || answer=n
+    case "${answer}" in
+      "" | y | Y | yes) exec "${BIN_DIR}/supragnosis" setup </dev/tty ;;
+    esac
+  fi
+  exit 0
+fi
+
 cat <<EOF
 
 Install complete. Onboarding:

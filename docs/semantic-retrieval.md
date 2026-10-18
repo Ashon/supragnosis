@@ -129,10 +129,21 @@ Other facts the design rests on:
   terminal, and says what it got and how large. It is idempotent. `supragnosis service install`
   runs it after installing the job, and reports a failure without failing the install: the daemon
   is useful without the model. The app's Start at Login does the same through the CLI it already
-  calls, and its status line carries the result.
+  calls, and its status line carries the result. `service install --no-model` leaves it out, for
+  `supragnosis setup`, which fetches it as its own step (onboarding.md Section 4.3).
+- **`embed fetch --events`** writes one JSON line about twice a second instead of the progress bar:
+  the bytes the model's directory holds against the model's size, and last whether the model is
+  complete. The desktop app reads it (onboarding.md Section 3).
+- **Present means complete.** The model is in the cache when a snapshot under `snapshots/` links
+  every file fastembed reads - the tokenizer's three files, the config and the ONNX weights - to a
+  file that exists, the weights over a megabyte. hf-hub links a file there only once its blob is
+  whole, so a download in progress (`blobs/<etag>.part`) never reads as present. This revises a
+  check that counted any file over a megabyte, a partial blob included: a daemon could try a
+  half-finished model, fail, and remember the failure until a restart (onboarding.md Section 12).
 - After a fetch, a running daemon that had degraded loads the model on its next embed: the
   failure it remembers is "no files", and the files are now there. So the sequence for a person
-  who started by hand is `supragnosis embed fetch`, and nothing else.
+  who started by hand is `supragnosis embed fetch`, and nothing else. A load attempted while a
+  download runs finds no complete model, so it is "no files" too, and is tried again.
 - **`status`** gains a `semantic` object: `{"state": "on" | "loading" | "off", "model": <identity>,
   "note": <why off, and what to run>}`. The text form is one line, `semantic: on
   (paraphrase-multilingual-minilm-l12-v2-q-384)` or `semantic: off - model not fetched; run

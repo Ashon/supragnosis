@@ -103,7 +103,9 @@ One command registers the bridge with a client, using whatever mechanism that cl
 - **`supragnosis connect --remove <client>`** removes the `supragnosis` entry, by the same route and
   with the same backup.
 - **After connecting**, the command says what the person has to do next: restart Claude Desktop, or
-  start a new Claude Code session.
+  start a new Claude Code session. It names what it changed: the file it wrote, or the client
+  command it ran. When the server the active profile names does not answer, it says so: the entry
+  is written, and the app fails until a server runs (onboarding.md Section 4.2).
 - **Claude Code also gets the capture hook** (Section 12) unless `--no-capture` is given, and the
   listing says `capture on` or `off` beside its entry.
 

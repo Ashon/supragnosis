@@ -1141,6 +1141,54 @@ fn every_tool_has_a_remote_policy() {
     assert_eq!(declared, classified, "the remote policy table and the tool list disagree");
 }
 
+/// docs/onboarding.md Section 5 and O7: the local surface notes the name a client gives itself at
+/// `initialize`, in memory and nowhere else; a hub's surface for principals notes nothing.
+#[tokio::test]
+async fn first_contact_is_the_clients_own_name_and_a_hub_records_none() {
+    use supragnosis_core::AssertionStore;
+    for remote in [false, true] {
+        let log = Arc::new(supragnosis_mcp::ClientLog::default());
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
+        let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+        let noted = log.clone();
+        let server = tokio::spawn(async move {
+            let mut s = SupragnosisServer::new(engine).with_clients(noted);
+            if remote {
+                s = s.with_remote(supragnosis_mcp::remote::Surface {
+                    servable: Arc::new(|_: &str| Ok(())),
+                });
+            }
+            let running = s.serve(server_io).await.expect("server handshake");
+            let _ = running.waiting().await;
+        });
+        let info = rmcp::model::ClientConfig::new(
+            Default::default(),
+            rmcp::model::Implementation::new("claude-code", "2.1.0"),
+        );
+        let client = info.serve(client_io).await.expect("client handshake");
+        client.list_all_tools().await.expect("list tools");
+        let seen = log.snapshot();
+        if remote {
+            assert_eq!(seen, json!({ "clients": [] }), "O7: a hub's listener records nothing");
+        } else {
+            let clients = seen["clients"].as_array().expect("clients");
+            assert_eq!(clients.len(), 1, "{seen}");
+            assert_eq!(
+                (&clients[0]["name"], &clients[0]["version"]),
+                (&json!("claude-code"), &json!("2.1.0"))
+            );
+            assert!(clients[0]["first"].as_u64() <= clients[0]["last"].as_u64(), "{seen}");
+        }
+        assert!(
+            store.all_observations(None).unwrap().is_empty(),
+            "O1: nothing reaches the store"
+        );
+        client.cancel().await.ok();
+        server.abort();
+    }
+}
+
 // --- Prompts (docs/prompts.md) ------------------------------------------------------------------
 
 async fn prompt_server(
@@ -1346,6 +1394,46 @@ async fn a_brief_is_fenced_bounded_and_writes_nothing() {
     assert!(instruction.contains("Never cast a merge verdict"), "PR5");
     assert!(instruction.contains("never as") && instruction.contains("instructions"), "PR4");
 
+    client.cancel().await.ok();
+    server.abort();
+}
+
+/// docs/onboarding.md Section 7: a brief of a workspace nothing has been recorded in says so, and
+/// names the workspaces that do hold knowledge - zero counts alone read as a finding (P5).
+#[tokio::test]
+async fn an_empty_workspace_brief_says_it_is_empty() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, false).await;
+    let brief = |ws: &'static str| {
+        let client = &client;
+        async move {
+            prompt_text(
+                &client
+                    .get_prompt(
+                        rmcp::model::GetPromptRequestParams::new("brief")
+                            .with_arguments(args(json!({ "workspace": ws }))),
+                    )
+                    .await
+                    .expect("brief"),
+            )
+        }
+    };
+    assert!(brief("ws")
+        .await
+        .contains("No other workspace on this node holds knowledge either"));
+    call(
+        &client,
+        "observe",
+        json!({"workspace": "web", "content": "the site uses Fraunces for headings",
+        "entities": [{"name": "Fraunces", "type": "Technology"}]}),
+    )
+    .await;
+    let text = brief("ws").await;
+    assert!(
+        text.contains("holds nothing yet") && text.contains("Workspaces that hold knowledge: web."),
+        "{text}"
+    );
+    assert!(!brief("web").await.contains("holds nothing yet"), "a workspace with knowledge");
     client.cancel().await.ok();
     server.abort();
 }

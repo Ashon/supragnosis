@@ -268,6 +268,7 @@ fn brief_digest(
             }))
         })
         .collect();
+    let empty = graph.stats.node_count == 0 && recent.is_empty() && recent_events.is_empty();
     let mut digest = json!({
         "workspace": ws.unwrap_or("*"),
         "counts": {
@@ -290,6 +291,21 @@ fn brief_digest(
         digest["recent_proposal_events_note"] = json!(format!(
             "the newest {SECTION_CAP}; older proposal events exist - list_proposals and \
              get_proposal reach them"
+        ));
+    }
+    // Zero counts read as a finding about the project; they are only a workspace nothing has been
+    // recorded in yet, which is the state of every first run (docs/onboarding.md Section 7, P5).
+    if empty {
+        let others: Vec<String> =
+            engine.workspaces()?.into_iter().filter(|w| Some(w.as_str()) != ws).collect();
+        digest["empty"] = json!(format!(
+            "this workspace holds nothing yet - not a finding about the project. It fills as work \
+             happens: record each decision when it is made, with its reason (observe). {}",
+            if others.is_empty() {
+                "No other workspace on this node holds knowledge either.".to_string()
+            } else {
+                format!("Workspaces that hold knowledge: {}.", others.join(", "))
+            }
         ));
     }
     if let Some(f) = focus {
