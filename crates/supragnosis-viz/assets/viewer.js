@@ -116,12 +116,15 @@ const HYPER_PULL = 0.03;         // base hyperedge centroid cohesion (scaled by 
 // Cohesion scales with member count: larger hulls pull their nodes tighter (small ones stay loose).
 const HULL_SIZE_REF = 8;         // members at/above which a hull gets full cohesion weight
 const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HYPER_PULL)
-// Hull rendering: each hull is a single outward-offset rounded path (see roundedHullPath) filled once,
-// directly on the canvas, at the opacity below. No stroke -> no fill/stroke seam; no offscreen -> cheap.
-// A hull's whole area gets uniform transparency, while different hulls blend where they overlap.
-const HULL_LAYER_ALPHA = 0.13;   // per-hull fill opacity (no node active) - tuned down for the darker candlelight ink, where the old value read as heavy plum slabs
-const HULL_LAYER_DIM = 0.04;     // non-active hulls fade to this while a node is active (inspection view)
-const HULL_ACTIVE_ALPHA = 0.34;  // the active node's own hulls, painted on top
+// Hull rendering: a region is a cloud (docs/design-system.md Section 5) - one ellipse fitted to its
+// members and filled with a radial gradient that is densest at their centre and fades to nothing past
+// the outermost, so it has no edge to read as a line. A flat fill of the hull drew a slab whose rim
+// looked like a border. One gradient fill per region, directly on the canvas: no stroke, no blur
+// filter, nothing composited offscreen.
+const HULL_LAYER_ALPHA = 0.14;   // a region's density at its core (no node active)
+const HULL_LAYER_DIM = 0.04;     // non-active regions fade to this while a node is active (inspection view)
+const HULL_ACTIVE_ALPHA = 0.26;  // the active node's own regions, painted on top
+const CLOUD_REACH = 1.8;         // how far the cloud reaches past its outermost member, x the hull's node gap
 const HULL_LABEL_BASE = 0.7;     // hull label opacity with no active node
 const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this while a node is active
 const HULL_NODE_GAP = 14;        // world px: extra gap past the largest member glyph when expanding a hull
@@ -2358,26 +2361,21 @@ function drawMinimap() {
   }
   // A faithful miniature: hyperedge hulls (under), edge connections, then nodes sized by degree.
   const mx = n => n.x * k + ox, my = n => n.y * k + oy;
-  // Hulls (hyperedge overlay) - reuse the graph's exact rounded-hull geometry (hullGeom +
-  // roundedHullPath, which balloons past the node glyphs and wraps corners with arcs), just scaled
-  // into the minimap via a world->minimap transform, so the smooth corner-wrapping matches the main
-  // canvas instead of a coarse polygon. Only while the overlay is on.
+  // Hulls (hyperedge overlay) - the graph's own clouds (hullGeom + paintCloud), scaled into the
+  // minimap via a world->minimap transform, so a region looks the same in both. Only while the
+  // overlay is on.
   if (hyperMode && hyperedges.length) {
     const nodeMap = new Map(src.map(n => [n.id, n]));
     mctx.save();
     mctx.transform(k, 0, 0, k, ox, oy);   // compose world->minimap on top of the DPR transform
-    mctx.globalAlpha = 0.14;
     for (const he of hyperedges) {
       if ((he.size || 0) < 3) continue;
       const ms = (he.members || []).map(id => nodeMap.get(id)).filter(Boolean);
       if (ms.length < 3) continue;
       const g = hullGeom(ms);
       if (!g) continue;
-      roundedHullPath(mctx, g);
-      mctx.fillStyle = hyperColor(he.id);
-      mctx.fill();
+      paintCloud(mctx, g, hyperColor(he.id), 0.16);
     }
-    mctx.globalAlpha = 1;
     mctx.restore();
   }
   // Edge connections - one batched path, thin and neutral (structure, not type).
@@ -2541,9 +2539,9 @@ function hullGeom(ms) {
   let cx = 0, cy = 0, r = 0;
   for (const m of ms) { cx += m.x; cy += m.y; const g = nodeRadius(m) + nodeStrokeW(m) / 2; if (g > r) r = g; }
   cx /= ms.length; cy /= ms.length; r += HULL_NODE_GAP;
-  const hull = convexHull(ms.map(m => ({ x: m.x, y: m.y })));
+  const pts = ms.map(m => ({ x: m.x, y: m.y })), hull = convexHull(pts);
   if (hull.length < 3) return null;
-  return { hull, r, cx, cy };
+  return { hull, r, cx, cy, pts };
 }
 // Trace the outward-offset rounded hull as a SINGLE closed path: each edge is pushed out by r (past the
 // node glyphs) and consecutive edges are joined by a corner arc sampled into short segments. Filling this
@@ -2651,6 +2649,31 @@ function renderBoundaryChips() {
     el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); requestFrame(); };
     legendBoundaryEl.appendChild(el);
   }
+}
+
+// One region as a cloud. The ellipse lies along the members' principal axis (their covariance), each
+// radius the farthest member along it plus CLOUD_REACH times the hull's gap, and the gradient keeps
+// most of its density over the members before it fades out: a member at the far end of a long region
+// still sits in about a third of it.
+function paintCloud(c, g, col, alpha) {
+  const ms = g.pts;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const m of ms) { const dx = m.x - g.cx, dy = m.y - g.cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th);
+  let ru = 0, rv = 0;
+  for (const m of ms) {
+    const dx = m.x - g.cx, dy = m.y - g.cy;
+    ru = Math.max(ru, Math.abs(dx * ux + dy * uy)); rv = Math.max(rv, Math.abs(-dx * uy + dy * ux));
+  }
+  const pad = g.r * CLOUD_REACH, R = ru + pad, Rv = Math.max(rv + pad, R * 0.35);
+  const hsla = a => col.replace("hsl(", "hsla(").replace(")", ", " + a + ")");
+  c.save();
+  c.translate(g.cx, g.cy); c.rotate(th); c.scale(1, Rv / R);
+  const grad = c.createRadialGradient(0, 0, 0, 0, 0, R);
+  grad.addColorStop(0, hsla(1)); grad.addColorStop(0.45, hsla(0.8)); grad.addColorStop(0.75, hsla(0.38)); grad.addColorStop(1, hsla(0));
+  c.globalAlpha = alpha; c.fillStyle = grad;
+  c.beginPath(); c.arc(0, 0, R, 0, 2 * Math.PI); c.fill();
+  c.restore();
 }
 
 function roundedHullPath(c, g) {
@@ -2975,9 +2998,9 @@ function draw() {
   ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   // Hyperedge hull overlay (laid behind edges/nodes). Only size>=3 is drawn - 2 converges to a binary
-  // edge. Each hull is a SINGLE outward-offset rounded path filled once, directly on the canvas, at the
-  // hull's opacity - no stroke (so no fill/stroke seam) and no offscreen compositing (cheap: N path fills,
-  // not N large drawImage copies). Overlapping hulls blend naturally (C1: overlap = connective tissue).
+  // edge. Each hull is a cloud (paintCloud): one gradient-filled ellipse, directly on the canvas - no
+  // stroke and no offscreen compositing (cheap: one fill, not a large drawImage copy). Overlapping
+  // hulls blend naturally (C1: overlap = connective tissue).
   // While a node is active, its own hulls are emphasized and the rest fade. Labels are collected per hull.
   let hullLabels = [];
   // Every label placed this frame - region names first, then node names - so the second pass avoids
@@ -3011,10 +3034,8 @@ function draw() {
     }
     const lgActive = !!(typeHl || edgeTypeHl);
     const paint = (it) => {
-      roundedHullPath(ctx, it.g);
-      ctx.globalAlpha = lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
-        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
-      ctx.fillStyle = it.col; ctx.fill();
+      paintCloud(ctx, it.g, it.col, lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
+        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA);
       // The name sits above the region's upper edge, outside it, where no member's label is.
       hullLabels.push({ cx: it.g.cx, cy: it.top, text: it.text, col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
     };

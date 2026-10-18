@@ -222,7 +222,10 @@ count: "proposal gate, claim_demotion defect (4)". Today every context of a hub 
 hub, so selecting one titles five regions alike. A view toggle still draws them all. Region names
 sit outside the region's upper edge, and node labels avoid them and each other, larger degree first.
 A region's name is 13px at medium weight whatever the region's size, the active node's at full
-strength and the rest faded.
+strength and the rest faded. A region is a cloud in its context's color: one ellipse laid along its
+members, densest over them and fading to nothing past the outermost, with no edge. A region says what
+was said together, which is a looser fact than a boundary, and an edge would read as a line no fact
+asks for (Section 4). The minimap draws the same clouds.
 
 **The layout is remembered on the local console.** Node positions are kept per workspace in the
 browser's storage, keyed by the node's id from `/api/surface` as well as the workspace, and the next
@@ -878,3 +881,9 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
 - **Step 9: measured, the stage costs little.** Drawn in full at 1000 by 625 at twice the density, a
   frame of the busiest scene took under half a millisecond with the CPU slowed four times; at rest it
   draws no frame at all.
+- **After step 9: regions are clouds.** A region was its hull filled flat, at 0.34 for the active
+  node's: a slab with a crisp rim, and the active node's five contexts read as a patchwork. The
+  landing's stage drew its one region as a soft light instead, and the viewer takes it: an ellipse
+  fitted to the members' principal axis, filled with one radial gradient. Layers of the hull shrinking
+  toward its centre were tried first; they followed the hull's shape but showed their steps as
+  contour rings.
