@@ -310,3 +310,124 @@ fn no_border_draws_an_area() {
     );
     assert!(!js.contains("style=\"border"), "a template sets a border inline (U9)");
 }
+
+const VIEWER_HTML: &str = include_str!("../assets/viewer.html");
+const VIEWER_JS: &str = include_str!("../assets/viewer.js");
+const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
+const LANDING_HTML: &str = include_str!("../../../site/index.html");
+
+/// Whether a surface ships the file at a path it names.
+type Ships<'a> = &'a dyn Fn(&str) -> bool;
+
+/// The `url(...)` targets of a stylesheet, quotes dropped.
+fn urls(css: &str) -> Vec<String> {
+    css.match_indices("url(")
+        .filter_map(|(i, _)| {
+            let rest = &css[i + 4..];
+            let end = rest.find(')')?;
+            Some(rest[..end].trim().trim_matches(['"', '\'']).to_string())
+        })
+        .filter(|u| !u.starts_with("data:"))
+        .collect()
+}
+
+/// The `href` of each stylesheet link in a page.
+fn stylesheet_links(html: &str) -> Vec<String> {
+    html.match_indices("<link")
+        .filter_map(|(i, _)| {
+            let tag = &html[i..i + html[i..].find('>')?];
+            if !tag.contains("rel=\"stylesheet\"") {
+                return None;
+            }
+            let h = tag.find("href=\"")? + 6;
+            Some(tag[h..h + tag[h..].find('"')?].to_string())
+        })
+        .collect()
+}
+
+/// U11 (design-system.md Section 4): every face a surface names first in its reading or identifier
+/// stack ships with that surface and is served from its own origin, and no surface fetches a font
+/// from another host. Until step 10 the tools shipped none: the "IBM Plex Mono" they named was drawn
+/// as SF Mono, because their policies had no font-src and the face was nowhere on disk.
+#[test]
+fn every_face_ships_with_its_surface() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // The reading and identifier stacks begin with the shipped faces; U7 holds them equal.
+    for (file, set) in &surfaces() {
+        let sans = value(set, "--sans").unwrap_or_else(|| panic!("{file} names no --sans"));
+        let mono = value(set, "--mono").unwrap_or_else(|| panic!("{file} names no --mono"));
+        assert!(
+            sans.starts_with("\"pretendardvariable\",pretendard,"),
+            "{file}: --sans is {sans}"
+        );
+        assert!(mono.starts_with("\"ibmplexmono\","), "{file}: --mono is {mono}");
+    }
+
+    // Each surface declares both faces from files it ships. The viewer's are compiled into the
+    // binary and served under /fonts/; the Settings page's and the landing's sit beside the page.
+    let viewer_ships = |url: &str| supragnosis_viz::asset(url).is_some();
+    let settings_ships = |url: &str| root.join("app/assets").join(url).is_file();
+    let landing_ships = |url: &str| root.join("site").join(url).is_file();
+    let surfaces_: [(&str, &str, &str, Ships); 3] = [
+        ("viewer", VIEWER_HTML, VIEWER, &viewer_ships),
+        ("settings page", SETTINGS_HTML, SETTINGS, &settings_ships),
+        ("landing", LANDING_HTML, LANDING, &landing_ships),
+    ];
+    for (name, html, css, ships) in surfaces_ {
+        let plex: Vec<String> =
+            urls(css).into_iter().filter(|u| u.contains("ibm-plex-mono")).collect();
+        assert!(
+            plex.len() >= 3,
+            "{name}: IBM Plex Mono is not declared at 400, 500 and 600 ({plex:?})"
+        );
+        let links = stylesheet_links(html);
+        let pretendard = links
+            .iter()
+            .find(|h| h.contains("fonts/pretendard"))
+            .unwrap_or_else(|| panic!("{name} links no Pretendard stylesheet: {links:?}"));
+        assert!(ships(pretendard), "{name}: {pretendard} is not shipped");
+        let sheet = if name == "viewer" {
+            String::from_utf8(supragnosis_viz::asset(pretendard).unwrap().1.to_vec()).unwrap()
+        } else {
+            let base = if name == "landing" { "site" } else { "app/assets" };
+            std::fs::read_to_string(root.join(base).join(pretendard)).unwrap()
+        };
+        let dir = &pretendard[..pretendard.rfind('/').unwrap() + 1];
+        let files: Vec<String> = urls(&sheet)
+            .iter()
+            .map(|u| format!("{dir}{}", u.trim_start_matches("./")))
+            .collect();
+        assert!(files.len() >= 9, "{name}: the Pretendard sheet declares {} files", files.len());
+        for url in plex.iter().chain(files.iter()) {
+            assert!(ships(url), "{name}: {url} is named but not shipped");
+        }
+        for text in [html, css] {
+            assert!(
+                !text.contains("fonts.googleapis") && !text.contains("fonts.gstatic"),
+                "{name} fetches a font from another host"
+            );
+        }
+    }
+
+    // The two policies that would refuse a font allow this origin's.
+    assert!(
+        supragnosis_viz::CSP.contains("font-src 'self'"),
+        "the viewer's policy refuses its own fonts"
+    );
+    assert!(
+        SETTINGS_HTML.contains("font-src 'self'"),
+        "the Settings page's policy refuses its own fonts"
+    );
+
+    // The map's names are drawn in the reading face and its relation kinds in the identifier face.
+    assert!(VIEWER_JS.contains("const NAME_FAMILY = '\"Pretendard Variable\",Pretendard,"));
+    assert!(VIEWER_JS.contains("const KIND_FAMILY = \"'IBM Plex Mono',"));
+    assert!(
+        VIEWER_JS.contains("px \" + NAME_FAMILY;"),
+        "the name sprites are not set in the reading face"
+    );
+    assert!(
+        !VIEWER_JS.contains("LABEL_FAMILY"),
+        "a label is still set in the old mono stack"
+    );
+}

@@ -24,7 +24,9 @@
   const EDGE_NEUTRAL = "#6b7383", EDGE_ALPHA = 0.42;
   const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(",");
   const RGB = { teal: rgbOf(C.teal), ink: rgbOf(C.ink) };
-  const MONO = '"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+  // Labels are names and short captions, so they are set in the reading face (design-system.md
+  // Section 4), the same stack site/style.css names.
+  const SANS = '"Pretendard Variable", Pretendard, system-ui, -apple-system, "Segoe UI", sans-serif';
 
   // ---- a type's color: the viewer's functions, copied character for character (a test compares) ----
   function catColor(i, edge) {
@@ -279,7 +281,7 @@
   function label(ctx, s, x, y, color, a, o = {}) {
     if (a <= .01) return;
     ctx.globalAlpha = Math.min(1, a);
-    ctx.font = `${o.weight || 400} ${o.size || 11}px ${MONO}`; ctx.textAlign = o.align || "left"; ctx.textBaseline = "middle";
+    ctx.font = `${o.weight || 400} ${o.size || 11}px ${SANS}`; ctx.textAlign = o.align || "left"; ctx.textBaseline = "middle";
     // a label near an edge of a narrow stage stays on the canvas, whichever way it is aligned
     const tw = ctx.measureText(s).width, cw = ctx.canvas.width / ctx.getTransform().a;
     if (o.align === "right") x = clamp(x, tw + 6, cw - 6);
@@ -383,7 +385,7 @@
       }
       if (o.labels || d.key) {
         const l = d.side === "l";
-        label(ctx, d.name, l ? x - r - 7 : x + r + 7, y + .5, n.hi > .5 ? C.ink : C.ink2, al * Math.min(1, n.s), { align: l ? "right" : "left" });
+        label(ctx, d.name, l ? x - r - 7 : x + r + 7, y + .5, n.hi > .5 ? C.ink : C.ink2, al * Math.min(1, n.s), { align: l ? "right" : "left", weight: 500 });
       }
     }
     // contested: the viewer's badge, upper right, at full strength
@@ -567,7 +569,7 @@
     })();
     document.addEventListener("visibilitychange", () => { if (document.hidden && playing) { playing = false; kick(); } });
     if (reduce.addEventListener) reduce.addEventListener("change", () => { playing = false; snap = null; kick(); });
-    if (document.fonts && document.fonts.load) document.fonts.load(`11px ${MONO}`).then(kick, kick);
+    if (document.fonts && document.fonts.load) document.fonts.load(`11px ${SANS}`).then(kick, kick);
     return { go, replay: () => go(scene, true), get scene() { return scene; }, get playing() { return playing; } };
   }
 

@@ -21,6 +21,20 @@ use std::sync::Arc;
 
 pub mod remote;
 
+mod fonts {
+    include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
+}
+
+/// A file the page ships with it - the faces under `/fonts/` (docs/design-system.md Section 4,
+/// U11) - as its content type and bytes. The same bytes answer on the local console and on a hub's
+/// read tier, which serves them as it serves the page itself.
+pub fn asset(path: &str) -> Option<(&'static str, &'static [u8])> {
+    fonts::FONTS
+        .iter()
+        .find(|(p, _, _)| *p == path)
+        .map(|(_, kind, bytes)| (*kind, *bytes))
+}
+
 use anyhow::Context;
 use supragnosis_engine::{Engine, EventEnvelope, EventSink};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -171,6 +185,13 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
+    // A shipped file - no store read, no policy beyond the page's own - straight from the binary.
+    if method == "GET" {
+        if let Some((kind, bytes)) = asset(path) {
+            return write_asset(&mut stream, kind, bytes).await;
+        }
+    }
 
     // SSE: live MCP event stream - the response is not closed and events keep streaming.
     if method == "GET" && path == "/api/events" {
@@ -1143,6 +1164,8 @@ fn workspaces_response(engine: &Engine) -> Response {
 ///   `'unsafe-inline'` buys CSS injection, whose exfiltration route is a URL fetch, and `img-src`
 ///   below is what closes that. It costs nothing on the script side, which is the class that matters.
 /// - `img-src 'self' data:` - the favicon and the CSS noise texture are `data:` SVGs.
+/// - `font-src 'self'` - the faces the page ships under `/fonts/` (design-system.md U11), and no
+///   other host's.
 /// - `connect-src 'self'` - polling and the SSE stream, same origin.
 /// - `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'`, `object-src 'none'` - the
 ///   page has no `<base>`, no form and no plugin, and nothing should frame it. Denying what is
@@ -1151,6 +1174,7 @@ pub const CSP: &str = "default-src 'none'; \
      script-src 'self' viz:; \
      style-src 'self' 'unsafe-inline'; \
      img-src 'self' data:; \
+     font-src 'self'; \
      connect-src 'self'; \
      base-uri 'none'; \
      form-action 'none'; \
@@ -1170,6 +1194,27 @@ async fn write_response<S: AsyncWrite + Unpin>(stream: &mut S, r: &Response) -> 
     stream.flush().await?;
     Ok(())
 }
+
+/// A shipped file. Its path names the release of the files it holds (`/fonts/pretendard-1.3.9/`), so
+/// it is cached for a year: a new release of a face is a new path.
+async fn write_asset<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    kind: &str,
+    bytes: &[u8],
+) -> anyhow::Result<()> {
+    let header = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\
+         Cache-Control: {ASSET_CACHE}\r\nX-Content-Type-Options: nosniff\r\n\r\n",
+        bytes.len()
+    );
+    stream.write_all(header.as_bytes()).await?;
+    stream.write_all(bytes).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+/// How long a shipped file may be kept: its path changes when its bytes do.
+pub const ASSET_CACHE: &str = "public, max-age=31536000, immutable";
 
 fn err_body(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()

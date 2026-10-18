@@ -76,6 +76,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | Path | Remote | Rule |
 |---|---|---|
 | `/`, `/viewer.css`, `/viewer.js` | served | The page. |
+| `/fonts/...` | served | The faces the page ships, the local console's bytes, cached under a versioned path (design-system.md U11). |
 | `/api/about` | served | Which build answers. |
 | `/api/surface` | served | New, on both surfaces (Section 3.5). |
 | `/api/workspaces` | read | The principal's granted workspaces that hold knowledge, unservable ones included (V3). |

@@ -618,10 +618,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (11, &[c(
         "every face a surface names first in its reading or identifier stack ships with that surface and is served from its own origin, no surface fetches a font from another host, and the three surfaces name the same stacks",
-        Evidence::Deferred(
-            "design-system.md Section 4's faces are specified, not shipped: the tools load no font. \
-             Revisit when Section 14 step 10 lands with its test in design_tokens.rs",
-        ),
+        // crates/supragnosis-viz/tests/design_tokens.rs: the stacks, the files each surface names
+        // and ships, the two policies, no font host, and the map's label faces.
+        Evidence::Scenario(&["every_face_ships_with_its_surface"]),
     )]),
 ];
 

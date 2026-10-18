@@ -320,6 +320,23 @@ async fn viz_get(
         None | Some("") => "/".to_string(),
         Some(rest) => rest.to_string(),
     };
+    // The faces the page ships (docs/design-system.md U11): the same bytes as the local console's,
+    // with no workspace involved, so they are served as the page itself is - and before the audit,
+    // which records reads, not the twenty files one page load fetches. Their path names their
+    // release, so they are cached.
+    if let Some((kind, bytes)) = supragnosis_viz::asset(&path) {
+        use axum::http::header;
+        use axum::response::IntoResponse;
+        return (
+            [
+                (header::CONTENT_TYPE, kind),
+                (header::CACHE_CONTROL, supragnosis_viz::ASSET_CACHE),
+                (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            ],
+            bytes,
+        )
+            .into_response();
+    }
     let query = uri.query().unwrap_or("").to_string();
     let reader = Reader { name: p.name.clone(), readable: p.readable().into_iter().collect() };
     if path == "/api/events" {
