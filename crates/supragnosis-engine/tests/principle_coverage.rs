@@ -622,6 +622,27 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // and ships, the two policies, no font host, and the map's label faces.
         Evidence::Scenario(&["every_face_ships_with_its_surface"]),
     )]),
+    (12, &[c(
+        "the principles page states only what the code states: ledger, counts and clause lists written from the registry, every principle and every Appendix A tension present, and every behavior a demo or scene shows a case a test replays against the code that owns it, with no resolution rule in the page's script",
+        Evidence::Deferred(
+            "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
+             lands with the page's tests",
+        ),
+    )]),
+    (13, &[c(
+        "the principles page never draws an owed clause as working: a beat or branch showing one names it, draws it owed and says owed, and a principle's line states only what its held clauses say",
+        Evidence::Deferred(
+            "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
+             lands with the page's tests",
+        ),
+    )]),
+    (14, &[c(
+        "the principles page draws the viewer's marks with the viewer's meanings and landing tokens, each demo and scene plays at most once on its own, can be stopped and rests, reduced motion draws resting frames, and canvases are hidden while each beat's caption is announced",
+        Evidence::Deferred(
+            "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
+             lands with the page's tests",
+        ),
+    )]),
 ];
 
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).
