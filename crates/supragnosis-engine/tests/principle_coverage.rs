@@ -656,6 +656,82 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
 ];
 
+// docs/onboarding.md Section 11 - from install to the first entry, inside the app (O rows).
+const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
+    (
+        1,
+        &[c(
+            "setup writes nothing to the knowledge store: its checks read, its acts change the daemon's manager, the apps' configuration and the model cache only, and its first-entry step waits for the person's own entry",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+    (
+        2,
+        &[c(
+            "every setup step reports its outcome where it ran - what it did, each file it changed with its copy, or why it failed and what to do - and a failed step exits non-zero",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+    (
+        3,
+        &[c(
+            "the checklist is computed from the live state each time it is shown; setup --check only reads, and running setup again changes only what is not done",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+    (
+        4,
+        &[c(
+            "the Welcome page decides nothing itself: every state it draws and every change it makes comes from setup's events",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 3 lands",
+            ),
+        )],
+    ),
+    (
+        5,
+        &[c(
+            "the model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only meanwhile, and stopping the download leaves nothing broken",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+    (
+        6,
+        &[c(
+            "nothing leaves the machine during setup: it never configures sync or a remote server, and the page says so",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+    (
+        7,
+        &[c(
+            "first contact is the app's own initialize, kept in the daemon's memory: never written to the store, never served on the read tier, never sent to a peer",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+    (
+        8,
+        &[c(
+            "setup takes over a running manager only as the Start at Login switch does and reports any other manager; a Linux user unit adds no exposure and needs no privilege",
+            Evidence::Deferred(
+                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+            ),
+        )],
+    ),
+];
+
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).
 const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -2444,6 +2520,12 @@ const FAMILIES: &[Family] = &[
         prefix: "U",
         rows: DESIGN_SYSTEM_REGISTRY,
     },
+    Family {
+        doc: "docs/onboarding.md",
+        text: include_str!("../../../docs/onboarding.md"),
+        prefix: "O",
+        rows: ONBOARDING_REGISTRY,
+    },
 ];
 
 /// The invariant numbers a document declares under one prefix, first occurrence of each, in
@@ -2827,6 +2909,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     ("docs/compatibility.md", include_str!("../../../docs/compatibility.md")),
     ("docs/sync-correctness.md", include_str!("../../../docs/sync-correctness.md")),
     ("docs/store-migration.md", include_str!("../../../docs/store-migration.md")),
+    // Listed the day it was written. Its guards will split between the CLI (setup, first contact on
+    // the daemon) and the app workspace, whose source SOURCES already scans.
+    ("docs/onboarding.md", include_str!("../../../docs/onboarding.md")),
     (
         "docs/semantic-retrieval.md",
         include_str!("../../../docs/semantic-retrieval.md"),
