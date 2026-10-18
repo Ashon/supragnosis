@@ -1,0 +1,100 @@
+/*
+Copyright (c) 2021 Kil Hyung-jin, with Reserved Font Name Pretendard.
+https://github.com/orioncactus/pretendard
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+*/
+/* The nine files of the author's dynamic subset that hold Latin and its punctuation, their rules
+   copied unchanged from pretendardvariable-dynamic-subset.css (docs/design-system.md Section 4): an
+   English page needs no other. */
+/* [71] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.71.woff2) format('woff2-variations');
+	unicode-range: U+81-82, U+84, U+a2-a5, U+a7-a8, U+aa, U+ac, U+b1-b3, U+b6, U+b8-ba, U+bc-be, U+c0, U+c2, U+c6-cb, U+ce-d0, U+d4, U+d8-d9, U+db-dc, U+de-df, U+e6, U+eb, U+ee-f0, U+f4, U+f7-f9, U+fb, U+fe-ff, U+111, U+126-127, U+132-133, U+138, U+13f-142, U+149-14b, U+152-153, U+166-167, U+2bc, U+2c7, U+2d0, U+2d8-2d9, U+2db-2dd, U+391-394, U+396-3a1, U+3a3-3a9, U+3b2-3b6, U+3b8, U+3bc, U+3be-3c1, U+3c3-3c9, U+2010, U+2015-2016, U+2018-2019, U+201b, U+201f-2021, U+2025, U+2030, U+2033-2036, U+203c, U+203e, U+2042, U+2074, U+207a-207f, U+2081-2084, U+2109, U+2113, U+2116, U+2121, U+2126, U+212b, U+2153-2154;
+}
+
+/* [81] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.81.woff2) format('woff2-variations');
+	unicode-range: U+24, U+60, U+3b9, U+3bb, U+3bd, U+2191, U+2606, U+300c-300d, U+3131, U+3134, U+3139, U+3141-3142, U+3148, U+3161, U+3163, U+321c, U+4eba, U+5317, U+ac31, U+ac77, U+ac9f, U+acb9, U+acf0-acf1, U+acfd, U+ad73, U+af3d, U+b00c, U+b04a, U+b057, U+b0c4, U+b188, U+b1cc, U+b214, U+b2db, U+b2ee, U+b304, U+b4ed, U+b518, U+b5bc, U+b625, U+b69c-b69d, U+b7ac, U+b801, U+b86c, U+b959, U+b95c, U+b985, U+ba48, U+bb58, U+bc0c, U+bc38, U+bc85, U+bc9a, U+bf40, U+c068, U+c0bd, U+c0cc, U+c12f, U+c149, U+c1e0, U+c22b, U+c22d, U+c250, U+c2fc, U+c300, U+c313, U+c370, U+c3d8, U+c557, U+c580, U+c5e3, U+c62e, U+c634, U+c6f0, U+c74d, U+c783, U+c78e, U+c796, U+c7bc, U+c92c, U+ca4c, U+cc1c, U+cc54, U+cc59, U+ce04, U+cf30, U+cfc4, U+d140, U+d321, U+d38c, U+d399, U+d54f, U+d587, U+d5d0, U+d6e8, U+d770;
+}
+
+/* [82] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.82.woff2) format('woff2-variations');
+	unicode-range: U+d7, U+ea, U+fc, U+2192, U+25bc, U+3000, U+3137, U+3145, U+315c, U+7f8e, U+ac13, U+ac71, U+ac90, U+acb8, U+ace7, U+ad7f, U+ae50, U+aef4, U+af34, U+afbc, U+b048, U+b09a, U+b0ad, U+b0bc, U+b113, U+b125, U+b141, U+b20c, U+b2d9, U+b2ed, U+b367, U+b369, U+b374, U+b3cb, U+b4ec, U+b611, U+b760, U+b81b, U+b834, U+b8b0, U+b8e1, U+b989, U+b9d1, U+b9e1, U+b9fa, U+ba4d, U+ba78, U+bb35, U+bb54, U+bbf9, U+bc11, U+bcb3, U+bd05, U+bd95, U+bdd4, U+be10, U+bed0, U+bf51, U+c0d8, U+c232, U+c2b7, U+c2eb, U+c378, U+c500, U+c52c, U+c549, U+c568, U+c598, U+c5c9, U+c61b, U+c639, U+c67c, U+c717, U+c78a, U+c80a, U+c90c-c90d, U+c950, U+c9e7, U+cbe4, U+cca9, U+cce4, U+cdb0, U+ce78, U+ce94, U+ce98, U+cf8c, U+d018, U+d034, U+d0f1, U+d1b1, U+d280, U+d2f8, U+d338, U+d380, U+d3b4, U+d610, U+d69f, U+d6fc, U+d758;
+}
+
+/* [85] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.85.woff2) format('woff2-variations');
+	unicode-range: U+5e, U+25b2, U+25b6, U+314e, U+ac24, U+ace1, U+ace4, U+ae68, U+af2d, U+b0d0, U+b0e5, U+b150, U+b155, U+b193, U+b2c9, U+b2dd, U+b3c8, U+b3fc, U+b410, U+b458, U+b4dd, U+b5a0, U+b5a4, U+b5bb, U+b7b5, U+b838, U+b840, U+b86f, U+b8f9, U+b960, U+b9e5, U+bab8, U+bb50, U+bc1d, U+bc24-bc25, U+bca8, U+bcbd, U+bd04, U+bd10, U+bd24, U+be48, U+be5b, U+be68, U+c05c, U+c12c, U+c140, U+c15c, U+c168, U+c194, U+c219, U+c27d, U+c2a8, U+c2f1, U+c2f8, U+c368, U+c554-c555, U+c559, U+c564, U+c5d8, U+c5fc, U+c625, U+c65c, U+c6b1, U+c728, U+c794, U+c84c, U+c88c, U+c8e0, U+c8fd, U+c998, U+c9dd, U+cc0d, U+cc30, U+ceec, U+cf13, U+cf1c, U+cf5c, U+d050, U+d07c, U+d0a8, U+d134, U+d138, U+d154, U+d1f4, U+d2bc, U+d329, U+d32c, U+d3d0, U+d3f4, U+d3fc, U+d56b, U+d5cc, U+d600-d601, U+d639, U+d6c8, U+d754, U+d765;
+}
+
+/* [86] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.86.woff2) format('woff2-variations');
+	unicode-range: U+3c-3d, U+2026, U+24d2, U+314b, U+ac11, U+acf3, U+ad74, U+ad81, U+adf9, U+ae34, U+af43, U+afb8, U+b05d, U+b07c, U+b110, U+b118, U+b17c, U+b180, U+b18d, U+b192, U+b2cc, U+b355, U+b378, U+b4a4, U+b4ef, U+b78d, U+b799, U+b7a9, U+b7fd, U+b807, U+b80c, U+b839, U+b9b4, U+b9db, U+ba3c, U+bab0, U+bba4, U+bc94, U+be4c, U+c154, U+c1c4, U+c26c, U+c2ac, U+c2ed, U+c4f4, U+c55e, U+c561, U+c571, U+c5b5, U+c5c4, U+c654-c655, U+c695, U+c6e8, U+c6f9, U+c724, U+c751, U+c775, U+c7a0, U+c7c1, U+c874, U+c880, U+c9d5, U+c9f8, U+cabd, U+cc29, U+cc2c, U+cca8, U+ccab, U+ccd0, U+ce21, U+ce35, U+ce7c, U+ce90, U+cee8, U+cef4, U+cfe0, U+d070, U+d0b9, U+d0c1, U+d0c4, U+d0c8, U+d15c, U+d1a1, U+d2c0, U+d300, U+d314, U+d3ed, U+d478, U+d480, U+d48d, U+d508, U+d53d, U+d5e4, U+d611, U+d61c, U+d68d, U+d6a8, U+d798;
+}
+
+/* [87] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.87.woff2) format('woff2-variations');
+	unicode-range: U+23, U+25, U+5f, U+a9, U+ac08, U+ac78, U+aca8, U+acac, U+ace8, U+ad70, U+adc0, U+addc, U+b137, U+b140, U+b208, U+b290, U+b2f5, U+b3c5, U+b3cc, U+b420, U+b429, U+b529, U+b530, U+b77d, U+b79c, U+b7a8, U+b7c9, U+b7f0, U+b7fc, U+b828, U+b860, U+b9ad, U+b9c1, U+b9c9, U+b9dd-b9de, U+b9e8, U+ba38-ba39, U+babb, U+bc00, U+bc8c, U+bca0, U+bca4, U+bcd1, U+bcfc, U+bd09, U+bdf0, U+be60, U+c0ad, U+c0b4, U+c0bc, U+c190, U+c1fc, U+c220, U+c288, U+c2b9, U+c2f6, U+c528, U+c545, U+c558, U+c5bc, U+c5d4, U+c600, U+c644, U+c6c0, U+c6c3, U+c721, U+c798, U+c7a1, U+c811, U+c838, U+c871, U+c904, U+c990, U+c9dc, U+cc38, U+cc44, U+cca0, U+cd1d, U+cd95, U+cda9, U+ce5c, U+cf00, U+cf58, U+d150, U+d22c, U+d305, U+d328, U+d37c, U+d3f0, U+d551, U+d5a5, U+d5c8, U+d5d8, U+d63c, U+d64d, U+d669, U+d734, U+d76c;
+}
+
+/* [88] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.88.woff2) format('woff2-variations');
+	unicode-range: U+26, U+2b, U+3e, U+40, U+7e, U+ac01, U+ac19, U+ac1d, U+aca0, U+aca9, U+acb0, U+ad8c, U+ae09, U+ae38, U+ae40, U+aed8, U+b09c, U+b0a0, U+b108, U+b204, U+b298, U+b2d8, U+b2eb-b2ec, U+b2f4, U+b313, U+b358, U+b450, U+b4e0, U+b54c, U+b610, U+b780, U+b78c, U+b791, U+b8e8, U+b958, U+b974, U+b984, U+b9b0, U+b9bc-b9bd, U+b9ce, U+ba70, U+bbfc, U+bc0f, U+bc15, U+bc1b, U+bc31, U+bc95, U+bcc0, U+bcc4, U+bd81, U+bd88, U+c0c8, U+c11d, U+c13c, U+c158, U+c18d, U+c1a1, U+c21c, U+c4f0, U+c54a, U+c560, U+c5b8, U+c5c8, U+c5f4, U+c628, U+c62c, U+c678, U+c6cc, U+c808, U+c810, U+c885, U+c88b, U+c900, U+c988, U+c99d, U+c9c8, U+cc3d-cc3e, U+cc45, U+cd08, U+ce20, U+cee4, U+d074, U+d0a4, U+d0dd, U+d2b9, U+d3b8, U+d3c9, U+d488, U+d544, U+d559, U+d56d, U+d588, U+d615, U+d648, U+d655, U+d658, U+d65c;
+}
+
+/* [89] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.89.woff2) format('woff2-variations');
+	unicode-range: U+d, U+7c, U+ac10, U+ac15, U+ac74, U+ac80, U+ac83, U+acc4, U+ad11, U+ad50, U+ad6d, U+adfc, U+ae00, U+ae08, U+ae4c, U+b0a8, U+b124, U+b144, U+b178, U+b274, U+b2a5, U+b2e8, U+b2f9, U+b354, U+b370, U+b418, U+b41c, U+b4f1, U+b514, U+b798, U+b808, U+b824-b825, U+b8cc, U+b978, U+b9d0, U+b9e4, U+baa9, U+bb3c, U+bc18, U+bc1c, U+bc30, U+bc84, U+bcf5, U+bcf8, U+bd84, U+be0c, U+be14, U+c0b0, U+c0c9, U+c0dd, U+c124, U+c2dd, U+c2e4, U+c2ec, U+c54c, U+c57c-c57d, U+c591, U+c5c5-c5c6, U+c5ed, U+c608, U+c640, U+c6b8, U+c6d4, U+c784, U+c7ac, U+c800-c801, U+c9c1, U+c9d1, U+cc28, U+cc98, U+cc9c, U+ccad, U+cd5c, U+cd94, U+cd9c, U+cde8, U+ce68, U+cf54, U+d0dc, U+d14c, U+d1a0, U+d1b5, U+d2f0, U+d30c, U+d310, U+d398, U+d45c, U+d50c, U+d53c, U+d560, U+d568, U+d589, U+d604, U+d6c4, U+d788;
+}
+
+/* [91] */
+@font-face {
+	font-family: 'Pretendard Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 45 920;
+	src: url(./woff2-dynamic-subset/PretendardVariable.subset.91.woff2) format('woff2-variations');
+	unicode-range: U+20-22, U+27-2a, U+2c-39, U+3a-3b, U+3f, U+41-4e, U+4f-5d, U+61-7b, U+7d, U+a0-a1, U+ab, U+ad-ae, U+b7, U+bb, U+bf, U+2013-2014, U+201c-201d, U+2122, U+ac00, U+ace0, U+ae30, U+b2e4, U+b85c, U+b9ac, U+c0ac, U+c2a4, U+c2dc, U+c774, U+c778, U+c9c0, U+d558;
+}

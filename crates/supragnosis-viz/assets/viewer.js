@@ -2733,10 +2733,17 @@ function hullsShareMember(a, b) {
 // is the identical raster, shifted), the name on top, baked once into a sprite. Registration then
 // holds by construction, globalAlpha fades the label as one unit, and a frame costs one drawImage per
 // label instead of two text layouts. Sprites are cached by everything that shapes them, LRU-bounded.
-const LABEL_FAMILY = "'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
+// Names - of nodes and of regions - are set in the reading face and relation kinds in the identifier
+// face (docs/design-system.md Section 4), the same stacks viewer.css names: a Korean name and an
+// English one then share one design, which the mono stack, holding no Hangul, could not give them.
+const NAME_FAMILY = '"Pretendard Variable",Pretendard,system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif';
+const KIND_FAMILY = "'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace";
 // The cap bounds memory (a 12px name is ~50KB at 2x) and sits above what label thinning leaves on screen;
 // the node pass culls off-screen labels so a large graph cannot cycle the cache every frame.
 const LABEL_SPRITES = new Map(), LABEL_SPRITE_CAP = 300;
+// A sprite baked before its face had loaded holds the fallback's glyphs, and was placed by the
+// fallback's measure. When a face finishes loading the sprites go and the map draws again.
+if (document.fonts) document.fonts.addEventListener("loadingdone", () => { LABEL_SPRITES.clear(); requestFrame(); });
 const haloDiscs = new Map();   // "radius|dpr" -> [[dx, dy], ...] in device px, centre excluded
 function haloDisc(radius, dpr) {
   const key = radius + "|" + dpr;
@@ -2754,7 +2761,7 @@ function labelSprite(text, weight, size, color, spacing, halo) {
   const key = [DPR, weight, size, color, spacing, halo, text].join("|");
   let s = LABEL_SPRITES.get(key);
   if (s) { LABEL_SPRITES.delete(key); LABEL_SPRITES.set(key, s); return s; }   // LRU touch
-  const font = weight + " " + size + "px " + LABEL_FAMILY;
+  const font = weight + " " + size + "px " + NAME_FAMILY;
   const scratch = labelSprite.ctx || (labelSprite.ctx = document.createElement("canvas").getContext("2d"));
   scratch.font = font;
   if ("letterSpacing" in scratch) scratch.letterSpacing = spacing;
@@ -3062,7 +3069,7 @@ function draw() {
         .sort((a, b) => (b.l.hot - a.l.hot) || (b.l.size - a.l.size));
       for (const o of cand) {
         const l = o.l;
-        ctx.font = "500 " + o.fs + "px " + LABEL_FAMILY;   // measures the placement box
+        ctx.font = "500 " + o.fs + "px " + NAME_FAMILY;   // measures the placement box
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
         if (labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
         labelBoxes.push({ x, y, w, h });
@@ -3216,7 +3223,7 @@ function draw() {
     ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
     ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
     ctx.fillStyle = SURFACE; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "700 " + (11 / cam.s) + "px " + LABEL_FAMILY;
+    ctx.font = "600 " + (11 / cam.s) + "px " + KIND_FAMILY;
     ctx.fillText("!", bx, by + 0.5 / cam.s);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
@@ -3312,13 +3319,13 @@ function draw() {
     // out - its node is still there, and hovering it names it.
     const rank = o => (o.n === focus ? 2 : 0) + (o.n === hover ? 1 : 0);
     want.sort((a, b) => rank(b) - rank(a) || (b.n.degree || 0) - (a.n.degree || 0));
-    ctx.font = "400 12px " + LABEL_FAMILY;
+    ctx.font = "500 12px " + NAME_FAMILY;
     for (const o of want) {
       const w = ctx.measureText(o.n.name).width + 4, h = 15, x = o.px - 2, y = o.py - h / 2;
       if (rank(o) === 0 && labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
       labelBoxes.push({ x, y, w, h });
       ctx.globalAlpha = o.on ? 1 : 0.25;
-      drawLabel(o.n.name, "400", 12, (o.n === focus || o.n === hover) ? INK : INK2, "0px", 1.5, o.px, o.py, "left");
+      drawLabel(o.n.name, "500", 12, (o.n === focus || o.n === hover) ? INK : INK2, "0px", 1.5, o.px, o.py, "left");
     }
     ctx.globalAlpha = 1;
     // (Group / hull labels are drawn in their own pass right after the hulls - see drawHullLabels below.)
@@ -3328,7 +3335,7 @@ function draw() {
       edgeLabels.sort((p, q) => p.len - q.len);
       const shown = Math.min(edgeLabels.length, EDGE_LABEL_MAX);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "11px " + LABEL_FAMILY;   // the scale's floor (docs/design-system.md Section 4)
+      ctx.font = "11px " + KIND_FAMILY;   // relation kinds, at the scale's floor (docs/design-system.md Section 4)
       // Pill and text on whole device pixels: fillText snaps to the grid and the pill path does not, so
       // at a fractional point the text sits off-centre in its pill by a different amount every frame.
       const snap = v => Math.round(v * DPR) / DPR;
@@ -3346,7 +3353,7 @@ function draw() {
       }
       const omitted = edgeLabels.length - shown, an = focus || hover;
       if (omitted > 0 && an) {
-        ctx.font = "11px " + LABEL_FAMILY;
+        ctx.font = "11px " + NAME_FAMILY;
         const t = "+" + omitted + " more", px = snap(an.x*cam.s + cam.x), py = snap(an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15), w = ctx.measureText(t).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);

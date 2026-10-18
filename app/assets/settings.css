@@ -2,6 +2,19 @@
    bar, the page navigation and the icon mask come from shell.css, which the viewer shares; this file
    draws the page below the bar. Self-contained: the page's policy allows no remote style or font. */
 
+/* The two faces (docs/design-system.md Section 4, U11), shipped in the app: Pretendard's Latin files
+   are linked from settings.html, and IBM Plex Mono's are here. This page is English; a Hangul name on
+   it falls back to the system's Korean face. */
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-display: swap; font-weight: 400;
+  src: url("fonts/ibm-plex-mono-5.3.0/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-display: swap; font-weight: 500;
+  src: url("fonts/ibm-plex-mono-5.3.0/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-display: swap; font-weight: 600;
+  src: url("fonts/ibm-plex-mono-5.3.0/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
 :root {
   --surface: #08090d; --panel: #10131b; --panel-2: #161a23; --panel-3: #1d222d; --select: #2a2826;
   --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #868f9f; /* text: 4.51:1 on --select, this page's lowest pair (docs/design-system.md Section 3) */
@@ -12,7 +25,7 @@
   --warn: #e0a24a; --warn-glass: rgba(224,162,74,0.12);
   --bad: #e07a5f; --bad-glass: rgba(224,122,95,0.12);
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
+  --sans: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
   --radius: 12px;
   color-scheme: dark;
 }
@@ -108,7 +121,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 .row .body { flex: 1; min-width: 0; }
 .row .title { color: var(--ink); font-weight: 500; display: flex; align-items: center; gap: 8px; }
 .row .sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.row .sub.mono { font: 11.5px/1.5 var(--mono); color: var(--faint); }
+.row .sub.mono { font: 12px/1.5 var(--mono); color: var(--faint); }
 .row .end { display: flex; align-items: center; gap: 8px; flex: none; }
 .row.muted .title { color: var(--muted); }
 .row.muted .lead { opacity: 0.55; }
@@ -122,7 +135,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 
 .pill {
   display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 7px; border-radius: 999px;
-  font: 500 11.5px/1.6 var(--sans); white-space: nowrap;
+  font: 500 11px/1.6 var(--sans); white-space: nowrap;
   background: var(--panel-3); color: var(--muted);
 }
 .pill .dot { width: 6px; height: 6px; box-shadow: none; }
@@ -138,7 +151,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 12px;
   border-radius: 8px; border: 0; background: var(--panel-2); color: var(--ink);
-  font: 500 12.5px/1 var(--sans); cursor: pointer; white-space: nowrap;
+  font: 500 13px/1 var(--sans); cursor: pointer; white-space: nowrap;
   transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 .btn:hover:not(:disabled) { background: var(--panel-3); color: var(--ink); }
@@ -173,7 +186,7 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 /* Callouts: a line of state that asks for attention, inside or above a card. */
 .callout {
   display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px;
-  background: var(--panel-2); color: var(--ink2); font-size: 12.5px;
+  background: var(--panel-2); color: var(--ink2); font-size: 13px;
 }
 .callout .i { margin-top: 2px; }
 .callout.info { background: var(--panel-2); color: var(--ink); }
@@ -229,19 +242,19 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
   background: var(--panel); box-shadow: 0 24px 64px rgba(0,0,0,0.55); animation: rise 0.16s ease;
 }
 .dialog .d-head { padding: 20px 22px 0; }
-.dialog h3 { margin: 0 0 4px; color: var(--ink); font-size: 15.5px; font-weight: 600; }
+.dialog h3 { margin: 0 0 4px; color: var(--ink); font-size: 15px; font-weight: 600; }
 .dialog .d-head p { margin: 0; color: var(--muted); }
 .dialog .d-body { padding: 18px 22px 4px; display: grid; gap: 14px; }
 .dialog .d-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 18px 22px 20px; }
 .field { display: grid; gap: 6px; }
-.field label { color: var(--ink); font-weight: 500; font-size: 12.5px; display: flex; gap: 6px; align-items: baseline; }
-.field label .opt { color: var(--faint); font-weight: 400; font-size: 11.5px; }
-.field .help { color: var(--faint); font-size: 11.5px; }
-.field .err { color: var(--bad); font-size: 11.5px; }
+.field label { color: var(--ink); font-weight: 500; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+.field label .opt { color: var(--faint); font-weight: 400; font-size: 12px; }
+.field .help { color: var(--faint); font-size: 12px; }
+.field .err { color: var(--bad); font-size: 12px; }
 .input { position: relative; display: flex; align-items: center; }
 .input input {
   width: 100%; height: 34px; padding: 0 11px; border: 0; border-radius: 8px;
-  background: var(--panel-2); color: var(--ink); font: 12.5px/1 var(--mono);
+  background: var(--panel-2); color: var(--ink); font: 13px/1 var(--mono);
   transition: background-color 0.12s ease;
 }
 .input input::placeholder { color: var(--faint); }

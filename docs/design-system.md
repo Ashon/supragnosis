@@ -7,12 +7,11 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **built - Section 14 steps 0-9; step 10 specified**: the fixes that needed no document,
-> the tokens and the foundations, the map, the places, the Review page, search, the landing's
-> picture, the three surfaces drawn with surfaces instead of lines (Section 4), and the landing that
-> shows how knowledge moves (Section 11, U10). Step 10, one voice in type (Section 4, U11), is
-> specified and not built. Dream drafts join the Review page with dreaming.md Section 12 step 5
-> (U5).
+> Status: **built - Section 14 steps 0-10**: the fixes that needed no document, the tokens and the
+> foundations, the map, the places, the Review page, search, the landing's picture, the three
+> surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
+> moves (Section 11, U10), and one voice in type (Section 4, U11). Dream drafts join the Review page
+> with dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -186,8 +185,9 @@ surface token, `--select` among them.
   reads heavier than it is, and a hairline at 11px breaks up.
 - **Lines and spacing.** A line of English in the tools runs at 1.4 to 1.5; where Korean runs - an
   observation's text, the Log - at 1.55 or more, since its syllable blocks stand taller than a
-  lowercase line. Tracking is +0.01em at 11 and 12px, none from 13 to 15, -0.01em on headings, and
-  never negative on Korean below 18px. Numbers that count or line up take tabular figures. Korean
+  lowercase line. Tracking is the face's own in the tools - Pretendard's Latin is already spaced for
+  small sizes - with -0.02em on the landing's large Fraunces headings and +0.1em on uppercase
+  eyebrows, and Korean is never tracked tighter. Numbers that count or line up take tabular figures. Korean
   labels and headings keep their words whole (`word-break: keep-all`); ids and addresses break
   anywhere.
 - **On the canvas**, the names of nodes and regions are Pretendard at 500, and relation kinds and the
@@ -682,12 +682,14 @@ setting is read and its change followed; and every canvas on the page is hidden 
 technology while each of the five steps has a heading and a paragraph of its own.
 `the_landing_has_one_version_badge` holds the page to the one element the deploy stamps.
 
-U11 is to be guarded, from step 10, by a test in `crates/supragnosis-viz/tests/design_tokens.rs`
-that reads the three stylesheets, their pages and the policies they are served under: the reading
-and identifier stacks are the same in all three and begin with Pretendard and IBM Plex Mono; each
-surface declares an `@font-face` for both whose files it ships; the viewer's and the Settings page's
-policies allow `font-src 'self'`; no page or stylesheet names a font host; and the map's name labels
-use the reading stack.
+U11 is guarded by `every_face_ships_with_its_surface` in `crates/supragnosis-viz/tests/design_tokens.rs`,
+which reads the three stylesheets, their pages and the policies they are served under: the reading
+and identifier stacks begin with Pretendard and IBM Plex Mono in all three (U7 holds them equal);
+each surface declares IBM Plex Mono at three weights and links a Pretendard stylesheet, and every
+file those name is one the surface ships - compiled into the viewer and served under `/fonts/`, or
+beside the Settings page and the landing on disk; the viewer's and the Settings page's policies
+allow `font-src 'self'`; no page or stylesheet names a font host; and the map's names are set in the
+reading face and its relation kinds in the identifier face.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -732,7 +734,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    the install script's search notice, `site/**` in the Rust workflow's paths and `site/*.js` in the
    front-end lint, and the tests. Merging it publishes the site, so it merges on the author's word,
    not on a green check.
-10. **One voice in type** (Section 4, U11): Pretendard and IBM Plex Mono shipped and served under
+10. **One voice in type** [built] (Section 4, U11): Pretendard and IBM Plex Mono shipped and served under
    `/fonts/` by the daemon, on both the local console and the read tier, and carried by the Settings
    page and the landing; `font-src 'self'` in the two policies; the shared stacks; the map's labels
    and the stage's in the reading face; the Settings page's off-scale sizes back on the scale; and the
@@ -957,3 +959,20 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   fitted to the members' principal axis, filled with one radial gradient. Layers of the hull shrinking
   toward its centre were tried first; they followed the hull's shape but showed their steps as
   contour rings.
+- **Step 10: the viewer's chrome had been set in the identifier face.** Its body defaulted to the
+  mono stack, so every chip, legend entry, count and timestamp was mono, not only identifiers. The
+  body is Pretendard now, and the identifiers are named: the edge legend's entries and the
+  inspector's relation headers, besides the map's relation labels.
+- **Step 10: a label baked before its face loaded kept the fallback.** The map bakes each name into
+  a sprite once; a sprite made in the first frames held the system face's glyphs and its measure. The
+  sprites are dropped and the map drawn again when a face finishes loading.
+- **Step 10: an English page needs nine of Pretendard's 92 files.** The author's subset groups
+  symbols by their use in Korean text, so Latin and its punctuation are spread over nine files, not
+  one; the Settings page and the landing ship those nine with the author's rules for them, copied
+  unchanged.
+- **Step 10: the faces are answered before anything else.** On the local console a font request is
+  answered before the router's blocking work, and on the read tier before the audit, which records
+  reads and would otherwise log the twenty files one page load fetches.
+- **Step 10: the Settings page's off-scale sizes rounded to the nearest step** - 11.5 to 12 (11 for
+  its pill), 12.5 to 13, 15.5 to 15 - and the viewer's observation text, which is often Korean, runs
+  at 1.55 and its card at 1.6.

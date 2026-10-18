@@ -1,15 +1,26 @@
   /* Candlelight theme - the viewer speaks the same design language as site/ (the landing):
      gold kept for what it means (docs/design-system.md Section 4) on near-black, parchment text,
-     mono chrome, grain over the map.
-     Fonts stay self-contained (no webfont fetch - the viewer must work offline, and the CSP names no
-     font-src). Two families, split by what the text IS rather than where it sits:
-     - --sans for what a person reads: running text, and the names of things. It is the SYSTEM sans
-       on purpose. The serif this replaced was "Newsreader" first, which the viewer never shipped, so
-       it always fell through - and for Hangul the fall-through was the system serif, a Myungjo face
-       that blurs at 12-13px on this background, under exactly the text the inspector exists to show.
-       Bundling a face (Pretendard was weighed) would buy cross-platform sameness for ~2MB in every
-       binary; on macOS, where the shell runs, the system face is what such a font imitates.
-     - --mono for identifiers: relation kinds, ids, hashes, counts, and the chrome. */
+     grain over the map.
+     Two faces, split by what the text IS rather than where it sits, both shipped in the binary and
+     served under /fonts/ (Section 4, U11), so the page draws the same on every system and fetches
+     nothing from another host:
+     - --sans, Pretendard, for what a person reads and the names of things: running text, controls,
+       headings. Its Hangul and its Latin are one design, so a Korean name beside an English one keeps
+       its height and weight; the system face this replaced took the two from different families, and
+       was a different face on every system the read tier opens in. Its stylesheet, the author's
+       dynamic subset, is linked from viewer.html: a page fetches only the files its text needs.
+     - --mono, IBM Plex Mono, for identifiers: relation kinds, ids, hashes, paths. Its x-height is
+       within 3% of Pretendard's, so an identifier among names keeps the line's height. Until it was
+       shipped here it was named and never drawn - SF Mono stood in. */
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-display:swap; font-weight:400;
+    src:url("/fonts/ibm-plex-mono-5.3.0/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-display:swap; font-weight:500;
+    src:url("/fonts/ibm-plex-mono-5.3.0/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-display:swap; font-weight:600;
+    src:url("/fonts/ibm-plex-mono-5.3.0/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
   :root {
     color-scheme: dark;
     /* The surfaces, lowest first, and the selection (docs/design-system.md Section 3). Areas are told
@@ -27,13 +38,13 @@
     --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
     --gold-glass:rgba(217,165,68,0.12); --ok:#56b3a2; --bad:#e07a5f;
     --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    --sans:system-ui,-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",
-           "Noto Sans CJK KR",sans-serif;
+    --sans:"Pretendard Variable",Pretendard,system-ui,-apple-system,"Segoe UI","Apple SD Gothic Neo",
+           "Malgun Gothic","Noto Sans KR","Noto Sans CJK KR",sans-serif;
   }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
   body { background:var(--surface); color:var(--ink2); overflow:hidden;
-         font:13px/1.5 var(--mono);
+         font:13px/1.5 var(--sans);
          /* Light text on near-black. macOS's default smoothing dilates glyph stems, which on a dark
             ground reads as bold and soft - most visibly at 1x, under the 10-13px this panel lives at.
             Grayscale antialiasing draws them at their designed weight. The same two lines the landing
@@ -262,6 +273,11 @@
      (sans - they are names). A superseded edge stays listed, dashed and dimmed, never dropped (P4). */
   #detail .rgroup { margin:0 0 7px; }
   #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:11px; color:var(--muted); margin:0 0 3px; }
+  /* Relation kinds are identifiers, set in the identifier face (docs/design-system.md Section 4): the
+     inspector's relation headers here, and the edge legend's entries. */
+  #detail .rghead, #legendEdges .lg { font-family:var(--mono); }
+  /* Numbers that count or line up take tabular figures (Section 4). */
+  #statusbar, .ct, .rct { font-variant-numeric:tabular-nums; }
   #detail .rghead .rkind { color:var(--ink2); }
   #detail .rghead .rct { color:var(--faint); }
   #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
@@ -421,7 +437,7 @@
   .tdot.t-agent_extracted { background:var(--ink2); }
   .tdot.t-host_signed { background:var(--ok); }
   .tdot.t-human_confirmed { background:var(--gold-bright); }
-  .obs .otext { color:var(--ink); font:12px/1.45 var(--sans); opacity:.92;
+  .obs .otext { color:var(--ink); font:12px/1.55 var(--sans); opacity:.92;
                 overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; }
   .osec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:12px 0 4px; }
   .prow { display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
@@ -450,7 +466,7 @@
   .oc-meta { display:flex; align-items:center; gap:7px; margin:0 22px 8px 0; font-size:11px; color:var(--faint); }
   .oc-meta .octier { color:var(--ink2); }
   .oc-meta .ocwhen { margin-left:auto; }
-  .oc-content { color:var(--ink); font:13px/1.5 var(--sans); white-space:pre-wrap; }
+  .oc-content { color:var(--ink); font:13px/1.6 var(--sans); white-space:pre-wrap; }
   .ocrel { font:12px/1.45 var(--sans); color:var(--ink2); padding:1px 0; }
   .ocrel .rk { color:var(--muted); font:11px var(--mono); }
   .prow .poid { color:var(--muted); font:11px var(--mono); }

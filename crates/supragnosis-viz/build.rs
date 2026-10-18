@@ -41,6 +41,46 @@ fn main() {
         fs::write(out.join(name), processed)
             .unwrap_or_else(|e| panic!("write {name} to OUT_DIR: {e}"));
     }
+
+    // The faces the viewer ships (docs/design-system.md Section 4, U11): every file under
+    // assets/fonts, served at /fonts/<its path there> with its bytes compiled in, so the binary stays
+    // the only thing to install and no page fetches a font from another host.
+    let fonts = assets.join("fonts");
+    let mut files = Vec::new();
+    walk(&fonts, &mut files);
+    files.sort();
+    let mut table = String::from("pub(crate) static FONTS: &[(&str, &str, &[u8])] = &[\n");
+    for f in &files {
+        println!("cargo:rerun-if-changed={}", f.display());
+        let rel = f
+            .strip_prefix(&fonts)
+            .expect("under assets/fonts")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let kind = match f.extension().and_then(|e| e.to_str()) {
+            Some("woff2") => "font/woff2",
+            Some("css") => "text/css; charset=utf-8",
+            _ => "text/plain; charset=utf-8",
+        };
+        table.push_str(&format!(
+            "    (\"/fonts/{rel}\", \"{kind}\", include_bytes!({:?})),\n",
+            f.display().to_string()
+        ));
+    }
+    table.push_str("];\n");
+    fs::write(out.join("fonts.rs"), table).expect("write fonts.rs to OUT_DIR");
+}
+
+fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+    println!("cargo:rerun-if-changed={}", dir.display());
+    for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            walk(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
 }
 
 fn minify_css(src: &str) -> String {
