@@ -661,7 +661,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         1,
         &[c(
-            "setup writes nothing to the knowledge store: its checks read, its acts change the daemon's manager, the apps' configuration and the model cache only, and its first-entry step waits for the person's own entry",
+            "setup appends nothing to the knowledge log: its checks read, its first-entry step waits for the person's own entry, and every path it changes is named in its events",
             Evidence::Deferred(
                 "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
             ),
@@ -670,7 +670,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         2,
         &[c(
-            "every setup step reports its outcome where it ran - what it did, each file it changed with its copy, or why it failed and what to do - and a failed step exits non-zero",
+            "every setup step reports its outcome where it ran - what it did, each file it changed and the copy where C3 or L5 makes one, or why it failed and what to do - and a failed step exits non-zero",
             Evidence::Deferred(
                 "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
             ),
@@ -688,7 +688,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         4,
         &[c(
-            "the Welcome page decides nothing itself: every state it draws and every change it makes comes from setup's events",
+            "every state the Welcome page draws comes from setup's events, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, and asking setup again",
             Evidence::Deferred(
                 "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 3 lands",
             ),
@@ -697,7 +697,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         5,
         &[c(
-            "the model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only meanwhile, and stopping the download leaves nothing broken",
+            "the model never blocks: the other steps proceed while it downloads, search says keyword only until the model is complete, a download in progress never reads as complete, and stopping it breaks nothing",
             Evidence::Deferred(
                 "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
             ),
@@ -715,7 +715,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         7,
         &[c(
-            "first contact is the app's own initialize, kept in the daemon's memory: never written to the store, never served on the read tier, never sent to a peer",
+            "first contact is the client's own name, kept in the local daemon's memory: never in the store, never on the read tier, never recorded by a hub's remote listener, never sent to a peer",
             Evidence::Deferred(
                 "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
             ),
@@ -724,7 +724,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         8,
         &[c(
-            "setup takes over a running manager only as the Start at Login switch does and reports any other manager; a Linux user unit adds no exposure and needs no privilege",
+            "setup takes over only a daemon nobody chose a manager for and reports any other; a Linux user unit overwrites no unit it did not generate, adds no exposure and needs no privilege",
             Evidence::Deferred(
                 "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
             ),
