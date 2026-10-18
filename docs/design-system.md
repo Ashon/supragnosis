@@ -600,6 +600,94 @@ whether anything leaves the machine, whether it needs a key or a model, what hap
 using it, and how it differs from a notes file. It names no other product: a claim about one would be
 ours to keep true, and we could not.
 
+## 11a. The principles page
+
+The principles page presents [principles.md](principles.md) to someone deciding whether to trust the
+product, and it is held to the rule those principles hold everything else to: it states what the
+code states, and a demand the code does not yet meet is shown as owed, never as working. What sets it
+apart from a list of promises is the coverage registry (principles.md Appendix B), which splits each
+principle into clauses and names the test that holds each one; the page shows that ledger as it is.
+
+**One page**, `/principles/` (`site/principles/index.html`), with an anchor for every principle
+(`#p1` to `#p24`), one for the tensions (`#tensions`) and one for the method (`#how-held`), so the
+landing, the README and an issue can each point at one principle. The landing links it three times:
+from its navigation, between How it works and Status; from four of the six properties under the hood,
+each beside the principle it summarizes (a log that never forgets, P3; no model decides, P19; absence
+is not falsehood, P5; private by default, P17), with a line after them that names the page; and from
+the status section's note.
+
+**Six parts**, in this order:
+
+| Part | What it does |
+|---|---|
+| Hero and ledger | The heading, a subhead saying that each principle is split into clauses and each clause names its test or says it is owed, and the ledger |
+| Chapter navigation | The six chapters of principles.md, held at the top while the page scrolls |
+| Six chapters | Each chapter's name, a one-line thesis and its part of the ledger, then its principles |
+| Tensions | Appendix A's rulings, as a map and a list |
+| How a principle is held | The four evidence states, a rule about change tested as change, and links to the registry and the policy cases |
+| Closing | The normative text, what is owed and when (architecture.md Section 14), and the install |
+
+**The ledger** draws a column for each principle and a block for each of its clauses, stacked from
+the bottom: tested by name, holding by construction, owed with today's behavior pinned, and owed.
+Under it is the count of each state. It shows no ratio and no score: the registry deliberately
+asserts none (principles.md Appendix B), and a ratio on the page would be read instead of the clauses.
+Pressing a column shows that principle's clauses, each with its state, beside the ledger. The
+columns, the counts and every principle's clauses are written into the page from the registry (U12).
+
+**A principle** is a block with its number, a short title, one line, a reason of a sentence or two,
+its animation, its clauses - folded, in an element the browser's find still opens - and two links,
+to its section of principles.md and to the registry. Its line says only what its held clauses say;
+where the headline demand is owed, as for P7 and P13, the line says what the system should do (U13).
+The words are the landing's: they name what a visitor recognizes, and the normative terms stay in the
+clause lists, which are the registry's own lines.
+
+**Every principle animates.** Five are demos with one thing the reader changes: the kinds of answer a
+read gives (P5), a conflict trust cannot settle and the verdict that settles it (P6), one log
+delivered in different orders, twice or across a cut link (P16), a claimed tier against the
+receiver's evaluation (P18), and a proposal, a write while it waits, and its merge or rejection (P23).
+The other nineteen are scenes of two to four beats, each beat with a caption, with a button for each
+beat and Replay. Each shows one claim on a made-up project, the stage's payments service and its
+neighbours, and its resting frame is that claim's conclusion. They draw as the stage draws (Section
+11): a pure function of the scene and the time, the viewer's marks with the viewer's meanings, a
+backing store at the device pixel ratio capped at 2, and only names and short labels on the canvas,
+with the sentences in the caption beneath it. A scene plays once when it first comes into view and
+then rests, drawing nothing; while it plays, Replay reads Stop and stops it at its resting frame,
+since a scene may run past the five seconds after which WCAG 2.2.2 asks for a way to stop. Under
+reduced motion every beat is its resting frame, and a hidden tab stops a scene. The canvas is hidden
+from assistive technology, each beat's caption is announced, and the page reads complete without its
+canvases (U14).
+
+**Owed is drawn as owed.** A beat or a branch that shows a clause the registry does not hold draws it
+in muted, dashed lines with an owed tag, and its caption says owed and names the demand: destroying an
+entry on a privacy demand (P3), asking either time axis as of a date (P4), sinking old knowledge in
+retrieval (P7), proposing type candidates from co-occurrence (P11), essence and role (P13), merging
+the most confident identity candidates automatically (P15), and evaluating a replicated verdict's
+marker against the canon policy (P18). When the registry moves a clause to held, its tag goes in the
+change that moves it (U13).
+
+**What a demo shows is the code's answer.** Every value a demo or scene presents as the product's
+behavior - a belief, a contested flag, an effective tier, a kind of answer, an id, a graph's
+fingerprint, a count, a refusal - is a case in a JSON block in the page, and each case names the
+clauses it shows. Tests replay the cases against the code that owns them: the engine's on the
+in-memory adapter for the graph, trust and the gate; the CLI's for the commit hook's words and a
+configuration that refuses to start; the MCP server's for its thirteen tools and a failed call's
+correction. P20's arrows are read from the crates' manifests. A graph's fingerprint is the first six
+hex digits of the BLAKE3 hash of the graph serialized whole, the form the convergence tests compare.
+The page's script holds no resolution rule; it draws between the states the cases fix, and a beat
+whose outcome no test replays is not drawn (U12).
+
+**Tensions.** Appendix A's rows are drawn as a map - the principles as nodes in their chapters' soft
+regions, each tension a contested badge joined to the principles it sets against each other - and
+listed beside it; choosing one in either place shows its ruling. A ruling whose mechanism is owed is
+tagged owed and names the cautious side that holds meanwhile, as Appendix A says. The list is the way
+in for a keyboard and a screen reader; the map is hidden from assistive technology.
+
+**Type, surface and files.** The page uses the landing's faces and tokens and adds its rules to the
+landing's stylesheet, so U7, U9 and U11 hold it as they hold the landing. Its script is
+`site/principles.js`, one file with no build step, which the front-end lint covers as it covers the
+stage; a demo or scene is set up when it first comes near the window. The page shares the landing's
+social image.
+
 ## 12. Decisions
 
 - **Review is a page, not a wider dock.** A decision deserves the window, and the dock cut its own
@@ -644,8 +732,20 @@ ours to keep true, and we could not.
 - **IBM Plex Mono kept, and now shipped.** JetBrains Mono reads best at 11px, with the tallest
   x-height, and stands out of a line of Pretendard for the same reason. Plex Mono is already the
   landing's face and its social image's, and its height matches.
-- **Fraunces stays on the landing only.** It is the product's voice where the product is presented;
-  the tools are operated, and a display face there is one more family to read past.
+- **Fraunces stays on the site only.** It is the product's voice where the product is presented, on
+  the landing and the principles page; the tools are operated, and a display face there is one more
+  family to read past.
+- **The principles get a page, not a landing section.** Twenty-four principles with their clauses are
+  a reference, read in parts and linked one at a time; the landing keeps its seven sections and points
+  at the page from the four properties that summarize a principle.
+- **The ledger shows clauses, not a ratio.** A score invites improving the score; the registry
+  asserts none, and a column of owed blocks says more than a percentage would.
+- **A demo's outcome is the code's, not the page's.** A script that re-implemented resolution would
+  drift from the engine with nobody noticing, and the page would then say something false about the
+  product; as cases a test replays, every outcome the page shows is one the build checks.
+- **Every principle animates, the owed ones as owed.** Animating only what works would hide the debt
+  the ledger shows; drawing an owed demand in its own style keeps the pictures and the ledger saying
+  the same thing.
 
 ## 13. Invariants
 
@@ -662,6 +762,9 @@ ours to keep true, and we could not.
 | **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph. |
 | **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's own functions, a ring is human confirmed at the viewer's width, the coral badge is contested, a relation is the viewer's neutral line, and every other color it draws is a landing token. The second machine draws every ring and badge the first draws, since it replays the same log. Each scene ends within five seconds and then draws nothing until it is asked again; under reduced motion each scene is its resting frame; the canvas is hidden from assistive technology and each step says its scene in its own words (P2, P6, P18). |
 | **U11** | Every face a surface names first in its reading or identifier stack ships with that surface and is served from its own origin, and no surface fetches a font from another host. The viewer, the Settings page and the landing name the same stacks. |
+| **U12** | The principles page states only what the code states: its ledger, counts and clause lists are written from the coverage registry and the build fails when they differ; every principle of principles.md has its block and every Appendix A tension its entry; and every behavior a demo or scene shows - a belief, a contested flag, an effective tier, a kind of answer, an id, a fingerprint, a count, a refusal - is a case a test replays against the code that owns it, with no resolution rule in the page's script (P1, P5, P16). |
+| **U13** | The principles page never draws an owed clause as working: a beat or branch that shows a clause the registry does not hold names it, draws it in the owed style and says owed in its caption, and a principle's line states only what its held clauses say (P5). |
+| **U14** | The principles page draws the viewer's marks with the viewer's meanings, every other color a landing token; each demo and scene plays at most once on its own, can be stopped while it plays, and rests drawing nothing; under reduced motion each beat is its resting frame; and every canvas is hidden from assistive technology while each beat's caption is announced (P2, P6, P18). |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -758,6 +861,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    page and the landing; `font-src 'self'` in the two policies; the shared stacks; the map's labels
    and the stage's in the reading face; the Settings page's off-scale sizes back on the scale; and the
    landing's fonts served from the site instead of Google Fonts.
+11. **The principles page** (Section 11a, U12, U13, U14): the page and its rules in the landing's
+   stylesheet, the ledger written from the registry, the cases and the tests that replay them, the five
+   demos and nineteen scenes, the tensions, the landing's three links, and `site/principles.js` in the
+   front-end lint. Merging it publishes the site, so it merges on the author's word.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
@@ -799,6 +906,7 @@ proposal and the read tier.
 | P22 - curation where the reader already is | Section 7 (Health folded, the review count where the person looks) |
 | P23 - the gate decides, one verdict at a time | Section 7; U4 |
 | P24 - fail loudly | Sections 6, 9; U1, U8 |
+| P1-P24 - the principles where a visitor reads them, each clause with its state | Section 11a; U12, U13, U14 |
 | inspector.md D3, D4 - silence declared, display reads the effective tier | Section 5; U2 |
 | inspector.md D5 - the viewer never re-resolves identity | Section 8; U6 |
 | remote-viewer.md Section 6 - the read tier offers nothing it refuses | Sections 6, 7 |
