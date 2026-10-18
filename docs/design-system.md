@@ -67,17 +67,19 @@ the drawing was heavy.
 
 - **The model told four times and shown once.** The agent-first triptych, the three guarantees, the
   pipeline with its two terminals and the eight capability cards each explain observe, the log, the
-  gate and trust in prose: 1,937 words in nine numbered sections, eleven screens tall at 1440. The
+  gate and trust in prose: about 1,900 words of the page's main text, code excluded, in nine numbered
+  sections, eleven screens tall at 1440. The
   one picture of the product is the viewer's screenshot in the fourth section; the hero's
   constellation is decoration.
 - **A 76-word lede** under the heading, about four times the subhead of the developer-tool pages it
   was compared with, and two buttons that both leave the page, with the install command below them.
-- **Hidden until scrolled.** Every section starts invisible and fades in when an observer sees it,
-  and the hero rises in on load, so a link preview, a capture or a reader who follows an anchor
-  meets blank space until a script has run.
+- **Hidden until scrolled.** With script running, every section starts invisible and fades in when
+  an observer sees it, and the hero rises in on load, so a reader who follows an anchor, or a capture
+  taken as the page loads, meets blank space until the fade has run.
 - **Three tokens used and never declared.** The landing reads `--panel-3` and `--gold-glass`, and the
   Settings page `--select`, from no `:root`, so the landing's GitHub and secondary buttons lose their
-  hover, its version badge its ground, and the Settings page's selected section its surface. U7's
+  hover background, its version badge its ground, and the Settings page's selected section its
+  surface. U7's
   test compares the tokens a stylesheet declares and never saw the ones it only reads.
 - **Sixteen font sizes and three web fonts**, the body set in a serif that neither the viewer nor the
   app uses.
@@ -143,8 +145,9 @@ surface token, `--select` among them.
 - **Two families, as viewer.css already decided.** The system sans for what a person reads, with the
   Hangul faces named early in the stack, and IBM Plex Mono for identifiers: relation kinds, ids,
   hashes, counts. The app and the viewer load no web font; the landing keeps its own display faces.
-- **Six sizes**: 24 (page title), 18 (sheet title), 15 (section), 13 (body), 12 (secondary) and 11
-  (labels). Nothing is drawn below 11px. A heading on a panel is 12px sans, semibold, in `--muted`
+- **Six sizes** in the viewer and on the Settings page: 24 (page title), 18 (sheet title), 15
+  (section), 13 (body), 12 (secondary) and 11 (labels). Nothing is drawn below 11px. The landing, a
+  page read at length rather than a tool, has six sizes of its own (Section 11). A heading on a panel is 12px sans, semibold, in `--muted`
   and in sentence case, and nothing in the viewer or on the Settings page is set in uppercase. The
   landing keeps its uppercase eyebrows with its own display faces: a page about the product, set in
   the product's type, not a tool.
@@ -431,30 +434,42 @@ not shipped; moving between machines is the stage's fifth step.
 **The hero.** The heading stays: memory for AI agents that remembers who said it. The subhead names
 the clients and the split of the work - agents write as they work, a person decides what becomes
 canon. The act is the install command in two tabs, the macOS app (`brew install --cask
-ashon/tap/supragnosis`) and the script for macOS and Linux, with a copy button; beside it are the
-install script's source, GitHub and the docs. One line of facts follows: the version, stamped on
-deploy as today, Rust, the licenses, the platforms, and no account. Nothing in the hero waits for a
-script or an animation to be seen.
+ashon/tap/supragnosis`, the one spelling the page uses) and the script, with a copy button; beside it
+are the install script's source, GitHub and the docs. One line of facts follows: the version, Rust,
+the licenses, the platforms the binaries are built for (macOS on Apple silicon, Linux with glibc 2.39
+or later), and no account. The version is stamped on deploy by one substitution over exactly one
+`<li id="version-badge">` holding plain text (pages.yml), so the page keeps exactly one such element,
+with no other attribute. Nothing in the hero waits for a script or an animation to be seen. The
+install script the hero links to says what its binary searches with: the release is built with the
+local embedding model, and the script's keyword-only notice predates that.
 
 **The stage** is one canvas beside the five steps. Each step is a sentence, a short paragraph and one
 snippet of the product's own text, and the scene beside it shows the same thing happen to a made-up
 project - a payments service, its webhooks and their idempotency, nothing from a real store:
 
-1. **Write.** Three agents' entries fly into one log; the first shows who wrote it, for whom and how
-   sure. It answers "who said this?".
+1. **Write.** Three agents' entries fly into one log; the first shows what an entry keeps - the
+   machine that wrote it, the person it acts for, its source and how sure it is. The log records the
+   machine and the person, not which agent app wrote an entry, so the agents' names are drawn beside
+   the log and never on it. It answers "who said this?".
 2. **Structure.** Each entry rises into the entities it names and draws its relations, and what was
    said together gathers into a region.
-3. **Govern.** A second type for one entity raises the contested badge. Two names for one thing
-   become a merge proposal, a dashed gold link; a person accepts it and confirms one fact, both acts
-   land in the log in gold, and the confirmed entity takes the gold ring. It answers "has anyone
+3. **Govern.** A second type for one entity raises the contested badge, and it stays: nothing settles
+   it in this story. Two names for one thing become a merge proposal, and an agent asks a person to
+   confirm one of its claims (webhooks need an idempotency key). The person accepts both on the Review
+   page; the two verdicts land in the log; the merge folds one name into the other; the confirmed
+   entry's tick turns gold, as the viewer's Log draws a human-confirmed row, and the two entities it
+   names take the gold ring, since a node's trust is its best support's tier. It answers "has anyone
    checked it?".
-4. **Recall.** Another agent searches; what matches lights, and a dashed line runs from the answer
-   back to the log entries it rests on - the receipts.
-5. **Travel.** The log crosses a hub to a second machine and replays into the same graph, with the
-   same contested badge and the same merge. The person's confirmation arrives as what the receiving
-   node can prove: signed by the laptop, a thin ring and not gold, because a tier never rises by
-   crossing the wire (federation.md Section 6b, resolution.md R4). It answers "does my other machine
-   know?".
+4. **Recall.** Another agent searches; what matches stays lit while the rest dims, as the viewer's
+   search lights its answer, and a dashed line runs from the answer back to the entries that say it -
+   the receipts. A verdict is not a receipt; the entry it confirmed is.
+5. **Travel.** The log crosses a hub to a second machine, which checks the signatures (an entry is
+   signed when it leaves the machine that wrote it) and replays the same graph: the same contested
+   badge, the same merge, and the same gold rings, because a verdict is an entry and the tier it grants
+   is read from the log (resolution.md Section 6). Only the workspaces the person allows travel. What
+   cannot arrive as human confirmed is a bare claim: an entry that only says a person checked it counts
+   for no more than its signature proves (resolution.md R4). The step says that in words; the scene
+   has no such entry. It answers "does my other machine know?".
 
 The words carry the whole meaning. The canvas is hidden from assistive technology and the page reads
 complete without it; what is worth reading - an entry's provenance, a Review row, a search answer's
@@ -462,34 +477,58 @@ receipt, the two machines' tiers - is a snippet in the step, and the canvas draw
 short labels, at 11 to 12 pixels.
 
 **The stage's marks are the viewer's** (U10). An entity is filled with its type's color, computed by
-the viewer's own function of the type's name, with a halo of the ground; a gold ring is human
-confirmed and a thin ink ring host signed, at the viewer's widths; the coral badge at the upper right
-is contested; a relation is the viewer's neutral line. Teal is an agent at work and gold a person, as
-`--ok` and `--accent` are elsewhere. The stage's colors are the landing's tokens.
+the viewer's own functions of the type's name, copied into the stage; the stage's type names are
+chosen so their colors sit apart from each other and from gold, coral and teal. A node has a halo of
+the ground. A gold ring is human confirmed, at the viewer's width and offset; nothing on the stage is
+host signed or unverified, so it draws no other ring. The coral badge at the upper right is
+contested. A relation is the viewer's neutral line at its alpha, the one color the stage copies from
+the viewer's script rather than from a token. A merge waiting for a person is the viewer's proposal
+preview: an arrow from the name folded away into the one kept, in `--accent`, and the relation that
+would move with it dashed. Log ticks are colored as the viewer's Log colors a row: an agent's entry in
+`--ink2`, a human-confirmed entry in `--gold-bright`, a proposal muted and a verdict in `--ink`. Teal
+is an agent at work, as the viewer's footprint glow marks what an agent's session touched; the
+person and their verdicts are ink. Every other color the stage draws is a landing token.
 
 **Motion.** A scene plays when its step reaches the middle of the window, once, in at most five
-seconds, and then rests: at rest nothing moves and no frame is drawn. The page's scroll is never
-captured or tied to the drawing; a rail of step numbers under the stage moves to a step, and a scene
-that is not the next one cuts to its resting frame. Under reduced motion every scene is its resting
-frame, and a change of the setting while the page is open is followed. A hidden tab stops the stage.
-The hero has no entrance, and no section waits to be scrolled into view to be shown (Section 10).
+seconds, and then rests: at rest nothing moves and no frame is drawn. Each scene ends within the five
+seconds after which WCAG 2.2.2 asks for a pause, so the stage needs none, on the phone's frames as
+beside the steps. The page's scroll is never captured or tied to the drawing. Under the stage a rail
+of five buttons, each named "Step n of 5" with its scene, marks the current step with `aria-current`
+and takes the focus ring every control takes; pressing one scrolls that step's words to the middle of
+the window, so the scene beside them is always theirs, and a scene that is not the next one cuts to
+its resting frame. Under reduced motion every scene is its resting frame, the page scrolls without
+smoothing, and a change of the setting while the page is open is followed. A hidden tab stops the
+stage. The stage keeps its own timing and easing, outside Section 3's three durations: they are for
+the tools' controls, and the stage's motion is its content. The hero has no entrance, and no section
+waits to be scrolled into view to be shown (Section 10).
 
 **Drawing.** The canvas's backing store is its CSS size times the device pixel ratio, capped at 2:
 measured from the device-pixel content box where the browser reports it, and redrawn when the ratio
 changes, as when a window moves to another screen. Its box has a fixed aspect ratio, 16:10 beside the
-steps and 4:5 on a phone, so nothing shifts when it draws. A glow is a sprite drawn once per color,
-not a blur on every frame. Without script, the stage is a still picture of the third scene's resting
-frame, and the steps read the same.
+steps and 4:5 on a phone, its width capped so the frame fits the window's height, so nothing shifts
+when it draws. A glow is a sprite drawn once per color, not a blur on every frame. Beside the steps the
+stage's box holds a still picture of the third scene's resting frame; it shows whenever the stage
+cannot draw - no script, a script that did not load, or one that failed - and the steps read the same
+(P24). Without script the phone's frames are not drawn at all, rather than left as empty boxes.
 
 **By width.** From 900 pixels the steps and the stage sit side by side, and the stage stays in view
 while the steps scroll past it. Below 900 each step carries its own 4:5 frame above its words, which
 plays when the frame comes into view, and the stage's column is not drawn.
 
-**Type and surface.** Headings in Fraunces, reading in the system sans at 18 pixels (the subhead at
-20), commands, identifiers and labels in IBM Plex Mono: Newsreader goes, and sixteen sizes become six.
-The grain, the two glows, the constellation, the hero's entrance, the scroll reveal, the numbered
-eyebrows and the cards' hover lift go. Surfaces follow Section 4 (U9), and every token a stylesheet
-reads is one it declares (U7).
+**Type and surface.** Headings in Fraunces, reading in the system sans, commands, identifiers and
+labels in IBM Plex Mono: Newsreader goes. The landing's own six sizes, which Section 4's scale for the
+tools does not bind, are three for headings (up to 72, 38 and 24 pixels, smaller on a phone), 18 for
+reading, 15 for secondary text and 13 for labels; the subhead takes the third heading size. Sixteen
+sizes become those six. The grain, the two glows, the constellation, the hero's entrance, the scroll
+reveal, the numbered eyebrows and the cards' hover lift go; the unnumbered eyebrows - the name's
+etymology and "How it works" - stay. Surfaces follow Section 4 (U9). The stylesheet declares
+`--panel-3`, `--select`, `--ink2` and `--bad`, which it now reads, and drops `--gold-glass`, the gold
+ground under the version badge that Section 4's gold does not cover; every token a stylesheet reads is
+one it declares (U7).
+
+**Checked on every change.** The tests that read `site/` run in the Rust workflow, which a change
+under `site/` alone did not start; step 9 adds `site/**` to its paths, and the front-end lint covers
+`site/*.js` as it covers the viewer's scripts.
 
 **Trust is earned with what can be checked.** The landing has no adoption to show yet, so it shows
 the status - what shipped, what is next and who it is not for yet - and answers four questions:
@@ -544,10 +583,10 @@ ours to keep true, and we could not.
 | **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision. Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
 | **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
 | **U6** | The viewer's search answers with the engine's ranking and mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
-| **U7** | The viewer, the settings page and the landing give every token they share one value and declare every token they read, and every text token meets 4.5:1 on every surface token. |
+| **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 | **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph. |
-| **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's function, a gold ring is human confirmed and a thin ring host signed, the coral badge is contested, and a confirmation that reaches another machine is drawn as that machine evaluates it. Every scene's meaning is in its step's words, and at rest, under reduced motion and without script nothing on the stage moves (P2, P6, P18). |
+| **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's own functions, a ring is human confirmed at the viewer's width, the coral badge is contested, a relation is the viewer's neutral line, and every other color it draws is a landing token. The second machine draws every ring and badge the first draws, since it replays the same log. Each scene ends within five seconds and then draws nothing until it is asked again; under reduced motion each scene is its resting frame; the canvas is hidden from assistive technology and each step says its scene in its own words (P2, P6, P18). |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -578,12 +617,14 @@ legend. In the stylesheets steps 7 and 8 replaced it finds 85 such declarations 
 in the landing's.
 
 U10 is to be guarded, from step 9, by a source tripwire in `crates/supragnosis-viz/tests/landing.rs`
-that reads `site/stage.js` beside the viewer's script and the landing's stylesheet: the stage's
-type-color and name-slot functions are the viewer's, character for character; each of its palette
-colors is a landing token's value; its rings are the viewer's widths and colors for the two tiers it
-draws; the travel scene's receiving machine draws the confirmed entity's ring as host signed; the
-stage reads the reduced-motion setting and follows its change; and the page hides the canvas from
-assistive technology while every step carries its own words.
+that reads `site/stage.js` beside the viewer's script, the landing's stylesheet and the page: the
+stage's color functions are the viewer's, line for line with leading spaces dropped; each palette
+color is the value of the token named beside it; the edge line and its alpha, the human-confirmed ring
+and the contested badge are the viewer's; every ring and badge the govern scene sets, the travel
+scene sets on the second machine; no scene lasts more than five seconds, a frame is requested only
+while a scene plays, and the reduced-motion setting is read and its change followed; and every canvas
+on the page is hidden from assistive technology while each of the five steps has a heading and a
+paragraph of its own. A second test holds the page to one version badge.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -624,8 +665,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    frames become surfaces and the steps' gold rules go. Then the landing's picture is retaken.
 9. **The landing tells how knowledge moves** (Section 11, U10, and U7's declared tokens): the seven
    sections and their words, the stage with its five scenes, the phone's frames and the still picture
-   for a page without script, the three undeclared tokens declared, and the tests. Merging it
-   publishes the site, so it merges on the author's word, not on a green check.
+   for a stage that cannot draw, the tokens the stylesheets read declared (and `--gold-glass` dropped),
+   the install script's search notice, `site/**` in the Rust workflow's paths and `site/*.js` in the
+   front-end lint, and the tests. Merging it publishes the site, so it merges on the author's word,
+   not on a green check.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
@@ -657,7 +700,7 @@ proposal and the read tier.
 | P5 - absence is not negation | Section 6 (rows moved before tabs go, the strip's empty state); Section 8 (empty search); U8 |
 | P6 - a contradiction is surfaced | Sections 5, 11; U3, U10 |
 | P17 - the read tier reads what it was granted | Sections 5 (no remembered layout there), 8; U6 |
-| P18 - trust is the receiver's evaluation | Sections 5, 11 (the travel scene); U2, U10 |
+| P18 - trust is the receiver's evaluation | Sections 5, 11 (the travel step: a bare claim counts for what its signature proves); U2, U10 |
 | P19 - a deterministic core, the edge labelled | Section 8; U6 |
 | P21 - the MCP surface stays narrow | Section 2; U6 |
 | P22 - curation where the reader already is | Section 7 (Health folded, the review count where the person looks) |
@@ -716,6 +759,33 @@ Steps 7 and 8 were read the same way before they were built, and eleven findings
   as the docks left.
 - Smaller: two notes that said "today" of things already built, a clause that would have changed the
   body font, the U9 deferral's trigger, and the Settings page's 10.5px labels.
+
+Step 9 was read the same way before it was built, and thirteen findings changed it:
+
+- **The travel scene drew the wrong tier.** The draft had the second machine draw the person's
+  confirmation as host signed, a thin ring. A verdict is an entry whose ceiling is read from the log,
+  the same on every node (resolution.md Section 6), so the receiver draws the same gold ring. R4's cap
+  is for a bare claim, and the step says so in words.
+- **The log does not record which agent wrote an entry.** Provenance holds the machine, the person,
+  the source and the confidence; the draft's "by claude-code" said otherwise, and its "signed" was
+  true only once an entry leaves the machine.
+- **Gold and teal had new meanings.** Gold drew a person, their verdicts and the search's matches, and
+  teal on a Log row means host signed. The person is ink now, ticks take the viewer's Log colors,
+  matches are lit as the viewer's search lights them, and teal is the viewer's footprint: an agent at
+  work.
+- **"The stage's colors are the landing's tokens" was not true of its type fills or its edges**, and
+  the landing declared neither `--bad` nor `--ink2`. The exceptions are named and the tokens declared.
+- **The tests reading `site/` did not run when only `site/` changed**, and nothing linted the stage.
+- **The merge and the confirmation were not the viewer's.** The merge is the viewer's preview arrow,
+  the confirmation is an agent's claim accepted on the Review page, and it stays off the contested
+  node so the badge that travels is still there.
+- **The stage's five type names collided in pairs** under the viewer's own color function; they are
+  chosen apart now.
+- Smaller: the version badge's contract, the rail and the stage's own timing were unstated; a stage
+  that failed to load left a blank box; a phone frame at 760 pixels was taller than the window; Section
+  4's six sizes did not say they are the tools'; U7 and U10 named checks no test could make; the
+  install script still said its binary searched by keyword only; and three of Section 1's measurements
+  were stated too strongly.
 
 ## 18. What building it changed
 
