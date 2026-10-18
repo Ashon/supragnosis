@@ -270,7 +270,18 @@ two of their members other than it, with the count: "proposal gate, claim_demoti
 every context of a hub was once named after the hub, so selecting one titled five regions alike.
 Region names are placed before node labels, which avoid them, so names for every region at rest
 would push the map's own names out. A region's name sits outside its upper edge, 13px at medium
-weight whatever the region's size. The minimap draws the same clouds.
+weight whatever the region's size. The minimap draws the same clouds. Each region's hue comes from its
+context's id, and every region shares one lightness and one chroma in OKLCH, so no region reads
+brighter or heavier for its hue; where clouds overlap they are mixed in OKLCH too - lightness and
+chroma kept, hues by their weighted circular mean - not by the canvas, whose compositing mixes in
+sRGB and meets two hues in a grey or a brown neither of them is.
+
+**Workspaces cohere while the boundaries draw them.** With the boundaries on "workspace" and more
+than one workspace in scope, a node outside its workspace's natural radius - what its nodes would
+fill at their usual spacing - is pulled toward the workspace's centre, two workspaces whose actual
+spreads overlap are pushed apart as wholes, and the repulsion between nodes of different workspaces
+is turned down to a quarter, since the workspaces already keep their distance. Inside the radius
+nothing pulls, so a large workspace keeps the shape its edges give it.
 
 **The layout is remembered on the local console.** Node positions are kept per workspace in the
 browser's storage, keyed by the node's id from `/api/surface` as well as the workspace, and the next
@@ -983,3 +994,18 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   faint field (0.10 at the core at rest), so the author asked for them on by default. Their names are
   still the active node's alone: on the author's store, twenty region names at rest took the places
   of the node labels. A stored "off" from before is forgotten once, as the minimap's was.
+- **After step 10: workspaces cohere.** With every workspace in scope, a workspace's loose pieces -
+  a few nodes no edge ties to the rest - drifted off under a repulsion whose range on a large graph
+  is about 960px, held by a centre pull the graph's size had divided down to almost nothing, and the
+  boundaries enclosed mostly empty space. Measured on a copy of the author's store (392 nodes in five
+  workspaces), the farthest node from its workspace's centre went from 2292 to 530 in one workspace
+  and from 2086 to 327 in another, the large ones kept their shape, and the nodes lying closer to
+  another workspace's centre than to their own went from 113 to 0. The push first used the radius a
+  workspace's nodes would fill; a small workspace's centre then settled inside a large one's real
+  spread, so the push uses the 90th percentile of the actual distances. A layout remembered for a
+  scope of several workspaces is forgotten once, since a warm start would keep the scattered picture.
+- **After step 10: clouds are mixed in OKLCH.** The canvas composites in sRGB, so overlapping clouds
+  met in greys and browns, and the HSL band gave some hues 50% lightness and others 66%. The clouds
+  of a frame are now mixed in one field at a quarter of the screen's resolution - a cloud has no
+  detail to lose - and drawn smoothed up: 1.7ms a frame at 1600 by 900 on the author's store. The
+  minimap, too small to show a mix, keeps the canvas's compositing with the same colours.
