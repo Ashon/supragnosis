@@ -179,7 +179,17 @@ const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let settling = true;
 let refitOnReveal = false;   // re-frame the graph after a sync-driven re-layout settles (follow mode)
 // Base force parameters. The larger the graph, the wider it should spread, so stepSim scales by node count (spread).
-const REPULSE = 7000, SPRING_LEN = 120, SPRING_K = 0.02;
+const REPULSE = 7000;
+// Links fit the density around them (stepSim). A link's rest length grows with the smaller degree of
+// its two ends - a leaf sits close to its hub, two hubs keep room between them for their leaves - and
+// with how crowded its ends are against the graph's average, so a crowded patch spreads and a sparse
+// one gathers. Its strength falls with that degree, as d3's links do, so a hub is not held by every
+// link at once, and the end with fewer links does more of the moving.
+const LINK_BASE = 70;              // rest length of a leaf's link, before crowding
+const LINK_PER_DEG = 14;           // added per sqrt(smaller degree)
+const LINK_K = 0.09;               // a leaf link's strength; LINK_K / sqrt(smaller degree) otherwise
+const DENSITY_R = 160;             // a node's crowd: the nodes within this many world px
+const CROWD_MIN = 0.7, CROWD_MAX = 1.5;    // how far crowding may shorten or lengthen a link
 const CENTER_BASE = 0.0015; // center-attraction base - weakened for large graphs (prevents central clumping)
 const ANCHOR_K = 0.5;       // central-axis anchor: fraction of the centroid-offset corrected each frame (rigid recenter, positions only) - pins the whole cluster to the world center so it cannot drift off, even when dormant
 const RANGE_BASE = 240;     // repulsion range base - widened for large graphs (pushes out farther)
@@ -2916,6 +2926,7 @@ function stepSim() {
   // Collision displacement is accumulated per node, then clamped to a cap - stops a hub overlapping
   // many neighbors from flinging far in a single frame (instead of moving directly).
   const cdx = new Array(N).fill(0), cdy = new Array(N).fill(0);
+  const near = active ? new Float32Array(N) : null;   // each node's crowd this frame
   // The radius (degree-proportional) is computed once per frame and shared by repulsion weighting/collision separation.
   const rad = new Array(N);
   for (let i = 0; i < N; i++) rad[i] = nodeRadius(nodes[i]);
@@ -2942,6 +2953,7 @@ function stepSim() {
       const rf = repulse * alpha * w * (1 - d / range) / Math.max(d2, MIN_SEP * MIN_SEP);
       a.vx -= rf*dx; a.vy -= rf*dy; b.vx += rf*dx; b.vy += rf*dy;
     }
+    if (near && d < DENSITY_R) { near[i]++; near[j]++; }
     // Collision minimum gap = sum of the two radii + padding -> a node with more neighbors (larger) gets wider spacing around it.
     const minD = rad[i] + rad[j] + COLLIDE_PAD;
     if (d < minD) {
@@ -2954,10 +2966,23 @@ function stepSim() {
   // Do not reheat here - wake only from 'events' like a new node/drag/resize
   // (removes the problem of reheating every frame after settling).
   if (active) {
+    // Each node's crowd, smoothed over frames so a link's length does not flicker as its ends move,
+    // and the graph's average crowd that a link's ends are measured against.
+    let crowdSum = 0;
+    for (let k = 0; k < N; k++) {
+      const v = nodes[k];
+      v.crowd = v.crowd === undefined ? near[k] : v.crowd + (near[k] - v.crowd) * 0.15;
+      crowdSum += v.crowd;
+    }
+    const crowdRef = Math.sqrt(crowdSum / N + 1);
     for (const e of edges) {
       let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx,dy) || 1;
-      const f = (d - SPRING_LEN) * SPRING_K * alpha; dx /= d; dy /= d;
-      e.a.vx += f*dx; e.a.vy += f*dy; e.b.vx -= f*dx; e.b.vy -= f*dy;
+      const da = Math.max(1, e.a.degree || 1), db = Math.max(1, e.b.degree || 1), lo = Math.sqrt(Math.min(da, db));
+      const crowd = Math.min(CROWD_MAX, Math.max(CROWD_MIN, Math.sqrt((e.a.crowd + e.b.crowd) / 2 + 1) / crowdRef));
+      const f = (d - (LINK_BASE + LINK_PER_DEG * lo) * crowd) * (LINK_K / lo) * alpha; dx /= d; dy /= d;
+      // The end with fewer links moves more: a leaf comes to its hub rather than the hub to the leaf.
+      const ma = 2 * db / (da + db), mb = 2 - ma;
+      e.a.vx += f*dx*ma; e.a.vy += f*dy*ma; e.b.vx -= f*dx*mb; e.b.vy -= f*dy*mb;
     }
   }
 
