@@ -315,6 +315,7 @@ const VIEWER_HTML: &str = include_str!("../assets/viewer.html");
 const VIEWER_JS: &str = include_str!("../assets/viewer.js");
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const LANDING_HTML: &str = include_str!("../../../site/index.html");
+const PRINCIPLES_HTML: &str = include_str!("../../../site/principles/index.html");
 
 /// Whether a surface ships the file at a path it names.
 type Ships<'a> = &'a dyn Fn(&str) -> bool;
@@ -408,6 +409,24 @@ fn every_face_ships_with_its_surface() {
             );
         }
     }
+
+    // The principles page reads the landing's stylesheet and links its Pretendard sheet, from one
+    // directory down, and fetches nothing from a font host (design-system.md Section 11a).
+    let page_links = stylesheet_links(PRINCIPLES_HTML);
+    for want in ["../fonts/pretendard-1.3.9/pretendard-latin.css", "../style.css"] {
+        assert!(
+            page_links.iter().any(|h| h == want),
+            "the principles page does not link {want}: {page_links:?}"
+        );
+        assert!(
+            root.join("site/principles").join(want).is_file(),
+            "the principles page links {want}, which is not shipped"
+        );
+    }
+    assert!(
+        !PRINCIPLES_HTML.contains("fonts.googleapis") && !PRINCIPLES_HTML.contains("fonts.gstatic"),
+        "the principles page fetches a font from another host"
+    );
 
     // The two policies that would refuse a font allow this origin's.
     assert!(

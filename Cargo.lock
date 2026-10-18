@@ -3989,6 +3989,7 @@ dependencies = [
 name = "supragnosis-engine"
 version = "0.6.4"
 dependencies = [
+ "blake3",
  "serde",
  "serde_json",
  "supragnosis-core",

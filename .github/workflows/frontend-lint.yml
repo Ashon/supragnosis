@@ -1,5 +1,5 @@
-# Security lint for the viewer frontend assets, and the scope rule for the landing's stage
-# (site/stage.js). This is SEPARATE from the crate build: the binary embeds viewer.html/css/js via
+# Security lint for the viewer frontend assets, and the scope rule for the site's scripts
+# (site/stage.js, site/principles.js). This is SEPARATE from the crate build: the binary embeds viewer.html/css/js via
 # include_str! and builds with pure cargo (no Node). For the viewer this job runs ESLint's
 # no-unsanitized rule so a new innerHTML sink that forgets to escape untrusted content (the XSS
 # class - Principle 18) fails CI instead of shipping.

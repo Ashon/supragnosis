@@ -7,12 +7,11 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **built - Section 14 steps 0-10**: the fixes that needed no document, the tokens and the
+> Status: **built - Section 14 steps 0-11**: the fixes that needed no document, the tokens and the
 > foundations, the map, the places, the Review page, search, the landing's picture, the three
 > surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
-> moves (Section 11, U10), and one voice in type (Section 4, U11). Dream drafts join the Review page
-> with dreaming.md Section 12 step 5 (U5). Specified, not built: the principles page, step 11 (Section
-> 11a, U12-U14).
+> moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
+> U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -822,6 +821,27 @@ beside the Settings page and the landing on disk; the viewer's and the Settings 
 allow `font-src 'self'`; no page or stylesheet names a font host; and the map's names are set in the
 reading face and its relation kinds in the identifier face.
 
+U12 and U13 are guarded in the engine's tests. `the_principles_page_reads_the_registry` writes the
+page's ledger, each chapter's part of it and each principle's clauses from the registry, and fails when
+the page differs; run with `SUPRAGNOSIS_WRITE_PAGE=1`, it rewrites those regions, so a change that
+moves a clause carries the page with it. `the_principles_page_shows_held_clauses_as_held_and_owed_ones_as_owed`
+reads every clause a figure names: a shown clause must hold, an owed one must not, each tension's owed
+tag must follow the clauses it rests on, Appendix A's rows and the page's tensions must name the same
+principles, and every figure must have its case. `every_principles_page_case_marked_replay_is_the_engines_answer`
+replays each case marked replay - eleven of them - on the in-memory adapter with the project its
+figure draws, and compares every value the script reads from it: the digest, the id, the belief during
+and after a conflict, the tier a person's verdict gives, the log's counts around a proposal.
+
+U14 is guarded by `the_principles_page_draws_the_viewers_marks` and
+`the_principles_page_plays_once_can_stop_and_rests` in `crates/supragnosis-viz/tests/principles.rs`,
+which read the page's script beside the viewer's and the landing's stylesheet: the color functions,
+the palette, the edge line and the rings are the viewer's; no tier is named in the script; a frame is
+requested only while a figure plays, reduced motion draws the resting frame, a hidden tab stops it,
+a scene plays once and can be stopped, a caption is announced only after a press; every canvas is
+hidden and every beat is text in the page; and the page carries no style of its own. U9 and U11 hold
+it through `no_border_draws_an_area` and `every_face_ships_with_its_surface`, which reads the page's
+links. `the_landing_links_the_principles_page` holds the landing's four links to it.
+
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
 the read tier's own policy table, so a write added later is covered without anyone extending a list,
@@ -870,7 +890,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    page and the landing; `font-src 'self'` in the two policies; the shared stacks; the map's labels
    and the stage's in the reading face; the Settings page's off-scale sizes back on the scale; and the
    landing's fonts served from the site instead of Google Fonts.
-11. **The principles page** (Section 11a, U12, U13, U14): the page and its rules in the landing's
+11. **The principles page** [built] (Section 11a, U12, U13, U14): the page and its rules in the landing's
    stylesheet, the ledger written from the registry, the cases and the tests that replay them, the five
    demos and nineteen scenes, the tensions, the landing's three links, and `site/principles.js` in the
    front-end lint. Merging it publishes the site, so it merges on the author's word.
@@ -1143,4 +1163,17 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   window now fades by how much wider it is, and overlapping coverage eases toward 0.42 instead of
   stacking: the same view is covered at a mean 0.11. Node labels are thinned by the nodes in view, not
   the graph's count, so zooming into a large graph names its cluster progressively.
+- **Step 11: the cases moved two lines of copy.** P21's line said each tool is one intent, but the
+  registry owes that clause, so the line says thirteen tools and no query language, and its first
+  beat carries the owed tag. P23's note while the proposal waits was about Postgres, the merge's own
+  target, which would show a verdict on a base that had moved - and binding a verdict to its base is
+  owed - so the note is about the orders service.
+- **Step 11: ten rulings are owed, not six.** Appendix A names the quarantine tier, the tombstone,
+  retrieval demotion, the auto-merge band and the checks that route review; deriving each tag from
+  the clauses its ruling rests on also tags the gate for type changes, asking a person through
+  elicitation, the replicated verdict marker, the one-intent surface and excision.
+- **Step 11: a mention without a type asserts none.** An entry that names billing-api untyped leaves
+  its kind to the entries that type it, so a machine that receives the relation first draws a
+  Concept that later takes its type, and no order contests it; the engine agrees on the stage's
+  project, whose digest is the same on every order the replay tries.
 
