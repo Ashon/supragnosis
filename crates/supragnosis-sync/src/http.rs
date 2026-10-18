@@ -1388,12 +1388,19 @@ mod tests {
         params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
         let signing_key = rcgen::KeyPair::generate().expect("key");
         let cert = params.self_signed(&signing_key).expect("mint a self-signed certificate");
+        // The clock alone does not make the name unique: macOS reads it in microseconds, so two
+        // tests minting at once got one directory, and whichever finished first removed the other's
+        // certificate while it was still being read - its listener never started (refused
+        // connections) or failed on the PEM instead of at the bind. The counter makes each call's
+        // directory its own.
+        static MINTED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = MINTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("supragnosis-tls-{}-{nanos}", std::process::id()));
+        let dir = std::env::temp_dir()
+            .join(format!("supragnosis-tls-{}-{nanos}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let tls = TlsPaths { cert_pem: dir.join("cert.pem"), key_pem: dir.join("key.pem") };
         std::fs::write(&tls.cert_pem, cert.pem()).unwrap();
