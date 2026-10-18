@@ -1021,3 +1021,9 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   235 to 158 and its 90th percentile from 380 to 259, with the spacing between neighbours nearly
   unchanged (76 to 69); in the view of every workspace, the two large ones' medians went from 230
   and 251 to 176 and 191. Leaves now gather around their hubs instead of lying anywhere in the disk.
+- **After step 10: a cloud is not the ground.** Zoomed into a cluster, one region spans the window and
+  ten overlap, so the clouds covered 96% of a 2.2x view at a mean 0.37. A cloud wider than 45% of the
+  window now fades by how much wider it is, and overlapping coverage eases toward 0.42 instead of
+  stacking: the same view is covered at a mean 0.11. Node labels are thinned by the nodes in view, not
+  the graph's count, so zooming into a large graph names its cluster progressively.
+

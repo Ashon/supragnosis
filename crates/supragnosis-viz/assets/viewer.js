@@ -2682,6 +2682,12 @@ function renderBoundaryChips() {
 const CLOUD_L = 0.70, CLOUD_C = 0.12;   // the clouds' OKLCH lightness and chroma
 const LABEL_L = 0.82, LABEL_C = 0.10;   // a region's name, the same hue lighter, to read on the ground
 const CLOUD_CELL = 4;                   // CSS px per cell of the mixing field
+// A cloud wider than this share of the window is no longer a region you see but the ground you read
+// on (zoomed in, one region spans the window), so it fades by how much wider it is.
+const CLOUD_FADE_AT = 0.45;
+// However many clouds overlap, their coverage eases toward this ceiling instead of stacking toward
+// opaque: ten regions sharing a cluster's core had covered it at 0.65.
+const CLOUD_COVER_MAX = 0.42;
 function regionHue(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return ((h % 512) * 137.508) % 360;   // the golden angle over the same 512 slots hyperColor used
@@ -2758,11 +2764,13 @@ function drawCloudField(items) {
     const sh = it.shape, k = cam.s / CLOUD_CELL;
     const px = (sh.cx * cam.s + cam.x) / CLOUD_CELL, py = (sh.cy * cam.s + cam.y) / CLOUD_CELL;
     const Ru = sh.R * k, Rv = sh.Rv * k, cs = Math.cos(sh.th), sn = Math.sin(sh.th);
+    const across = Math.max(Ru, Rv) * CLOUD_CELL, fit = CLOUD_FADE_AT * Math.min(innerWidth, innerHeight);
+    const fade = across > fit ? Math.max(0.15, (fit / across) ** 1.5) : 1;
     const ex = Math.hypot(Ru * cs, Rv * sn), ey = Math.hypot(Ru * sn, Rv * cs);
     const x0 = Math.max(0, Math.floor(px - ex)), x1 = Math.min(w - 1, Math.ceil(px + ex));
     const y0 = Math.max(0, Math.floor(py - ey)), y1 = Math.min(h - 1, Math.ceil(py + ey));
     if (x0 > x1 || y0 > y1 || it.alpha <= 0) continue;
-    const hue = it.hue * Math.PI / 180, ca = Math.cos(hue), cb = Math.sin(hue), al = it.alpha;
+    const hue = it.hue * Math.PI / 180, ca = Math.cos(hue), cb = Math.sin(hue), al = it.alpha * fade;
     for (let y = y0; y <= y1; y++) {
       const dy = y + 0.5 - py;
       for (let x = x0; x <= x1; x++) {
@@ -2782,7 +2790,8 @@ function drawCloudField(items) {
     const vec = Math.hypot(f.A[i], f.B[i]) / wt;   // 1 where every hue agrees, toward 0 where they oppose
     const c = vec > 1e-6 ? CLOUD_C * Math.pow(Math.min(1, vec), 0.35) / (vec * wt) : 0;
     oklabToSrgb(CLOUD_L, f.A[i] * c, f.B[i] * c, rgb);
-    d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = Math.round(255 * (1 - f.P[i]));
+    const cover = CLOUD_COVER_MAX * (1 - Math.exp(-(1 - f.P[i]) / CLOUD_COVER_MAX));
+    d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = Math.round(255 * cover);
   }
   f.x.putImageData(f.img, 0, 0);
   ctx.save();
@@ -3486,9 +3495,16 @@ function draw() {
   // Labels (nodes + hulls) - turned on/off by the labels toggle. In screen coordinates (DPR), so constant size regardless of zoom.
   if (showLabels) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    // Label thinning: everything when small (<=40) or zoomed in enough (cam.s>1.4); on a large graph,
-    // only hubs (high degree >= cut) + hover/focus/active. Removes the hairball's wall of labels.
-    const cut = (nodes.length <= 40 || cam.s > 1.4) ? 0 : Math.max(4, Math.round(nodes.length / 25));
+    // Label thinning by what is on screen: every name when 40 or fewer nodes are in view, otherwise
+    // only hubs (degree >= cut) + hover/focus/active, the cut set by the nodes in view rather than the
+    // graph's - zooming into a large graph's cluster then names it progressively, where a cut from the
+    // whole graph left it unnamed until 1.4x. Label avoidance still keeps the names apart.
+    let inView = 0;
+    for (const n of nodes) {
+      const sx = n.x * cam.s + cam.x, sy = n.y * cam.s + cam.y;
+      if (sx >= insetL() && sx <= innerWidth - insetR() && sy >= 0 && sy <= innerHeight - insetB()) inView++;
+    }
+    const cut = inView <= 40 ? 0 : Math.max(4, Math.round(inView / 25));
     const want = [];
     for (const n of nodes) {
       if (typeOff.has(n.type)) continue;
