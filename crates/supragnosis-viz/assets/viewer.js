@@ -117,10 +117,9 @@ const HYPER_PULL = 0.03;         // base hyperedge centroid cohesion (scaled by 
 const HULL_SIZE_REF = 8;         // members at/above which a hull gets full cohesion weight
 const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HYPER_PULL)
 // Hull rendering: a region is a cloud (docs/design-system.md Section 5) - one ellipse fitted to its
-// members and filled with a radial gradient that is densest at their centre and fades to nothing past
-// the outermost, so it has no edge to read as a line. A flat fill of the hull drew a slab whose rim
-// looked like a border. One gradient fill per region, directly on the canvas: no stroke, no blur
-// filter, nothing composited offscreen.
+// members, densest at their centre and fading to nothing past the outermost, so it has no edge to
+// read as a line. A flat fill of the hull drew a slab whose rim looked like a border. The clouds of a
+// frame are mixed in OKLCH in one low-resolution field (drawCloudField) and drawn as one image.
 const HULL_LAYER_ALPHA = 0.10;   // a region's density at its core (no node active) - every region is drawn then, so they stay faint
 const HULL_LAYER_DIM = 0.04;     // non-active regions fade to this while a node is active (inspection view)
 const HULL_ACTIVE_ALPHA = 0.26;  // the active node's own regions, painted on top
@@ -132,6 +131,15 @@ const HULL_PAD = 24;             // target gap between hulls (world px). Kept sm
 const HULL_SEP = 0.008;          // separation force between hulls (gentle - scaled by cooling alpha)
 const HULL_R_CAP = 160;          // upper bound on the hull radius used for separation - so a huge grab-bag cannot push the whole layout
 const HULL_MAX_PUSH = 4;         // per-frame separation displacement cap per hull - prevents divergence accumulating across many pairs
+// Workspaces cohere while the boundaries draw them (stepSim): a node outside its workspace's natural
+// radius - WS_RADIUS x sqrt(its node count), about the disk its nodes fill at their usual spacing - is
+// pulled toward the workspace's centroid, and two workspaces whose disks overlap are pushed apart.
+const WS_RADIUS = 18;            // world px per sqrt(node): a workspace of 100 nodes rests within ~180px of its centre
+const WS_PULL = 0.012;           // pull per px beyond that radius (x cooling alpha) - far stronger than the global centre pull on a large graph
+const WS_PAD = 70;               // gap kept between two workspaces' disks
+const WS_SEP = 0.01;             // push apart per px of overlap (x cooling alpha)
+const WS_MAX_PUSH = 6;           // per-frame push cap per workspace, as HULL_MAX_PUSH is per hull
+const WS_CROSS_REPULSE = 0.25;   // node-to-node repulsion across two workspaces: the workspaces already push apart as wholes
 let footprintSession = null;     // the session (conversation) the current footprint belongs to
 const footprint = new Set();     // ids of nodes this session touched - the conversation's knowledge footprint
 let nodes = [], edges = [], typeColor = {}, edgeTypeColor = {};
@@ -327,7 +335,10 @@ async function loadSurface() {
 }
 function loadLayout() {
   storedLayout = null;
-  layoutScope = surfaceNode ? "supra.layout:" + surfaceNode + ":" + (currentWs() || "") : null;
+  // A scope of several workspaces is laid out with their cohesion since 0.6.4 (stepSim); a layout
+  // remembered before it is forgotten once, or the warm start would keep the scattered picture.
+  const ws = currentWs() || "", many = ws === "*" || ws.includes(",");
+  layoutScope = surfaceNode ? "supra.layout:" + surfaceNode + ":" + ws + (many ? ":ws2" : "") : null;
   if (!layoutScope) return;
   try { storedLayout = JSON.parse(localStorage.getItem(layoutScope) || "null"); } catch (_) { storedLayout = null; }
 }
@@ -2374,7 +2385,7 @@ function drawMinimap() {
       if (ms.length < 3) continue;
       const g = hullGeom(ms);
       if (!g) continue;
-      paintCloud(mctx, g, hyperColor(he.id), 0.16);
+      paintCloud(mctx, g, regionRgb(he.id), 0.16);
     }
     mctx.restore();
   }
@@ -2646,16 +2657,50 @@ function renderBoundaryChips() {
     el.appendChild(sw);
     el.appendChild(document.createTextNode(mode));
     el.title = why + " (b cycles the three)";
-    el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); requestFrame(); };
+    el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); wake(0.5); };   // workspaces cohere only in one mode
     legendBoundaryEl.appendChild(el);
   }
 }
 
-// One region as a cloud. The ellipse lies along the members' principal axis (their covariance), each
-// radius the farthest member along it plus CLOUD_REACH times the hull's gap, and the gradient keeps
-// most of its density over the members before it fades out: a member at the far end of a long region
-// still sits in about a third of it.
-function paintCloud(c, g, col, alpha) {
+// --- Region clouds, mixed in OKLCH (docs/design-system.md Section 5) ------------------------------
+// Each region's hue comes from its context's id; every region shares one lightness and one chroma in
+// OKLCH, so no region reads brighter or heavier than another because of its hue (the HSL band gave
+// some 50% lightness and others 66%). Where regions overlap they are mixed in OKLCH as well, not by
+// the canvas: its compositing mixes in sRGB, where two clouds of different hues meet in a grey or a
+// brown neither of them is. The field below does the mixing itself, at a quarter of the screen's
+// resolution - a cloud has no detail to lose - and is drawn smoothed up to the window.
+const CLOUD_L = 0.70, CLOUD_C = 0.12;   // the clouds' OKLCH lightness and chroma
+const LABEL_L = 0.82, LABEL_C = 0.10;   // a region's name, the same hue lighter, to read on the ground
+const CLOUD_CELL = 4;                   // CSS px per cell of the mixing field
+function regionHue(id) {
+  let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return ((h % 512) * 137.508) % 360;   // the golden angle over the same 512 slots hyperColor used
+}
+function regionLabelColor(id) { return "oklch(" + LABEL_L + " " + LABEL_C + " " + regionHue(id).toFixed(1) + ")"; }
+// OKLab -> sRGB in 0..255 (Ottosson's matrices), clamped into the gamut. The gamma step is a table.
+const SRGB_LUT = (() => {
+  const t = new Uint8ClampedArray(4097);
+  for (let i = 0; i <= 4096; i++) { const v = i / 4096; t[i] = Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); }
+  return t;
+})();
+function oklabToSrgb(L, a, b, out) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+  const g = v => SRGB_LUT[Math.round(Math.min(1, Math.max(0, v)) * 4096)];
+  out[0] = g(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s);
+  out[1] = g(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s);
+  out[2] = g(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+  return out;
+}
+function regionRgb(id) {
+  const h = regionHue(id) * Math.PI / 180;
+  return oklabToSrgb(CLOUD_L, CLOUD_C * Math.cos(h), CLOUD_C * Math.sin(h), [0, 0, 0]);
+}
+
+// A region's ellipse. It lies along the members' principal axis (their covariance), each radius the
+// farthest member along it plus CLOUD_REACH times the hull's gap.
+function cloudShape(g) {
   const ms = g.pts;
   let sxx = 0, syy = 0, sxy = 0;
   for (const m of ms) { const dx = m.x - g.cx, dy = m.y - g.cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
@@ -2665,15 +2710,76 @@ function paintCloud(c, g, col, alpha) {
     const dx = m.x - g.cx, dy = m.y - g.cy;
     ru = Math.max(ru, Math.abs(dx * ux + dy * uy)); rv = Math.max(rv, Math.abs(-dx * uy + dy * ux));
   }
-  const pad = g.r * CLOUD_REACH, R = ru + pad, Rv = Math.max(rv + pad, R * 0.35);
-  const hsla = a => col.replace("hsl(", "hsla(").replace(")", ", " + a + ")");
+  const pad = g.r * CLOUD_REACH, R = ru + pad;
+  return { cx: g.cx, cy: g.cy, th, R, Rv: Math.max(rv + pad, R * 0.35) };
+}
+// The density across a cloud, by distance from its centre as a fraction of its radius: most of it
+// stays over the members before it fades out, so a member at the far end of a long region still sits
+// in about a third of it.
+function cloudFalloff(r) {
+  return r < 0.45 ? 1 - 0.2 * r / 0.45 : r < 0.75 ? 0.8 - 0.42 * (r - 0.45) / 0.3 : 0.38 * (1 - r) / 0.25;
+}
+// One region as a cloud on its own (the minimap), composited by the canvas.
+function paintCloud(c, g, rgb, alpha) {
+  const sh = cloudShape(g), col = a => "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + "," + a + ")";
   c.save();
-  c.translate(g.cx, g.cy); c.rotate(th); c.scale(1, Rv / R);
-  const grad = c.createRadialGradient(0, 0, 0, 0, 0, R);
-  grad.addColorStop(0, hsla(1)); grad.addColorStop(0.45, hsla(0.8)); grad.addColorStop(0.75, hsla(0.38)); grad.addColorStop(1, hsla(0));
+  c.translate(sh.cx, sh.cy); c.rotate(sh.th); c.scale(1, sh.Rv / sh.R);
+  const grad = c.createRadialGradient(0, 0, 0, 0, 0, sh.R);
+  grad.addColorStop(0, col(1)); grad.addColorStop(0.45, col(0.8)); grad.addColorStop(0.75, col(0.38)); grad.addColorStop(1, col(0));
   c.globalAlpha = alpha; c.fillStyle = grad;
-  c.beginPath(); c.arc(0, 0, R, 0, 2 * Math.PI); c.fill();
+  c.beginPath(); c.arc(0, 0, sh.R, 0, 2 * Math.PI); c.fill();
   c.restore();
+}
+// Every region of the frame, mixed in OKLCH and drawn in one image. Coverage builds as layered paint
+// would (1 - the product of what each cloud leaves uncovered); the colour is the clouds' weighted mix.
+// All share one lightness and chroma, so only the hue mixes: by the clouds' weighted circular mean,
+// with the chroma eased only where the hues oppose (two opposite hues have no mean to keep).
+const cloudField = { c: null, x: null, img: null, w: 0, h: 0, W: null, A: null, B: null, P: null };
+function drawCloudField(items) {
+  const w = Math.ceil(innerWidth / CLOUD_CELL), h = Math.ceil(innerHeight / CLOUD_CELL), n = w * h, f = cloudField;
+  if (f.w !== w || f.h !== h) {
+    f.c = document.createElement("canvas"); f.c.width = w; f.c.height = h; f.x = f.c.getContext("2d");
+    f.img = f.x.createImageData(w, h); f.w = w; f.h = h;
+    f.W = new Float32Array(n); f.A = new Float32Array(n); f.B = new Float32Array(n); f.P = new Float32Array(n);
+  }
+  f.W.fill(0); f.A.fill(0); f.B.fill(0); f.P.fill(1);
+  let any = false;
+  for (const it of items) {
+    const sh = it.shape, k = cam.s / CLOUD_CELL;
+    const px = (sh.cx * cam.s + cam.x) / CLOUD_CELL, py = (sh.cy * cam.s + cam.y) / CLOUD_CELL;
+    const Ru = sh.R * k, Rv = sh.Rv * k, cs = Math.cos(sh.th), sn = Math.sin(sh.th);
+    const ex = Math.hypot(Ru * cs, Rv * sn), ey = Math.hypot(Ru * sn, Rv * cs);
+    const x0 = Math.max(0, Math.floor(px - ex)), x1 = Math.min(w - 1, Math.ceil(px + ex));
+    const y0 = Math.max(0, Math.floor(py - ey)), y1 = Math.min(h - 1, Math.ceil(py + ey));
+    if (x0 > x1 || y0 > y1 || it.alpha <= 0) continue;
+    const hue = it.hue * Math.PI / 180, ca = Math.cos(hue), cb = Math.sin(hue), al = it.alpha;
+    for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - py;
+      for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - px, u = (dx * cs + dy * sn) / Ru, v = (dy * cs - dx * sn) / Rv, r2 = u * u + v * v;
+        if (r2 >= 1) continue;
+        const wt = al * cloudFalloff(Math.sqrt(r2)), i = y * w + x;
+        f.W[i] += wt; f.A[i] += wt * ca; f.B[i] += wt * cb; f.P[i] *= 1 - wt;
+        any = true;
+      }
+    }
+  }
+  if (!any) return;
+  const d = f.img.data, rgb = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    const wt = f.W[i], o = i * 4;
+    if (wt <= 0) { d[o + 3] = 0; continue; }
+    const vec = Math.hypot(f.A[i], f.B[i]) / wt;   // 1 where every hue agrees, toward 0 where they oppose
+    const c = vec > 1e-6 ? CLOUD_C * Math.pow(Math.min(1, vec), 0.35) / (vec * wt) : 0;
+    oklabToSrgb(CLOUD_L, f.A[i] * c, f.B[i] * c, rgb);
+    d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = Math.round(255 * (1 - f.P[i]));
+  }
+  f.x.putImageData(f.img, 0, 0);
+  ctx.save();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(f.c, 0, 0, w * CLOUD_CELL, h * CLOUD_CELL);
+  ctx.restore();
 }
 
 function roundedHullPath(c, g) {
@@ -2813,6 +2919,10 @@ function stepSim() {
   // The radius (degree-proportional) is computed once per frame and shared by repulsion weighting/collision separation.
   const rad = new Array(N);
   for (let i = 0; i < N; i++) rad[i] = nodeRadius(nodes[i]);
+  // While workspaces cohere (below), two of them push apart as wholes, so the repulsion between their
+  // nodes is turned down: on a large graph its range reaches about 960px, and a hundred nodes of one
+  // workspace pushing each node of a small one kept the small one strung out across the map.
+  const wsApart = boundaryMode === "workspace" && !clusterMode && new Set(nodes.map(n => n.workspace).filter(Boolean)).size > 1;
 
   for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
     const a = nodes[i], b = nodes[j];
@@ -2827,7 +2937,8 @@ function stepSim() {
     // problem where, when dormant, only repulsion remained and spread endlessly without the balance of cohesion (gravity/springs).
     if (active && d < range) {
       // The larger a node's neighbor count (radius), the more gently repulsion is weighted up - spacing around a hub widens (clamped to a cap).
-      const w = Math.min(REPULSE_HUB_MAX, (rad[i] + rad[j]) / (2 * NODE_R_BASE));
+      const w = Math.min(REPULSE_HUB_MAX, (rad[i] + rad[j]) / (2 * NODE_R_BASE))
+        * (wsApart && a.workspace !== b.workspace ? WS_CROSS_REPULSE : 1);
       const rf = repulse * alpha * w * (1 - d / range) / Math.max(d2, MIN_SEP * MIN_SEP);
       a.vx -= rf*dx; a.vy -= rf*dy; b.vx += rf*dx; b.vy += rf*dy;
     }
@@ -2898,6 +3009,56 @@ function stepSim() {
       if (mm === 0) continue;
       if (mm > HULL_MAX_PUSH) { mx *= HULL_MAX_PUSH / mm; my *= HULL_MAX_PUSH / mm; }
       for (const m of hgs[i].ms) if (!pinned(m)) { m.vx += mx; m.vy += my; }
+    }
+  }
+
+  // Workspaces cohere (docs/design-system.md Section 5). While the boundaries draw workspaces and the
+  // scope holds more than one, a node outside its workspace's natural radius is pulled toward that
+  // workspace's centroid, and workspaces whose disks overlap are pushed apart, as disjoint hulls are.
+  // Without it a workspace's loose pieces - a few nodes no edge ties to the rest - drifted off under
+  // the repulsion and its outline enclosed mostly empty space: the global centre pull, divided by the
+  // spread a large graph needs, was far too weak to hold them. Inside the radius nothing pulls, so a
+  // large workspace keeps the shape its edges give it.
+  if (boundaryMode === "workspace" && !clusterMode && active) {
+    const byWs = new Map();
+    for (const n of nodes) if (n.workspace) {
+      let ms = byWs.get(n.workspace);
+      if (!ms) byWs.set(n.workspace, ms = []);
+      ms.push(n);
+    }
+    if (byWs.size > 1) {
+      const wgs = [];
+      for (const ms of byWs.values()) {
+        let cx = 0, cy = 0;
+        for (const m of ms) { cx += m.x; cy += m.y; }
+        cx /= ms.length; cy /= ms.length;
+        // The pull's radius is what the nodes would fill; the push's is what they do fill (the 90th
+        // percentile of their distances from the centre), or a small workspace's centre settles
+        // inside a large one's spread and its nodes are pulled into the other's crowd.
+        const d = ms.map(m => Math.hypot(m.x - cx, m.y - cy)).sort((a, b) => a - b);
+        const r = WS_RADIUS * Math.sqrt(ms.length);
+        wgs.push({ ms, cx, cy, r, extent: Math.max(r, d[Math.floor(d.length * 0.9)]) });
+      }
+      for (const g of wgs) for (const m of g.ms) {
+        if (pinned(m)) continue;
+        const dx = g.cx - m.x, dy = g.cy - m.y, d = Math.hypot(dx, dy);
+        if (d > g.r) { const f = (d - g.r) / d * WS_PULL * alpha; m.vx += dx * f; m.vy += dy * f; }
+      }
+      const sepx = new Array(wgs.length).fill(0), sepy = new Array(wgs.length).fill(0);
+      for (let i = 0; i < wgs.length; i++) for (let j = i + 1; j < wgs.length; j++) {
+        const a = wgs[i], b = wgs[j];
+        const dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 0.01, want = a.extent + b.extent + WS_PAD;
+        if (d < want) {
+          const mag = (want - d) * WS_SEP * alpha, ux = dx / d * mag, uy = dy / d * mag;
+          sepx[i] -= ux; sepy[i] -= uy; sepx[j] += ux; sepy[j] += uy;
+        }
+      }
+      for (let i = 0; i < wgs.length; i++) {
+        let mx = sepx[i], my = sepy[i]; const mm = Math.hypot(mx, my);
+        if (mm === 0) continue;
+        if (mm > WS_MAX_PUSH) { mx *= WS_MAX_PUSH / mm; my *= WS_MAX_PUSH / mm; }
+        for (const m of wgs[i].ms) if (!pinned(m)) { m.vx += mx; m.vy += my; }
+      }
     }
   }
 
@@ -3038,19 +3199,18 @@ function draw() {
         .sort((a, b) => (b.degree || 0) - (a.degree || 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
         .slice(0, 2).map(m => m.name);
       const top = Math.min(...g.hull.map(p => p.y)) - g.r;
-      items.push({ g, col: hyperColor(h.id), hot, lgHit, text: named.join(", ") + " (" + ms.length + ")", top, size: ms.length });
+      items.push({ g, shape: cloudShape(g), hue: regionHue(h.id), col: regionLabelColor(h.id), hot, lgHit, text: named.join(", ") + " (" + ms.length + ")", top, size: ms.length });
     }
     const lgActive = !!(typeHl || edgeTypeHl);
-    const paint = (it) => {
-      paintCloud(ctx, it.g, it.col, lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
-        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA);
+    for (const it of items) {
+      it.alpha = lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
+        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
       // The name sits above the region's upper edge, outside it, where no member's label is. Only
       // the active node's regions are named: names are placed before the nodes', which avoid them,
       // so twenty region names at rest would push the map's own names out.
       if (it.hot) hullLabels.push({ cx: it.g.cx, cy: it.top, text: it.text, col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
-    };
-    for (const it of items) if (!it.hot) paint(it);   // active hulls painted last so they sit on top
-    for (const it of items) if (it.hot) paint(it);
+    }
+    drawCloudField(items);   // every cloud at once, mixed in OKLCH
     ctx.globalAlpha = 1;
     drawWsHulls(ctx, hullLabels);
     // Group labels: their own layer, right after the hulls (below edges/nodes). Greedy placement -
@@ -3681,6 +3841,7 @@ window.addEventListener("keydown", e => {
   }
   else if (e.key === "b") {
     boundaryMode = boundaryMode === "workspace" ? "origin" : boundaryMode === "origin" ? "off" : "workspace";
+    wake(0.5);   // the workspace cohesion turns on or off with the mode (stepSim)
     // The mode belongs in the stats line, which is durable, and not in `statusEl`, which the render
     // loop rewrites every frame - the first version put it there and the feedback was gone before it
     // could be read, so the toggle looked like it had done nothing.
