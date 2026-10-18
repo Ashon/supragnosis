@@ -8,8 +8,9 @@
 #   SUPRAGNOSIS_VERSION  tag to install (default: latest)
 #   BIN_DIR              install path (default: ~/.local/bin)
 #
-# The prebuilt is the default build (keyword search only). If you need local ONNX
-# semantic search, build from source with `cargo build --release --features fastembed`.
+# The prebuilt carries local semantic search (built with --features fastembed). Its model (224 MB)
+# is fetched once, by `supragnosis service install` or `supragnosis embed fetch`; until then search
+# is keyword only, and `supragnosis status` says so.
 set -eu
 
 REPO="Ashon/supragnosis"
@@ -41,8 +42,8 @@ Examples:
   sh scripts/install.sh --version v0.1.0
   BIN_DIR=/usr/local/bin sh scripts/install.sh
 
-Note: the prebuilt uses keyword search only. For local ONNX semantic search, build from source with
-  cargo build --release --features fastembed.
+Note: semantic search needs the local embedding model (224 MB), fetched once by
+  supragnosis service install, or supragnosis embed fetch. Until then search is keyword only.
 USAGE
 }
 
@@ -177,6 +178,7 @@ ${daemon_hint}
        "${BIN_DIR}/supragnosis" connect claude-code
        # or claude-desktop, cursor, vscode, codex, gemini - \`supragnosis connect\` lists them
 
-  - Search: the prebuilt uses keyword search only. For semantic search, build from source with --features fastembed.
+  - Search: semantic search needs the local model (224 MB), fetched once by \`supragnosis embed fetch\`
+    (service install does it too); until then search is keyword only, and \`supragnosis status\` says so.
   - Help: sh install.sh --help   |   Docs/issues: https://github.com/${REPO}
 EOF

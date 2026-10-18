@@ -595,11 +595,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     ), c(
         "each of the three stylesheets declares every custom property it reads, in any of its rules",
-        Evidence::Deferred(
-            "the landing reads --panel-3 and --gold-glass and the settings page --select from no \
-             :root. Revisit when design-system.md Section 14 step 9 lands with \
-             its test that every var() names a declared token",
-        ),
+        // crates/supragnosis-viz/tests/design_tokens.rs: every var() of the three stylesheets.
+        Evidence::Scenario(&["every_token_a_stylesheet_reads_is_declared"]),
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
@@ -615,10 +612,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (10, &[c(
         "the landing's stage draws the viewer's marks with the viewer's meanings - type color by the viewer's functions, gold ring human confirmed, coral badge contested, the viewer's neutral line, every other color a landing token - the second machine draws every ring and badge the first does, each scene ends within five seconds and rests, reduced motion draws resting frames, and each step says its scene in words",
-        Evidence::Deferred(
-            "design-system.md Section 11 is specified, not built. Revisit when Section 14 step 9 \
-             lands with the stage's source tripwire",
-        ),
+        // crates/supragnosis-viz/tests/landing.rs: site/stage.js read beside viewer.js, the landing's
+        // stylesheet and its page.
+        Evidence::Scenario(&["the_stage_draws_the_viewers_marks"]),
     )]),
 ];
 
@@ -2824,6 +2820,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
+    include_str!("../../supragnosis-viz/tests/landing.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

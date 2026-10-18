@@ -1,0 +1,212 @@
+//! docs/design-system.md U10: the landing's stage (site/stage.js) draws the viewer's marks with the
+//! viewer's meanings. It is a picture of the product, so a mark that drifted from the viewer would
+//! teach a visitor something the app does not show. The stage is a static file with no build step
+//! and no test harness of its own; this file reads its source beside the viewer's script, the
+//! landing's stylesheet and the page, the way the http.rs tripwires read the viewer's.
+
+const STAGE: &str = include_str!("../../../site/stage.js");
+const PAGE: &str = include_str!("../../../site/index.html");
+const LANDING_CSS: &str = include_str!("../../../site/style.css");
+const VIEWER: &str = include_str!("../assets/viewer.js");
+
+/// The source of a top-level function or const in `src`, from its first line up to the closing
+/// brace at the start of a line, each line with its leading whitespace dropped - the stage keeps
+/// its copies one level deeper, inside its wrapper.
+fn block(src: &str, start: &str) -> String {
+    let at = src.find(start).unwrap_or_else(|| panic!("no `{start}`"));
+    let mut out = Vec::new();
+    for line in src[at..].lines() {
+        let l = line.trim_start();
+        out.push(l.to_string());
+        if l == "}" || (start.starts_with("const ") && l.ends_with(';')) {
+            break;
+        }
+    }
+    out.join("\n")
+}
+
+/// The value of a token in the landing's `:root` block.
+fn token(name: &str) -> String {
+    let root = &LANDING_CSS[LANDING_CSS.find(":root {").expect("a :root block")..];
+    let root = &root[..root.find('}').expect("the :root block closes")];
+    let decl = root
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with(&format!("{name}:")))
+        .unwrap_or_else(|| panic!("site/style.css does not declare {name}"));
+    decl[name.len() + 1..].trim().trim_end_matches(';').trim().to_lowercase()
+}
+
+/// A `const NAME = "#rrggbb"` color in the viewer's script.
+fn viewer_color(name: &str) -> String {
+    let at = VIEWER
+        .find(&format!("{name} = \"#"))
+        .unwrap_or_else(|| panic!("viewer.js: no {name}"));
+    VIEWER[at + name.len() + 4..at + name.len() + 11].to_lowercase()
+}
+
+/// The source of one scene, from its id to the next scene's.
+fn scene(id: &str) -> &'static str {
+    let at = STAGE
+        .find(&format!("{{ id: \"{id}\""))
+        .unwrap_or_else(|| panic!("no scene {id}"));
+    let rest = &STAGE[at + 1..];
+    &STAGE[at..at
+        + 1
+        + rest
+            .find("{ id: \"")
+            .unwrap_or_else(|| rest.find("\n  ];").expect("SCENES closes"))]
+}
+
+#[test]
+fn the_stage_draws_the_viewers_marks() {
+    // A type's color is the viewer's function of its name, copied character for character.
+    for start in [
+        "function catColor(",
+        "const COLOR_SLOTS",
+        "function nameSlot(",
+        "function stableColors(",
+    ] {
+        assert_eq!(
+            block(STAGE, start),
+            block(VIEWER, start),
+            "stage.js's `{start}` is not the viewer's"
+        );
+    }
+    assert!(
+        STAGE.contains("const TYPE = stableColors(["),
+        "the stage's type colors come from stableColors"
+    );
+    assert_eq!(
+        STAGE.matches("hsl(").count(),
+        1,
+        "the stage names a color the viewer's function did not compute"
+    );
+
+    // Every palette color is a landing token's value, named beside it.
+    let pal = &STAGE[STAGE.find("const C = {").expect("the stage's palette")..];
+    let pal = &pal[..pal.find("};").expect("the palette closes")];
+    let mut seen = 0;
+    for line in pal.lines().skip(1) {
+        let line = line.trim();
+        let Some(hex) = line.split('"').nth(1) else {
+            continue;
+        };
+        let tok = line
+            .split("// ")
+            .nth(1)
+            .and_then(|c| c.split([',', ' ']).next())
+            .unwrap_or_else(|| panic!("palette entry names no token: {line}"));
+        assert_eq!(hex.to_lowercase(), token(tok), "stage.js {line}");
+        seen += 1;
+    }
+    assert!(seen >= 8, "the palette was read ({seen} colors)");
+    let hexes = STAGE.matches("\"#").count();
+    assert_eq!(hexes, seen + 1, "stage.js writes a color outside its palette and the edge line");
+
+    // A relation is the viewer's neutral line at its alpha.
+    assert!(STAGE.contains(&format!("EDGE_NEUTRAL = \"{}\"", viewer_color("EDGE_NEUTRAL"))));
+    let alpha = |src: &str| {
+        let at = src.find("EDGE_ALPHA = ").expect("EDGE_ALPHA");
+        src[at + 13..].split([';', ',', ' ']).next().unwrap().to_string()
+    };
+    assert_eq!(alpha(STAGE), alpha(VIEWER), "the stage's edge alpha is not the viewer's");
+
+    // Human confirmed is the viewer's ring: gold-bright, 2.2 wide, 3.5 outside the node.
+    let ring = &VIEWER[VIEWER.find("function trustRing(").expect("trustRing")..];
+    let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
+    assert!(
+        ring.contains("r + 3.5")
+            && ring.contains("ctx.lineWidth = 2.2/cam.s; ctx.strokeStyle = EDGE_HI;")
+    );
+    assert_eq!(viewer_color("EDGE_HI"), token("--gold-bright"));
+    assert!(
+        STAGE.contains("ctx.arc(x, y, r + 3.5,")
+            && STAGE.contains("ctx.lineWidth = 2.2; ctx.strokeStyle = C.goldHi;")
+    );
+
+    // Contested is the viewer's badge: --bad, at the node's upper right, with its "!".
+    for src in [VIEWER, STAGE] {
+        assert!(
+            src.contains("+ r * 0.75") && src.contains("- r * 0.75"),
+            "the badge sits at the upper right"
+        );
+    }
+    assert_eq!(viewer_color("BAD"), token("--bad"));
+    assert!(STAGE.contains("ctx.fillStyle = C.bad;") && STAGE.contains("label(ctx, \"!\""));
+
+    // The second machine replays the same log, so it draws the marks the first one does
+    // (resolution.md Section 6: a verdict's ceiling is read from the log, the same on every node).
+    // Every ring and badge is set in one function, and both machines' scenes call it.
+    let at = STAGE.find("\n  function settle(").expect("stage.js sets its marks in settle()");
+    let end = at + STAGE[at..].find("\n  }\n").expect("settle() closes");
+    for mark in [".ring = ", ".ringP = ", ".bad = "] {
+        for (i, _) in STAGE.match_indices(mark) {
+            assert!(
+                i > at && i < end,
+                "stage.js sets `{mark}` outside settle(), where one machine may not"
+            );
+        }
+    }
+    assert!(
+        scene("govern").contains("settle(st, "),
+        "the first machine's marks do not come from settle()"
+    );
+    assert!(
+        scene("travel").contains("settle(b, "),
+        "the second machine does not draw the first one's marks"
+    );
+    assert!(
+        !STAGE.contains("\"thin\""),
+        "a ring other than human confirmed: say which tier it draws"
+    );
+
+    // Motion: each scene ends within five seconds and then rests, and reduced motion is read and
+    // followed when it changes.
+    let mut scenes = 0;
+    for (i, _) in STAGE.match_indices("\", dur: ") {
+        let d: f64 = STAGE[i + 8..].split(',').next().unwrap().trim().parse().expect("a duration");
+        assert!(d <= 5.0, "a scene runs {d}s");
+        scenes += 1;
+    }
+    assert_eq!(scenes, 6, "the scenes were read: the overview and five steps");
+    assert!(STAGE.contains("matchMedia(\"(prefers-reduced-motion: reduce)\")"));
+    assert!(
+        STAGE.contains("playing = next && !reduce.matches"),
+        "a scene plays under reduced motion"
+    );
+    assert!(
+        STAGE.contains("reduce.addEventListener(\"change\""),
+        "a change of the setting is not followed"
+    );
+    assert!(
+        STAGE.contains("if (playing || snap) raf = requestAnimationFrame(frame);"),
+        "the stage draws at rest"
+    );
+
+    // The page: the canvases are hidden from assistive technology, and each of the five steps says
+    // its scene in its own words.
+    let canvases = PAGE.matches("<canvas").count();
+    assert_eq!(
+        canvases,
+        PAGE.matches("<canvas class=\"frame\" aria-hidden=\"true\">").count() + 1
+    );
+    assert!(PAGE.contains("<canvas id=\"stage\" aria-hidden=\"true\">"));
+    for n in 1..=5 {
+        let at = PAGE
+            .find(&format!("data-scene=\"{n}\""))
+            .unwrap_or_else(|| panic!("no step {n}"));
+        let step = &PAGE[at..at + PAGE[at..].find("</article>").expect("the step closes")];
+        assert!(
+            step.contains("<h3>") && step.contains("<p>"),
+            "step {n} has no words of its own"
+        );
+    }
+}
+
+/// The deploy stamps the release into the hero's facts with one sed over this exact element
+/// (.github/workflows/pages.yml), and fails unless it finds exactly one.
+#[test]
+fn the_landing_has_one_version_badge() {
+    assert_eq!(PAGE.matches("<li id=\"version-badge\">").count(), 1);
+}

@@ -9,9 +9,9 @@ name: release
 # "Without publishing" means nothing reaches the GitHub Release or ghcr - every step that would is
 # guarded on the tag ref, and the image build passes `push: false`.
 #
-# The prebuilt binaries are a default build: keyword search only. Local ONNX semantic search
-# means building from source with `--features fastembed`, which is kept out of the release because
-# the `ort` dependency it pulls is heavy.
+# The prebuilt binaries are built with `--features fastembed`: local semantic search, with
+# onnxruntime linked statically (SR5, below). The model itself is not in the binary; it is fetched
+# once on the person's machine (`supragnosis embed fetch`), and search is keyword only until then.
 on:
   push:
     tags: ["v*"]

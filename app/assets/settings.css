@@ -3,8 +3,8 @@
    draws the page below the bar. Self-contained: the page's policy allows no remote style or font. */
 
 :root {
-  --surface: #08090d; --panel: #10131b; --panel-2: #161a23; --panel-3: #1d222d;
-  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #868f9f; /* text: 4.89:1 on --panel-3, this page's lowest pair (docs/design-system.md Section 3) */
+  --surface: #08090d; --panel: #10131b; --panel-2: #161a23; --panel-3: #1d222d; --select: #2a2826;
+  --ink: #e9e4d6; --ink2: #aab1bd; --muted: #8e96a5; --faint: #868f9f; /* text: 4.51:1 on --select, this page's lowest pair (docs/design-system.md Section 3) */
   --line: #222836; --line-soft: #1a1f2b;
   --accent: #d9a544; --gold-bright: #f0c469; --gold-glass: rgba(217,165,68,0.12);
   --gold-dim: rgba(217,165,68,0.35);

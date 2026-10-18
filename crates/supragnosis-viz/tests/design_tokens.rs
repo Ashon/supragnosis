@@ -129,6 +129,51 @@ fn every_text_token_meets_4_5_on_every_surface() {
     assert!(low.is_empty(), "text under 4.5:1:\n  {}", low.join("\n  "));
 }
 
+/// Custom properties a stylesheet reads that its page's markup or script sets, each with its setter.
+/// None today: the three pages set no custom property of their own.
+const SET_ELSEWHERE: &[(&str, &str, &str)] = &[];
+
+/// Every `var(--name)` a stylesheet reads names a property the same file declares (U7). U7's first
+/// test compares what the files declare and never saw what they only read: the landing read
+/// `--panel-3` and `--gold-glass` and the settings page `--select` from no `:root`, so a hover, a
+/// badge's ground and the selected section's surface were drawn with nothing.
+#[test]
+fn every_token_a_stylesheet_reads_is_declared() {
+    let mut missing = Vec::new();
+    for (file, css) in
+        [("viewer.css", VIEWER), ("settings.css", SETTINGS), ("site/style.css", LANDING)]
+    {
+        let name = |rest: &str| -> String {
+            rest.chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect()
+        };
+        let declared: Vec<String> = css
+            .match_indices("--")
+            .filter(|(i, _)| !css[..*i].ends_with("var("))
+            .map(|(i, _)| name(&css[i..]))
+            .filter(|n| css.contains(&format!("{n}:")))
+            .collect();
+        let mut read = 0;
+        for (i, _) in css.match_indices("var(--") {
+            read += 1;
+            let n = name(&css[i + 4..]);
+            let elsewhere = SET_ELSEWHERE.iter().any(|(f, p, _)| *f == file && *p == n);
+            if !declared.contains(&n) && !elsewhere {
+                missing.push(format!("{file} reads {n}, which it does not declare"));
+            }
+        }
+        assert!(read >= 10, "{file}: the var() reads were found ({read})");
+    }
+    missing.sort();
+    missing.dedup();
+    assert!(
+        missing.is_empty(),
+        "tokens read but never declared:\n  {}",
+        missing.join("\n  ")
+    );
+}
+
 /// The leaf rules of a stylesheet as (selector, declarations), comments removed and whitespace in the
 /// selector collapsed. A rule inside `@media` is returned with its own selector.
 fn rules(css: &str) -> Vec<(String, String)> {
