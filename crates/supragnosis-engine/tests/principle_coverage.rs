@@ -594,7 +594,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "every_text_token_meets_4_5_on_every_surface",
         ]),
     ), c(
-        "each of the three stylesheets declares every token it reads",
+        "each of the three stylesheets declares every custom property it reads, in any of its rules",
         Evidence::Deferred(
             "the landing reads --panel-3 and --gold-glass and the settings page --select from no \
              :root. Revisit when design-system.md Section 14 step 9 lands with \
@@ -614,7 +614,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["no_border_draws_an_area"]),
     )]),
     (10, &[c(
-        "the landing's stage draws the viewer's marks with the viewer's meanings - type color by the viewer's function, gold ring human confirmed, thin ring host signed, coral badge contested, a confirmation that reaches another machine drawn as that machine evaluates it - and every scene's meaning is in its step's words, with nothing moving at rest, under reduced motion or without script",
+        "the landing's stage draws the viewer's marks with the viewer's meanings - type color by the viewer's functions, gold ring human confirmed, coral badge contested, the viewer's neutral line, every other color a landing token - the second machine draws every ring and badge the first does, each scene ends within five seconds and rests, reduced motion draws resting frames, and each step says its scene in words",
         Evidence::Deferred(
             "design-system.md Section 11 is specified, not built. Revisit when Section 14 step 9 \
              lands with the stage's source tripwire",
