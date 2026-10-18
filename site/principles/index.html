@@ -1,0 +1,1080 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The principles - supragnosis</title>
+  <meta name="description" content="Twenty-four principles decide what supragnosis keeps, believes, shares and refuses. Each one is split into clauses, and each clause names the test that holds it or says that it is owed.">
+  <link rel="canonical" href="https://supragnosis.dev/principles/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis - how a shared memory stays honest">
+  <meta property="og:description" content="Twenty-four principles, split into clauses, each naming the test that holds it or saying that it is owed.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://supragnosis.dev/principles/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="supragnosis - memory for AI agents that remembers who said it. A constellation of observation, event log, projection, ontology and entity over dark ink.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="preload" href="../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../style.css">
+  <!-- Script-only parts (the canvases, the beat buttons, the ledger's detail) show only when scripting
+       runs; without it every principle, beat caption, clause list and ruling reads as text. -->
+  <script>document.documentElement.classList.add("js");</script>
+  <script src="../principles.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../#how">How it works</a>
+      <a href="./" aria-current="page">Principles</a>
+      <a href="../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- The principles page (docs/design-system.md Section 11a). It states what the code states: the
+         ledger, the counts and each principle's clauses are written here from the coverage registry,
+         and every outcome a demo or scene shows is a case in the block at the end of the page that a
+         test replays (U12). -->
+    <section class="p-hero wrap" id="top">
+      <p class="eyebrow">Principles</p>
+      <h1>How a shared memory stays honest.</h1>
+      <p class="sub">Twenty-four principles decide what supragnosis keeps, believes, shares and refuses. Each one is split into clauses, and each clause names the tests or the construction that hold it, or says that it is owed.</p>
+      <div class="p-ledger">
+        <!-- registry:ledger -->
+        <div class="sky" role="group" aria-label="Clauses by principle">
+          <div class="cols">
+            <div class="grp" data-n="7">
+              <a class="col" href="#p1" data-p="1" aria-label="P1, 5 clauses: 4 tested, 1 by construction"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span></a>
+              <a class="col" href="#p2" data-p="2" aria-label="P2, 5 clauses: 5 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p3" data-p="3" aria-label="P3, 6 clauses: 3 tested, 3 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p4" data-p="4" aria-label="P4, 2 clauses: 1 tested, 1 owed"><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p5" data-p="5" aria-label="P5, 5 clauses: 4 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p6" data-p="6" aria-label="P6, 3 clauses: 2 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p7" data-p="7" aria-label="P7, 4 clauses: 2 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="6">
+              <a class="col" href="#p8" data-p="8" aria-label="P8, 3 clauses: 2 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p9" data-p="9" aria-label="P9, 4 clauses: 2 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p10" data-p="10" aria-label="P10, 2 clauses: 2 tested"><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p11" data-p="11" aria-label="P11, 7 clauses: 4 tested, 3 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p12" data-p="12" aria-label="P12, 1 clause: 1 by construction"><span class="cell s"></span></a>
+              <a class="col" href="#p13" data-p="13" aria-label="P13, 1 clause: 1 owed"><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="5">
+              <a class="col" href="#p14" data-p="14" aria-label="P14, 7 clauses: 4 tested, 1 by construction, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p15" data-p="15" aria-label="P15, 4 clauses: 3 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p16" data-p="16" aria-label="P16, 4 clauses: 4 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p17" data-p="17" aria-label="P17, 6 clauses: 6 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p18" data-p="18" aria-label="P18, 6 clauses: 4 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="4">
+              <a class="col" href="#p19" data-p="19" aria-label="P19, 4 clauses: 3 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p20" data-p="20" aria-label="P20, 2 clauses: 2 by construction"><span class="cell s"></span><span class="cell s"></span></a>
+              <a class="col" href="#p21" data-p="21" aria-label="P21, 4 clauses: 2 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p22" data-p="22" aria-label="P22, 3 clauses: 3 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+            </div>
+            <div class="grp" data-n="1">
+              <a class="col" href="#p23" data-p="23" aria-label="P23, 14 clauses: 9 tested, 5 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell p"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="1">
+              <a class="col" href="#p24" data-p="24" aria-label="P24, 6 clauses: 5 tested, 1 by construction"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span></a>
+            </div>
+          </div>
+          <div class="labs" aria-hidden="true">
+            <div class="grp" data-n="7"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div>
+            <div class="grp" data-n="6"><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span></div>
+            <div class="grp" data-n="5"><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span></div>
+            <div class="grp" data-n="4"><span>19</span><span>20</span><span>21</span><span>22</span></div>
+            <div class="grp" data-n="1"><span>23</span></div>
+            <div class="grp" data-n="1"><span>24</span></div>
+          </div>
+          <div class="chn" aria-hidden="true">
+            <div class="grp" data-n="7"><span>1</span></div>
+            <div class="grp" data-n="6"><span>2</span></div>
+            <div class="grp" data-n="5"><span>3</span></div>
+            <div class="grp" data-n="4"><span>4</span></div>
+            <div class="grp" data-n="1"><span>5</span></div>
+            <div class="grp" data-n="1"><span>6</span></div>
+          </div>
+        </div>
+        <p class="count"><b>108</b> clauses across <b>24</b> principles: <b>74</b> tested by name, <b>6</b> hold by construction, <b>28</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
+        <ul class="legend"><li><i class="cell t"></i>Tested by name</li><li><i class="cell s"></i>Holds by construction</li><li><i class="cell p"></i>Owed, today's behavior pinned</li><li><i class="cell o"></i>Owed</li></ul>
+        <!-- /registry:ledger -->
+        <div class="detail" id="detail" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <nav class="chnav" aria-label="Chapters">
+      <div class="wrap">
+      <a href="#ch-kept"><b>1</b>What is kept</a>
+      <a href="#ch-shaped"><b>2</b>How it is shaped</a>
+      <a href="#ch-trust"><b>3</b>Who said it, who sees it</a>
+      <a href="#ch-built"><b>4</b>How it is built</a>
+      <a href="#ch-canon"><b>5</b>What becomes canon</a>
+      <a href="#ch-ops"><b>6</b>When parts fail</a>
+      <a href="#tensions"><b>+</b>Tensions</a>
+      <a href="#how-held"><b>+</b>Method</a>
+      </div>
+    </nav>
+
+    <section class="chap wrap" id="ch-kept" aria-labelledby="h-kept">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">Chapter 1 <span>Epistemology</span></p>
+          <h2 id="h-kept">What is kept</h2>
+          <p class="thesis">Claims rather than facts: who said them, when, and what is believed because of them.</p>
+        </div>
+        <!-- registry:chapter:1 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:1 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p1" aria-labelledby="t-p1">
+          <div class="ph"><span class="pn">P1</span><h3 id="t-p1">Assertions, not facts.</h3></div>
+            <p class="line">The log keeps what was said, by whom and when. What is believed is computed from it, and computing it again gives the same graph.</p>
+            <p class="why">Two machines can disagree, and either can be wrong. Keeping the claims and deriving the belief means a better rule can read the same log again.</p>
+          <figure class="scene" data-scene="1" aria-label="Animation: Assertions, not facts">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="3"><span class="bn">1</span> <span class="bk">Write</span> <span class="bc">Each entry is a claim: who said what, and when. The graph is computed from the entries.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">Throw away</span> <span class="bc">Throw the graph away. The log is untouched.</span></li>
+            <li data-t="7.4"><span class="bn">3</span> <span class="bk">Replay</span> <span class="bc">Replaying the log builds the same graph, down to its digest.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="1">the graph is a projection: re-deriving it from the log reproduces it exactly</span></p>
+          </figure>
+          <!-- registry:clauses:1 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span class="tally">5 clauses: 4 tested, 1 by construction</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>the graph is a projection: re-deriving it from the log reproduces it exactly<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a generator proposes; nothing but a verdict commits<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>a read is answered from the log as it stands, not from a stale view of it<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>ingest validates well-formedness and nothing beyond it<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell s"></i><span>no API may write a fact that did not pass through an assertion directly into the graph<span class="st">holds by construction</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:1 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-1-separation-of-assertion-and-fact-assertion-belief-separation">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p2" aria-labelledby="t-p2">
+          <div class="ph"><span class="pn">P2</span><h3 id="t-p2">Every claim has an author.</h3></div>
+            <p class="line">Each entry carries the machine, the person it acted for, the workspace and the time. A confidence nobody stated stays unstated.</p>
+            <p class="why">An agent usually works on someone&#x27;s behalf. Without the chain, nobody can tell a guess from a decision, or trace a bad one back.</p>
+          <figure class="scene" data-scene="2" aria-label="Animation: Every claim has an author">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="3"><span class="bn">1</span> <span class="bk">Unpack</span> <span class="bc">An entry carries the machine that wrote it, the person it acted for, the workspace, the time and its source.</span></li>
+            <li data-t="4.7"><span class="bn">2</span> <span class="bk">Unstated</span> <span class="bc">A confidence nobody stated stays unstated. Nothing fills it in with a guess.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">Trace back</span> <span class="bc">Any answer points back to the entry it came from, with all of this attached.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="2">an attestation carries its acting host, principal, workspace and time, and an unstated confidence stays unstated</span> / <span data-clause="2">a query result can carry its provenance: a hit dereferences to its observation, with its attestations and delegation chain</span></p>
+          </figure>
+          <!-- registry:clauses:2 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">5 clauses: 5 tested</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>an attestation carries its acting host, principal, workspace and time, and an unstated confidence stays unstated<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a peer's claimed tier is stored verbatim, because the log is audit<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>at least one attestation, refused at ingest at the schema level<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a query result can carry its provenance: a hit dereferences to its observation, with its attestations and delegation chain<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>a relayed attestation is authenticated by its origin's signature, not by the relay<span class="st">tested by 2 named tests</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:2 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-2-provenance-is-a-first-class-citizen-identity-is-a-delegation-chain-provenance-first-identity-as-delegation-chain">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p3" aria-labelledby="t-p3">
+          <div class="ph"><span class="pn">P3</span><h3 id="t-p3">Correct, never erase.</h3></div>
+            <p class="line">A correction supersedes an entry and the old one stays readable. The same entry arriving twice changes nothing.</p>
+            <p class="why">Deleting loses the reason something was believed. Superseding keeps that history for whoever needs it later.</p>
+          <figure class="scene" data-scene="3" aria-label="Animation: Correct, never erase">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="1.6"><span class="bn">1</span> <span class="bk">Write</span> <span class="bc">An entity&#x27;s description is written once.</span></li>
+            <li data-t="3.6"><span class="bn">2</span> <span class="bk">Correct</span> <span class="bc">A correction supersedes it. The older entry stays readable in the log.</span></li>
+            <li data-t="5.4"><span class="bn">3</span> <span class="bk">Again</span> <span class="bc">The same entry arriving again merges into the one already there. Nothing changes.</span></li>
+            <li data-t="6.8"><span class="bn">4</span> <span class="bk">Delete?</span> <span class="bc">There is no delete. <span class="ow"><span class="owed">owed</span> <span data-owed="3">a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest</span></span></span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="3">a re-arrival merges monotonically and drops nothing, in any order</span></p>
+          </figure>
+          <!-- registry:clauses:3 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">6 clauses: 3 tested, 3 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a re-arrival merges monotonically and drops nothing, in any order<span class="st">tested by 6 named tests</span></span></li>
+              <li><i class="cell t"></i><span>every encoding the log has ever used stays readable<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>entity merge preserves history, so un-merge is possible<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell o"></i><span>a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>a relation accumulates attestations the way an entity and an observation do<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>a re-materialization concurrent with an observe cannot interleave<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:3 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-3-supersede-instead-of-delete-supersede-dont-delete">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p4" aria-labelledby="t-p4">
+          <div class="ph"><span class="pn">P4</span><h3 id="t-p4">Two clocks.</h3></div>
+            <p class="line">When something was true and when the system learned it are recorded apart.</p>
+            <p class="why">Knowledge goes stale on both axes. A fact learned late is not a fact that became true late.</p>
+          <figure class="scene" data-scene="4" aria-label="Animation: Two clocks">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2"><span class="bn">1</span> <span class="bk">True</span> <span class="bc">billing-api has used Postgres since January 10. That is valid time: when it was true in the world.</span></li>
+            <li data-t="3.8"><span class="bn">2</span> <span class="bk">Learned</span> <span class="bc">The system learned it on March 3. That is recorded time, and the two are kept apart.</span></li>
+            <li data-t="5"><span class="bn">3</span> <span class="bk">Recorded</span> <span class="bc">Both dates are captured with the entry, in the log and in the graph.</span></li>
+            <li data-t="6.8"><span class="bn">4</span> <span class="bk">As of</span> <span class="bc">Asking what was believed as of a date reads the two axes. <span class="ow"><span class="owed">owed</span> <span data-owed="4">as_of_valid / as_of_recorded time travel, and the asserted close of a disproven relation&#x27;s valid interval</span></span></span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="4">both time axes are captured at ingest, into the log and the projection</span></p>
+          </figure>
+          <!-- registry:clauses:4 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell o"></i></span><span class="tally">2 clauses: 1 tested, 1 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>both time axes are captured at ingest, into the log and the projection<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>as_of_valid / as_of_recorded time travel, and the asserted close of a disproven relation's valid interval<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:4 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-4-bitemporal---two-time-axes-bi-temporality">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr big" id="p5" aria-labelledby="t-p5">
+          <div class="pt">
+            <div class="ph"><span class="pn">P5</span><h3 id="t-p5">Missing is not false.</h3></div>
+            <p class="line">A search that finds nothing says &#x27;not found&#x27;, never &#x27;no&#x27;. Each kind of non-answer keeps its own name.</p>
+            <p class="why">Every node holds part of the picture. Reading a gap as a no turns missing knowledge into a wrong answer.</p>
+            <!-- registry:clauses:5 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">5 clauses: 4 tested, 1 owed</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span>absence is a well-formed answer, never an error<span class="st">tested by 3 named tests</span></span></li>
+                <li><i class="cell t"></i><span>absent is distinguished from unavailable, rather than collapsing into an empty result<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found<span class="st">tested by 4 named tests</span></span></li>
+                <li><i class="cell t"></i><span>an id outside the caller's grants answers as unknown, and a named scope outside them is refused by name<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell o"></i><span>a destroyed id answers as destroyed, recording the act and never the content<span class="st">owed</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:5 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-5-open-world-assumption-open-world-assumption">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+          </div>
+          <figure class="demo" data-demo="5" aria-label="The kinds of answer a read can give">
+            <canvas class="route" aria-hidden="true"></canvas>
+            <div class="ask">
+              <div class="qs" role="group" aria-label="Questions">
+                <button type="button" data-out="found" aria-pressed="false">Which database does billing-api use?<small>a relation this node holds</small></button>
+                <button type="button" data-out="notfound" aria-pressed="true">Does billing-api use Kafka?<small>nothing on this node says so</small></button>
+                <button type="button" data-out="unavail" data-route="team hub" aria-pressed="false">Ask the team hub about payments<small>the hub is unreachable</small></button>
+                <button type="button" data-out="withheld" data-route="shared server" aria-pressed="false">Search the workspace 'payroll'<small>on a shared server, not granted to you</small></button>
+                <button type="button" data-out="notfound" data-route="shared server" aria-pressed="false">Open entity 7f3a91c2<small>it exists, outside your grants</small></button>
+                <button type="button" data-out="trunc" aria-pressed="false">Everything about billing-api<small>more than one page of it</small></button>
+                <button type="button" disabled>Open an entry that was destroyed<small>owed: a tombstone that names the act</small></button>
+              </div>
+              <div class="ans" aria-live="polite">
+                <ul class="p-answers">
+                  <li><span class="kind">Found</span><p>Postgres.</p><p class="sm">Said by laptop for you on Mon 10:02, and confirmed by you in the console.</p></li>
+                  <li class="on"><span class="kind">Not found</span><p>Nothing on this node says so.</p><p class="sm">That is unknown, never no. Another node may know, and a later entry may say so.</p></li>
+                  <li><span class="kind">Unavailable</span><p>The hub did not answer.</p><p class="sm">This is not an empty result. Local answers still work; ask again when the hub is reachable.</p></li>
+                  <li><span class="kind">Withheld</span><p>You are not granted 'payroll'.</p><p class="sm">You named the workspace, so the refusal names it too.</p></li>
+                  <li><span class="kind">Not found</span><p>No entity 7f3a91c2 on this node.</p><p class="sm">Word for word the answer an id that does not exist gets, so asking cannot reveal what exists.</p></li>
+                  <li><span class="kind">Truncated</span><p>Showing 20 of 57.</p><p class="sm">The rest were left out, not missing. Ask a narrower question or for the next page.</p></li>
+                </ul>
+              </div>
+            </div>
+            <p class="cap"><span class="ow"><span class="owed">owed</span> <span data-owed="5">a destroyed id answers as destroyed, recording the act and never the content</span></span></p>
+            <p class="shows">Shows <span data-clause="5">absence is a well-formed answer, never an error</span> / <span data-clause="5">absent is distinguished from unavailable, rather than collapsing into an empty result</span> / <span data-clause="5">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span> / <span data-clause="5">an id outside the caller&#x27;s grants answers as unknown, and a named scope outside them is refused by name</span></p>
+          </figure>
+        </article>
+        <article class="pr big" id="p6" aria-labelledby="t-p6">
+          <div class="pt">
+            <div class="ph"><span class="pn">P6</span><h3 id="t-p6">Disagreement is information.</h3></div>
+            <p class="line">When sources conflict and trust cannot settle it, the answer says &#x27;contested&#x27; and keeps both sides.</p>
+            <p class="why">A silent winner hides the one place a person should look.</p>
+            <!-- registry:clauses:6 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">3 clauses: 2 tested, 1 owed</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span>a conflict that trust does not settle surfaces as contested instead of resolving silently<span class="st">tested by 3 named tests</span></span></li>
+                <li><i class="cell t"></i><span>a defeated assertion stays in the log and is reinstated by re-resolution<span class="st">tested by 1 named test</span></span></li>
+                <li><i class="cell o"></i><span>a contradiction between relations is surfaced too<span class="st">owed</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:6 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-6-conflict-is-information-contradiction-is-signal">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+          </div>
+          <figure class="demo" data-demo="6" aria-label="Two machines disagree about what Redis is">
+            <canvas aria-hidden="true"></canvas>
+            <div class="rows"></div>
+            <div class="ctl"><button class="b" data-a="replay" type="button">Play from the start</button><button class="b" data-a="confirm" type="button">You confirm "Database"</button></div>
+            <p class="cap" aria-live="polite">A second machine says Cache. Both are agents, so trust cannot decide: the answer shows the latest value and says it is contested.</p>
+            <ul class="caps" hidden>
+              <li data-k="0">One machine says Redis is a Database. With nothing against it, that is the belief.</li>
+              <li data-k="1">A second machine says Cache. Both are agents, so trust cannot decide: the answer shows the latest value and says it is contested.</li>
+              <li data-k="2">You confirmed Database in the console. Trust settled it, so the flag clears. The Cache claim stays in the log, and the conflict stays in the curation report.</li>
+            </ul>
+            <p class="shows">Shows <span data-clause="6">a conflict that trust does not settle surfaces as contested instead of resolving silently</span> / <span data-clause="6">a defeated assertion stays in the log and is reinstated by re-resolution</span></p>
+          </figure>
+        </article>
+        <article class="pr" id="p7" aria-labelledby="t-p7">
+          <div class="ph"><span class="pn">P7</span><h3 id="t-p7">Forget by ranking, not by deleting.</h3></div>
+            <p class="line">Old knowledge should fall in retrieval, never out of the log. Consolidation suggests and commits nothing.</p>
+            <p class="why">Attention is finite and the log is not. Forgetting is how attention gets spent.</p>
+          <figure class="scene" data-scene="7" aria-label="Animation: Forget by ranking, not by deleting">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">Idle</span> <span class="bc">When the node is idle, consolidation reads the log.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">Draft</span> <span class="bc">It drafts candidates for review and commits none of them. The canon is unchanged.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">Rank</span> <span class="bc">Older knowledge should sink in retrieval while the log keeps every entry. <span class="ow"><span class="owed">owed</span> <span data-owed="7">forgetting happens as retrieval demotion at idle, never as deletion</span></span></span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="7">consolidation generates candidates and commits none of them</span></p>
+          </figure>
+          <!-- registry:clauses:7 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">4 clauses: 2 tested, 2 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>consolidation generates candidates and commits none of them<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a generated summary is never stored by the server<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>forgetting happens as retrieval demotion at idle, never as deletion<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>a consolidation output enters the log only as a gated candidate's derived, lowest-trust, lineage-bearing enrichment<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:7 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-7-forgetting-is-demotion-consolidation-is-re-projection-forgetting-as-demotion-consolidation-as-re-projection">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-shaped" aria-labelledby="h-shaped">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">Chapter 2 <span>Ontology</span></p>
+          <h2 id="h-shaped">How it is shaped</h2>
+          <p class="thesis">A vocabulary that starts small, grows from use and stays consistent.</p>
+        </div>
+        <!-- registry:chapter:2 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell s"></i></span><span><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:2 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p8" aria-labelledby="t-p8">
+          <div class="ph"><span class="pn">P8</span><h3 id="t-p8">One name, one meaning.</h3></div>
+            <p class="line">A type enters the vocabulary only with a plain-language definition, and a description once written is never erased by an omission.</p>
+            <p class="why">Agents from different tools read the same vocabulary. A name with two meanings splits the graph without anyone noticing.</p>
+          <figure class="scene" data-scene="8" aria-label="Animation: One name, one meaning">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">No definition</span> <span class="bc">A new type with no definition is refused at the door.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">Defined</span> <span class="bc">With a plain-language definition, it enters the vocabulary.</span></li>
+            <li data-t="6.4"><span class="bn">3</span> <span class="bk">Left blank</span> <span class="bc">A description already written survives a later entry that leaves it blank.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="8">a type cannot enter the vocabulary without a natural-language definition</span> / <span data-clause="8">a description already captured, an entity&#x27;s or a relation&#x27;s, is never erased by a later omission, and a blank description is an omission</span></p>
+          </figure>
+          <!-- registry:clauses:8 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">3 clauses: 2 tested, 1 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a type cannot enter the vocabulary without a natural-language definition<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>a description already captured, an entity's or a relation's, is never erased by a later omission, and a blank description is an omission<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>a relation type reads its direction from its name, and relates_to is the one catch-all, treated as not yet classified<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:8 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-8-clarity---one-meaning-per-concept-clarity">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p9" aria-labelledby="t-p9">
+          <div class="ph"><span class="pn">P9</span><h3 id="t-p9">A vocabulary that cannot contradict itself.</h3></div>
+            <p class="line">Two definitions of one type surface as contested, and a name defined twice blocks the change that would add it.</p>
+            <p class="why">The data may disagree. The vocabulary that reads the data may not.</p>
+          <figure class="scene" data-scene="9" aria-label="Animation: A vocabulary that cannot contradict itself">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">Two definitions</span> <span class="bc">Two machines define Service differently. The type surfaces as contested.</span></li>
+            <li data-t="5"><span class="bn">2</span> <span class="bk">Both axes</span> <span class="bc">A proposal would add member_of as an entity type while it is already a relation type. The name is surfaced, and the merge is blocked.</span></li>
+            <li data-t="6.4"><span class="bn">3</span> <span class="bk">Inference</span> <span class="bc">Contradictions derived by inference are next. <span class="ow"><span class="owed">owed</span> <span data-owed="9">subtype cycles and domain/range coherence are checked</span></span></span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="9">conflicting definitions of one type surface as contested</span> / <span data-clause="9">a name defined on both T-Box axes is surfaced, and blocks a tbox_change merge</span></p>
+          </figure>
+          <!-- registry:clauses:9 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">4 clauses: 2 tested, 2 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>conflicting definitions of one type surface as contested<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>a name defined on both T-Box axes is surfaced, and blocks a tbox_change merge<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell o"></i><span>subtype cycles and domain/range coherence are checked<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>inference rules are tested for non-derivation of contradictions<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:9 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-9-coherence---contradiction-free-inference-coherence">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p10" aria-labelledby="t-p10">
+          <div class="ph"><span class="pn">P10</span><h3 id="t-p10">Extend, don&#x27;t modify.</h3></div>
+            <p class="line">Your vocabulary grows in the log. The core model stays fixed, and a change to it comes with a migration.</p>
+            <p class="why">Every workspace names its own things. None of them should need a new build to do it.</p>
+          <figure class="scene" data-scene="10" aria-label="Animation: Extend, don&#x27;t modify">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="3.2"><span class="bn">1</span> <span class="bk">Extend</span> <span class="bc">Your vocabulary grows through the log: new types arrive as entries, and the core model is not touched.</span></li>
+            <li data-t="5.8"><span class="bn">2</span> <span class="bk">Migrate</span> <span class="bc">When the core itself changes, a migration comes with it, and every older log still reads.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="10">the domain vocabulary extends through the log without touching the core model</span> / <span data-clause="10">a change to the core model comes with a migration path</span></p>
+          </figure>
+          <!-- registry:clauses:10 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i></span><span class="tally">2 clauses: 2 tested</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>the domain vocabulary extends through the log without touching the core model<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a change to the core model comes with a migration path<span class="st">tested by 2 named tests</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:10 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-10-schema-open-to-extension-closed-to-modification-extendibility--open-closed">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p11" aria-labelledby="t-p11">
+          <div class="ph"><span class="pn">P11</span><h3 id="t-p11">Let the schema emerge.</h3></div>
+            <p class="line">Notes come in untyped. Names said together form a context, and promoting one writes an entry that names its lineage.</p>
+            <p class="why">Nobody designs a good taxonomy up front. A schema induced from use fits the work it came from.</p>
+          <figure class="scene" data-scene="11" aria-label="Animation: Let the schema emerge">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">Untyped</span> <span class="bc">Notes come in with names and no types. No schema blocks ingest: an untyped name is a Concept.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">Said together</span> <span class="bc">Names said together form a context: a derived view identified by its members, beside the ordinary relations.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">Promote</span> <span class="bc">Promoting the context writes an ordinary entry. It names its members as its lineage and starts at the lowest trust; raising it goes through the gate. <span class="ow"><span class="owed">owed</span> <span data-owed="11">type candidates are induced from repeated co-occurrence</span></span></span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="11">no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written</span> / <span data-clause="11">second-order structure is a derived view identified by its member set, coexisting with binary relations rather than replacing them</span> / <span data-clause="11">promoting a recurring context is an ordinary gated assertion that carries its lineage</span></p>
+          </figure>
+          <!-- registry:clauses:11 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">7 clauses: 4 tested, 3 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>second-order structure is a derived view identified by its member set, coexisting with binary relations rather than replacing them<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>promoting a recurring context is an ordinary gated assertion that carries its lineage<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>the T-Box is scoped to the workspace - an all-workspaces read is a union of glossaries, not one glossary<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>type candidates are induced from repeated co-occurrence<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>the escape hatch is complete: Concept, relates_to and free-form properties<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>corroboration counts independent principals, not repetitions<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:11 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-11-minimal-ontological-commitment-schema-is-induced-minimal-commitment-induced-schema">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p12" aria-labelledby="t-p12">
+          <div class="ph"><span class="pn">P12</span><h3 id="t-p12">Not tied to a store.</h3></div>
+            <p class="line">The model is defined above any encoding. The store is an adapter, and it has already been replaced once.</p>
+            <p class="why">Storage formats change faster than meaning. Knowledge should survive a change of database.</p>
+          <figure class="scene" data-scene="12" aria-label="Animation: Not tied to a store">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="1.8"><span class="bn">1</span> <span class="bk">Above</span> <span class="bc">The graph is defined above any storage format.</span></li>
+            <li data-t="4.2"><span class="bn">2</span> <span class="bk">Swap</span> <span class="bc">The store has been replaced once already, from cozo to redb. The graph above it did not change.</span></li>
+            <li data-t="6"><span class="bn">3</span> <span class="bk">Boundary</span> <span class="bc">No storage concept can cross into the domain model. The crate graph makes it impossible to write.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="12">a storage concept cannot reach the domain model</span></p>
+          </figure>
+          <!-- registry:clauses:12 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell s"></i></span><span class="tally">1 clause: 1 by construction</span></summary>
+            <ul class="cl">
+              <li><i class="cell s"></i><span>a storage concept cannot reach the domain model<span class="st">holds by construction</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:12 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-12-minimal-encoding-bias-minimal-encoding-bias">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p13" aria-labelledby="t-p13">
+          <div class="ph"><span class="pn">P13</span><h3 id="t-p13">What it is, and what it does.</h3></div>
+            <p class="line">&#x27;Person&#x27; is a kind and &#x27;reviewer&#x27; is a role held for a time. Roles should be relations, not subtypes.</p>
+            <p class="why">A role that becomes a subtype cannot end. The person stops reviewing; they do not stop being a person.</p>
+          <figure class="scene" data-scene="13" aria-label="Animation: What it is, and what it does">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">A role</span> <span class="bc">Reviewing is something you do for a while, so it is drawn as a relation with a time span, not as a kind of person. <span class="ow"><span class="owed">owed</span> <span data-owed="13">essence is distinguished from role, and a role cannot subsume an essence</span></span></span></li>
+            <li data-t="5"><span class="bn">2</span> <span class="bk">It ends</span> <span class="bc">When the role ends, the relation closes. You are still a person. <span class="ow"><span class="owed">owed</span> <span data-owed="13">essence is distinguished from role, and a role cannot subsume an essence</span></span></span></li>
+            </ol>
+            
+          </figure>
+          <!-- registry:clauses:13 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell o"></i></span><span class="tally">1 clause: 1 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell o"></i><span>essence is distinguished from role, and a role cannot subsume an essence<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:13 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-13-distinguishing-essence-from-role-rigidity---ontoclean">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-trust" aria-labelledby="h-trust">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">Chapter 3 <span>Identity and trust</span></p>
+          <h2 id="h-trust">Who said it, who sees it</h2>
+          <p class="thesis">Stable names, one graph from one log, and trust that the receiver decides.</p>
+        </div>
+        <!-- registry:chapter:3 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:3 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p14" aria-labelledby="t-p14">
+          <div class="ph"><span class="pn">P14</span><h3 id="t-p14">Names that do not move.</h3></div>
+            <p class="line">Identifiers come from content, so the same entry has the same id on every machine, and an id still resolves after a merge.</p>
+            <p class="why">An id that depends on where something is stored breaks the moment it travels.</p>
+          <figure class="scene" data-scene="14" aria-label="Animation: Names that do not move">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">Same content</span> <span class="bc">Two machines write the same note. Each computes the id from the content, so both get the same id.</span></li>
+            <li data-t="4"><span class="bn">2</span> <span class="bk">Sync</span> <span class="bc">When they sync, it is one entry, counted once.</span></li>
+            <li data-t="6.2"><span class="bn">3</span> <span class="bk">After a merge</span> <span class="bc">Merge pg into Postgres, and asking for pg still resolves, forwarded to Postgres.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="14">identifiers are content-derived, collision-resistant and independent of notation</span> / <span data-clause="14">an identifier stays resolvable after the thing it names is merged away</span></p>
+          </figure>
+          <!-- registry:clauses:14 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">7 clauses: 4 tested, 1 by construction, 2 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>identifiers are content-derived, collision-resistant and independent of notation<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>an identifier stays resolvable after the thing it names is merged away<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>one content counts once even when a re-keying leaves it under two ids<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>an identity or a signature, once made, verifies under every later build<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell s"></i><span>a field added to the identity, attestation-order, re-arrival-merge or signing functions is a compile error until it is classified<span class="st">holds by construction</span></span></li>
+              <li><i class="cell o"></i><span>every identifier the system hands out is dereferenceable<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>the wire envelope and the well-formedness check are forced the same way<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:14 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-14-stable-identifiers-for-everything-stable-identifiers">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p15" aria-labelledby="t-p15">
+          <div class="ph"><span class="pn">P15</span><h3 id="t-p15">Same thing, two names: the system&#x27;s job.</h3></div>
+            <p class="line">The system proposes that two names are one thing. A verdict commits it, and a split can undo it.</p>
+            <p class="why">Each tool speaks its own vocabulary. Asking every client to agree first would mean they never connect.</p>
+          <figure class="scene" data-scene="15" aria-label="Animation: Same thing, two names: the system&#x27;s job">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">Propose</span> <span class="bc">Two tools call one database pg and Postgres. The system proposes that they are one thing, and does not commit it. <span class="ow"><span class="owed">owed</span> <span data-owed="15">top-band candidates merge automatically</span></span></span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">Merge</span> <span class="bc">A reviewer&#x27;s verdict merges them.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">Split</span> <span class="bc">A split is a new proposal. Merged, it separates them again, and the merge stays in the log.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="15">the substrate proposes identity candidates rather than leaving them to the operator</span> / <span data-clause="15">a proposed identity is committed by the gate, never by the generator</span> / <span data-clause="15">a merge and a split are both reversible</span></p>
+          </figure>
+          <!-- registry:clauses:15 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">4 clauses: 3 tested, 1 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a merge and a split are both reversible<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>the substrate proposes identity candidates rather than leaving them to the operator<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a proposed identity is committed by the gate, never by the generator<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>top-band candidates merge automatically<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:15 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-15-identity-resolution-is-the-substrates-responsibility-resolution-is-substrates-job">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr big full" id="p16" aria-labelledby="t-p16">
+          <div class="pt">
+            <div class="ph"><span class="pn">P16</span><h3 id="t-p16">Same log, same graph.</h3></div>
+            <p class="line">In any order, by any route, with duplicates or without: machines that hold the same entries build the same graph.</p>
+            <p class="why">Laptops, servers and hubs sync in whatever order the network allows. Agreement cannot depend on it.</p>
+            <!-- registry:clauses:16 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">4 clauses: 4 tested</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span>one observation set converges to one state regardless of order, partitioning or duplication<span class="st">tested by 8 named tests</span></span></li>
+                <li><i class="cell t"></i><span>a query response is reproducible, and ties and truncation break on a stable key<span class="st">tested by 7 named tests</span></span></li>
+                <li><i class="cell t"></i><span>a response labels the surface that answered, so a retrieval aid is told apart from the convergence surface<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>a terminal state is absorbing, so a conclusion is never overturned by a later verdict<span class="st">tested by 2 named tests</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:16 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-16-topology-independent-convergence-topology-independent-convergence">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+          </div>
+          <figure class="demo" data-demo="16" aria-label="Three machines receive the same six entries in different orders">
+            <canvas class="bare" aria-hidden="true"></canvas>
+            <div class="ctl"><button class="b" data-a="shuffle" type="button">Shuffle the order</button><button class="b" data-a="dup" type="button">Deliver one twice</button><button class="b" data-a="cut" type="button">Cut the hub off, then heal</button></div>
+            <p class="cap" aria-live="polite">Three machines received the same six entries in three orders, and each computed the same graph.</p>
+            <ul class="caps" hidden>
+              <li data-k="plain">Six entries go to three machines, each in its own order.</li>
+              <li data-k="dup">Desktop receives one of the entries twice.</li>
+              <li data-k="cut">The hub's link is cut partway through. The other two keep going.</li>
+              <li data-k="done">Three orders ({orders}), one graph: every machine computes {fp}.</li>
+              <li data-k="done-dup">The duplicate changed nothing.</li>
+              <li data-k="done-cut">The hub caught up when the link came back, and agrees.</li>
+            </ul>
+            <p class="shows">Entries: 1 billing-api is an App / 2 Postgres is a Database / 3 billing-api uses Postgres / 4 webhooks is a Feature / 5 billing-api sends webhooks / 6 webhooks use idempotency keys, a Pattern</p>
+            <p class="shows">Shows <span data-clause="16">one observation set converges to one state regardless of order, partitioning or duplication</span></p>
+          </figure>
+        </article>
+        <article class="pr" id="p17" aria-labelledby="t-p17">
+          <div class="ph"><span class="pn">P17</span><h3 id="t-p17">Yours to share.</h3></div>
+            <p class="line">Nothing leaves until you allow a workspace. Text shaped like a secret is refused at the door.</p>
+            <p class="why">The person who wrote the knowledge decides who sees it. A default that shares everything cannot be taken back.</p>
+          <figure class="scene" data-scene="17" aria-label="Animation: Yours to share">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">Sync</span> <span class="bc">Only the workspace you allowed travels. The others stay on your machine.</span></li>
+            <li data-t="4.6"><span class="bn">2</span> <span class="bk">Allow oss</span> <span class="bc">Allow another workspace, and from the next sync it travels too.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">A secret</span> <span class="bc">Text shaped like a credential is refused at the door, and the refusal does not repeat it.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="17">sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included</span> / <span data-clause="17">credential-shaped text is refused at every local ingest door, and the refusal does not repeat it</span></p>
+          </figure>
+          <!-- registry:clauses:17 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">6 clauses: 6 tested</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>the viewer socket and the sync bind admit only the local principal or an authenticated peer<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>the MCP daemon admits only the local principal - loopback TCP is host-local, not single-user<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a workspace boundary is not crossed by a derived suggestion either<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>credential-shaped text is refused at every local ingest door, and the refusal does not repeat it<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>an authenticated network read tier filters workspace enumeration by the reader's grants<span class="st">tested by 4 named tests</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:17 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-17-knowledge-sovereignty---selective-sharing-knowledge-sovereignty">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr big" id="p18" aria-labelledby="t-p18">
+          <div class="pt">
+            <div class="ph"><span class="pn">P18</span><h3 id="t-p18">Every write could be wrong.</h3></div>
+            <p class="line">A sender&#x27;s claim of trust is kept as sent and evaluated by the receiver. A signature proves who sent it, not that it is true.</p>
+            <p class="why">Poisoning an agent&#x27;s memory is an attack. The defense is trust that the receiver computes, never trust the sender declares.</p>
+            <!-- registry:clauses:18 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">6 clauses: 4 tested, 2 owed</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span>a claimed tier is the receiver's to evaluate, and no wire claim or agent verdict can mint a human's direct act<span class="st">tested by 6 named tests</span></span></li>
+                <li><i class="cell t"></i><span>the reserved surface-marker namespace is refused at every local ingest door<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>origin is provable and tampering detectable, and a signature is not mistaken for well-formedness<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>untrusted text never becomes markup in the console that reviews it<span class="st">tested by 1 named test</span></span></li>
+                <li><i class="cell o"></i><span>derived assertions without lineage are quarantined, retrieval is trust-weighted, and contamination can be traced back and cleaned<span class="st">owed</span></span></li>
+                <li><i class="cell o"></i><span>a replicated verdict marker is evaluated against the canon policy, not honored as sent<span class="st">owed</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:18 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-18-writes-are-an-attack-surface-writes-are-an-attack-surface">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+          </div>
+          <figure class="demo" data-demo="18" aria-label="A receiving node evaluates the trust a sender claims">
+            <div class="ctl top"><button class="b on" data-a="claim" type="button" aria-pressed="true">A bare claim</button><button class="b" data-a="verdict" type="button" aria-pressed="false">A person's verdict</button></div>
+            <canvas aria-hidden="true"></canvas>
+            <div class="rows"></div>
+            <p class="cap" aria-live="polite">Your node keeps the claim exactly as sent, for the audit trail, and evaluates it as host signed. A signature proves which machine sent it, never that a person checked it.</p>
+            <ul class="caps" hidden>
+              <li data-k="claim">Your node keeps the claim exactly as sent, for the audit trail, and evaluates it as host signed. A signature proves which machine sent it, never that a person checked it.</li>
+              <li data-k="verdict">This time the trust comes from a verdict a person cast in a console, and the log records where it was cast. Every node that replays it counts it as human confirmed. <span class="ow"><span class="owed">owed</span> <span data-owed="18">a replicated verdict marker is evaluated against the canon policy, not honored as sent</span></span></li>
+            </ul>
+            <p class="shows">Shows <span data-clause="18">a claimed tier is the receiver&#x27;s to evaluate, and no wire claim or agent verdict can mint a human&#x27;s direct act</span></p>
+          </figure>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-built" aria-labelledby="h-built">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">Chapter 4 <span>System</span></p>
+          <h2 id="h-built">How it is built</h2>
+          <p class="thesis">Code decides and models help. A small surface, and nothing extra to maintain.</p>
+        </div>
+        <!-- registry:chapter:4 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell s"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span></div>
+        <!-- /registry:chapter:4 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p19" aria-labelledby="t-p19">
+          <div class="ph"><span class="pn">P19</span><h3 id="t-p19">Deterministic core, probabilistic edge.</h3></div>
+            <p class="line">Models widen search and draft proposals. What commits is decided by code that gives the same answer every time.</p>
+            <p class="why">A model can be swapped, can be missing and can be wrong. The graph cannot depend on any of that.</p>
+          <figure class="scene" data-scene="19" aria-label="Animation: Deterministic core, probabilistic edge">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">Widen</span> <span class="bc">A model widens the search, finding notes that share no words with the question.</span></li>
+            <li data-t="4.6"><span class="bn">2</span> <span class="bk">Model missing</span> <span class="bc">Without the model, search falls back to keywords and says so. A write never waits for it.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">Suggest</span> <span class="bc">Similarity can suggest that two names are one thing. Only a verdict commits it.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="19">a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span> / <span data-clause="19">embedding similarity only generates identity candidates; a merge commits only through a verdict</span></p>
+          </figure>
+          <!-- registry:clauses:19 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">4 clauses: 3 tested, 1 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a vector the store accepted is a vector the store returns - a dropped retrieval aid must not be reported as a backend that has none<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>embedding similarity only generates identity candidates; a merge commits only through a verdict<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>a probabilistic component's output enters as an assertion carrying its confidence, never as fact<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:19 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-19-deterministic-core-probabilistic-edge-deterministic-core-probabilistic-edge">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p20" aria-labelledby="t-p20">
+          <div class="ph"><span class="pn">P20</span><h3 id="t-p20">A core with no IO.</h3></div>
+            <p class="line">The domain logic touches no disk and no network. Storage, sync and models plug in from outside.</p>
+            <p class="why">Rules that run against memory alone can be tested exactly, and every adapter can be replaced.</p>
+          <figure class="scene" data-scene="20" aria-label="Animation: A core with no IO">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.8"><span class="bn">1</span> <span class="bk">Inward</span> <span class="bc">Every dependency points inward. The core depends on nothing.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">No way out</span> <span class="bc">An arrow from the core out to storage cannot be written: the core has no IO dependency to call.</span></li>
+            <li data-t="6.4"><span class="bn">3</span> <span class="bk">In memory</span> <span class="bc">So all engine logic runs against an in-memory adapter, which is how the rules are tested exactly.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="20">dependencies point inward only</span> / <span data-clause="20">all engine logic runs against an in-memory adapter</span></p>
+          </figure>
+          <!-- registry:clauses:20 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell s"></i><i class="cell s"></i></span><span class="tally">2 clauses: 2 by construction</span></summary>
+            <ul class="cl">
+              <li><i class="cell s"></i><span>dependencies point inward only<span class="st">holds by construction</span></span></li>
+              <li><i class="cell s"></i><span>all engine logic runs against an in-memory adapter<span class="st">holds by construction</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:20 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-20-purity-of-the-domain-hexagonal-purity">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p21" aria-labelledby="t-p21">
+          <div class="ph"><span class="pn">P21</span><h3 id="t-p21">A small surface for models.</h3></div>
+            <p class="line">Thirteen tools and no query language. A failed call says how to fix it.</p>
+            <p class="why">The caller is a model with no person beside it. Fewer, clearer tools get used correctly more often.</p>
+          <figure class="scene" data-scene="21" aria-label="Animation: A small surface for models">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.8"><span class="bn">1</span> <span class="bk">Thirteen</span> <span class="bc">Thirteen tools, from observe to workspace_map. <span class="ow"><span class="owed">owed</span> <span data-owed="21">the surface stays at one tool per recurring intent</span></span></span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">A call</span> <span class="bc">A model calls the tool for what it means to do.</span></li>
+            <li data-t="5.8"><span class="bn">3</span> <span class="bk">A mistake</span> <span class="bc">A failed call says what was wrong and how to call it instead: here, an id that is not on this node, and where a real one comes from.</span></li>
+            <li data-t="7.2"><span class="bn">4</span> <span class="bk">Query?</span> <span class="bc">There is no query language to pass through, so a query in one has nowhere to go.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="21">a failure tells the caller how to correct itself, since the caller is a model with no human beside it</span> / <span data-clause="21">no query-language passthrough exists; the pinned tool list would show one</span></p>
+          </figure>
+          <!-- registry:clauses:21 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">4 clauses: 2 tested, 2 owed</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a failure tells the caller how to correct itself, since the caller is a model with no human beside it<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>no query-language passthrough exists; the pinned tool list would show one<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell o"></i><span>the surface stays at one tool per recurring intent<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>long-running work is non-blocking, and mediation asks through elicitation<span class="st">owed</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:21 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-21-a-narrow-clear-surface-for-the-llm-narrow-llm-legible-surface">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+        <article class="pr" id="p22" aria-labelledby="t-p22">
+          <div class="ph"><span class="pn">P22</span><h3 id="t-p22">Knowledge as a by-product.</h3></div>
+            <p class="line">After a commit, the agent is asked for the decision behind it. A new session starts knowing what the workspace holds.</p>
+            <p class="why">If keeping knowledge becomes a separate job, nobody does it, and the system dies.</p>
+          <figure class="scene" data-scene="22" aria-label="Animation: Knowledge as a by-product">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">Commit</span> <span class="bc">You commit. The hook asks the agent whether the commit settled a decision the diff does not show.</span></li>
+            <li data-t="4.6"><span class="bn">2</span> <span class="bk">Answer</span> <span class="bc">The agent records the decision as an observation that points at the commit. If it settled nothing, it records nothing.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">Next session</span> <span class="bc">The next session starts knowing what the workspace holds, with nobody writing it up.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="22">a commit the agent made asks it for the decision behind the change, and a session starts knowing what the workspace holds, with the person asking for neither</span></p>
+          </figure>
+          <!-- registry:clauses:22 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">3 clauses: 3 tested</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a commit the agent made asks it for the decision behind the change, and a session starts knowing what the workspace holds, with the person asking for neither<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>curation surfaces as decisions where the person reads, never as a document to maintain<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>observe has minimal friction: free text alone is an observation<span class="st">tested by 1 named test</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:22 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-22-knowledge-management-is-a-by-product-of-work-knowledge-as-a-by-product">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-canon" aria-labelledby="h-canon">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">Chapter 5 <span>Governance</span></p>
+          <h2 id="h-canon">What becomes canon</h2>
+          <p class="thesis">Writing is free. Trust is granted by a verdict.</p>
+        </div>
+        <!-- registry:chapter:5 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell p"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:5 -->
+      </header>
+      <div class="prs">
+        <article class="pr big" id="p23" aria-labelledby="t-p23">
+          <div class="pt">
+            <div class="ph"><span class="pn">P23</span><h3 id="t-p23">A gate to the canon.</h3></div>
+            <p class="line">Anything can be written. Only a verdict on a proposal changes what is trusted, and proposing alone changes nothing.</p>
+            <p class="why">Free writing and careful promotion pull apart. Putting the gate on promotion only keeps both.</p>
+            <!-- registry:clauses:23 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell p"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">14 clauses: 9 tested, 5 owed</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span>a proposal is itself an observation, and its state is a deterministic fold with merge absorbing<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>no merge without a diff: what a verdict would overturn is computed before it is cast<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>blocking checks are enforced by the fold, and reach the same conclusion on every node<span class="st">tested by 3 named tests</span></span></li>
+                <li><i class="cell t"></i><span>a merge the fold calls blocked has no commit effect - the grant fold and the state fold agree<span class="st">tested by 1 named test</span></span></li>
+                <li><i class="cell t"></i><span>the write surface refuses a proposal the fold could never resolve<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>a merged verdict has the commit effect its kind promises<span class="st">tested by 1 named test</span></span></li>
+                <li><i class="cell t"></i><span>a recall verdict is not delegable: a recall merge cast anywhere but the human console decides nothing, and the agent surface refuses to cast one<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell t"></i><span>no proposal state blocks or delays an observe<span class="st">tested by 1 named test</span></span></li>
+                <li><i class="cell t"></i><span>a rejection is not a negation, and no verdict deletes an assertion<span class="st">tested by 3 named tests</span></span></li>
+                <li><i class="cell p"></i><span>self-attestation is computed from the proposer and reviewer<span class="st">owed, today's behavior pinned by 1 test</span></span></li>
+                <li><i class="cell o"></i><span>a reviewer is shown the informative checks - blast radius and the payload's trust profile<span class="st">owed</span></span></li>
+                <li><i class="cell o"></i><span>every proposal kind the surface accepts has a commit effect<span class="st">owed</span></span></li>
+                <li><i class="cell o"></i><span>a verdict binds to the base it reviewed, and a stale or withdrawn proposal cannot merge<span class="st">owed</span></span></li>
+                <li><i class="cell o"></i><span>a T-Box change passes the gate - a tbox_change merge defines the type - and direct define_type is the solo-exception shortcut<span class="st">owed</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:23 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-23-gate-to-canon-gate-to-canon">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+          </div>
+          <figure class="demo" data-demo="23" aria-label="A merge proposal and its verdict">
+            <canvas aria-hidden="true"></canvas>
+            <div class="counters"><div><b data-k="log">7</b>entries in the log</div><div><b data-k="canon">0</b>changes to the canon</div></div>
+            <div class="ctl"><button class="b" data-a="propose" type="button">Propose the merge</button><button class="b" data-a="note" type="button">Write a note meanwhile</button><button class="b" data-a="merge" type="button">Merge</button><button class="b" data-a="reject" type="button">Reject</button><button class="b" data-a="reset" type="button">Start over</button></div>
+            <p class="cap" aria-live="polite">The proposal is an entry in the log, and the canon has not changed. Before anyone decides, the diff shows what a merge would move: one relation, overturning no belief.</p>
+            <ul class="caps" hidden>
+              <li data-k="base">Two names for one database. Nothing has been proposed yet.</li>
+              <li data-k="proposed">The proposal is an entry in the log, and the canon has not changed. Before anyone decides, the diff shows what a merge would move: one relation, overturning no belief.</li>
+              <li data-k="note">A note about the orders service landed at once, while the proposal waits. No proposal blocks a write.</li>
+              <li data-k="merge">The verdict commits. pg now forwards to Postgres, and the old id still resolves.</li>
+              <li data-k="reject">Rejected, and nothing was deleted. Both names and every entry stay; a rejection is not a negation.</li>
+            </ul>
+            <p class="shows">Shows <span data-clause="23">no merge without a diff: what a verdict would overturn is computed before it is cast</span> / <span data-clause="23">no proposal state blocks or delays an observe</span> / <span data-clause="23">a merged verdict has the commit effect its kind promises</span> / <span data-clause="23">a rejection is not a negation, and no verdict deletes an assertion</span> / <span data-clause="14">P14: an identifier stays resolvable after the thing it names is merged away</span></p>
+          </figure>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-ops" aria-labelledby="h-ops">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">Chapter 6 <span>Operation</span></p>
+          <h2 id="h-ops">When parts fail</h2>
+          <p class="thesis">Keep serving, say what is off, and refuse only when serving would mislead.</p>
+        </div>
+        <!-- registry:chapter:6 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span></div>
+        <!-- /registry:chapter:6 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p24" aria-labelledby="t-p24">
+          <div class="ph"><span class="pn">P24</span><h3 id="t-p24">Degrade loudly.</h3></div>
+            <p class="line">When a part cannot start, the rest keeps serving and says what is off. It refuses only when going on would be worse.</p>
+            <p class="why">A server that will not start over a typo teaches people to fear upgrades, and a server nobody upgrades stops getting fixed.</p>
+          <figure class="scene" data-scene="24" aria-label="Animation: Degrade loudly">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">Model missing</span> <span class="bc">The search model is not there. Semantic search turns off, keyword search keeps working, and the node says so.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">Hub lost</span> <span class="bc">The hub cannot be reached. Sync turns off, every local read keeps working, and sync_status says what to change.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">Unknown key</span> <span class="bc">A setting this build does not know refuses to start, because a misspelled key would otherwise do nothing in silence. A public address without TLS refuses too.</span></li>
+            </ol>
+            <p class="shows">Shows <span data-clause="24">a subsystem that cannot come up leaves the node serving, and says what it disabled</span> / <span data-clause="24">the workaround reaches the operator&#x27;s own surface, not only a startup log</span> / <span data-clause="24">refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written</span> / <span data-clause="19">P19: a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span></p>
+          </figure>
+          <!-- registry:clauses:24 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span class="tally">6 clauses: 5 tested, 1 by construction</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span>a subsystem that cannot come up leaves the node serving, and says what it disabled<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>the workaround reaches the operator's own surface, not only a startup log<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>a workaround narrows without asking only toward sharing less, never toward more<span class="st">tested by 3 named tests</span></span></li>
+              <li><i class="cell t"></i><span>refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>two conflicting settings resolve by a stated precedence that names what it ignored<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell s"></i><span>a workaround applies to the running state and never rewrites the operator's file<span class="st">holds by construction</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:24 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-24-degrade-loudly-refuse-only-when-proceeding-is-worse-operational-posture">Normative text</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">How each clause is checked</a></p>
+        </article>
+      </div>
+    </section>
+
+    <section class="tensions wrap" id="tensions" aria-labelledby="ten-title">
+      <p class="eyebrow">Tensions</p>
+      <h2 id="ten-title">When two principles pull apart.</h2>
+      <p class="thesis">Principles collide. Each collision has a ruling. Where the mechanism behind a ruling is not built yet, the cautious side holds: nothing is removed, demoted or merged automatically.</p>
+      <canvas class="tmap" aria-hidden="true"></canvas>
+      <ol class="tlist">
+        <li data-a="11 22" data-b="8 9" data-rests="P11: no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written"><button type="button" aria-pressed="false"><span class="vs">P11 + P22 vs P8 + P9</span> <span class="tn">Loose ingest vs a clear schema</span></button><p class="win">Ingest first, and leave a path to refine. Knowledge that never came in cannot be refined either.</p></li>
+        <li data-a="22" data-b="18" data-rests="P18: derived assertions without lineage are quarantined, retrieval is trust-weighted, and contamination can be traced back and cleaned" data-owed><button type="button" aria-pressed="false"><span class="vs">P22 vs P18</span> <span class="tn">Loose ingest vs contamination</span> <em>owed</em></button><p class="win">Do not block ingest. Suspicious knowledge comes in and is held at the lowest tier: a label, not a locked door. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, the quarantine tier, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="3 6" data-b="17" data-rests="P3: a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest" data-owed><button type="button" aria-pressed="false"><span class="vs">P3 + P6 vs P17</span> <span class="tn">Keeping everything vs privacy</span> <em>owed</em></button><p class="win">Privacy wins. A demand to destroy is the one exception to Principle 3, and it leaves a tombstone. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, the tombstone, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="3" data-b="7" data-rests="P7: forgetting happens as retrieval demotion at idle, never as deletion" data-owed><button type="button" aria-pressed="false"><span class="vs">P3 vs P7</span> <span class="tn">Keeping everything vs forgetting</span> <em>owed</em></button><p class="win">Not a conflict. The log is kept forever and retrieval is finite. Forgetting spends attention, not storage. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, retrieval demotion, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="15" data-b="" data-side="caution" data-rests="P15: top-band candidates merge automatically" data-owed><button type="button" aria-pressed="false"><span class="vs">P15</span> <span class="tn">Eager resolution vs caution</span> <em>owed</em></button><p class="win">Caution is the default. Merge automatically only in the confident band; when unsure, propose a candidate. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, the auto-merge band, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="21" data-b="" data-side="expressiveness" data-rests="P21: the surface stays at one tool per recurring intent" data-owed><button type="button" aria-pressed="false"><span class="vs">P21</span> <span class="tn">A small surface vs expressiveness</span> <em>owed</em></button><p class="win">Small is the default. Compose the existing tools first, and promote a pattern only when it repeats. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, a check that the surface stays one tool per recurring intent, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="19" data-b="" data-side="search quality" data-rests="P19: embedding similarity only generates identity candidates; a merge commits only through a verdict"><button type="button" aria-pressed="false"><span class="vs">P19</span> <span class="tn">A deterministic core vs search quality</span></button><p class="win">Models only widen retrieval. What commits stays deterministic.</p></li>
+        <li data-a="24" data-b="" data-side="failing fast" data-rests="P24: refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written"><button type="button" aria-pressed="false"><span class="vs">P24</span> <span class="tn">Staying up vs failing fast</span></button><p class="win">Degrade loudly. Refuse only when going on would serve a wrong answer, an unauthorized surface or a configuration other than the one written.</p></li>
+        <li data-a="23" data-b="22" data-rests="P23: no proposal state blocks or delays an observe"><button type="button" aria-pressed="true"><span class="vs">P23 vs P22</span> <span class="tn">The gate vs low friction</span></button><p class="win">The gate is on promotion, never on writing. Even with review backlogged, knowledge exists and circulates at a low tier.</p></li>
+        <li data-a="23" data-b="" data-side="a reviewer&#x27;s attention" data-rests="P23: a reviewer is shown the informative checks - blast radius and the payload&#x27;s trust profile" data-owed><button type="button" aria-pressed="false"><span class="vs">P23</span> <span class="tn">Careful review vs a reviewer&#x27;s attention</span> <em>owed</em></button><p class="win">Most of it is automatic. Only new contradictions, high-impact or structural changes and recalls reach a person. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, the checks that route review, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="11" data-b="23" data-rests="P23: a T-Box change passes the gate - a tbox_change merge defines the type - and direct define_type is the solo-exception shortcut" data-owed><button type="button" aria-pressed="false"><span class="vs">P11 vs P23</span> <span class="tn">Promoting a type vs the gate</span> <em>owed</em></button><p class="win">The gate is the act. A merged type change defines the type; defining one directly is the shortcut for working alone. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, the gate for type changes, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="23" data-b="3 17" data-rests="P3: a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest" data-owed><button type="button" aria-pressed="false"><span class="vs">P23 vs P3 + P17</span> <span class="tn">Final verdicts vs a demand to destroy</span> <em>owed</em></button><p class="win">Destruction wins. It does not pass through the gate, and a decision resting on what was destroyed is undone with its effects. You see which decisions fall before you act. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, excision, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="3 15" data-b="23" data-rests="P15: a merge and a split are both reversible|P16: a terminal state is absorbing, so a conclusion is never overturned by a later verdict"><button type="button" aria-pressed="false"><span class="vs">P3 + P15 vs P23</span> <span class="tn">Undoing a merge vs a final merge</span></button><p class="win">Both hold. A split is a new proposal; the merge stays in the log and only its forwarding is removed.</p></li>
+        <li data-a="5" data-b="17" data-rests="P5: an id outside the caller&#x27;s grants answers as unknown, and a named scope outside them is refused by name"><button type="button" aria-pressed="false"><span class="vs">P5 vs P17</span> <span class="tn">Honest absence vs hiding what exists</span></button><p class="win">Outside your grants, an id is unknown rather than refused. A refusal is only for a scope you named.</p></li>
+        <li data-a="21" data-b="18" data-rests="P21: long-running work is non-blocking, and mediation asks through elicitation" data-owed><button type="button" aria-pressed="false"><span class="vs">P21 vs P18</span> <span class="tn">Asking a person vs trust the receiver evaluates</span> <em>owed</em></button><p class="win">The channel carries the question and the signature carries the answer. A reply alone grants nothing above the agent&#x27;s ceiling. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, asking a person through elicitation, is not built yet, so the cautious side holds.</span></p></li>
+        <li data-a="16" data-b="18" data-rests="P18: a replicated verdict marker is evaluated against the canon policy, not honored as sent" data-owed><button type="button" aria-pressed="false"><span class="vs">P16 vs P18</span> <span class="tn">One canon vs trust each node evaluates</span> <em>owed</em></button><p class="win">Not a conflict. Evaluation depends on the entry alone and the policy is in the log, so one log gives one canon. <span class="ow"><span class="owed">owed</span> The mechanism behind this ruling, evaluating a replicated verdict marker against the canon policy, is not built yet, so the cautious side holds.</span></p></li>
+      </ol>
+    </section>
+
+    <section class="held wrap" id="how-held" aria-labelledby="held-title">
+      <p class="eyebrow">Method</p>
+      <h2 id="held-title">How a principle is held.</h2>
+      <p class="thesis">A principle is a conjunction, so it is checked clause by clause. Every clause declares one of four states, and the build fails when a clause declares none, or when a test it names stops running.</p>
+      <dl class="states">
+        <div><dt><i class="cell t"></i>Tested by name</dt><dd>Named tests show the clause holds. Rename or delete one and the clause reports itself unguarded.</dd></div>
+        <div><dt><i class="cell s"></i>Holds by construction</dt><dd>The code cannot express the violation, like a crate graph with no path from the core to storage. The mechanism is written down.</dd></div>
+        <div><dt><i class="cell p"></i>Owed, behavior pinned</dt><dd>The clause does not hold yet. A running test records today's behavior, so repaying it means rewriting that test.</dd></div>
+        <div><dt><i class="cell o"></i>Owed</dt><dd>Not assured: it may not hold, or it holds with nothing checking it. It names the milestone that repays it, or the event that brings it due.</dd></div>
+      </dl>
+      <h3>Rules about change are tested as change.</h3>
+      <p>Most principles forbid a difference: nothing may be forgotten, a proposal may not move the canon. A final state cannot show that, so these cases snapshot the store before and after an act and check the difference.</p>
+<pre class="given"><b>given</b> the log as it stands
+<b>when </b> a proposal to merge pg into Postgres is written
+<b>then </b> the canon changed by nothing        proposing is not deciding
+<b>when </b> a reviewer merges it
+<b>then </b> the canon changed by that merge     and by nothing else</pre>
+      <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">The registry, principle_coverage.rs</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/policy_cases.rs">Policy cases, policy_cases.rs</a></p>
+    </section>
+
+    <section class="p-close wrap" aria-label="Where to go next">
+      <a class="pri" href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md">Read the normative text</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">What is owed, and when</a>
+      <a href="../#get-started">Install supragnosis</a>
+    </section>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="https://github.com/Ashon/supragnosis/releases">Releases</a>
+      <a href="./">Principles</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Architecture</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">Federation</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">Proposal workflow</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML, CSS and one script, no build step. This page lives in <code>site/principles/</code>.</p>
+  </footer>
+
+  <!-- The cases (U12): every outcome a demo or scene shows as the product's behavior. A test of the
+       code that owns each one replays it; the script reads the values it draws from here. -->
+  <script type="application/json" id="cases">
+{
+ "p1": {
+  "replay": true,
+  "values": {
+   "digest": "2f0845"
+  }
+ },
+ "p2": {
+  "replay": true,
+  "values": {
+   "confidence": "unstated"
+  }
+ },
+ "p3": {
+  "replay": true,
+  "values": {
+   "shown": "Postgres 16",
+   "entries": 2
+  }
+ },
+ "p4": {
+  "replay": true
+ },
+ "p5": {
+  "replay": false
+ },
+ "p6": {
+  "replay": true,
+  "values": {
+   "first": "Database",
+   "during": "Cache",
+   "after": "Database",
+   "tier": "human confirmed"
+  }
+ },
+ "p7": {
+  "replay": false
+ },
+ "p8": {
+  "replay": true
+ },
+ "p9": {
+  "replay": true
+ },
+ "p10": {
+  "replay": false
+ },
+ "p11": {
+  "replay": false
+ },
+ "p12": {
+  "replay": false
+ },
+ "p13": {
+  "replay": false
+ },
+ "p14": {
+  "replay": true,
+  "values": {
+   "id": "c34921"
+  }
+ },
+ "p15": {
+  "replay": false
+ },
+ "p16": {
+  "replay": true,
+  "values": {
+   "digest": "2f0845"
+  }
+ },
+ "p17": {
+  "replay": true
+ },
+ "p18": {
+  "replay": false,
+  "values": {
+   "claimed": "human confirmed",
+   "evaluated": "host signed",
+   "verdict_claimed": "agent extracted",
+   "verdict_evaluated": "human confirmed"
+  }
+ },
+ "p19": {
+  "replay": false
+ },
+ "p20": {
+  "replay": false
+ },
+ "p21": {
+  "replay": false
+ },
+ "p22": {
+  "replay": false
+ },
+ "p23": {
+  "replay": true,
+  "values": {
+   "log": {
+    "base": 6,
+    "propose": 1,
+    "note": 1,
+    "verdict": 1
+   },
+   "canon": {
+    "base": 0,
+    "merge": 1,
+    "reject": 0
+   }
+  }
+ },
+ "p24": {
+  "replay": false
+ }
+}
+  </script>
+</body>
+</html>

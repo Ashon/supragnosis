@@ -624,24 +624,35 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (12, &[c(
         "the principles page states only what the code states: ledger, counts and clause lists written from the registry, every principle and every Appendix A row present, every case naming held clauses and replayed or held by their tests, and the script taking every behavior value from the cases and naming no trust tier",
-        Evidence::Deferred(
-            "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
-             lands with the page's tests",
-        ),
+        // engine tests: the page's regions rewritten from this registry, its figures' cases and
+        // clause spans, and the engine replaying every case marked replay; viz tests: the script
+        // names no trust tier.
+        Evidence::Scenario(&[
+            "the_principles_page_reads_the_registry",
+            "the_principles_page_shows_held_clauses_as_held_and_owed_ones_as_owed",
+            "every_principles_page_case_marked_replay_is_the_engines_answer",
+            "the_principles_page_draws_the_viewers_marks",
+        ]),
     )]),
     (13, &[c(
         "the principles page never draws an owed clause as working: every owed beat or branch names a clause the registry does not hold and is drawn owed, and every tension's owed tag is derived from its clauses",
-        Evidence::Deferred(
-            "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
-             lands with the page's tests",
-        ),
+        // every data-owed span names an owed clause and every data-clause span a held one, and each
+        // tension's owed tag follows the clauses it rests on; the page's owed mark is its own.
+        Evidence::Scenario(&[
+            "the_principles_page_shows_held_clauses_as_held_and_owed_ones_as_owed",
+            "the_principles_page_draws_the_viewers_marks",
+        ]),
     )]),
     (14, &[c(
         "the principles page draws the viewer's marks with the viewer's meanings and its own marks as its own, each demo and scene plays at most once on its own, can be stopped and rests, reduced motion draws resting frames, canvases are hidden, captions are announced only after the reader acts, and no script draws no empty frame",
-        Evidence::Deferred(
-            "design-system.md Section 11a is specified, not built. Revisit when Section 14 step 11 \
-             lands with the page's tests",
-        ),
+        // crates/supragnosis-viz/tests/principles.rs, design_tokens.rs: the script read beside the
+        // viewer's and the landing's stylesheet, the page's canvases and beats, its fonts and lines.
+        Evidence::Scenario(&[
+            "the_principles_page_draws_the_viewers_marks",
+            "the_principles_page_plays_once_can_stop_and_rests",
+            "every_face_ships_with_its_surface",
+            "no_border_draws_an_area",
+        ]),
     )]),
 ];
 
@@ -2836,6 +2847,7 @@ const SOURCES: &[&str] = &[
     include_str!("policy_cases.rs"),
     include_str!("recall_eval.rs"),
     include_str!("read_path_cost.rs"),
+    include_str!("principles_page.rs"),
     include_str!("../src/lib.rs"),
     include_str!("../../supragnosis-core/src/lib.rs"),
     include_str!("../../supragnosis-store/src/lib.rs"),
@@ -2848,6 +2860,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/tests/landing.rs"),
+    include_str!("../../supragnosis-viz/tests/principles.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
@@ -4309,4 +4322,379 @@ fn report_principle_coverage() {
     for o in &owed {
         println!("  {o}");
     }
+}
+
+// ---- the principles page (design-system.md Section 11a, U12, U13) -------------------------------
+
+/// The page lives in `site/` and is read when the test runs, not compiled in, so the write mode below
+/// and the check that follows it read the same file.
+fn principles_page_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/principles/index.html")
+}
+
+fn page_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn page_unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&#x27;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+/// A clause's state as the page draws it: its block's class, in the order the ledger stacks them
+/// from the bottom, and the words its list item says.
+fn page_state(e: &Evidence) -> (u8, &'static str, String) {
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    match e {
+        Evidence::Scenario(t) => {
+            (0, "t", format!("tested by {} named test{}", t.len(), plural(t.len())))
+        }
+        Evidence::Structural(_) => (1, "s", "holds by construction".to_string()),
+        Evidence::Characterized(t, _) => (
+            2,
+            "p",
+            format!("owed, today's behavior pinned by {} test{}", t.len(), plural(t.len())),
+        ),
+        Evidence::Deferred(_) => (3, "o", "owed".to_string()),
+    }
+}
+
+fn page_clauses(n: u8) -> Vec<&'static Clause> {
+    let clauses = REGISTRY.iter().find(|(p, _, _)| *p == n).map(|(_, _, c)| *c).unwrap_or(&[]);
+    let mut out: Vec<&Clause> = clauses.iter().collect();
+    out.sort_by_key(|c| page_state(&c.evidence).0);
+    out
+}
+
+fn page_tally(n: u8) -> String {
+    let cl = page_clauses(n);
+    let count = |k: &[u8]| cl.iter().filter(|c| k.contains(&page_state(&c.evidence).0)).count();
+    let mut parts = Vec::new();
+    if count(&[0]) > 0 {
+        parts.push(format!("{} tested", count(&[0])));
+    }
+    if count(&[1]) > 0 {
+        parts.push(format!("{} by construction", count(&[1])));
+    }
+    if count(&[2, 3]) > 0 {
+        parts.push(format!("{} owed", count(&[2, 3])));
+    }
+    format!(
+        "{} clause{}: {}",
+        cl.len(),
+        if cl.len() == 1 { "" } else { "s" },
+        parts.join(", ")
+    )
+}
+
+/// The chapters of principles.md and the principles under each, in document order.
+fn page_chapters() -> Vec<(u8, Vec<u8>)> {
+    let mut out: Vec<(u8, Vec<u8>)> = Vec::new();
+    for line in PRINCIPLES_DOC.lines() {
+        if let Some(rest) = line.strip_prefix("## Chapter ") {
+            let n: u8 =
+                rest.split(' ').next().and_then(|s| s.parse().ok()).expect("a chapter number");
+            out.push((n, Vec::new()));
+        } else if line.starts_with("## ") {
+            out.push((0, Vec::new()));
+        } else if let Some(rest) = line.strip_prefix("### Principle ") {
+            let n: u8 = rest
+                .split('.')
+                .next()
+                .and_then(|s| s.trim().parse().ok())
+                .expect("a principle number");
+            out.last_mut().expect("a principle sits in a chapter").1.push(n);
+        }
+    }
+    out.retain(|(n, ps)| *n > 0 && !ps.is_empty());
+    out
+}
+
+/// What the page's marked regions hold, written from the registry: the ledger, each chapter's part of
+/// it, and each principle's clauses.
+fn page_regions() -> Vec<(String, Vec<String>)> {
+    let cells = |n: u8, tag: &str| -> String {
+        page_clauses(n)
+            .iter()
+            .map(|c| format!("<{tag} class=\"cell {}\"></{tag}>", page_state(&c.evidence).1))
+            .collect()
+    };
+    let chapters = page_chapters();
+    let mut out = Vec::new();
+    let mut ledger = vec![
+        "<div class=\"sky\" role=\"group\" aria-label=\"Clauses by principle\">".to_string(),
+        "  <div class=\"cols\">".to_string(),
+    ];
+    for (_, ps) in &chapters {
+        ledger.push(format!("    <div class=\"grp\" data-n=\"{}\">", ps.len()));
+        for p in ps {
+            ledger.push(format!(
+                "      <a class=\"col\" href=\"#p{p}\" data-p=\"{p}\" aria-label=\"P{p}, {}\">{}</a>",
+                page_tally(*p),
+                cells(*p, "span")
+            ));
+        }
+        ledger.push("    </div>".to_string());
+    }
+    ledger.push("  </div>".to_string());
+    ledger.push("  <div class=\"labs\" aria-hidden=\"true\">".to_string());
+    for (_, ps) in &chapters {
+        let spans: String = ps.iter().map(|p| format!("<span>{p}</span>")).collect();
+        ledger.push(format!("    <div class=\"grp\" data-n=\"{}\">{spans}</div>", ps.len()));
+    }
+    ledger.push("  </div>".to_string());
+    ledger.push("  <div class=\"chn\" aria-hidden=\"true\">".to_string());
+    for (n, ps) in &chapters {
+        ledger
+            .push(format!("    <div class=\"grp\" data-n=\"{}\"><span>{n}</span></div>", ps.len()));
+    }
+    ledger.push("  </div>".to_string());
+    ledger.push("</div>".to_string());
+    let all: Vec<&Clause> = REGISTRY.iter().flat_map(|(_, _, c)| c.iter()).collect();
+    let count = |k: &[u8]| all.iter().filter(|c| k.contains(&page_state(&c.evidence).0)).count();
+    ledger.push(format!(
+        "<p class=\"count\"><b>{}</b> clauses across <b>{}</b> principles: <b>{}</b> tested by name, <b>{}</b> hold by construction, <b>{}</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>",
+        all.len(),
+        REGISTRY.len(),
+        count(&[0]),
+        count(&[1]),
+        count(&[2, 3])
+    ));
+    ledger.push("<ul class=\"legend\"><li><i class=\"cell t\"></i>Tested by name</li><li><i class=\"cell s\"></i>Holds by construction</li><li><i class=\"cell p\"></i>Owed, today's behavior pinned</li><li><i class=\"cell o\"></i>Owed</li></ul>".to_string());
+    out.push(("ledger".to_string(), ledger));
+    for (n, ps) in &chapters {
+        let cols: String = ps.iter().map(|p| format!("<span>{}</span>", cells(*p, "i"))).collect();
+        out.push((
+            format!("chapter:{n}"),
+            vec![format!("<div class=\"mini\" aria-hidden=\"true\">{cols}</div>")],
+        ));
+    }
+    for (p, _, _) in REGISTRY {
+        let mut lines = vec![
+            "<details class=\"clauses\">".to_string(),
+            format!("  <summary><span class=\"bar\" aria-hidden=\"true\">{}</span><span class=\"tally\">{}</span></summary>", cells(*p, "i"), page_tally(*p)),
+            "  <ul class=\"cl\">".to_string(),
+        ];
+        for c in page_clauses(*p) {
+            let (_, class, words) = page_state(&c.evidence);
+            lines.push(format!(
+                "    <li><i class=\"cell {class}\"></i><span>{}<span class=\"st\">{words}</span></span></li>",
+                page_escape(c.demands)
+            ));
+        }
+        lines.push("  </ul>".to_string());
+        lines.push("</details>".to_string());
+        out.push((format!("clauses:{p}"), lines));
+    }
+    out
+}
+
+/// Replaces each marked region of `page` with what the registry writes; the begin marker's indent is
+/// the region's.
+fn page_with_regions(page: &str) -> Result<String, String> {
+    let mut out = page.to_string();
+    for (name, lines) in page_regions() {
+        let begin = format!("<!-- registry:{name} -->");
+        let end = format!("<!-- /registry:{name} -->");
+        let b = out.find(&begin).ok_or_else(|| format!("the page has no `{begin}` marker"))?;
+        let e = out[b..]
+            .find(&end)
+            .map(|i| b + i)
+            .ok_or_else(|| format!("the page has no `{end}` marker"))?;
+        let indent: String = out[..b].rsplit('\n').next().unwrap_or("").to_string();
+        let body: String = lines.iter().map(|l| format!("\n{indent}{l}")).collect();
+        out = format!("{}{begin}{body}\n{indent}{}", &out[..b], &out[e..]);
+    }
+    Ok(out)
+}
+
+fn clause_holds(n: u8, text: &str) -> Option<bool> {
+    REGISTRY
+        .iter()
+        .find(|(p, _, _)| *p == n)
+        .and_then(|(_, _, cl)| cl.iter().find(|c| c.demands == text))
+        .map(|c| c.evidence.holds())
+}
+
+/// Every `attr="N">text</span>` in the page: the principle a span names and its text.
+fn page_spans(page: &str, attr: &str) -> Vec<(u8, String)> {
+    let open = format!("{attr}=\"");
+    let mut out = Vec::new();
+    let mut rest = page;
+    while let Some(i) = rest.find(&open) {
+        rest = &rest[i + open.len()..];
+        let q = rest.find('"').expect("a closed attribute");
+        let Ok(n) = rest[..q].parse::<u8>() else {
+            continue;
+        };
+        let body = &rest[q + 2..];
+        let end = body.find("</span>").expect("a closed span");
+        let text = page_unescape(&body[..end]);
+        let text = text.strip_prefix(&format!("P{n}: ")).unwrap_or(&text).to_string();
+        out.push((n, text));
+    }
+    out
+}
+
+/// docs/design-system.md U12: the ledger, its counts and every principle's clauses are written from
+/// this registry, and the build fails when the page differs. `SUPRAGNOSIS_WRITE_PAGE=1` rewrites the
+/// page's marked regions instead of failing, so a change that moves a clause's state carries the
+/// page's new ledger with it.
+#[test]
+fn the_principles_page_reads_the_registry() {
+    let path = principles_page_path();
+    let page = std::fs::read_to_string(&path).expect("site/principles/index.html");
+    let want = page_with_regions(&page).unwrap_or_else(|e| panic!("{e}"));
+    if std::env::var("SUPRAGNOSIS_WRITE_PAGE").as_deref() == Ok("1") {
+        std::fs::write(&path, &want).expect("rewrite the page");
+        return;
+    }
+    assert!(
+        page == want,
+        "site/principles/index.html does not show the registry as it is - rerun with \
+         SUPRAGNOSIS_WRITE_PAGE=1 to rewrite its marked regions, and review the diff"
+    );
+    for (n, _) in documented_principles() {
+        assert!(
+            page.contains(&format!("id=\"p{n}\" aria-labelledby=\"t-p{n}\"")),
+            "the page has no block for P{n}"
+        );
+    }
+}
+
+/// docs/design-system.md U12 and U13: what a figure shows as working is a clause that holds, what it
+/// shows as owed is one that does not, every Appendix A row has its entry whose owed tag follows the
+/// clauses it rests on, and every figure has its case.
+#[test]
+fn the_principles_page_shows_held_clauses_as_held_and_owed_ones_as_owed() {
+    let page = std::fs::read_to_string(principles_page_path()).expect("site/principles/index.html");
+    let mut bad = Vec::new();
+    for (n, text) in page_spans(&page, "data-clause") {
+        match clause_holds(n, &text) {
+            Some(true) => {}
+            Some(false) => {
+                bad.push(format!("P{n} is shown as held but the registry owes it: {text}"))
+            }
+            None => bad.push(format!("P{n} has no clause \"{text}\"")),
+        }
+    }
+    let owed = page_spans(&page, "data-owed");
+    assert!(
+        !owed.is_empty(),
+        "the page shows no owed clause, which the registry does not support"
+    );
+    for (n, text) in owed {
+        match clause_holds(n, &text) {
+            Some(false) => {}
+            Some(true) => bad.push(format!(
+                "P{n} is tagged owed but the registry holds it - drop the tag: {text}"
+            )),
+            None => bad.push(format!("P{n} has no clause \"{text}\"")),
+        }
+    }
+    // Appendix A: one entry per row, with the same principles on its two sides together.
+    let appendix = &PRINCIPLES_DOC[PRINCIPLES_DOC.find("## Appendix A").expect("Appendix A")..];
+    let appendix = &appendix[..appendix.find("\n## ").unwrap_or(appendix.len())];
+    let mut rows: Vec<Vec<u8>> = Vec::new();
+    for line in appendix
+        .lines()
+        .filter(|l| l.starts_with("| ") && !l.starts_with("| Tension") && !l.starts_with("|--"))
+    {
+        let cell = line.trim_start_matches("| ").split(" |").next().unwrap_or("");
+        let mut nums: Vec<u8> = Vec::new();
+        let b = cell.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            if b[i].is_ascii_digit() && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
+                let j = (i..b.len()).find(|&j| !b[j].is_ascii_digit()).unwrap_or(b.len());
+                nums.push(cell[i..j].parse().expect("a number"));
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        nums.sort_unstable();
+        rows.push(nums);
+    }
+    let mut entries: Vec<Vec<u8>> = Vec::new();
+    let mut rest = page.as_str();
+    while let Some(i) = rest.find("<li data-a=\"") {
+        let li = &rest[i..rest[i..].find('>').map(|e| i + e).expect("a closed tag")];
+        let attr = |name: &str| -> Option<String> {
+            let k = format!("{name}=\"");
+            li.find(&k)
+                .map(|s| li[s + k.len()..][..li[s + k.len()..].find('"').unwrap()].to_string())
+        };
+        let mut nums: Vec<u8> = format!(
+            "{} {}",
+            attr("data-a").unwrap_or_default(),
+            attr("data-b").unwrap_or_default()
+        )
+        .split_whitespace()
+        .map(|s| s.parse().expect("a principle number"))
+        .collect();
+        nums.sort_unstable();
+        let rests = page_unescape(&attr("data-rests").unwrap_or_default());
+        let mut all_hold = true;
+        for r in rests.split('|').filter(|r| !r.is_empty()) {
+            let (p, text) = r.split_once(": ").expect("P<n>: <clause>");
+            let n: u8 = p.trim_start_matches('P').parse().expect("a principle number");
+            match clause_holds(n, text) {
+                Some(h) => all_hold &= h,
+                None => bad.push(format!("a tension rests on P{n}'s missing clause \"{text}\"")),
+            }
+        }
+        if rests.is_empty() {
+            bad.push(format!("the tension over {nums:?} names no clause it rests on"));
+        }
+        let tagged = li.contains(" data-owed");
+        if tagged == all_hold {
+            bad.push(format!(
+                "the tension over {nums:?} is {}tagged owed, but its clauses {}",
+                if tagged { "" } else { "not " },
+                if all_hold { "all hold" } else { "are not all held" }
+            ));
+        }
+        entries.push(nums);
+        rest = &rest[i + 1..];
+    }
+    let (mut r, mut e) = (rows.clone(), entries.clone());
+    r.sort();
+    e.sort();
+    if r != e {
+        bad.push(format!("Appendix A's rows {rows:?} and the page's tensions {entries:?} differ"));
+    }
+    // Every figure has its case, and a case no test replays is held by the clauses its figure names.
+    let at = page
+        .find("<script type=\"application/json\" id=\"cases\">")
+        .expect("the cases block");
+    let body = &page[at..][page[at..].find('>').unwrap() + 1..];
+    let cases: serde_json::Value =
+        serde_json::from_str(&body[..body.find("</script>").unwrap()]).expect("the cases are JSON");
+    for (n, _) in documented_principles() {
+        let figure = page.contains(&format!("data-scene=\"{n}\""))
+            || page.contains(&format!("data-demo=\"{n}\""));
+        if !figure {
+            bad.push(format!("P{n} has no figure"));
+        }
+        if cases
+            .get(format!("p{n}"))
+            .and_then(|c| c.get("replay"))
+            .and_then(serde_json::Value::as_bool)
+            .is_none()
+        {
+            bad.push(format!("P{n}'s figure has no case saying whether a test replays it"));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "the principles page and the registry disagree:\n  {}",
+        bad.join("\n  ")
+    );
 }

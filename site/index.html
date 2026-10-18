@@ -33,6 +33,7 @@
     <a class="wordmark" href="#top">supragnosis</a>
     <nav aria-label="Sections">
       <a href="#how">How it works</a>
+      <a href="principles/">Principles</a>
       <a href="#status">Status</a>
       <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
       <a href="https://github.com/Ashon/supragnosis">GitHub</a>
@@ -234,12 +235,13 @@
       <h2 id="hood-title">Small binary, careful semantics.</h2>
       <dl class="props">
         <div><dt>One process, one directory.</dt><dd>An embedded store under <code>~/.supragnosis</code>. No database to run.</dd></div>
-        <div><dt>A log that never forgets.</dt><dd>Corrections supersede an entry; nothing is edited in place.</dd></div>
-        <div><dt>No model decides.</dt><dd>Models draft and widen search. What commits is deterministic.</dd></div>
+        <div><dt>A log that never forgets.</dt><dd>Corrections supersede an entry; nothing is edited in place. <a class="pref" href="principles/#p3">P3</a></dd></div>
+        <div><dt>No model decides.</dt><dd>Models draft and widen search. What commits is deterministic. <a class="pref" href="principles/#p19">P19</a></dd></div>
         <div><dt>Search in any language, locally.</dt><dd>A multilingual model, fetched once. No cloud calls.</dd></div>
-        <div><dt>Absence is not falsehood.</dt><dd>A miss says "not found", never "no".</dd></div>
-        <div><dt>Private by default.</dt><dd>Nothing syncs until you allow a workspace.</dd></div>
+        <div><dt>Absence is not falsehood.</dt><dd>A miss says "not found", never "no". <a class="pref" href="principles/#p5">P5</a></dd></div>
+        <div><dt>Private by default.</dt><dd>Nothing syncs until you allow a workspace. <a class="pref" href="principles/#p17">P17</a></dd></div>
       </dl>
+      <p class="note">These come from <a href="principles/">twenty-four principles</a>, each split into clauses that name what holds them, or say they are owed.</p>
     </section>
 
     <section class="section wrap" id="status" aria-labelledby="status-title">
@@ -274,7 +276,7 @@
           </ul>
         </div>
       </div>
-      <p class="note">The roadmap keeps a record of what shipped and what is deferred, in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> sections 12 and 14.</p>
+      <p class="note">The roadmap keeps a record of what shipped and what is deferred, in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> sections 12 and 14, and <a href="principles/#how-held">every principle, clause by clause</a>, says which of its demands a test holds.</p>
 
       <h3 class="faq-title">Questions</h3>
       <dl class="faq">
@@ -332,7 +334,7 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
     <nav aria-label="Footer">
       <a href="https://github.com/Ashon/supragnosis">GitHub</a>
       <a href="https://github.com/Ashon/supragnosis/releases">Releases</a>
-      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md">Principles</a>
+      <a href="principles/">Principles</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Architecture</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">Federation</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">Proposal workflow</a>
