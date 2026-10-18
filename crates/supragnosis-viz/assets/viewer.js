@@ -81,7 +81,7 @@ let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node typ
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
 // The minimap is on until View turns it off (docs/design-system.md Section 6).
 let showFootprint = true, showPulses = true, showSuperseded = true, showMini = true;
-let allRegions = false;   // draw every context region, not only the active node's (design-system.md Section 5)
+let allRegions = true;    // draw every context region as a cloud, not only the active node's (design-system.md Section 5)
 // Workspace boundaries: a DASHED outline per workspace, drawn only in the all-workspaces view.
 //
 // A separate layer from the hyperedge hulls above, and deliberately a different shape language -
@@ -121,7 +121,7 @@ const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HY
 // the outermost, so it has no edge to read as a line. A flat fill of the hull drew a slab whose rim
 // looked like a border. One gradient fill per region, directly on the canvas: no stroke, no blur
 // filter, nothing composited offscreen.
-const HULL_LAYER_ALPHA = 0.14;   // a region's density at its core (no node active)
+const HULL_LAYER_ALPHA = 0.10;   // a region's density at its core (no node active) - every region is drawn then, so they stay faint
 const HULL_LAYER_DIM = 0.04;     // non-active regions fade to this while a node is active (inspection view)
 const HULL_ACTIVE_ALPHA = 0.26;  // the active node's own regions, painted on top
 const CLOUD_REACH = 1.8;         // how far the cloud reaches past its outermost member, x the hull's node gap
@@ -3018,9 +3018,10 @@ function draw() {
     const items = [];
     for (const h of hyperedges) {
       const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
-      // Regions are the active node's contexts (design-system.md Section 5): drawn all at once they
-      // overlap into one blur, and a hub's five contexts all wore the hub's name. "all regions" in
-      // the view menu draws every one.
+      // Every context is drawn as a cloud by default, the active node's at full strength and the
+      // rest faded (design-system.md Section 5); as flat hulls they had overlapped into one slab,
+      // which is why only the active node's were drawn. "all regions" off in the view menu draws
+      // the active node's alone.
       if (!allRegions && !hot) continue;
       const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
       if (ms.length < 3) continue;
@@ -3043,8 +3044,10 @@ function draw() {
     const paint = (it) => {
       paintCloud(ctx, it.g, it.col, lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
         : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA);
-      // The name sits above the region's upper edge, outside it, where no member's label is.
-      hullLabels.push({ cx: it.g.cx, cy: it.top, text: it.text, col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
+      // The name sits above the region's upper edge, outside it, where no member's label is. Only
+      // the active node's regions are named: names are placed before the nodes', which avoid them,
+      // so twenty region names at rest would push the map's own names out.
+      if (it.hot) hullLabels.push({ cx: it.g.cx, cy: it.top, text: it.text, col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
     };
     for (const it of items) if (!it.hot) paint(it);   // active hulls painted last so they sit on top
     for (const it of items) if (it.hot) paint(it);
@@ -3752,15 +3755,17 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
   try { saved = JSON.parse(localStorage.getItem("supra.view") || "{}") || {}; } catch (_) { saved = {}; }
   // Any click stored every choice, so a stored minimap is rarely one anyone made: 0.6.0 and 0.6.1
   // started it off and stored that on the first click of any toggle. Forget it once more now that it
-  // starts on (docs/design-system.md Section 6), and keep it from the next click.
-  if (saved.v !== 3) delete saved.miniBtn;
+  // starts on (docs/design-system.md Section 6), and keep it from the next click. "all regions" is
+  // the same case from 0.6.4, when it starts on: a stored "off" before then is forgotten once.
+  if (!(saved.v >= 3)) delete saved.miniBtn;
+  if (!(saved.v >= 4)) delete saved.regionsBtn;
   for (const id of VIEW_PREFS) {
     const b = document.getElementById(id);
     if (!b) continue;
     // Replay a stored choice through the button's own handler, so its state and side effects agree.
     if (typeof saved[id] === "boolean" && saved[id] !== b.classList.contains("on")) b.click();
     b.addEventListener("click", () => {
-      const now = { v: 3 };
+      const now = { v: 4 };
       for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
       try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
     });
