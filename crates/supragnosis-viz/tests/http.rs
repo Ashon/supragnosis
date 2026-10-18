@@ -28,7 +28,7 @@ async fn serve_uds(name: &str, engine: Arc<Engine>, events: broadcast::Sender<St
     let path = sock_path(name);
     let _ = std::fs::remove_file(&path); // leftover from a previous run of this same test
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
-    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None, None));
+    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None, None, None));
     path
 }
 
@@ -42,7 +42,7 @@ async fn serve_uds_with_narrow(
     let path = sock_path(name);
     let _ = std::fs::remove_file(&path);
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
-    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None, Some(narrow)));
+    tokio::spawn(supragnosis_viz::serve(engine, listener, events, None, Some(narrow), None));
     path
 }
 
@@ -310,6 +310,41 @@ fn the_read_tier_search_reads_only_the_grants() {
         a.body
     );
     let refused = route(&engine, &reader, &servable, "GET", "/api/search", "q=lantern&workspace=b");
+    assert_eq!(refused.status, 403, "{}", refused.body);
+}
+
+/// First contact (docs/onboarding.md Section 5): the local socket serves what the daemon recorded,
+/// a viewer without the record says it keeps none rather than answering an empty list (P5), and the
+/// read tier refuses the path as the node's own (O7).
+#[tokio::test]
+async fn first_contact_is_the_nodes_own() {
+    use supragnosis_viz::remote::{route, Reader, Servable};
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+    let path = sock_path("clients");
+    let _ = std::fs::remove_file(&path);
+    let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
+    let view: supragnosis_viz::ClientsView = Arc::new(
+        || serde_json::json!({"clients": [{"name": "claude-code", "version": "2.1.0", "first": 1, "last": 2}]}),
+    );
+    tokio::spawn(supragnosis_viz::serve(
+        engine.clone(),
+        listener,
+        ev_channel(),
+        None,
+        None,
+        Some(view),
+    ));
+    let seen = json_get(&uds_get(&path, "/api/clients").await);
+    assert_eq!(seen["clients"][0]["name"], "claude-code", "{seen}");
+
+    let bare = serve_uds("clients-none", engine.clone(), ev_channel()).await;
+    let none = json_get(&uds_get(&bare, "/api/clients").await);
+    assert!(none["clients"].is_null() && none["note"].as_str().is_some(), "{none}");
+
+    let reader =
+        Reader { name: "alice".into(), readable: ["ws".to_string()].into_iter().collect() };
+    let servable: Servable = Arc::new(|_| Ok(()));
+    let refused = route(&engine, &reader, &servable, "GET", "/api/clients", "");
     assert_eq!(refused.status, 403, "{}", refused.body);
 }
 
@@ -1087,7 +1122,7 @@ async fn p17_socket_directory_denies_foreign_users_before_the_socket_mode() {
 
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
     let listener = supragnosis_viz::bind_uds(&path).await.expect("bind_uds");
-    tokio::spawn(supragnosis_viz::serve(engine, listener, ev_channel(), None, None));
+    tokio::spawn(supragnosis_viz::serve(engine, listener, ev_channel(), None, None, None));
 
     let dir_mode = std::fs::metadata(&dir).expect("dir exists").permissions().mode() & 0o777;
     assert_eq!(

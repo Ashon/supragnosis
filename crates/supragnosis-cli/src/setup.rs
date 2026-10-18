@@ -1,0 +1,726 @@
+//! `supragnosis setup` (docs/onboarding.md): one procedure for a first run. It reads the live state,
+//! decides which of the four steps are done, and does what is not. The desktop app's Welcome page
+//! draws the same decisions from `--events`, so the app and the CLI cannot disagree (O4).
+//!
+//! This module is the decision and its words: pure functions from what was observed to the
+//! checklist, to who runs the daemon and what setup may do about it, and to the lines a step
+//! writes. Observing and acting live in main.rs, which runs this binary's own subcommands for each
+//! act, so the output a person would have seen in a terminal is what reaches the app's log drawer.
+
+use crate::lifecycle::{LabelKind, Manager, Situation, CANONICAL_LABEL};
+use serde::Serialize;
+
+/// The schema `--events` names on its first line (docs/compatibility.md Section 6).
+pub const EVENTS_SCHEMA: u64 = 1;
+
+/// What setup suggests asking a connected app (Section 4.4): the person's real work, never a sample
+/// sentence, since a made-up fact would stay in the log for good (P3).
+pub const TRY_IT: &str = "Remember one decision we made in this project today, and why.";
+
+/// A step's state, as the checklist and the app's cards show it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum State {
+    /// Not done, and setup can do it.
+    Todo,
+    /// Under way: a download running, an app connected and no entry yet.
+    Working,
+    Done,
+    /// Not done, and setup will not do it without being asked: the sentence names what would.
+    Attention,
+    Failed,
+    /// Does not apply here: a remote profile, an app that is not installed, a node with no model.
+    Skipped,
+}
+
+/// One line of `--events`: what a step is, how it stands, and - while an act runs - the command it
+/// ran, or a line of that command's output, which is where each file it changed is named (O2).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Event {
+    pub step: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub state: State,
+    pub say: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cmd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub out: Option<String>,
+}
+
+impl Event {
+    pub fn new(step: &'static str, id: Option<&str>, state: State, say: impl Into<String>) -> Self {
+        Event { step, id: id.map(str::to_string), state, say: say.into(), cmd: None, out: None }
+    }
+}
+
+/// Who runs the daemon, as setup needs to know it (Section 4.1, O8).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Runner {
+    /// Nothing answers and nothing manages it: setup installs the login job.
+    Stopped,
+    /// A manager that outlives the app keeps it answering. The sentence names it.
+    Kept(String),
+    /// A manager nobody chose (`start`, a retired label): setup takes it over. The sentence says how
+    /// it runs now.
+    TakeOver(String),
+    /// The daemon the desktop app spawned. The app stops it before the server step runs, since only
+    /// the app can (Section 3).
+    AppChild,
+    /// Setup does not act on it without being asked; the sentence says what runs it and what would.
+    Attention(String),
+}
+
+/// Where the hand-written plist is, in the words both refusals use.
+fn hand_written() -> String {
+    format!(
+        "~/Library/LaunchAgents/{CANONICAL_LABEL}.plist was written by hand, so setup leaves it: `supragnosis service install --take-over` moves it aside and carries its settings into a generated one."
+    )
+}
+
+/// Who runs the daemon, from the lifecycle's own classification (daemon-lifecycle.md L2) and what is
+/// on disk. Takes over only what nobody chose a manager for; reports a Homebrew service, a
+/// hand-written plist and a holder it cannot name (O8). `app_daemon` is whether the desktop app said
+/// it spawned the process that answers; `launchd` is whether this system has the login job at all.
+pub fn runner(
+    s: &Situation,
+    answering: bool,
+    plist: &str,
+    app_daemon: bool,
+    launchd: bool,
+) -> Runner {
+    let hand = plist == "hand_written";
+    if !launchd {
+        // The systemd user unit is docs/onboarding.md Section 13 step 4; until it lands, setup names
+        // the unit to copy and does not install anything itself.
+        let unit = "On Linux setup does not install a login service yet: deploy/systemd/README.md has a user unit to copy.";
+        return match s {
+            Situation::Stopped => {
+                Runner::Attention(format!("Not running. {unit} `supragnosis start` runs it until you log out."))
+            }
+            Situation::One(Manager::Pidfile { .. }) => {
+                Runner::Attention(format!("Running only until you log out (`supragnosis start`). {unit}"))
+            }
+            Situation::Unrecognized if answering => Runner::Attention(
+                "A daemon answers that this CLI does not manage; the systemd user unit of deploy/systemd/README.md reads this way. Setup leaves it as it is.".to_string(),
+            ),
+            _ => conflict_or_unnamed(s),
+        };
+    }
+    match s {
+        Situation::Stopped if hand => Runner::Attention(format!("Not running, and {}", hand_written())),
+        Situation::Stopped => Runner::Stopped,
+        Situation::One(Manager::Launchd(j)) => match j.kind {
+            LabelKind::Canonical if answering => {
+                Runner::Kept("Running, and the login job starts it at every login.".to_string())
+            }
+            LabelKind::Canonical => Runner::Attention(format!(
+                "The login job is loaded but its server does not answer{}. `supragnosis status` says why, and `supragnosis restart` tries again.",
+                j.last_exit.map(|c| format!(" (last exit {c})")).unwrap_or_default()
+            )),
+            LabelKind::Homebrew(token) if answering => Runner::Kept(format!(
+                "Running under Homebrew's service (brew services {token}), which starts it at login."
+            )),
+            LabelKind::Homebrew(token) => Runner::Attention(format!(
+                "Homebrew's service (brew services {token}) is loaded but its server does not answer. Setup does not take it over unless asked: `supragnosis service install --take-over`."
+            )),
+            LabelKind::Retired if hand => Runner::Attention(hand_written()),
+            LabelKind::Retired => Runner::TakeOver(format!(
+                "A login job an earlier release installed ({}) runs it. Setup replaces it with the current one.",
+                j.label
+            )),
+        },
+        Situation::One(Manager::Pidfile { .. }) if hand => Runner::Attention(hand_written()),
+        Situation::One(Manager::Pidfile { .. }) => Runner::TakeOver(
+            "Running only until you log out or restart (`supragnosis start`). Setup keeps it running at login instead.".to_string(),
+        ),
+        Situation::Unrecognized if app_daemon => Runner::AppChild,
+        _ => conflict_or_unnamed(s),
+    }
+}
+
+fn conflict_or_unnamed(s: &Situation) -> Runner {
+    match s {
+        Situation::Conflict(ms) => Runner::Attention(format!(
+            "{} managers claim the daemon, and the store admits one writer. `supragnosis status` lists them; `supragnosis service install --take-over` keeps one.",
+            ms.len()
+        )),
+        _ => Runner::Attention(
+            "Something this CLI does not manage is serving the daemon's address or holding its store: an AI app's stdio server, or a `supragnosis serve` in a terminal. Stop it, then run setup again.".to_string(),
+        ),
+    }
+}
+
+/// The server step's act: the arguments of `service install` it runs, or why it runs nothing.
+pub fn server_act(r: &Runner) -> Result<Option<Vec<&'static str>>, String> {
+    match r {
+        Runner::Stopped => Ok(Some(vec!["service", "install", "--no-model"])),
+        Runner::TakeOver(_) => Ok(Some(vec!["service", "install", "--no-model", "--take-over"])),
+        Runner::Kept(_) => Ok(None),
+        Runner::AppChild => Err(
+            "The app's own daemon is still running. The app stops it before this step; quit the app, or turn on Start at Login in it.".to_string(),
+        ),
+        Runner::Attention(why) => Err(why.clone()),
+    }
+}
+
+/// One AI app as `connect --json` lists it, with whether it has reached the daemon.
+#[derive(Clone, Debug, PartialEq)]
+pub struct App {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    /// The `entry` field of `connect --json`: none, bridge, http, stdio, other, unknown.
+    pub entry: String,
+    /// What the person does for the app to load the entry (connect.rs `next_step`).
+    pub next: String,
+    /// How long ago this app first reached the daemon, when it has since the daemon started.
+    pub reached: Option<String>,
+}
+
+/// The search model (Section 4.3).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Model {
+    On,
+    /// Not complete in the cache; the download's size in MB. Only a build with the model reads it.
+    #[cfg_attr(not(feature = "fastembed"), allow(dead_code))]
+    Missing(u32),
+    /// Complete on disk, and the daemon could not load it: its note.
+    Broken(String),
+    /// Nothing to fetch here: `SUPRAGNOSIS_EMBED=none`, or a build without a model.
+    Skipped(String),
+}
+
+/// What the store holds, for the last step (Section 4.4).
+#[derive(Clone, Debug, PartialEq)]
+pub enum FirstEntry {
+    /// The daemon does not answer, so the store's content is not known (P5: unknown is not empty).
+    Unknown,
+    None,
+    /// The newest entry: its workspace (a daemon older than this binary does not say), how long
+    /// ago, and what it said.
+    Some {
+        workspace: Option<String>,
+        ago: String,
+        said: String,
+    },
+}
+
+/// What setup reads before it decides anything (O3).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Observed {
+    /// The active profile's name when this machine's AI apps use a remote server.
+    pub remote: Option<String>,
+    pub runner: Runner,
+    pub apps: Vec<App>,
+    /// Whether the daemon reported first contact at all. One that does not answer, or is older than
+    /// first contact, says nothing about which app reached it - which is not "none did" (P5).
+    pub contacts_known: bool,
+    /// Client names that reached the daemon and map to no app connect lists, as they were sent.
+    pub other_contacts: Vec<String>,
+    pub model: Model,
+    pub first: FirstEntry,
+}
+
+/// The checklist: one event per step, and one per AI app under the apps step. A pure function of
+/// what was observed, so `setup --check` and the Welcome page compute it the same way every time.
+pub fn checklist(o: &Observed) -> Vec<Event> {
+    let mut out = Vec::new();
+    let remote = o.remote.as_deref();
+    out.push(match (remote, &o.runner) {
+        (Some(r), _) => Event::new(
+            "server",
+            None,
+            State::Skipped,
+            format!("This machine's AI apps use the server \"{r}\", so this machine's daemon is not what they use."),
+        ),
+        (None, Runner::Kept(say)) => Event::new("server", None, State::Done, say.clone()),
+        (None, Runner::TakeOver(say)) => Event::new("server", None, State::Todo, say.clone()),
+        (None, Runner::AppChild) => Event::new(
+            "server",
+            None,
+            State::Todo,
+            "Running only while the app is open. Setup keeps it running at login instead.",
+        ),
+        (None, Runner::Stopped) => {
+            Event::new("server", None, State::Todo, "Not running. Setup starts it now and at every login.")
+        }
+        (None, Runner::Attention(say)) => Event::new("server", None, State::Attention, say.clone()),
+    });
+
+    // Done when an app is connected through the bridge. Whether it has reached the daemon is shown
+    // on its row but holds nothing open: first contact lives in memory, and the server step itself
+    // may restart the daemon (Section 4.2).
+    let installed = o.apps.iter().filter(|a| a.installed).count();
+    let connected = o.apps.iter().filter(|a| a.installed && a.entry == "bridge").count();
+    out.push(if connected > 0 {
+        Event::new("apps", None, State::Done, format!("{connected} connected through the bridge."))
+    } else if installed == 0 {
+        Event::new(
+            "apps",
+            None,
+            State::Attention,
+            "No AI app that connect knows is installed: Claude Desktop, Claude Code, Cursor, VS Code, Codex or Gemini CLI.",
+        )
+    } else {
+        Event::new("apps", None, State::Todo, "None connected yet.")
+    });
+    for a in &o.apps {
+        let id = Some(a.id.as_str());
+        out.push(match (a.installed, a.entry.as_str(), &a.reached) {
+            (false, _, _) => Event::new("app", id, State::Skipped, format!("{} is not installed.", a.name)),
+            (true, "bridge", Some(ago)) => Event::new(
+                "app",
+                id,
+                State::Done,
+                format!("{} is connected, and reached the server {ago}.", a.name),
+            ),
+            (true, "bridge", None) if o.contacts_known => Event::new(
+                "app",
+                id,
+                State::Done,
+                format!(
+                    "{} is connected, and has not reached the server since it started. If it was just connected: {}.",
+                    a.name, a.next
+                ),
+            ),
+            (true, "bridge", None) => {
+                Event::new("app", id, State::Done, format!("{} is connected.", a.name))
+            }
+            (true, "none", _) => Event::new("app", id, State::Todo, format!("{} is not connected.", a.name)),
+            (true, "unknown", _) => Event::new(
+                "app",
+                id,
+                State::Attention,
+                format!("{}'s settings could not be read, so setup leaves them alone.", a.name),
+            ),
+            (true, other, _) => Event::new(
+                "app",
+                id,
+                State::Attention,
+                format!(
+                    "{} has a supragnosis entry setup did not write ({other}). Setup leaves it: `supragnosis connect {} --replace` switches it to the bridge.",
+                    a.name, a.id
+                ),
+            ),
+        });
+    }
+    for name in &o.other_contacts {
+        out.push(Event::new(
+            "app",
+            Some(name),
+            State::Done,
+            format!("{name} reached the server."),
+        ));
+    }
+
+    out.push(match (remote, &o.model) {
+        (Some(_), _) => Event::new("model", None, State::Skipped, "The remote server searches with its own model."),
+        (None, Model::Skipped(why)) => Event::new("model", None, State::Skipped, why.clone()),
+        (None, Model::On) => Event::new("model", None, State::Done, "Search by meaning is on."),
+        (None, Model::Missing(mb)) => Event::new(
+            "model",
+            None,
+            State::Todo,
+            format!("Search matches words only until the model ({mb} MB) is downloaded. Setup downloads it, and nothing waits for it."),
+        ),
+        (None, Model::Broken(note)) => Event::new("model", None, State::Attention, note.clone()),
+    });
+
+    out.push(match (remote, &o.first) {
+        (Some(_), _) => {
+            Event::new("first", None, State::Skipped, "Entries go to the remote server.")
+        }
+        (None, FirstEntry::Some { workspace: Some(ws), ago, .. }) => Event::new(
+            "first",
+            None,
+            State::Done,
+            format!("The store holds an entry: workspace \"{ws}\", {ago}."),
+        ),
+        (None, FirstEntry::Some { workspace: None, ago, .. }) => Event::new(
+            "first",
+            None,
+            State::Done,
+            format!("The store holds an entry, the newest {ago}."),
+        ),
+        (None, FirstEntry::Unknown) => {
+            Event::new("first", None, State::Todo, "Known once the server answers.")
+        }
+        (None, FirstEntry::None) if connected > 0 => {
+            Event::new("first", None, State::Working, format!("Ask a connected app: \"{TRY_IT}\""))
+        }
+        (None, FirstEntry::None) => {
+            Event::new("first", None, State::Todo, "Waits for a connected app.")
+        }
+    });
+    out
+}
+
+/// Whether the first run is set up enough to leave: the daemon is kept running (or a remote profile
+/// is in use) and an app is connected. The model and the first entry follow on their own (O5).
+pub fn essentials_done(list: &[Event]) -> bool {
+    let done = |step: &str| {
+        list.iter()
+            .any(|e| e.step == step && matches!(e.state, State::Done | State::Skipped))
+    };
+    done("server") && done("apps")
+}
+
+/// The last line of a run: the worst state among the steps it covers, and what is left.
+pub fn summary(list: &[Event]) -> Event {
+    let rank = |s: State| match s {
+        State::Failed => 5,
+        State::Attention => 4,
+        State::Todo => 3,
+        State::Working => 2,
+        State::Done | State::Skipped => 0,
+    };
+    let steps: Vec<&Event> = list.iter().filter(|e| e.step != "app").collect();
+    let worst = steps.iter().map(|e| e.state).max_by_key(|s| rank(*s)).unwrap_or(State::Done);
+    let worst = if worst == State::Skipped { State::Done } else { worst };
+    let left: Vec<&str> =
+        steps.iter().filter(|e| rank(e.state) > 0).map(|e| title(e.step)).collect();
+    let say = if left.is_empty() {
+        "Every step is done.".to_string()
+    } else if essentials_done(list) {
+        format!("Set up. Still going: {}.", left.join(", "))
+    } else {
+        format!("Not done: {}.", left.join(", "))
+    };
+    Event::new("summary", None, worst, say)
+}
+
+/// A step's name where a person reads it.
+pub fn title(step: &str) -> &'static str {
+    match step {
+        "server" => "Keep it running",
+        "apps" => "Connect your AI apps",
+        "model" => "Search by meaning",
+        "first" => "Try it",
+        "wait" => "Try it",
+        _ => "Setup",
+    }
+}
+
+/// One checklist row in the terminal: a mark, the step (or the app, indented under its step), and
+/// the sentence. The marks are ASCII so they read the same in any terminal.
+pub fn text_row(e: &Event) -> String {
+    let mark = match e.state {
+        State::Done => "[o]",
+        State::Todo => "[ ]",
+        State::Working => "[~]",
+        State::Attention => "[!]",
+        State::Failed => "[x]",
+        State::Skipped => "[-]",
+    };
+    match e.step {
+        "app" => format!("      {mark} {}", e.say),
+        "summary" => e.say.clone(),
+        _ => format!("  {mark} {:<21} {}", title(e.step), e.say),
+    }
+}
+
+/// The app a client name from MCP `initialize` belongs to (Section 5), as the apps send it. A name
+/// this table does not know is shown as sent, never guessed.
+pub fn client_app(name: &str) -> Option<&'static str> {
+    let n = name.trim().to_ascii_lowercase();
+    if n.starts_with("claude-code") {
+        Some("claude-code")
+    } else if n == "claude-ai" || n.starts_with("claude-desktop") || n == "claude" {
+        Some("claude-desktop")
+    } else if n.contains("cursor") {
+        Some("cursor")
+    } else if n.contains("visual studio code") || n == "vscode" || n.starts_with("code-") {
+        Some("vscode")
+    } else if n.starts_with("codex") {
+        Some("codex")
+    } else if n.starts_with("gemini") {
+        Some("gemini")
+    } else {
+        None
+    }
+}
+
+/// How long ago `then_ms` was, at `now_ms`, in the words a row shows.
+pub fn ago(then_ms: u64, now_ms: u64) -> String {
+    let s = now_ms.saturating_sub(then_ms) / 1000;
+    let (n, unit) = match s {
+        0..=59 => return "just now".to_string(),
+        60..=3599 => (s / 60, "minute"),
+        3600..=86_399 => (s / 3600, "hour"),
+        _ => (s / 86_400, "day"),
+    };
+    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
+}
+
+/// Bytes the model's directory holds against its size, as the line `embed fetch --events` writes.
+#[cfg_attr(not(feature = "fastembed"), allow(dead_code))]
+pub fn progress_say(bytes: u64, total_mb: u32) -> String {
+    let mb = (bytes >> 20).min(u64::from(total_mb));
+    format!("{mb} of {total_mb} MB. Search matches words until it is here.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lifecycle::Job;
+
+    fn app(id: &str, installed: bool, entry: &str) -> App {
+        App {
+            id: id.into(),
+            name: id.into(),
+            installed,
+            entry: entry.into(),
+            next: "start a new session".into(),
+            reached: None,
+        }
+    }
+
+    fn fresh() -> Observed {
+        Observed {
+            remote: None,
+            runner: Runner::Stopped,
+            apps: vec![app("claude-code", true, "none"), app("codex", false, "none")],
+            contacts_known: true,
+            other_contacts: vec![],
+            model: Model::Missing(224),
+            first: FirstEntry::None,
+        }
+    }
+
+    fn state(list: &[Event], step: &str, id: Option<&str>) -> State {
+        list.iter()
+            .find(|e| e.step == step && e.id.as_deref() == id)
+            .map(|e| e.state)
+            .expect("the step")
+    }
+
+    fn job(label: &'static str, kind: LabelKind, pid: Option<u32>) -> Situation {
+        Situation::One(Manager::Launchd(Job { label, kind, pid, last_exit: None }))
+    }
+
+    /// O3: the checklist is a function of what was observed - a fresh machine has every step to do,
+    /// and nothing it cannot do is reported as done.
+    #[test]
+    fn a_fresh_machine_has_every_step_to_do() {
+        let l = checklist(&fresh());
+        assert_eq!(state(&l, "server", None), State::Todo);
+        assert_eq!(state(&l, "apps", None), State::Todo);
+        assert_eq!(state(&l, "app", Some("claude-code")), State::Todo);
+        assert_eq!(state(&l, "app", Some("codex")), State::Skipped);
+        assert_eq!(state(&l, "model", None), State::Todo);
+        assert_eq!(state(&l, "first", None), State::Todo);
+        assert!(!essentials_done(&l));
+        let s = summary(&l);
+        assert_eq!((s.step, s.state), ("summary", State::Todo));
+        assert!(
+            s.say.starts_with("Not done: Keep it running, Connect your AI apps"),
+            "{}",
+            s.say
+        );
+    }
+
+    /// Connected is done; reached is shown but holds nothing open, since first contact is forgotten
+    /// when the daemon restarts (Section 4.2). The model and the first entry do not hold the run open
+    /// either (O5), and the last step suggests the person's own work, not a sentence to paste.
+    #[test]
+    fn a_connected_app_is_done_and_reached_is_only_shown() {
+        let mut o = fresh();
+        o.runner = Runner::Kept("Running.".into());
+        o.apps[0].entry = "bridge".into();
+        let l = checklist(&o);
+        assert_eq!(state(&l, "app", Some("claude-code")), State::Done);
+        assert_eq!(state(&l, "apps", None), State::Done);
+        assert_eq!(state(&l, "first", None), State::Working);
+        assert!(l.iter().any(|e| e.say.contains(TRY_IT)));
+        assert!(essentials_done(&l));
+        assert!(summary(&l).say.starts_with("Set up. Still going: Search by meaning, Try it"));
+        assert!(l.iter().any(|e| e.say.contains("has not reached the server since it started")));
+        o.apps[0].reached = Some(ago(0, 120_000));
+        let l = checklist(&o);
+        assert!(l.iter().any(|e| e.say.contains("reached the server 2 minutes ago")));
+        // A daemon that does not report first contact says nothing about who reached it (P5).
+        o.apps[0].reached = None;
+        o.contacts_known = false;
+        let l = checklist(&o);
+        assert!(l.iter().any(|e| e.say == "claude-code is connected."), "{l:?}");
+        o.first = FirstEntry::Some {
+            workspace: Some("web".into()),
+            ago: "just now".into(),
+            said: "x".into(),
+        };
+        o.model = Model::On;
+        let l = checklist(&o);
+        assert_eq!(state(&l, "first", None), State::Done);
+        assert_eq!(summary(&l), Event::new("summary", None, State::Done, "Every step is done."));
+    }
+
+    /// O8 on macOS: setup takes over only what nobody chose a manager for - a `start` daemon, a
+    /// retired label, the app's child - and reports a Homebrew service that is not answering, a
+    /// hand-written plist and a holder it cannot name, each with the command that would act. A
+    /// manager that keeps the daemon answering is done, whoever it is.
+    #[test]
+    fn setup_takes_over_only_what_nobody_chose() {
+        let r = |s: &Situation, answering, plist, app| runner(s, answering, plist, app, true);
+        assert_eq!(r(&Situation::Stopped, false, "absent", false), Runner::Stopped);
+        assert!(matches!(
+            r(&Situation::One(Manager::Pidfile { pid: 7 }), true, "absent", false),
+            Runner::TakeOver(_)
+        ));
+        assert!(matches!(
+            r(
+                &job("com.ashon.supragnosis", LabelKind::Retired, Some(7)),
+                true,
+                "absent",
+                false
+            ),
+            Runner::TakeOver(_)
+        ));
+        assert_eq!(r(&Situation::Unrecognized, true, "absent", true), Runner::AppChild);
+        assert!(matches!(
+            r(&job(CANONICAL_LABEL, LabelKind::Canonical, Some(7)), true, "generated", false),
+            Runner::Kept(_)
+        ));
+        assert!(matches!(
+            r(
+                &job(
+                    "sh.brew.supragnosis-server",
+                    LabelKind::Homebrew("supragnosis-server"),
+                    Some(7)
+                ),
+                true,
+                "absent",
+                false
+            ),
+            Runner::Kept(_)
+        ));
+        for (s, answering, plist) in [
+            (
+                job("sh.brew.supragnosis-server", LabelKind::Homebrew("supragnosis-server"), None),
+                false,
+                "absent",
+            ),
+            (Situation::Stopped, false, "hand_written"),
+            (Situation::One(Manager::Pidfile { pid: 7 }), true, "hand_written"),
+            (Situation::Unrecognized, true, "absent"),
+            (
+                Situation::Conflict(vec![Manager::Pidfile { pid: 7 }, Manager::Pidfile { pid: 8 }]),
+                true,
+                "absent",
+            ),
+        ] {
+            let got = r(&s, answering, plist, false);
+            let Runner::Attention(say) = &got else {
+                panic!("{s:?} -> {got:?}")
+            };
+            assert!(server_act(&got).is_err(), "{s:?} is acted on");
+            assert!(say.contains('`'), "{s:?} names no command: {say}");
+        }
+        // The acts: a fresh install, a take-over, nothing for a kept daemon, and the app's child
+        // refused until the app has stopped it.
+        assert_eq!(
+            server_act(&Runner::Stopped).unwrap(),
+            Some(vec!["service", "install", "--no-model"])
+        );
+        assert_eq!(
+            server_act(&Runner::TakeOver(String::new())).unwrap(),
+            Some(vec!["service", "install", "--no-model", "--take-over"])
+        );
+        assert_eq!(server_act(&Runner::Kept(String::new())).unwrap(), None);
+        assert!(server_act(&Runner::AppChild).is_err());
+        // Without launchd nothing is installed yet (Section 13 step 4): every case is reported.
+        for s in [
+            Situation::Stopped,
+            Situation::One(Manager::Pidfile { pid: 7 }),
+            Situation::Unrecognized,
+        ] {
+            assert!(
+                matches!(runner(&s, true, "absent", false, false), Runner::Attention(_)),
+                "{s:?}"
+            );
+        }
+    }
+
+    /// An entry `connect` did not write is left alone (client-connect.md C3), and the checklist says
+    /// which command would replace it; `--yes` never does.
+    #[test]
+    fn an_entry_setup_did_not_write_is_reported_not_replaced() {
+        let mut o = fresh();
+        o.apps[0].entry = "http".into();
+        let l = checklist(&o);
+        assert_eq!(state(&l, "app", Some("claude-code")), State::Attention);
+        assert!(l.iter().any(|e| e.say.contains("`supragnosis connect claude-code --replace`")));
+    }
+
+    /// A remote profile: this machine's daemon, model and entries are not what the apps use, so
+    /// those steps stand down; connecting apps still applies (Section 2).
+    #[test]
+    fn a_remote_profile_skips_this_machines_daemon_model_and_entries() {
+        let mut o = fresh();
+        o.remote = Some("team".into());
+        let l = checklist(&o);
+        assert_eq!(state(&l, "server", None), State::Skipped);
+        assert_eq!(state(&l, "model", None), State::Skipped);
+        assert_eq!(state(&l, "first", None), State::Skipped);
+        assert_eq!(state(&l, "app", Some("claude-code")), State::Todo);
+    }
+
+    /// P5: a store that cannot be read is not an empty one, and a model that is on disk but did not
+    /// load is not a missing one.
+    #[test]
+    fn unknown_is_not_empty_and_broken_is_not_missing() {
+        let mut o = fresh();
+        o.first = FirstEntry::Unknown;
+        o.model = Model::Broken("the model did not load".into());
+        let l = checklist(&o);
+        assert_eq!(
+            l.iter().find(|e| e.step == "first").unwrap().say,
+            "Known once the server answers."
+        );
+        assert_eq!(state(&l, "model", None), State::Attention);
+    }
+
+    /// Section 5: the names apps send map to the apps connect lists; an unknown name maps to none.
+    #[test]
+    fn client_names_map_to_apps_and_unknown_names_to_none() {
+        for (name, app) in [
+            ("claude-code", "claude-code"),
+            ("claude-ai", "claude-desktop"),
+            ("cursor-vscode", "cursor"),
+            ("Visual Studio Code", "vscode"),
+            ("codex-mcp-client", "codex"),
+            ("gemini-cli-mcp-client", "gemini"),
+        ] {
+            assert_eq!(client_app(name), Some(app), "{name}");
+        }
+        assert_eq!(client_app("some-agent"), None);
+        assert_eq!(client_app("an unnamed client"), None);
+    }
+
+    /// The lines the app and the terminal read: lowercase states, absent fields left out, ASCII marks.
+    #[test]
+    fn an_event_is_one_json_object_and_one_ascii_row() {
+        let e = Event::new("app", Some("cursor"), State::Working, "connected");
+        assert_eq!(
+            serde_json::to_string(&e).unwrap(),
+            r#"{"step":"app","id":"cursor","state":"working","say":"connected"}"#
+        );
+        assert_eq!(text_row(&e), "      [~] connected");
+        assert_eq!(
+            text_row(&Event::new("server", None, State::Done, "Running.")),
+            "  [o] Keep it running       Running."
+        );
+        assert_eq!(
+            progress_say(40 << 20, 224),
+            "40 of 224 MB. Search matches words until it is here."
+        );
+        assert_eq!(
+            progress_say(300 << 20, 224),
+            "224 of 224 MB. Search matches words until it is here."
+        );
+        assert_eq!(
+            (ago(0, 59_000), ago(0, 3_600_000), ago(0, 2 * 86_400_000)),
+            ("just now".into(), "1 hour ago".into(), "2 days ago".into())
+        );
+    }
+}

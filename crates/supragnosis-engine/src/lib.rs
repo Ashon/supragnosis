@@ -1259,6 +1259,9 @@ pub struct ProposalEventSummary {
 #[derive(Serialize)]
 pub struct ObsSummary {
     pub id: String,
+    /// The workspace the observation was written to - what a log read across every workspace needs
+    /// to say where an entry landed (docs/onboarding.md Section 4.4).
+    pub workspace: String,
     pub content: String,
     /// The deterministic fold-ordering key ([`ordering_hlc`]) - also the log-feed order.
     pub hlc: Hlc,
@@ -4327,6 +4330,7 @@ impl Engine {
                 hlc: ordering_hlc(obs),
                 effective_tier: effective_tier(obs, &gates),
                 id: obs.id.clone(),
+                workspace: ws,
                 content: obs.content.clone(),
                 proposal,
                 derived_from: obs.derived_from.clone(),

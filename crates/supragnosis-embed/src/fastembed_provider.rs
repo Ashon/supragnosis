@@ -91,28 +91,55 @@ impl Model {
         cache.join(format!("models--{}", self.repo().replace('/', "--")))
     }
 
-    /// Whether the weights are in the cache: a file over a megabyte under the model's directory.
-    /// The tokenizer and the config are small; only the weights are worth a download. Symlinks are
-    /// skipped: hf-hub keeps the files once under `blobs` and links them from `snapshots`.
+    /// Whether the model is complete in the cache: a snapshot links every file fastembed reads - the
+    /// tokenizer's three files, the config and the ONNX weights - to a file that exists, the weights
+    /// over a megabyte. hf-hub links a snapshot's file only once its blob has finished downloading,
+    /// so a download in progress (`blobs/<etag>.part`) never reads as present. The check this
+    /// replaces counted any file over a megabyte, the partial weights included; the loader then tried
+    /// a half-finished model, failed, and never tried again in that process (docs/onboarding.md
+    /// Section 4.3, semantic-retrieval.md SR2).
     pub fn present(self, cache: &Path) -> bool {
-        fn has_large_file(dir: &Path) -> bool {
-            let Ok(entries) = std::fs::read_dir(dir) else {
-                return false;
-            };
-            entries.flatten().any(|e| {
-                let p = e.path();
-                let Ok(meta) = std::fs::symlink_metadata(&p) else {
-                    return false;
-                };
-                if meta.is_dir() {
-                    has_large_file(&p)
-                } else {
-                    meta.is_file() && meta.len() > 1 << 20
-                }
-            })
-        }
-        has_large_file(&self.cache_path(cache))
+        let Ok(snapshots) = std::fs::read_dir(self.cache_path(cache).join("snapshots")) else {
+            return false;
+        };
+        snapshots.flatten().any(|e| snapshot_complete(&e.path()))
     }
+
+    /// Bytes this model's directory holds now, partial downloads included: the progress `embed
+    /// fetch --events` reports while the download runs (docs/onboarding.md Section 4.3).
+    pub fn bytes_on_disk(self, cache: &Path) -> u64 {
+        dir_size(&self.cache_path(cache))
+    }
+}
+
+/// The files fastembed reads from a snapshot besides the weights (fastembed's `common.rs`).
+const SNAPSHOT_FILES: [&str; 4] = [
+    "tokenizer.json",
+    "config.json",
+    "special_tokens_map.json",
+    "tokenizer_config.json",
+];
+
+/// A snapshot directory that links every file the model needs to a file that exists (following
+/// links): the four of [`SNAPSHOT_FILES`], non-empty, and an `.onnx` over a megabyte, in the
+/// directory itself or one level down (some repositories keep it under `onnx/`).
+fn snapshot_complete(dir: &Path) -> bool {
+    let file = |p: &Path| std::fs::metadata(p).map(|m| m.is_file()).unwrap_or(false);
+    let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    if !SNAPSHOT_FILES.iter().all(|f| file(&dir.join(f)) && size(&dir.join(f)) > 0) {
+        return false;
+    }
+    let weights_in = |d: &Path| {
+        std::fs::read_dir(d).is_ok_and(|es| {
+            es.flatten().any(|e| {
+                let p = e.path();
+                p.extension().is_some_and(|x| x == "onnx") && file(&p) && size(&p) > 1 << 20
+            })
+        })
+    };
+    weights_in(dir)
+        || std::fs::read_dir(dir)
+            .is_ok_and(|es| es.flatten().any(|e| e.path().is_dir() && weights_in(&e.path())))
 }
 
 /// Model cache directory: `~/.supragnosis/models`, inside the state directory so removing it
@@ -274,12 +301,24 @@ mod tests {
         assert!(err.to_string().contains("embed fetch"), "{err}");
         assert!(!dir.exists(), "nothing was downloaded or created");
 
-        let small = Model::Multilingual.cache_path(&dir).join("snapshots/a");
-        std::fs::create_dir_all(&small).unwrap();
-        std::fs::write(small.join("config.json"), "{}").unwrap();
-        assert!(!Model::Multilingual.present(&dir), "small files are not the weights");
-        std::fs::write(small.join("model_optimized.onnx"), vec![0u8; (1 << 20) + 1]).unwrap();
+        // A download in progress: the weights' blob is large and partial, and no snapshot links it.
+        let model_dir = Model::Multilingual.cache_path(&dir);
+        std::fs::create_dir_all(model_dir.join("blobs")).unwrap();
+        std::fs::write(model_dir.join("blobs/abc.part"), vec![0u8; (2 << 20) + 1]).unwrap();
+        assert!(!Model::Multilingual.present(&dir), "a partial download is not the model");
+        let snap = model_dir.join("snapshots/a");
+        std::fs::create_dir_all(&snap).unwrap();
+        for f in SNAPSHOT_FILES {
+            std::fs::write(snap.join(f), "{}").unwrap();
+        }
+        assert!(
+            !Model::Multilingual.present(&dir),
+            "the tokenizer and the config are not the weights"
+        );
+        std::fs::write(snap.join("model_optimized.onnx"), vec![0u8; (1 << 20) + 1]).unwrap();
         assert!(Model::Multilingual.present(&dir));
+        std::fs::remove_file(snap.join("tokenizer.json")).unwrap();
+        assert!(!Model::Multilingual.present(&dir), "every file fastembed reads must be there");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

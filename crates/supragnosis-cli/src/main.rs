@@ -66,6 +66,9 @@ enum Cmd {
     /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini) to this
     /// node through the bridge; with no app, list them and how each is connected
     Connect(ConnectArgs),
+    /// From install to the first entry: keep the daemon running, connect your AI apps, download the
+    /// search model, and try it. Shows the plan and asks first (docs/onboarding.md)
+    Setup(SetupArgs),
     /// The embedding model behind semantic retrieval (docs/semantic-retrieval.md)
     Embed {
         #[command(subcommand)]
@@ -163,7 +166,12 @@ enum PrincipalCmd {
 enum EmbedCmd {
     /// Download the model into ~/.supragnosis/models, once. `service install` does this too; the
     /// daemon never downloads, and says so in `status` while the model is missing
-    Fetch,
+    Fetch {
+        /// One JSON object per line instead of a progress bar: the bytes on disk against the
+        /// model's size, about twice a second (the desktop app reads this).
+        #[arg(long)]
+        events: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -186,6 +194,37 @@ struct ServiceInstallArgs {
     /// set are carried forward on their own.
     #[arg(long = "env", value_name = "KEY=VALUE")]
     env: Vec<String>,
+    /// Do not download the search model; `supragnosis embed fetch` does it later. The daemon does
+    /// not wait for it either way (`setup` downloads it as its own step).
+    #[arg(long)]
+    no_model: bool,
+}
+
+#[derive(Args, Clone, Default)]
+struct SetupArgs {
+    /// Apply the plan with its defaults, asking nothing. Never replaces an entry `connect` did not
+    /// write, and never takes over a manager setup only reports.
+    #[arg(long, conflicts_with = "check")]
+    yes: bool,
+    /// Only read, and print the checklist.
+    #[arg(long, conflicts_with = "step")]
+    check: bool,
+    /// Apply one step: server, app=<id>, model or wait.
+    #[arg(long, value_name = "STEP")]
+    step: Option<String>,
+    /// One JSON object per line instead of text (the desktop app reads this).
+    #[arg(long)]
+    events: bool,
+    /// How long `--step wait` waits for the first entry, in seconds.
+    #[arg(long, value_name = "SECONDS", default_value_t = 600)]
+    timeout: u64,
+    /// Claude Code only: connect it without the capture hook (docs/client-connect.md Section 12).
+    #[arg(long)]
+    no_capture: bool,
+    /// The pid of the daemon the desktop app spawned, which this CLI cannot otherwise tell from a
+    /// process it does not know. The app passes it.
+    #[arg(long, value_name = "PID", hide = true)]
+    app_daemon: Option<u32>,
 }
 
 #[derive(Args, Clone, Default)]
@@ -278,6 +317,7 @@ mod hook;
 mod lifecycle;
 mod principal;
 mod profile;
+mod setup;
 
 fn main() -> Result<()> {
     match Cli::parse().cmd.unwrap_or(Cmd::Serve(RunArgs::default())) {
@@ -288,7 +328,8 @@ fn main() -> Result<()> {
         Cmd::Status(a) => status(a.json),
         Cmd::Bridge => bridge_cmd(),
         Cmd::Connect(a) => connect_cmd(a),
-        Cmd::Embed { cmd: EmbedCmd::Fetch } => embed_fetch(true),
+        Cmd::Setup(a) => setup_cmd(a),
+        Cmd::Embed { cmd: EmbedCmd::Fetch { events } } => embed_fetch(true, events),
         Cmd::Hook(a) => hook_cmd(a),
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
@@ -470,12 +511,17 @@ fn build_fastembed() -> Result<Option<Arc<dyn EmbeddingProvider>>> {
 }
 
 /// `supragnosis embed fetch` (semantic-retrieval.md Section 6): the one download, by the person's
-/// or the installer's command. Idempotent, and says what it found or fetched.
+/// or the installer's command. Idempotent, and says what it found or fetched. With `events`, the
+/// progress bar gives way to one JSON line about twice a second with the bytes on disk, and the last
+/// line says whether the model is complete (docs/onboarding.md Section 4.3).
 #[cfg(feature = "fastembed")]
-fn embed_fetch(progress: bool) -> Result<()> {
+fn embed_fetch(progress: bool, events: bool) -> Result<()> {
     use supragnosis_embed::{model_cache_dir, FastEmbedProvider};
     let model = embed_model()?;
     let cache = model_cache_dir();
+    if events {
+        return embed_fetch_events(model, &cache);
+    }
     let had = model.present(&cache);
     if !had {
         println!(
@@ -497,8 +543,78 @@ fn embed_fetch(progress: bool) -> Result<()> {
     Ok(())
 }
 
+/// `embed fetch --events`: the fetch on a thread, and the model's directory measured beside it. A
+/// download in progress is `working`; only a complete model is `done` (O5).
+#[cfg(feature = "fastembed")]
+fn embed_fetch_events(model: supragnosis_embed::Model, cache: &std::path::Path) -> Result<()> {
+    use setup::{Event, State};
+    use supragnosis_embed::FastEmbedProvider;
+    let emit = |e: &Event| println!("{}", serde_json::to_string(e).unwrap_or_default());
+    println!("{}", serde_json::json!({ "schema": setup::EVENTS_SCHEMA }));
+    let mb = model.download_mb();
+    if model.present(cache) {
+        emit(&Event::new(
+            "model",
+            None,
+            State::Done,
+            "Search by meaning is on: the model is here.",
+        ));
+        return Ok(());
+    }
+    emit(&Event::new(
+        "model",
+        None,
+        State::Working,
+        format!(
+            "Downloading the search model {} ({mb} MB, once) into {}.",
+            model.name(),
+            cache.display()
+        ),
+    ));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let to = cache.to_path_buf();
+    std::thread::spawn(move || {
+        let _ = tx.send(FastEmbedProvider::fetch(model, &to, false));
+    });
+    let result = loop {
+        match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+            Ok(r) => break r,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => emit(&Event::new(
+                "model",
+                None,
+                State::Working,
+                setup::progress_say(model.bytes_on_disk(cache), mb),
+            )),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                break Err(supragnosis_core::EmbedError::Provider("the download stopped".into()))
+            }
+        }
+    };
+    match result {
+        Ok(_) if model.present(cache) => {
+            emit(&Event::new(
+                "model",
+                None,
+                State::Done,
+                "Search by meaning is on: the model is here.",
+            ));
+            Ok(())
+        }
+        Ok(_) => {
+            let say = format!("The download ended, but the model in {} is not complete. Run setup again to fetch what is missing.", cache.display());
+            emit(&Event::new("model", None, State::Failed, say.clone()));
+            anyhow::bail!(say)
+        }
+        Err(e) => {
+            let say = format!("The download failed ({e}). Search matches words until it is here; run setup again when online.");
+            emit(&Event::new("model", None, State::Failed, say.clone()));
+            anyhow::bail!(say)
+        }
+    }
+}
+
 #[cfg(not(feature = "fastembed"))]
-fn embed_fetch(_progress: bool) -> Result<()> {
+fn embed_fetch(_progress: bool, _events: bool) -> Result<()> {
     anyhow::bail!(
         "this build has no embedding model (built without the fastembed feature); retrieval is keyword only"
     )
@@ -1417,6 +1533,8 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
             }
             connect::write_replacing(&path, &edited)
                 .with_context(|| format!("writing {}", path.display()))?;
+            // Every file setup changes is named where it ran (docs/onboarding.md O2).
+            println!("  wrote   {}", path.display());
         }
     }
     let after = client.entry(&env);
@@ -1433,6 +1551,23 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
         capture_add(&env, &program)?;
     }
     println!("  next    {}", client.next_step());
+    // The entry is written either way, and the app fails until a server answers - said here rather
+    // than at the app's first tool call (docs/onboarding.md Section 4.2).
+    if let Ok(target) = profile::active(&env.home, |k| std::env::var(k).ok()) {
+        if !check_server(&target).answering {
+            match target {
+                profile::Target::Local => println!(
+                    "  warning no daemon answers at http://{}/mcp, so {} cannot reach it yet - `supragnosis setup` starts one and keeps it running",
+                    status_http_addr(),
+                    client.name()
+                ),
+                profile::Target::Remote { name, url, .. } => println!(
+                    "  warning the server {name:?} ({url}) does not answer, so {} cannot reach it yet - `supragnosis server` checks it",
+                    client.name()
+                ),
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1590,6 +1725,9 @@ fn run_client_cli(client: connect::Client, env: &connect::Env, argv: &[String]) 
             }
         );
     }
+    // The command that changed the app's settings, since no file of ours names the change
+    // (docs/onboarding.md Section 4.2, O2).
+    println!("  ran     {} {}", cli.display(), argv.join(" "));
     Ok(())
 }
 
@@ -1675,6 +1813,581 @@ fn unix_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+// --- First run: `supragnosis setup` (docs/onboarding.md) ---------------------------------------
+// The decisions and their words are in setup.rs; what is here looks (the lifecycle's observation,
+// `connect --json`, the viewer socket) and acts by running this binary's own subcommands, so what a
+// person would have read in a terminal is what reaches the app's log drawer.
+
+/// Where setup writes: one JSON object per line for the app, or rows for a person. A test keeps the
+/// lines instead of printing them.
+#[cfg(unix)]
+struct SetupOut {
+    events: bool,
+    kept: Option<std::cell::RefCell<Vec<String>>>,
+}
+
+#[cfg(unix)]
+impl SetupOut {
+    fn new(events: bool) -> Self {
+        SetupOut { events, kept: None }
+    }
+    fn line(&self, line: String) {
+        match &self.kept {
+            Some(k) => k.borrow_mut().push(line),
+            None => println!("{line}"),
+        }
+    }
+    fn emit(&self, e: &setup::Event) {
+        if self.events {
+            self.line(serde_json::to_string(e).unwrap_or_default());
+        } else if let Some(line) = &e.out {
+            self.line(format!("    {line}"));
+        } else if e.cmd.is_none() {
+            self.line(setup::text_row(e));
+        }
+    }
+    fn list(&self, list: &[setup::Event]) {
+        for e in list {
+            self.emit(e);
+        }
+    }
+}
+
+/// An act setup can take for a step that is `todo`.
+#[cfg(unix)]
+#[derive(Clone, Debug, PartialEq)]
+enum SetupAct {
+    Server,
+    App(String),
+    Model,
+}
+
+#[cfg(unix)]
+impl SetupAct {
+    fn describe(&self, o: &setup::Observed) -> String {
+        match self {
+            SetupAct::Server => "keep the server running, now and at every login".to_string(),
+            SetupAct::App(id) => format!(
+                "connect {}",
+                o.apps.iter().find(|a| &a.id == id).map_or(id.as_str(), |a| a.name.as_str())
+            ),
+            SetupAct::Model => match o.model {
+                setup::Model::Missing(mb) => format!("download the search model ({mb} MB)"),
+                _ => "download the search model".to_string(),
+            },
+        }
+    }
+}
+
+/// The plan: every step the checklist says setup can do, in the order a terminal runs them - the
+/// model last, since nothing waits for it (Section 4.3).
+#[cfg(unix)]
+fn setup_plan(list: &[setup::Event]) -> Vec<SetupAct> {
+    use setup::State;
+    let mut plan = Vec::new();
+    if list.iter().any(|e| e.step == "server" && e.state == State::Todo) {
+        plan.push(SetupAct::Server);
+    }
+    for e in list.iter().filter(|e| e.step == "app" && e.state == State::Todo) {
+        plan.extend(e.id.clone().map(SetupAct::App));
+    }
+    if list.iter().any(|e| e.step == "model" && e.state == State::Todo) {
+        plan.push(SetupAct::Model);
+    }
+    plan
+}
+
+#[cfg(unix)]
+fn setup_cmd(a: SetupArgs) -> Result<()> {
+    let out = SetupOut::new(a.events);
+    if a.events {
+        println!("{}", serde_json::json!({ "schema": setup::EVENTS_SCHEMA }));
+    }
+    if let Some(step) = a.step.clone() {
+        let ok = setup_step(&a, &out, &step)?;
+        return if ok { Ok(()) } else { std::process::exit(1) };
+    }
+    let observed = setup_observe(a.app_daemon)?;
+    let list = setup::checklist(&observed);
+    if a.check {
+        out.list(&list);
+        out.emit(&setup::summary(&list));
+        return Ok(());
+    }
+    let plan = setup_plan(&list);
+    if !out.events {
+        println!("supragnosis setup - from install to the first entry\n");
+        out.list(&list);
+        println!();
+    }
+    if plan.is_empty() {
+        out.emit(&setup::summary(&list));
+        setup_next(&out, &list);
+        return Ok(());
+    }
+    let chosen = if a.yes {
+        plan
+    } else {
+        if a.events {
+            anyhow::bail!(
+                "with --events setup asks nothing: add --yes to apply the plan, or --check to only read"
+            );
+        }
+        setup_ask(&observed, plan)?
+    };
+    if chosen.is_empty() {
+        out.emit(&setup::summary(&list));
+        return Ok(());
+    }
+    let mut ok = true;
+    for act in &chosen {
+        let step = match act {
+            SetupAct::Server => "server".to_string(),
+            SetupAct::App(id) => format!("app={id}"),
+            SetupAct::Model => "model".to_string(),
+        };
+        ok &= setup_step(&a, &out, &step)?;
+    }
+    let list = setup::checklist(&setup_observe(a.app_daemon)?);
+    if !out.events {
+        println!();
+        out.list(&list);
+        println!();
+    }
+    out.emit(&setup::summary(&list));
+    setup_next(&out, &list);
+    if ok {
+        Ok(())
+    } else {
+        std::process::exit(1)
+    }
+}
+
+/// Shows the plan and asks, as rustup's installer does: Enter applies it, `n` leaves, `c` asks act by
+/// act. Asking needs a terminal; without one, `--yes` or `--check` says which the caller meant.
+#[cfg(unix)]
+fn setup_ask(o: &setup::Observed, plan: Vec<SetupAct>) -> Result<Vec<SetupAct>> {
+    use std::io::{BufRead, IsTerminal, Write};
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "setup asks before it acts, and there is no terminal to ask in: add --yes to apply the plan, or --check to only read"
+        );
+    }
+    println!("Setup will:");
+    for act in &plan {
+        println!("  - {}", act.describe(o));
+    }
+    // An answer is read per question. The end of input answers no, never the default: a closed
+    // terminal or a short script must not consent to a download (or anything else) for the person.
+    let read = |q: &str| -> Result<Option<String>> {
+        print!("{q}");
+        std::io::stdout().flush()?;
+        let mut s = String::new();
+        if std::io::stdin().lock().read_line(&mut s)? == 0 {
+            println!();
+            return Ok(None);
+        }
+        Ok(Some(s.trim().to_ascii_lowercase()))
+    };
+    let yes = |a: &Option<String>| matches!(a.as_deref(), Some("" | "y" | "yes"));
+    let answer = read("Proceed? [Y/n, c to choose] ")?;
+    if answer.as_deref() == Some("c") {
+        let mut chosen = Vec::new();
+        for act in plan {
+            let a = read(&format!("  {}? [Y/n] ", act.describe(o)))?;
+            if a.is_none() {
+                break;
+            }
+            if yes(&a) {
+                chosen.push(act);
+            }
+        }
+        return Ok(chosen);
+    }
+    if yes(&answer) {
+        return Ok(plan);
+    }
+    println!("Nothing was changed. `supragnosis setup` shows this plan again.");
+    Ok(Vec::new())
+}
+
+/// What to do next in a terminal, once the acts are done: the question to ask, and how to wait.
+#[cfg(unix)]
+fn setup_next(out: &SetupOut, list: &[setup::Event]) {
+    if out.events {
+        return;
+    }
+    if list.iter().any(|e| e.step == "first" && e.state == setup::State::Working) {
+        println!(
+            "\nNext: in a connected app, ask \"{}\"\n`supragnosis setup --step wait` waits for the entry, and the viewer shows it.",
+            setup::TRY_IT
+        );
+    }
+}
+
+/// One step, applied: `server`, `app=<id>`, `model` or `wait`. Re-reads the state first, does
+/// nothing to a step that is not `todo`, and ends with the step's state as it is afterwards. `false`
+/// when the step failed or could not be applied (O2).
+#[cfg(unix)]
+fn setup_step(a: &SetupArgs, out: &SetupOut, step: &str) -> Result<bool> {
+    use setup::{Event, State};
+    let observed = setup_observe(a.app_daemon)?;
+    let list = setup::checklist(&observed);
+    let (name, id) = match step.split_once('=') {
+        Some(("app", id)) => ("app", Some(id)),
+        None if matches!(step, "server" | "model" | "wait") => (step, None),
+        _ => anyhow::bail!("unknown step {step:?} - one of: server, app=<id>, model, wait"),
+    };
+    let row = |l: &[Event], name: &str, id: Option<&str>| {
+        l.iter().find(|e| e.step == name && e.id.as_deref() == id).cloned()
+    };
+    if name == "wait" {
+        return setup_wait(a, out, &observed);
+    }
+    let name: &'static str = if name == "app" {
+        "app"
+    } else if name == "server" {
+        "server"
+    } else {
+        "model"
+    };
+    let Some(before) = row(&list, name, id) else {
+        let ids: Vec<&str> = connect::CLIENTS.iter().map(|c| c.id()).collect();
+        anyhow::bail!("unknown app {:?} - one of: {}", id.unwrap_or(""), ids.join(", "));
+    };
+    if before.state != State::Todo {
+        let ok = matches!(before.state, State::Done | State::Skipped | State::Working);
+        out.emit(&before);
+        return Ok(ok);
+    }
+    let args: Vec<String> = match name {
+        "server" => match setup::server_act(&observed.runner) {
+            Ok(Some(args)) => args.into_iter().map(String::from).collect(),
+            Ok(None) => {
+                out.emit(&before);
+                return Ok(true);
+            }
+            Err(why) => {
+                out.emit(&Event::new("server", None, State::Attention, why));
+                return Ok(false);
+            }
+        },
+        "app" => {
+            let id = id.unwrap_or_default();
+            let mut v = vec!["connect".to_string(), id.to_string()];
+            if a.no_capture && id == connect::Client::ClaudeCode.id() {
+                v.push("--no-capture".to_string());
+            }
+            v
+        }
+        _ if out.events => vec!["embed".into(), "fetch".into(), "--events".into()],
+        _ => vec!["embed".into(), "fetch".into()],
+    };
+    let exe = std::env::current_exe().context("the path of this binary")?;
+    let ran = setup_run(out, &exe, name, id, &args)?;
+    if let Err(why) = ran {
+        let hint = match name {
+            "server" => "`supragnosis status` says who runs the daemon.",
+            "app" => "The app's settings are as they were, or the copy made first is named above.",
+            _ => "Search matches words until the model is here; run setup again when online.",
+        };
+        out.emit(&Event::new(name, id, State::Failed, format!("{why} {hint}")));
+        return Ok(false);
+    }
+    let after = setup::checklist(&setup_observe(a.app_daemon)?);
+    let row_after = row(&after, name, id).unwrap_or(before);
+    out.emit(&row_after);
+    if name == "app" {
+        if let Some(apps) = row(&after, "apps", None) {
+            out.emit(&apps);
+        }
+    }
+    Ok(row_after.state != State::Failed)
+}
+
+/// Runs `supragnosis <args>` - `exe`, this same binary. In a terminal its output is the person's to
+/// read as it comes; with `--events` each line of it is an event naming the command, and a child that
+/// writes events itself (`embed fetch --events`) has them passed on as they are. `Err` carries why
+/// it failed: the child's last error line, or its exit status.
+#[cfg(unix)]
+fn setup_run(
+    out: &SetupOut,
+    exe: &std::path::Path,
+    step: &'static str,
+    id: Option<&str>,
+    args: &[String],
+) -> Result<std::result::Result<(), String>> {
+    use setup::{Event, State};
+    use std::io::BufRead;
+    let shown = format!("supragnosis {}", args.join(" "));
+    if !out.events {
+        println!("$ {shown}");
+        let st = std::process::Command::new(exe)
+            .args(args)
+            .status()
+            .with_context(|| format!("running {shown}"))?;
+        return Ok(if st.success() { Ok(()) } else { Err(format!("`{shown}` failed ({st}).")) });
+    }
+    let running = format!("Running {shown}.");
+    let mut start = Event::new(step, id, State::Working, running.clone());
+    start.cmd = Some(shown.clone());
+    out.emit(&start);
+    let mut child = std::process::Command::new(exe)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .with_context(|| format!("running {shown}"))?;
+    let (tx, rx) = std::sync::mpsc::channel::<(bool, String)>();
+    let pipes: Vec<(bool, Box<dyn std::io::Read + Send>)> = vec![
+        (false, Box::new(child.stdout.take().context("the child's stdout")?)),
+        (true, Box::new(child.stderr.take().context("the child's stderr")?)),
+    ];
+    for (is_err, pipe) in pipes {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                let _ = tx.send((is_err, line));
+            }
+        });
+    }
+    drop(tx);
+    let mut last_err = String::new();
+    for (is_err, line) in rx {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if is_err {
+            last_err = line.trim().trim_start_matches("Error: ").to_string();
+        }
+        match serde_json::from_str::<serde_json::Value>(&line) {
+            // A child's own events, passed on; its schema line is this run's already.
+            Ok(v) if v.get("step").is_some() => out.line(v.to_string()),
+            Ok(v) if v.get("schema").is_some() => {}
+            _ => {
+                let mut e = Event::new(step, id, State::Working, running.clone());
+                e.out = Some(line);
+                out.emit(&e);
+            }
+        }
+    }
+    let st = child.wait().with_context(|| format!("waiting for {shown}"))?;
+    Ok(if st.success() {
+        Ok(())
+    } else if last_err.is_empty() {
+        Err(format!("`{shown}` failed ({st})."))
+    } else {
+        Err(format!("`{shown}` failed: {last_err}."))
+    })
+}
+
+/// `--step wait` (Section 4.4): polls until the store holds an entry, for `--timeout` seconds. Exits
+/// 0 when one is there and 2 when none came, which is not a failure; it writes nothing (O1).
+#[cfg(unix)]
+fn setup_wait(a: &SetupArgs, out: &SetupOut, o: &setup::Observed) -> Result<bool> {
+    use setup::{Event, FirstEntry, State};
+    if let Some(r) = &o.remote {
+        out.emit(&Event::new(
+            "first",
+            None,
+            State::Skipped,
+            format!("Entries go to the remote server \"{r}\"."),
+        ));
+        return Ok(true);
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(a.timeout);
+    let mut said = false;
+    loop {
+        match newest_entry() {
+            FirstEntry::Some { workspace, said: text, .. } => {
+                let say = match &workspace {
+                    Some(ws) => format!("An entry is in workspace \"{ws}\": {text}"),
+                    None => format!("An entry is in the store: {text}"),
+                };
+                let mut e = Event::new("first", None, State::Done, say);
+                e.id = workspace;
+                out.emit(&e);
+                return Ok(true);
+            }
+            _ if !said => {
+                said = true;
+                out.emit(&Event::new(
+                    "first",
+                    None,
+                    State::Working,
+                    format!(
+                        "Waiting for the first entry. Ask a connected app: \"{}\"",
+                        setup::TRY_IT
+                    ),
+                ));
+            }
+            _ => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            out.emit(&Event::new(
+                "first",
+                None,
+                State::Todo,
+                format!(
+                    "No entry yet after {} seconds. It appears when a connected app records one; `supragnosis setup --step wait` waits again.",
+                    a.timeout
+                ),
+            ));
+            std::process::exit(2);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+}
+
+/// What setup reads before it decides anything, every time (O3).
+#[cfg(unix)]
+fn setup_observe(app_daemon: Option<u32>) -> Result<setup::Observed> {
+    let env = connect::Env::from_process();
+    // An unreadable profile is reported, never read as "local" (P5).
+    let remote = match profile::active(&env.home, |k| std::env::var(k).ok())
+        .map_err(|e| anyhow::anyhow!("the server profile could not be read: {e}"))?
+    {
+        profile::Target::Local => None,
+        profile::Target::Remote { name, .. } => Some(name),
+    };
+    let observed = observe();
+    let situation = lifecycle::classify(&observed);
+    let app_child = app_daemon
+        .is_some_and(|p| i32::try_from(p).is_ok_and(|p| pid_alive(p) && pid_is_supragnosis(p)));
+    let runner = setup::runner(
+        &situation,
+        observed.answering,
+        canonical_plist_state(),
+        app_child,
+        cfg!(target_os = "macos"),
+    );
+
+    // First contact is this daemon's, so it says nothing about apps that use a remote one.
+    let reported = if remote.is_none() && observed.answering { first_contacts() } else { None };
+    let contacts_known = reported.is_some();
+    let contacts: Vec<(String, u64)> = reported
+        .as_ref()
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|c| Some((c["name"].as_str()?.to_string(), c["first"].as_u64()?)))
+        .collect();
+    let now = supragnosis_core::now_millis();
+    let doc = connect_document(&env, &bridge_program()?);
+    let apps = doc["clients"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| {
+            let id = c["id"].as_str().unwrap_or_default().to_string();
+            setup::App {
+                name: c["name"].as_str().unwrap_or_default().to_string(),
+                installed: c["installed"].as_bool().unwrap_or(false),
+                entry: c["entry"].as_str().unwrap_or("unknown").to_string(),
+                next: connect::Client::parse(&id)
+                    .map(|c| c.next_step())
+                    .unwrap_or_default()
+                    .to_string(),
+                reached: contacts
+                    .iter()
+                    .filter(|(n, _)| setup::client_app(n) == Some(id.as_str()))
+                    .map(|(_, first)| *first)
+                    .min()
+                    .map(|t| setup::ago(t, now)),
+                id,
+            }
+        })
+        .collect();
+    let other_contacts = contacts
+        .into_iter()
+        .map(|(n, _)| n)
+        .filter(|n| setup::client_app(n).is_none())
+        .collect();
+    let health = if observed.answering { store_health() } else { None };
+    Ok(setup::Observed {
+        remote,
+        runner,
+        apps,
+        contacts_known,
+        other_contacts,
+        model: setup_model(health.as_ref()),
+        first: if observed.answering { newest_entry() } else { setup::FirstEntry::Unknown },
+    })
+}
+
+/// The search model: the running daemon's own report when it answers (semantic-retrieval.md SR3),
+/// and otherwise what this binary finds in the cache under its own environment.
+fn setup_model(health: Option<&serde_json::Value>) -> setup::Model {
+    let Some(h) = health else {
+        return local_model();
+    };
+    match h.get("semantic") {
+        Some(r) if r["state"].as_str() == Some("on") => setup::Model::On,
+        Some(r) if r.is_object() => match local_model() {
+            // Complete on disk and still off: the daemon tried it and it did not load.
+            setup::Model::On => setup::Model::Broken(
+                r["note"].as_str().unwrap_or("the search model is downloaded but did not load").to_string(),
+            ),
+            other => other,
+        },
+        _ => setup::Model::Skipped(
+            "This server runs without a search model (SUPRAGNOSIS_EMBED=none, or a build without one), so search matches words."
+                .to_string(),
+        ),
+    }
+}
+
+#[cfg(feature = "fastembed")]
+fn local_model() -> setup::Model {
+    let kind = std::env::var("SUPRAGNOSIS_EMBED").unwrap_or_default();
+    if !matches!(kind.trim(), "" | "fastembed") {
+        return setup::Model::Skipped(format!(
+            "SUPRAGNOSIS_EMBED={} here, so there is no search model to fetch.",
+            kind.trim()
+        ));
+    }
+    match embed_model() {
+        Ok(m) if m.present(&supragnosis_embed::model_cache_dir()) => setup::Model::On,
+        Ok(m) => setup::Model::Missing(m.download_mb()),
+        Err(e) => setup::Model::Broken(format!("{e:#}")),
+    }
+}
+
+#[cfg(not(feature = "fastembed"))]
+fn local_model() -> setup::Model {
+    setup::Model::Skipped("This build has no search model, so search matches words.".to_string())
+}
+
+/// The newest entry in the store, read through the viewer socket across every workspace. A socket
+/// that does not answer, or answers with an error, is unknown, never empty (P5).
+#[cfg(unix)]
+fn newest_entry() -> setup::FirstEntry {
+    let Some(body) = viz_get_within("/api/observations?workspace=*&limit=1", 10_000) else {
+        return setup::FirstEntry::Unknown;
+    };
+    let Ok(serde_json::Value::Array(log)) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return setup::FirstEntry::Unknown;
+    };
+    let Some(o) = log.first() else {
+        return setup::FirstEntry::None;
+    };
+    let mut said: String = o["content"].as_str().unwrap_or_default().chars().take(140).collect();
+    if said.len() < o["content"].as_str().unwrap_or_default().len() {
+        said.push_str("...");
+    }
+    setup::FirstEntry::Some {
+        workspace: o["workspace"].as_str().map(str::to_string),
+        ago: setup::ago(o["hlc"]["wall"].as_u64().unwrap_or(0), supragnosis_core::now_millis()),
+        said,
+    }
+}
+
+#[cfg(not(unix))]
+fn setup_cmd(_a: SetupArgs) -> Result<()> {
+    anyhow::bail!("setup is supported only on unix (macOS/Linux)")
 }
 
 /// `supragnosis bridge`: stdout carries JSON-RPC and nothing else, so nothing here logs to it.
@@ -2034,7 +2747,10 @@ async fn spawn_viz(
     );
     let engine = Arc::clone(engine);
     tokio::spawn(async move {
-        if let Err(e) = supragnosis_viz::serve(engine, listener, events, fed, narrow).await {
+        let clients: supragnosis_viz::ClientsView = Arc::new(|| client_log().snapshot());
+        if let Err(e) =
+            supragnosis_viz::serve(engine, listener, events, fed, narrow, Some(clients)).await
+        {
             tracing::error!(error = %e, "viz server terminated");
         }
     });
@@ -2084,6 +2800,13 @@ async fn serve_http_daemon(
     Ok(())
 }
 
+/// First contact (docs/onboarding.md Section 5): the one log this daemon process keeps of which AI
+/// apps talked to it, shared by every MCP session and read by the viewer's `/api/clients`.
+fn client_log() -> Arc<supragnosis_mcp::ClientLog> {
+    static LOG: std::sync::OnceLock<Arc<supragnosis_mcp::ClientLog>> = std::sync::OnceLock::new();
+    LOG.get_or_init(Default::default).clone()
+}
+
 /// The daemon's MCP router: the streamable-HTTP service behind its guards. Separate from the bind
 /// so the bridge's tests can serve exactly what the daemon serves (client-connect.md C4).
 fn mcp_router(
@@ -2093,7 +2816,7 @@ fn mcp_router(
 ) -> axum::Router {
     let service = StreamableHttpService::new(
         move || {
-            let mut server = SupragnosisServer::new(engine.clone());
+            let mut server = SupragnosisServer::new(engine.clone()).with_clients(client_log());
             if let Some(ctx) = &sync_ctx {
                 server = server.with_sync(ctx.clone());
             }
@@ -2691,6 +3414,16 @@ fn running_version() -> Option<String> {
     lifecycle::parse_about_version(&viz_get("/api/about")?)
 }
 
+/// First contact as the running daemon reports it, the `clients` list of `/api/clients`. `None`
+/// when the socket does not answer or the daemon does not record contacts (one older than this).
+fn first_contacts() -> Option<serde_json::Value> {
+    serde_json::from_str::<serde_json::Value>(&viz_get("/api/clients")?)
+        .ok()?
+        .get("clients")
+        .filter(|c| c.is_array())
+        .cloned()
+}
+
 /// The running daemon's store health - the owed-projection ledger and the last recovery
 /// (crash-recovery.md K5). `None` when the viewer socket does not answer, or answers without the
 /// route (a daemon older than this binary): both are unknown, not healthy (Principle 5).
@@ -2703,13 +3436,18 @@ fn store_health() -> Option<serde_json::Value> {
 /// One GET over the viewer's unix socket, returning the body. Short timeouts: `status` must answer
 /// even when the daemon is wedged.
 fn viz_get(path: &str) -> Option<String> {
+    viz_get_within(path, 800)
+}
+
+/// [`viz_get`] with its own timeout, for a read that walks the log.
+fn viz_get_within(path: &str, millis: u64) -> Option<String> {
     use std::io::{Read, Write};
     let sock = std::env::var("SUPRAGNOSIS_VIZ_SOCK")
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(default_viz_sock);
     let mut s = std::os::unix::net::UnixStream::connect(sock).ok()?;
-    let limit = Some(std::time::Duration::from_millis(800));
+    let limit = Some(std::time::Duration::from_millis(millis));
     s.set_read_timeout(limit).ok()?;
     s.set_write_timeout(limit).ok()?;
     s.write_all(format!("GET {path} HTTP/1.1\r\nConnection: close\r\n\r\n").as_bytes())
@@ -2988,6 +3726,9 @@ struct StatusFacts<'a> {
     running: Option<String>,
     health: Option<serde_json::Value>,
     server: serde_json::Value,
+    /// First contact (docs/onboarding.md Section 5): the AI apps that reached the daemon since it
+    /// started; null when it does not answer, or does not record them.
+    clients: Option<serde_json::Value>,
     plist: std::path::PathBuf,
     plist_state: &'static str,
 }
@@ -3071,6 +3812,7 @@ fn status_document(f: &StatusFacts) -> serde_json::Value {
         // The daemon's own report on semantic retrieval (SR3); null when it is not answering.
         "semantic": f.health.as_ref().and_then(|h| h.get("semantic")).cloned(),
         "server": f.server,
+        "clients": f.clients,
         "service": {
             "label": lifecycle::CANONICAL_LABEL,
             "plist": f.plist,
@@ -3110,6 +3852,7 @@ fn status(json: bool) -> Result<()> {
             running: running.clone(),
             health,
             server,
+            clients: if observed.answering { first_contacts() } else { None },
             plist: canonical_plist_path(),
             plist_state: canonical_plist_state(),
         };
@@ -3123,6 +3866,15 @@ fn status(json: bool) -> Result<()> {
                 Some(pid) => println!("stopped (stale pidfile, pid {pid})"),
                 None => println!("stopped"),
             }
+            // Where a person lands on a first run, or after a restart that did not bring it back
+            // (docs/onboarding.md Section 7): how to run it now, how to keep it, and setup.
+            println!("  start   supragnosis start            runs it until you log out");
+            if cfg!(target_os = "macos") {
+                println!("  keep    supragnosis service install  runs it now and at every login");
+            } else {
+                println!("  keep    deploy/systemd/README.md     a user unit that runs it at every login");
+            }
+            println!("  setup   supragnosis setup            the whole first run, step by step");
             return Ok(());
         }
         Situation::One(m) => {
@@ -3440,7 +4192,10 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     println!("  the daemon starts now and at every login (supragnosis service uninstall to undo)");
     // The model, so the first tool call does not find it missing (semantic-retrieval.md Section
     // 6). A failure is reported and does not fail the install: the daemon is useful without it.
-    if let Err(e) = embed_fetch(true) {
+    // `setup` asks for none and fetches it as its own step, which nothing waits on (O5).
+    if args.no_model {
+        println!("  model   not fetched here (--no-model) - `supragnosis embed fetch` fetches it");
+    } else if let Err(e) = embed_fetch(true, false) {
         println!("  model   not fetched: {e:#} - run `supragnosis embed fetch` when online");
     }
     await_daemon(lifecycle::CANONICAL_LABEL)
@@ -4442,11 +5197,45 @@ mod json_contract {
                     "backfill": {"state": "done", "found": 3, "embedded": 3}}
             })),
             server: serde_json::json!({"name": "lab", "url": "https://lab:7420/mcp", "remote": true}),
+            clients: Some(serde_json::json!([
+                {"name": "claude-code", "version": "2.1.0", "first": 1, "last": 2}
+            ])),
             plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),
             plist_state: "generated",
         });
         assert_eq!(doc["schema"], JSON_SCHEMA);
         same_shape(&example("status"), &doc, "status").unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// `setup --events` and `embed fetch --events` (docs/onboarding.md Section 3): a schema line,
+    /// then events whose fields are the example's and whose states are the six the app draws. The
+    /// example is what the Welcome page's tests read.
+    #[test]
+    fn setup_events_match_their_example() {
+        let text = include_str!("../tests/fixtures/json/setup-events.jsonl");
+        let lines: Vec<Value> = text
+            .lines()
+            .map(|l| serde_json::from_str(l).expect("each line is JSON"))
+            .collect();
+        assert_eq!(lines[0], serde_json::json!({ "schema": setup::EVENTS_SCHEMA }));
+        let fields: BTreeSet<&str> = ["step", "id", "state", "say", "cmd", "out"].into();
+        let states: BTreeSet<&str> =
+            ["todo", "working", "done", "attention", "failed", "skipped"].into();
+        let steps: BTreeSet<&str> = ["server", "apps", "app", "model", "first", "summary"].into();
+        for l in &lines[1..] {
+            let keys: BTreeSet<&str> = l.as_object().unwrap().keys().map(String::as_str).collect();
+            assert!(keys.is_subset(&fields) && keys.contains("say"), "{l}");
+            assert!(states.contains(l["state"].as_str().unwrap_or("")), "{l}");
+            assert!(steps.contains(l["step"].as_str().unwrap_or("")), "{l}");
+        }
+        assert_eq!(lines.last().unwrap()["step"], "summary", "the last line summarizes");
+        // What the CLI writes has the same fields: every one of them, when an act runs.
+        let mut e = setup::Event::new("app", Some("cursor"), setup::State::Working, "Running.");
+        e.cmd = Some("supragnosis connect cursor".into());
+        e.out = Some("  wrote   /x".into());
+        let made = serde_json::to_value(&e).unwrap();
+        let keys: BTreeSet<&str> = made.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys, fields);
     }
 
     #[test]
@@ -4587,5 +5376,121 @@ mod key_spelling {
         assert!(notes[0].contains("peer") && notes[1].contains("loud"));
         let keys = trusted_origin_keys(&fc.sync);
         assert_eq!(keys.keys().collect::<Vec<_>>(), vec!["hub"]);
+    }
+}
+
+/// docs/onboarding.md: what setup reads, what it runs, and what it says when an act fails.
+#[cfg(all(test, unix))]
+mod first_run {
+    use super::*;
+
+    /// This file's setup section, from its banner to the bridge command after it.
+    fn section() -> &'static str {
+        let src = include_str!("main.rs");
+        let start = src.find("// --- First run: `supragnosis setup`").expect("the setup section");
+        let end = start + src[start..].find("/// `supragnosis bridge`: stdout").expect("its end");
+        &src[start..end]
+    }
+
+    /// O1 and O6: setup reaches the daemon only through reads of the viewer socket, and acts only by
+    /// running this binary's `service install`, `connect` and `embed fetch` - nothing that observes,
+    /// syncs, adds a server, or replaces an entry `connect` did not write.
+    #[test]
+    fn setup_reads_the_daemon_and_runs_only_its_own_acts() {
+        let s = section();
+        let mut reads: Vec<&str> = s
+            .match_indices("viz_get(\"")
+            .chain(s.match_indices("viz_get_within(\""))
+            .map(|(i, m)| {
+                let r = &s[i + m.len()..];
+                &r[..r.find('"').expect("a closing quote")]
+            })
+            .collect();
+        reads.sort_unstable();
+        assert_eq!(reads, ["/api/observations?workspace=*&limit=1"]);
+        // The other reads go through the helpers `status` uses: /api/clients and /api/health.
+        assert!(s.contains("first_contacts()") && s.contains("store_health()"));
+        for helper in ["fn first_contacts(", "fn store_health("] {
+            let src = include_str!("main.rs");
+            let body = &src[src.find(helper).expect(helper)..];
+            let body = &body[..body.find("\n}\n").expect("its end")];
+            assert_eq!(body.matches("viz_get(").count(), 1, "{helper} reads one path");
+        }
+        assert_eq!(s.matches("Command::new(").count(), 2, "a subprocess other than this binary");
+        assert_eq!(s.matches("Command::new(exe)").count(), 2);
+        let acts = &s[s.find("let args: Vec<String> = match name {").expect("the acts")..];
+        let acts = &acts[..acts.find("let exe =").expect("their end")];
+        assert!(acts.contains("setup::server_act(&observed.runner)"));
+        assert!(acts.contains("\"connect\".to_string()") && acts.contains("\"embed\".into()"));
+        for word in [
+            "\"observe\"",
+            "\"sync\"",
+            "\"principal\"",
+            "\"server\".into",
+            "--replace",
+            "--take-over",
+        ] {
+            assert!(!acts.contains(word), "setup runs `{word}`");
+        }
+    }
+
+    /// O3: the plan is what the checklist says is `todo`, and only that - a step done, skipped or
+    /// waiting on the person is not acted on - and the model comes last, since nothing waits on it
+    /// (O5).
+    #[test]
+    fn the_plan_is_what_is_todo_and_the_model_goes_last() {
+        use setup::{Event, State};
+        let list = vec![
+            Event::new("server", None, State::Done, ""),
+            Event::new("apps", None, State::Todo, ""),
+            Event::new("app", Some("cursor"), State::Attention, ""),
+            Event::new("model", None, State::Todo, ""),
+            Event::new("app", Some("codex"), State::Todo, ""),
+            Event::new("app", Some("gemini"), State::Skipped, ""),
+            Event::new("first", None, State::Working, ""),
+        ];
+        assert_eq!(setup_plan(&list), vec![SetupAct::App("codex".into()), SetupAct::Model]);
+        let mut fresh = list.clone();
+        fresh[0].state = State::Todo;
+        assert_eq!(setup_plan(&fresh)[0], SetupAct::Server, "the server first");
+        let done: Vec<Event> =
+            list.into_iter().map(|e| Event { state: State::Done, ..e }).collect();
+        assert!(setup_plan(&done).is_empty(), "running again changes nothing that is done");
+    }
+
+    /// O2: an act's command is named before it runs, each line it writes is an event (a file it
+    /// changed among them), a child's own events pass through as they are, and a failure carries
+    /// the child's reason.
+    #[test]
+    fn a_failed_act_says_why_and_names_what_it_ran() {
+        let out = SetupOut { events: true, kept: Some(Default::default()) };
+        let script = "echo '{\"schema\":1}'; \
+                      echo '{\"step\":\"model\",\"state\":\"working\",\"say\":\"1 of 2 MB.\"}'; \
+                      echo '  wrote   /x/mcp.json'; \
+                      echo 'Error: the file could not be read' >&2; exit 3";
+        let ran = setup_run(
+            &out,
+            std::path::Path::new("/bin/sh"),
+            "app",
+            Some("cursor"),
+            &["-c".to_string(), script.to_string()],
+        )
+        .expect("it ran");
+        let why = ran.expect_err("it failed");
+        assert!(why.ends_with("failed: the file could not be read."), "{why}");
+        let lines: Vec<serde_json::Value> = out
+            .kept
+            .expect("kept")
+            .into_inner()
+            .iter()
+            .map(|l| serde_json::from_str(l).expect("JSON"))
+            .collect();
+        assert!(
+            lines[0]["cmd"].as_str().is_some_and(|c| c.starts_with("supragnosis -c")),
+            "{lines:?}"
+        );
+        assert!(lines.iter().any(|l| l["out"] == "  wrote   /x/mcp.json" && l["id"] == "cursor"));
+        assert!(lines.iter().any(|l| l["step"] == "model" && l["say"] == "1 of 2 MB."));
+        assert!(lines.iter().all(|l| l.get("schema").is_none()), "the child's schema line");
     }
 }

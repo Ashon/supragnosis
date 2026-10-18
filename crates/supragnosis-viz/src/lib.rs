@@ -123,12 +123,18 @@ pub type FedStatus = Arc<std::sync::RwLock<serde_json::Value>>;
 /// where the config and the admission directory already do.
 pub type NarrowShare = Arc<dyn Fn(&str, &[String]) -> Result<Vec<String>, String> + Send + Sync>;
 
+/// First contact (docs/onboarding.md Section 5): which AI apps have talked to this daemon since it
+/// started, as `{"clients": [...]}`. Read from the MCP server's log by the wiring layer; served on
+/// this local socket only, and refused on the read tier (O7).
+pub type ClientsView = Arc<dyn Fn() -> serde_json::Value + Send + Sync>;
+
 pub async fn serve(
     engine: Arc<Engine>,
     listener: UnixListener,
     events: broadcast::Sender<String>,
     fed: Option<FedStatus>,
     narrow: Option<NarrowShare>,
+    clients: Option<ClientsView>,
 ) -> anyhow::Result<()> {
     loop {
         // Peer trust is settled before accept ever runs: the socket file is 0600, so the OS only
@@ -144,8 +150,9 @@ pub async fn serve(
         let events = events.clone();
         let fed = fed.clone();
         let narrow = narrow.clone();
+        let clients = clients.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(engine, &events, stream, fed, narrow).await {
+            if let Err(e) = handle_conn(engine, &events, stream, fed, narrow, clients).await {
                 tracing::debug!(error = %e, "viz connection handling failed");
             }
         });
@@ -165,6 +172,7 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     mut stream: S,
     fed: Option<FedStatus>,
     narrow: Option<NarrowShare>,
+    clients: Option<ClientsView>,
 ) -> anyhow::Result<()> {
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
@@ -203,7 +211,7 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     // worker it would hold that thread, which the MCP daemon shares, and stall its tool calls.
     let (method, path, query) = (method.to_string(), path.to_string(), query.to_string());
     let resp = tokio::task::spawn_blocking(move || {
-        respond(&engine, &method, &path, &query, fed.as_ref(), narrow.as_ref())
+        respond(&engine, &method, &path, &query, fed.as_ref(), narrow.as_ref(), clients.as_ref())
     })
     .await
     .unwrap_or_else(|e| Response {
@@ -223,6 +231,7 @@ fn respond(
     query: &str,
     fed: Option<&FedStatus>,
     narrow: Option<&NarrowShare>,
+    clients: Option<&ClientsView>,
 ) -> Response {
     if path == "/api/peer/share" {
         // POST, unlike every other endpoint here. The GET-with-side-effect convention the rest of
@@ -240,6 +249,17 @@ fn respond(
             body: fed
                 .map(|f| f.read().map(|v| v.to_string()).unwrap_or_else(|_| "{}".into()))
                 .unwrap_or_else(|| "{\"configured\":false}".to_string()),
+        }
+    } else if path == "/api/clients" {
+        // First contact - kept by the MCP server, absent where nothing records it (a viewer with no
+        // daemon behind it), which is said rather than shown as an empty list (P5).
+        Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: clients.map(|c| c().to_string()).unwrap_or_else(|| {
+                "{\"clients\":null,\"note\":\"this server does not record first contact\"}"
+                    .to_string()
+            }),
         }
     } else {
         route(engine, method, path, query)

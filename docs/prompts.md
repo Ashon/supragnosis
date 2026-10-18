@@ -89,7 +89,10 @@ same state always gives the same digest.
   its stored text is machine shorthand and its tier is the writer's, not a claim about the world;
   listed among the knowledge rows it reads as knowledge. In a workspace that has just replayed a
   batch of merges, the newest fifteen rows were all such events, and "what arrived last" said
-  nothing about what the agents learned (found running v0.4.9 against a live store).
+  nothing about what the agents learned (found running v0.4.9 against a live store). A workspace
+  that holds nothing carries an `empty` note: zero counts are not a finding about the project but
+  a workspace nothing was recorded in yet, which fills as decisions are recorded while work happens;
+  the note names the workspaces that do hold knowledge (onboarding.md Section 7).
 - **`what-do-we-know-about`:** the search hits for the topic across workspaces, with ids, kinds,
   scores and the `mode` that answered (keyword or hybrid), and the entities they touch.
 - **`curate`:** the curation report - duplicate candidates, grab-bag clusters, orphans,

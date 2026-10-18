@@ -69,6 +69,9 @@ pub const POLICY: &[(&str, Policy)] = &[
     ("/api/federation", Policy::Refused(NODE_OP)),
     ("/api/peer/share", Policy::Refused(NODE_OP)),
     ("/api/health", Policy::Refused(NODE_OP)),
+    // First contact names the AI apps on the hub's own machine; it is the node's, not the reader's
+    // (docs/onboarding.md O7).
+    ("/api/clients", Policy::Refused(NODE_OP)),
     ("/api/review", Policy::Refused(VERDICT)),
     ("/api/resolve", Policy::Refused(VERDICT)),
     ("/api/reify", Policy::Refused(WRITE)),

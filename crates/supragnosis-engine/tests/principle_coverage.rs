@@ -662,27 +662,33 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
         1,
         &[c(
             "setup appends nothing to the knowledge log: its checks read, its first-entry step waits for the person's own entry, and every path it changes is named in its events",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
-            ),
+            Evidence::Scenario(&[
+                "setup_reads_the_daemon_and_runs_only_its_own_acts",
+                "first_contact_is_the_clients_own_name_and_a_hub_records_none",
+                "a_failed_act_says_why_and_names_what_it_ran",
+            ]),
         )],
     ),
     (
         2,
         &[c(
             "every setup step reports its outcome where it ran - what it did, each file it changed and the copy where C3 or L5 makes one, or why it failed and what to do - and a failed step exits non-zero",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
-            ),
+            Evidence::Scenario(&[
+                "a_failed_act_says_why_and_names_what_it_ran",
+                "setup_events_match_their_example",
+                "setup_takes_over_only_what_nobody_chose",
+            ]),
         )],
     ),
     (
         3,
         &[c(
             "the checklist is computed from the live state each time it is shown; setup --check only reads, and running setup again changes only what is not done",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
-            ),
+            Evidence::Scenario(&[
+                "a_fresh_machine_has_every_step_to_do",
+                "the_plan_is_what_is_todo_and_the_model_goes_last",
+                "setup_reads_the_daemon_and_runs_only_its_own_acts",
+            ]),
         )],
     ),
     (
@@ -690,7 +696,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "every state the Welcome page draws comes from setup's events, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, and asking setup again",
             Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 3 lands",
+                "docs/onboarding.md Section 13 step 3 (the app) is not built. Revisit when it lands",
             ),
         )],
     ),
@@ -698,37 +704,53 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
         5,
         &[c(
             "the model never blocks: the other steps proceed while it downloads, search says keyword only until the model is complete, a download in progress never reads as complete, and stopping it breaks nothing",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
-            ),
+            Evidence::Scenario(&[
+                "an_empty_cache_is_missing_and_never_fetched",
+                "a_missing_model_degrades_to_keyword_and_says_why",
+                "a_connected_app_is_done_and_reached_is_only_shown",
+                "the_plan_is_what_is_todo_and_the_model_goes_last",
+            ]),
         )],
     ),
     (
         6,
-        &[c(
-            "nothing leaves the machine during setup: it never configures sync or a remote server, and the page says so",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+        &[
+            c(
+                "nothing leaves the machine during setup: it never configures sync or a remote server",
+                Evidence::Scenario(&["setup_reads_the_daemon_and_runs_only_its_own_acts"]),
             ),
-        )],
+            c(
+                "the Welcome page says that nothing leaves the machine",
+                Evidence::Deferred(
+                    "docs/onboarding.md Section 13 step 3 (the app) is not built. Revisit when it lands",
+                ),
+            ),
+        ],
     ),
     (
         7,
         &[c(
             "first contact is the client's own name, kept in the local daemon's memory: never in the store, never on the read tier, never recorded by a hub's remote listener, never sent to a peer",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
-            ),
+            Evidence::Scenario(&[
+                "first_contact_is_the_clients_own_name_and_a_hub_records_none",
+                "first_contact_is_the_nodes_own",
+            ]),
         )],
     ),
     (
         8,
-        &[c(
-            "setup takes over only a daemon nobody chose a manager for and reports any other; a Linux user unit overwrites no unit it did not generate, adds no exposure and needs no privilege",
-            Evidence::Deferred(
-                "docs/onboarding.md is specified, not built. Revisit when its Section 13 step 2 lands",
+        &[
+            c(
+                "setup takes over only a daemon nobody chose a manager for - the app's child, a start daemon, a retired label - and reports a Homebrew service, a hand-written plist or an unnamed holder until the person asks",
+                Evidence::Scenario(&["setup_takes_over_only_what_nobody_chose"]),
             ),
-        )],
+            c(
+                "a Linux user unit overwrites no unit it did not generate, adds no exposure and needs no privilege",
+                Evidence::Deferred(
+                    "docs/onboarding.md Section 13 step 4 (Linux) is not built: setup installs nothing there yet and names the unit to copy. Revisit when it lands",
+                ),
+            ),
+        ],
     ),
 ];
 
@@ -2953,6 +2975,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/bridge.rs"),
     include_str!("../../supragnosis-cli/src/connect.rs"),
     include_str!("../../supragnosis-cli/src/hook.rs"),
+    include_str!("../../supragnosis-cli/src/setup.rs"),
     include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-embed/src/fastembed_provider.rs"),
     include_str!("../../supragnosis-cli/src/profile.rs"),

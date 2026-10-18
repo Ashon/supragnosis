@@ -241,6 +241,10 @@ Cozo refusal keeps discharging it for the era before.
     supragnosis-server is newer than the app - update the app" on the tray line and the Settings
     page, and stops reading the payload.
 
+`setup --events` and `embed fetch --events` write lines rather than one document: the first line is
+`{"schema": 1}`, each after it one event, and the same rules apply to the event's fields
+(onboarding.md Section 3). Their example is `setup-events.jsonl`, one line per kind of event.
+
 Each output has one example document, checked in at `crates/supragnosis-cli/tests/fixtures/json/`.
 Two sets of tests read the same file:
 

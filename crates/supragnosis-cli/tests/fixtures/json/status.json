@@ -41,6 +41,14 @@
     "url": "https://lab.example:7420/mcp",
     "remote": true
   },
+  "clients": [
+    {
+      "name": "claude-code",
+      "version": "2.1.0",
+      "first": 1792310400000,
+      "last": 1792310460000
+    }
+  ],
   "service": {
     "label": "com.supragnosis.daemon",
     "plist": "/Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist",
