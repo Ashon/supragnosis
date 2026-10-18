@@ -7,11 +7,10 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **built - Section 14 steps 0-8; step 9 specified**: the fixes that needed no document, the
-> tokens and the foundations, the map, the places, the Review page, search, the landing's picture, and
-> the three surfaces drawn with surfaces instead of lines (Section 4). Step 9, the landing that shows
-> how knowledge moves (Section 11, U10), is specified and not built. Dream drafts join the Review page
-> with dreaming.md Section 12 step 5 (U5).
+> Status: **built - Section 14 steps 0-9**: the fixes that needed no document, the tokens and the
+> foundations, the map, the places, the Review page, search, the landing's picture, the three
+> surfaces drawn with surfaces instead of lines (Section 4), and the landing that shows how knowledge
+> moves (Section 11, U10). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5).
 
 ## 1. Why this exists
 
@@ -416,7 +415,7 @@ draws means what the same mark means in the viewer. Everything else on it serves
 visitor brings - what happens to what my agents learn - and answers it by showing one fact travel
 from a note to an answer instead of describing the model again.
 
-**Seven sections**, in this order and about 850 words:
+**Seven sections**, in this order, in about half the words (Section 18):
 
 | Section | What it does | What it replaces |
 |---|---|---|
@@ -602,12 +601,11 @@ U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the
 only at zero, and the sync pill hides only off the local console or where sync is not configured, and
 draws "sync unavailable" when the daemon does not answer.
 
-U7 is guarded by `the_surfaces_share_one_token_set` and
-`every_text_token_meets_4_5_on_every_surface` in `crates/supragnosis-viz/tests/design_tokens.rs`,
-which read the three stylesheets' `:root` blocks. Step 9 adds a third test to the same file, which
-fails unless each `var(--name)` in the three stylesheets names a custom property the same file
-declares, outside a short list of properties a page's markup or script sets, each listed with its
-setter.
+U7 is guarded by `the_surfaces_share_one_token_set`, `every_text_token_meets_4_5_on_every_surface`
+and `every_token_a_stylesheet_reads_is_declared` in `crates/supragnosis-viz/tests/design_tokens.rs`.
+The first two read the three stylesheets' `:root` blocks; the third fails unless each `var(--name)`
+in the three stylesheets names a custom property the same file declares, outside a list, empty today,
+of properties a page's markup or script sets, each listed with its setter.
 
 U9 is guarded by `no_border_draws_an_area` in the same file, which reads the three stylesheets' rules
 and fails, outside keyboard focus and a short list of selectors each listed with the fact its line
@@ -616,15 +614,16 @@ ring-shaped `box-shadow`; it also fails on a border the viewer's script sets out
 legend. In the stylesheets steps 7 and 8 replaced it finds 85 such declarations in the viewer's and 26
 in the landing's.
 
-U10 is to be guarded, from step 9, by a source tripwire in `crates/supragnosis-viz/tests/landing.rs`
-that reads `site/stage.js` beside the viewer's script, the landing's stylesheet and the page: the
-stage's color functions are the viewer's, line for line with leading spaces dropped; each palette
-color is the value of the token named beside it; the edge line and its alpha, the human-confirmed ring
-and the contested badge are the viewer's; every ring and badge the govern scene sets, the travel
-scene sets on the second machine; no scene lasts more than five seconds, a frame is requested only
-while a scene plays, and the reduced-motion setting is read and its change followed; and every canvas
-on the page is hidden from assistive technology while each of the five steps has a heading and a
-paragraph of its own. A second test holds the page to one version badge.
+U10 is guarded by `the_stage_draws_the_viewers_marks`, a source tripwire in
+`crates/supragnosis-viz/tests/landing.rs` that reads `site/stage.js` beside the viewer's script, the
+landing's stylesheet and the page: the stage's color functions are the viewer's, line for line with
+leading spaces dropped; each palette color is the value of the token named beside it, and no other
+color is written; the edge line and its alpha, the human-confirmed ring and the contested badge are
+the viewer's; every ring and badge is set in one function, which both machines' scenes call; no scene
+lasts more than five seconds, a frame is requested only while a scene plays, and the reduced-motion
+setting is read and its change followed; and every canvas on the page is hidden from assistive
+technology while each of the five steps has a heading and a paragraph of its own.
+`the_landing_has_one_version_badge` holds the page to the one element the deploy stamps.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -663,7 +662,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    On the Settings page, cards, rows and fields become surfaces, and the sidebar's 10.5px uppercase
    group labels become 12px sentence-case headings. On the landing, the code, terminal and picture
    frames become surfaces and the steps' gold rules go. Then the landing's picture is retaken.
-9. **The landing tells how knowledge moves** (Section 11, U10, and U7's declared tokens): the seven
+9. **The landing tells how knowledge moves** [built] (Section 11, U10, and U7's declared tokens): the seven
    sections and their words, the stage with its five scenes, the phone's frames and the still picture
    for a stage that cannot draw, the tokens the stylesheets read declared (and `--gold-glass` dropped),
    the install script's search notice, `site/**` in the Rust workflow's paths and `site/*.js` in the
@@ -858,3 +857,24 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
 - **After step 7: the footprint glow is centred on its node.** It was a disc dropped below the node,
   which read as a circle out of place. It is a light that fades out from the node's edge, which no
   one mistakes for a trust ring.
+- **Step 9: the page has about 1,050 words of main text, not 850.** Counted the way Section 1 counts
+  (code excluded), the snippets, the tool list and the status lists are words too; the prose is near
+  the plan. Before it the page had about 1,900.
+- **Step 9: the stage's type names were chosen by their colors.** Under the viewer's own function the
+  draft's five names fell into two near pairs. App, Database, Feature, Pattern and Event sit at least
+  45 degrees of hue apart and away from gold, coral and teal.
+- **Step 9: every ring and badge is set in one function**, which the first machine's scene and the
+  second machine's both call, so the receiver cannot draw a mark the sender did not; the test reads
+  that rather than matching each mark by name.
+- **Step 9: the stage is linted from the repository's root**, with a configuration of its own: ESLint
+  lints nothing outside the directory it starts from, and the viewer's configuration lives beside the
+  viewer.
+- **Step 9: the Settings page's selected section had drawn no surface since step 7.** It read
+  `--select`, which only the viewer declared; the new test found it, and the page's lowest text pair
+  is now `--faint` on `--select`, 4.51:1.
+- **Step 9: on a phone a long command widened the page.** A one-column grid of `1fr` lets its widest
+  line set the column, so a code block made the layout 442 pixels wide on a 390-pixel screen; the
+  columns are `minmax(0, 1fr)`.
+- **Step 9: measured, the stage costs little.** Drawn in full at 1000 by 625 at twice the density, a
+  frame of the busiest scene took under half a millisecond with the CPU slowed four times; at rest it
+  draws no frame at all.

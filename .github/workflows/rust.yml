@@ -31,6 +31,9 @@ on:
       - "server.json"
       # The fmt step's answer is rustfmt.toml's; changing the config can fail the check.
       - "rustfmt.toml"
+      # design_tokens.rs and landing.rs include_str! the landing's stylesheet, page and stage, so a
+      # change under site/ alone can fail them - and merging one publishes the site (pages.yml).
+      - "site/**"
   pull_request:
     paths:
       - "crates/**"
@@ -53,6 +56,9 @@ on:
       - "server.json"
       # The fmt step's answer is rustfmt.toml's; changing the config can fail the check.
       - "rustfmt.toml"
+      # design_tokens.rs and landing.rs include_str! the landing's stylesheet, page and stage, so a
+      # change under site/ alone can fail them - and merging one publishes the site (pages.yml).
+      - "site/**"
   # The gate can go red with no change to the tree: a locked crate is yanked, an advisory is
   # published against one, or `stable` moves and a new lint fires. All three happened between
   # v0.4.1 and v0.4.2. The deny job had been red on main since the v0.4.1 release commit itself, and

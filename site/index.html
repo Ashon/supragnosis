@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>supragnosis - memory for AI agents that remembers who said it</title>
-  <meta name="description" content="Memory for AI agents that remembers who said it. An embedded, file-based Rust knowledge server for MCP clients: every claim carries who asserted it, on what basis, and how far to trust it. Agents build it as a by-product of work, humans govern what becomes canon, and it moves between your machines, tools and team.">
+  <meta name="description" content="Memory for AI agents that remembers who said it. A local knowledge server for Claude Code, Cursor, Codex and any MCP client: your agents write as they work, you decide what becomes canon, and every machine you use gets the same memory.">
   <link rel="canonical" href="https://supragnosis.dev/">
   <meta name="theme-color" content="#08090d">
   <meta property="og:title" content="supragnosis">
-  <meta property="og:description" content="Memory for AI agents that remembers who said it. Agents build the knowledge graph as a by-product of work, humans govern what becomes canon, and every claim travels with who asserted it and how far to trust it. An embedded Rust server with an MCP interface and multi-host federation.">
+  <meta property="og:description" content="Memory for AI agents that remembers who said it. Your agents write as they work, you decide what becomes canon, and every entry keeps which machine wrote it, for whom, and whether a person checked it.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://supragnosis.dev/">
   <meta property="og:site_name" content="supragnosis">
@@ -20,246 +20,181 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- The scroll reveal hides sections until an observer un-hides them, so it must only ever
-       arm itself when scripting is actually running: without this class the page renders whole. -->
+  <!-- Script-only parts (the stage, the phone's frames) show only when scripting runs; without it
+       the page shows the stage's still picture and every step's words. -->
   <script>document.documentElement.classList.add("js");</script>
+  <script src="stage.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
-  <header class="site-head">
+  <header class="site-head wrap">
     <a class="wordmark" href="#top">supragnosis</a>
-    <!-- in-page anchors: the docs links this nav used to hold all live in the footer, and a
-         landing page's own nav is more useful pointing at the page than away from it -->
     <nav aria-label="Sections">
-      <a href="#flow">how it works</a>
-      <a href="#features">capabilities</a>
-      <a href="#status">status</a>
-      <a href="#get-started">install</a>
-      <a class="nav-gh" href="https://github.com/Ashon/supragnosis">github</a>
+      <a href="#how">How it works</a>
+      <a href="#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
     </nav>
   </header>
 
   <main id="main">
 
-    <!-- ================= hero ================= -->
-    <section class="hero" id="top">
-      <svg class="constellation" viewBox="0 0 1200 640" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <g class="edges">
-          <line class="e" style="--d:.2s"  x1="140"  y1="180" x2="320"  y2="120" pathLength="1"/>
-          <line class="e" style="--d:.5s"  x1="320"  y1="120" x2="520"  y2="180" pathLength="1"/>
-          <line class="e" style="--d:.8s"  x1="520"  y1="180" x2="720"  y2="120" pathLength="1"/>
-          <line class="e" style="--d:1.1s" x1="720"  y1="120" x2="880"  y2="220" pathLength="1"/>
-          <line class="e" style="--d:1.4s" x1="880"  y1="220" x2="1050" y2="150" pathLength="1"/>
-          <line class="e" style="--d:.6s"  x1="140"  y1="180" x2="240"  y2="340" pathLength="1"/>
-          <line class="e" style="--d:.9s"  x1="240"  y1="340" x2="460"  y2="400" pathLength="1"/>
-          <line class="e" style="--d:1.2s" x1="460"  y1="400" x2="660"  y2="340" pathLength="1"/>
-          <line class="e" style="--d:1.5s" x1="660"  y1="340" x2="860"  y2="420" pathLength="1"/>
-          <line class="e" style="--d:1.8s" x1="860"  y1="420" x2="1060" y2="360" pathLength="1"/>
-          <line class="e" style="--d:1.3s" x1="240"  y1="340" x2="620"  y2="520" pathLength="1"/>
-          <line class="e" style="--d:1.0s" x1="520"  y1="180" x2="880"  y2="220" pathLength="1"/>
-          <line class="e" style="--d:1.6s" x1="660"  y1="340" x2="720"  y2="120" pathLength="1"/>
-        </g>
-        <g class="nodes">
-          <g class="n" style="--d:.1s"><circle cx="140" cy="180" r="4"/><text x="152" y="176">observation</text></g>
-          <g class="n pulse" style="--d:.4s"><circle cx="320" cy="120" r="5"/><text x="332" y="116">event log</text></g>
-          <g class="n" style="--d:.7s"><circle cx="520" cy="180" r="4"/><text x="532" y="176">projection</text></g>
-          <g class="n pulse" style="--d:1.0s"><circle cx="720" cy="120" r="6"/><text x="734" y="116">ontology</text></g>
-          <g class="n" style="--d:1.3s"><circle cx="880" cy="220" r="4"/><text x="892" y="216">entity</text></g>
-          <g class="n" style="--d:1.6s"><circle cx="1050" cy="150" r="3.5"/><text x="1062" y="146">relation</text></g>
-          <g class="n" style="--d:.5s"><circle cx="240" cy="340" r="4"/><text x="252" y="336">provenance</text></g>
-          <g class="n" style="--d:.8s"><circle cx="460" cy="400" r="4"/><text x="472" y="396">workspace</text></g>
-          <g class="n" style="--d:1.1s"><circle cx="660" cy="340" r="4"/><text x="672" y="336">host</text></g>
-          <g class="n pulse" style="--d:1.4s"><circle cx="860" cy="420" r="5"/><text x="874" y="416">hub</text></g>
-          <g class="n" style="--d:1.7s"><circle cx="1060" cy="360" r="4"/><text x="1072" y="356">peer</text></g>
-          <g class="n" style="--d:1.5s"><circle cx="620" cy="520" r="3.5"/><text x="632" y="516">trust tier</text></g>
-        </g>
-      </svg>
-
-      <div class="hero-inner">
-        <p class="etymology">supra <span>(above)</span> &nbsp;+&nbsp; gnosis <span>(knowing)</span></p>
-        <h1>Memory for AI agents<br> that remembers <em>who said it</em>.</h1>
-        <p class="lede">
-          Most agent memory answers what was remembered, not who said so.
-          supragnosis stores every claim with who asserted it, on what basis,
-          and how far to trust it - an embedded, file-based knowledge server in
-          Rust where agents shed observations as a by-product of work and humans
-          govern what becomes canon. The knowledge travels between your machines,
-          tools and team, and nothing leaves your machine unless you say so. Any
-          MCP client, any host, any workspace.
-        </p>
-        <div class="hero-actions">
-          <a class="btn btn-gold" href="https://github.com/Ashon/supragnosis">View on GitHub</a>
-          <a class="btn btn-ghost" href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Read the architecture</a>
+    <!-- The hero (docs/design-system.md Section 11): one heading, a subhead of at most 25 words, and
+         the install command as the one act. Nothing here waits for a script to be seen. -->
+    <section class="hero wrap" id="top">
+      <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span></p>
+      <h1>Memory for AI agents that remembers <em>who said it</em>.</h1>
+      <p class="sub">A local knowledge server for Claude Code, Cursor, Codex and any MCP client. Your agents write as they work; you decide what becomes canon.</p>
+      <div class="install" id="install">
+        <div class="tabs" role="tablist" aria-label="Install method">
+          <button type="button" role="tab" id="hero-tab-app" aria-controls="hero-pane-app" aria-selected="true">macOS app</button>
+          <button type="button" role="tab" id="hero-tab-script" aria-controls="hero-pane-script" aria-selected="false" tabindex="-1">Script</button>
         </div>
-        <div class="install">
-          <span class="install-label">install</span>
-          <code id="install-cmd">curl -fsSL https://supragnosis.dev/install.sh | sh</code>
-          <button class="copy" data-copy="#install-cmd" aria-label="Copy install command">copy</button>
+        <div class="cmd" id="hero-pane-app" role="tabpanel" aria-labelledby="hero-tab-app">
+          <code id="cmd-app">brew install --cask ashon/tap/supragnosis</code>
+          <button type="button" class="copy" data-copy="#cmd-app">Copy</button>
         </div>
-        <ul class="badges" aria-label="Project facts">
-          <!-- stamped from the latest release tag by .github/workflows/pages.yml on deploy -->
-          <li id="version-badge">v0.1.20</li>
-          <li>Rust</li>
-          <li>MIT OR Apache-2.0</li>
-          <li>macOS arm64</li>
-          <li>Linux x86_64 / arm64, glibc 2.39+</li>
-          <li>macOS desktop app</li>
-        </ul>
+        <div class="cmd" id="hero-pane-script" role="tabpanel" aria-labelledby="hero-tab-script" hidden>
+          <code id="cmd-script">curl -fsSL https://supragnosis.dev/install.sh | sh</code>
+          <button type="button" class="copy" data-copy="#cmd-script">Copy</button>
+        </div>
       </div>
-    </section>
-
-    <!-- ================= agent-first ================= -->
-    <section class="section reveal" id="agent-first">
-      <p class="eyebrow">01 / agent-first</p>
-      <h2>Agents build it. Humans govern it.</h2>
-      <div class="grid grid-3 triptych">
-        <article class="step">
-          <p class="step-actor">agents</p>
-          <h3>Agents write</h3>
-          <p>
-            Knowledge management dies the moment it becomes separate labor - so
-            here it is a by-product of work. While your agents code, debug, and
-            decide, they shed observations through one low-friction tool: free
-            text plus whatever structure they can already offer. No forms, no
-            curation shift.
-          </p>
-        </article>
-        <article class="step">
-          <p class="step-actor">agents</p>
-          <h3>Agents induce the schema</h3>
-          <p>
-            No ontologist draws the taxonomy up front. Unknown knowledge lands as
-            loose concepts, patterns harden with use, and agents promote them
-            through <code>define_type</code> - every type with a mandatory
-            plain-language definition. The workspace map keeps score of what is
-            said together, so the next type worth naming surfaces on its own.
-          </p>
-        </article>
-        <article class="step human">
-          <p class="step-actor">humans</p>
-          <h3>Humans supervise</h3>
-          <p>
-            Ingest is free; canon is governed. Entity merges, trust promotions,
-            and vocabulary changes travel through PR-like proposals that a human
-            decides on the viewer's Review page - and the tier a verdict may grant
-            depends on the surface it arrives on, so an agent-cast verdict cannot
-            reach human-confirmed.
-          </p>
-        </article>
-      </div>
-    </section>
-
-    <!-- ================= core ideas ================= -->
-    <section class="section reveal" id="ideas">
-      <p class="eyebrow">02 / guarantees</p>
-      <h2>Three guarantees, held everywhere.</h2>
-      <div class="grid grid-3">
-        <article class="card">
-          <h3>Assertions, not facts</h3>
-          <p>
-            Every answer can say where it came from. The log never stores "X is
-            true" - it stores who observed X, acting for whom, when, with what
-            confidence. Belief is computed on top by a replaceable policy, so
-            changing whom you trust recomputes the belief from the same log.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Supersede, don't delete</h3>
-          <p>
-            Nothing your agents learn is ever lost. Corrections supersede rather
-            than erase, contradictions surface as signals instead of being
-            silently resolved away, and forgetting only demotes retrieval - the log
-            is eternal; only attention is finite.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Deterministic core, probabilistic edge</h3>
-          <p>
-            No model ever judges your knowledge. LLMs and embeddings extract and
-            widen retrieval - they draft, they never decide. Everything that commits
-            is deterministic, so the graph is correct with no model attached at
-            all, and every node holding the same log holds the same graph.
-          </p>
-        </article>
-      </div>
-      <p class="section-note wide">
-        The name is the design: observations that mention the same things leave a
-        second-order structure behind - knowledge about the knowledge. That meta
-        layer (<em>supra</em> + <em>gnosis</em>) is what the workspace map shows,
-        and what curation reads when it proposes the next merge or type.
+      <p class="links">
+        <a href="https://github.com/Ashon/supragnosis/blob/main/scripts/install.sh">View the install script</a>
+        <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+        <a href="https://github.com/Ashon/supragnosis#readme">Read the docs</a>
       </p>
+      <ul class="facts" aria-label="Project facts">
+        <!-- stamped from the latest release tag by .github/workflows/pages.yml on deploy -->
+        <li id="version-badge">v0.6.2</li>
+        <li>Rust</li>
+        <li>MIT or Apache-2.0</li>
+        <li>macOS on Apple silicon, Linux with glibc 2.39+</li>
+        <li>no account</li>
+      </ul>
     </section>
 
-    <!-- ================= how it works ================= -->
-    <section class="section reveal" id="flow">
-      <p class="eyebrow">03 / how it works</p>
-      <h2>From observation to ontology.</h2>
-      <div class="flow" role="img" aria-label="Pipeline: observe, then observation log, then projector, then ontology, then retrieval">
-        <div class="flow-step"><strong>observe</strong><span>MCP tool call</span></div>
-        <span class="flow-arrow">-&gt;</span>
-        <div class="flow-step"><strong>observation log</strong><span>immutable, signed</span></div>
-        <span class="flow-arrow">-&gt;</span>
-        <div class="flow-step"><strong>projector</strong><span>deterministic</span></div>
-        <span class="flow-arrow">-&gt;</span>
-        <div class="flow-step"><strong>ontology</strong><span>entities + relations</span></div>
-        <span class="flow-arrow">-&gt;</span>
-        <div class="flow-step"><strong>retrieval</strong><span>search / traverse / map</span></div>
-      </div>
-      <p class="section-note">
-        The log is the source of truth. Delete the graph, replay the log, and you
-        get the same graph back - on any node, in any topology.
-      </p>
-      <div class="grid grid-2 starts">
-        <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">host A - an agent sheds an observation mid-task</span></div>
-          <pre><code><span class="c"># one observe call, free text plus whatever</span>
-<span class="c"># structure the agent already has</span>
-observe {
-  "content": "Replaced Cozo with redb: of nineteen
-              query shapes exactly one was recursive
-              and none used time travel.",
-  "source_ref": "docs/architecture.md",
-  "on_behalf_of": "ashon",
-  "confidence": 0.9,
-  "entities": [
-    { "name": "redb", "type": "Tool" }
-  ],
-  "relations": [
-    { "from": "supragnosis-store",
-      "type": "depends_on",
-      "to":   "redb" }
-  ]
-}</code></pre>
+    <!-- How it works: one fact from a note to an answer. Each step's words carry its whole meaning;
+         the stage (stage.js) shows the same thing happen to a made-up project and is hidden from
+         assistive technology. A scene plays when its step reaches the middle of the window, once,
+         and rests; under reduced motion it is its resting frame. -->
+    <section class="how wrap" id="how" aria-labelledby="how-title">
+      <div class="scrolly">
+        <div class="steps">
+          <article class="step intro" data-scene="0">
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">Follow one fact from a note to an answer.</h2>
+            <p>Most agent memory cannot answer three questions about what it holds. Here is how supragnosis answers each one.</p>
+            <ul class="questions">
+              <li>Who said this? <span>step 1</span></li>
+              <li>Has anyone checked it? <span>step 3</span></li>
+              <li>Does my other machine know? <span>step 5</span></li>
+            </ul>
+          </article>
+
+          <article class="step" data-scene="1" id="step-1">
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <p class="num"><b>1</b> / 5 write</p>
+            <h3>Agents write as they work.</h3>
+            <p>While they code, debug and decide, your agents call <code>observe</code> with a note and whatever structure they have. Each entry keeps which machine wrote it, for whom, from what source and how sure. Entries are never edited, only superseded.</p>
+            <div class="snip">
+              <p class="h">entry 1 <i>append-only</i></p>
+              <span class="k">host</span><span>laptop</span>
+              <span class="k">for</span><span>you</span>
+              <span class="k">source</span><span>docs/payments.md</span>
+              <span class="k">confidence</span><span>0.9</span>
+            </div>
+            <p class="answers">Answers: <b>who said this?</b></p>
+            <button type="button" class="replay">Replay</button>
+          </article>
+
+          <article class="step" data-scene="2" id="step-2">
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <p class="num"><b>2</b> / 5 structure</p>
+            <h3>The log becomes a graph.</h3>
+            <p>A deterministic projector turns entries into entities and relations, and what is said together gathers into a region. Delete the graph, replay the log, and the same graph comes back on any machine.</p>
+            <div class="snip">
+              <span class="k">log</span><span>6 entries</span>
+              <span class="k">graph</span><span>18 entities, 18 relations</span>
+              <span class="k">region</span><span>webhooks + idempotency</span>
+              <span class="k">replay</span><span>same log, same graph</span>
+            </div>
+            <button type="button" class="replay">Replay</button>
+          </article>
+
+          <article class="step" data-scene="3" id="step-3">
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <p class="num"><b>3</b> / 5 govern</p>
+            <h3>Disagreements wait for you.</h3>
+            <p>When agents disagree, the conflict is flagged, never quietly settled. Changes to what counts as true, like merging two names for one thing or confirming a claim, arrive as proposals you accept or reject on the Review page. Your verdict goes into the log like any entry.</p>
+            <div class="snip review">
+              <p class="h">Needs you <i>3</i></p>
+              <span>Merge pg into postgres</span><span class="act">Accept</span>
+              <span>Confirm a claim: webhooks need an idempotency key</span><span class="act">Accept</span>
+              <span>Contested: the type of retry-policy</span><span class="wait">waiting</span>
+            </div>
+            <p class="answers">Answers: <b>has anyone checked it?</b></p>
+            <button type="button" class="replay">Replay</button>
+          </article>
+
+          <article class="step" data-scene="4" id="step-4">
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <p class="num"><b>4</b> / 5 recall</p>
+            <h3>Any agent can ask, and gets receipts.</h3>
+            <p>Weeks later a different agent searches. Hits come back ranked, and each points to the entries behind it: which machine wrote them, for whom, when, and how far they are trusted.</p>
+            <div class="snip">
+              <p class="h">search_knowledge "webhook idempotency" <i>hybrid</i></p>
+              <span class="k">hit</span><span>idempotency</span>
+              <span class="k">said by</span><span>laptop, for you</span>
+              <span class="k">entries</span><span>3 and 4</span>
+              <span class="k">trust</span><span class="confirmed">human confirmed</span>
+            </div>
+            <button type="button" class="replay">Replay</button>
+          </article>
+
+          <article class="step" data-scene="5" id="step-5">
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <p class="num"><b>5</b> / 5 travel</p>
+            <h3>Your other machines get the same memory.</h3>
+            <p>The log syncs through a hub to the machines you choose, one workspace at a time, and is never flattened into merged state. Each machine checks every signature and replays the same graph, your verdicts included. An entry that only claims a person checked it counts for no more than its signature proves.</p>
+            <div class="snip">
+              <span class="k">laptop</span><span><span class="confirmed">human confirmed</span>, your verdict</span>
+              <span class="k">desktop</span><span><span class="confirmed">human confirmed</span>, the same verdict</span>
+              <span class="k">a bare claim</span><span>host signed at most</span>
+              <span class="k">shared</span><span>only the workspaces you allow</span>
+            </div>
+            <p class="answers">Answers: <b>does my other machine know?</b></p>
+            <button type="button" class="replay">Replay</button>
+          </article>
         </div>
-        <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">host B - weeks later, a different agent retrieves it</span></div>
-          <pre><code>search_knowledge {
-  "query": "cozo redb"
-}
 
-<span class="c"># every term, in any order - or other words</span>
-<span class="c"># that only mean the same thing.</span>
-<span class="c"># the hit names what matched, and the mode label</span>
-<span class="c"># (keyword or hybrid) says which surface answered.</span>
-
-<span class="c"># the id leads to the receipts: the original text,</span>
-<span class="c"># who observed it, acting for whom, from which</span>
-<span class="c"># source, when, at what trust tier.</span>
-get_entity { "id": "9f41..." }   <span class="c"># id from the hit</span>
-traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
+        <div class="stage-col">
+          <div class="stage">
+            <div class="stage-box">
+              <img class="poster" src="assets/stage.webp" width="1000" height="625" loading="lazy" alt="">
+              <canvas id="stage" aria-hidden="true"></canvas>
+            </div>
+            <div class="rail" role="group" aria-label="Steps">
+              <button type="button" data-go="1" aria-label="Step 1 of 5: write">1</button>
+              <button type="button" data-go="2" aria-label="Step 2 of 5: structure">2</button>
+              <button type="button" data-go="3" aria-label="Step 3 of 5: govern">3</button>
+              <button type="button" data-go="4" aria-label="Step 4 of 5: recall">4</button>
+              <button type="button" data-go="5" aria-label="Step 5 of 5: travel">5</button>
+              <span class="caption" id="stage-caption">a made-up project, three agents and you</span>
+              <button type="button" class="replay" id="stage-replay">Replay</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- ================= viewer ================= -->
-    <section class="section spread reveal" id="viewer">
-      <p class="eyebrow">04 / the viewer</p>
-      <h2>Watch your agents learn.</h2>
+    <section class="section wrap" id="viewer" aria-labelledby="viewer-title">
+      <h2 id="viewer-title">See it in the viewer.</h2>
+      <p class="lead">The marks above are the viewer's own. The desktop app draws your graph as agents write it: a gold ring is something a person confirmed, a coral badge a value agents disagree on, and Review counts what waits for you.</p>
       <figure class="shot">
-        <div class="terminal-bar"><span class="terminal-title">supragnosis viewer - http over ~/.supragnosis/viz.sock</span></div>
         <!-- Refreshing this capture: in a fresh HOME, run `supragnosis serve
              --http <addr> --viz <sock>`, seed one workspace through MCP observe
              (made-up content only - never a real store), open an entity_merge,
@@ -272,330 +207,129 @@ traverse   { "id": "9f41...", "max_depth": 2 }</code></pre>
                   whose type is contested; node and edge types and the trust legend
                   on the left, the Log of observations on the right, and a status
                   bar counting two items to review and one contested node.">
-        <figcaption>
-          A seeded workspace in the live viewer: entities land as agents
-          observe, and the Log lists each observation as it arrives. A ring
-          marks what a person has confirmed, a type two agents disagree on is
-          flagged, and the status bar counts what waits on the Review page -
-          here a merge of two spellings of one library. All served on an
-          owner-only unix socket.
-        </figcaption>
+        <figcaption>A made-up workspace in the desktop app. The viewer is served on an owner-only socket, never a network port.</figcaption>
       </figure>
     </section>
 
-    <!-- ================= capabilities ================= -->
-    <section class="section spread reveal" id="features">
-      <p class="eyebrow">05 / capabilities</p>
-      <h2>Small binary, serious semantics.</h2>
-      <!-- Ordered so each row of four is one kind of claim: the first row is what the knowledge
-           model guarantees, the second is what the running system is. It also keeps the long
-           cards together, so no row is padded out by one card three times the height of its
-           neighbours. -->
-      <div class="grid grid-4">
-        <article class="card">
-          <h3>Local retrieval</h3>
-          <p>
-            Ask with the words the knowledge holds - every term, in any order -
-            or with other words that mean the same thing: a local multilingual
-            embedding model, fetched once, finds it either way. The fragments
-            come back deterministically ranked and mode-labeled, so you know
-            which surface answered. No cloud calls.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Provenance and trust</h3>
-          <p>
-            Every fact carries its delegation chain (who, acting for whom),
-            workspace, and trust tier - and trust is the receiver's evaluation,
-            never self-declared. Every derivation records the observations it
-            came from, so a contaminated source's tree is traceable - bulk recall
-            over that lineage is specified and lands with M5.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Two time axes</h3>
-          <p>
-            "True until last month" is a first-class statement. Every relation
-            can carry the interval it held in the world, separate from when the
-            system learned it - so retroactive knowledge is captured the moment
-            it arrives, and nothing is lost while the time-travel query logic
-            (M3c) lands.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Absence is not falsehood</h3>
-          <p>
-            An open-world substrate: a miss comes back as
-            <code>{found: false}</code>, never conflated with "false", so an LLM
-            client cannot misread missing knowledge as negation. Asserting a
-            negation explicitly is the open half: it is what M3c's time-travel
-            queries wait on.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Embedded, file-based</h3>
-          <p>
-            One process, one directory. A pure-Rust embedded B-tree (redb) holds
-            rows, graph edges, and vectors under <code>~/.supragnosis/redb</code>.
-            No external database to run, and no C++ toolchain to build.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Proposal gate</h3>
-          <p>
-            Ingest is free; promotion is gated. Changes to canon - tier
-            promotions, entity merges, T-Box edits, recalls - flow through
-            PR-like proposals, and a proposal is itself an observation:
-            signed, replayable, decided on the Review page.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Live ontology viewer</h3>
-          <p>
-            A force-graph viewer streams entities, relations, proposals, and
-            sync chatter live over SSE - served on an owner-only unix socket,
-            never a TCP port. The macOS desktop app wraps the same viewer, with
-            a Settings page for the server your AI apps use, how each app is
-            connected, and this Mac's daemon. Watch your agents learn.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Self-managed daemon</h3>
-          <p>
-            <code>start</code> / <code>stop</code> / <code>status</code> /
-            <code>restart</code> with pidfile and logs under
-            <code>~/.supragnosis</code> - or <code>service install</code> to run it
-            at every login, which Start at Login on the app's Settings page
-            does too.
-            stdio for MCP-client children, loopback streamable HTTP for
-            everything else.
-          </p>
-        </article>
-      </div>
-    </section>
-
-    <!-- ================= mcp surface ================= -->
-    <section class="section reveal" id="mcp">
-      <p class="eyebrow">06 / mcp surface</p>
-      <h2>Speak MCP, remember everything.</h2>
-      <div class="mcp-wrap">
-        <div class="terminal">
-          <div class="terminal-bar"><span class="terminal-title">register with your MCP client</span></div>
-          <pre><code><span class="c"># keep the daemon running (or Start at Login</span>
-<span class="c"># on the desktop app's Settings page)</span>
-supragnosis service install
-
-<span class="c"># connect an AI app - no token to copy</span>
-supragnosis connect claude-desktop
-<span class="c"># or claude-code, cursor, vscode, codex, gemini;</span>
-<span class="c"># the app's Settings page does the same</span></code></pre>
+    <section class="section wrap" id="connect" aria-labelledby="connect-title">
+      <h2 id="connect-title">Works with the tools you already use.</h2>
+      <div class="split">
+        <div>
+          <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex and Gemini CLI connect with one command and no token to copy, or with Connect in the app's Settings.</p>
+          <pre class="code"><code>supragnosis connect claude-code
+<span class="c"># or claude-desktop, cursor, vscode, codex, gemini</span></code></pre>
+          <p class="note">Every search hit points back to the entry it came from, at <code>supragnosis://observation/{id}</code>.</p>
         </div>
         <dl class="tools">
-          <div><dt>observe</dt><dd>load knowledge: entities, relations, and text become observation events</dd></div>
-          <div><dt>search_knowledge</dt><dd>keyword and semantic retrieval, deterministically ranked and mode-labeled</dd></div>
-          <div><dt>get_entity</dt><dd>one entity with its relations and full provenance</dd></div>
-          <div><dt>traverse</dt><dd>n-hop walks over the relation graph</dd></div>
-          <div><dt>workspace_map</dt><dd>what was said together: co-occurrence hyperedges across a workspace</dd></div>
-          <div class="tools-more"><dt>and more</dt><dd>define_type, the proposal gate, federation (sync_*) - 13 tools today, deliberately few</dd></div>
+          <div><dt>observe</dt><dd>write a note, with the entities and relations it names</dd></div>
+          <div><dt>search_knowledge</dt><dd>keyword and semantic search, ranked and labeled by mode</dd></div>
+          <div><dt>get_entity</dt><dd>one entity with its relations and where each came from</dd></div>
+          <div><dt>traverse</dt><dd>walk the relations a few hops out</dd></div>
+          <div><dt>workspace_map</dt><dd>what is said together across a workspace</dd></div>
+          <div><dt>and eight more</dt><dd>types, the proposal gate and sync: 13 tools, deliberately few</dd></div>
         </dl>
       </div>
-      <p class="section-note wide">
-        Alongside the tools, addressable resources: every search hit points back
-        at <code>supragnosis://observation/{id}</code> - raw text, provenance,
-        lineage - and each workspace exposes its <code>graph</code>,
-        <code>hypergraph</code>, and <code>types</code> as read-only resources.
-        Whoever holds an id can dereference it: no answer without a "where from".
-      </p>
     </section>
 
-    <!-- ================= federation ================= -->
-    <section class="section reveal" id="federation">
-      <p class="eyebrow">07 / portability</p>
-      <h2>Move the memory. Keep the meaning.</h2>
-      <p class="section-note wide">
-        Laptop, desktop, a VM that never sleeps - every machine your agents work
-        on ends up holding the same graph. What travels is the observation log,
-        never merged state, so nothing is flattened on the way out: ids are
-        content addresses that survive the move, projection is deterministic so
-        any delivery order converges, and every attestation is signed by the node
-        that made it. The receiving node can therefore prove where a claim came
-        from and still decide for itself how far to trust it - a wire claim that
-        "a human confirmed this" never outranks what the transport can actually
-        prove. Sharing is opt-in per workspace: nothing leaves a node you did not
-        whitelist. Hub-and-spoke ships today; the replication primitive is
-        topology-independent, so peer and hybrid meshes reuse it unchanged when
-        they land.
-      </p>
-      <p class="section-note wide">
-        A machine does not have to run a node to use one. Every AI app connects
-        through <code>supragnosis bridge</code>, and the bridge follows the
-        machine's server profile: its own daemon, or a hub elsewhere
-        (<code>supragnosis server add</code>, or Settings in the app). The hub
-        admits people and agents as principals with per-workspace grants - over
-        MCP at <code>/mcp</code>, and to its viewer, read-only, at
-        <code>/viz/</code>. It records each remote write as the principal who
-        made it, and serves another node's knowledge only with that node's
-        consent.
-      </p>
-      <p class="section-note wide">
-        Portability here is a checked property rather than a promise. The
-        content-address, convergence, and re-key guards run in CI on every
-        change to the engine, and a
-        principle whose guard stops running is reported as unguarded instead of
-        quietly passing - the same registry that publishes what this system does
-        <em>not</em> do yet.
-      </p>
-      <div class="grid grid-3 topologies">
-        <figure class="topo">
-          <svg viewBox="0 0 220 150" aria-hidden="true">
-            <line class="t-edge" x1="110" y1="75" x2="40"  y2="30"/>
-            <line class="t-edge" x1="110" y1="75" x2="180" y2="30"/>
-            <line class="t-edge" x1="110" y1="75" x2="30"  y2="105"/>
-            <line class="t-edge" x1="110" y1="75" x2="190" y2="105"/>
-            <line class="t-edge" x1="110" y1="75" x2="110" y2="130"/>
-            <circle class="t-hub"  cx="110" cy="75"  r="8"/>
-            <circle class="t-node" cx="40"  cy="30"  r="5"/>
-            <circle class="t-node" cx="180" cy="30"  r="5"/>
-            <circle class="t-node" cx="30"  cy="105" r="5"/>
-            <circle class="t-node" cx="190" cy="105" r="5"/>
-            <circle class="t-node" cx="110" cy="130" r="5"/>
-          </svg>
-          <figcaption>hub-and-spoke</figcaption>
-        </figure>
-        <figure class="topo">
-          <svg viewBox="0 0 220 150" aria-hidden="true">
-            <line class="t-edge" x1="60"  y1="35"  x2="160" y2="35"/>
-            <line class="t-edge" x1="160" y1="35"  x2="190" y2="100"/>
-            <line class="t-edge" x1="190" y1="100" x2="110" y2="130"/>
-            <line class="t-edge" x1="110" y1="130" x2="30"  y2="100"/>
-            <line class="t-edge" x1="30"  y1="100" x2="60"  y2="35"/>
-            <line class="t-edge" x1="60"  y1="35"  x2="190" y2="100"/>
-            <circle class="t-node" cx="60"  cy="35"  r="5"/>
-            <circle class="t-node" cx="160" cy="35"  r="5"/>
-            <circle class="t-node" cx="190" cy="100" r="5"/>
-            <circle class="t-node" cx="110" cy="130" r="5"/>
-            <circle class="t-node" cx="30"  cy="100" r="5"/>
-          </svg>
-          <figcaption>peer-to-peer</figcaption>
-        </figure>
-        <figure class="topo">
-          <svg viewBox="0 0 220 150" aria-hidden="true">
-            <line class="t-edge" x1="60"  y1="55"  x2="160" y2="95"/>
-            <line class="t-edge" x1="60"  y1="55"  x2="25"  y2="25"/>
-            <line class="t-edge" x1="60"  y1="55"  x2="25"  y2="90"/>
-            <line class="t-edge" x1="160" y1="95"  x2="195" y2="60"/>
-            <line class="t-edge" x1="160" y1="95"  x2="195" y2="125"/>
-            <line class="t-edge" x1="25"  y1="25"  x2="110" y2="20"/>
-            <line class="t-edge" x1="110" y1="20"  x2="195" y2="60"/>
-            <circle class="t-hub"  cx="60"  cy="55"  r="7"/>
-            <circle class="t-hub"  cx="160" cy="95"  r="7"/>
-            <circle class="t-node" cx="25"  cy="25"  r="5"/>
-            <circle class="t-node" cx="25"  cy="90"  r="5"/>
-            <circle class="t-node" cx="195" cy="60"  r="5"/>
-            <circle class="t-node" cx="195" cy="125" r="5"/>
-            <circle class="t-node" cx="110" cy="20"  r="5"/>
-          </svg>
-          <figcaption>hybrid mesh</figcaption>
-        </figure>
-      </div>
+    <section class="section wrap" id="hood" aria-labelledby="hood-title">
+      <h2 id="hood-title">Small binary, careful semantics.</h2>
+      <dl class="props">
+        <div><dt>One process, one directory.</dt><dd>An embedded store under <code>~/.supragnosis</code>. No database to run.</dd></div>
+        <div><dt>A log that never forgets.</dt><dd>Corrections supersede an entry; nothing is edited in place.</dd></div>
+        <div><dt>No model decides.</dt><dd>Models draft and widen search. What commits is deterministic.</dd></div>
+        <div><dt>Search in any language, locally.</dt><dd>A multilingual model, fetched once. No cloud calls.</dd></div>
+        <div><dt>Absence is not falsehood.</dt><dd>A miss says "not found", never "no".</dd></div>
+        <div><dt>Private by default.</dt><dd>Nothing syncs until you allow a workspace.</dd></div>
+      </dl>
     </section>
 
-    <!-- ================= status ================= -->
-    <section class="section reveal" id="status">
-      <p class="eyebrow">08 / status</p>
-      <h2>Where it honestly stands.</h2>
-      <p class="section-note wide">
-        Nothing on this page is aspirational. Everything under <em>shipped</em> is in the
-        binary you can install today; everything under <em>in flight</em> is named and
-        specified, and not written yet.
-      </p>
+    <section class="section wrap" id="status" aria-labelledby="status-title">
+      <h2 id="status-title">Where it honestly stands.</h2>
       <div class="ledger">
-        <div class="ledger-col">
-          <h3 class="ledger-head done">Shipped</h3>
-          <ul class="checklist">
-            <li class="done"><span class="mark">[o]</span><div><strong>M2 - hybrid retrieval.</strong> Keyword search, plus semantic (fastembed ONNX) in a build with that feature; file-backed persistence, stdio MCP + HTTP daemon.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>M3a / M3b - resolution.</strong> A replaceable tier-weighted policy computes the current belief and surfaces contested ones; aliases accumulate and forward, and one shared write path makes an incremental write equal a fresh replay.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>M3.5 - proposal gate.</strong> PR-like review on the viewer's Review page, with a <em>computed</em> belief diff - what a verdict would overturn, and which references would rewire - and blocking checks the fold enforces, so a merge that cannot commit does not.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>M4 phases 0-4 - federation.</strong> Hub-and-spoke log replication, ed25519-signed events over TLS, per-node auth, federated retrieval.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>Remote servers and the read tier.</strong> One client setup for any server: AI apps reach this machine's daemon or a hub through the bridge. A hub admits principals with per-workspace grants over MCP, and serves its viewer read-only within them (phase 3.5, server side).</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>MCP prompts.</strong> <code>brief</code>, <code>what-do-we-know-about</code>, <code>curate</code> and <code>review-proposal</code>: a reading of the graph for the person, with the open decisions beside it, cited and never stored.</div></li>
-            <li class="done"><span class="mark">[o]</span><div><strong>Distribution.</strong> Signed/notarized macOS desktop app with a Settings page, a Homebrew tap whose server formula pours as a bottle (no Xcode needed on Apple silicon), and the viewer on an owner-only unix socket.</div></li>
+        <div>
+          <h3>Shipped</h3>
+          <ul>
+            <li>Keyword and semantic search</li>
+            <li>Conflicts flagged, not hidden</li>
+            <li>Proposals and the Review page</li>
+            <li>Signed sync through a hub</li>
+            <li>Remote servers with per-workspace grants</li>
+            <li>MCP prompts: brief, curate and two more</li>
+            <li>The desktop app, Homebrew and an install script</li>
           </ul>
         </div>
-        <div class="ledger-col">
-          <h3 class="ledger-head open">In flight</h3>
-          <ul class="checklist">
-            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M3c - bitemporal queries.</strong> Both time axes are captured; querying across them waits on explicit negation, which the model does not have yet.</div></li>
-            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>Canon effects for tbox_change and recall.</strong> Both fold correctly and change nothing yet - assigned, with multi-principal governance, to the federation remainder.</div></li>
-            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M4 remainder + MCP gaps.</strong> The desktop app browsing a remote hub's viewer; principal-signed acts, and with them remote verdicts and multi-principal governance (phase 5); elicitation and pollable tasks on the MCP surface.</div></li>
-            <li class="open"><span class="mark">[&nbsp;]</span><div><strong>M5 / M6.</strong> Extraction + contamination logic, forgetting + consolidation.</div></li>
+        <div>
+          <h3>Next</h3>
+          <ul>
+            <li>Questions about time: "true until last month"</li>
+            <li>Verdicts signed by people, and from teammates</li>
+            <li>Tracing and recalling a bad source</li>
+            <li>Forgetting and consolidation</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Not for you yet if</h3>
+          <ul>
+            <li>you need Windows or an Intel Mac</li>
+            <li>several people cast verdicts on one hub</li>
           </ul>
         </div>
       </div>
-      <p class="section-note">
-        The roadmap keeps an honest record of what shipped and what is deferred -
-        see <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> sections 12 and 14.
-      </p>
+      <p class="note">The roadmap keeps a record of what shipped and what is deferred, in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> sections 12 and 14.</p>
+
+      <h3 class="faq-title">Questions</h3>
+      <dl class="faq">
+        <div><dt>Does anything leave my machine?</dt><dd>Only what you share. Sync is off until you add a server, and then it carries only the workspaces you allow.</dd></div>
+        <div><dt>Do I need an API key or a model?</dt><dd>No. Search uses a local embedding model fetched once (224 MB); until then, keyword search works and says so.</dd></div>
+        <div><dt>What if I stop using it?</dt><dd>Your knowledge is a directory, and its log replays into the same graph on any node.</dd></div>
+        <div><dt>How is this different from a notes file?</dt><dd>A notes file keeps what someone wrote. This keeps which machine and person said each thing and whether a person checked it, and shares it with every agent and machine you use.</dd></div>
+      </dl>
     </section>
 
-    <!-- ================= get started ================= -->
-    <section class="section reveal" id="get-started">
-      <p class="eyebrow">09 / get started</p>
-      <h2>Up and running in a minute.</h2>
-      <div class="terminal install-tabs">
-        <div class="terminal-bar tabbar" role="tablist" aria-label="Install method">
-          <button class="tab" id="tab-macos" role="tab" aria-selected="true" aria-controls="pane-macos">macOS</button>
-          <button class="tab" id="tab-linux" role="tab" aria-selected="false" aria-controls="pane-linux">Linux</button>
-          <button class="tab" id="tab-source" role="tab" aria-selected="false" aria-controls="pane-source">from source</button>
-        </div>
-        <pre id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># desktop app, signed + notarized:</span>
-<span class="c"># pulls the server with it - poured as a</span>
-<span class="c"># bottle, no Xcode needed on Apple silicon</span>
-brew tap ashon/tap
-brew install supragnosis
+    <section class="section wrap" id="get-started" aria-labelledby="start-title">
+      <h2 id="start-title">Up and running in a minute.</h2>
+      <ol class="start">
+        <li>
+          <h3>Install</h3>
+          <div class="install-tabs">
+            <div class="tabs" role="tablist" aria-label="Install method">
+              <button type="button" role="tab" id="tab-macos" aria-controls="pane-macos" aria-selected="true">macOS</button>
+              <button type="button" role="tab" id="tab-linux" aria-controls="pane-linux" aria-selected="false" tabindex="-1">Linux</button>
+              <button type="button" role="tab" id="tab-source" aria-controls="pane-source" aria-selected="false" tabindex="-1">From source</button>
+            </div>
+            <pre class="code" id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># the desktop app, signed and notarized, with the server</span>
+brew install --cask ashon/tap/supragnosis
 
-<span class="c"># server / CLI only, running at every login</span>
-brew install supragnosis-server
-supragnosis service install
-
-<span class="c"># no homebrew? the one-line script installs</span>
-<span class="c"># to ~/.local/bin (Apple silicon)</span>
-curl -fsSL https://supragnosis.dev/install.sh | sh</code></pre>
-        <pre id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># one-line script -> ~/.local/bin</span>
-<span class="c"># (x86_64 / arm64, checksum-verified)</span>
+<span class="c"># or the server alone, running at every login</span>
+brew install ashon/tap/supragnosis-server
+supragnosis service install</code></pre>
+            <pre class="code" id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># x86_64 or arm64, glibc 2.39+, checksum-verified</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh
 
-<span class="c"># or homebrew (server formula)</span>
-brew tap ashon/tap
-brew install supragnosis-server
-
 <span class="c"># keep it running: the systemd user unit</span>
-<span class="c"># in deploy/systemd of the repo</span></code></pre>
-        <pre id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
+<span class="c"># in deploy/systemd of the repository</span></code></pre>
+            <pre class="code" id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
 cd supragnosis
-
 <span class="c"># fastembed = the local embedding model, as the release is built</span>
-cargo build -p supragnosis-cli --features fastembed
-
-cargo test</code></pre>
-      </div>
-      <p class="section-note">
-        On macOS, <code>supragnosis service install</code> (or Start at Login in
-        the app) keeps the daemon running; on Linux, the systemd user unit does.
-        Either way it serves MCP on <code>127.0.0.1:7373</code> plus the viewer
-        unix socket.
-        The embedding model (224 MB) is fetched once by <code>service install</code>
-        or <code>supragnosis embed fetch</code>; until then retrieval is keyword only,
-        and <code>status</code> says so. Curious how it is built? The design principles and the
-        hexagonal Rust workspace behind all of this live in
-        <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a>.
-      </p>
+cargo build -p supragnosis-cli --features fastembed</code></pre>
+          </div>
+        </li>
+        <li>
+          <h3>Connect</h3>
+          <p><code>supragnosis connect claude-code</code>, or Connect in the app's Settings.</p>
+        </li>
+        <li>
+          <h3>Keep working</h3>
+          <p>Open the app. The graph fills in as your agents write, and Review lists what waits for you.</p>
+        </li>
+      </ol>
+      <p class="note">The daemon serves MCP on <code>127.0.0.1:7373</code> and the viewer on a unix socket. The embedding model (224 MB) is fetched once by <code>service install</code> or <code>supragnosis embed fetch</code>; until then search is keyword only, and <code>supragnosis status</code> says so.</p>
     </section>
 
   </main>
 
-  <footer class="site-foot">
-    <p class="foot-ety">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
     <nav aria-label="Footer">
       <a href="https://github.com/Ashon/supragnosis">GitHub</a>
       <a href="https://github.com/Ashon/supragnosis/releases">Releases</a>
@@ -604,66 +338,106 @@ cargo test</code></pre>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">Federation</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">Proposal workflow</a>
     </nav>
-    <p class="foot-fine">MIT OR Apache-2.0. Plain HTML and CSS, no build step. This page lives in <code>site/</code>.</p>
+    <p class="fine">MIT or Apache-2.0. Plain HTML, CSS and one script, no build step. This page lives in <code>site/</code>.</p>
   </footer>
 
   <script>
-    // copy-to-clipboard for the install command
+  (function () {
+    // Tab lists: click or the arrow keys, one tab in the tab order (design-system.md Section 10).
+    document.querySelectorAll('[role="tablist"]').forEach(function (list) {
+      var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+      function select(tab) {
+        tabs.forEach(function (t) {
+          var on = t === tab;
+          t.setAttribute('aria-selected', on ? 'true' : 'false');
+          t.tabIndex = on ? 0 : -1;
+          document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+        });
+      }
+      tabs.forEach(function (t, i) {
+        t.addEventListener('click', function () { select(t); });
+        t.addEventListener('keydown', function (e) {
+          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          var next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+          next.focus(); select(next);
+        });
+      });
+      // A visitor on Linux sees the Linux tab first.
+      if (!/Mac/i.test(navigator.platform || navigator.userAgent)) {
+        var linux = list.querySelector('#tab-linux, #hero-tab-script');
+        if (linux) select(linux);
+      }
+    });
+
+    // Copy a command; where the clipboard is refused, select it so it can be copied by hand.
     document.querySelectorAll('.copy').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var el = document.querySelector(btn.dataset.copy);
-        if (!el) return;
-        navigator.clipboard.writeText(el.textContent).then(function () {
-          btn.textContent = 'copied';
-          btn.classList.add('ok');
-          setTimeout(function () {
-            btn.textContent = 'copy';
-            btn.classList.remove('ok');
-          }, 1600);
-        });
+        var pick = function () { getSelection().selectAllChildren(el); };
+        var done = function () {
+          btn.textContent = 'Copied';
+          setTimeout(function () { btn.textContent = 'Copy'; }, 1600);
+        };
+        try { navigator.clipboard.writeText(el.textContent).then(done, pick); } catch (e) { pick(); }
       });
     });
-
-    // install tabs: click/arrow-key switching, default pane follows the visitor's OS
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('.install-tabs .tab'));
-    function selectTab(tab) {
-      tabs.forEach(function (t) {
-        var on = t === tab;
-        t.setAttribute('aria-selected', on ? 'true' : 'false');
-        var pane = document.getElementById(t.getAttribute('aria-controls'));
-        if (pane) pane.hidden = !on;
-      });
+  })();
+  </script>
+  <script>
+  // The stage (design-system.md Section 11): beside the steps from 900 pixels, a frame per step below.
+  window.addEventListener('DOMContentLoaded', function () {
+    if (!window.Stage || !window.ResizeObserver || !window.IntersectionObserver) {
+      document.documentElement.classList.remove('js');
+      return;
     }
-    tabs.forEach(function (t) {
-      t.addEventListener('click', function () { selectTab(t); });
-      t.addEventListener('keydown', function (e) {
-        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-        var i = tabs.indexOf(t) + (e.key === 'ArrowRight' ? 1 : -1);
-        var next = tabs[(i + tabs.length) % tabs.length];
-        next.focus();
-        selectTab(next);
+    var reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    var wide = matchMedia('(min-width: 900px)');
+    var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+    var rail = Array.prototype.slice.call(document.querySelectorAll('.rail [data-go]'));
+    var caption = document.getElementById('stage-caption');
+    var CAPTIONS = ['a made-up project, three agents and you', '1 write', '2 structure', '3 govern', '4 recall', '5 travel'];
+    var stage;
+    try { stage = Stage.mount(document.getElementById('stage')); } catch (e) {
+      // a stage that cannot draw leaves its still picture and the steps (design-system.md Section 11)
+      document.documentElement.classList.remove('js');
+      return;
+    }
+
+    function show(i) {
+      if (!wide.matches) return;
+      stage.go(i);
+      rail.forEach(function (b) {
+        if (+b.dataset.go === i) b.setAttribute('aria-current', 'step');
+        else b.removeAttribute('aria-current');
+      });
+      caption.textContent = CAPTIONS[i];
+    }
+    // The step whose box crosses the middle of the window is the current one. Nothing reads the
+    // scroll position, and the scroll is never held.
+    var middle = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) show(+e.target.dataset.scene); });
+    }, { rootMargin: '-50% 0px -50% 0px' });
+    steps.forEach(function (s) { middle.observe(s); });
+    rail.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = +b.dataset.go;
+        document.getElementById('step-' + i).scrollIntoView({ block: 'center', behavior: reduce.matches ? 'auto' : 'smooth' });
+        show(i);
       });
     });
-    if (tabs.length && !/Mac/i.test(navigator.platform || navigator.userAgent)) {
-      selectTab(document.getElementById('tab-linux'));
-    }
+    document.getElementById('stage-replay').addEventListener('click', function () { stage.replay(); });
 
-    // reveal sections as they enter the viewport. The sections start hidden, so any failure
-    // here has to end with them shown - a broken animation must not eat the page.
-    var revealable = document.querySelectorAll('.reveal');
-    try {
-      var io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (en) {
-          if (en.isIntersecting) {
-            en.target.classList.add('in');
-            io.unobserve(en.target);
-          }
-        });
-      }, { rootMargin: '0px 0px -8% 0px' });
-      revealable.forEach(function (el) { io.observe(el); });
-    } catch (e) {
-      revealable.forEach(function (el) { el.classList.add('in'); });
-    }
+    // Below 900 pixels each step draws its own frame, which plays its scene once it is mostly in view.
+    steps.forEach(function (s) {
+      var c = s.querySelector('.frame');
+      if (!c) return;
+      var i = +s.dataset.scene, frame = Stage.mount(c, { scene: i - 1 });
+      s.querySelector('.replay').addEventListener('click', function () { frame.go(i, frame.scene === i); });
+      new IntersectionObserver(function (es) {
+        if (es[0].isIntersecting && frame.scene !== i && !wide.matches) frame.go(i);
+      }, { threshold: 0.6 }).observe(c);
+    });
+  });
   </script>
 </body>
 </html>
