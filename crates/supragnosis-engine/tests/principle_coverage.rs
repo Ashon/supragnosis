@@ -616,6 +616,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // stylesheet and its page.
         Evidence::Scenario(&["the_stage_draws_the_viewers_marks"]),
     )]),
+    (11, &[c(
+        "every face a surface names first in its reading or identifier stack ships with that surface and is served from its own origin, no surface fetches a font from another host, and the three surfaces name the same stacks",
+        Evidence::Deferred(
+            "design-system.md Section 4's faces are specified, not shipped: the tools load no font. \
+             Revisit when Section 14 step 10 lands with its test in design_tokens.rs",
+        ),
+    )]),
 ];
 
 // docs/semantic-retrieval.md Section 8 - the model in the prebuilt binary (SR rows).

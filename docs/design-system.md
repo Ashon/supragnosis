@@ -7,10 +7,12 @@
 > back, and how one area is told from another. Companion to [inspector.md](inspector.md), whose rules
 > for the detail panel stand unchanged.
 >
-> Status: **built - Section 14 steps 0-9**: the fixes that needed no document, the tokens and the
-> foundations, the map, the places, the Review page, search, the landing's picture, the three
-> surfaces drawn with surfaces instead of lines (Section 4), and the landing that shows how knowledge
-> moves (Section 11, U10). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5).
+> Status: **built - Section 14 steps 0-9; step 10 specified**: the fixes that needed no document,
+> the tokens and the foundations, the map, the places, the Review page, search, the landing's
+> picture, the three surfaces drawn with surfaces instead of lines (Section 4), and the landing that
+> shows how knowledge moves (Section 11, U10). Step 10, one voice in type (Section 4, U11), is
+> specified and not built. Dream drafts join the Review page with dreaming.md Section 12 step 5
+> (U5).
 
 ## 1. Why this exists
 
@@ -83,6 +85,21 @@ the drawing was heavy.
 - **Sixteen font sizes and three web fonts**, the body set in a serif that neither the viewer nor the
   app uses.
 
+**Measured again for type**, on 2026-10-18 after step 9, on the author's Mac:
+
+- **The tools load no font.** The viewer's and the Settings page's policies are `default-src 'none'`
+  with no `font-src`, so the "IBM Plex Mono" they name is drawn as SF Mono wherever it is not
+  installed, which is almost everywhere; only the landing, which loads it from Google Fonts, shows it.
+  This section said the tools set identifiers in IBM Plex Mono.
+- **Each system draws a different product.** The reading face is the system's: SF Pro with Apple SD
+  Gothic Neo's Hangul on a Mac, Segoe UI with Malgun Gothic on Windows, whatever a Linux distribution
+  ships. The read tier's viewer opens in any of them, and in each the Hangul and the Latin of one line
+  come from two designs.
+- **The map draws names in the identifier face.** Node and region labels were set in the mono stack;
+  it holds no Hangul, so a Korean name fell back to the system's face beside Latin names in mono.
+- **Off the scale.** The Settings page still drew 11.5, 12.5 and 15.5px, and the viewer set 600 in
+  25 places.
+
 ## 2. What this is NOT
 
 **It is not a change to what the server decides.** No fold, check, tier or verdict changes. One read
@@ -141,15 +158,41 @@ surface token, `--select` among them.
 
 ## 4. Type, focus and the selected state
 
-- **Two families, as viewer.css already decided.** The system sans for what a person reads, with the
-  Hangul faces named early in the stack, and IBM Plex Mono for identifiers: relation kinds, ids,
-  hashes, counts. The app and the viewer load no web font; the landing keeps its own display faces.
+- **Three faces, two of them in the tools.** Pretendard for what a person reads and the names of
+  things: running text, controls, the tools' headings, and the names the map draws. IBM Plex Mono for
+  identifiers: relation kinds, ids, hashes, paths and commands. Fraunces for the landing's headings
+  and its social image, and nowhere in the tools. Pretendard draws Hangul and Latin from one design,
+  so a Korean name beside an English one keeps its height and weight, which a system stack that takes
+  its Latin from one face and its Hangul from another does not; its Latin is Inter's, open and tall
+  enough to read at 11px, with tabular figures. IBM Plex Mono's x-height, 0.516 of the em, is within
+  3% of Pretendard's 0.530, so an identifier set among names keeps the line's height.
+- **The faces ship with the product** (U11). The daemon serves Pretendard, as its author's dynamic
+  subset - 92 files, each with a unicode-range, so a page fetches only the files its text needs - and
+  IBM Plex Mono's Latin files at 400, 500 and 600, under `/fonts/`: the same bytes on the local
+  console and on the read tier, under a versioned path cached for a year, and the viewer's policy
+  gains `font-src 'self'`. The Settings page and the landing are English pages and carry only the
+  nine Pretendard files that hold Latin and its punctuation, with the same IBM Plex Mono; a Hangul
+  name there falls back to the system's Korean face. Nothing is fetched from another host, and a face
+  that does not load falls back to the system stack the token names after it. The files are the ones
+  their authors publish, unmodified, with their licenses beside them.
 - **Six sizes** in the viewer and on the Settings page: 24 (page title), 18 (sheet title), 15
-  (section), 13 (body), 12 (secondary) and 11 (labels). Nothing is drawn below 11px. The landing, a
-  page read at length rather than a tool, has six sizes of its own (Section 11). A heading on a panel is 12px sans, semibold, in `--muted`
-  and in sentence case, and nothing in the viewer or on the Settings page is set in uppercase. The
-  landing keeps its uppercase eyebrows with its own display faces: a page about the product, set in
-  the product's type, not a tool.
+  (section), 13 (body), 12 (secondary) and 11 (labels). Nothing is drawn below 11px, and nothing
+  between the steps. The landing, a page read at length rather than a tool, has six sizes of its own
+  (Section 11). A heading on a panel is 12px sans, semibold, in `--muted` and in sentence case, and
+  nothing in the viewer or on the Settings page is set in uppercase. The landing keeps its uppercase
+  eyebrows in IBM Plex Mono: a page about the product, set in the product's type, not a tool.
+- **Three weights.** 400 for reading, 500 for small labels and emphasis, 600 for headings. Nothing in
+  the tools is set at 700 or heavier, or lighter than 400: light text on a dark ground spreads and
+  reads heavier than it is, and a hairline at 11px breaks up.
+- **Lines and spacing.** A line of English in the tools runs at 1.4 to 1.5; where Korean runs - an
+  observation's text, the Log - at 1.55 or more, since its syllable blocks stand taller than a
+  lowercase line. Tracking is +0.01em at 11 and 12px, none from 13 to 15, -0.01em on headings, and
+  never negative on Korean below 18px. Numbers that count or line up take tabular figures. Korean
+  labels and headings keep their words whole (`word-break: keep-all`); ids and addresses break
+  anywhere.
+- **On the canvas**, the names of nodes and regions are Pretendard at 500, and relation kinds and the
+  contested badge's mark are IBM Plex Mono. The map draws again when a face finishes loading, so no
+  label is placed by the fallback's measure and drawn in the face.
 - **Focus is visible on every control**: a 2px `--gold-bright` outline, offset 2px - an outline on
   `:focus-visible`, not a border.
 - **A selected item sits on `--select`**, its text `--gold-bright` when it is a choice (a chip, a
@@ -517,8 +560,8 @@ cannot draw - no script, a script that did not load, or one that failed - and th
 while the steps scroll past it. Below 900 each step carries its own 4:5 frame above its words, which
 plays when the frame comes into view, and the stage's column is not drawn.
 
-**Type and surface.** Headings in Fraunces, reading in the system sans, commands, identifiers and
-labels in IBM Plex Mono: Newsreader goes. The landing's own six sizes, which Section 4's scale for the
+**Type and surface.** Headings in Fraunces, reading in Pretendard (step 10; the system sans until
+then), commands, identifiers and labels in IBM Plex Mono: Newsreader goes. The landing's own six sizes, which Section 4's scale for the
 tools does not bind, are three for headings (up to 72, 38 and 24 pixels, smaller on a phone), 18 for
 reading, 15 for secondary text and 13 for labels; the subhead takes the third heading size. Sixteen
 sizes become those six. The grain, the two glows, the constellation, the hero's entrance, the scroll
@@ -574,6 +617,16 @@ ours to keep true, and we could not.
   terminal; the command, with its script one click away, is the shortest true path to trying it.
 - **No comparison with other products.** A table of someone else's features is a claim we cannot keep
   true; the status and the questions are claims about this product, kept in this repository.
+- **Pretendard, not the system's face.** The system's face costs nothing to ship and is excellent on
+  a Mac, but it is a different face on every system the read tier opens in, and on none of them are a
+  Korean name and an English one drawn from one design. Pretendard costs about 3MB in the daemon,
+  fetched a few files at a time. IBM Plex Sans with its Korean family was set beside it and set aside:
+  its Hangul is a second family, heavy to ship at every weight.
+- **IBM Plex Mono kept, and now shipped.** JetBrains Mono reads best at 11px, with the tallest
+  x-height, and stands out of a line of Pretendard for the same reason. Plex Mono is already the
+  landing's face and its social image's, and its height matches.
+- **Fraunces stays on the landing only.** It is the product's voice where the product is presented;
+  the tools are operated, and a display face there is one more family to read past.
 
 ## 13. Invariants
 
@@ -589,6 +642,7 @@ ours to keep true, and we could not.
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 | **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph. |
 | **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's own functions, a ring is human confirmed at the viewer's width, the coral badge is contested, a relation is the viewer's neutral line, and every other color it draws is a landing token. The second machine draws every ring and badge the first draws, since it replays the same log. Each scene ends within five seconds and then draws nothing until it is asked again; under reduced motion each scene is its resting frame; the canvas is hidden from assistive technology and each step says its scene in its own words (P2, P6, P18). |
+| **U11** | Every face a surface names first in its reading or identifier stack ships with that surface and is served from its own origin, and no surface fetches a font from another host. The viewer, the Settings page and the landing name the same stacks. |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -627,6 +681,13 @@ lasts more than five seconds, a frame is requested only while a scene plays, and
 setting is read and its change followed; and every canvas on the page is hidden from assistive
 technology while each of the five steps has a heading and a paragraph of its own.
 `the_landing_has_one_version_badge` holds the page to the one element the deploy stamps.
+
+U11 is to be guarded, from step 10, by a test in `crates/supragnosis-viz/tests/design_tokens.rs`
+that reads the three stylesheets, their pages and the policies they are served under: the reading
+and identifier stacks are the same in all three and begin with Pretendard and IBM Plex Mono; each
+surface declares an `@font-face` for both whose files it ships; the viewer's and the Settings page's
+policies allow `font-src 'self'`; no page or stylesheet names a font host; and the map's name labels
+use the reading stack.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -671,6 +732,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
    the install script's search notice, `site/**` in the Rust workflow's paths and `site/*.js` in the
    front-end lint, and the tests. Merging it publishes the site, so it merges on the author's word,
    not on a green check.
+10. **One voice in type** (Section 4, U11): Pretendard and IBM Plex Mono shipped and served under
+   `/fonts/` by the daemon, on both the local console and the read tier, and carried by the Settings
+   page and the landing; `font-src 'self'` in the two policies; the shared stacks; the map's labels
+   and the stage's in the reading face; the Settings page's off-scale sizes back on the scale; and the
+   landing's fonts served from the site instead of Google Fonts.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
@@ -690,6 +756,10 @@ proposal and the read tier.
 - **The viewer's chrome** (steps 7-8): the docks stop floating and join the frame, their edge
   handles become the title bar's panel toggles, the minimap moves above the camera toolbar, and the
   boundaries' legend moves into View.
+- **remote-viewer.md Section 3.2** (step 10): the read tier serves the files under `/fonts/` as it
+  serves the page's own assets - no workspace is involved - with a long cache, since the path is
+  versioned.
+- **settings-page.md** (step 10): the Settings page's policy gains `font-src 'self'`.
 - **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
   "this node" (Section 9). The read tier's answer is unchanged.
