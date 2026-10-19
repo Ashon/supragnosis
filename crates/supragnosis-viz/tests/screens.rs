@@ -85,3 +85,25 @@ fn search_chooses_nothing_until_the_person_moves() {
     }
     assert!(function("renderChipsActive").contains("syncSearchScope()"), "the scope's name is not kept current");
 }
+
+/// Sections 4 and 10: the View popover opens from its button with the keyboard and says it is open,
+/// the settings dialog has a name, the contested block's buttons are a finger's size, and a name the
+/// map does not draw is said whole.
+#[test]
+fn the_small_controls_say_what_they_are() {
+    let page = include_str!("../assets/viewer.html");
+    let view = &page[page.find("<button id=\"viewBtn\"").expect("viewBtn")..];
+    let view = &view[..view.find('>').expect("the tag closes")];
+    assert!(view.contains("aria-expanded=\"false\"") && view.contains("aria-controls=\"viewpop\""), "the View button does not say what it opens");
+    let pop = function("setViewPop");
+    assert!(pop.contains("aria-expanded"), "the View button does not say it is open");
+    assert!(pop.contains(".focus()"), "opening the popover leaves focus behind");
+    let dlg = &page[page.find("<dialog id=\"settings\"").expect("the settings dialog")..];
+    let dlg = &dlg[..dlg.find('>').expect("the tag closes")];
+    assert!(dlg.contains("aria-labelledby=\"settingsTitle\""), "the settings dialog has no name");
+    assert!(page.contains("<span class=\"ftitle\" id=\"settingsTitle\">"), "the dialog's title has no id");
+    let confirm = rule(".contested .confirm");
+    assert!(confirm.contains("min-height:24px"), "a contested value's button is under 24px");
+    assert!(CSS.contains(".contested .confirm { min-height:28px; }"), "a contested value's button is under 28px on a phone");
+    assert!(!function("nameOf").contains("slice(0, 8)"), "a name is cut to 8 characters");
+}

@@ -422,7 +422,7 @@
   .contested .crow .curtag { color:var(--muted); font-size:11px; margin-left:auto; }
   /* Committed (human-confirmed) belief: a filled chip, not the plain "current" text - reads as settled. */
   .contested .crow .curtag.confirmed { color:#171204; background:var(--accent); border-radius:4px; padding:0 6px; }
-  .contested .confirm { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; }
+  .contested .confirm { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; min-height:24px; }
   .contested .crow.cur .confirm { background:var(--accent); color:#171204; font-weight:600; }
   .contested .crow.cur .confirm:hover { background:var(--gold-bright); color:#171204; }
   /* Observation log rows - the workspace Log tab and the node inspector's log column share one row
@@ -688,6 +688,7 @@
     #statusbar #session, #statusbar #tierNote { display:none; }
     /* The camera buttons move to the top right, out of the sheets' way. */
     #hud { right:16px; top:61px; bottom:auto; }
+    .contested .confirm { min-height:28px; }
   }
   /* Reduced motion (docs/design-system.md Section 10): nothing moves - no spinner turning, no docks
      sliding, no feed rows fading in and out (a row simply stays until it is removed). The canvas half -

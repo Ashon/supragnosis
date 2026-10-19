@@ -1339,7 +1339,7 @@ async function refreshCuration() {
   renderReview();
 }
 
-function nameOf(id) { const n = nodeById(id); return n ? n.name : "(" + id.slice(0, 8) + ")"; }
+function nameOf(id) { const n = nodeById(id); return n ? n.name : HASH_ID.test(id) ? "(an entity not on the map)" : "(" + id + ")"; }
 
 // --- The Review page (docs/design-system.md Section 7, U4) ---------------------------------------
 // Everything that waits for a person's decision, in one place: Needs you (suspected secrets, open and
@@ -4009,7 +4009,12 @@ panelRBtn.onclick = () => toggleDock(false);
 // View options popover (HUD "view" button): preferences stay off the data rails; a click
 // elsewhere or Escape dismisses it.
 const viewBtn = document.getElementById("viewBtn"), viewPop = document.getElementById("viewpop");
-function setViewPop(on) { viewPop.classList.toggle("on", on); viewBtn.classList.toggle("on", on); }
+function setViewPop(on) {
+  if (!on && viewPop.contains(document.activeElement)) viewBtn.focus();
+  viewPop.classList.toggle("on", on); viewBtn.classList.toggle("on", on);
+  viewBtn.setAttribute("aria-expanded", on ? "true" : "false");
+  if (on) { const first = viewPop.querySelector("button"); if (first) first.focus(); }
+}
 viewBtn.onclick = ev => { ev.stopPropagation(); setViewPop(!viewPop.classList.contains("on")); };
 document.addEventListener("click", ev => { if (viewPop.classList.contains("on") && !viewPop.contains(ev.target)) setViewPop(false); });
 // [ / ] toggle the docks, "/" jumps to search - but never while typing in a field.

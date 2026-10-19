@@ -114,9 +114,9 @@
      this is where things are changed. Native <dialog> for Esc/backdrop/focus rather than another
      hand-rolled overlay, and every control is wired in JS - no inline handlers, so the page stays
      clean under the CSP the network read tier will need (federation.md 6d). -->
-<dialog id="settings">
+<dialog id="settings" aria-labelledby="settingsTitle">
   <form method="dialog" class="fchead">
-    <span class="ftitle">settings</span>
+    <span class="ftitle" id="settingsTitle">settings</span>
     <!-- Same glyph and hit target as the detail / observation card closers, so "close" looks the
          same everywhere it appears. `method="dialog"` closes without any script. -->
     <button class="fclose" title="close (Esc)" aria-label="close">
@@ -166,7 +166,7 @@
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">
-  <button id="viewBtn" title="view options (layout / show)" aria-label="view options">
+  <button id="viewBtn" title="view options (layout / show)" aria-label="view options" aria-expanded="false" aria-controls="viewpop">
     <svg viewBox="0 0 18 18"><path d="M1.5 9s3-5 7.5-5 7.5 5 7.5 5-3 5-7.5 5-7.5-5-7.5-5z"/><circle cx="9" cy="9" r="2.4"/></svg>
   </button>
   <button id="zin" title="zoom in" aria-label="zoom in">
