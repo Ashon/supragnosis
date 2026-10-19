@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.7.2](docs/releases/v0.7.2.md) | Upgrade the app and the server, then restart once; in full screen the title bar meets the edge. |
 | [v0.7.1](docs/releases/v0.7.1.md) | Upgrade the app and the server, then restart once; the title bar moves the window again. |
 | [v0.7.0](docs/releases/v0.7.0.md) | Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux. |
 | [v0.6.5](docs/releases/v0.6.5.md) | Upgrade the server, then restart once; `supragnosis setup` takes a first run to its first entry. |
