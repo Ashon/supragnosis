@@ -656,10 +656,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (15, &[c(
         "the viewer's search says how each hit was reached and over what scope: word matches grouped apart from meaning and neighbor hits in the engine's order, the scope named, no row chosen before the person moves, and an empty scope offering the wider one with its count",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 8 and 14 step 14, not built. Revisit when the \
-             search path answers how each hit was reached and the bar draws the two groups",
-        ),
+        // http.rs reads each hit's `reached`; screens.rs reads the bar's groups, scope and choice.
+        Evidence::Scenario(&[
+            "every_viewer_search_hit_says_how_it_was_reached",
+            "search_chooses_nothing_until_the_person_moves",
+            "search_groups_hits_by_how_they_were_reached",
+        ]),
     )]),
     (16, &[c(
         "no type color reads as a signal: the band stands 25 degrees of OKLCH hue from the signal tokens at lightness 0.62 or more and 5.5:1 on the ground, its tones measured apart, up to eight types take eight hues, relation kinds draw no color, and every copy of the band is the viewer's",
@@ -686,10 +688,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (18, &[c(
         "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast, is undone by the reverse gated events the log keeps, and is filed in the workspace of the observation it changes",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 7 and 14 step 14, not built. Revisit when the \
-             contested block draws one Confirm per value with Undo",
-        ),
+        // settle.rs reads the block and the acts; http.rs casts them over the socket.
+        Evidence::Scenario(&[
+            "settling_a_contested_value_says_why_asks_once_and_can_be_undone",
+            "viz_resolve_files_in_the_observations_workspace_and_can_be_undone",
+        ]),
     )]),
     (19, &[c(
         "the viewer's View toggles are switches that say their state, its legend chips say whether they are pressed, its workspace chips are one radio group, its page declares its language and names the map, and the app's dialogs hold focus",
@@ -704,10 +707,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (20, &[c(
         "on the local console the status bar always holds the way to Review with one count over tie-only contested items, and follow never changes the scope, the selection or the open sheet",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 6 and 14 step 14, not built. Revisit when Review \
-             is a permanent status bar entry and follow frames without switching the workspace",
-        ),
+        // places.rs: Review's entry and Needs you, follow, and the first view.
+        Evidence::Scenario(&[
+            "review_is_always_in_the_status_bar_with_one_count",
+            "follow_frames_what_is_in_scope_and_notes_the_rest",
+            "the_first_view_opens_where_the_knowledge_is",
+        ]),
     )]),
 ];
 
@@ -3026,6 +3031,9 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/type_band.rs"),
     include_str!("../../supragnosis-viz/tests/words.rs"),
     include_str!("../../supragnosis-viz/tests/controls.rs"),
+    include_str!("../../supragnosis-viz/tests/screens.rs"),
+    include_str!("../../supragnosis-viz/tests/settle.rs"),
+    include_str!("../../supragnosis-viz/tests/places.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

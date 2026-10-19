@@ -12,8 +12,9 @@
 > surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
-> pass over every screen (Section 1, U15-U20) has its foundation built (step 12); **steps 13-16 are
-> designed, not built**.
+> pass over every screen (Section 1, U15-U20) has its foundation (step 12), the Graph page (step 14)
+> and the viewer's and the engine's part of step 13 built; **the app's and the site's parts of step
+> 13, and steps 15 and 16, are designed, not built**.
 
 ## 1. Why this exists
 
@@ -728,7 +729,7 @@ principles page - to one floor (U19):
 - **A press lands.** A control a pointer presses is at least 24 by 24 pixels with its spacing (WCAG
   2.5.8), and 28 below 760 pixels wide, where a finger presses it.
 - **A single key can be turned off.** The view's single keys - /, b, [ and ] - act from anywhere
-  outside a text field, and the viewer's settings has a switch that turns them off (WCAG 2.1.4). The
+  outside a text field, and View has a switch that turns them off (WCAG 2.1.4). The
   keys that decide act only within their list or item (Section 7).
 - **Progress is announced.** A step that runs shows its progress as `role="progressbar"` with its
   value, and a step's end, success or failure, is said in a polite live region (WCAG 4.1.3). A page
@@ -1185,9 +1186,31 @@ one name for Setup - is owed until steps 14 and 15.
 U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 `crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:
 View's toggles, the legend's chips, the workspace chips, the page's language and the map's name, and
-the dialog on the app's pages. The rest of U19, and U15, U18 and U20, are owed until steps 13-16; each
-is to be held by a source tripwire and by browser scenarios that press what the rule governs at 1440
-and 390 pixels, and each registry entry stays owed until its guard runs.
+the dialog on the app's pages, and `view_holds_two_choices_with_one_name_each` holds View's two
+choices and its switch for the single keys. The rest of U19 - every control on every surface, the
+targets and the reflow - is owed until the app's and the site's steps are built and browser scenarios
+press them at 1440 and 390 pixels.
+
+U15 is guarded by `every_viewer_search_hit_says_how_it_was_reached` in `crates/supragnosis-viz/tests/http.rs`,
+which searches a store in keyword mode and with an embedder and reads each hit's `reached` - the word
+match, the meaning-only hit and the neighbor - and by `search_chooses_nothing_until_the_person_moves`
+and `search_groups_hits_by_how_they_were_reached` in `crates/supragnosis-viz/tests/screens.rs`, which
+read the bar: no row chosen on arrival, Enter only on the row moved to, the field naming its scope,
+the two groups and the wider scope's count.
+
+U18 is guarded by `settling_a_contested_value_says_why_asks_once_and_can_be_undone` in
+`crates/supragnosis-viz/tests/settle.rs` - the heading, one Confirm for every value at one weight, the
+question in place, Neither is right, Undo as the demotion and the notice that names its ceiling - and
+by `viz_resolve_files_in_the_observations_workspace_and_can_be_undone` in `http.rs`, which confirms a
+value from `workspace=*`, finds the act in the observation's workspace and none in the default, reads
+the value's `base_tier` from the explain path, and undoes it into a tie again.
+
+U20 is guarded by `review_is_always_in_the_status_bar_with_one_count`,
+`follow_frames_what_is_in_scope_and_notes_the_rest` and `the_first_view_opens_where_the_knowledge_is`
+in `crates/supragnosis-viz/tests/places.rs`: Review's entry hides only on the read tier, reads Review at
+zero and counts the contested beliefs inside its one count; Needs you lists only ties; the event
+handler changes no scope and notes a write elsewhere with Show; and an empty default with knowledge
+elsewhere opens on All and says so.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -1248,7 +1271,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    control helpers in the viewer and in the app's shared script: switch, pressed, radio group, tabs,
    the dialog that holds focus, and the live region; and the guards, which hold at once the rules
    that need no screen change and stay owed for the rest until steps 13-16 meet them.
-13. **The defects** [designed]: the seventeen found in Section 1's pass that ask no design question,
+13. **The defects** [viewer and engine built; app and site designed]: the seventeen found in Section 1's pass that ask no design question,
    each fixed as it is - in the viewer, search's chosen row and its field, the status bar's overflow
    and its empty counts, the Review page's keys and focus, the controls' states, names and targets;
    in the engine, `propose` turning names into ids, the Review page showing names whole, and a gate act
@@ -1257,7 +1280,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    three sentences, its progress, the server list's unnamed button and the dialog's focus; on the
    site, the cut install command, the ledger on phones, the owed contrast, the header's spacing and
    the heading order.
-14. **The Graph page** [designed] (U15, U18, U20): search's groups and scope, with the viewer's
+14. **The Graph page** [built] (U15, U18, U20): search's groups and scope, with the viewer's
    search function that says how each hit was reached (Section 8); the first view, the status bar,
    Review's entry with Needs you's tie-only contested items, and follow (Section 6); the Log's
    who-lines (Section 9); View's Regions and Boundaries and the switch for single keys (Sections 5,
@@ -1632,4 +1655,27 @@ findings changed it:
 - **Boundaries and peers drew from the generator too.** A workspace's dashed outline and a peer's dot
   took any hue, gold and teal among them; both draw from the band now.
 - **The workspace chips choose one scope**, so they are a radio group, not pressed buttons (Section 4).
+
+## 21. What building the Graph page changed
+
+- **The search path says how a hit was reached; the MCP tool does not.** The viewer's engine function
+  reads the keyword list, the fused list and the enrichment, and answers each hit with `reached`
+  (words, meaning or neighbor); `search_knowledge` is untouched, and its pinned tool list with it.
+- **The wider scope's count is the word matches.** A first version counted every hit the wider search
+  answered, so a scope full of related hits read "20+"; it counts the hits that contain the words, and
+  says 20+ only when those reach the path's limit.
+- **The single keys are turned off in View**, beside what they act on, rather than in the settings
+  dialog, which holds About and Sync (Section 10).
+- **View's stored choices carry over.** "hulls" and "all regions" were stored as two switches; a
+  stored pair becomes the one Regions choice the first time the page reads it.
+- **Follow said nothing about reads elsewhere.** It framed an agent's reads as well as its writes;
+  a read in the scope on screen still frames what it touched, and a read elsewhere is not a notice.
+- **The first view needed a chip for an empty default.** The workspace list names only workspaces
+  that hold knowledge, so a default that holds none had no chip to select; it gets a "default" chip
+  while it is the scope.
+- **A Log row's mark is the legend's ring.** The dot had its own colors - Host signed in teal, the
+  color of healthy - and every row, card and strip now draws the Trust legend's swatch instead.
+- **The block's hint took the inspector's class.** "Neither is right" first used `.why`, which the
+  inspector looks up for its own disclosure, so focusing a contested node threw; the hint has its own
+  class and `settle.rs` holds the name apart.
 
