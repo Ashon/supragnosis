@@ -46,6 +46,9 @@
     --text-body:0.8125rem; --text-small:0.75rem; --text-caption:0.6875rem;
     /* The status bar's height: 28 pixels at the default size, growing with its text (Section 10). */
     --bar:1.75rem;
+    /* Six corners (Section 3, U22): a window, a surface that floats or groups, a control, an inset
+       tag, a mark of data, and a capsule. An inner corner is the outer less the space between. */
+    --r-window:16px; --r-surface:12px; --r-control:8px; --r-inset:4px; --r-mark:2px; --r-capsule:999px;
     /* Depth and the scrim behind a dialog, as tokens so the light appearance can set its own. */
     --shadow:rgba(0,0,0,0.6); --shadow-soft:rgba(0,0,0,0.4); --scrim:rgba(4,5,8,0.6);
     /* A pill's tint: its signal at 12%, measured under the pill's text (Section 3). */
@@ -110,7 +113,7 @@
   /* A control is a filled surface with no edge (Section 4): a text field is named by its label or
      placeholder, and hover lightens rather than turning gold. */
   :where(input, button) { background:var(--panel-2); border:0; color:var(--ink);
-                          padding:5px 9px; border-radius:8px; font:inherit; font-size:var(--text-body); }
+                          padding:5px 9px; border-radius:var(--r-control); font:inherit; font-size:var(--text-body); }
   input::placeholder { color:var(--muted); }
   :where(input):focus { background:var(--panel-3); }
   :where(button) { cursor:pointer; transition:background-color 0.12s ease, color 0.12s ease; }
@@ -133,14 +136,14 @@
   #search { width:100%; height:30px; padding:0 30px 0 11px; font-size:var(--text-body); }
   .slashkey { position:absolute; right:7px; pointer-events:none;
               font:600 var(--text-caption)/1 var(--mono); color:var(--muted); background:var(--panel-3);
-              border-radius:4px; padding:3px 5px; transition:opacity 0.12s ease; }
+              border-radius:var(--r-inset); padding:3px 5px; transition:opacity 0.12s ease; }
   /* Out of the way as soon as the field is in use - focused, or already carrying a term. */
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
   /* The search answer (Section 8): a list under the field, floating over the map. Rows are buttons;
      the selected one sits on --select (Section 4). */
   .searchpop { position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%);
                width:min(460px, calc(100vw - 32px)); max-height:min(60vh, 460px); overflow-y:auto;
-               background:var(--panel); border-radius:12px; padding:6px;
+               background:var(--panel); border-radius:var(--r-surface); padding:6px;
                box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft); }
   .searchpop[hidden] { display:none; }
   .sp-head { display:flex; justify-content:space-between; gap:10px; padding:3px 6px 6px;
@@ -148,12 +151,12 @@
   .sp-mode { color:var(--muted); }
   .sp-sec { padding:8px 8px 4px; color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); }
   .sp-row { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:6px 8px;
-            border-radius:8px; background:none; color:var(--ink2); font:var(--text-body)/1.4 var(--sans); }
+            border-radius:var(--r-control); background:none; color:var(--ink2); font:var(--text-body)/1.4 var(--sans); }
   .sp-row:hover { background:var(--panel-2); color:var(--ink); }
   .sp-row.on { background:var(--select); color:var(--ink); }
   /* The option moved to shows its name and snippet whole (Section 10, U21). */
   .sp-row.on .sp-name, .sp-row.on .sp-snip { white-space:normal; -webkit-line-clamp:unset; line-clamp:unset; display:block; }
-  .sp-row .dot { width:8px; height:8px; border-radius:2px; flex:none; align-self:center; }
+  .sp-row .dot { width:8px; height:8px; border-radius:var(--r-mark); flex:none; align-self:center; }
   .sp-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sp-k { flex:none; color:var(--muted); font:var(--text-caption)/1.3 var(--mono); }
   .sp-row.off .sp-name { color:var(--muted); }
@@ -165,13 +168,13 @@
   .sp-note.bad { color:var(--bad-ink); }
   /* A key that works where it is shown (b beside Boundaries) - the same filled cap as "/", inline. */
   .keyhint { font:600 var(--text-caption)/1 var(--mono); color:var(--muted); background:var(--panel-3);
-             border-radius:4px; padding:2px 5px; margin-left:6px; vertical-align:1px; }
+             border-radius:var(--r-inset); padding:2px 5px; margin-left:6px; vertical-align:1px; }
   /* Notices: what a write did. Top centre, under the header and clear of both docks, the HUD and the
      inspector at the bottom (whose acts most writes come from); the same shape as the settings page's
      toasts - a success leaves by itself, an error stays until it is dismissed. */
   #toasts { position:fixed; left:50%; top:61px; transform:translateX(-50%); z-index:12;
             display:grid; gap:6px; width:min(420px, calc(100vw - 32px)); pointer-events:none; }
-  .toast { display:flex; gap:9px; align-items:flex-start; padding:9px 10px 9px 12px; border-radius:12px;
+  .toast { display:flex; gap:9px; align-items:flex-start; padding:9px 10px 9px 12px; border-radius:var(--r-surface);
            background:var(--panel-2); color:var(--ink);
            box-shadow:0 12px 32px var(--shadow-soft); font:var(--text-body)/1.45 var(--sans); pointer-events:auto; }
   .toast .tk { width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none; margin-top:5px; }
@@ -181,7 +184,7 @@
   .toast .td { color:var(--muted); font-size:var(--text-small); overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
   .toast button { padding:0 6px; font-size:var(--text-body); line-height:18px; color:var(--muted); background:none; }
   /* A notice's one action, such as Undo. */
-  .toast button.tact { align-self:center; padding:2px 10px; border-radius:6px; font-size:var(--text-body); color:var(--ink); background:var(--panel-3); }
+  .toast button.tact { align-self:center; padding:2px 10px; border-radius:var(--r-control); font-size:var(--text-body); color:var(--ink); background:var(--panel-3); }
   /* Computed belief diff on the selected proposal - a before -> after row per change, so accepting
      is a decision about a visible delta rather than about a proposal's title. */
   .ddiff { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
@@ -208,7 +211,7 @@
   /* Why the page opened on All (design-system.md Section 6). */
   #wschips .wsnote { flex-basis:100%; margin-top:2px; color:var(--muted); font-size:var(--text-small); }
   .lbl { color:var(--muted); font-size:var(--text-small); margin-right:2px; }
-  .chip,.lg { padding:3px 10px; border-radius:8px; background:var(--panel-2); cursor:pointer;
+  .chip,.lg { padding:3px 10px; min-height:28px; border-radius:var(--r-control); background:var(--panel-2); cursor:pointer;
               font-size:var(--text-body); color:var(--ink2); user-select:none;
               transition:background-color 0.12s ease, color 0.12s ease; }
   .chip:hover { background:var(--panel-3); color:var(--ink); }
@@ -216,9 +219,9 @@
   .lg { display:inline-flex; align-items:center; gap:6px; background:none; padding:3px 8px; }
   .lg:hover { background:var(--panel-2); color:var(--ink); }
   .lg.off { opacity:0.38; }
-  .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .sw { width:10px; height:10px; border-radius:var(--r-mark); display:inline-block; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
-         background:var(--panel-2); border-radius:8px;
+         background:var(--panel-2); border-radius:var(--r-control);
          padding:7px 10px; font-size:var(--text-body); color:var(--ink2); box-shadow:0 8px 28px var(--shadow); }
   #tip b { color:var(--ink); font-family:var(--sans); }
   #tip .k { color:var(--muted); }
@@ -235,16 +238,16 @@
   body.dr { --win-r:300px; }
   body.sheet { --win-r:360px; }
   #mapwin { position:fixed; top:49px; bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:3;
-            pointer-events:none; border-radius:16px; box-shadow:0 0 0 100vmax var(--panel);
+            pointer-events:none; border-radius:var(--r-window); box-shadow:0 0 0 100vmax var(--panel);
             transition:left .18s ease, right .18s ease; }
   /* The camera is one toolbar at the window's lower right; the minimap, off until View turns it
      on, and the View menu open above it. Both float over the map, so they are surfaces with a
      shadow. The minimap's backing store is DPR-scaled in JS from this CSS size. inset:auto FIRST:
      the global `canvas` rule sets inset:0, and its top/left would win over right/bottom. */
   #hud { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 16px); z-index:8; display:flex;
-         padding:3px; background:var(--panel); border-radius:12px; box-shadow:0 8px 24px var(--shadow-soft); }
+         padding:3px; background:var(--panel); border-radius:var(--r-surface); box-shadow:0 8px 24px var(--shadow-soft); }
   #hud button { width:32px; height:32px; padding:0; display:flex; align-items:center;
-                justify-content:center; background:none; border-radius:9px; color:var(--ink2); }
+                justify-content:center; background:none; border-radius:var(--r-control); color:var(--ink2); }
   #hud button:hover { background:var(--panel-2); color:var(--ink); }
   #hud button svg { width:16px; height:16px; fill:none; stroke:currentColor;
                     stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
@@ -252,7 +255,7 @@
      only anchor telling you where it came from. */
   #hud button.on { background:var(--select); color:var(--gold-bright); }
   #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:7;
-             width:168px; height:154px; background:var(--panel); border-radius:12px;
+             width:168px; height:154px; background:var(--panel); border-radius:var(--r-surface);
              box-shadow:0 8px 24px var(--shadow-soft); cursor:crosshair; display:none; }
   #minimap.on { display:block; }
   #empty { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
@@ -276,7 +279,7 @@
   /* The activity feed's passing rows, inside the map's window at its upper left (Section 6). */
   #log { position:fixed; left:calc(var(--win-l) + 16px); top:65px; z-index:6; width:280px; max-width:38vw;
          display:flex; flex-direction:column; gap:4px; pointer-events:none; }
-  #log .row { background:var(--panel); border-radius:8px; box-shadow:0 6px 18px var(--shadow-soft);
+  #log .row { background:var(--panel); border-radius:var(--r-control); box-shadow:0 6px 18px var(--shadow-soft);
               padding:5px 10px; font-size:var(--text-small); color:var(--ink2); animation:logfade 8s forwards; }
   #log .row b { color:var(--ink); font-weight:600; }
   #log .row .t { color:var(--muted); margin-right:5px; }
@@ -320,25 +323,25 @@
   #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
   #detail .rchip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                    font:var(--text-body)/1.55 var(--sans); color:var(--ink); background:var(--panel-2);
-                   border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
+                   border-radius:var(--r-control); padding:3px 8px; min-height:24px; cursor:pointer; }
   #detail .rchip:hover { background:var(--panel-3); }
   /* A superseded relation keeps a thin outline in place of a fill: the line says "past" (U9's list). */
   #detail .rchip.past { opacity:.6; background:none; border:1px solid var(--muted); padding:2px 7px; }
-  #detail .rchip .dot { width:7px; height:7px; border-radius:2px; margin-right:5px; vertical-align:0; }
+  #detail .rchip .dot { width:7px; height:7px; border-radius:var(--r-mark); margin-right:5px; vertical-align:0; }
   #detail .rmore { font:var(--text-caption)/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
-                   border-radius:8px; padding:1px 8px; }
-  #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
+                   border-radius:var(--r-control); padding:1px 8px; }
+  #detail .dot { width:9px; height:9px; border-radius:var(--r-mark); flex:0 0 auto; display:inline-block; }
   /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
      asterisk). A square hit target with a soft hover fill, not a bare text glyph. */
   #detail .close { position:absolute; top:8px; right:8px; cursor:pointer; color:var(--muted);
-                   border:none; background:none; border-radius:5px; padding:0;
+                   border:none; background:none; border-radius:var(--r-control); padding:0;
                    width:24px; height:24px; min-height:24px; display:flex; align-items:center; justify-content:center;
                    transition:color 0.15s ease, background 0.15s ease; }
   #detail .close:hover { color:var(--ink); background:var(--panel-2); }
   #detail .close svg { display:block; }
   /* The grow control sits beside close and borrows its whole look. */
   #detail .grow { position:absolute; top:8px; right:32px; cursor:pointer; color:var(--muted);
-                  border:none; background:none; border-radius:5px; padding:0;
+                  border:none; background:none; border-radius:var(--r-control); padding:0;
                   width:22px; height:22px; display:flex; align-items:center; justify-content:center;
                   transition:color 0.15s ease, background 0.15s ease; }
   #detail .grow:hover { color:var(--ink); background:var(--panel-2); }
@@ -388,26 +391,26 @@
      button (map-tool convention). Options render as compact monospace checkbox rows -
      "[x] labels" - because they are on/off view state, not actions. */
   #viewpop { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:9; display:none;
-             flex-direction:column; width:248px; background:var(--panel); border-radius:12px;
+             flex-direction:column; width:248px; background:var(--panel); border-radius:var(--r-surface);
              padding:10px 12px; box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft); }
   #viewpop.on { display:flex; }
   #viewpop .btns { display:flex; flex-direction:column; gap:1px; }
-  #viewpop button.tog { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;
-                        min-height:24px; text-align:left; background:none; border:none; padding:2px 3px;
-                        font-size:var(--text-body); color:var(--ink2); border-radius:4px; }
+  #viewpop button.tog { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:28px;
+                        text-align:left; background:none; border:none; padding:2px 3px;
+                        font-size:var(--text-body); color:var(--ink2); border-radius:var(--r-control); }
   /* The switch's track: a knob at the left on a panel tone when off, at the right on the selection
      tone, in gold, when on (Section 4: gold says selected). */
-  #viewpop button.tog::after { content:""; flex:none; width:26px; height:14px; border-radius:7px;
+  #viewpop button.tog::after { content:""; flex:none; width:26px; height:14px; border-radius:var(--r-capsule);
                                background:radial-gradient(circle at 7px 50%, var(--muted) 4.5px, transparent 5px), var(--panel-3); }
   #viewpop button.tog.on { color:var(--ink); background:none; border:none; }
   #viewpop button.tog.on::after { background:radial-gradient(circle at 19px 50%, var(--gold-bright) 4.5px, transparent 5px), var(--select); }
   #viewpop button.tog:hover { color:var(--ink); background:var(--panel-2); }
   /* Regions and Boundaries: one choice of three each, a segmented control (Sections 4, 5). */
-  #viewpop .seg { display:flex; gap:2px; padding:2px; border-radius:8px; background:var(--panel-2); }
-  #viewpop .seg button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:24px;
-                         padding:2px 6px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:6px; }
+  #viewpop .seg { display:flex; gap:2px; padding:2px; border-radius:var(--r-control); background:var(--panel-2); }
+  #viewpop .seg button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:28px;
+                         padding:2px 6px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:var(--r-inset); }
   #viewpop .seg button.on { background:var(--select); color:var(--gold-bright); }
-  #viewpop .seg .sw { width:10px; height:10px; border-radius:3px; flex:none; }
+  #viewpop .seg .sw { width:10px; height:10px; border-radius:var(--r-mark); flex:none; }
   #viewpop #reload { margin-top:7px; padding:4px 8px; font-size:var(--text-body); }
   /* Legend chips live in the dock sections now. */
   #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
@@ -425,10 +428,10 @@
   /* A suspected secret is not housekeeping - it reads as an alert, above the hygiene signals. */
   .rv-detail .csec.hot { color:var(--bad-ink); }
   .rv-detail .grp { padding:6px 0; }
-  .rv-detail .grp.secret { background:var(--bad-glass); border-radius:8px; padding:6px 10px; }
+  .rv-detail .grp.secret { background:var(--bad-glass); border-radius:var(--r-control); padding:6px 10px; }
   .rv-detail .gk { color:var(--ink); font-size:var(--text-body); }
   .rv-detail .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
-  .nchip { padding:3px 9px; min-height:24px; border-radius:8px; background:var(--panel-2); cursor:pointer;
+  .nchip { padding:3px 9px; min-height:24px; border-radius:var(--r-control); background:var(--panel-2); cursor:pointer;
            font:var(--text-body)/1.5 var(--sans); color:var(--ink2); }
   .nchip:hover { background:var(--panel-3); color:var(--ink); }
   .nchip .ty { color:var(--muted); font-size:var(--text-caption); margin-left:4px; }
@@ -447,7 +450,7 @@
   /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
      .hot = tier-tied (the contested badge on the canvas): mediation invited; otherwise the list is
      informational (the conflict was resolved by trust but stays queryable). */
-  .contested { border:1px solid var(--bad); border-radius:8px; padding:6px 9px; margin:6px 0; }
+  .contested { border:1px solid var(--bad); border-radius:var(--r-control); padding:6px 9px; margin:6px 0; }
   .contested.hot { background:var(--bad-glass); }
   /* A conflict trust already resolved folds to one line that still says it exists (inspector.md D2);
      a contested one never gets this class (D1). */
@@ -464,29 +467,29 @@
   .contested .crow .ctier { color:var(--muted); font-size:var(--text-caption); margin-left:auto; }
   /* The value shown now is marked as shown, not as preferred: every value's Confirm has the same
      weight (design-system.md Section 7, U18). */
-  .contested .crow .curtag { color:var(--muted); font-size:var(--text-caption); background:var(--panel-3); border-radius:999px; padding:0 6px; }
+  .contested .crow .curtag { color:var(--muted); font-size:var(--text-caption); background:var(--panel-3); border-radius:var(--r-capsule); padding:0 6px; }
   .contested .crow .cwho { color:var(--muted); font-size:var(--text-caption); }
   /* Every value's Confirm sits at the row's end, the same on every row; a row too narrow for its
      who-line wraps that line, not the act. */
   .contested .crow { flex-wrap:wrap; }
   .contested .crow > .confirm { margin-left:auto; }
-  .contested .confirm { padding:0 8px; font-size:var(--text-body); letter-spacing:.04em; border-radius:5px; flex:0 0 auto; min-height:24px; }
+  .contested .confirm { padding:0 8px; font-size:var(--text-body); letter-spacing:.04em; border-radius:var(--r-control); flex:0 0 auto; min-height:24px; }
   /* The question a Confirm asks, in place, before anything is cast. */
   .contested .cask { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:2px 0 4px; padding:6px 8px;
-                     border-radius:8px; background:var(--panel-2); color:var(--ink); font-size:var(--text-body); }
+                     border-radius:var(--r-control); background:var(--panel-2); color:var(--ink); font-size:var(--text-body); }
   .contested .cacts { display:flex; gap:6px; margin-left:auto; }
   .contested .neither { margin-top:6px; font-size:var(--text-body); color:var(--ink2); }
   .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box; }
   .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
   .contested .copyline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
-  .contested .copyline code { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; padding:4px 6px; border-radius:6px;
+  .contested .copyline code { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; padding:4px 6px; border-radius:var(--r-inset);
                               background:var(--surface); color:var(--ink); font:var(--text-small)/1.4 var(--mono); }
   /* Observation log rows - the workspace Log tab and the node inspector's log column share one row
      style. A row is a compact list item (content-first: a quiet meta line of tier dot + compact time
      over the content, 2-line); clicking it opens the observation detail card. A light divider list,
      not boxed cards and not ruled: rows are spaced, and hover lightens the one under the pointer. */
   .obs + .obs { margin-top:2px; }
-  .obs .ohead { display:block; width:100%; padding:7px 8px; cursor:pointer; border-radius:8px; }
+  .obs .ohead { display:block; width:100%; padding:7px 8px; cursor:pointer; border-radius:var(--r-control); }
   .obs .ohead:hover { background:var(--panel-2); }
   .obs .ometa { display:flex; align-items:center; gap:6px; margin-bottom:2px; }
   .obs .owhen { color:var(--muted); font-size:var(--text-small); }
@@ -506,8 +509,8 @@
   .prow .pconf { color:var(--muted); font-size:var(--text-caption); }
   .prow .pwhen { color:var(--muted); font-size:var(--text-caption); margin-left:auto; }
   .oids, .echips { display:flex; gap:4px; flex-wrap:wrap; }
-  .oid { font:var(--text-caption) var(--mono); color:var(--muted); background:var(--panel-2); border-radius:6px; padding:1px 5px; }
-  .echip { font:var(--text-body)/1.5 var(--sans); color:var(--ink2); background:var(--panel-2); border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
+  .oid { font:var(--text-caption) var(--mono); color:var(--muted); background:var(--panel-2); border-radius:var(--r-inset); padding:1px 5px; }
+  .echip { font:var(--text-body)/1.5 var(--sans); color:var(--ink2); background:var(--panel-2); border-radius:var(--r-control); padding:3px 8px; min-height:24px; cursor:pointer; }
   .echip:hover { color:var(--ink); background:var(--panel-3); }
   /* Observation detail card: a focused, dismissable view of one observation (full content +
      provenance + lineage + entities/relations). The single detail surface for both the node log
@@ -516,10 +519,10 @@
              padding:24px; background:var(--scrim); }
   #obscard.on { display:flex; }
   #obscard .card { width:min(560px, 92vw); max-height:82vh; overflow-y:auto; position:relative;
-                   background:var(--panel); border-radius:12px;
+                   background:var(--panel); border-radius:var(--r-surface);
                    box-shadow:0 24px 60px var(--shadow); padding:18px 20px; }
   #obscard .close { position:absolute; top:10px; right:10px; cursor:pointer; color:var(--muted);
-                    background:none; border:none; padding:4px; border-radius:5px; line-height:0;
+                    background:none; border:none; padding:4px; border-radius:var(--r-control); line-height:0;
                     min-height:24px; min-width:24px; display:flex; align-items:center; justify-content:center; }
   #obscard .close:hover { color:var(--ink); background:var(--panel-2); }
   #obscard .close svg { display:block; }
@@ -534,11 +537,11 @@
   /* Inspector "why (evidence & decision)" disclosure: per-field decision + supporting log. */
   #detail .why { margin:4px 0 2px; }
   #detail .whytoggle { width:100%; text-align:left; padding:5px 9px; font-size:var(--text-body);
-                       color:var(--muted); background:var(--panel-2); border-radius:8px; cursor:pointer; }
+                       color:var(--muted); background:var(--panel-2); border-radius:var(--r-control); cursor:pointer; }
   #detail .whytoggle:hover { color:var(--ink); background:var(--panel-3); }
   #detail .why .whybody { display:none; margin-top:5px; max-height:230px; overflow-y:auto; }
   #detail .why.open .whybody { display:block; }
-  .wfield { background:var(--panel-2); border-radius:8px; padding:6px 9px; margin-bottom:6px; }
+  .wfield { background:var(--panel-2); border-radius:var(--r-control); padding:6px 9px; margin-bottom:6px; }
   .wfield.hot { background:var(--bad-glass); }
   .wfhead { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin-bottom:3px; }
   .wfhead .wtag { color:var(--bad-ink); margin-left:4px; }
@@ -577,7 +580,7 @@
      reuse the panel type scale so the dialog reads as the same application rather than a bolted-on
      form. */
   #settings { width:min(560px,92vw); max-height:82vh; padding:0; border:0;
-            border-radius:12px; background:var(--panel); color:var(--ink2);
+            border-radius:var(--r-surface); background:var(--panel); color:var(--ink2);
             font:var(--text-body)/1.5 var(--mono); box-shadow:0 18px 60px var(--shadow); }
   #settings::backdrop { background:var(--scrim); }
   #settings .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
@@ -585,7 +588,7 @@
   #settings .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
   /* Matches #detail/#obscard: a square hit target with a soft hover fill, not a bare glyph. */
   #settings .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
-                      border-radius:5px; color:var(--muted); cursor:pointer;
+                      border-radius:var(--r-control); color:var(--muted); cursor:pointer;
                       display:flex; align-items:center; justify-content:center;
                       transition:color 0.15s ease, background 0.15s ease; }
   #settings .fclose:hover { color:var(--ink); background:var(--panel-2); }
@@ -594,11 +597,11 @@
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */
   #glossaryBody .gws { margin-left:6px; padding:0 6px; background:var(--panel-2);
-                       border-radius:6px; color:var(--muted); font-size:var(--text-caption); }
+                       border-radius:var(--r-inset); color:var(--muted); font-size:var(--text-caption); }
   /* Segments, as on the Review page: the open one is selected (Section 4). */
   #settings .stabs { display:flex; gap:4px; padding:8px 14px 0; }
   #settings .stab { flex:0 0 auto; padding:5px 11px; font:500 var(--text-body)/1.5 var(--sans);
-                    background:none; color:var(--muted); border-radius:8px; cursor:pointer; }
+                    background:none; color:var(--muted); border-radius:var(--r-control); cursor:pointer; }
   #settings .stab:hover { color:var(--ink); background:var(--panel-2); }
   #settings .stab.on { color:var(--gold-bright); background:var(--select); }
   #settingsBody { padding:10px 12px 14px; overflow:auto; max-height:calc(82vh - 74px); }
@@ -609,13 +612,13 @@
   #settings .kv dd a { color:var(--ink); }
   #settings .fsec { margin:14px 0 6px; color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); }
   #settings .fsec:first-child { margin-top:0; }
-  #settings .prow { padding:8px 10px; margin-bottom:6px; border-radius:8px; background:var(--panel-2); }
+  #settings .prow { padding:8px 10px; margin-bottom:6px; border-radius:var(--r-control); background:var(--panel-2); }
   #settings .pid { color:var(--ink); }
   #settings .wschips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
   /* A grant is a chip you can only DROP. There is no field to type a wider set into, because the
      surface only narrows (federation.md 6a) - the shape of the control is the rule. */
   #settings .wsc { display:inline-flex; align-items:center; gap:5px; padding:2px 8px;
-                 border-radius:8px; background:var(--panel-3); color:var(--ink2); cursor:pointer; }
+                 border-radius:var(--r-control); background:var(--panel-3); color:var(--ink2); cursor:pointer; }
   #settings .wsc:hover { color:var(--ink); }
   #settings .wsc .x { color:var(--muted); }
   #settings .wsc:hover .x { color:var(--bad-ink); }
@@ -625,7 +628,7 @@
   #settings .note { margin-top:14px; color:var(--muted); }
   #settings .err { color:var(--bad-ink); margin-top:6px; }
   /* The entry point: a gear at the right end of the status bar, after the status text. */
-  #statusbar #settingsBtn { margin-left:6px; width:24px; height:24px; min-height:24px; padding:0; flex:none;
+  #statusbar #settingsBtn { margin-left:6px; width:28px; height:28px; min-height:24px; padding:0; flex:none;
                             display:flex; align-items:center; justify-content:center;
                             background:none; border:none; color:var(--muted); cursor:pointer; }
   /* Lucide's own stroke on its 24-unit grid, so the gear keeps the set's line weight at this size. */
@@ -649,7 +652,7 @@
   .tsw.t-human_confirmed { border:2.4px solid var(--gold-bright); }
   .tnote { flex-basis:100%; color:var(--muted); font:var(--text-small)/1.4 var(--sans); }
   /* A status pill: a count that needs reading, on the status bar's right (Section 6). */
-  #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:999px; font:500 var(--text-body)/1.5 var(--sans);
+  #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:var(--r-capsule); font:500 var(--text-body)/1.5 var(--sans);
                       background:var(--panel-2); color:var(--ink2); white-space:nowrap; }
   #statusbar .spill.bad { color:var(--bad-ink); background:var(--bad-glass); }
   #statusbar .spill.warn { color:var(--gold-bright); background:var(--gold-glass); }
@@ -658,7 +661,7 @@
   /* The Review page (design-system.md Section 7): over the canvas, between the header and the status
      bar - a queue on the left, the selected item on the right. */
   #reviewPage { position:fixed; top:49px; bottom:var(--bar); left:0; right:0; z-index:11; display:grid;
-                grid-template-columns:320px minmax(0,1fr); background:var(--panel); font-family:var(--sans); }
+                grid-template-columns:360px minmax(0,1fr); background:var(--panel); font-family:var(--sans); }
   #reviewPage[hidden] { display:none; }
   .rv-queue { display:flex; flex-direction:column; min-height:0; padding:14px 16px; gap:12px; }
   .rv-head { display:flex; align-items:baseline; gap:4px 10px; flex-wrap:wrap; }
@@ -667,43 +670,45 @@
   .rv-close { margin-left:auto; color:var(--muted); font-size:var(--text-body); text-decoration:none;
               display:inline-flex; align-items:center; min-height:24px; padding:0 4px; }
   .rv-close:hover { color:var(--ink); }
+  /* One row of tabs at the queue's width (a Mac's tab view does not wrap); it wraps only when text grows. */
   .rv-seg { display:flex; flex-wrap:wrap; gap:4px; }
-  .rv-segb { padding:4px 10px; border-radius:8px; font-size:var(--text-body); color:var(--muted); background:var(--panel-2); }
+  .rv-segb { padding:4px 8px; min-height:28px; border-radius:var(--r-control); font-size:var(--text-body); color:var(--muted); background:var(--panel-2); }
   .rv-segb.on { color:var(--gold-bright); background:var(--select); }
   .rv-list { overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:4px; }
-  .rv-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:8px; font:var(--text-body)/1.4 var(--sans);
+  .rv-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:var(--r-control); font:var(--text-body)/1.4 var(--sans);
              color:var(--ink); background:none; }
   .rv-item:hover { background:var(--panel-2); color:var(--ink); }
   .rv-item.on { background:var(--select); }
   .rv-k { display:inline-block; margin-right:6px; font:500 var(--text-caption)/1 var(--mono); color:var(--muted); }
   .rv-k.bad { color:var(--bad-ink); }
-  .rv-st { display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px; font:var(--text-caption)/1.4 var(--mono);
+  .rv-st { display:inline-block; margin-right:6px; padding:1px 7px; border-radius:var(--r-capsule); font:var(--text-caption)/1.4 var(--mono);
            color:var(--muted); background:var(--panel-3); }
   .rv-st.blocked { color:var(--bad-ink); background:var(--bad-glass); }
   .rv-st.merged { color:var(--ok-ink); background:var(--ok-glass); }
   .rv-t { display:block; margin-top:3px; }
   /* The selected item: a window into the page's frame, as the map is one on the Graph page. */
   .rv-detail { overflow-y:auto; padding:20px 28px 32px; color:var(--ink2); font-size:var(--text-body);
-               background:var(--surface); border-radius:16px 0 0 16px; }
+               background:var(--surface); border-radius:var(--r-window) 0 0 var(--r-window); }
   .rv-detail > * { max-width:820px; }
   .rv-detail h3 { margin:0 0 6px; font:600 var(--text-sheet)/1.3 var(--sans); color:var(--ink); }
   .rv-detail .why { margin:4px 0 8px; line-height:1.5; }
   .rv-detail .sec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:18px 0 6px; }
   .rv-detail .hint { color:var(--muted); }
-  .rv-block { background:var(--bad-glass); border-radius:8px; padding:9px 12px; color:var(--ink); line-height:1.5; }
+  .rv-block { background:var(--bad-glass); border-radius:var(--r-control); padding:9px 12px; color:var(--ink); line-height:1.5; }
   .rv-block b { color:var(--bad-ink); }
   .rv-acts { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 8px; }
-  .rv-acts .btn { padding:6px 12px; border-radius:8px; font:500 var(--text-body)/1 var(--sans); }
+  /* The decision's row is drawn large, a Mac's 28, as capsules, every button of it alike (Section 4). */
+  .rv-acts .btn { padding:6px 14px; min-height:28px; border-radius:var(--r-capsule); font:500 var(--text-body)/1 var(--sans); }
   .rv-acts .btn.p { background:var(--accent); color:#171204; }
   .rv-acts .btn.p:hover { background:var(--gold-bright); color:#171204; }
   .rv-acts .btn[disabled] { opacity:.45; cursor:not-allowed; }
   .rv-detail kbd, .rv-acts kbd { font:500 var(--text-caption)/1 var(--mono); background:var(--panel-3); color:var(--ink2);
-                                 border-radius:4px; padding:2px 5px; margin-left:4px; }
+                                 border-radius:var(--r-inset); padding:2px 5px; margin-left:4px; }
   .rv-acts .btn.p kbd { background:rgba(23,18,4,0.14); color:#171204; }
   /* The panel toggles at the title bar's right (Section 6): Lucide's panel-left and panel-right. */
   .ptoggles { margin-left:auto; display:flex; gap:2px; }
   .ptoggles button { width:30px; height:30px; padding:0; display:flex; align-items:center;
-                     justify-content:center; background:none; color:var(--muted); border-radius:8px; }
+                     justify-content:center; background:none; color:var(--muted); border-radius:var(--r-control); }
   .ptoggles button:hover { background:var(--panel-2); color:var(--ink); }
   .ptoggles button[aria-pressed="true"] { color:var(--ink); }
   .ptoggles svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8;
@@ -714,7 +719,7 @@
      window's lower left while the right side is empty; clicking it opens the Log. */
   #strip { position:fixed; left:calc(var(--win-l) + 16px); bottom:calc(var(--bar) + 16px); z-index:8; display:none;
            align-items:center; gap:9px; max-width:min(640px, calc(100vw - var(--win-l) - var(--win-r) - 200px));
-           padding:8px 14px; background:var(--panel); border-radius:12px; box-shadow:0 8px 24px var(--shadow-soft);
+           padding:8px 14px; background:var(--panel); border-radius:var(--r-surface); box-shadow:0 8px 24px var(--shadow-soft);
            font:var(--text-body)/1.4 var(--sans); color:var(--ink2); text-align:left; }
   #strip.on { display:flex; }
   #strip:hover { background:var(--panel-2); }
@@ -726,11 +731,11 @@
   @media (max-width: 1199px) {
     body.dl, body.dr, body.sheet { --win-l:0px; --win-r:0px; }
     /* A floating panel ends above the camera toolbar (bottom 44 + 38 + 8), so neither covers the other. */
-    .dock { top:61px; bottom:auto; max-height:calc(100vh - 151px); border-radius:12px;
+    .dock { top:61px; bottom:auto; max-height:calc(100vh - 151px); border-radius:var(--r-surface);
             box-shadow:0 16px 40px var(--shadow); }
     #dockL { left:12px; }
     #dockR { right:12px; }
-    #detail { top:61px; right:12px; bottom:90px; border-radius:12px; box-shadow:0 16px 40px var(--shadow); }
+    #detail { top:61px; right:12px; bottom:90px; border-radius:var(--r-surface); box-shadow:0 16px 40px var(--shadow); }
     /* A panel floats over the map's right side here, where the minimap sits: the minimap gives way. */
     body.dr #minimap, body.sheet #minimap { display:none !important; }
   }
@@ -748,7 +753,7 @@
     #detail.tall { max-height:80vh; }
     #reviewPage { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
     .rv-queue { max-height:40vh; }
-    .rv-detail { border-radius:16px 16px 0 0; }
+    .rv-detail { border-radius:var(--r-window) var(--r-window) 0 0; }
     #minimap { display:none !important; }
     #statusbar #session, #statusbar #tierNote { display:none; }
     /* The camera buttons move to the top right, out of the sheets' way. */
@@ -773,6 +778,13 @@
     :root { --ink2:#e9e4d6; --muted:#cad2de; }
     :where(button, input, select, textarea, summary) { box-shadow:inset 0 0 0 1px var(--muted); }
     :focus-visible { outline-width:3px !important; }
+  }
+  /* A finger (Section 10, U19): where the pointer is coarse every target is 44 pixels, and the
+     status bar grows to hold them. */
+  @media (pointer: coarse) {
+    :root { --bar:2.75rem; }
+    :where(button, summary, select, a[href]:not(p a, li a), [role="button"], [role="tab"], [role="switch"], [role="radio"]) {
+      min-height:44px !important; min-width:44px !important; }
   }
   /* The light appearance under Increase Contrast: its text tokens take the next stronger one too. */
   @media (prefers-contrast: more) and (prefers-color-scheme: light) {

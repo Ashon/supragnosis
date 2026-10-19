@@ -15,7 +15,7 @@
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is designed - steps 17-24 - and steps 17, 18 and 24, its defects, reading and the light appearance,
-> are built, with step 19's lines.
+> are built, with step 19's lines, shapes and targets.
 
 ## 1. Why this exists
 
@@ -1358,6 +1358,12 @@ and the page load that gives it to each page. U22's line half is guarded by `lin
 the viewer's rings and their swatches for their weights. The rest of U22, and U24, U25 and U26, are
 designed and not yet guarded; steps 19-21 and 23 build each with its test (Section 14).
 
+The rest of U22 is guarded by `crates/supragnosis-viz/tests/shapes.rs`: `every_corner_is_a_radius_token`
+reads every radius of the viewer's, the app pages' and the landing's stylesheets, and
+`large_acts_are_capsules_and_their_rows_share_a_size` the Review page's and Setup's acts and the pills;
+`targets_reach_28_and_44_under_a_finger` holds the stacked rows and segments at 28 and the coarse
+pointer's 44, the part of U19's targets a stylesheet can hold, and browser scenarios measure the rest.
+
 U27 is guarded by `the_light_appearance_meets_the_same_floors` and `no_color_is_drawn_outside_the_tokens`
 in `design_tokens.rs`, which read each light `:root` - every dark color token redefined, the floors on
 the light surfaces and tints, Increase Contrast in the light - and every color the tools' stylesheets
@@ -1577,7 +1583,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    admitting the edges Increase Contrast draws; the six sizes as rem tokens given by role, the map's
    labels scaled with the root, the app's root-size menu items, and every clamp and ellipsis Section
    10 names opened on focus or a press; and U7's test measuring APCA.
-19. **Shapes, lines and targets** [lines built] (Sections 3, 4, 5, 10; U19, U22): the radius tokens and
+19. **Shapes, lines and targets** [built] (Sections 3, 4, 5, 10; U19, U22): the radius tokens and
    the concentric rule in the viewer's, the app pages' and the landing's stylesheets, capsules for
    pills and large controls, one size per row, the accent on every checkbox, radio and switch; every
    dashed line drawn thin and solid - trust's rings by weight with their swatches and the Log's marks,
@@ -2065,6 +2071,13 @@ changed it:
   swatch read the token, so the ring is `--muted` too.
 - **The forced-colors map covers its regions.** A region's name and a boundary drew from the type band;
   under forced colors both are `CanvasText`.
+- **The Review page's tabs did not fit one row.** At 13 pixels the four tabs needed 333 pixels of a
+  queue 288 wide, so the queue is 360 and a tab's padding 8; they wrap only when text grows.
+- **A finger's 44 pixels override the controls' own heights.** A zero-specificity rule lost to every
+  class that set a smaller height, so the coarse pointer's rule is marked important.
+- **Measured in a browser.** Every target on the Graph and Review pages, View, Settings and Setup
+  reaches 28 pixels with its spacing at 1440 and 1280, and 44 under a coarse pointer at 390, with the
+  status bar grown to hold them; the gear is 28 square.
 - **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
   redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
   the map stops drawing once nothing else does.

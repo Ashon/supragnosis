@@ -4,14 +4,14 @@
    box carries a line on one side (docs/design-system.md Section 4). */
 
 body { background: var(--panel); }
-.wpage { flex: 1; overflow-y: auto; outline: none; background: var(--surface); border-radius: 16px 16px 0 0; }
+.wpage { flex: 1; overflow-y: auto; outline: none; background: var(--surface); border-radius: var(--r-window) var(--r-window) 0 0; }
 .wcol { max-width: 680px; margin: 0 auto; padding: 34px 32px 28px; }
 .wintro h2 { margin: 0 0 6px; color: var(--ink); font-size: var(--text-page); font-weight: 600; letter-spacing: -0.01em; }
 .wintro p { margin: 0 0 22px; color: var(--muted); max-width: 60ch; }
 
 /* A step: its number (a check once done), its name and state, the sentence setup said, its controls,
    and a drawer with what it ran. */
-.step { display: grid; grid-template-columns: 28px 1fr; gap: 4px 14px; padding: 18px 20px; border-radius: var(--radius); background: var(--panel); }
+.step { display: grid; grid-template-columns: 28px 1fr; gap: 4px 14px; padding: 18px 20px; border-radius: var(--r-surface); background: var(--panel); }
 .step + .step { margin-top: 10px; }
 .step .num {
   width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; grid-row: span 3;
@@ -29,7 +29,7 @@ body { background: var(--panel); }
 .step .switchrow { display: flex; align-items: center; gap: 10px; color: var(--ink); }
 
 /* The AI apps, one row each, inside their step. */
-.apps { margin-top: 12px; display: grid; gap: 2px; border-radius: 10px; overflow: hidden; }
+.apps { margin-top: 12px; display: grid; gap: 2px; border-radius: var(--r-surface); overflow: hidden; }
 .apps .row { background: var(--panel-2); min-height: 50px; padding: 9px 12px; }
 .apps .row .lead { width: 28px; height: 28px; background: var(--panel-3); }
 .apps .row .lead .i { width: 15px; height: 15px; }
@@ -44,13 +44,13 @@ body { background: var(--panel); }
 .step code { font: var(--text-small)/1.4 var(--mono); color: var(--ink); white-space: nowrap; }
 
 /* The download's progress. */
-.bar { height: 6px; border-radius: 999px; background: var(--panel-3); overflow: hidden; margin-top: 12px; }
-.bar > span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.4s ease; }
+.bar { height: 6px; border-radius: var(--r-capsule); background: var(--panel-3); overflow: hidden; margin-top: 12px; }
+.bar > span { display: block; height: 100%; width: 0; border-radius: var(--r-capsule); background: var(--accent); transition: width 0.4s ease; }
 .bar.busy > span { width: 35%; animation: slide 1.2s ease-in-out infinite; }
 .barnote { margin-top: 6px; color: var(--muted); font-size: var(--text-small); }
 
 /* What to ask a connected app. */
-.ask { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 10px 10px 14px; border-radius: 10px; background: var(--panel-2); }
+.ask { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 10px 10px 14px; border-radius: var(--r-surface); background: var(--panel-2); }
 .ask q { flex: 1; color: var(--ink); font: var(--text-body)/1.5 var(--mono); quotes: none; }
 
 /* A step's log drawer (D8): the commands it ran, their output, the files they changed, and how
@@ -60,11 +60,11 @@ body { background: var(--panel); }
   background: none; color: var(--muted); font: 500 var(--text-body)/1.4 var(--sans); cursor: pointer;
 }
 .drawer-toggle:hover { color: var(--ink2); }
-.drawer-toggle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; border-radius: 4px; }
+.drawer-toggle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; border-radius: var(--r-inset); }
 .drawer-toggle .i { width: 12px; height: 12px; transition: transform 0.12s ease; }
 .drawer-toggle[aria-expanded="true"] .i { transform: rotate(90deg); }
 .drawer {
-  margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface); max-height: 260px; overflow: auto;
+  margin-top: 8px; padding: 10px 12px; border-radius: var(--r-surface); background: var(--surface); max-height: 260px; overflow: auto;
   font: var(--text-small)/1.6 var(--mono); color: var(--ink2); -webkit-user-select: text; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .drawer .l-cmd { color: var(--gold-bright); }
@@ -84,6 +84,9 @@ body { background: var(--panel); }
 /* The page's acts read right to left - Set up, the default, comes first in tab order and is drawn
    rightmost; the copy buttons sit at the left, by the privacy line. */
 .wactions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; flex: none; }
+/* Set up is the page's act, drawn large as a capsule, and its row shares the size (design-system.md
+   Section 4). */
+.wactions .btn { min-height: 28px; border-radius: var(--r-capsule); }
 /* A plan row is its checkbox's label: the whole row ticks it. */
 .apps label.row.pick { cursor: pointer; }
 .apps .end input[type="checkbox"] { width: 15px; height: 15px; margin: 0; }

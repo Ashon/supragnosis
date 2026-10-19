@@ -739,10 +739,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (22, &[c(
         "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, and checkboxes, radios and switches take the accent",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 3, 4 and 14 step 19, not built. Revisit when \
-             the stylesheets draw corners only from the radius tokens",
-        ),
+        // crates/supragnosis-viz/tests/shapes.rs: every radius of five stylesheets, the large acts
+        // and the pills, and the rows held at 28 and a finger's 44.
+        Evidence::Scenario(&[
+            "every_corner_is_a_radius_token",
+            "large_acts_are_capsules_and_their_rows_share_a_size",
+            "targets_reach_28_and_44_under_a_finger",
+        ]),
     ), c(
         "no line is dashed or dotted, on a page or on a canvas, and trust's rings are told by weight",
         // crates/supragnosis-viz/tests/design_tokens.rs: the four stylesheets and the three scripts
@@ -3107,6 +3110,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/settle.rs"),
     include_str!("../../supragnosis-viz/tests/places.rs"),
     include_str!("../../supragnosis-viz/tests/type_scale.rs"),
+    include_str!("../../supragnosis-viz/tests/shapes.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
