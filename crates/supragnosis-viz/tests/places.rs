@@ -37,3 +37,47 @@ fn review_is_always_in_the_status_bar_with_one_count() {
         "a settled conflict is listed nowhere"
     );
 }
+
+/// Follow moves the camera, never the reader: activity elsewhere is a notice with Show, and nothing in
+/// the event handler changes the scope.
+#[test]
+fn follow_frames_what_is_in_scope_and_notes_the_rest() {
+    let handle = function("handleEvent");
+    assert!(
+        handle.contains("if (ev.workspace && !inScope(ev.workspace))"),
+        "activity elsewhere is not told apart"
+    );
+    assert!(handle.contains("noteElsewhere(ev.workspace)"), "a write elsewhere is not noted");
+    assert!(
+        !handle.contains("wsInput.value ="),
+        "an agent's activity changes the scope on screen"
+    );
+    assert!(
+        !handle.contains("beginWorkspaceTransition"),
+        "an agent's activity moves the reader"
+    );
+    let note = function("noteElsewhere");
+    assert!(note.contains("label: \"Show\""), "the notice has no Show");
+}
+
+/// The first view is where the knowledge is: an empty default with knowledge elsewhere opens on All
+/// and says so, and the scope in use is always a selected chip.
+#[test]
+fn the_first_view_opens_where_the_knowledge_is() {
+    let empty = function("refreshEmpty");
+    assert!(
+        empty.contains("if (firstView && cur === \"\" && others.length)"),
+        "an empty default is where the page stays"
+    );
+    assert!(empty.contains("wsInput.value = \"*\""), "the page does not open on All");
+    let load = function("loadWorkspaces");
+    assert!(
+        load.contains("Showing all workspaces - default is empty"),
+        "the page does not say why it opened on All"
+    );
+    assert!(load.contains("mk(\"default\", \"\")"), "an empty default has no chip");
+    assert!(
+        function("renderChipsActive").contains("chipIsCurrent("),
+        "the selected chip is not the scope in use"
+    );
+}

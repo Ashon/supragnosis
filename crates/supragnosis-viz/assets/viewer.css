@@ -177,6 +177,8 @@
   #status { color:var(--muted); font-size:12px; margin-left:auto; white-space:nowrap; }
   #wschips { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }
   #wschips .wshead { flex-basis:100%; margin:10px 0 4px; }
+  /* Why the page opened on All (design-system.md Section 6). */
+  #wschips .wsnote { flex-basis:100%; margin-top:2px; color:var(--muted); font-size:12px; }
   .lbl { color:var(--muted); font-size:11px; margin-right:2px; }
   .chip,.lg { padding:3px 10px; border-radius:8px; background:var(--panel-2); cursor:pointer;
               font-size:12px; color:var(--ink2); user-select:none;

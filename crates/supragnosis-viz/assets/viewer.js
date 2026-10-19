@@ -451,6 +451,7 @@ function applyGraph(g) {
 
   // Initial auto-fit: once after the layout settles (cooling done), and only before user interaction (in draw).
   if (firstData && nodes.length) { firstData = false; needFit = !warm; }
+  if (nodes.length) firstView = false;   // the scope the page opened on holds knowledge
   // wake() only fires when the node set changed; a tier, kind or contested flag that moved
   // repaints without moving anything, so it has to ask for the frame itself.
   requestFrame();
@@ -960,9 +961,16 @@ function beginWorkspaceTransition() {
   wake(1);
 }
 
-function renderChipsActive() {
+// The scope in use is always a selected chip (design-system.md Section 6). The node default is
+// addressed as "" and named by its nodes, so its chip is the one its nodes' workspace names, or a
+// "default" chip while it holds nothing.
+function chipIsCurrent(ws) {
   const cur = currentWs();
-  chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.ws === cur));
+  if (ws === cur) return true;
+  return cur === "" && nodes.length > 0 && nodes[0].workspace === ws;
+}
+function renderChipsActive() {
+  chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", chipIsCurrent(c.dataset.ws)));
   radioGroup(chipBar, "Workspace");
   syncSearchScope();
 }
@@ -984,9 +992,10 @@ async function loadWorkspaces() {
     const mk = (label, val) => {
       const c = document.createElement("button");
       c.type = "button";
-      c.className = "chip" + (val === cur ? " on" : "");
+      c.className = "chip" + (chipIsCurrent(val) ? " on" : "");
       c.dataset.ws = val; c.textContent = label;
       c.onclick = () => {
+        openedAll = false;
         if (wsInput.value.trim() === val) return;
         wsInput.value = val; beginWorkspaceTransition(); renderChipsActive(); poll();
       };
@@ -994,7 +1003,14 @@ async function loadWorkspaces() {
     };
     // A panel heading like the ones below it (docs/design-system.md Section 4).
     const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = "Workspace";
-    chipBar.replaceChildren(lbl, mk("All", "*"), ...list.map(w => mk(w, w)));
+    const named = list.some(w => chipIsCurrent(w));
+    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk("default", "")] : []), ...list.map(w => mk(w, w))];
+    const note = [];
+    if (openedAll && (cur === "*" || cur === "all")) {
+      const n = document.createElement("div"); n.className = "wsnote"; n.textContent = "Showing all workspaces - default is empty";
+      note.push(n);
+    }
+    chipBar.replaceChildren(lbl, ...chips, ...note);
     radioGroup(chipBar, "Workspace");   // one scope at a time (Section 4)
   } catch (e) { /* server not up - retry next cycle */ }
 }
@@ -1003,6 +1019,8 @@ async function loadWorkspaces() {
 // what fills it, and the workspaces that hold knowledge, each with its count, one click away. The
 // counts are read across every workspace at most every 30 seconds, and only while this shows.
 let wsCounts = null, wsCountsAt = 0;
+let firstView = new URLSearchParams(location.search).get("workspace") === null;   // the address named no scope
+let openedAll = false;   // the page opened on All because the default was empty - said beside the chips
 async function refreshEmpty() {
   if (Date.now() - wsCountsAt > 30000) {
     wsCountsAt = Date.now();
@@ -1017,6 +1035,14 @@ async function refreshEmpty() {
   }
   const cur = currentWs();
   const others = Object.entries(wsCounts || {}).filter(([w]) => w !== cur).sort((a, b) => b[1] - a[1]);
+  // The first view is where the knowledge is (design-system.md Section 6): when the address named no
+  // scope and the node default holds nothing while other workspaces do, the page opens on All and
+  // says so beside the chips. An empty default is the wrong scope, not an absence of knowledge (P5).
+  if (firstView && cur === "" && others.length) {
+    firstView = false; openedAll = true;
+    wsInput.value = "*"; beginWorkspaceTransition(); renderChipsActive(); loadWorkspaces(); poll();
+    return;
+  }
   const line = (text, cls) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; };
   const kids = [line("Nothing here yet.", "e-title"),
     line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
@@ -1094,6 +1120,7 @@ function toast(kind, title, detail, action) {
   toastsEl.prepend(el);
   if (kind === "ok" && !action) setTimeout(() => el.remove(), 4500);
   while (toastsEl.children.length > 4) toastsEl.lastChild.remove();
+  return el;
 }
 // One console write: GET path+query (the viewer's writes are GETs on the 0600 socket - see the review
 // handler below), then a notice saying what happened. Returns the parsed answer, or null when the
@@ -2004,6 +2031,29 @@ function logRow(body) {
   while (logEl.children.length > 8) logEl.lastChild.remove();
   setTimeout(() => row.remove(), 8000);
 }
+// Whether a workspace is part of the scope on screen. The node default is named by its nodes, so an
+// empty default counts every workspace as its own until something arrives to say otherwise.
+function inScope(ws) {
+  const cur = currentWs();
+  if (cur === "*" || cur === "all" || cur === ws) return true;
+  return cur === "" && (!nodes.length || nodes.some(n => n.workspace === ws));
+}
+// Writes in another workspace, one notice per workspace that counts them, with Show - the person's
+// act that moves the scope (U20).
+const elsewhere = new Map();   // workspace -> { el, n }
+function noteElsewhere(ws) {
+  const was = elsewhere.get(ws);
+  if (was && was.el && was.el.isConnected) {
+    was.n += 1;
+    was.el.querySelector(".tt").textContent = was.n + " new writes in " + ws;
+    return;
+  }
+  const el = toast("ok", "New in " + ws, null, { label: "Show", note: "", run: () => {
+    elsewhere.delete(ws);
+    wsInput.value = ws; beginWorkspaceTransition(); renderChipsActive(); poll();
+  } });
+  elsewhere.set(ws, { el, n: 1 });
+}
 function primaryNode(ev) {
   const id = ev.kind === "observe" ? (ev.entities || [])[0]
     : ev.kind === "traverse" ? ev.start
@@ -2014,10 +2064,13 @@ function primaryNode(ev) {
 async function handleEvent(ev) {
   // If the session (conversation) changes, reset the footprint - track the new conversation's knowledge use from the start.
   if (ev.session && ev.session !== footprintSession) { footprintSession = ev.session; footprint.clear(); }
-  // While following, if activity happens in a different workspace, switch to it - otherwise added
-  // nodes/hits are outside the current scope and do not appear (the SSE event arrives, but the polling ws mismatches).
-  const switched = follow && ev.workspace && currentWs() !== "*" && currentWs() !== ev.workspace;
-  if (switched) { wsInput.value = ev.workspace; beginWorkspaceTransition(); renderChipsActive(); }
+  // Follow moves the camera, never the reader (design-system.md Section 6, U20): activity in the scope
+  // on screen frames what it touched below; a write in another workspace is a notice with Show, and
+  // the scope, the selection and the open sheet stay where the person left them.
+  if (ev.workspace && !inScope(ev.workspace)) {
+    if (ev.kind === "observe" || (ev.kind === "sync" && ev.count > 0)) noteElsewhere(ev.workspace);
+    return;
+  }
   let ids = [];
   if (ev.kind === "observe") {
     logRow(html`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${ev.workspace}</span>`);
@@ -2025,7 +2078,6 @@ async function handleEvent(ev) {
     ids = ev.entities || [];
   } else if (ev.kind === "search") {
     logRow(html`<b>search</b> "${ev.query}" -> ${ev.hits} hits <span class="t">${ev.mode}</span>`);
-    if (switched) await poll();          // if the workspace switched, load that graph (so hits are visible)
     ids = ev.nodes || [];
   } else if (ev.kind === "get_entity") {
     logRow(html`<b>get_entity</b> ${ev.name || ev.id.slice(0,8)} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
