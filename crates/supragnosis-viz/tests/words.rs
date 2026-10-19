@@ -132,3 +132,24 @@ fn every_proposal_event_has_a_sentence() {
     assert!(line.contains("\"Something changed\""));
     assert!(!line.contains("slice(0, 8)"), "a name is cut short");
 }
+
+/// Every Log row says who and when under what happened: the tier by its name, the writer as the strip
+/// names one, and the time once per minute; its mark is the ring the map draws for its tier.
+#[test]
+fn every_log_row_says_who_and_when() {
+    let at = SCRIPT.find("function obsRowHtml(").expect("obsRowHtml");
+    let row = &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")];
+    for part in [
+        "tierName(o.effective_tier)",
+        "writerOf(a0)",
+        "obsWhen(prev.observed_at) === when",
+    ] {
+        assert!(row.contains(part), "a Log row does not say {part}");
+    }
+    let at = SCRIPT.find("function tierDot(").expect("tierDot");
+    let mark = &SCRIPT[at..at + SCRIPT[at..].find('\n').expect("one line")];
+    assert!(
+        mark.contains("class=\"tsw tmark t-"),
+        "a row's tier mark is not the legend's ring"
+    );
+}

@@ -1772,7 +1772,9 @@ function obsWhen(ms) {
 function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
 // Trust tier as a colored dot (the edge columns' dot idiom) - a quiet ramp from dim (unverified) to
 // gold (human-confirmed). The full tier text lives in the expanded provenance.
-function tierDot(t) { return html`<span class="tdot t-${String(t)}" title="${tierName(t)}"></span>`; }
+// A tier's mark wherever a row or card shows one: the ring the map draws for that tier, as the Trust
+// legend draws it (design-system.md Section 9), so a mark means one thing on every surface.
+function tierDot(t) { return html`<span class="tsw tmark t-${String(t)}" title="${tierName(t)}"></span>`; }
 
 // Content-first row: a quiet meta line (tier dot + compact time) over the observation content (the
 // primary element, clamped to 2 lines). Host and the rest move to the expanded provenance.
@@ -1827,15 +1829,22 @@ function proposalLine(p) {
   return `${noun} ${verb}${what ? ": " + what : ""}${state}`;
 }
 
-function obsRowHtml(o) {
+// A Log row (design-system.md Section 9, U17): what happened, in words, under a who-line - the tier,
+// who and when, marked with the ring the map draws for that tier. Rows from one minute say the time
+// once, on the first. Called as a map callback, so `list` is the rows it is one of.
+function obsRowHtml(o, i, list) {
   const a0 = (o.attestations || [])[0] || {};
   const text = o.proposal ? proposalLine(o.proposal) : o.content;
   const cls = o.proposal ? "otext ev" : "otext";
+  const when = obsWhen(a0.observed_at);
+  const prev = i > 0 && Array.isArray(list) ? (list[i - 1].attestations || [])[0] || {} : null;
+  const who = [tierName(o.effective_tier), writerOf(a0), prev && obsWhen(prev.observed_at) === when ? "" : when]
+    .filter(Boolean).join(" - ");
   return html`${[
     html`<div class="obs" data-id="${o.id}">`,
     html`<button type="button" class="ohead" title="open observation detail">`,
       html`<span class="ometa">${tierDot(o.effective_tier)}`,
-        html`<span class="owhen">${obsWhen(a0.observed_at)}</span></span>`,
+        html`<span class="owhen">${who}</span></span>`,
       html`<span class="${cls}">${text}</span>`,
     html`</button></div>`]}`;
 }
