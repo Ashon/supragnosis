@@ -5,6 +5,7 @@
 const SCRIPT: &str = include_str!("../assets/viewer.js");
 /// The layout (Section 27.5): its constants, a node's radius, and the engine `createLayout` makes.
 const SIM: &str = include_str!("../assets/viewer-sim.js");
+const GL: &str = include_str!("../assets/viewer-gl.js");
 
 fn function(name: &str) -> &'static str {
     let at = SCRIPT
@@ -159,7 +160,12 @@ fn what_the_map_draws_follows_the_screen() {
     ] {
         assert!(draw.contains(part), "a small node is drawn in full: {part}");
     }
-    for part in ["ctx.stroke(l.line);", "ctx.fill(l.heads);", "ctx.fill(halo);", "ctx.fill(f);"] {
+    for part in [
+        "bulk.stroke(l.line);",
+        "bulk.fill(l.heads);",
+        "bulk.fill(halo);",
+        "bulk.fill(f);",
+    ] {
         assert!(draw.contains(part), "a look is not one path: {part}");
     }
     assert!(
@@ -568,5 +574,59 @@ fn a_far_map_folds_into_bodies_around_hubs() {
         SCRIPT
             .contains("if (k >= 0) { fitView(bodyMembers(k)); userMoved = true; requestFrame(); }"),
         "a body's click does not open it"
+    );
+}
+
+/// U39: where WebGL2 renders to half-float targets, the GPU draws the map's bulk under a 2D canvas of
+/// text and badges. The renderer starts only with half-float rendering and gives way when its context
+/// is lost; the page draws the bulk with whichever renderer holds - the 2D one under forced colors -
+/// through the same calls; the field is added up in a half-float target; and the page loads the
+/// renderer before viewer.js, with its canvas under the map's.
+#[test]
+fn the_gpu_draws_the_bulk() {
+    for part in [
+        "if (!gl || !gl.getExtension(\"EXT_color_buffer_float\")) return null;",
+        "canvas.addEventListener(\"webglcontextlost\", ev => { ev.preventDefault(); lost = true; onLost(); });",
+        "gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);",
+        "gl.blendFunc(gl.ONE, gl.ONE);",
+    ] {
+        assert!(GL.contains(part), "the GPU renderer is not built as Section 27.9 says: {part}");
+    }
+    assert!(
+        SCRIPT.contains("bulk = gpu && !FORCED_COLORS.matches ? gpu : ctx;")
+            && SCRIPT.contains("if (bulk === gpu) gpu.end();"),
+        "the page does not choose its renderer per frame"
+    );
+    assert!(
+        function("drawCloudField").contains("if (bulk !== ctx) { bulk.field(items,"),
+        "the field is worked out on the processor under the GPU"
+    );
+    let draw = function("draw");
+    for part in [
+        "drawWsHulls(bulk, hullLabels);",
+        "bulk.stroke(l.line);",
+        "bulk.fillStyle = SURFACE; bulk.fill(halo);",
+        "bulk.globalAlpha = a; bulk.fillStyle = SURFACE; bulk.fill(halo);",
+    ] {
+        assert!(draw.contains(part), "the bulk is drawn on the 2D canvas alone: {part}");
+    }
+    assert!(
+        function("trustRing").contains("bulk.stroke();"),
+        "a trust ring is drawn on the 2D canvas alone"
+    );
+    let html = include_str!("../assets/viewer.html");
+    let (gl, sim, viewer) = (
+        html.find("<script src=\"/viewer-gl.js\"></script>")
+            .expect("viewer-gl.js is not loaded"),
+        html.find("<script src=\"/viewer-sim.js\"></script>")
+            .expect("viewer-sim.js is not loaded"),
+        html.find("<script src=\"/viewer.js\"></script>")
+            .expect("viewer.js is not loaded"),
+    );
+    assert!(sim < gl && gl < viewer, "the renderer does not load before viewer.js");
+    assert!(
+        html.find("<canvas id=\"gl\"").expect("no GPU canvas")
+            < html.find("<canvas id=\"c\"").expect("no map canvas"),
+        "the GPU's canvas is not under the map's"
     );
 }

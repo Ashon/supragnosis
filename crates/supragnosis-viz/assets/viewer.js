@@ -68,6 +68,17 @@ function hearColors() {
 }
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+// The GPU renderer under the 2D canvas (design-system.md Section 27.9, U39), where WebGL2 renders to
+// half-float targets; `?renderer=2d` holds the 2D canvas alone, for a measure. Once its context is
+// lost the 2D canvas draws everything, and under forced colors it does as well.
+const glCanvas = document.getElementById("gl");
+let gpu = new URLSearchParams(location.search).get("renderer") === "2d" ? null
+  : createGpu(glCanvas, () => { gpu = null; glCanvas.classList.remove("on"); requestFrame(); });
+// What draws the map's bulk this frame - the region field, the workspace outlines, the relations,
+// the bodies and the nodes: the 2D context, or the GPU renderer, which takes the same calls. What is
+// text or few - names, badges, pulses, peers - is the 2D context's either way.
+let bulk = ctx;
+function bulkPath() { return bulk === ctx ? new Path2D() : bulk.path(); }
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
 // --- List (docs/design-system.md Section 6, U24) -------------------------------------------------
 // The entities the map draws as a table - the same scope, filters and search - sorted by type and
@@ -1055,13 +1066,13 @@ function renderTierNote() {
 function trustRing(n, r) {
   const t = trustUniform ? null : n.trust_tier;
   if (!t || t === "agent_extracted") return;
-  ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
+  bulk.beginPath(); bulk.arc(n.x, n.y, r + 3.5, 0, 7);
   // Told by weight, not by dash (Section 5): the more support, the heavier the ring.
-  if (t === "unverified") { ctx.lineWidth = 1/cam.s; ctx.strokeStyle = OTHER; }
-  else if (t === "host_signed") { ctx.lineWidth = 1.6/cam.s; ctx.strokeStyle = INK; }
-  else if (FORCED_COLORS.matches) { ctx.lineWidth = 4.8/cam.s; ctx.strokeStyle = INK; }
-  else { ctx.lineWidth = 2.4/cam.s; ctx.strokeStyle = EDGE_HI; }
-  ctx.stroke();
+  if (t === "unverified") { bulk.lineWidth = 1/cam.s; bulk.strokeStyle = OTHER; }
+  else if (t === "host_signed") { bulk.lineWidth = 1.6/cam.s; bulk.strokeStyle = INK; }
+  else if (FORCED_COLORS.matches) { bulk.lineWidth = 4.8/cam.s; bulk.strokeStyle = INK; }
+  else { bulk.lineWidth = 2.4/cam.s; bulk.strokeStyle = EDGE_HI; }
+  bulk.stroke();
 }
 
 // The graph and the hypergraph the page holds, by their address and ETag (design-system.md Section
@@ -2911,6 +2922,8 @@ function resize() {
   canvas.height = Math.round(innerHeight * DPR);
   canvas.style.width = innerWidth + "px";
   canvas.style.height = innerHeight + "px";
+  glCanvas.style.width = innerWidth + "px";
+  glCanvas.style.height = innerHeight + "px";
 }
 addEventListener("resize", resize);
 
@@ -3515,6 +3528,7 @@ function blitCloudField(f, k, ox, oy) {
   ctx.restore();
 }
 function drawCloudField(items) {
+  if (bulk !== ctx) { bulk.field(items, { L: cloudL(), C: cloudC(), coverMax: CLOUD_COVER_MAX, fadeAt: CLOUD_FADE_AT }); return; }
   const f = cloudField;
   const look = cloudL() + " " + cloudC() + " " + innerWidth + " " + innerHeight + " " + edges.length;
   const same = cloudKeySame(f, items) && f.look === look;
@@ -4067,6 +4081,7 @@ function draw() {
   // a calm spinner instead of nodes flying around during the violent early rearrangement.
   if (settling && nodes.length) {
     ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
+    if (gpu) gpu.clear();
     loaderEl.classList.add("on");
     requestFrame(); return;
   }
@@ -4090,6 +4105,9 @@ function draw() {
   const anchor = focus || hover;
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  bulk = gpu && !FORCED_COLORS.matches ? gpu : ctx;
+  glCanvas.classList.toggle("on", bulk === gpu);
+  if (bulk === gpu) gpu.begin({ s: cam.s, x: cam.x, y: cam.y, w: innerWidth, h: innerHeight, dpr: DPR });
 
   // Edges + nodes use the world transform (zoom/pan, incl. DPR supersampling); labels use screen coordinates (keeping readability).
   ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
@@ -4141,7 +4159,7 @@ function draw() {
     }
     drawCloudField(items);   // every cloud at once, mixed in OKLCH
     ctx.globalAlpha = 1;
-    drawWsHulls(ctx, hullLabels);
+    drawWsHulls(bulk, hullLabels);
     // Group labels: their own layer, right after the hulls (below edges/nodes). Greedy placement -
     // active first, then larger contexts - skips any label whose box overlaps one already placed, so
     // the map reads as spaced region names instead of a wall of overlapping text. A soft pill keeps
@@ -4238,7 +4256,7 @@ function draw() {
     const lookOf = (alpha, color, width) => {
       const key = color + "|" + width + "|" + alpha;
       let l = looks.get(key);
-      if (!l) { l = { alpha, color, width, line: new Path2D(), heads: null }; looks.set(key, l); }
+      if (!l) { l = { alpha, color, width, line: bulkPath(), heads: null }; looks.set(key, l); }
       return l;
     };
     // A relation with one folded end goes to that end's body as well (Section 27.8): one line for each
@@ -4323,7 +4341,7 @@ function draw() {
       // Arrowhead: base -> tip along the tip tangent (points the way the curve arrives). The heads are
       // filled, and a fill closes each triangle, so none is closed here: closing every one of a few
       // thousand in one path cost Chrome 80 ms a frame.
-      const hw = alen * 0.55, h = look.heads || (look.heads = new Path2D());
+      const hw = alen * 0.55, h = look.heads || (look.heads = bulkPath());
       h.moveTo(tipx, tipy);
       h.lineTo(basex - tdy*hw, basey + tdx*hw);
       h.lineTo(basex + tdy*hw, basey - tdx*hw);
@@ -4351,9 +4369,9 @@ function draw() {
       }
     }
     for (const l of [...looks.values()].sort((p, q) => p.alpha - q.alpha)) {
-      ctx.globalAlpha = l.alpha; ctx.strokeStyle = l.color; ctx.lineWidth = l.width;
-      ctx.stroke(l.line);
-      if (l.heads) { ctx.fillStyle = l.color; ctx.fill(l.heads); }
+      bulk.globalAlpha = l.alpha; bulk.strokeStyle = l.color; bulk.lineWidth = l.width;
+      bulk.stroke(l.line);
+      if (l.heads) { bulk.fillStyle = l.color; bulk.fill(l.heads); }
     }
   }
   // Nodes, one path per look (Section 26.5): the decorations under a node first - the selection's
@@ -4364,7 +4382,7 @@ function draw() {
   // The bodies first (Section 27.8, U38): a disc of the color most members share in a halo of the
   // surface's, as a node is drawn, with its count inside where it fits.
   if (fold > 0) {
-    const halo = new Path2D(), fills = new Map(), counts = [];
+    const halo = bulkPath(), fills = new Map(), counts = [];
     for (let k = 0; k < B.count; k++) {
       if (B.size[k] < 2) continue;
       const r = bodyRadius(B, k), x = B.cx[k], y = B.cy[k];
@@ -4372,13 +4390,13 @@ function draw() {
       const h = r + NODE_STROKE_MIN / cam.s, color = typeColor[B.type[k]] || OTHER;
       halo.moveTo(x + h, y); halo.arc(x, y, h, 0, 7);
       let f = fills.get(color);
-      if (!f) { f = new Path2D(); fills.set(color, f); }
+      if (!f) { f = bulkPath(); fills.set(color, f); }
       f.moveTo(x + r, y); f.arc(x, y, r, 0, 7);
       if (r * cam.s >= BODY_COUNT_PX && fold >= 0.5) counts.push(k);
     }
     const a = fold * (act || typeHl || edgeTypeHl ? 0.12 : 1);
-    ctx.globalAlpha = a; ctx.fillStyle = SURFACE; ctx.fill(halo);
-    for (const [color, f] of fills) { ctx.fillStyle = color; ctx.fill(f); }
+    bulk.globalAlpha = a; bulk.fillStyle = SURFACE; bulk.fill(halo);
+    for (const [color, f] of fills) { bulk.fillStyle = color; bulk.fill(f); }
     if (counts.length) {
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       // A count holds its place among the names, so a name placed later does not cover it.
@@ -4389,7 +4407,7 @@ function draw() {
       }
       ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1; bulk.globalAlpha = 1;
   }
   // Each node in the layer of its opacity: lit or dimmed, by its weight in a crossfade.
   const layersOf = new Map();
@@ -4401,43 +4419,43 @@ function draw() {
     const layer = layersOf.get(base);
     if (layer) layer.push(n); else layersOf.set(base, [n]);
     if (n === anchor) {
-      ctx.globalAlpha = base * 0.2; ctx.fillStyle = INK;
-      ctx.beginPath(); ctx.arc(n.x, n.y, r + 8, 0, 7); ctx.fill();
+      bulk.globalAlpha = base * 0.2; bulk.fillStyle = INK;
+      bulk.beginPath(); bulk.arc(n.x, n.y, r + 8, 0, 7); bulk.fill();
     }
     // The footprint is a light centred on the node that fades out. It was a disc dropped below the
     // node, which read as a circle out of place; a crisp disc on the centre would read as a ring, and
     // rings belong to trust.
     if (showFootprint && footprint.has(n.id) && n._lod !== LOD_DOT_TIER) {
-      const glow = ctx.createRadialGradient(n.x, n.y, r * 0.8, n.x, n.y, r + 13);
+      const glow = bulk.createRadialGradient(n.x, n.y, r * 0.8, n.x, n.y, r + 13);
       const teal = LIGHT.matches ? "29,122,106" : "86,179,162";   // --ok in each appearance
       glow.addColorStop(0, "rgba(" + teal + "," + (LIGHT.matches ? 0.35 : 0.55) + ")");
       glow.addColorStop(1, "rgba(" + teal + ",0)");
-      ctx.globalAlpha = base; ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(n.x, n.y, r + 13, 0, 7); ctx.fill();
+      bulk.globalAlpha = base; bulk.fillStyle = glow;
+      bulk.beginPath(); bulk.arc(n.x, n.y, r + 13, 0, 7); bulk.fill();
     }
   }
   for (const [base, group] of [...layersOf].sort((p, q) => p[0] - q[0])) {
-    ctx.globalAlpha = base;
+    bulk.globalAlpha = base;
     // Halos: the surface's color, one fill. A square node has none.
-    const halo = new Path2D();
+    const halo = bulkPath();
     for (const n of group) {
       if (n._lod === LOD_DOT_TIER) continue;
       const r = nodeRadius(n) + nodeStrokeW(n) / 2;
       halo.moveTo(n.x + r, n.y); halo.arc(n.x, n.y, r, 0, 7);
     }
-    ctx.fillStyle = SURFACE; ctx.fill(halo);
+    bulk.fillStyle = SURFACE; bulk.fill(halo);
     // Fills: one path per type's color - a disc inside the halo, or a square of the node's size.
     const fills = new Map();
     for (const n of group) {
       const color = typeColor[n.type] || OTHER;
       let f = fills.get(color);
-      if (!f) { f = new Path2D(); fills.set(color, f); }
+      if (!f) { f = bulkPath(); fills.set(color, f); }
       const r = nodeRadius(n);
       if (n._lod === LOD_DOT_TIER) { f.rect(n.x - r, n.y - r, 2 * r, 2 * r); continue; }
       const inner = Math.max(0.5, r - nodeStrokeW(n) / 2);
       f.moveTo(n.x + inner, n.y); f.arc(n.x, n.y, inner, 0, 7);
     }
-    for (const [color, f] of fills) { ctx.fillStyle = color; ctx.fill(f); }
+    for (const [color, f] of fills) { bulk.fillStyle = color; bulk.fill(f); }
     for (const n of group) {
       if (n._lod !== LOD_FULL_TIER) continue;
       trustRing(n, nodeRadius(n));
@@ -4445,14 +4463,14 @@ function draw() {
       // a cross-group transit point, marked without a ring.
       if (clusterMode && bridgeSet.has(n.id)) {
         const r = nodeRadius(n), q = 5 / cam.s;
-        ctx.fillStyle = INK; ctx.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
+        bulk.fillStyle = INK; bulk.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
       }
     }
   }
   // Contested beliefs (resolution.md R6): a badge at the node's upper right, drawn in its own pass at
   // full strength, so neither focus dimming nor label thinning can mute it (U3). The inspector shows
   // the competing values with the mediation act.
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1; bulk.globalAlpha = 1;
   for (const n of vis) {
     if (!n.contested) continue;
     const r = nodeRadius(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
@@ -4614,6 +4632,7 @@ function draw() {
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.globalAlpha = 1;
     }
   }
+  if (bulk === gpu) gpu.end();
   // Peer cursor-dots (server mode) - drawn last so they float above the graph and labels.
   stepPeers(); drawPeers();
   drawMinimap();

@@ -1705,7 +1705,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 35. **Clipping** [built] (Section 27.7; U37): the grid index of positions and of relations' midpoints.
 36. **Semantic zoom** [built] (Section 27.8; U38): the far map folded into bodies around hubs, with
    the crossfade.
-37. **WebGL** [planned] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
+37. **WebGL** [built] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
 38. **Measured** [planned] (Section 27.2; U40): the bench to 50,000 in both browsers and both
    renderers, the dev store through its daemon, and the app.
 
@@ -2661,6 +2661,19 @@ most of its members are not. A body gathers what is near on the screen instead, 
   changes.
 - **The 2D canvas stays.** Without WebGL2 or half-float rendering, under forced colors, or when the
   context is lost, the 2D canvas draws all of it as it does now.
+- **One drawing, two renderers.** The viewer draws the bulk with the calls it gives the 2D canvas -
+  paths of moves, lines, quadratic curves, full circles and rectangles, filled or stroked in a style.
+  `viewer-gl.js` takes the same calls and keeps each fill and stroke as instances, in the order they
+  came: a circle filled is a disc, stroked a ring; a square, a square; a radial gradient's fill, a glow;
+  a line, a capsule, and a curve its own shape by its distance to the curve, so a lane has no joints;
+  the arrowheads, triangles. At the frame's end they are drawn in that order, one draw call for each
+  run of one kind.
+- **Where they differ.** The 2D canvas strokes a look's relations as one path, so two that cross are no
+  darker where they cross; on the GPU each is its own shape and a crossing adds, as on every WebGL map.
+  The region names are text, so they lie on the 2D canvas, above the relations and nodes rather than
+  under them. The field is worked out every frame, at a cell of 2 pixels, where the 2D field keeps its
+  image while only the camera moves (Section 26.6).
+- **A measure's switch.** `?renderer=2d` keeps the 2D canvas alone, so the bench can take both.
 
 ### 27.10 What this is not
 

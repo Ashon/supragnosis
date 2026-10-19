@@ -646,7 +646,7 @@ fn the_map_rings_read_the_effective_tier() {
 #[test]
 fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
     let js = include_str!("../assets/viewer.js");
-    let pass = "ctx.globalAlpha = 1;\n  for (const n of vis) {\n    if (!n.contested) continue;";
+    let pass = "ctx.globalAlpha = 1; bulk.globalAlpha = 1;\n  for (const n of vis) {\n    if (!n.contested) continue;";
     assert!(
         js.contains(pass),
         "the contested badge is drawn in its own full-strength pass, skipping only undrawn types"

@@ -380,6 +380,12 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
             content_type: "text/javascript; charset=utf-8",
             body: VIEWER_SIM_JS.to_string(),
         },
+        // The GPU renderer (design-system.md Section 27.9): a classic script before viewer.js.
+        "/viewer-gl.js" => Response {
+            status: "200 OK",
+            content_type: "text/javascript; charset=utf-8",
+            body: VIEWER_GL_JS.to_string(),
+        },
         "/api/graph" => graph_response(engine, query),
         "/api/hypergraph" => hypergraph_response(engine, query),
         "/api/types" => types_response(engine, query),
@@ -1393,6 +1399,7 @@ const VIEWER_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.html"))
 const VIEWER_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.css"));
 const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.js"));
 const VIEWER_SIM_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer-sim.js"));
+const VIEWER_GL_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer-gl.js"));
 
 #[cfg(test)]
 mod tests {

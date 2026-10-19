@@ -866,9 +866,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (39, &[c(
         "where WebGL2 renders to half-float targets the GPU draws the field, outlines, relations, arrowheads, nodes and bodies under a 2D canvas of text and badges, and the 2D canvas draws all of it otherwise",
-        Evidence::Deferred(
-            "Section 14 step 37 is planned: the 2D canvas draws everything. Revisit when step 37 lands",
-        ),
+        // scale.rs reads viewer-gl.js, the page's choice of renderer, drawCloudField, draw, trustRing and
+        // viewer.html.
+        Evidence::Scenario(&["the_gpu_draws_the_bulk"]),
     )]),
     (40, &[c(
         "at 10,000 entities shaped like a store the first picture within 3 seconds and a frame within 16.7 ms at p95 at rest, at any zoom and while the layout moves, and at 50,000 within 10 seconds and 16.7 ms on WebGL, in Chrome and WebKit",

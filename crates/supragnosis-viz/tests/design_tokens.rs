@@ -279,9 +279,9 @@ fn lines_are_thin_and_solid() {
     let ring = &script[script.find("function trustRing(").expect("trustRing")..];
     let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
     for weight in [
-        "ctx.lineWidth = 1/cam.s; ctx.strokeStyle = OTHER;",
-        "ctx.lineWidth = 1.6/cam.s; ctx.strokeStyle = INK;",
-        "ctx.lineWidth = 2.4/cam.s; ctx.strokeStyle = EDGE_HI;",
+        "bulk.lineWidth = 1/cam.s; bulk.strokeStyle = OTHER;",
+        "bulk.lineWidth = 1.6/cam.s; bulk.strokeStyle = INK;",
+        "bulk.lineWidth = 2.4/cam.s; bulk.strokeStyle = EDGE_HI;",
     ] {
         assert!(ring.contains(weight), "a trust ring is not told by weight: {weight}");
     }

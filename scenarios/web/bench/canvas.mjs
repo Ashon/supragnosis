@@ -12,7 +12,8 @@
 // BROWSER is chromium (the system's Chrome) or webkit (Playwright's, which `npx playwright install
 // webkit` fetches); OUT is where the rows go; SHOTS=1 keeps a screenshot of each size beside them;
 // NEAR_SCALE is the reading zoom the pan is taken at again (0.6), and DRAG_LIMIT how long a dragged
-// layout is followed to rest.
+// layout is followed to rest. RENDERER=2d keeps the 2D canvas alone (design-system.md Section 27.9);
+// each row says which renderer drew it.
 import { chromium, webkit } from "@playwright/test";
 import fs from "node:fs";
 import http from "node:http";
@@ -29,6 +30,7 @@ const SHOTS = process.env.SHOTS === "1";
 const PARTS = process.env.BREAKDOWN === "1" ? ["drawCloudField", "drawWsHulls", "drawMinimap"] : [];
 // The pan is taken again at a reading zoom, where nodes are drawn full - rings, arrowheads and names.
 const NEAR_SCALE = Number(process.env.NEAR_SCALE || 0.6);
+const RENDERER = process.env.RENDERER || "";
 const DRAG_LIMIT = Number(process.env.DRAG_LIMIT || 30000);
 
 const TYPES = ["Component", "Concept", "Decision", "Document", "Feature", "Tool", "Service", "Database", "Process", "Metric", "Release", "Artifact"];
@@ -139,7 +141,7 @@ try {
     served.set("/api/graph", { body: JSON.stringify(g), tag: `"bench-graph-${n}"` });
     served.set("/api/hypergraph", { body: JSON.stringify(h), tag: `"bench-hyper-${n}"` });
     const started = Date.now();
-    await page.goto(proxy.url + "?workspace=bench");
+    await page.goto(proxy.url + "?workspace=bench" + (RENDERER ? "&renderer=" + RENDERER : ""));
     await page.waitForFunction(() => typeof draw === "function" && typeof layout === "object");
     await page.evaluate(parts => {
       window.__bench = { sim: [], draw: [], drawAt: [], hit: [], frames: [], parts: {} };
@@ -170,9 +172,9 @@ try {
     } catch {
       revealed = false;
     }
-    const settle = await page.evaluate(() => ({ sim: __bench.sim.slice(), steps: layout.stats().steps, worker: layout.stats().worker, nodes: nodes.length, edges: edges.length, regions: hyperedges.length }));
+    const settle = await page.evaluate(() => ({ sim: __bench.sim.slice(), steps: layout.stats().steps, worker: layout.stats().worker, nodes: nodes.length, edges: edges.length, regions: hyperedges.length, gpu: gpu !== null && bulk === gpu }));
     const row = {
-      browser: BROWSER, n, edges: settle.edges, regions: settle.regions, revealed, layout_worker: settle.worker,
+      browser: BROWSER, n, renderer: settle.gpu ? "gpu" : "2d", edges: settle.edges, regions: settle.regions, revealed, layout_worker: settle.worker,
       first_picture_s: +((Date.now() - started) / 1000).toFixed(1), settle_steps: settle.steps,
       settle_step_p50: pct(settle.sim, 0.5), settle_step_p95: pct(settle.sim, 0.95),
     };

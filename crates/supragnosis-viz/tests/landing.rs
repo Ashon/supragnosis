@@ -130,7 +130,7 @@ fn the_stage_draws_the_viewers_marks() {
     let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
     assert!(
         ring.contains("r + 3.5")
-            && ring.contains("ctx.lineWidth = 2.4/cam.s; ctx.strokeStyle = EDGE_HI;")
+            && ring.contains("bulk.lineWidth = 2.4/cam.s; bulk.strokeStyle = EDGE_HI;")
     );
     assert_eq!(viewer_color("EDGE_HI"), token("--gold-bright"));
     assert!(

@@ -30,6 +30,8 @@ export default [
         createLayout: "readonly", radiusOfDegree: "readonly", ALPHA_MIN: "readonly",
         REVEAL_ALPHA: "readonly", SETTLE_ENTER: "readonly", MOTION_MIN_PX: "readonly",
         NODE_R_MAX: "readonly", NODE_R_BASE: "readonly",
+        // What viewer-gl.js, loaded before this script, gives it: the GPU renderer (Section 27.9).
+        createGpu: "readonly",
       },
     },
     rules: {
@@ -52,6 +54,17 @@ export default [
       ecmaVersion: 2022,
       sourceType: "script",
       globals: { performance: "readonly", self: "readonly", setTimeout: "readonly", WorkerGlobalScope: "readonly" },
+    },
+    rules: { "no-undef": "error" },
+  },
+  {
+    // The GPU renderer (docs/design-system.md Section 27.9): a classic script on the page, reaching
+    // nothing of it but a canvas to read a color with.
+    files: ["viewer-gl.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "script",
+      globals: { document: "readonly", Float32Array: "readonly" },
     },
     rules: { "no-undef": "error" },
   },
