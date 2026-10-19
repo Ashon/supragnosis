@@ -681,10 +681,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["a_tier_is_named_never_spelled", "every_proposal_event_has_a_sentence"]),
     ), c(
         "each observation row with a who-line naming tier, who and when and the map's ring for its tier, and one name for one place",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 6a, 9 and 14 steps 14-15, not built. Revisit \
-             when the Log's rows carry the who-line and the first-run page is Setup everywhere",
-        ),
+        // words.rs reads the Log's rows; the app's tests read Setup's one name.
+        Evidence::Scenario(&[
+            "every_log_row_says_who_and_when",
+            "the_setup_page_says_what_is_true_and_how_far_it_is",
+        ]),
     )]),
     (18, &[c(
         "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast, is undone by the reverse gated events the log keeps, and is filed in the workspace of the observation it changes",

@@ -12,9 +12,9 @@
 > surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
-> pass over every screen (Section 1, U15-U20) has its foundation (step 12), the Graph page (step 14)
-> and the viewer's and the engine's part of step 13 built; **the app's and the site's parts of step
-> 13, and steps 15 and 16, are designed, not built**.
+> pass over every screen (Section 1, U15-U20) has its foundation (step 12), the Graph page (step 14),
+> the app's pages (step 15) and the viewer's, the engine's and the app's part of step 13 built; **the
+> site's part of step 13, and step 16, are designed, not built**.
 
 ## 1. Why this exists
 
@@ -1180,8 +1180,10 @@ page's copies are held to the viewer's by `the_stage_draws_the_viewers_marks` an
 U17's first half is guarded by `a_tier_is_named_never_spelled` and `every_proposal_event_has_a_sentence`
 in `crates/supragnosis-viz/tests/words.rs`: no interpolation in the viewer's script draws a tier but
 through `tierName`, and the Log's two tables cover every kind in the engine's `PROPOSAL_KINDS`, every
-`ProposalEventKind` and every decision `review_proposal` accepts. Its second half - the who-line and
-one name for Setup - is owed until steps 14 and 15.
+`ProposalEventKind` and every decision `review_proposal` accepts. Its second half is guarded by
+`every_log_row_says_who_and_when` in the same file - the tier by name, the writer and the time once a
+minute, marked with the legend's ring - and by `the_setup_page_says_what_is_true_and_how_far_it_is` in
+the app's tests, which holds Setup's one name in its crumb, the tray and About.
 
 U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 `crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:
@@ -1271,7 +1273,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    control helpers in the viewer and in the app's shared script: switch, pressed, radio group, tabs,
    the dialog that holds focus, and the live region; and the guards, which hold at once the rules
    that need no screen change and stay owed for the rest until steps 13-16 meet them.
-13. **The defects** [viewer and engine built; app and site designed]: the seventeen found in Section 1's pass that ask no design question,
+13. **The defects** [viewer, engine and app built; site designed]: the seventeen found in Section 1's pass that ask no design question,
    each fixed as it is - in the viewer, search's chosen row and its field, the status bar's overflow
    and its empty counts, the Review page's keys and focus, the controls' states, names and targets;
    in the engine, `propose` turning names into ids, the Review page showing names whole, and a gate act
@@ -1287,7 +1289,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    10); and settling a contested value, with `/api/resolve`'s demotion kind and each explain
    candidate's tier before any verdict (Section 7). U8's guard follows the contested pill to the read
    tier.
-15. **The app's pages** [designed] (Section 6a): Setup's name, its plan and its sentences; the
+15. **The app's pages** [built] (Section 6a): Setup's name, its plan and its sentences; the
    Settings page's one card per fact, its radio group, its peers, and the capture switch with
    `connect claude-code --no-capture` removing the hook. It ships with the Setup page itself
    (onboarding.md Section 13 step 3).
@@ -1678,4 +1680,21 @@ findings changed it:
 - **The block's hint took the inspector's class.** "Neither is right" first used `.why`, which the
   inspector looks up for its own disclosure, so focusing a contested node threw; the hint has its own
   class and `settle.rs` holds the name apart.
+
+## 22. What building the app's pages changed
+
+- **The shell says what runs.** A step's progress lived only in the page, so leaving Setup lost it and
+  pressing Set up again reported a download that was still running as failed. `setup_running` answers
+  the steps the shell runs; Setup and Settings show them as running and wait for them.
+- **The download runs outside the page's lock.** Settings ran it under the one-act-at-a-time lock that
+  keeps two CLI writes from racing, which disabled the page for minutes; nothing the download writes
+  races with the rest, so it runs on its own, with its progress and a Stop on its row.
+- **`connect claude-code --no-capture` removes the hook on a bridged app.** It did nothing there before,
+  so the hook could be added from Setup and never taken away; the switch needed the CLI to say both.
+- **The tray keeps its rule.** The spec's first draft extended "Finish Setup..." to every step; the way
+  back is named where it always is instead, in About.
+- **Return presses Set up** unless focus is on a control Return already acts on, and the foot is drawn
+  right to left so that Set up is both first in tab order and rightmost.
+- **One row per peer** on a hub reads the checked-in list and the admitted list together; a peer that
+  checked in but is not admitted says so.
 
