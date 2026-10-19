@@ -24,7 +24,12 @@ export default [
         innerWidth: "readonly", localStorage: "readonly", location: "readonly",
         matchMedia: "readonly", Path2D: "readonly", performance: "readonly", removeEventListener: "readonly",
         requestAnimationFrame: "readonly", setInterval: "readonly", setTimeout: "readonly",
-        URL: "readonly", URLSearchParams: "readonly", window: "readonly",
+        URL: "readonly", URLSearchParams: "readonly", window: "readonly", Worker: "readonly",
+        // What viewer-sim.js, loaded before this script, gives it: the layout's engine, a node's
+        // radius, and the thresholds the page reads the layout's reports against.
+        createLayout: "readonly", radiusOfDegree: "readonly", ALPHA_MIN: "readonly",
+        REVEAL_ALPHA: "readonly", SETTLE_ENTER: "readonly", MOTION_MIN_PX: "readonly",
+        NODE_R_MAX: "readonly",
       },
     },
     rules: {
@@ -38,5 +43,16 @@ export default [
       // else unresolved is a scope mistake, and this is the cheapest place to find one.
       "no-undef": "error",
     },
+  },
+  {
+    // The layout (docs/design-system.md Section 27.5): a classic script on the page and the worker
+    // started from it. It reaches nothing of the page - only what a worker has.
+    files: ["viewer-sim.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "script",
+      globals: { performance: "readonly", self: "readonly", setTimeout: "readonly", WorkerGlobalScope: "readonly" },
+    },
+    rules: { "no-undef": "error" },
   },
 ];

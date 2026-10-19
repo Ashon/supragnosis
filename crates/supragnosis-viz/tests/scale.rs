@@ -1,8 +1,10 @@
-//! docs/design-system.md Section 26, the map at scale: tripwires over the viewer's script for the
-//! rules that keep its cost in proportion (U28-U30). The timings themselves are the scale bench's
-//! (Section 26.1, U31), which CI does not run.
+//! docs/design-system.md Sections 26 and 27, the map at scale and at any size: tripwires over the
+//! viewer's scripts for the rules that keep its cost in proportion (U28-U39). The timings themselves
+//! are the scale bench's (Section 26.1, U31 and U40), which CI does not run.
 
 const SCRIPT: &str = include_str!("../assets/viewer.js");
+/// The layout (Section 27.5): its constants, a node's radius, and the engine `createLayout` makes.
+const SIM: &str = include_str!("../assets/viewer-sim.js");
 
 fn function(name: &str) -> &'static str {
     let at = SCRIPT
@@ -11,19 +13,29 @@ fn function(name: &str) -> &'static str {
     &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")]
 }
 
+/// One of the layout engine's own functions, inside createLayout.
+fn engine(name: &str) -> &'static str {
+    let at = SIM
+        .find(&format!("\n  function {name}("))
+        .unwrap_or_else(|| panic!("the engine has no function {name}"));
+    &SIM[at..at + SIM[at..].find("\n  }\n").expect("it closes")]
+}
+
 /// U28: drawing never moves the layout. A frame steps the simulation only while it is warm -
 /// settling, applying force, a node held, the settle's last collision pass owed, or still coasting
 /// on the screen - so a pan, a zoom or a hover only redraws. Once cooled, the pairs are visited only
-/// for the collision pass the cooling owes, which ends as soon as nothing overlaps.
+/// for the collision pass the cooling owes, which ends as soon as nothing overlaps. In a worker the
+/// layout steps on its own (U35); the page's frame steps it only when it runs here.
 #[test]
 fn drawing_never_moves_the_layout() {
     let draw = function("draw");
-    let calls: Vec<usize> = draw.match_indices("stepSim()").map(|(i, _)| i).collect();
+    let calls: Vec<usize> = draw.match_indices("layout.tick()").map(|(i, _)| i).collect();
     assert!(!calls.is_empty(), "draw no longer steps the layout at all");
     for at in calls {
         let line = &draw[draw[..at].rfind('\n').map_or(0, |p| p + 1)..at];
         assert!(
-            line.contains("if (simWarm())") || line.contains("settling && REDUCED_MOTION"),
+            line.contains("if (simWarm())")
+                || line.contains("settling && REDUCED_MOTION && layout.here()"),
             "draw steps the layout unguarded: {line}"
         );
     }
@@ -37,7 +49,7 @@ fn drawing_never_moves_the_layout() {
     ] {
         assert!(warm.contains(part), "simWarm forgets {part}");
     }
-    let step = function("stepSim");
+    let step = engine("forces");
     for part in [
         "if (cooling && !active) overlapOwed = OVERLAP_STEPS;",
         "const pairs = active || overlapOwed > 0;",
@@ -50,9 +62,13 @@ fn drawing_never_moves_the_layout() {
     // over the threshold and step the layout.
     assert!(
         step.contains(
-            "if (!active && overlapOwed === 0 && !drag && simMotion * cam.s <= MOTION_MIN_PX) {"
-        ) && step.contains("for (const v of nodes) { v.vx = 0; v.vy = 0; }\n    simMotion = 0;"),
+            "if (!active && overlapOwed === 0 && p.drag < 0 && motion * p.camS <= MOTION_MIN_PX) {"
+        ) && step.contains("vx.fill(0, 0, N); vy.fill(0, 0, N);\n      motion = 0;"),
         "a layout at rest keeps a coast a zoom can wake"
+    );
+    assert!(
+        engine("warm").contains("alpha >= ALPHA_MIN || overlapOwed > 0 || p.drag >= 0 || motion * p.camS > MOTION_MIN_PX"),
+        "the layout steps on when the page would call it still"
     );
     assert!(
         function("animating").contains("overlapOwed > 0"),
@@ -67,14 +83,13 @@ fn drawing_never_moves_the_layout() {
 /// the costly shared-member test after the distance. No loop visits every pair of nodes or regions.
 #[test]
 fn near_forces_come_from_a_grid() {
-    let step = function("stepSim");
+    let step = engine("forces");
     assert!(
-        !step.contains("for (let j = i + 1; j < N; j++)")
-            && !step.contains("for (let j = i + 1; j < hgs.length; j++)"),
+        !step.contains("for (let j = i + 1; j < N; j++)") && !step.contains("j < H; j++)"),
         "the layout visits every pair again"
     );
     for part in [
-        "if (pairs) binGrid(N, active ? Math.max(DENSITY_R, 2 * NODE_R_MAX + COLLIDE_PAD, range / FAR_SPLIT) : reach);",
+        "if (pairs) binGrid(active ? Math.max(DENSITY_R, 2 * NODE_R_MAX + COLLIDE_PAD, range / FAR_SPLIT) : reach);",
         "const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];",
         "if (dx * dx + dy * dy >= reach2) continue;",
         "const i = gi < gj ? gi : gj, j = gi < gj ? gj : gi;",
@@ -85,20 +100,22 @@ fn near_forces_come_from_a_grid() {
     ] {
         assert!(step.contains(part), "the grids' pairing changed: {part}");
     }
-    assert!(SCRIPT.contains("const FAR_SPLIT = 6;"), "the far field's cells moved");
+    assert!(SIM.contains("const FAR_SPLIT = 6;"), "the far field's cells moved");
     // A cell is never narrower than the reach it is binned for, so no pair within reach is missed.
     assert!(
-        function("binGrid").contains("cell = Math.max(cell, "),
+        engine("binGrid").contains("cell = Math.max(cell, "),
         "a cell can shrink below the reach"
     );
-    // The step's scratch and its lookups are kept between steps.
+    // The step's scratch is kept between steps, and it reads no node objects.
     assert!(
-        !step.contains("new Array(N)") && !step.contains("new Float32Array(N)"),
-        "the step allocates per-node scratch again"
+        !step.contains("new Array(N)")
+            && !step.contains("new Float32Array(N)")
+            && !step.contains("nodes["),
+        "the step allocates per-node scratch or reads the page's nodes again"
     );
     assert!(
-        !step.contains("new Map(nodes.map(") && function("nodeById").contains("nodesById()"),
-        "a step or a lookup builds its own map of the nodes"
+        function("nodeById").contains("nodesById()"),
+        "a lookup builds its own map of the nodes"
     );
 }
 
@@ -205,11 +222,26 @@ fn still_layers_move_with_the_camera() {
     let mini = function("drawMinimap");
     for part in [
         "const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(\",\"),",
-        "if (!miniStillSame(src, look)) paintMiniature(src, dpr, k, ox, oy, R, round);",
+        "if (!miniStillSame(src, look)) m.dirty = true;",
+        "if (m.dirty && (!simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {",
+        "paintMiniature(src, dpr, k, ox, oy, R, round);",
         "mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);",
+        "drawMiniWindow(m.k, m.ox, m.oy, R, round);",
     ] {
         assert!(mini.contains(part), "the minimap paints its miniature every frame again: {part}");
     }
+    // While the layout moves the miniature waits a quarter of a second between paints, and its dots
+    // are drawn into one pixel buffer, not one canvas call each.
+    assert!(
+        SCRIPT.contains("const MINI_MOVING_MS = 250;"),
+        "the minimap's pace while moving moved"
+    );
+    let paint = function("paintMiniature");
+    assert!(
+        paint.contains("mctx.drawImage(paintMiniDots(src, dpr, mx, my), 0, 0, MINI_W, MINI_H);")
+            && !paint.contains("mctx.arc(mx(n)"),
+        "the minimap draws each dot through the canvas again"
+    );
     assert!(
         function("miniStillSame").contains(
             "if (same && (xy[3 * i] !== n.x || xy[3 * i + 1] !== n.y || xy[3 * i + 2] !== d || ty[i] !== n.type)) same = false;"
@@ -273,27 +305,76 @@ fn region_forces_grow_with_the_members() {
     for part in [
         "if (r.nodes === nodes && r.hyper === hyperedges) return r;",
         "if (mem.length - from >= 3) drawn.push(start.length - 1);",
-        "r.mark = new Int32Array(nodes.length).fill(-1);",
     ] {
         assert!(kept.contains(part), "the contexts' membership is not kept: {part}");
     }
-    let step = function("stepSim");
+    assert!(
+        function("layoutGraph").contains("regStart: rg.start, regMem: rg.mem, regDrawn: rg.drawn"),
+        "the layout does not take the kept membership"
+    );
+    let step = engine("forces");
     for part in [
-        "const rg = regionSimOf(), H = rg.count, start = rg.start, mem = rg.mem;",
+        "const H = regCount, start = regStart, mem = regMem;",
         "for (let k = start[i]; k < start[i + 1]; k++) mark[mem[k]] = i;",
         "for (let k = start[j]; k < start[j + 1] && !shared; k++) shared = mark[mem[k]] === i;",
-        "for (const i of drawn) {",
+        "for (const i of regDrawn) {",
     ] {
         assert!(step.contains(part), "the region forces grow with their pairs again: {part}");
     }
-    let regions = &step[step.find("const rg = regionSimOf()").expect("region forces")..];
+    let regions = &step[step.find("const H = regCount").expect("region forces")..];
     let regions = &regions[..regions.find("// Workspaces cohere").expect("their end")];
-    for alloc in ["new Set(", "hgs.push(", ".map(id =>", "new Array("] {
+    for alloc in ["new Set(", ".push({", ".map(id =>", "new Array("] {
         assert!(!regions.contains(alloc), "a step allocates per region: {alloc}");
     }
     assert!(
-        !SCRIPT.contains("function hullsShareMember"),
+        !SCRIPT.contains("function hullsShareMember") && !SIM.contains("function hullsShareMember"),
         "the set-based share test is back"
+    );
+}
+
+/// U35: the layout steps on a thread of its own when a worker can start, and the page draws its
+/// frames without waiting on a step. The page starts the worker from the served file, sends it the
+/// graph with each node's previous index and its state, drops a report for a graph it has replaced,
+/// and runs the same engine itself when no worker starts; the worker steps as fast as it can behind
+/// the loader and at most every SHOWN_STEP_MS once the map shows.
+#[test]
+fn the_layout_steps_on_its_own_thread() {
+    let host = &SCRIPT[SCRIPT.find("const layout = (() => {").expect("the layout's host")..];
+    let host = &host[..host.find("\n})();\n").expect("it closes")];
+    for part in [
+        "worker = new Worker(\"/viewer-sim.js\");",
+        "worker.onerror = () => { here(); requestFrame(); };",
+        "} catch (e) { here(); }",
+        "if (st.gen !== gen) return;",
+        "engine = createLayout();",
+        "tick() {\n      if (!engine) return;",
+    ] {
+        assert!(host.contains(part), "the layout is not off the page's thread: {part}");
+    }
+    let graph = function("layoutGraph");
+    assert!(
+        graph.contains("prev[i] = v._k === undefined ? -1 : v._k;")
+            && graph.contains("for (let i = 0; i < N; i++) nodes[i]._k = i;"),
+        "a node that stays does not keep the layout's position for it"
+    );
+    assert!(function("wake").contains("layout.wake(a);"), "a wake does not reach the layout");
+    let worker =
+        &SIM[SIM.find("if (typeof WorkerGlobalScope !== \"undefined\"").expect("the worker")..];
+    for part in [
+        "if (shown) L.step();",
+        "else do { L.step(); } while (L.warm() && performance.now() - t0 < SHOWN_STEP_MS);",
+        "timer = setTimeout(run, shown ? Math.max(0, SHOWN_STEP_MS - (performance.now() - t0)) : 0);",
+    ] {
+        assert!(worker.contains(part), "the worker does not pace itself: {part}");
+    }
+    assert!(SIM.contains("const SHOWN_STEP_MS = 1000 / 60;"), "the shown pace moved");
+    let html = include_str!("../assets/viewer.html");
+    let sim = html
+        .find("<script src=\"/viewer-sim.js\"></script>")
+        .expect("the page loads the layout");
+    assert!(
+        sim < html.find("<script src=\"/viewer.js\"></script>").expect("and the viewer"),
+        "the layout loads after the viewer that uses it"
     );
 }
 

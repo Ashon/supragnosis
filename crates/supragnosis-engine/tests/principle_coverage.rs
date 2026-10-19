@@ -837,9 +837,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (35, &[c(
         "the layout steps on a thread of its own when a worker can start, the page's frames never wait on a step, and the page's thread steps it when no worker starts",
-        Evidence::Deferred(
-            "Section 14 step 33 is planned: the simulation steps on the page's thread inside draw. Revisit when step 33 lands",
-        ),
+        // scale.rs reads the layout's host, layoutGraph, wake, viewer-sim.js's worker and the page's
+        // script tags; the engine was measured equal to the step it was moved from (Section 27.5).
+        Evidence::Scenario(&["the_layout_steps_on_its_own_thread"]),
     )]),
     (36, &[c(
         "a fresh layout starts from its communities' layout, found by label propagation, and a saved one skips it",

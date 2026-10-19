@@ -23,7 +23,7 @@ fn main() {
     let assets = Path::new(&manifest).join("assets");
     let out = Path::new(&out_dir);
 
-    for name in ["viewer.html", "viewer.css", "viewer.js"] {
+    for name in ["viewer.html", "viewer.css", "viewer.js", "viewer-sim.js"] {
         let src = assets.join(name);
         println!("cargo:rerun-if-changed={}", src.display());
         let content =
@@ -31,7 +31,7 @@ fn main() {
         let processed = if release {
             match name {
                 "viewer.css" => minify_css(&content),
-                "viewer.js" => minify_js(&content),
+                "viewer.js" | "viewer-sim.js" => minify_js(&content),
                 "viewer.html" => minify_html_doc(&content),
                 _ => content,
             }

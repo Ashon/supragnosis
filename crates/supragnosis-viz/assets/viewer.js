@@ -197,11 +197,7 @@ let allRegions = true;    // draw every context region as a cloud, not only the 
 let boundaryMode = "workspace";   // "workspace" | "origin" | "off"
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
-const CLUSTER_PULL = 0.03;       // pull toward the group target point (stronger than the center attraction)
-const HYPER_PULL = 0.03;         // base hyperedge centroid cohesion (scaled by hull size - see hullSizeNorm)
-// Cohesion scales with member count: larger hulls pull their nodes tighter (small ones stay loose).
-const HULL_SIZE_REF = 8;         // members at/above which a hull gets full cohesion weight
-const HULL_COH_MIN = 0.4, HULL_COH_MAX = 1.15;    // cohesion factor range (x HYPER_PULL)
+// The layout's forces and their constants are viewer-sim.js's (Section 27.5), loaded before this.
 // Hull rendering: a region is a cloud (docs/design-system.md Section 5) - one ellipse fitted to its
 // members, densest at their centre and fading to nothing past the outermost, so it has no edge to
 // read as a line. A flat fill of the hull drew a slab whose rim looked like a border. The clouds of a
@@ -213,19 +209,6 @@ const CLOUD_REACH = 1.8;         // how far the cloud reaches past its outermost
 const HULL_LABEL_BASE = 0.7;     // hull label opacity with no active node
 const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this while a node is active
 const HULL_NODE_GAP = 14;        // world px: extra gap past the largest member glyph when expanding a hull
-const HULL_PAD = 24;             // target gap between hulls (world px). Kept small to avoid over-separation at high density
-const HULL_SEP = 0.008;          // separation force between hulls (gentle - scaled by cooling alpha)
-const HULL_R_CAP = 160;          // upper bound on the hull radius used for separation - so a huge grab-bag cannot push the whole layout
-const HULL_MAX_PUSH = 4;         // per-frame separation displacement cap per hull - prevents divergence accumulating across many pairs
-// Workspaces cohere while the boundaries draw them (stepSim): a node outside its workspace's natural
-// radius - WS_RADIUS x sqrt(its node count), about the disk its nodes fill at their usual spacing - is
-// pulled toward the workspace's centroid, and two workspaces whose disks overlap are pushed apart.
-const WS_RADIUS = 18;            // world px per sqrt(node): a workspace of 100 nodes rests within ~180px of its centre
-const WS_PULL = 0.012;           // pull per px beyond that radius (x cooling alpha) - far stronger than the global centre pull on a large graph
-const WS_PAD = 70;               // gap kept between two workspaces' disks
-const WS_SEP = 0.01;             // push apart per px of overlap (x cooling alpha)
-const WS_MAX_PUSH = 6;           // per-frame push cap per workspace, as HULL_MAX_PUSH is per hull
-const WS_CROSS_REPULSE = 0.25;   // node-to-node repulsion across two workspaces: the workspaces already push apart as wholes
 let footprintSession = null;     // the session (conversation) the current footprint belongs to
 const footprint = new Set();     // ids of nodes this session touched - the conversation's knowledge footprint
 let nodes = [], edges = [], typeColor = {}, edgeKinds = [];
@@ -241,65 +224,18 @@ let DPR = 1;
 const cam = { s: 1, x: 0, y: 0 }, camT = { s: 1, x: 0, y: 0 };
 let panning = null, downPos = null, userMoved = false, firstData = true, needFit = false;
 
-// --- force simulation (alpha cooling + collision separation) ------------------------------------
-let alpha = 1;
-// alpha decays multiplicatively (x0.9772 a frame), so ALPHA_MIN buys time logarithmically: 0.02
-// applies force for ~170 frames from a cold load, 0.008 for ~209. Lowered because the tail of the
-// layout is where it is still worth nudging - the forces down there are tiny, and stopping while
-// they are still meaningful is what made the settle read as a cut rather than a stop. The coasting
-// afterwards is not governed by this at all; that is DAMPING, and it is measured (see simMotion).
-const ALPHA_DECAY = 0.0228, ALPHA_MIN = 0.008;
-// Layout-loader gating: while the sim is reheated at/above SETTLE_ENTER (initial load, data change,
-// group toggle - the big rearrangements), the graph is hidden behind a loader; it is revealed once
-// alpha cools to REVEAL_ALPHA. Small wakes (drag/focus at 0.3) stay below SETTLE_ENTER, so those never
-// trigger the loader. `settling` starts true so the first layout comes up settled, not mid-flight.
-const SETTLE_ENTER = 0.5, REVEAL_ALPHA = 0.08;
-// Largest distance any node moved on the last step, in world units - the settle test the cooling
-// schedule cannot give, since alpha says how hard the sim is pushing and not whether anything moved.
-let simMotion = 0;
-const MOTION_MIN_PX = 0.05;   // screen px per frame below which the picture is not changing
-// The settle's last collision pass (design-system.md Section 26.3): once the layout cools, the
-// overlaps the cooling left are cleared for at most this many steps, and then no pair is visited
-// until something warms the layout again. It used to run in every frame for good, which made every
-// pan and hover pay for every pair of nodes.
-const OVERLAP_STEPS = 90;
-let overlapOwed = 0;
-// How many cells span the repulsion's range while force applies (Section 26.4): the near field is a
-// node's own cell and the eight around it, the far field the rest of the range, cell by cell.
-const FAR_SPLIT = 6;
+// --- the layout (Section 27.5, U35) --------------------------------------------------------------
+// What the layout last reported: how hard it still pushes (alpha), the settle's last collision pass
+// still owed, and the largest move of its last step in world units - the settle test the cooling
+// schedule cannot give. The layout itself is viewer-sim.js's, in a worker or here.
+let alpha = 1, overlapOwed = 0, simMotion = 0;
 // Reduced motion (same respect the landing pays to prefers-reduced-motion): instead of animating
 // the violent early rearrangement behind a loader, burst-step the sim to convergence within one
 // frame and reveal the layout already still.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let settling = true;
 let refitOnReveal = false;   // re-frame the graph after a sync-driven re-layout settles (follow mode)
-// Base force parameters. The larger the graph, the wider it should spread, so stepSim scales by node count (spread).
-const REPULSE = 7000;
-// Links fit the density around them (stepSim). A link's rest length grows with the smaller degree of
-// its two ends - a leaf sits close to its hub, two hubs keep room between them for their leaves - and
-// with how crowded its ends are against the graph's average, so a crowded patch spreads and a sparse
-// one gathers. Its strength falls with that degree, as d3's links do, so a hub is not held by every
-// link at once, and the end with fewer links does more of the moving.
-const LINK_BASE = 70;              // rest length of a leaf's link, before crowding
-const LINK_PER_DEG = 14;           // added per sqrt(smaller degree)
-const LINK_K = 0.09;               // a leaf link's strength; LINK_K / sqrt(smaller degree) otherwise
-const DENSITY_R = 160;             // a node's crowd: the nodes within this many world px
-const CROWD_MIN = 0.7, CROWD_MAX = 1.5;    // how far crowding may shorten or lengthen a link
-const CENTER_BASE = 0.0015; // center-attraction base - weakened for large graphs (prevents central clumping)
-const ANCHOR_K = 0.5;       // central-axis anchor: fraction of the centroid-offset corrected each frame (rigid recenter, positions only) - pins the whole cluster to the world center so it cannot drift off, even when dormant
-const RANGE_BASE = 240;     // repulsion range base - widened for large graphs (pushes out farther)
-const COLLIDE_PAD = 16, DAMPING = 0.85;
-const MIN_SEP = 12;        // repulsion denominator floor - prevents force blowup (flinging) when very close
-const MAX_V = 30;          // per-frame max speed base - raised for large graphs
-const MAX_PUSH = 6;        // per-frame per-node collision displacement cap - prevents hub blowup
-// Node size is proportional to neighbor count (degree) (sqrt, to flatten a wide range). The enlarged
-// radius feeds directly into collision separation (minD), so spacing widens with neighbor count too,
-// and nodes with few neighbors stay small and dense.
-const NODE_R_BASE = 4;         // radius at degree 0
-const NODE_R_SCALE = 3.4;      // sqrt(degree) coefficient
-const NODE_R_MAX = 28;         // radius upper bound (prevents hub runaway)
-const REPULSE_HUB_MAX = 2.5;   // hub-hub repulsion weight cap (prevents divergence)
-function nodeRadius(n) { return Math.min(NODE_R_MAX, NODE_R_BASE + Math.sqrt(n.degree || 0) * NODE_R_SCALE); }
+function nodeRadius(n) { return radiusOfDegree(n.degree); }
 // Level of detail (design-system.md Section 26.5, U30): the radius on the screen, in pixels, from which
 // a node is drawn full - halo, fill, trust ring, lanes and arrowheads into it - and below which it is
 // a square of its color. At the sizes a map is read at nothing changes; a map zoomed out far enough
@@ -349,7 +285,7 @@ function labelGrid() {
 function nodeStrokeW(n) { return Math.min(NODE_STROKE_MAX / cam.s, Math.max(nodeRadius(n) * NODE_STROKE_RATIO, NODE_STROKE_MIN / cam.s)); }
 // Wake the simulation (discrete wakeup). Called only from events: new node/deletion (applyGraph),
 // drag, focus. Never called from a continuous condition (overlap) - prevents endless reheating after settling.
-function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) settling = true; requestFrame(); }
+function wake(a = 0.7) { alpha = Math.max(alpha, a); layout.wake(a); if (a >= SETTLE_ENTER) settling = true; requestFrame(); }
 // Whether the layout still moves, and so whether a frame steps it (design-system.md Section 26.3,
 // U28): settling, applying force, a node held, the last collision pass owed, or still coasting on
 // the screen. Otherwise a frame only redraws - a pan, a zoom or a hover never steps the layout.
@@ -359,7 +295,7 @@ function simWarm() {
 }
 
 // --- render scheduling: draw when something moves, not every frame ------------------------------
-// stepSim already goes dormant (no force is applied below ALPHA_MIN), but draw() re-scheduled itself
+// The layout already goes dormant (no force is applied below ALPHA_MIN), but draw() re-scheduled itself
 // unconditionally, so a settled graph still re-rendered the whole canvas 60 times a second to
 // produce an identical image. A viewer left open on a settled graph is the normal case, not an edge
 // one - it is what the thing does while you work.
@@ -530,7 +466,7 @@ async function loadSurface() {
 }
 function loadLayout() {
   storedLayout = null;
-  // A scope of several workspaces is laid out with their cohesion since 0.6.4 (stepSim); a layout
+  // A scope of several workspaces is laid out with their cohesion since 0.6.4 (the layout); a layout
   // remembered before it is forgotten once, or the warm start would keep the scattered picture.
   const ws = currentWs() || "", many = ws === "*" || ws.includes(",");
   layoutScope = surfaceNode ? "supra.layout:" + surfaceNode + ":" + ws + (many ? ":ws2" : "") : null;
@@ -636,6 +572,7 @@ function applyGraph(g) {
     const dx = innerWidth / 2 - cx / nodes.length, dy = innerHeight / 2 - cy / nodes.length;
     for (const n of nodes) { n.x += dx; n.y += dy; }
     alpha = Math.min(alpha, REVEAL_ALPHA);
+    layout.cool(REVEAL_ALPHA);
     // Frame the remembered picture now: the reveal that fits a fresh layout may already have passed
     // while the page waited for its first graph.
     if (!userMoved) { fitView(); cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; needFit = false; }
@@ -648,6 +585,7 @@ function applyGraph(g) {
   bridgeSet.clear();
   for (const e of edges) if (e.a.type !== e.b.type) { bridgeSet.add(e.a.id); bridgeSet.add(e.b.id); }
   assignColors();
+  layoutGraph(warm);   // after the colors: group mode's targets are by type
   renderLegend();
   noteTrustAndContest();
   const s = g.stats || {};
@@ -1157,6 +1095,7 @@ async function poll() {
             hyperedges = hg.hyperedges || [];
             showStats(currentWs(), lastStats, hyperedges.length);
             hold(heldHyper, hurl, hr);
+            layoutGraph();
           }
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
@@ -2980,7 +2919,66 @@ addEventListener("resize", resize);
 const miniEl = document.getElementById("minimap"), mctx = miniEl.getContext("2d");
 const MINI_W = 168, MINI_H = 154, MINI_PAD = 10;   // height matches the HUD column (see viewer.css)
 let miniT = { k: 1, ox: 0, oy: 0 };   // world -> minimap: m = w * k + o (kept for the pan handler)
-const miniStill = { c: null, x: null, look: "", xy: null, types: [] };
+const miniStill = { c: null, x: null, look: "", xy: null, types: [], dirty: true, at: 0, k: 1, ox: 0, oy: 0 };
+// While the layout moves, the miniature is painted at most this often - an overview needs no more -
+// and at once when it comes to rest (design-system.md Section 27.5).
+const MINI_MOVING_MS = 250;
+// A color as its RGB, read once from a pixel a canvas paints with it.
+const rgbOf = new Map();
+function cssRgb(color) {
+  let v = rgbOf.get(color);
+  if (!v) {
+    const c = cssRgb.ctx || (cssRgb.ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true }));
+    c.clearRect(0, 0, 1, 1); c.fillStyle = color; c.fillRect(0, 0, 1, 1);
+    const d = c.getImageData(0, 0, 1, 1).data;
+    v = [d[0], d[1], d[2]];
+    rgbOf.set(color, v);
+  }
+  return v;
+}
+// The miniature's dots, drawn into a pixel buffer here rather than through the canvas: ten thousand
+// dots one call each kept the minimap's paint at 39 ms in WebKit, and copying a dot drawn once,
+// from a canvas each, kept WebKit's renderer so busy its frames came twice a second (Section 27.5).
+// Each dot is what a fill and its halo stroke drew - its color inside, the surface's ring around -
+// laid over the dots before it in order, so a dense cluster still shows its dots apart.
+const miniDots = { c: null, x: null, img: null, buf: null, w: 0, h: 0 };
+function paintMiniDots(src, dpr, mx, my) {
+  const L = miniDots, w = MINI_W * dpr, h = MINI_H * dpr;
+  if (L.w !== w || L.h !== h) {
+    L.c = document.createElement("canvas"); L.c.width = w; L.c.height = h; L.x = L.c.getContext("2d");
+    L.img = L.x.createImageData(w, h); L.buf = new Float32Array(w * h * 4); L.w = w; L.h = h;
+  }
+  const buf = L.buf, halo = cssRgb(SURFACE);
+  buf.fill(0);
+  for (const n of src) {
+    const mr = Math.max(1.2, Math.min(5, 1.2 + Math.sqrt(n.degree || 0) * 0.75));
+    const lw = Math.min(1.4, Math.max(mr * NODE_STROKE_RATIO, 0.6)), fill = cssRgb(typeColor[n.type] || OTHER);
+    const cx = mx(n) * dpr, cy = my(n) * dpr, rOut = (mr + lw / 2) * dpr, rIn = (mr - lw / 2) * dpr;
+    const x0 = Math.max(0, Math.floor(cx - rOut - 1)), x1 = Math.min(w - 1, Math.ceil(cx + rOut + 1));
+    const y0 = Math.max(0, Math.floor(cy - rOut - 1)), y1 = Math.min(h - 1, Math.ceil(cy + rOut + 1));
+    for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - cy;
+      for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - cx, d = Math.sqrt(dx * dx + dy * dy);
+        const aOut = Math.min(1, Math.max(0, rOut - d + 0.5));
+        if (aOut <= 0) continue;
+        const aIn = Math.min(1, Math.max(0, rIn - d + 0.5)), ring = aOut - aIn, keep = 1 - aOut, i = (y * w + x) * 4;
+        buf[i] = fill[0] * aIn + halo[0] * ring + buf[i] * keep;
+        buf[i + 1] = fill[1] * aIn + halo[1] * ring + buf[i + 1] * keep;
+        buf[i + 2] = fill[2] * aIn + halo[2] * ring + buf[i + 2] * keep;
+        buf[i + 3] = aOut + buf[i + 3] * keep;
+      }
+    }
+  }
+  const d = L.img.data;
+  for (let i = 0; i < buf.length; i += 4) {
+    const a = buf[i + 3];
+    if (a <= 0) { d[i + 3] = 0; continue; }
+    d[i] = buf[i] / a; d[i + 1] = buf[i + 1] / a; d[i + 2] = buf[i + 2] / a; d[i + 3] = a * 255;
+  }
+  L.x.putImageData(L.img, 0, 0);
+  return L.c;
+}
 // Whether the kept miniature shows these nodes - where they are, their degree and their type - in this
 // look; compared in place and left as the new key. By content, not by which arrays hold it: a poll
 // that brings the same graph brings new arrays.
@@ -3009,7 +3007,6 @@ function drawMinimap() {
   const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
   const k = Math.min((MINI_W - MINI_PAD*2) / gw, (MINI_H - MINI_PAD*2) / gh);
   const ox = (MINI_W - gw*k)/2 - a*k, oy = (MINI_H - gh*k)/2 - b*k;
-  miniT = { k, ox, oy };
   // Everything renders inside the panel's rounded outline (radius matches the 10px
   // border-radius in viewer.css, minus the half-pixel stroke inset) - without the clip, dots
   // and the viewport stroke land in the corner cut zones and get sliced by the CSS rounding.
@@ -3017,7 +3014,14 @@ function drawMinimap() {
   const round = mctx.roundRect !== undefined;
   const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(","),
     edges.length, hyperedges.length, Object.keys(typeColor).map(t => t + ":" + typeColor[t]).join(",")].join("|");
-  if (!miniStillSame(src, look)) paintMiniature(src, dpr, k, ox, oy, R, round);
+  const m = miniStill;
+  if (!miniStillSame(src, look)) m.dirty = true;
+  if (m.dirty && (!simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {
+    paintMiniature(src, dpr, k, ox, oy, R, round);
+    m.dirty = false; m.at = performance.now(); m.k = k; m.ox = ox; m.oy = oy;
+  } else if (m.dirty) requestFrame();   // still owed: painted when the layout rests or the wait ends
+  // The window's frame and a click on the miniature go by the transform it was painted with.
+  miniT = { k: m.k, ox: m.ox, oy: m.oy };
   mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   mctx.clearRect(0, 0, MINI_W, MINI_H);
   mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);
@@ -3027,7 +3031,7 @@ function drawMinimap() {
     mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
     mctx.clip();
   }
-  drawMiniWindow(k, ox, oy, R, round);
+  drawMiniWindow(m.k, m.ox, m.oy, R, round);
   mctx.restore();
 }
 // The miniature into its own bitmap: hyperedge hulls (under), edge connections, then nodes sized by
@@ -3080,16 +3084,7 @@ function paintMiniature(src, dpr, k, ox, oy, R, round) {
   // without it, dots that overlap in a dense cluster merge into one blob and the minimap stops
   // reporting density, which is most of what it is for. Same ratio, minimap-scale bounds - the floor
   // keeps a 1.2px dot separated at all, the cap keeps a hub from closing into a donut.
-  for (const n of src) {
-    const mr = Math.max(1.2, Math.min(5, 1.2 + Math.sqrt(n.degree || 0) * 0.75));
-    mctx.beginPath();
-    mctx.arc(mx(n), my(n), mr, 0, 6.2832);
-    mctx.fillStyle = typeColor[n.type] || OTHER;
-    mctx.fill();
-    mctx.lineWidth = Math.min(1.4, Math.max(mr * NODE_STROKE_RATIO, 0.6));
-    mctx.strokeStyle = SURFACE;
-    mctx.stroke();
-  }
+  mctx.drawImage(paintMiniDots(src, dpr, mx, my), 0, 0, MINI_W, MINI_H);
   mctx.restore();
 }
 function drawMiniWindow(k, ox, oy, R, round) {
@@ -3218,8 +3213,8 @@ function focusView(n) {
 }
 
 // hyperedge id -> palette color (deterministic hash). Overlapping hulls blend semi-transparently (C1: overlap = connective tissue).
-// Size-scaled visual weight for a hyperedge (0 at min size 2, 1 at HULL_SIZE_REF+ members).
-function hullSizeNorm(size) { return Math.max(0, Math.min(1, (size - 2) / (HULL_SIZE_REF - 2))); }
+// Size-scaled visual weight for a hyperedge (0 at min size 2, 1 at HULL_SIZE_REF+ members) is
+// viewer-sim.js's hullSizeNorm, which the layout's cohesion uses too.
 // Geometry of one hyperedge hull: the convex hull of the member centers, an outward expansion radius r
 // (largest member glyph + gap), and the member centroid (for the label). Returns null when degenerate.
 function hullGeom(ms) {
@@ -3640,11 +3635,9 @@ function convexHull(pts) {
 }
 // The contexts' membership as index arrays into the nodes (design-system.md Section 27.4, U34), kept
 // while the page holds the same nodes and contexts: `start[h]` to `start[h + 1]` of `mem` are context
-// h's members, `drawn` the contexts of three or more - the regions the map draws - and `mark` the
-// array the shared-member test marks members in.
-const regionSim = { nodes: null, hyper: null, count: 0, start: new Int32Array(1), mem: new Int32Array(0), drawn: [], mark: new Int32Array(0) };
-let regCx = new Float64Array(0), regCy = new Float64Array(0), regR = new Float64Array(0);
-let regSx = new Float64Array(0), regSy = new Float64Array(0);
+// h's members, and `drawn` the contexts of three or more - the regions the map draws. The layout
+// takes them with the graph.
+const regionSim = { nodes: null, hyper: null, count: 0, start: new Int32Array(1), mem: new Int32Array(0), drawn: new Int32Array(0) };
 function regionSimOf() {
   const r = regionSim;
   if (r.nodes === nodes && r.hyper === hyperedges) return r;
@@ -3659,9 +3652,117 @@ function regionSimOf() {
     start.push(mem.length);
   }
   r.nodes = nodes; r.hyper = hyperedges; r.count = start.length - 1;
-  r.start = Int32Array.from(start); r.mem = Int32Array.from(mem); r.drawn = drawn;
-  r.mark = new Int32Array(nodes.length).fill(-1);
+  r.start = Int32Array.from(start); r.mem = Int32Array.from(mem); r.drawn = Int32Array.from(drawn);
   return r;
+}
+
+// --- the layout's host (Section 27.5, U35) -------------------------------------------------------
+// The layout runs in a worker when one starts, and here, from draw, when none does - the same engine
+// either way (viewer-sim.js). The page sends it the graph when the graph changes and its state when
+// that changes, and takes back positions, which it writes into the nodes it draws; a report for a
+// graph the page has since replaced (an older `gen`) is dropped.
+const layout = (() => {
+  let worker = null, engine = null, gen = 0, lastGraph = null, shownNow = false;
+  const lastSet = {}, stats = { steps: 0, stepMs: 0 };
+  const apply = st => {
+    if (st.gen !== gen) return;
+    alpha = st.alpha; overlapOwed = st.overlapOwed; simMotion = st.motion;
+    stats.steps = st.steps; stats.stepMs = st.stepMs;
+    const n = Math.min(nodes.length, st.x.length);
+    for (let i = 0; i < n; i++) { const v = nodes[i]; v.x = st.x[i]; v.y = st.y[i]; }
+  };
+  // No worker, or one that failed to start: the engine runs here, from the positions the page holds.
+  const here = () => {
+    if (engine) return;
+    if (worker) worker.terminate();
+    worker = null;
+    engine = createLayout();
+    engine.set(lastSet);
+    if (lastGraph) layoutGraph(true);
+  };
+  try {
+    worker = new Worker("/viewer-sim.js");
+    worker.onmessage = ev => { if (ev.data.kind === "state") { apply(ev.data); requestFrame(); } };
+    worker.onerror = () => { here(); requestFrame(); };
+  } catch (e) { here(); }
+  return {
+    graph(g) {
+      g.gen = ++gen; lastGraph = g;
+      if (engine) engine.graph(g); else worker.postMessage({ kind: "graph", ...g });
+    },
+    set(q) {
+      Object.assign(lastSet, q);
+      if (engine) engine.set(q); else worker.postMessage({ kind: "set", set: q });
+    },
+    wake(a) { if (engine) engine.wake(a); else worker.postMessage({ kind: "wake", alpha: a }); },
+    cool(a) { if (engine) engine.cool(a); else worker.postMessage({ kind: "cool", alpha: a }); },
+    shown(on) {
+      if (on === shownNow) return;
+      shownNow = on;
+      if (worker) worker.postMessage({ kind: "shown", shown: on });
+    },
+    // A frame's step, when the engine runs here; in a worker the positions come as messages.
+    tick() {
+      if (!engine) return;
+      engine.step();
+      const { x, y } = engine.positions();
+      apply({ ...engine.state(), x, y });
+    },
+    here: () => engine !== null,
+    // How many steps the layout has taken and what the last one cost - what a bench reads.
+    stats: () => ({ ...stats, worker: !engine }),
+  };
+})();
+
+// The graph as the layout takes it: each node's position, velocity, degree, workspace and type as
+// arrays, its index in the graph the layout held before (`_k`, so a node that stays keeps what the
+// layout has for it), the relations as index pairs and the contexts as kept index arrays. `moved`
+// says the page moved every node itself, and the layout takes all their positions.
+function layoutGraph(moved = false) {
+  const N = nodes.length;
+  const x = new Float64Array(N), y = new Float64Array(N), vx = new Float64Array(N), vy = new Float64Array(N);
+  const deg = new Float64Array(N), ws = new Int32Array(N), typ = new Int32Array(N), prev = new Int32Array(N);
+  const wsAt = new Map(), named = [], typeAt = new Map(Object.keys(typeColor).sort().map((t, i) => [t, i]));
+  const at = new Map();
+  for (let i = 0; i < N; i++) {
+    const v = nodes[i], w = v.workspace || "";
+    x[i] = v.x; y[i] = v.y; vx[i] = v.vx || 0; vy[i] = v.vy || 0; deg[i] = v.degree || 0;
+    let k = wsAt.get(w);
+    if (k === undefined) { k = wsAt.size; wsAt.set(w, k); named.push(w ? 1 : 0); }
+    ws[i] = k;
+    const t = typeAt.get(v.type);
+    typ[i] = t === undefined ? -1 : t;
+    prev[i] = v._k === undefined ? -1 : v._k;
+    at.set(v, i);
+  }
+  for (let i = 0; i < N; i++) nodes[i]._k = i;
+  const ea = new Int32Array(edges.length), eb = new Int32Array(edges.length);
+  for (let k = 0; k < edges.length; k++) { ea[k] = at.get(edges[k].a); eb[k] = at.get(edges[k].b); }
+  const rg = regionSimOf();
+  layout.graph({ x, y, vx, vy, deg, ws, wsNamed: Uint8Array.from(named), typ, prev, moved, ea, eb,
+    regStart: rg.start, regMem: rg.mem, regDrawn: rg.drawn });
+}
+
+// The layout's view of the moment, sent when it changes: the modes, the window's centre, the zoom
+// (the coast is measured on the screen), the held node and where it is held, the focused node, and
+// group mode's targets - one per type, on a circle, in sorted type order.
+let layoutSent = "";
+function layoutSync() {
+  const q = {
+    hullForce, clusterMode, wsMode: boundaryMode === "workspace", wcx: innerWidth / 2, wcy: innerHeight / 2,
+    camS: +cam.s.toPrecision(2), drag: drag ? drag._k : -1, dragX: drag ? drag.x : 0, dragY: drag ? drag.y : 0,
+    focus: focus && focus._k !== undefined ? focus._k : -1, targets: null,
+  };
+  if (clusterMode) {
+    const types = Object.keys(typeColor).sort(), k = Math.max(1, types.length);
+    const R = Math.min(innerWidth, innerHeight) * 0.34, t = new Array(2 * types.length);
+    types.forEach((_, i) => { const a = (i / k) * Math.PI * 2; t[2 * i] = q.wcx + R * Math.cos(a); t[2 * i + 1] = q.wcy + R * Math.sin(a); });
+    q.targets = t;
+  }
+  const key = JSON.stringify(q);
+  if (key === layoutSent) return;
+  layoutSent = key;
+  layout.set(q);
 }
 
 // --- Haloed labels: text and its halo rasterized together, then blitted on the device pixel grid ---
@@ -3734,430 +3835,17 @@ function drawLabel(text, weight, size, color, spacing, halo, x, y, align) {
   ctx.drawImage(s.c, Math.round((left - s.ax) * DPR) / DPR, Math.round((y - s.ay) * DPR) / DPR, s.w, s.h);
 }
 
-// The near-force grid (design-system.md Section 26.4, U29), kept between steps: a counting sort of the
-// nodes into cells, so a cell's nodes are gridOrder[gridStart[c] .. gridStart[c + 1]).
-let gridOrder = new Int32Array(0), gridStart = new Int32Array(0), gridCursor = new Int32Array(0);
-let gridCell = new Int32Array(0), gridW = 0, gridH = 0, gridSize = 0;
-// The far field's per-cell sums (Section 26.4): how many nodes a cell holds, where their centre is,
-// their radii, and how many of them are in each workspace - kept between steps like the grid.
-let farN = new Float64Array(0), farX = new Float64Array(0), farY = new Float64Array(0), farR = new Float64Array(0);
-let farWs = new Int32Array(0), nodeWs = new Int32Array(0);
-// The step's per-node scratch, kept between steps rather than allocated in each.
-let scrCdx = new Float64Array(0), scrCdy = new Float64Array(0), scrRad = new Float64Array(0), scrNear = new Float32Array(0);
-
-// Bins the nodes into square cells at least `cell` wide. A layout spread much wider than its nodes
-// would ask for more cells than nodes, so the cell grows instead - which keeps every pair within
-// reach in the same or an adjacent cell, since a cell never shrinks below the reach.
-function binGrid(N, cell) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (let i = 0; i < N; i++) {
-    const v = nodes[i];
-    if (v.x < minX) minX = v.x; if (v.x > maxX) maxX = v.x;
-    if (v.y < minY) minY = v.y; if (v.y > maxY) maxY = v.y;
-  }
-  const area = Math.max(1, (maxX - minX) * (maxY - minY));
-  cell = Math.max(cell, Math.sqrt(area / (4 * N + 64)));
-  gridSize = cell;
-  gridW = Math.floor((maxX - minX) / cell) + 1;
-  gridH = Math.floor((maxY - minY) / cell) + 1;
-  const cells = gridW * gridH;
-  if (gridCell.length < N) { gridCell = new Int32Array(N * 2); gridOrder = new Int32Array(N * 2); }
-  if (gridStart.length < cells + 1) { gridStart = new Int32Array((cells + 1) * 2); gridCursor = new Int32Array((cells + 1) * 2); }
-  gridStart.fill(0, 0, cells + 1);
-  for (let i = 0; i < N; i++) {
-    const v = nodes[i];
-    const c = Math.floor((v.x - minX) / cell) + Math.floor((v.y - minY) / cell) * gridW;
-    gridCell[i] = c; gridStart[c + 1]++;
-  }
-  for (let c = 0; c < cells; c++) gridStart[c + 1] += gridStart[c];
-  gridCursor.set(gridStart.subarray(0, cells));
-  for (let i = 0; i < N; i++) gridOrder[gridCursor[gridCell[i]]++] = i;
-}
-
-function stepSim() {
-  simMotion = 0;
-  const N = nodes.length;
-  if (N === 0) return;
-  const cooling = alpha >= ALPHA_MIN;
-  if (cooling) alpha += (0 - alpha) * ALPHA_DECAY;
-  const active = alpha >= ALPHA_MIN;   // dormant once cooling is done - no force is applied
-  // The step that cools the layout owes the last collision pass; a layout at rest visits no pair.
-  if (cooling && !active) overlapOwed = OVERLAP_STEPS;
-  const pairs = active || overlapOwed > 0;
-  let overlapped = false;
-  const pinned = v => v === drag || v === focus;
-
-  // Scale by node count: more nodes spread wider (repulsion range/strength up, center attraction down).
-  // Prevents a hairball (central clumping) - base is tuned for small graphs, large ones expand via spread.
-  const spread = Math.min(4, Math.max(1, Math.sqrt(N / 20)));
-  const range = RANGE_BASE * spread, centerG = CENTER_BASE / spread;
-  const repulse = REPULSE * spread, maxV = MAX_V * Math.min(spread, 2);
-
-  // Collision displacement is accumulated per node, then clamped to a cap - stops a hub overlapping
-  // many neighbors from flinging far in a single frame (instead of moving directly).
-  if (scrCdx.length < N) {
-    scrCdx = new Float64Array(N * 2); scrCdy = new Float64Array(N * 2);
-    scrRad = new Float64Array(N * 2); scrNear = new Float32Array(N * 2);
-  }
-  const cdx = scrCdx, cdy = scrCdy;
-  cdx.fill(0, 0, N); cdy.fill(0, 0, N);
-  const near = active ? scrNear : null;   // each node's crowd this frame
-  if (near) near.fill(0, 0, N);
-  // The radius (degree-proportional) is computed once per frame and shared by repulsion weighting/collision separation.
-  const rad = scrRad;
-  for (let i = 0; i < N; i++) rad[i] = nodeRadius(nodes[i]);
-  // While workspaces cohere (below), two of them push apart as wholes, so the repulsion between their
-  // nodes is turned down: on a large graph its range reaches about 960px, and a hundred nodes of one
-  // workspace pushing each node of a small one kept the small one strung out across the map.
-  const wsApart = boundaryMode === "workspace" && !clusterMode && new Set(nodes.map(n => n.workspace).filter(Boolean)).size > 1;
-
-  // Near forces from a grid (design-system.md Section 26.4, U29). Every force in this loop acts within
-  // a reach - repulsion its range, crowding DENSITY_R, collision two radii and the padding - so the
-  // nodes are binned into cells as wide as the longest reach in use, and a node meets only the nodes
-  // of its own cell and the adjacent ones: the pairs every-pair would have found within reach, and
-  // no others. A cell pairs with itself and four forward neighbours, so each pair is met once, and the
-  // lower index goes first, as it did, so a coincident pair still parts the same way.
-  // While force applies the cells are a quarter of the repulsion's range: pairs in a node's own and
-  // the adjacent cells are met one by one - every collision and every crowd among them, since a cell
-  // is never narrower than those reaches - and the repulsion of the cells beyond, out to the range,
-  // is taken from each cell as a whole (the far field, below).
-  const reach = active ? Math.max(range, DENSITY_R) : 2 * NODE_R_MAX + COLLIDE_PAD;
-  const reach2 = reach * reach;
-  if (pairs) binGrid(N, active ? Math.max(DENSITY_R, 2 * NODE_R_MAX + COLLIDE_PAD, range / FAR_SPLIT) : reach);
-  const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];
-  if (pairs) for (let cy = 0; cy < gridH; cy++) for (let cx = 0; cx < gridW; cx++) {
-    const c = cx + cy * gridW, c0 = gridStart[c], c1 = gridStart[c + 1];
-    if (c0 === c1) continue;
-    for (let nb = -1; nb < FORWARD.length; nb++) {
-      let n0, n1;
-      if (nb < 0) { n0 = c0; n1 = c1; }
-      else {
-        const ox = cx + FORWARD[nb][0], oy = cy + FORWARD[nb][1];
-        if (ox < 0 || ox >= gridW || oy >= gridH) continue;
-        const o = ox + oy * gridW; n0 = gridStart[o]; n1 = gridStart[o + 1];
-        if (n0 === n1) continue;
-      }
-      for (let p = c0; p < c1; p++) for (let q = nb < 0 ? p + 1 : n0; q < n1; q++) {
-    const gi = gridOrder[p], gj = gridOrder[q];
-    const i = gi < gj ? gi : gj, j = gi < gj ? gj : gi;
-    const a = nodes[i], b = nodes[j];
-    let dx = b.x - a.x, dy = b.y - a.y;
-    if (dx * dx + dy * dy >= reach2) continue;   // beyond every force's reach
-    let d = Math.hypot(dx, dy);
-    if (d < 0.5) {
-      // (Nearly) coincident coordinates have a zero direction and cannot be pushed apart - separate in a deterministic direction (prevents degeneracy).
-      const ang = ((i * 7 + j * 13) % 628) / 100;
-      dx = Math.cos(ang); dy = Math.sin(ang); d = 0.5;
-    } else { dx /= d; dy /= d; }
-    const d2 = d * d;
-    // Repulsion only when active (cooling), and near-range only (0 outside the range). Prevents the
-    // problem where, when dormant, only repulsion remained and spread endlessly without the balance of cohesion (gravity/springs).
-    if (active && d < range) {
-      // The larger a node's neighbor count (radius), the more gently repulsion is weighted up - spacing around a hub widens (clamped to a cap).
-      const w = Math.min(REPULSE_HUB_MAX, (rad[i] + rad[j]) / (2 * NODE_R_BASE))
-        * (wsApart && a.workspace !== b.workspace ? WS_CROSS_REPULSE : 1);
-      const rf = repulse * alpha * w * (1 - d / range) / Math.max(d2, MIN_SEP * MIN_SEP);
-      a.vx -= rf*dx; a.vy -= rf*dy; b.vx += rf*dx; b.vy += rf*dy;
-    }
-    if (near && d < DENSITY_R) { near[i]++; near[j]++; }
-    // Collision minimum gap = sum of the two radii + padding -> a node with more neighbors (larger) gets wider spacing around it.
-    const minD = rad[i] + rad[j] + COLLIDE_PAD;
-    if (d < minD) {
-      overlapped = true;
-      const push = (minD - d) / 2;
-      cdx[i] -= dx*push; cdy[i] -= dy*push; cdx[j] += dx*push; cdy[j] += dy*push;
-    }
-      }
-    }
-  }
-
-  // The far field (design-system.md Section 26.4): beyond a node's own and the adjacent cells, out to
-  // the repulsion's range, each cell pushes as one body at its nodes' centre - its count weighted as
-  // every pair would weight it, by the node's radius and the cell's mean radius and by how many of
-  // its nodes are in another workspace. It is the one approximation the layout makes (Barnes-Hut's,
-  // with a cell's width against its distance at most a half), and it replaces the many far pairs a
-  // dense map gives every node, which kept a step at 151 ms on 5,000 nodes with the grid alone.
-  if (active && gridW * gridH > 9) {
-    const cells = gridW * gridH;
-    if (farN.length < cells) {
-      farN = new Float64Array(cells * 2); farX = new Float64Array(cells * 2);
-      farY = new Float64Array(cells * 2); farR = new Float64Array(cells * 2);
-    }
-    farN.fill(0, 0, cells); farX.fill(0, 0, cells); farY.fill(0, 0, cells); farR.fill(0, 0, cells);
-    let wsCount = 0;
-    if (wsApart) {
-      const wsIndex = new Map();
-      if (nodeWs.length < N) nodeWs = new Int32Array(N * 2);
-      for (let k = 0; k < N; k++) {
-        const w = nodes[k].workspace || "";
-        let x = wsIndex.get(w);
-        if (x === undefined) { x = wsIndex.size; wsIndex.set(w, x); }
-        nodeWs[k] = x;
-      }
-      wsCount = wsIndex.size;
-      if (farWs.length < cells * wsCount) farWs = new Int32Array(cells * wsCount * 2);
-      farWs.fill(0, 0, cells * wsCount);
-    }
-    for (let k = 0; k < N; k++) {
-      const c = gridCell[k], v = nodes[k];
-      farN[c]++; farX[c] += v.x; farY[c] += v.y; farR[c] += rad[k];
-      if (wsCount) farWs[c * wsCount + nodeWs[k]]++;
-    }
-    const span = Math.ceil(range / gridSize), range2 = range * range, floor2 = MIN_SEP * MIN_SEP;
-    for (let i = 0; i < N; i++) {
-      const a = nodes[i];
-      if (pinned(a)) continue;
-      const ci = gridCell[i], cx = ci % gridW, cy = (ci - cx) / gridW;
-      for (let oy = -span; oy <= span; oy++) {
-        const y = cy + oy;
-        if (y < 0 || y >= gridH) continue;
-        for (let ox = -span; ox <= span; ox++) {
-          if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) continue;   // near cells were met pair by pair
-          const x = cx + ox;
-          if (x < 0 || x >= gridW) continue;
-          const c = x + y * gridW, n = farN[c];
-          if (!n) continue;
-          const mx = farX[c] / n - a.x, my = farY[c] / n - a.y, dd = mx * mx + my * my;
-          if (dd >= range2) continue;
-          const d = Math.sqrt(dd) || 0.5;
-          const same = wsCount ? farWs[c * wsCount + nodeWs[i]] : n;
-          const count = same + (n - same) * WS_CROSS_REPULSE;
-          const w = Math.min(REPULSE_HUB_MAX, (rad[i] + farR[c] / n) / (2 * NODE_R_BASE)) * count;
-          const rf = repulse * alpha * w * (1 - d / range) / Math.max(dd, floor2);
-          a.vx -= rf * mx / d; a.vy -= rf * my / d;
-        }
-      }
-    }
-  }
-
-  // Residual overlap is cleaned up by the collision displacement below, for the steps the cooling
-  // owes and no longer: the pass ends as soon as nothing overlaps.
-  // Do not reheat here - wake only from 'events' like a new node/drag/resize
-  // (removes the problem of reheating every frame after settling).
-  if (!active && overlapOwed > 0) overlapOwed = overlapped ? overlapOwed - 1 : 0;
-  if (active) {
-    // Each node's crowd, smoothed over frames so a link's length does not flicker as its ends move,
-    // and the graph's average crowd that a link's ends are measured against.
-    let crowdSum = 0;
-    for (let k = 0; k < N; k++) {
-      const v = nodes[k];
-      v.crowd = v.crowd === undefined ? near[k] : v.crowd + (near[k] - v.crowd) * 0.15;
-      crowdSum += v.crowd;
-    }
-    const crowdRef = Math.sqrt(crowdSum / N + 1);
-    for (const e of edges) {
-      let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx,dy) || 1;
-      const da = Math.max(1, e.a.degree || 1), db = Math.max(1, e.b.degree || 1), lo = Math.sqrt(Math.min(da, db));
-      const crowd = Math.min(CROWD_MAX, Math.max(CROWD_MIN, Math.sqrt((e.a.crowd + e.b.crowd) / 2 + 1) / crowdRef));
-      const f = (d - (LINK_BASE + LINK_PER_DEG * lo) * crowd) * (LINK_K / lo) * alpha; dx /= d; dy /= d;
-      // The end with fewer links moves more: a leaf comes to its hub rather than the hub to the leaf.
-      const ma = 2 * db / (da + db), mb = 2 - ma;
-      e.a.vx += f*dx*ma; e.a.vy += f*dy*ma; e.b.vx -= f*dx*mb; e.b.vy -= f*dy*mb;
-    }
-  }
-
-  // Hyperedge layout (Principle 11 second-order structure "well cohered"): (1) pull members toward
-  // each hyperedge's centroid to cohere the hull tightly, and (2) push apart the centroids of
-  // non-overlapping hulls to widen the gap. Hulls that share a node (overlap) stay naturally close
-  // because the shared node is pulled to both centroids at once, and the separation force cancels at
-  // the shared node, preserving the overlap relationship (C1: overlap = connective tissue).
-  // Default organizer; group mode takes precedence (suppressed while clusterMode is on) so the two never fight.
-  if (hullForce && !clusterMode && active && hyperedges.length) {
-    // Membership comes kept, as index arrays (design-system.md Section 27.4, U34); the centres and
-    // spreads go into arrays kept between steps, so a step allocates nothing per region.
-    const rg = regionSimOf(), H = rg.count, start = rg.start, mem = rg.mem;
-    if (regCx.length < H) {
-      regCx = new Float64Array(H * 2); regCy = new Float64Array(H * 2); regR = new Float64Array(H * 2);
-      regSx = new Float64Array(H * 2); regSy = new Float64Array(H * 2);
-    }
-    // Geometry: each context's centre and its members' mean distance from it, clamped to a cap - so a
-    // huge grab-bag cannot push the whole layout.
-    for (let h = 0; h < H; h++) {
-      const a = start[h], b = start[h + 1];
-      let cx = 0, cy = 0;
-      for (let k = a; k < b; k++) { const v = nodes[mem[k]]; cx += v.x; cy += v.y; }
-      cx /= b - a; cy /= b - a;
-      let r = 0;
-      for (let k = a; k < b; k++) { const v = nodes[mem[k]]; r += Math.hypot(v.x - cx, v.y - cy); }
-      regCx[h] = cx; regCy[h] = cy; regR[h] = Math.min(r / (b - a), HULL_R_CAP);
-    }
-    // (1) Cohesion: member -> its own centroid. Scaled by hull size - larger hulls pull tighter,
-    // small ones stay loose. Every context of two or more pulls; one of two is a spring between two
-    // entities seen together.
-    for (let h = 0; h < H; h++) {
-      const a = start[h], b = start[h + 1];
-      const cf = HYPER_PULL * (HULL_COH_MIN + hullSizeNorm(b - a) * (HULL_COH_MAX - HULL_COH_MIN)) * alpha;
-      for (let k = a; k < b; k++) {
-        const m = nodes[mem[k]];
-        if (pinned(m)) continue;
-        m.vx += (regCx[h] - m.x) * cf; m.vy += (regCy[h] - m.y) * cf;
-      }
-    }
-    // (2) Separation: push apart only **disjoint** hull pairs (not sharing a node) - a shared hull is
-    // a connected context and must stay attached (C1), and pushing every pair at high density blows up the whole layout.
-    // Accumulate each hull's net displacement, clamp it to the cap (HULL_MAX_PUSH), then apply it to members to prevent divergence.
-    // Only the regions the map draws - three or more members - push apart: ten thousand contexts of
-    // two, pushed apart, were a second repulsion on top of the first.
-    const sepx = regSx, sepy = regSy, drawn = rg.drawn, mark = rg.mark;
-    sepx.fill(0, 0, H); sepy.fill(0, 0, H);
-    // Only regions within reach of each other push, and their centres are then at most
-    // 2 * HULL_R_CAP + HULL_PAD apart: the centres are binned into cells that wide and a region meets
-    // only those of its own and the adjacent cells (design-system.md Section 26.4) - the pushes every
-    // pair gives - and the shared-member test, the costly one, runs only for a pair close enough to
-    // push. Every pair, with the test first, was 72 ms of a step at 838 regions.
-    const RC = 2 * HULL_R_CAP + HULL_PAD, cellOf = new Map();
-    const hk = (x, y) => (x + 32768) * 65536 + (y + 32768);
-    for (const i of drawn) {
-      const k = hk(Math.floor(regCx[i] / RC), Math.floor(regCy[i] / RC));
-      const l = cellOf.get(k);
-      if (l) l.push(i); else cellOf.set(k, [i]);
-    }
-    for (const i of drawn) {
-      // A region marks its members; a neighbour shares one when any of its members carries the mark.
-      for (let k = start[i]; k < start[i + 1]; k++) mark[mem[k]] = i;
-      const gx = Math.floor(regCx[i] / RC), gy = Math.floor(regCy[i] / RC);
-      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-        for (const j of cellOf.get(hk(gx + ox, gy + oy)) || []) {
-          if (j <= i) continue;
-          const dx = regCx[j] - regCx[i], dy = regCy[j] - regCy[i], d = Math.hypot(dx, dy) || 0.01;
-          const want = regR[i] + regR[j] + HULL_PAD;
-          if (d >= want) continue;
-          let shared = false;
-          for (let k = start[j]; k < start[j + 1] && !shared; k++) shared = mark[mem[k]] === i;
-          if (shared) continue;   // a connected context stays (C1)
-          const mag = (want - d) * HULL_SEP * alpha, ux = dx / d * mag, uy = dy / d * mag;
-          sepx[i] -= ux; sepy[i] -= uy; sepx[j] += ux; sepy[j] += uy;
-        }
-      }
-    }
-    for (const i of drawn) {
-      let mx = sepx[i], my = sepy[i]; const mm = Math.hypot(mx, my);
-      if (mm === 0) continue;
-      if (mm > HULL_MAX_PUSH) { mx *= HULL_MAX_PUSH / mm; my *= HULL_MAX_PUSH / mm; }
-      for (let k = start[i]; k < start[i + 1]; k++) { const m = nodes[mem[k]]; if (!pinned(m)) { m.vx += mx; m.vy += my; } }
-    }
-  }
-
-  // Workspaces cohere (docs/design-system.md Section 5). While the boundaries draw workspaces and the
-  // scope holds more than one, a node outside its workspace's natural radius is pulled toward that
-  // workspace's centroid, and workspaces whose disks overlap are pushed apart, as disjoint hulls are.
-  // Without it a workspace's loose pieces - a few nodes no edge ties to the rest - drifted off under
-  // the repulsion and its outline enclosed mostly empty space: the global centre pull, divided by the
-  // spread a large graph needs, was far too weak to hold them. Inside the radius nothing pulls, so a
-  // large workspace keeps the shape its edges give it.
-  if (boundaryMode === "workspace" && !clusterMode && active) {
-    const byWs = new Map();
-    for (const n of nodes) if (n.workspace) {
-      let ms = byWs.get(n.workspace);
-      if (!ms) byWs.set(n.workspace, ms = []);
-      ms.push(n);
-    }
-    if (byWs.size > 1) {
-      const wgs = [];
-      for (const ms of byWs.values()) {
-        let cx = 0, cy = 0;
-        for (const m of ms) { cx += m.x; cy += m.y; }
-        cx /= ms.length; cy /= ms.length;
-        // The pull's radius is what the nodes would fill; the push's is what they do fill (the 90th
-        // percentile of their distances from the centre), or a small workspace's centre settles
-        // inside a large one's spread and its nodes are pulled into the other's crowd.
-        const d = ms.map(m => Math.hypot(m.x - cx, m.y - cy)).sort((a, b) => a - b);
-        const r = WS_RADIUS * Math.sqrt(ms.length);
-        wgs.push({ ms, cx, cy, r, extent: Math.max(r, d[Math.floor(d.length * 0.9)]) });
-      }
-      for (const g of wgs) for (const m of g.ms) {
-        if (pinned(m)) continue;
-        const dx = g.cx - m.x, dy = g.cy - m.y, d = Math.hypot(dx, dy);
-        if (d > g.r) { const f = (d - g.r) / d * WS_PULL * alpha; m.vx += dx * f; m.vy += dy * f; }
-      }
-      const sepx = new Array(wgs.length).fill(0), sepy = new Array(wgs.length).fill(0);
-      for (let i = 0; i < wgs.length; i++) for (let j = i + 1; j < wgs.length; j++) {
-        const a = wgs[i], b = wgs[j];
-        const dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 0.01, want = a.extent + b.extent + WS_PAD;
-        if (d < want) {
-          const mag = (want - d) * WS_SEP * alpha, ux = dx / d * mag, uy = dy / d * mag;
-          sepx[i] -= ux; sepy[i] -= uy; sepx[j] += ux; sepy[j] += uy;
-        }
-      }
-      for (let i = 0; i < wgs.length; i++) {
-        let mx = sepx[i], my = sepy[i]; const mm = Math.hypot(mx, my);
-        if (mm === 0) continue;
-        if (mm > WS_MAX_PUSH) { mx *= WS_MAX_PUSH / mm; my *= WS_MAX_PUSH / mm; }
-        for (const m of wgs[i].ms) if (!pinned(m)) { m.vx += mx; m.vy += my; }
-      }
-    }
-  }
-
-  const wcx = innerWidth/2, wcy = innerHeight/2;   // world coordinates (CSS pixel system) - independent of the camera
-  // Group mode: place per-type target points on a circle to spatially separate groups (deterministic:
-  // angle assigned in sorted type order). The group-target attraction replaces the center attraction, and
-  // bridge edges (springs) pull linking nodes between groups so a "navigable" connection remains.
-  let tgt = null;
-  if (clusterMode && active) {
-    const types = Object.keys(typeColor).sort(), k = Math.max(1, types.length);
-    const R = Math.min(innerWidth, innerHeight) * 0.34;
-    tgt = {};
-    types.forEach((t, i) => { const a = (i / k) * Math.PI * 2; tgt[t] = [wcx + R * Math.cos(a), wcy + R * Math.sin(a)]; });
-  }
-  for (let k = 0; k < N; k++) {
-    const v = nodes[k];
-    if (pinned(v)) { v.vx = 0; v.vy = 0; continue; }
-    if (active) {
-      if (tgt) {
-        const g = tgt[v.type] || [wcx, wcy];
-        v.vx += (g[0] - v.x) * CLUSTER_PULL * alpha; v.vy += (g[1] - v.y) * CLUSTER_PULL * alpha;
-      } else {
-        v.vx += (wcx - v.x) * centerG * alpha; v.vy += (wcy - v.y) * centerG * alpha;
-      }
-    }
-    v.vx *= DAMPING; v.vy *= DAMPING;
-    // speed cap - even under a large force, nothing flies off-screen.
-    const sp = Math.hypot(v.vx, v.vy);
-    if (sp > maxV) { v.vx *= maxV/sp; v.vy *= maxV/sp; }
-    // the collision displacement is also clamped to a per-node cap before adding.
-    let mx = cdx[k], my = cdy[k]; const m = Math.hypot(mx, my);
-    if (m > MAX_PUSH) { mx *= MAX_PUSH/m; my *= MAX_PUSH/m; }
-    v.x += v.vx + mx; v.y += v.vy + my;
-    // What this node actually moved. Cooling says whether force is still being applied; it does not
-    // say whether anything is still moving, and those part company exactly where the stop was
-    // abrupt - damping and integration run whether or not the sim is active, so nodes coast for
-    // roughly half a second after the last force.
-    const stepped = Math.hypot(v.vx + mx, v.vy + my);
-    if (stepped > simMotion) simMotion = stepped;
-  }
-
-  // Central-axis anchor: the pairwise forces are action-reaction symmetric (zero net force on the
-  // whole-graph centroid), but the per-node / per-hull clamps (maxV, MAX_PUSH, HULL_MAX_PUSH) and the
-  // collision push that keeps correcting while dormant break that symmetry, so the constellation
-  // slowly drifts to one side. Rigidly translate every node so the centroid returns to the world
-  // center - positions only (no velocity -> no momentum/oscillation), applied every frame including
-  // when dormant, which fixes the cluster to the center after cooling and across simulation restarts.
-  // Skipped while dragging (do not fight the pointer); pinned nodes (drag/focus) are held in place.
-  if (!drag) {
-    let sx = 0, sy = 0;
-    for (const v of nodes) { sx += v.x; sy += v.y; }
-    const offx = (wcx - sx / N) * ANCHOR_K, offy = (wcy - sy / N) * ANCHOR_K;
-    if (offx || offy) for (const v of nodes) if (!pinned(v)) { v.x += offx; v.y += offy; }
-    // The recenter shifts every node, so it is motion too - and it runs while dormant.
-    const shifted = Math.hypot(offx, offy);
-    if (shifted > simMotion) simMotion = shifted;
-  }
-  // The coast ends once it is too slow to see on the screen, and the layout is then at rest: its
-  // velocities and its motion are dropped, so a zoom into it later magnifies no motion that would
-  // step it again (U28). A wake starts it afresh.
-  if (!active && overlapOwed === 0 && !drag && simMotion * cam.s <= MOTION_MIN_PX) {
-    for (const v of nodes) { v.vx = 0; v.vy = 0; }
-    simMotion = 0;
-  }
-}
-
 function draw() {
   rafId = null;
-  if (simWarm()) stepSim();
+  layoutSync();
+  layout.shown(!settling);
+  // The layout steps on a thread of its own (U35); here only when no worker could start.
+  if (simWarm()) layout.tick();
   easeCam();
   // Reduced motion: settle synchronously (bounded - alpha decays multiplicatively, so convergence
-  // takes ~110 steps; the cap only guards a pathological graph from locking the frame).
-  if (settling && REDUCED_MOTION) { for (let i = 0; i < 600 && alpha > REVEAL_ALPHA; i++) stepSim(); }
+  // takes ~110 steps; the cap only guards a pathological graph from locking the frame). A worker
+  // settles behind the loader as fast as it can anyway.
+  if (settling && REDUCED_MOTION && layout.here()) { for (let i = 0; i < 600 && alpha > REVEAL_ALPHA; i++) layout.tick(); }
   // Reveal transition: the layout has calmed enough to show. Frame it first (auto-fit + snap the
   // camera, before any user interaction) so the graph appears already fitted rather than mid-zoom.
   if (settling && alpha <= REVEAL_ALPHA) {
@@ -5016,7 +4704,7 @@ window.addEventListener("keydown", e => {
   }
   else if (e.key === "b") {
     boundaryMode = boundaryMode === "workspace" ? "origin" : boundaryMode === "origin" ? "off" : "workspace";
-    wake(0.5);   // the workspace cohesion turns on or off with the mode (stepSim)
+    wake(0.5);   // the workspace cohesion turns on or off with the mode (the layout)
     // The mode belongs in the stats line, which is durable, and not in `statusEl`, which the render
     // loop rewrites every frame - the first version put it there and the feedback was gone before it
     // could be read, so the toggle looked like it had done nothing.

@@ -373,6 +373,13 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
             content_type: "text/javascript; charset=utf-8",
             body: VIEWER_JS.to_string(),
         },
+        // The layout (design-system.md Section 27.5): a classic script before viewer.js, and the
+        // worker the page starts from it - the policy admits a worker from a served file.
+        "/viewer-sim.js" => Response {
+            status: "200 OK",
+            content_type: "text/javascript; charset=utf-8",
+            body: VIEWER_SIM_JS.to_string(),
+        },
         "/api/graph" => graph_response(engine, query),
         "/api/hypergraph" => hypergraph_response(engine, query),
         "/api/types" => types_response(engine, query),
@@ -1385,6 +1392,7 @@ fn percent_decode(s: &str) -> String {
 const VIEWER_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.html"));
 const VIEWER_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.css"));
 const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.js"));
+const VIEWER_SIM_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer-sim.js"));
 
 #[cfg(test)]
 mod tests {

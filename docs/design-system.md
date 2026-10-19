@@ -19,7 +19,8 @@
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
 > The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38 - and
-> steps 31 and 32, the poll that asks first and region forces that scale, are built.
+> steps 31-33, the poll that asks first, region forces that scale and the layout on its own thread,
+> are built.
 
 ## 1. Why this exists
 
@@ -1396,7 +1397,7 @@ social image.
 | **U32** | Layers that do not change when only the camera moves are not worked out again for it: the region field is kept with the camera it was worked out for and drawn moved and scaled by the camera's change, and worked out again once the camera rests, when the moved field would leave the window uncovered or be scaled past half or double, and when a region, its strength or the appearance changes; the minimap's miniature is a bitmap of its own, painted when the nodes, their positions, the filters or the look change, under the window's frame drawn each frame; and the regions' members and hulls are kept while the nodes stand still. |
 | **U33** | A poll that finds nothing new costs the page nothing: the graph, the hypergraph and the Log's observations answer with an ETag of their body, the viewer asks with it, an unchanged one answers 304 with no body, and the viewer keeps what it has without parsing or applying anything. |
 | **U34** | The layout's region forces grow with the regions' members, not with their pairs or their number: membership is kept as index arrays while the graph and its contexts are unchanged, a step allocates nothing per region, the shared-member test marks one region's members and reads the other's, and only regions of three or more members - the ones the map draws - push apart, while every context of two or more keeps its pull. |
-| **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once a drawn frame after, and hands back positions; when no worker can start, the same file steps on the page's thread as before. |
+| **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once every 16.7 ms after, and hands back positions; when no worker can start, the same file steps on the page's thread as before; and while the layout moves, the minimap's miniature is painted at most four times a second, its dots drawn into a pixel buffer. |
 | **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it, and semantic zoom (U38) folds the same communities. |
 | **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their boxes; and the Log lists the scope's newest 200 observations, asking for one more to know there are more, wires its rows by their place, and shows more on request. |
 | **U38** | A community smaller than 24 pixels on the screen is drawn as one body - a disc for its members, its count and, where it fits, its best-connected member's name - the relations between two bodies as one line as wide as their number, and from 24 to 48 pixels the members fade in as the body fades out; a hovered, selected, active, pulsing or contested node is never folded. |
@@ -1698,7 +1699,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    and a 304 for an unchanged one, through the desktop app's proxy as well.
 32. **Region forces that scale** [built] (Section 27.4; U34): kept membership, marking, and
    separation among drawn regions; the bench's graph gains a store's contexts.
-33. **The layout on its own thread** [planned] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
+33. **The layout on its own thread** [built] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
    in a worker, and on the page's thread when none starts.
 34. **The multilevel start** [planned] (Section 27.6; U36): communities, their layout first.
 35. **Clipping** [planned] (Section 27.7; U37): the grid index of positions and of relations' boxes.
@@ -2528,10 +2529,24 @@ Guarded by `region_forces_grow_with_the_members`.
   state - a wake, a held or dragged node, a focus, the mode, the window's centre - and the worker
   sends positions back (U35).
 - **Its own pace.** Behind the loader the worker steps as fast as it can. Once the map shows, it takes
-  at most one step for each frame the page draws, so the cooling looks as it did, and the page draws
-  every frame with the positions it last received - a pan or a zoom never waits on a step.
+  at most one step every 16.7 ms, so the cooling looks as it did at sixty frames a second whatever the
+  page's frames cost, and the page draws every frame with the positions it last received - a pan or a
+  zoom never waits on a step.
 - **The page's thread when there is no worker.** The same file loads as a classic script, and when a
   worker cannot start, the page steps it from `draw` as it does now.
+- **The same layout.** From the same start, 300 steps of the engine on 2,000 nodes left every position
+  where the step it was moved from left it, to the last bit, with three workspaces and without.
+- **The minimap waits while the layout moves.** With the step gone from the page's thread, a moving
+  frame in WebKit was the minimap: its ten thousand dots, one canvas call each, took 39 of a frame's
+  63 ms. Copying a dot drawn once, from a canvas each, was worse - WebKit's renderer was kept so busy
+  the page's frames came twice a second. The dots are now drawn into one pixel buffer, each a fill and
+  its halo laid over the dots before it as before, and while the layout moves the miniature is painted
+  at most every 250 ms, and at once when it rests.
+
+At 10,000 entities the layout's motion went from 20 frames a second to 58 in Chrome and from 16 to 58
+in WebKit.
+
+Guarded by `the_layout_steps_on_its_own_thread`.
 
 ### 27.6 The multilevel start
 

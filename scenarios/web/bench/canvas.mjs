@@ -1,7 +1,8 @@
 // The scale bench (docs/design-system.md Section 26.1): what the map costs as a workspace grows. A
 // seeded synthetic graph answers /api/graph and /api/hypergraph in the browser, and the viewer's own
-// functions - stepSim, draw and nodeAt, globals of its classic script - are timed from outside, so the
-// script under measure is the one that ships. A measurement, not a test: CI does not run it, since
+// functions - draw and nodeAt, globals of its classic script - are timed from outside, so the script
+// under measure is the one that ships. The layout's steps, in a worker or not (Section 27.5), are
+// read from what it reports: layout.stats(), its steps so far and what the last one cost. A measurement, not a test: CI does not run it, since
 // frame times on a shared runner are noise.
 //
 //   node bench/canvas.mjs                         # Chrome, 500 to 10,000 entities
@@ -118,7 +119,7 @@ try {
     await page.route(/\/api\/hypergraph/, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(h) }));
     const started = Date.now();
     await page.goto(proxy.url + "?workspace=bench");
-    await page.waitForFunction(() => typeof stepSim === "function" && typeof draw === "function");
+    await page.waitForFunction(() => typeof draw === "function" && typeof layout === "object");
     await page.evaluate(parts => {
       window.__bench = { sim: [], draw: [], drawAt: [], hit: [], frames: [], parts: {} };
       const time = (name, into) => {
@@ -128,8 +129,9 @@ try {
           try { return f.apply(this, args); } finally { window.__bench[into].push(performance.now() - t); }
         };
       };
-      time("stepSim", "sim");
       time("draw", "draw");
+      // A step the layout reports, once for each frame that brings new ones.
+      { let seen = 0; const d = window.draw; window.draw = function (...args) { try { return d.apply(this, args); } finally { const st = layout.stats(); if (st.steps > seen) { window.__bench.sim.push(st.stepMs); seen = st.steps; } } }; }
       { const d = window.draw; window.draw = function (...args) { window.__bench.drawAt.push(performance.now()); return d.apply(this, args); }; }
       time("nodeAt", "hit");
       for (const name of parts) {
@@ -147,10 +149,10 @@ try {
     } catch {
       revealed = false;
     }
-    const settle = await page.evaluate(() => ({ sim: __bench.sim.slice(), nodes: nodes.length, edges: edges.length, regions: hyperedges.length }));
+    const settle = await page.evaluate(() => ({ sim: __bench.sim.slice(), steps: layout.stats().steps, worker: layout.stats().worker, nodes: nodes.length, edges: edges.length, regions: hyperedges.length }));
     const row = {
-      browser: BROWSER, n, edges: settle.edges, regions: settle.regions, revealed,
-      first_picture_s: +((Date.now() - started) / 1000).toFixed(1), settle_steps: settle.sim.length,
+      browser: BROWSER, n, edges: settle.edges, regions: settle.regions, revealed, layout_worker: settle.worker,
+      first_picture_s: +((Date.now() - started) / 1000).toFixed(1), settle_steps: settle.steps,
       settle_step_p50: pct(settle.sim, 0.5), settle_step_p95: pct(settle.sim, 0.95),
     };
     // The first picture comes before the layout stops: it keeps cooling, and stepping, after the
@@ -162,7 +164,7 @@ try {
         await page.waitForFunction(() => !animating(), null, { timeout: REVEAL_LIMIT, polling: 200 });
         rested = true;
       } catch { /* still moving at the limit */ }
-      const tail = await page.evaluate(() => __bench.sim.length);
+      const tail = await page.evaluate(() => layout.stats().steps);
       Object.assign(row, { rested, at_rest_s: +((Date.now() - started) / 1000).toFixed(1), steps_to_rest: tail });
       // The frames between the reveal and rest: the layout still steps in every one of them.
       Object.assign(row, moving("cool", await page.evaluate(([d, a]) => ({ draw: __bench.draw.slice(d), at: __bench.drawAt.slice(a) }), from)));
@@ -187,7 +189,7 @@ try {
         }
         return best;
       });
-      await page.evaluate(() => { __bench.sim = []; __bench.draw = []; __bench.hit = []; for (const k in __bench.parts) __bench.parts[k] = []; });
+      await page.evaluate(() => { __bench.sim = []; __bench.draw = []; __bench.hit = []; for (const k in __bench.parts) __bench.parts[k] = []; __bench.steps0 = layout.stats().steps; });
       const sx = start ? start.x : 710, sy = start ? start.y : 450;
       await page.mouse.move(sx, sy);
       await page.mouse.down();
@@ -196,11 +198,12 @@ try {
         await page.waitForTimeout(33);
       }
       await page.mouse.up();
-      const pan = await page.evaluate(() => { window.__stop = true; return { sim: __bench.sim.slice(), draw: __bench.draw.slice(), frames: __bench.frames.slice(1), parts: __bench.parts }; });
+      const pan = await page.evaluate(() => { window.__stop = true; return { sim: __bench.sim.slice(), steps: layout.stats().steps - __bench.steps0, here: !layout.stats().worker, draw: __bench.draw.slice(), frames: __bench.frames.slice(1), parts: __bench.parts }; });
       for (const [name, samples] of Object.entries(pan.parts || {})) row["pan_" + name + "_p50"] = pct(samples, 0.5);
-      const drawing = pan.draw.map((d, i) => d - (pan.sim[i] || 0));
+      // A step taken in the page's frame is part of that frame's time; one in a worker is not.
+      const drawing = pan.here ? pan.draw.map((d, i) => d - (pan.sim[i] || 0)) : pan.draw;
       Object.assign(row, {
-        pan_from_empty: !!start, pan_frames: pan.draw.length, pan_sim_calls: pan.sim.length,
+        pan_from_empty: !!start, pan_frames: pan.draw.length, pan_sim_calls: pan.steps,
         pan_draw_p50: pct(pan.draw, 0.5), pan_draw_p95: pct(pan.draw, 0.95),
         pan_sim_p50: pct(pan.sim, 0.5), pan_drawing_p50: pct(drawing, 0.5), pan_drawing_p95: pct(drawing, 0.95),
         pan_interval_p50: pct(pan.frames, 0.5), pan_interval_p95: pct(pan.frames, 0.95),
@@ -243,7 +246,7 @@ try {
         return best;
       });
       if (near) {
-        await page.evaluate(() => { __bench.sim = []; __bench.draw = []; });
+        await page.evaluate(() => { __bench.sim = []; __bench.draw = []; __bench.steps0 = layout.stats().steps; });
         await page.mouse.move(near.x, near.y);
         await page.mouse.down();
         for (let i = 0; i < 60; i++) {
@@ -251,7 +254,7 @@ try {
           await page.waitForTimeout(33);
         }
         await page.mouse.up();
-        const nearPan = await page.evaluate(() => ({ draw: __bench.draw.slice(), sim: __bench.sim.length }));
+        const nearPan = await page.evaluate(() => ({ draw: __bench.draw.slice(), sim: layout.stats().steps - __bench.steps0 }));
         Object.assign(row, { near_scale: NEAR_SCALE, pan_near_sim_calls: nearPan.sim, pan_near_p50: pct(nearPan.draw, 0.5), pan_near_p95: pct(nearPan.draw, 0.95) });
       }
       // A node near the middle, at the fitted view, held and dragged in a circle for two seconds and
