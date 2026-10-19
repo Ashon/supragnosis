@@ -2740,6 +2740,41 @@ mod settings_tests {
         assert!(body("stopDownload").contains("invoke(\"setup_stop\", { step: \"model\" })"));
     }
 
+    /// design-system.md Section 6a, onboarding.md O8: Setup's plan is checkboxes, each row its label;
+    /// replacing what the person set up is in the plan and starts unchecked, so nothing changes until
+    /// Set up; and Set up is the default button, first in tab order, which Return presses.
+    #[test]
+    fn the_setup_plan_is_checkboxes_and_set_up_is_the_default() {
+        let js = include_str!("../assets/welcome.js");
+        let css = include_str!("../assets/welcome.css");
+        assert!(!js.contains("function sw("), "the plan still mixes switches with checkboxes");
+        assert!(
+            js.contains("replace: {}, takeover: false"),
+            "replacing items do not start unchecked"
+        );
+        assert!(
+            js.contains("checked: !!plan.replace[a.id]"),
+            "an app's replacement is not a plan item"
+        );
+        assert!(
+            js.contains("h(tick ? \"label\" : \"div\""),
+            "a plan row is not its checkbox's label"
+        );
+        assert!(
+            js.contains("if (takingOver) await run(\"takeover\""),
+            "Set up does not apply the take-over it was given"
+        );
+        assert!(
+            js.contains("document.getElementById(\"setup-go\")")
+                && js.contains("e.key === \"Enter\""),
+            "Return does not press Set up"
+        );
+        assert!(
+            css.contains("flex-direction: row-reverse"),
+            "Set up is not first in tab order and rightmost"
+        );
+    }
+
     /// Settings > About names where the source lives, and its hint points there for the dependency
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing

@@ -43,7 +43,10 @@ let events = [];              // the last checklist
 let info = null;              // welcome_state: what the app remembers, and its facts
 let loadError = null;         // why the checklist could not be read
 let applied = false;          // whether the plan was applied, or there was none to apply
-const plan = { login: true, apps: {}, capture: true, model: true };
+// The plan Set up applies (onboarding.md Section 6). Replacing what the person set up - an app's
+// other supragnosis entry, a daemon someone else started - is in the plan too, and starts unchecked
+// (O8): nothing changes until Set up, and then only what was ticked.
+const plan = { login: true, apps: {}, capture: true, model: true, replace: {}, takeover: false };
 let planTotal = 0, planDone = 0;   // how many of the plan's acts Set up started, and how many ended
 const running = {};           // run key -> true while its CLI call runs
 const live = {};              // step key -> the last event a running step streamed
@@ -64,8 +67,11 @@ function stateOf(step) {
 function runKeyOf(step) { return step === "server" && running.takeover ? "takeover" : step; }
 function busy() { return Object.keys(running).length > 0; }
 function todoApps() { return appEvents().filter((e) => e.state === "todo" && APPS[e.id]).map((e) => e.id); }
+function replaceApps() { return appEvents().filter((e) => e.state === "attention" && /--replace/.test(e.say) && APPS[e.id]).map((e) => e.id); }
+function canTakeOver() { const e = stepEvent("server"); return !!(e && e.state === "attention" && /--take-over/.test(e.say)); }
 function needsPlan() {
-  return ["server", "model"].some((s) => stepEvent(s) && stepEvent(s).state === "todo") || todoApps().length > 0;
+  return ["server", "model"].some((s) => stepEvent(s) && stepEvent(s).state === "todo") || todoApps().length > 0
+    || replaceApps().length > 0 || canTakeOver();
 }
 
 async function check() {
@@ -162,18 +168,25 @@ async function applyPlan() {
   applied = true;
   const server = stepEvent("server"), model = stepEvent("model");
   planDone = 0;
+  const replacing = replaceApps().filter((id) => plan.replace[id]);
+  const takingOver = canTakeOver() && plan.takeover;
   planTotal = (model && model.state === "todo" && plan.model ? 1 : 0)
-    + (server && server.state === "todo" && plan.login ? 1 : 0)
-    + todoApps().filter((id) => plan.apps[id] !== false).length;
+    + (server && server.state === "todo" && plan.login ? 1 : 0) + (takingOver ? 1 : 0)
+    + todoApps().filter((id) => plan.apps[id] !== false).length + replacing.length;
   render();
   if (server && server.state === "todo" && !plan.login) {
     try { info.prefs = await invoke("welcome_set", { loginOff: true }); } catch (_) { /* remembered next time */ }
   }
   if (model && model.state === "todo" && plan.model) run("model", { failTitle: "The model did not download" });
   if (server && server.state === "todo" && plan.login) await run("server", { failTitle: "The daemon is not kept running" });
+  if (takingOver) await run("takeover", { failTitle: "The daemon was not taken over" });
   for (const id of todoApps()) {
     if (plan.apps[id] === false) continue;
     await run("app=" + id, { noCapture: id === "claude-code" && !plan.capture, failTitle: APPS[id] + " was not connected" });
+  }
+  for (const id of replacing) {
+    await switchToBridge(id);
+    if (planTotal) planDone += 1;
   }
 }
 
@@ -253,14 +266,6 @@ function button(label, iconName, cls, onclick, key) {
     isBusy ? icon("spin", "i-spin") : iconName ? icon(iconName) : null, label);
 }
 
-function sw(checked, label, onchange) {
-  return h("label", { class: "switchrow" },
-    h("span", { class: "switch" },
-      h("input", { type: "checkbox", role: "switch", checked, "aria-label": label, on: { change: (e) => onchange(e.target.checked) } }),
-      h("span", { class: "track" })),
-    label);
-}
-
 function check_(checked, label, onchange) {
   return h("label", { class: "check" }, h("input", { type: "checkbox", checked, on: { change: (e) => onchange(e.target.checked) } }), label);
 }
@@ -294,7 +299,9 @@ function stepCard(s, i) {
 function serverBody(e, state, say) {
   const controls = [];
   if (state === "todo" && !applied) {
-    controls.push(sw(plan.login, "Start at Login", (v) => { plan.login = v; }));
+    controls.push(check_(plan.login, "Start at Login", (v) => { plan.login = v; }));
+  } else if (state === "attention" && /--take-over/.test(say) && !applied) {
+    controls.push(check_(plan.takeover, "Take over the daemon that runs now, so it starts at login", (v) => { plan.takeover = v; }));
   } else if ((state === "todo" || state === "failed") && !running.server) {
     controls.push(button("Start at Login", "power", "primary", () => run("server", { failTitle: "The daemon is not kept running" }), "server"));
   } else if (state === "attention" && /--take-over/.test(say)) {
@@ -312,16 +319,22 @@ function appsBody(e, state, say) {
     const end = [];
     let sub = null;
     let option = null;
+    let tick = null;
     if (st === "todo" && !applied && APPS[a.id]) {
-      end.push(h("label", { class: "check", title: "Connect " + name },
-        h("input", { type: "checkbox", checked: plan.apps[a.id] !== false, "aria-label": "Connect " + name,
-          on: { change: (ev) => { plan.apps[a.id] = ev.target.checked; render(); } } })));
+      tick = h("input", { type: "checkbox", checked: plan.apps[a.id] !== false,
+        on: { change: (ev) => { plan.apps[a.id] = ev.target.checked; render(); } } });
+      end.push(tick);
       if (a.id === "claude-code" && plan.apps[a.id] !== false) {
         option = h("div", { class: "sub option" },
           check_(plan.capture, "After a commit, ask for the decision behind it", (v) => { plan.capture = v; }));
       }
     } else if ((st === "todo" || st === "failed") && APPS[a.id]) {
       end.push(button("Connect", "plug", "primary", () => run(key, { noCapture: a.id === "claude-code" && !plan.capture, failTitle: name + " was not connected" }), key));
+    } else if (st === "attention" && /--replace/.test(a.say) && !applied) {
+      // Replacing an entry the person made is in the plan, unchecked (O8).
+      tick = h("input", { type: "checkbox", checked: !!plan.replace[a.id],
+        on: { change: (ev) => { plan.replace[a.id] = ev.target.checked; } } });
+      end.push(h("span", { class: "sub", text: "Switch to the bridge" }), tick);
     } else if (st === "attention" && /--replace/.test(a.say)) {
       end.push(button("Switch to the bridge", "plug", "", () => switchToBridge(a.id), "replace:" + a.id));
     }
@@ -329,7 +342,8 @@ function appsBody(e, state, say) {
       end.push(button(HELPER[a.id], a.id === "cursor" ? "open" : "restart", "", () => helper(a.id), "helper:" + a.id));
     }
     if (st !== "todo" && st !== "skipped") sub = h("div", { class: "sub" }, sayNodes(l && running[key] ? l.say : a.say));
-    return h("div", { class: "row" + (st === "skipped" ? " muted" : "") },
+    // A plan row is one checkbox whose label is the whole row (design-system.md Section 6a).
+    return h(tick ? "label" : "div", { class: "row" + (st === "skipped" ? " muted" : "") + (tick ? " pick" : "") },
       h("span", { class: "lead" }, icon(APP_KIND[a.id] || "desktop")),
       h("div", { class: "body" }, h("div", { class: "title" }, name, pill(APP_PILL, st)), sub, option),
       h("div", { class: "end" }, end));
@@ -395,25 +409,27 @@ function renderIntro() {
 
 function renderActions() {
   const host = document.getElementById("actions");
-  const out = [];
-  // While the plan runs, the foot says how far it is (Section 6a).
-  if (applied && busy() && planTotal) out.push(h("span", { class: "progress-say", text: "Setting up... " + Math.min(planDone, planTotal) + " of " + planTotal }));
-  out.push(
-    h("button", { class: "btn quiet", on: { click: () => copy(logText(), "The log") } }, "Copy log"),
-    h("button", { class: "btn quiet", on: { click: async () => {
-      try { copy(await invoke("diagnostics"), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
-    } } }, "Copy diagnostics"));
+  // The row is drawn right to left (welcome.css): the page's main act comes first, so it is first in
+  // tab order and rightmost; the copy buttons come last and sit at the left, by the privacy line.
+  const main = [];
   if (!applied && needsPlan()) {
-    out.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"),
-      h("button", { class: "btn primary", disabled: busy() || !events.length, on: { click: applyPlan } }, "Set up"));
+    // Set up is the default button, which Return presses.
+    main.push(h("button", { class: "btn primary", id: "setup-go", disabled: busy() || !events.length, on: { click: applyPlan } }, "Set up"),
+      h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
   } else {
     const essentials = essentialsDone();
-    if (!essentials) out.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
     const first = stepEvent("first");
-    out.push(h("button", { class: "btn " + (essentials ? "primary" : ""), on: { click: () => openGraph(first && first.state === "done" ? first.id : null) } },
+    main.push(h("button", { class: "btn " + (essentials ? "primary" : ""), on: { click: () => openGraph(first && first.state === "done" ? first.id : null) } },
       "Open the graph", icon("arrow")));
+    if (!essentials) main.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
   }
-  host.replaceChildren(...out);
+  // While the plan runs, the foot says how far it is (Section 6a).
+  if (applied && busy() && planTotal) main.push(h("span", { class: "progress-say", text: "Setting up... " + Math.min(planDone, planTotal) + " of " + planTotal }));
+  host.replaceChildren(...main,
+    h("button", { class: "btn quiet", on: { click: async () => {
+      try { copy(await invoke("diagnostics"), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
+    } } }, "Copy diagnostics"),
+    h("button", { class: "btn quiet", on: { click: () => copy(logText(), "The log") } }, "Copy log"));
 }
 
 function render() {
@@ -450,7 +466,14 @@ listen("viz-event", () => {
 });
 setInterval(() => { if (!busy() && document.visibilityState === "visible") check(); }, 15000);
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") location.href = GRAPH; });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") location.href = GRAPH;
+  // Return presses the default button, Set up, unless focus is on a control Return already acts on.
+  if (e.key === "Enter" && !applied && needsPlan() && !(e.target.closest && e.target.closest("button, a, textarea"))) {
+    const go = document.getElementById("setup-go");
+    if (go && !go.disabled) { e.preventDefault(); applyPlan(); }
+  }
+});
 document.getElementById("close").href = GRAPH;
 
 render();

@@ -81,7 +81,11 @@ body { background: var(--panel); }
   background: var(--panel);
 }
 .wfoot .privacy { flex: 1; margin: 0; color: var(--muted); font-size: 12px; }
-.wactions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* The page's acts read right to left - Set up, the default, comes first in tab order and is drawn
+   rightmost; the copy buttons sit at the left, by the privacy line. */
+.wactions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; flex: none; }
+/* A plan row is its checkbox's label: the whole row ticks it. */
+.apps label.row.pick { cursor: pointer; }
 
 @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
 
@@ -94,4 +98,4 @@ body { background: var(--panel); }
 /* Read by a screen reader, not drawn: the live region a step's end is said in. */
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 /* How far the plan is, in the foot while it runs. */
-.progress-say { color: var(--muted); margin-right: auto; }
+.progress-say { color: var(--muted); }
