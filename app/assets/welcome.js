@@ -44,6 +44,7 @@ let info = null;              // welcome_state: what the app remembers, and its 
 let loadError = null;         // why the checklist could not be read
 let applied = false;          // whether the plan was applied, or there was none to apply
 const plan = { login: true, apps: {}, capture: true, model: true };
+let planTotal = 0, planDone = 0;   // how many of the plan's acts Set up started, and how many ended
 const running = {};           // run key -> true while its CLI call runs
 const live = {};              // step key -> the last event a running step streamed
 const logs = { server: [], apps: [], model: [], first: [] };
@@ -127,21 +128,44 @@ async function run(key, opts) {
     log.push({ kind: "exit", text: out.ok ? "finished" : "failed (exit " + out.code + ")" + (out.why ? ": " + out.why : "") });
     if (out.ok && key.startsWith("app=")) connectedHere.add(key.slice(4));
     if (!out.ok) toast("bad", (opts && opts.failTitle) || "That step did not finish", out.why || "See its details.");
+    announce(stepName(key) + (out.ok ? ": done" : ": failed"));
   } catch (e) {
     log.push({ kind: "err", text: String(e) });
     toast("bad", (opts && opts.failTitle) || "That step did not run", String(e));
+    announce(stepName(key) + ": failed");
   } finally {
     delete running[key];
+    if (planTotal) planDone += 1;
     await check();
   }
+}
+
+// What a step is called when its end is said: its card's title, or the app it connects.
+function stepName(key) {
+  if (key.startsWith("app=")) return "Connect " + (APPS[key.slice(4)] || key.slice(4));
+  const s = STEPS.find((x) => x.step === (key === "takeover" ? "server" : key));
+  return s ? s.title : key;
+}
+
+// A step's end, in the live region a screen reader reads (design-system.md Section 10). Emptied first,
+// so the same sentence twice is read twice.
+function announce(text) {
+  const el = document.getElementById("announce");
+  if (!el) return;
+  el.textContent = "";
+  setTimeout(() => { el.textContent = text; }, 50);
 }
 
 // "Set up": the plan, applied in the order the steps depend on - the download first, since nothing
 // waits for it (O5), then keeping the daemon running, then each ticked app.
 async function applyPlan() {
   applied = true;
-  render();
   const server = stepEvent("server"), model = stepEvent("model");
+  planDone = 0;
+  planTotal = (model && model.state === "todo" && plan.model ? 1 : 0)
+    + (server && server.state === "todo" && plan.login ? 1 : 0)
+    + todoApps().filter((id) => plan.apps[id] !== false).length;
+  render();
   if (server && server.state === "todo" && !plan.login) {
     try { info.prefs = await invoke("welcome_set", { loginOff: true }); } catch (_) { /* remembered next time */ }
   }
@@ -320,8 +344,10 @@ function modelBody(e, state, say) {
   if (running.model) {
     const l = live.model;
     const m = l && /^(\d+) of (\d+) MB/.exec(l.say || "");
-    const bar = h("div", { class: "bar" + (m ? "" : " busy") }, h("span"));
-    if (m) bar.firstChild.style.width = Math.min(100, (100 * +m[1]) / Math.max(1, +m[2])) + "%";
+    const pct = m ? Math.min(100, Math.round((100 * +m[1]) / Math.max(1, +m[2]))) : null;
+    const bar = h("div", { class: "bar" + (m ? "" : " busy"), role: "progressbar", "aria-label": "Model download",
+      "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": pct === null ? null : String(pct) }, h("span"));
+    if (m) bar.firstChild.style.width = pct + "%";
     out.push(bar);
     controls.push(button("Not now", null, "quiet", stopModel));
   } else if (state === "todo" && !applied) {
@@ -354,26 +380,34 @@ function firstBody(e, state, say) {
   return out;
 }
 
+function essentialsDone() {
+  return ["server", "apps"].every((s) => stepEvent(s) && (stepEvent(s).state === "done" || stepEvent(s).state === "skipped"));
+}
+
 function renderIntro() {
   const text = !applied && needsPlan()
     ? "Four steps. Each one says what it ran and what it changed. Nothing changes until you click Set up."
-    : "Each step says what it ran. You can leave, and come back from Finish setup in the menu bar.";
-  return h("div", { class: "wintro" }, h("h2", { text: "Set up supragnosis" }), h("p", { text }));
+    : "Each step says what it ran. You can leave, and come back from Open Setup in Settings > About.";
+  // The heading says the work is done once the essentials are, not only a notice that leaves.
+  const title = essentialsDone() ? "Supragnosis is set up" : "Set up supragnosis";
+  return h("div", { class: "wintro" }, h("h2", { text: title }), h("p", { text }));
 }
 
 function renderActions() {
   const host = document.getElementById("actions");
-  const out = [
+  const out = [];
+  // While the plan runs, the foot says how far it is (Section 6a).
+  if (applied && busy() && planTotal) out.push(h("span", { class: "progress-say", text: "Setting up... " + Math.min(planDone, planTotal) + " of " + planTotal }));
+  out.push(
     h("button", { class: "btn quiet", on: { click: () => copy(logText(), "The log") } }, "Copy log"),
     h("button", { class: "btn quiet", on: { click: async () => {
       try { copy(await invoke("diagnostics"), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
-    } } }, "Copy diagnostics"),
-  ];
+    } } }, "Copy diagnostics"));
   if (!applied && needsPlan()) {
     out.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"),
       h("button", { class: "btn primary", disabled: busy() || !events.length, on: { click: applyPlan } }, "Set up"));
   } else {
-    const essentials = ["server", "apps"].every((s) => stepEvent(s) && (stepEvent(s).state === "done" || stepEvent(s).state === "skipped"));
+    const essentials = essentialsDone();
     if (!essentials) out.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
     const first = stepEvent("first");
     out.push(h("button", { class: "btn " + (essentials ? "primary" : ""), on: { click: () => openGraph(first && first.state === "done" ? first.id : null) } },

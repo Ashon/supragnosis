@@ -2180,7 +2180,7 @@ fn main() {
             // Out of the menu until something waits (refresh_status inserts it).
             let review = MenuItem::with_id(app, "review", "Review...", true, None::<&str>)?;
             app.manage(TrayReview { menu: menu.clone(), item: review, shown: Mutex::new(false) });
-            let finish = MenuItem::with_id(app, "finish-setup", "Finish setup...", true, None::<&str>)?;
+            let finish = MenuItem::with_id(app, "finish-setup", "Finish Setup...", true, None::<&str>)?;
             app.manage(TraySetup { menu: menu.clone(), item: finish, shown: Mutex::new(false) });
             app.manage(ActiveRemote(Mutex::new(None)));
             app.manage(AppsHint(Mutex::new(None)));
@@ -2663,7 +2663,10 @@ mod settings_tests {
             let at = js.find(&format!("function {name}(")).expect(name);
             &js[at..at + js[at..].find("\n}\n").expect("it closes")]
         };
-        assert!(body("actionButton").contains("\"aria-label\""), "an icon button cannot be named");
+        assert!(
+            body("actionButton").contains("\"aria-label\""),
+            "an icon button cannot be named"
+        );
         assert!(js.contains("\"Remove \" + p.label"), "the remove button has no name");
         let add = body("openAddServer");
         for part in ["aria-invalid", "aria-describedby", ".focus()"] {
@@ -2672,6 +2675,46 @@ mod settings_tests {
         assert!(
             add.contains("For safety the credential was cleared. Paste it again."),
             "a refusal does not say the credential was cleared"
+        );
+    }
+
+    /// docs/design-system.md Section 6a: the first-run page is Setup wherever it is reached, every
+    /// sentence on it is one the code keeps, and its progress is said - as a progress bar a screen
+    /// reader reads, in the foot while the plan runs, in a live region as each step ends, and in the
+    /// heading once the essentials are done.
+    #[test]
+    fn the_setup_page_says_what_is_true_and_how_far_it_is() {
+        let html = include_str!("../assets/welcome.html");
+        let js = include_str!("../assets/welcome.js");
+        let settings = include_str!("../assets/settings.js");
+        let main = include_str!("main.rs");
+        assert!(html.contains("<span class=\"crumb\">setup</span>"), "the crumb is not Setup");
+        assert!(
+            html.contains("Supragnosis keeps your memory on this Mac. It is shared only if you add a remote server or set up sync."),
+            "the privacy line promises what the code does not keep"
+        );
+        assert!(
+            !js.contains("Finish setup in the menu bar"),
+            "the page points at a tray item that goes away"
+        );
+        assert!(js.contains("Open Setup"), "the page does not name the way back");
+        assert!(
+            settings.contains("\"Open Setup\"") && !settings.contains("Run setup again"),
+            "About does not say Open Setup"
+        );
+        assert!(main.contains("\"Finish Setup...\""), "the tray does not say Finish Setup...");
+        for part in [
+            "role: \"progressbar\"",
+            "\"aria-valuenow\"",
+            "Setting up... ",
+            "Supragnosis is set up",
+            "function announce(",
+        ] {
+            assert!(js.contains(part), "the page does not say its progress: {part}");
+        }
+        assert!(
+            html.contains("id=\"announce\"") && html.contains("aria-live=\"polite\""),
+            "there is no live region for a step's end"
         );
     }
 
@@ -2815,8 +2858,9 @@ mod welcome_tests {
         for cmd in welcome.iter().chain(&called(include_str!("../assets/settings.js"))) {
             assert!(APP_COMMANDS.contains(&cmd.as_str()), "{cmd} is called but not declared");
         }
+        // O6: the page says what stays on this Mac, in words the code keeps (design-system.md 6a).
         assert!(include_str!("../assets/welcome.html").contains(
-            "Nothing leaves this Mac. Sync stays off until you add a server in Settings."
+            "Supragnosis keeps your memory on this Mac. It is shared only if you add a remote server or set up sync."
         ));
     }
 }

@@ -438,9 +438,9 @@ function renderAbout() {
     h("div", { class: "card" },
       h("div", { class: "row" },
         h("div", { class: "body" },
-          h("div", { class: "title", text: "Run setup again" }),
+          h("div", { class: "title", text: "Setup" }),
           h("div", { class: "sub", text: "The four steps of the first run: what is done, and what is left." })),
-        h("div", { class: "end" }, h("a", { class: "btn", href: "welcome.html" }, "Open")))),
+        h("div", { class: "end" }, h("a", { class: "btn", href: "welcome.html" }, "Open Setup")))),
     h("p", { class: "hint", text: "Dependency licences are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
   ];
 }

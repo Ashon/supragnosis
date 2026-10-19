@@ -17,16 +17,18 @@
 </head>
 <body>
 <header>
-  <h1><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg>supragnosis<span class="crumb">welcome</span></h1>
+  <h1><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg>supragnosis<span class="crumb">setup</span></h1>
   <a id="close" class="hclose" href="viz://localhost/" title="Back to the graph (Esc)" aria-label="Back to the graph"><span class="i i-x" aria-hidden="true"></span></a>
 </header>
 <main id="page" class="wpage" tabindex="-1"></main>
 <!-- O6: what setup does stays on this Mac, and the page says so where every step can be seen. -->
 <footer class="wfoot">
-  <p class="privacy">Nothing leaves this Mac. Sync stays off until you add a server in Settings.</p>
+  <p class="privacy">Supragnosis keeps your memory on this Mac. It is shared only if you add a remote server or set up sync.</p>
   <div id="actions" class="wactions"></div>
 </footer>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+<!-- Each step's end, said to a screen reader as it happens (docs/design-system.md Section 10). -->
+<div id="announce" class="sr-only" role="status" aria-live="polite"></div>
 <script src="kit.js"></script>
 <script src="welcome.js"></script>
 </body>

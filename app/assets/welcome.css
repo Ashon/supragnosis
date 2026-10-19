@@ -91,3 +91,7 @@ body { background: var(--panel); }
 .i-chevron { --i: url(icons/chevron-right.svg); }
 .i-arrow { --i: url(icons/arrow-right.svg); }
 .i-open { --i: url(icons/external-link.svg); }
+/* Read by a screen reader, not drawn: the live region a step's end is said in. */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+/* How far the plan is, in the foot while it runs. */
+.progress-say { color: var(--muted); margin-right: auto; }
