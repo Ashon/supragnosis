@@ -12,9 +12,8 @@
 > surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
-> pass over every screen (Section 1, U15-U20) has its foundation (step 12), the Graph page (step 14),
-> the app's pages (step 15) and the viewer's, the engine's and the app's part of step 13 built; **the
-> site's part of step 13, and step 16, are designed, not built**.
+> pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
+> waits on browser scenarios.
 
 ## 1. Why this exists
 
@@ -1273,7 +1272,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    control helpers in the viewer and in the app's shared script: switch, pressed, radio group, tabs,
    the dialog that holds focus, and the live region; and the guards, which hold at once the rules
    that need no screen change and stay owed for the rest until steps 13-16 meet them.
-13. **The defects** [viewer, engine and app built; site designed]: the seventeen found in Section 1's pass that ask no design question,
+13. **The defects** [built]: the seventeen found in Section 1's pass that ask no design question,
    each fixed as it is - in the viewer, search's chosen row and its field, the status bar's overflow
    and its empty counts, the Review page's keys and focus, the controls' states, names and targets;
    in the engine, `propose` turning names into ids, the Review page showing names whole, and a gate act
@@ -1293,7 +1292,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Settings page's one card per fact, its radio group, its peers, and the capture switch with
    `connect claude-code --no-capture` removing the hook. It ships with the Setup page itself
    (onboarding.md Section 13 step 3).
-16. **The site** [designed] (Sections 11, 11a): the landing's next step and Install link, the
+16. **The site** [built] (Sections 11, 11a): the landing's next step and Install link, the
    principles page's glossary, its ledger by chapter on phones and its scenes played by a press.
    Merging it publishes the site, so it merges on the author's word, right before the release that
    carries step 15.
@@ -1697,4 +1696,18 @@ findings changed it:
   right to left so that Set up is both first in tab order and rightmost.
 - **One row per peer** on a hub reads the checked-in list and the admitted list together; a peer that
   checked in but is not admitted says so.
+
+## 23. What building the site changed
+
+- **The ledger's two outlines join U9's list.** An owed clause's `--muted` outline and the chosen
+  column's `--gold-bright` one are lines that carry a fact, listed in `no_border_draws_an_area` beside
+  the Trust legend's swatches; every other column keeps a transparent edge of the same width, so
+  choosing one does not move the rest.
+- **A phone's ledger needed its old height gone.** The 560-pixel rule fixed the ledger at 136 pixels,
+  which would have clipped the six chapter rows; the rows set their own height now.
+- **Only the scenes wait for a press on a phone.** Section 11a's rule names scenes, and below 560
+  pixels they say Play scene; the five demos still play their opening once as they come into view, each
+  with its own control to play it again or change it.
+- **A separator is drawn, not read.** The "/" between two shown clauses is its own span hidden from a
+  screen reader, outside the clause spans the registry's tests read.
 
