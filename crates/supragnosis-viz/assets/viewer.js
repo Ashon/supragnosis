@@ -94,7 +94,6 @@ let lastStats = {};              // the stats of the last successful graph - reu
 let lastOkAt = null;             // when the graph last loaded (status bar says "Not updated since ..." only when stale)
 // Graphic-element visibility toggles (all default on). Pure render switches with no effect on layout.
 let showLabels = true, showEdges = true, showArrows = true;
-let flowPhase = 0;   // per-frame counter driving the marching-dash flow animation on active edges
 let typeHl = null, edgeTypeHl = null;   // legend-chip hover highlight (node type / edge kind) - render-only
 const EDGE_LABEL_MAX = 14;   // cap on relation labels shown for an active node's edges (overflow summarized as "+K more")
 // The minimap is on until View turns it off (docs/design-system.md Section 6).
@@ -272,7 +271,7 @@ for (const ev of ["mousedown", "mousemove", "mouseup", "wheel", "keydown", "inpu
 }
 // Whether anything is still in motion. Every per-frame source is named here; one missing is an
 // animation that stops halfway and stays there until the next mouse move.
-function animating(act) {
+function animating() {
   return settling                                                 // loader phase, sim mid-flight
     || alpha >= ALPHA_MIN                                         // the sim still applies force
     // ...and, after force stops, while anything is still visibly coasting. Measured on screen, so
@@ -282,11 +281,8 @@ function animating(act) {
     || cam.s !== camT.s || cam.x !== camT.x || cam.y !== camT.y    // easeCam snaps exactly, so == is safe
     || drag !== null                                              // a node is being dragged
     || pulses.size > 0 || peerEdgeFlash.size > 0                  // ring/flash effects still decaying
-    || (peersOn && peerMarkers.size > 0)                          // markers ease asymptotically, never arrive
-    // The flow animation is the only per-frame part of a highlight, and it only runs on edges that
-    // are hot - so a search term matching nodes but no edges is a still picture, not motion. Under
-    // reduced motion the dashes stand still, so a highlight is a still picture too.
-    || (!REDUCED_MOTION && act !== null && act.es.size > 0);
+    // A highlight is a still picture: an active edge is a solid line with an arrowhead (Section 4).
+    || (peersOn && peerMarkers.size > 0);                         // markers ease asymptotically, never arrive
 }
 
 // --- Camera (canvas is fullscreen, mouse uses client coordinates) ----------------------------
@@ -968,11 +964,12 @@ function trustRing(n, r) {
   const t = trustUniform ? null : n.trust_tier;
   if (!t || t === "agent_extracted") return;
   ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
-  if (t === "unverified") { ctx.setLineDash([3/cam.s, 3/cam.s]); ctx.lineWidth = 1.4/cam.s; ctx.strokeStyle = OTHER; }
-  else if (t === "host_signed") { ctx.lineWidth = 1.2/cam.s; ctx.strokeStyle = INK; }
-  else if (FORCED_COLORS.matches) { ctx.lineWidth = 4.4/cam.s; ctx.strokeStyle = INK; }
-  else { ctx.lineWidth = 2.2/cam.s; ctx.strokeStyle = EDGE_HI; }
-  ctx.stroke(); ctx.setLineDash([]);
+  // Told by weight, not by dash (Section 5): the more support, the heavier the ring.
+  if (t === "unverified") { ctx.lineWidth = 1/cam.s; ctx.strokeStyle = OTHER; }
+  else if (t === "host_signed") { ctx.lineWidth = 1.6/cam.s; ctx.strokeStyle = INK; }
+  else if (FORCED_COLORS.matches) { ctx.lineWidth = 4.8/cam.s; ctx.strokeStyle = INK; }
+  else { ctx.lineWidth = 2.4/cam.s; ctx.strokeStyle = EDGE_HI; }
+  ctx.stroke();
 }
 
 async function poll() {
@@ -2995,8 +2992,7 @@ function drawWsHulls(ctx, hullLabels) {
   }
   if (groups.size < 2) return;
   ctx.save();
-  ctx.setLineDash([6, 5]);
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1;
   // Sorted, so the colour a workspace gets does not depend on map iteration order (P16's
   // reproducibility, applied to the render: the same state must draw the same picture).
   for (const ws of [...groups.keys()].sort()) {
@@ -3061,9 +3057,9 @@ function renderBoundaryChips() {
     el.className = boundaryMode === mode ? "on" : "";
     const sw = document.createElement("span");
     sw.className = "sw";
-    // Dashed swatch for the two that draw, hollow for off - the same outline the layer uses.
-    if (mode === "off") { sw.style.background = "transparent"; sw.style.border = "1px dashed #666"; }
-    else { sw.style.background = "transparent"; sw.style.border = "1px dashed " + hyperColor(mode + ":swatch"); }
+    // A thin outline for the two that draw, hollow for off - the same outline the layer uses.
+    if (mode === "off") { sw.style.background = "transparent"; sw.style.border = "1px solid #666"; }
+    else { sw.style.background = "transparent"; sw.style.border = "1px solid " + hyperColor(mode + ":swatch"); }
     el.appendChild(sw);
     el.appendChild(document.createTextNode(label));
     el.title = why + " (b cycles the three)";
@@ -3231,7 +3227,7 @@ function roundedHullPath(c, g) {
   }
   c.closePath();
 }
-// A boundary's color: the band picked by the id's hash, so a dashed outline is never a signal's color.
+// A boundary's color: the band picked by the id's hash, so its outline is never a signal's color.
 function hyperColor(id) {
   if (FORCED_COLORS.matches) return INK;
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
@@ -3588,7 +3584,6 @@ function draw() {
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
 
   const act = activeSet();
-  flowPhase++;   // advance the active-edge flow animation (only while a frame is being drawn)
   // Legend-chip hover highlight: for an edge-kind chip, collect the endpoint nodes of matching visible
   // edges once per frame (nodes to keep lit). Node-type chips match on n.type directly.
   let lgEndpoints = null;
@@ -3756,24 +3751,18 @@ function draw() {
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
     // A relation's kind is said by its label, not a color (Section 5); an active edge or one whose kind
-    // the legend points at is drawn brighter. A superseded edge is EDGE_OLD (a past signal, dashed).
+    // the legend points at is drawn brighter. A superseded edge is EDGE_OLD, thin (a past signal).
     ctx.strokeStyle = e.valid_to ? EDGE_OLD
       : (hot || edgeTypeHl === e.type) ? EDGE_ACTIVE : EDGE_NEUTRAL;
-    ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // constant thickness on screen
-    if (hot) {
-      // Active edges show flow direction: marching dashes travel source -> target. Screen-constant
-      // dash/speed (divide by cam.s) so it reads the same at any zoom. Negative offset -> forward flow.
-      ctx.setLineDash([7/cam.s, 6/cam.s]);
-      ctx.lineDashOffset = REDUCED_MOTION ? 0 : -(flowPhase * 0.6) / cam.s;
-    } else {
-      ctx.setLineDash(e.valid_to ? [5/cam.s, 5/cam.s] : []);
-      ctx.lineDashOffset = 0;
-    }
-    // With arrows off, draw the curve to the node edge (tip); with arrows on, to the arrowhead base.
-    const endx = showArrows ? basex : tipx, endy = showArrows ? basey : tipy;
+    // Constant thickness on screen; a past relation is the thinnest line.
+    ctx.lineWidth = (e.valid_to ? 0.8 : hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;
+    // An active edge says its direction with an arrowhead even when the view's arrows are off: lines
+    // are solid (Section 4), so nothing marches along it.
+    const arrow = showArrows || hot;
+    // Without an arrowhead, draw the curve to the node edge (tip); with one, to the arrowhead base.
+    const endx = arrow ? basex : tipx, endy = arrow ? basey : tipy;
     ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.quadraticCurveTo(cpx, cpy, endx, endy); ctx.stroke();
-    ctx.setLineDash([]); ctx.lineDashOffset = 0;
-    if (showArrows) {
+    if (arrow) {
       // Arrowhead: base -> tip along the tip tangent (points the way the curve arrives).
       const hw = alen * 0.55;
       ctx.beginPath(); ctx.moveTo(tipx, tipy);
@@ -3850,7 +3839,7 @@ function draw() {
   ctx.globalAlpha = 1;
 
   // Proposal preview (belief-diff visualization): when a proposal is selected, show on the graph what it
-  // would change. For entity_merge: a dashed arrow from each fold-away target to the canonical `into`,
+  // would change. For entity_merge: an arrow from each fold-away target to the canonical `into`,
   // and the target's incident edges accented (they rewire); everything the merge does not touch is
   // dimmed by activeSet, and no node is ringed - rings are trust's (design-system.md Section 5). For an open proposal both nodes are still present (a before-preview); for a merged one the
   // targets are already folded away, so only the canonical is highlighted (the result).
@@ -3859,14 +3848,12 @@ function draw() {
     const tgts = (proposalSel.targets || []).map(nodeById).filter(n => n && (!into || n.id !== into.id));
     const tgtIds = new Set(tgts.map(n => n.id));
     const ACC = GOLD;
-    ctx.setLineDash([5/cam.s, 4/cam.s]);
-    for (const e of edges) {   // edges that will rewire onto the canonical
+    for (const e of edges) {   // edges that will rewire onto the canonical: thin, under the fold arrow
       if (tgtIds.has(e.a.id) || tgtIds.has(e.b.id)) {
-        ctx.globalAlpha = 0.95; ctx.strokeStyle = ACC; ctx.lineWidth = 2/cam.s;
+        ctx.globalAlpha = 0.75; ctx.strokeStyle = ACC; ctx.lineWidth = 1.2/cam.s;
         ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
       }
     }
-    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     for (const t of tgts) {
       if (into) {   // fold arrow target -> into, with an arrowhead near into
@@ -3978,7 +3965,7 @@ function draw() {
   // Peer cursor-dots (server mode) - drawn last so they float above the graph and labels.
   stepPeers(); drawPeers();
   drawMinimap();
-  if (animating(act)) { layoutDirty = true; requestFrame(); }
+  if (animating()) { layoutDirty = true; requestFrame(); }
   else if (layoutDirty) { layoutDirty = false; saveLayout(); }   // the picture came to rest - keep it
 }
 

@@ -1309,8 +1309,10 @@ reads every font declaration of the viewer's, the Settings page's and Setup's st
 `text_and_control_labels_are_body_size` holds the roles Section 4 gives at 13, and
 `the_maps_labels_scale_with_the_root` and `cut_text_can_be_read_whole` read the map's label sizes and
 every clamp; `view_sets_the_root_text_size` in the app's tests holds View's three items, the kept size
-and the page load that gives it to each page. U22, U24, U25 and U26 are designed and not yet
-guarded; steps 19-21 and 23 build each with its test (Section 14).
+and the page load that gives it to each page. U22's line half is guarded by `lines_are_thin_and_solid` in
+`design_tokens.rs`, which reads the four stylesheets and the three scripts that draw for a dash, and
+the viewer's rings and their swatches for their weights. The rest of U22, and U24, U25 and U26, are
+designed and not yet guarded; steps 19-21 and 23 build each with its test (Section 14).
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -1525,7 +1527,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    admitting the edges Increase Contrast draws; the six sizes as rem tokens given by role, the map's
    labels scaled with the root, the app's root-size menu items, and every clamp and ellipsis Section
    10 names opened on focus or a press; and U7's test measuring APCA.
-19. **Shapes, lines and targets** [designed] (Sections 3, 4, 5, 10; U19, U22): the radius tokens and
+19. **Shapes, lines and targets** [lines built] (Sections 3, 4, 5, 10; U19, U22): the radius tokens and
    the concentric rule in the viewer's, the app pages' and the landing's stylesheets, capsules for
    pills and large controls, one size per row, the accent on every checkbox, radio and switch; every
    dashed line drawn thin and solid - trust's rings by weight with their swatches and the Log's marks,
@@ -2009,5 +2011,10 @@ changed it:
   swatch read the token, so the ring is `--muted` too.
 - **The forced-colors map covers its regions.** A region's name and a boundary drew from the type band;
   under forced colors both are `CanvasText`.
+- **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
+  redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
+  the map stops drawing once nothing else does.
+- **The rewiring relations of a merge preview are thin and fainter** than its fold arrow, which they
+  were told from by their dashes.
 - **Panel headings and pills follow their roles.** The Review page's heading wraps rather than cuts
   its link at 200%, and the Log's who-line wraps instead of being clipped.

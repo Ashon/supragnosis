@@ -738,11 +738,16 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (22, &[c(
-        "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, checkboxes, radios and switches take the accent, and no line is dashed or dotted",
+        "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, and checkboxes, radios and switches take the accent",
         Evidence::Deferred(
             "designed in design-system.md Sections 3, 4 and 14 step 19, not built. Revisit when \
              the stylesheets draw corners only from the radius tokens",
         ),
+    ), c(
+        "no line is dashed or dotted, on a page or on a canvas, and trust's rings are told by weight",
+        // crates/supragnosis-viz/tests/design_tokens.rs: the four stylesheets and the three scripts
+        // that draw, and the viewer's rings and their swatches.
+        Evidence::Scenario(&["lines_are_thin_and_solid"]),
     )]),
     (23, &[c(
         "under Increase Contrast every text token takes the next stronger one, controls draw a 3:1 edge and the focus ring is 3 pixels; under forced colors the map redraws in system colors and keeps every mark",

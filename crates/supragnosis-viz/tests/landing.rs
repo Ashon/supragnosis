@@ -125,17 +125,17 @@ fn the_stage_draws_the_viewers_marks() {
     };
     assert_eq!(alpha(STAGE), alpha(VIEWER), "the stage's edge alpha is not the viewer's");
 
-    // Human confirmed is the viewer's ring: gold-bright, 2.2 wide, 3.5 outside the node.
+    // Human confirmed is the viewer's ring: gold-bright, 2.4 wide, 3.5 outside the node.
     let ring = &VIEWER[VIEWER.find("function trustRing(").expect("trustRing")..];
     let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
     assert!(
         ring.contains("r + 3.5")
-            && ring.contains("ctx.lineWidth = 2.2/cam.s; ctx.strokeStyle = EDGE_HI;")
+            && ring.contains("ctx.lineWidth = 2.4/cam.s; ctx.strokeStyle = EDGE_HI;")
     );
     assert_eq!(viewer_color("EDGE_HI"), token("--gold-bright"));
     assert!(
         STAGE.contains("ctx.arc(x, y, r + 3.5,")
-            && STAGE.contains("ctx.lineWidth = 2.2; ctx.strokeStyle = C.goldHi;")
+            && STAGE.contains("ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi;")
     );
 
     // Contested is the viewer's badge: --bad, at the node's upper right, with its "!".

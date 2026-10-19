@@ -123,16 +123,18 @@ fn the_principles_page_draws_the_viewers_marks() {
     };
     assert_eq!(alpha(SCRIPT), alpha(VIEWER), "the page's edge alpha is not the viewer's");
 
-    // The trust rings are the viewer's: gold-bright 2.2 wide, a host's signature thin ink, the lowest
-    // tier dashed muted, each 3.5 outside the node; the contested badge is the viewer's coral disc.
+    // The trust rings are the viewer's, told by weight: gold-bright 2.4 wide, a host's signature 1.6
+    // ink, the lowest tier 1 muted, each 3.5 outside the node; the contested badge is the viewer's
+    // coral disc.
     let ring = body(SCRIPT, "function ring(");
     assert!(
         ring.contains("r + 3.5")
-            && ring.contains("ctx.lineWidth = 2.2; ctx.strokeStyle = C.goldHi;"),
+            && ring.contains("ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi;"),
         "the gold ring is not the viewer's"
     );
     assert!(
-        ring.contains("ctx.lineWidth = 1.2; ctx.strokeStyle = C.ink;"),
+        ring.contains("ctx.lineWidth = 1.6; ctx.strokeStyle = C.ink;")
+            && ring.contains("ctx.lineWidth = 1; ctx.strokeStyle = C.muted;"),
         "the signed ring is not the viewer's"
     );
     assert!(
@@ -156,7 +158,7 @@ fn the_principles_page_draws_the_viewers_marks() {
             "principles.js names the tier `{tier}` instead of reading it from the cases"
         );
     }
-    // An owed demand has its own mark, never a dashed viewer mark.
+    // An owed demand has its own mark, never a viewer mark.
     assert!(SCRIPT.contains("function owedBox("), "the page's owed style is gone");
 }
 

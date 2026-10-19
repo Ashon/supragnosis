@@ -292,7 +292,7 @@
   body.sheet #dockR { display:none; }
   #detail .sec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:4px 0 8px; }
   /* A relation group: the kind said once (mono - it is an identifier), then its members as chips
-     (sans - they are names). A superseded edge stays listed, dashed and dimmed, never dropped (P4). */
+     (sans - they are names). A superseded edge stays listed, outlined and dimmed, never dropped (P4). */
   #detail .rgroup { margin:0 0 7px; }
   #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:var(--text-small); color:var(--muted); margin:0 0 3px; }
   /* Relation kinds are identifiers, set in the identifier face (docs/design-system.md Section 4): the
@@ -307,8 +307,8 @@
                    font:var(--text-body)/1.55 var(--sans); color:var(--ink); background:var(--panel-2);
                    border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
   #detail .rchip:hover { background:var(--panel-3); }
-  /* A superseded relation keeps a dashed edge: the line says "past" (U9's list). */
-  #detail .rchip.past { opacity:.6; background:none; border:1px dashed var(--muted); padding:2px 7px; }
+  /* A superseded relation keeps a thin outline in place of a fill: the line says "past" (U9's list). */
+  #detail .rchip.past { opacity:.6; background:none; border:1px solid var(--muted); padding:2px 7px; }
   #detail .rchip .dot { width:7px; height:7px; border-radius:2px; margin-right:5px; vertical-align:0; }
   #detail .rmore { font:var(--text-caption)/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
                    border-radius:8px; padding:1px 8px; }
@@ -430,9 +430,9 @@
   .rv-detail .reifyform button { padding:2px 9px; font-size:var(--text-body); }
   .rv-detail .empty { color:var(--muted); font:italic var(--text-body)/1.5 var(--sans); padding:2px 0; }
   /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
-     .hot = tier-tied (the dashed amber ring on the canvas): mediation invited; otherwise the list is
+     .hot = tier-tied (the contested badge on the canvas): mediation invited; otherwise the list is
      informational (the conflict was resolved by trust but stays queryable). */
-  .contested { border:1px dashed var(--bad); border-radius:8px; padding:6px 9px; margin:6px 0; }
+  .contested { border:1px solid var(--bad); border-radius:8px; padding:6px 9px; margin:6px 0; }
   .contested.hot { background:rgba(224,122,95,0.08); }
   /* A conflict trust already resolved folds to one line that still says it exists (inspector.md D2);
      a contested one never gets this class (D1). */
@@ -628,10 +628,10 @@
   /* Read by a screen reader, not drawn. */
   .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   .tsw { width:12px; height:12px; border-radius:50%; background:var(--panel-2); box-sizing:border-box; }
-  .tsw.t-unverified { border:1.5px dashed var(--muted); }
+  .tsw.t-unverified { border:1px solid var(--muted); }
   .tsw.t-agent_extracted { border:1px solid transparent; }
-  .tsw.t-host_signed { border:1.5px solid var(--ink); }
-  .tsw.t-human_confirmed { border:2px solid var(--gold-bright); }
+  .tsw.t-host_signed { border:1.6px solid var(--ink); }
+  .tsw.t-human_confirmed { border:2.4px solid var(--gold-bright); }
   .tnote { flex-basis:100%; color:var(--muted); font:var(--text-small)/1.4 var(--sans); }
   /* A status pill: a count that needs reading, on the status bar's right (Section 6). */
   #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:999px; font:500 var(--text-body)/1.5 var(--sans);

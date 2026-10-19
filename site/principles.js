@@ -101,9 +101,8 @@ function line(ctx, a, b, o) {
   if (p <= 0) return;
   ctx.globalAlpha = o.alpha == null ? EDGE_ALPHA : o.alpha;
   ctx.strokeStyle = o.color || EDGE_NEUTRAL; ctx.lineWidth = o.w || 1.2; ctx.lineCap = "round";
-  if (o.dash) ctx.setLineDash(o.dash);
   ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(a[0] + (b[0] - a[0]) * p, a[1] + (b[1] - a[1]) * p); ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1;
 }
 function arrow(ctx, a, b, ra, rb, al) {
   // the viewer's merge preview: the name folded away points into the one kept
@@ -367,7 +366,7 @@ MOUNT[23] = function (fig) {
     const a = P("api"), g = P("pg"), q = P("pgs"), o = P("orders"), gm = [g[0] + (q[0] - g[0]) * m, g[1] + (q[1] - g[1]) * m];
     line(ctx, o, q);
     line(ctx, a, gm, {alpha: EDGE_ALPHA * (1 - pr)});
-    if (pr > .01) { line(ctx, a, gm, {color: C.gold, alpha: .9 * pr, dash: [5, 4], w: 1.4}); arrow(ctx, g, q, r, r, pr); }
+    if (pr > .01) { line(ctx, a, gm, {color: C.gold, alpha: .9 * pr, w: 1.2}); arrow(ctx, g, q, r, r, pr); }
     dot(ctx, a[0], a[1], r, TYPE.App); label(ctx, "billing-api", a[0], a[1] + r + 13, {align: "center", size: 11.5});
     dot(ctx, o[0], o[1], r, TYPE.App); label(ctx, "orders", o[0], o[1] + r + 13, {align: "center", size: 11.5});
     const nk = st.note && !prev.note ? 1 - kk : 0;
@@ -461,7 +460,7 @@ function chip(ctx, s, x, y, o) {
   const x0 = o.align === "center" ? x - w / 2 : o.align === "right" ? x - w : x;
   ctx.globalAlpha = Math.min(1, a);
   ctx.fillStyle = o.bg || C.panel3; rrect(ctx, x0, y - h / 2, w, h, h / 2); ctx.fill();
-  if (o.dash) { ctx.setLineDash([4, 3]); ctx.strokeStyle = o.dash; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]); }
+  if (o.edge) { ctx.strokeStyle = o.edge; ctx.lineWidth = 1; ctx.stroke(); }
   ctx.fillStyle = o.color || C.ink2; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(s, x0 + 7, y + .5);
   ctx.globalAlpha = 1;
   return w;
@@ -493,13 +492,13 @@ function arrowN(ctx, a, b, ra, rb, al, col, w) {
   ctx.globalAlpha = 1;
 }
 function ring(ctx, x, y, r, kind, a) {
-  // the viewer's trust rings: the lowest tier dashed muted, a host's signature thin ink, a person's confirmation gold
+  // the viewer's trust rings, told by weight: the lowest tier 1 muted, a host's signature 1.6 ink, a person's confirmation 2.4 gold
   if (a <= 0) return;
   ctx.globalAlpha = a; ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, 7);
-  if (kind === "lowest") { ctx.setLineDash([3, 3]); ctx.lineWidth = 1.4; ctx.strokeStyle = C.muted; }
-  else if (kind === "ink") { ctx.lineWidth = 1.2; ctx.strokeStyle = C.ink; }
-  else { ctx.lineWidth = 2.2; ctx.strokeStyle = C.goldHi; }
-  ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  if (kind === "lowest") { ctx.lineWidth = 1; ctx.strokeStyle = C.muted; }
+  else if (kind === "ink") { ctx.lineWidth = 1.6; ctx.strokeStyle = C.ink; }
+  else { ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi; }
+  ctx.stroke(); ctx.globalAlpha = 1;
 }
 function cloud(ctx, pts, pad, a) {
   // what was said together: a soft field under the members (the stage's region)
@@ -710,8 +709,8 @@ SCENE[7] = {
     well(ctx, wx, wy, ww, wh);
     for (let k = 0; k < n; k++) { const hl = clamp(1 - Math.abs(s - k - .5) / 1.6, 0, 1); tick(ctx, wx + sw * (k + .5), wy + wh / 2, sw * .5, wh - 7, hl > .3 ? C.ink : C.ink2, .45 + .55 * hl); }
     label(ctx, "idle: consolidation reads the log", wx, wy + wh + 14, {mono: true, size: 10, color: C.muted, halo: false, alpha: t < 4.4 ? 1 : .55});
-    chip(ctx, "merge pg into Postgres?", wx, 78, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, dash: C.gold, alpha: win(t, 2.7, 3.2)});
-    chip(ctx, "promote this context?", wx, 108, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, dash: C.gold, alpha: win(t, 3.1, 3.6)});
+    chip(ctx, "merge pg into Postgres?", wx, 78, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, edge: C.gold, alpha: win(t, 2.7, 3.2)});
+    chip(ctx, "promote this context?", wx, 108, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, edge: C.gold, alpha: win(t, 3.1, 3.6)});
     const pulse = t > 3.5 && t < 4.5 ? Math.sin(lin(t, 3.5, 4.5) * Math.PI) : 0;
     if (t > 2.7) label(ctx, "canon: 0 changes", wx, 136, {mono: true, size: 10.5, color: pulse > .15 ? C.ink : C.muted, halo: false, alpha: win(t, 2.7, 3.1)});
     const a = win(t, 4.5, 4.9);
@@ -786,7 +785,7 @@ SCENE[9] = {
     chip(ctx, "relation type: member_of", 14, ry, {size: 10.5, color: C.ink2, alpha: rA});
     const gate = W * .78, py = H * .78, pw = chipW(ctx, "add type member_of", {size: 10.5}), mv = win(t, 3.1, 4.1), blocked = win(t, 4.1, 4.5);
     if (rA > 0) {
-      chip(ctx, "add type member_of", mix(14, Math.max(14, gate - pw - 8), mv), py, {size: 10.5, color: C.ink, bg: C.bg, dash: C.gold, alpha: rA});
+      chip(ctx, "add type member_of", mix(14, Math.max(14, gate - pw - 8), mv), py, {size: 10.5, color: C.ink, bg: C.bg, edge: C.gold, alpha: rA});
       line(ctx, [gate, py - 14], [gate, py + 14], {color: blocked > .5 ? C.bad : C.ink2, alpha: .5 + .5 * blocked, w: 2.5});
       if (blocked > 0) label(ctx, "blocked", gate + 8, py, {size: 11, color: C.bad, halo: false, alpha: blocked});
       if (blocked > 0) line(ctx, [14 + chipW(ctx, "relation type: member_of", {size: 10.5}) * .5, ry + 10], [mix(14, Math.max(14, gate - pw - 8), 1) + pw * .5, py - 10], {color: C.bad, alpha: .5 * blocked, w: 1});
@@ -957,7 +956,7 @@ SCENE[15] = {
     const k = m * (1 - s), gp = [mix(G[0], Pg[0], k), mix(G[1], Pg[1], k)];
     line(ctx, A, gp);
     if (p1 > 0) { arrow(ctx, G, Pg, r, r, p1); label(ctx, "same thing?", (G[0] + Pg[0]) / 2, G[1] - 15, {align: "center", size: 11.5, alpha: p1}); }
-    if (p2 > 0) { ctx.globalAlpha = p2; ctx.setLineDash([5, 4]); ctx.strokeStyle = C.gold; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(Pg[0], Pg[1], r + 9, 0, 7); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; label(ctx, "split?", Pg[0], Pg[1] - r - 20, {align: "center", size: 11.5, alpha: p2}); }
+    if (p2 > 0) { ctx.globalAlpha = p2; ctx.strokeStyle = C.gold; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(Pg[0], Pg[1], r + 9, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; label(ctx, "split?", Pg[0], Pg[1] - r - 20, {align: "center", size: 11.5, alpha: p2}); }
     dot(ctx, A[0], A[1], 9, TYPE.App); label(ctx, "billing-api", A[0] + 14, A[1], {size: 11.5});
     dot(ctx, Pg[0], Pg[1], r, TYPE.Database); label(ctx, "Postgres", Pg[0], Pg[1] + 22, {align: "center", size: 12, weight: 600, color: C.ink});
     if (k < 1) { dot(ctx, gp[0], gp[1], r, TYPE.Database, {alpha: 1 - k * .9}); label(ctx, "pg", gp[0], gp[1] + 22, {align: "center", size: 12, weight: 600, color: C.ink, alpha: 1 - k}); }

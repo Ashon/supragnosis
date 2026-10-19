@@ -352,7 +352,7 @@
       ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(1.8, 3.2 * L.k * sc), 0, 7); ctx.fill();
     });
     // a merge waiting for a person, drawn as the viewer previews one: an arrow from the name folded
-    // away into the one kept, and the relations that would move with it dashed (viewer.js, the
+    // away into the one kept, and the relations that would move with it drawn thin (viewer.js, the
     // proposal preview)
     if (w.proposal > .01) {
       const a = nodeXY(L, cam, "pg", w), b = nodeXY(L, cam, "pgs", w), api = nodeXY(L, cam, "api", w);
@@ -360,8 +360,8 @@
       const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
       const tx = b[0] - ux * (rb + 5), ty = b[1] - uy * (rb + 5), hl = clamp(rb * .9, 6, 10), hw = hl * .55;
       ctx.globalAlpha = alpha * w.proposal; ctx.strokeStyle = C.gold; ctx.fillStyle = C.gold;
-      ctx.lineWidth = 1.4; ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(api[0], api[1]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(api[0], api[1]); ctx.stroke();
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(a[0] + ux * (ra + 4), a[1] + uy * (ra + 4)); ctx.lineTo(tx, ty); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx - ux * hl - uy * hw, ty - uy * hl + ux * hw);
@@ -380,7 +380,7 @@
       // human confirmed: the viewer's trust ring (viewer.js trustRing), drawn closing as it arrives
       if (n.ring === "gold" && n.ringP > 0) {
         ctx.beginPath(); ctx.arc(x, y, r + 3.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * n.ringP);
-        ctx.lineWidth = 2.2; ctx.strokeStyle = C.goldHi; ctx.stroke();
+        ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi; ctx.stroke();
       }
       if (o.labels || d.key) {
         const l = d.side === "l";
@@ -494,13 +494,13 @@
     }
     if (st.trace > .01) {
       const a = nodeXY(L, camA, "idem", st);
-      ctx.strokeStyle = C.ink2; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = C.ink2; ctx.lineWidth = 1;
       for (const i of RECEIPTS) {
         const b = tickXY(L, camA, i);
         ctx.globalAlpha = .75 * Math.min(1, st.trace * 2);
         ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(lerp(a[0], b[0], st.trace), lerp(a[1], b[1], st.trace)); ctx.stroke();
       }
-      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
       const b = tickXY(L, camA, RECEIPTS[RECEIPTS.length - 1]);
       label(ctx, "receipts", b[0] + 12, b[1] - 20, C.ink, st.receipts);
     }

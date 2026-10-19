@@ -235,6 +235,65 @@ fn text_on_a_pill_reads_over_its_tint() {
     assert!(low.is_empty(), "pill text under Lc 60:\n  {}", low.join("\n  "));
 }
 
+/// Section 4 and U22: no line is dashed or dotted, on a page or on a canvas, as the author asked.
+/// Trust's rings, which a dash told apart, are told by weight: 1 pixel for Unverified, 1.6 for Host
+/// signed and 2.4 for Human confirmed.
+#[test]
+fn lines_are_thin_and_solid() {
+    let strip = |src: &str| {
+        let mut clean = String::new();
+        let mut rest = src;
+        while let Some(i) = rest.find("/*") {
+            clean.push_str(&rest[..i]);
+            rest = rest[i..].find("*/").map_or("", |j| &rest[i + j + 2..]);
+        }
+        clean.push_str(rest);
+        clean
+            .lines()
+            .map(|l| l.split(" //").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    for (file, src) in [
+        ("viewer.css", VIEWER),
+        ("settings.css", SETTINGS),
+        ("welcome.css", include_str!("../../../app/assets/welcome.css")),
+        ("site/style.css", LANDING),
+        ("viewer.js", include_str!("../assets/viewer.js")),
+        ("site/stage.js", include_str!("../../../site/stage.js")),
+        ("site/principles.js", include_str!("../../../site/principles.js")),
+    ] {
+        let code = strip(src);
+        assert!(
+            !code.contains("dashed") && !code.contains("dotted"),
+            "{file} draws a dashed line"
+        );
+        let mut rest = code.as_str();
+        while let Some(i) = rest.find("setLineDash([") {
+            rest = &rest[i + "setLineDash([".len()..];
+            assert!(rest.starts_with(']'), "{file} draws a dash pattern");
+        }
+    }
+    let script = include_str!("../assets/viewer.js");
+    let ring = &script[script.find("function trustRing(").expect("trustRing")..];
+    let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
+    for weight in [
+        "ctx.lineWidth = 1/cam.s; ctx.strokeStyle = OTHER;",
+        "ctx.lineWidth = 1.6/cam.s; ctx.strokeStyle = INK;",
+        "ctx.lineWidth = 2.4/cam.s; ctx.strokeStyle = EDGE_HI;",
+    ] {
+        assert!(ring.contains(weight), "a trust ring is not told by weight: {weight}");
+    }
+    let flat: String = VIEWER.split_whitespace().collect();
+    for swatch in [
+        ".tsw.t-unverified{border:1pxsolidvar(--muted);}",
+        ".tsw.t-host_signed{border:1.6pxsolidvar(--ink);}",
+        ".tsw.t-human_confirmed{border:2.4pxsolidvar(--gold-bright);}",
+    ] {
+        assert!(flat.contains(swatch), "the Trust legend's swatch is not the ring: {swatch}");
+    }
+}
+
 /// `--faint` is retired into `--muted` (Section 3): no stylesheet declares or reads it.
 #[test]
 fn faint_is_retired() {
@@ -427,7 +486,7 @@ fn draws_a_line(name: &str, value: &str) -> bool {
 /// outline under `:focus-visible` is keyboard focus wherever it is, so the lists leave it out.
 const VIEWER_LINES: &[(&str, &str)] = &[
     (".contested", "a contested value, in --bad"),
-    ("#detail .rchip.past", "a superseded relation, dashed"),
+    ("#detail .rchip.past", "a superseded relation, outlined"),
     (".tsw.t-unverified", "the Trust legend's swatch of the unverified ring"),
     (".tsw.t-host_signed", "the Trust legend's swatch of the host-signed ring"),
     (
@@ -487,7 +546,7 @@ fn stray_lines<'a>(css: &str, listed: &'a [(&'a str, &'a str)]) -> (Vec<String>,
 
 /// U9 (design-system.md Section 4): areas are told apart by surface. Each of the three stylesheets
 /// draws a line only for keyboard focus or a selector listed with the fact its line carries, and
-/// the viewer's script sets a border only on the boundaries' legend swatches, which show the dashes
+/// the viewer's script sets a border only on the boundaries' legend swatches, which show the outlines
 /// the map draws. Before step 7 viewer.css drew 85 such lines; every dock, chip, row, pill and camera
 /// button had a border of its own.
 #[test]
