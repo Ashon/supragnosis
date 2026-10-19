@@ -14,7 +14,7 @@
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U26),
-> is designed - steps 17-23 - and not built.
+> is designed - steps 17-23 - and its defects are fixed (step 17).
 
 ## 1. Why this exists
 
@@ -1499,7 +1499,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    principles page's glossary, its ledger by chapter on phones and its scenes played by a press.
    Merging it publishes the site, so it merges on the author's word, right before the release that
    carries step 15.
-17. **The third pass's defects** [designed]: the Trust legend's off entries drawn at full strength
+17. **The third pass's defects** [built]: the Trust legend's off entries drawn at full strength
    and saying they are off, the Review page's key caps in `--ink2`, the eight short targets and the
    phone's Review tabs and acts brought to the floor before step 19 (24, 28 below 760), Setup's
    checkboxes in the accent, the search field named with its scope, the status line's short form on

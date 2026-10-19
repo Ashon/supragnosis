@@ -359,14 +359,26 @@ function saveLayout() {
 addEventListener("pagehide", saveLayout);
 
 // Status bar stats line: one plain sentence, scope first. `regions` is a count or null.
+function statsScope(cur) {
+  return cur === "*" || cur === "all" ? "All workspaces" : cur || "default";
+}
 function statsLine(cur, s, regions) {
-  const scope = cur === "*" || cur === "all" ? "All workspaces" : cur || "default";
+  const scope = statsScope(cur);
   const n = s.node_count ?? nodes.length, m = s.edge_count ?? edges.length;
   const e = n === 1 ? "1 entity" : n + " entities";
   const r = m === 1 ? "1 relation" : m + " relations";
   let line = scope + " - " + e + ", " + r;
   if (regions !== null) line += ", " + (regions === 1 ? "1 region" : regions + " regions");
   return line;
+}
+// The line drawn: the counts in their own span, which a phone gives up before the scope's name.
+function showStats(cur, s, regions) {
+  const scope = statsScope(cur), line = statsLine(cur, s, regions);
+  const head = document.createElement("span"), counts = document.createElement("span");
+  head.textContent = scope;
+  counts.className = "counts";
+  counts.textContent = line.slice(scope.length);
+  document.getElementById("stats").replaceChildren(head, counts);
 }
 // Status bar: only say when the graph is stale, and only then say since when.
 function sayLate(reason) {
@@ -442,7 +454,7 @@ function applyGraph(g) {
   // keeps the selection readable even with that dock collapsed.
   // The regions the last hypergraph read counted stay in the line until the next one answers, so the
   // count does not blink out at every poll.
-  document.getElementById("stats").textContent = statsLine(currentWs(), s, hyperedges.length ? hyperedges.length : null);
+  showStats(currentWs(), s, hyperedges.length ? hyperedges.length : null);
   emptyEl.style.display = nodes.length ? "none" : "flex";
   if (!nodes.length) refreshEmpty();
 
@@ -868,9 +880,14 @@ function renderTrustLegend() {
   host.textContent = "";
   for (const t of ["unverified", "agent_extracted", "host_signed", "human_confirmed"]) {
     const el = document.createElement("span");
-    el.className = "tlg" + (trustUniform && trustUniform !== t ? " off" : "");
+    const off = !!trustUniform && trustUniform !== t;
+    el.className = "tlg" + (off ? " off" : "");
     const sw = document.createElement("span"); sw.className = "tsw t-" + t;
     el.append(sw, document.createTextNode(TIER_NAME[t]));
+    if (off) {
+      const none = document.createElement("span"); none.className = "sr-only"; none.textContent = ", none here";
+      el.append(none);
+    }
     host.appendChild(el);
   }
   const note = document.createElement("div");
@@ -919,7 +936,7 @@ async function poll() {
           const hg = await hr.json();
           if (!hg.error) {
             hyperedges = hg.hyperedges || [];
-            document.getElementById("stats").textContent = statsLine(currentWs(), lastStats, hyperedges.length);
+            showStats(currentWs(), lastStats, hyperedges.length);
           }
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
@@ -982,6 +999,8 @@ function syncSearchScope() {
   else if (cur === "") ph = "Search default";
   else ph = "Search " + cur;
   searchEl.placeholder = ph;
+  // The placeholder goes when the person types, so the field's name says the scope too.
+  searchEl.setAttribute("aria-label", ph);
 }
 async function loadWorkspaces() {
   try {

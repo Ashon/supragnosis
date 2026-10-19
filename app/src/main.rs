@@ -461,7 +461,7 @@ fn remote_html(r: &RemoteServer) -> String {
         (false, _) => "it does not answer right now",
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#7b8494;margin-top:14px;font-size:11px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#8e96a5;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
         name = esc(&r.name),
         url = esc(&r.url),
     )
@@ -470,7 +470,7 @@ fn remote_html(r: &RemoteServer) -> String {
 fn starting_html(status: &str) -> String {
     let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#0c0e14;color:#f0c469;font:14px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#7b8494;margin-top:6px;font-size:11px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#8e96a5;margin-top:6px;font-size:12px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
     )
 }
 
@@ -2742,6 +2742,40 @@ mod settings_tests {
     /// sentence on it is one the code keeps, and its progress is said - as a progress bar a screen
     /// reader reads, in the foot while the plan runs, in a live region as each step ends, and in the
     /// heading once the essentials are done.
+    /// design-system.md Section 14 step 17: every checkbox and radio on the app's pages takes the
+    /// accent, Setup's privacy line keeps a reading width, and the starting splash is drawn in the
+    /// tokens and the reading face rather than the old mono and colors.
+    #[test]
+    fn the_third_pass_defects_on_the_apps_pages() {
+        let css = include_str!("../assets/settings.css");
+        let welcome = include_str!("../assets/welcome.css");
+        let main = include_str!("main.rs");
+        assert!(
+            css.contains(":where(input[type=\"checkbox\"], input[type=\"radio\"]) { accent-color: var(--accent); }"),
+            "a checkbox can take the system's blue beside a gold one"
+        );
+        assert!(
+            welcome.contains("min-height: 24px; border: 0;"),
+            "Setup's Details is under 24 pixels"
+        );
+        assert!(
+            welcome.contains("max-width: 34em"),
+            "the privacy line runs past a reading width"
+        );
+        let splash: Vec<&str> = main
+            .split("r#\"<!doctype html>")
+            .skip(1)
+            .map(|page| &page[..page.find("</body>").expect("a splash ends its body")])
+            .collect();
+        assert_eq!(splash.len(), 2, "the shell authors two splash pages");
+        for page in splash {
+            assert!(
+                !page.contains("monospace") && !page.contains("#7b8494"),
+                "a splash keeps the old look"
+            );
+        }
+    }
+
     #[test]
     fn the_setup_page_says_what_is_true_and_how_far_it_is() {
         let html = include_str!("../assets/welcome.html");

@@ -263,7 +263,9 @@ header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--faint
 .input .reveal { position: absolute; right: 4px; }
 .input input.with-reveal { padding-right: 38px; }
 .check { display: flex; align-items: center; gap: 9px; color: var(--ink2); cursor: pointer; }
-.check input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+.check input { width: 15px; height: 15px; margin: 0; }
+/* Every checkbox and radio takes the accent, so the system's blue never sits beside a gold one. */
+:where(input[type="checkbox"], input[type="radio"]) { accent-color: var(--accent); }
 
 /* Notices: the outcome of an action, top right under the title bar. */
 .toasts { position: fixed; top: 60px; right: 16px; z-index: 30; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); }

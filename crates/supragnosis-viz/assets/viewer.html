@@ -23,7 +23,7 @@
        field is focused or already holds a term, so it never sits on top of what you typed. The list
        under it is the engine's answer from /api/search (docs/design-system.md Section 8). -->
   <div class="searchwrap">
-    <input id="search" placeholder="search knowledge" size="18" autocomplete="off" spellcheck="false"
+    <input id="search" placeholder="search knowledge" aria-label="Search" size="18" autocomplete="off" spellcheck="false"
            role="combobox" aria-expanded="false" aria-controls="searchPop" aria-autocomplete="list">
     <kbd class="slashkey" aria-hidden="true">/</kbd>
     <div id="searchPop" class="searchpop" role="listbox" aria-label="search results" hidden></div>

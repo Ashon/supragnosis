@@ -25,7 +25,7 @@ fn rule(selector: &str) -> &'static str {
 /// is only once it is late. It gives up its counts before the gear, which never leaves the screen.
 #[test]
 fn the_status_bar_says_the_scope_once() {
-    let stats = function("statsLine");
+    let stats = format!("{}{}", function("statsScope"), function("statsLine"));
     for word in ["All workspaces", "entities", "relations", "regions"] {
         assert!(stats.contains(word), "the stats line does not say {word}");
     }
@@ -200,5 +200,72 @@ fn search_groups_hits_by_how_they_were_reached() {
     assert!(
         wider.contains("workspace=*") && wider.contains("reached === \"words\""),
         "the wider count is not the words found"
+    );
+}
+
+/// The declarations of every rule inside the stylesheet's `@media (max-width: 759px)` block.
+fn phone_block() -> &'static str {
+    let at = CSS.find("@media (max-width: 759px) {").expect("the phone block");
+    let body = &CSS[at..];
+    let mut depth = 0usize;
+    for (i, ch) in body.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &body[..i];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("the phone block does not close")
+}
+
+/// Section 14 step 17: the third pass's defects that ask no design question. An entry the scope does
+/// not hold is drawn at full strength and says so, a key cap reads, a short target reaches U19's
+/// floor as it stood before step 19 (24, 28 below 760), the search field is named with its scope,
+/// and a phone's status bar gives up its counts instead of cutting them.
+#[test]
+fn the_third_pass_defects_on_the_viewer() {
+    let off = rule(".tlg.off");
+    assert!(!off.contains("opacity"), "an entry the scope does not hold is dimmed, not said");
+    let legend = function("renderTrustLegend");
+    assert!(legend.contains("none here"), "an entry the scope does not hold does not say so");
+    let kbd = rule(".rv-detail kbd, .rv-acts kbd");
+    assert!(
+        !kbd.contains("opacity") && kbd.contains("color:var(--ink2)"),
+        "a key cap is dimmed"
+    );
+    for selector in [
+        "#statusbar #settingsBtn",
+        "#statusbar .spill",
+        "#defsBox summary",
+        "#detail .close",
+        "#obscard .close",
+        "#settings .fclose",
+        "#settings dd a",
+        ".contested .neither summary",
+        "#detail .rchip",
+        ".nchip",
+        ".echip",
+        ".rv-close",
+    ] {
+        assert!(rule(selector).contains("min-height:24px"), "{selector} is under 24 pixels");
+    }
+    let phone = phone_block();
+    assert!(
+        phone.contains(".rv-segb, .rv-acts .btn { min-height:28px; }"),
+        "the Review page's tabs and acts are under 28 pixels on a phone"
+    );
+    assert!(
+        function("syncSearchScope").contains("setAttribute(\"aria-label\", ph)"),
+        "the search field is named only by its placeholder"
+    );
+    assert!(
+        function("showStats").contains("counts")
+            && phone.contains("#statusbar #stats .counts { display:none; }"),
+        "a phone cuts the counts instead of giving them up"
     );
 }

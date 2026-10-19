@@ -292,10 +292,10 @@
   #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
   #detail .rchip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                    font:12px/1.55 var(--sans); color:var(--ink); background:var(--panel-2);
-                   border-radius:8px; padding:1px 8px; cursor:pointer; }
+                   border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
   #detail .rchip:hover { background:var(--panel-3); }
   /* A superseded relation keeps a dashed edge: the line says "past" (U9's list). */
-  #detail .rchip.past { opacity:.6; background:none; border:1px dashed var(--muted); padding:0 7px; }
+  #detail .rchip.past { opacity:.6; background:none; border:1px dashed var(--muted); padding:2px 7px; }
   #detail .rchip .dot { width:7px; height:7px; border-radius:2px; margin-right:5px; vertical-align:0; }
   #detail .rmore { font:11px/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
                    border-radius:8px; padding:1px 8px; }
@@ -304,7 +304,7 @@
      asterisk). A square hit target with a soft hover fill, not a bare text glyph. */
   #detail .close { position:absolute; top:8px; right:8px; cursor:pointer; color:var(--muted);
                    border:none; background:none; border-radius:5px; padding:0;
-                   width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+                   width:24px; height:24px; min-height:24px; display:flex; align-items:center; justify-content:center;
                    transition:color 0.15s ease, background 0.15s ease; }
   #detail .close:hover { color:var(--ink); background:var(--panel-2); }
   #detail .close svg { display:block; }
@@ -398,7 +398,7 @@
   .rv-detail .grp.secret { background:rgba(224,122,95,0.1); border-radius:8px; padding:6px 10px; }
   .rv-detail .gk { color:var(--ink); font-size:12px; }
   .rv-detail .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
-  .nchip { padding:2px 9px; border-radius:8px; background:var(--panel-2); cursor:pointer;
+  .nchip { padding:3px 9px; min-height:24px; border-radius:8px; background:var(--panel-2); cursor:pointer;
            font:12px/1.5 var(--sans); color:var(--ink2); }
   .nchip:hover { background:var(--panel-3); color:var(--ink); }
   .nchip .ty { color:var(--faint); font-size:11px; margin-left:4px; }
@@ -446,7 +446,7 @@
                      border-radius:8px; background:var(--panel-2); color:var(--ink); font-size:12px; }
   .contested .cacts { display:flex; gap:6px; margin-left:auto; }
   .contested .neither { margin-top:6px; font-size:12px; color:var(--ink2); }
-  .contested .neither summary { cursor:pointer; color:var(--muted); }
+  .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box; }
   .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
   .contested .copyline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
   .contested .copyline code { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; padding:4px 6px; border-radius:6px;
@@ -474,7 +474,7 @@
   .prow .pwhen { color:var(--faint); font-size:11px; margin-left:auto; }
   .oids, .echips { display:flex; gap:4px; flex-wrap:wrap; }
   .oid { font:11px var(--mono); color:var(--muted); background:var(--panel-2); border-radius:6px; padding:1px 5px; }
-  .echip { font:12px/1.5 var(--sans); color:var(--ink2); background:var(--panel-2); border-radius:8px; padding:1px 8px; cursor:pointer; }
+  .echip { font:12px/1.5 var(--sans); color:var(--ink2); background:var(--panel-2); border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
   .echip:hover { color:var(--ink); background:var(--panel-3); }
   /* Observation detail card: a focused, dismissable view of one observation (full content +
      provenance + lineage + entities/relations). The single detail surface for both the node log
@@ -486,7 +486,8 @@
                    background:var(--panel); border-radius:12px;
                    box-shadow:0 24px 60px #000b; padding:18px 20px; }
   #obscard .close { position:absolute; top:10px; right:10px; cursor:pointer; color:var(--muted);
-                    background:none; border:none; padding:4px; border-radius:5px; line-height:0; }
+                    background:none; border:none; padding:4px; border-radius:5px; line-height:0;
+                    min-height:24px; min-width:24px; display:flex; align-items:center; justify-content:center; }
   #obscard .close:hover { color:var(--ink); background:var(--panel-2); }
   #obscard .close svg { display:block; }
   .oc-meta { display:flex; align-items:center; gap:7px; margin:0 22px 8px 0; font-size:11px; color:var(--faint); }
@@ -518,7 +519,7 @@
   .pacts button[disabled] { opacity:0.45; cursor:not-allowed; }
   /* The type definitions in the filters dock (moved from the Types tab): a disclosure under the
      legend, its summary styled as the section heads around it. */
-  #defsBox summary { cursor:pointer; list-style:none; }
+  #defsBox summary { cursor:pointer; list-style:none; min-height:24px; padding-block:4px; line-height:16px; box-sizing:border-box; }
   #defsBox summary::-webkit-details-marker { display:none; }
   #defsBox summary::before { content:"+ "; color:var(--faint); }
   #defsBox[open] summary::before { content:"- "; }
@@ -550,11 +551,12 @@
                     padding:12px 14px 4px; }
   #settings .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
   /* Matches #detail/#obscard: a square hit target with a soft hover fill, not a bare glyph. */
-  #settings .fclose { width:22px; height:22px; padding:0; border:none; background:none;
+  #settings .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
                       border-radius:5px; color:var(--muted); cursor:pointer;
                       display:flex; align-items:center; justify-content:center;
                       transition:color 0.15s ease, background 0.15s ease; }
   #settings .fclose:hover { color:var(--ink); background:var(--panel-2); }
+  #settings dd a { display:inline-block; min-height:24px; line-height:24px; overflow-wrap:anywhere; }
   #settings .fclose svg { display:block; }
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */
@@ -590,7 +592,7 @@
   #settings .note { margin-top:14px; color:var(--faint); }
   #settings .err { color:var(--bad); margin-top:6px; }
   /* The entry point: a gear at the right end of the status bar, after the status text. */
-  #statusbar #settingsBtn { margin-left:10px; width:18px; height:18px; padding:0; flex:none;
+  #statusbar #settingsBtn { margin-left:6px; width:24px; height:24px; min-height:24px; padding:0; flex:none;
                             display:flex; align-items:center; justify-content:center;
                             background:none; border:none; color:var(--muted); cursor:pointer; }
   /* Lucide's own stroke on its 24-unit grid, so the gear keeps the set's line weight at this size. */
@@ -601,7 +603,12 @@
      ring reads. A tier the scope does not hold is dimmed when the scope holds only one. */
   #legendTrust { display:flex; flex-wrap:wrap; gap:4px 12px; margin:2px 0 6px; }
   .tlg { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink2); }
-  .tlg.off { opacity:0.38; }
+  /* A tier the scope does not hold, when the scope holds one: its text at full strength in --muted,
+     its swatch faded, and "none here" said to a screen reader. */
+  .tlg.off { color:var(--muted); }
+  .tlg.off .tsw { opacity:0.45; }
+  /* Read by a screen reader, not drawn. */
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   .tsw { width:12px; height:12px; border-radius:50%; background:var(--panel-2); box-sizing:border-box; }
   .tsw.t-unverified { border:1.5px dashed var(--muted); }
   .tsw.t-agent_extracted { border:1px solid transparent; }
@@ -609,7 +616,7 @@
   .tsw.t-human_confirmed { border:2px solid var(--gold-bright); }
   .tnote { flex-basis:100%; color:var(--faint); font:12px/1.4 var(--sans); }
   /* A status pill: a count that needs reading, on the status bar's right (Section 6). */
-  #statusbar .spill { margin-left:8px; padding:1px 10px; border-radius:999px; font:500 11px/1.5 var(--sans);
+  #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:999px; font:500 11px/1.5 var(--sans);
                       background:var(--panel-2); color:var(--ink2); white-space:nowrap; }
   #statusbar .spill.bad { color:var(--bad); background:rgba(224,122,95,0.13); }
   #statusbar .spill.warn { color:var(--gold-bright); background:var(--gold-glass); }
@@ -624,7 +631,8 @@
   .rv-head { display:flex; align-items:baseline; gap:10px; }
   .rv-head h2 { margin:0; font:600 18px/1.2 var(--sans); color:var(--ink); }
   .rv-scope { color:var(--faint); font:11px var(--mono); }
-  .rv-close { margin-left:auto; color:var(--muted); font-size:12px; text-decoration:none; }
+  .rv-close { margin-left:auto; color:var(--muted); font-size:12px; text-decoration:none;
+              display:inline-flex; align-items:center; min-height:24px; padding:0 4px; }
   .rv-close:hover { color:var(--ink); }
   .rv-seg { display:flex; flex-wrap:wrap; gap:4px; }
   .rv-segb { padding:4px 10px; border-radius:8px; font-size:12px; color:var(--muted); background:var(--panel-2); }
@@ -656,8 +664,9 @@
   .rv-acts .btn.p { background:var(--accent); color:#171204; }
   .rv-acts .btn.p:hover { background:var(--gold-bright); color:#171204; }
   .rv-acts .btn[disabled] { opacity:.45; cursor:not-allowed; }
-  .rv-detail kbd, .rv-acts kbd { font:500 11px/1 var(--mono); background:rgba(127,127,127,0.2);
-                                 border-radius:4px; padding:2px 5px; margin-left:4px; opacity:.8; }
+  .rv-detail kbd, .rv-acts kbd { font:500 11px/1 var(--mono); background:var(--panel-3); color:var(--ink2);
+                                 border-radius:4px; padding:2px 5px; margin-left:4px; }
+  .rv-acts .btn.p kbd { background:rgba(23,18,4,0.14); color:#171204; }
   /* The panel toggles at the title bar's right (Section 6): Lucide's panel-left and panel-right. */
   .ptoggles { margin-left:auto; display:flex; gap:2px; }
   .ptoggles button { width:30px; height:30px; padding:0; display:flex; align-items:center;
@@ -712,6 +721,9 @@
     /* The camera buttons move to the top right, out of the sheets' way. */
     #hud { right:16px; top:61px; bottom:auto; }
     .contested .confirm { min-height:28px; }
+    .rv-segb, .rv-acts .btn { min-height:28px; }
+    /* The status bar gives up its counts first and keeps the scope's name (Section 6). */
+    #statusbar #stats .counts { display:none; }
   }
   /* Reduced motion (docs/design-system.md Section 10): nothing moves - no spinner turning, no docks
      sliding, no feed rows fading in and out (a row simply stays until it is removed). The canvas half -
