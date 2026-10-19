@@ -446,8 +446,9 @@ fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Ve
 /// viewer once it is. Carries the LIVE daemon state so a failure is readable on the splash
 /// instead of an eternal "starting..." (the tray shows the same line, but the splash is what
 /// the user is looking at). Palette mirrors the viewer's candlelight theme.
-// data-tauri-drag-region: with the overlay title bar there is no other chrome to drag the
-// window by while the splash is up.
+// data-tauri-drag-region="deep": with the overlay title bar there is no other chrome to drag the
+// window by while the splash is up, and its text covers the middle, which the bare attribute would
+// leave undraggable.
 /// What the viewer shows while a remote profile is active: which server the AI apps use, and that
 /// browsing it arrives with the network read tier (remote-server.md Section 5). Not an empty graph,
 /// which would read as "no knowledge" (P5).
@@ -461,7 +462,7 @@ fn remote_html(r: &RemoteServer) -> String {
         (false, _) => "it does not answer right now",
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
         name = esc(&r.name),
         url = esc(&r.url),
     )
@@ -470,7 +471,7 @@ fn remote_html(r: &RemoteServer) -> String {
 fn starting_html(status: &str) -> String {
     let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div class="m" style="color:#b0b8c7;margin-top:6px;font-size:12px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div class="m" style="color:#b0b8c7;margin-top:6px;font-size:12px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
     )
 }
 
@@ -724,6 +725,7 @@ const CLI_NEWER_LINE: &str = "supragnosis-server is newer than this app - update
 
 /// Re-reads the CLI's view and republishes the tray's one line (docs/settings-page.md Section 5).
 async fn refresh_status(app: &tauri::AppHandle) {
+    heal_failed(app).await;
     refresh_servers(app).await;
     refresh_apps(app).await;
     let hint = app.try_state::<AppsHint>().and_then(|h| h.0.lock().unwrap().clone());
@@ -980,28 +982,101 @@ async fn remove_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> Str
 /// directly; an external daemon is bounced through the CLI (`supragnosis restart` knows every
 /// manager the product installs). A refused restart (a conflict, an unrecognized holder) says why,
 /// instead of the shell quietly re-attaching to the process it failed to replace (L4).
-async fn restart_daemon(app: &tauri::AppHandle, sock: PathBuf) -> String {
+async fn restart_daemon(app: &tauri::AppHandle, sock: PathBuf) -> Result<String, String> {
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
     refresh_status(app).await;
-    let message = match prev {
+    let outcome = match prev {
         Daemon::Spawned(mut child) => {
             let _ = child.kill();
             let _ = child.wait();
-            "restarted the daemon this app runs".to_string()
+            Ok("restarted the daemon this app runs".to_string())
         }
         Daemon::External => {
+            let before = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
             let out = tokio::task::spawn_blocking(|| run_cli(&["restart"])).await.ok().flatten();
-            match out.as_ref().map(cli_outcome) {
-                Some((true, _)) => "restarted".to_string(),
-                Some((false, why)) => format!("restart refused: {why}"),
-                None => "restart: supragnosis CLI not found".to_string(),
+            // launchd may still be starting the new process when the CLI returns, or retrying one
+            // that lost the store lock to the old process while it exited, and the CLI then reports
+            // a failure that a few seconds settle. Wait for the socket, as set_login does, so the
+            // shell attaches to that daemon rather than spawning a second one into its lock.
+            let up = wait_for_socket(&sock, Duration::from_secs(30)).await;
+            let after = if up {
+                tokio::task::spawn_blocking(cli_status).await.ok().flatten()
+            } else {
+                None
+            };
+            let outcome = restart_outcome(
+                out.as_ref().map(cli_outcome),
+                manager_pid(before.as_ref()),
+                manager_pid(after.as_ref()),
+                up,
+            );
+            if !up {
+                // A login job owns this daemon: spawning one here would race it for the store. The
+                // state says so until the socket answers, and heal_failed attaches then.
+                *app.state::<DaemonGuard>().0.lock().unwrap() = Daemon::Failed(
+                    "the daemon did not answer within 30 seconds of the restart - `supragnosis status` says why"
+                        .to_string(),
+                );
+                refresh_status(app).await;
+                return outcome;
             }
+            outcome
         }
-        Daemon::Starting | Daemon::Failed(_) => "starting the daemon".to_string(),
+        Daemon::Starting | Daemon::Failed(_) => Ok("starting the daemon".to_string()),
     };
     bring_up(app.clone(), sock).await;
-    message
+    outcome
+}
+
+/// What a restart of a daemon the shell did not spawn came to (docs/daemon-lifecycle.md L4): the
+/// CLI's outcome, the running process before and after, and whether the viewer socket answered
+/// within the wait. A refusal while a new process took over - launchd retrying a start that lost the
+/// store lock for a moment - is a restart; a refusal that left the same process is not.
+fn restart_outcome(
+    cli: Option<(bool, String)>,
+    before: Option<u64>,
+    after: Option<u64>,
+    up: bool,
+) -> Result<String, String> {
+    let replaced = after.is_some() && after != before;
+    match cli {
+        None => Err("the supragnosis CLI was not found".to_string()),
+        Some((true, _)) if up => Ok("restarted".to_string()),
+        Some((false, _)) if up && replaced => Ok("restarted".to_string()),
+        Some((false, why)) if up => Err(format!("restart refused: {why}")),
+        Some((ok, why)) => Err(format!(
+            "the daemon did not answer within 30 seconds of the restart{} - `supragnosis status` says why",
+            if ok || why.is_empty() { String::new() } else { format!(" ({why})") }
+        )),
+    }
+}
+
+/// The pid of the manager `status --json` names first, when it has a process.
+fn manager_pid(st: Option<&serde_json::Value>) -> Option<u64> {
+    st?["managers"].get(0)?["pid"].as_u64()
+}
+
+/// A Failed state outlives its cause: a spawn that lost the store lock to a login job still
+/// starting, or a restart reported failed while launchd brought the daemon back. Whenever the state
+/// is read, a Failed daemon whose socket answers is attached to, so the tray line and the Settings
+/// page say what is true instead of the failure that has passed.
+async fn heal_failed(app: &tauri::AppHandle) {
+    let (Some(guard), Some(sock)) = (app.try_state::<DaemonGuard>(), app.try_state::<VizSock>())
+    else {
+        return;
+    };
+    if !matches!(*guard.0.lock().unwrap(), Daemon::Failed(_)) {
+        return;
+    }
+    let sock = sock.0.clone();
+    if UnixStream::connect(&sock).await.is_ok() {
+        let mut guard = guard.0.lock().unwrap();
+        if matches!(*guard, Daemon::Failed(_)) {
+            tracing::info!(sock = %sock.display(), "the daemon answers again - attached");
+            *guard = Daemon::External;
+        }
+    }
 }
 
 /// Waits for the viewer socket to answer, so a daemon launchd is still starting is attached to
@@ -1151,6 +1226,7 @@ struct VizSock(PathBuf);
 
 /// Everything the settings window shows, gathered from the CLI in one pass.
 async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
+    heal_failed(app).await;
     let servers = refresh_servers(app).await;
     // Both CLI calls run at once; each is a process the other need not wait for.
     let status = tokio::task::spawn_blocking(cli_status);
@@ -1436,7 +1512,7 @@ async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Resul
         );
     }
     let sock = app.state::<VizSock>().0.clone();
-    Ok(restart_daemon(&app, sock).await)
+    restart_daemon(&app, sock).await
 }
 
 // --- The Welcome page (docs/onboarding.md Section 6) ----------------------------------------
@@ -2684,7 +2760,10 @@ mod status_text_tests {
 
 #[cfg(test)]
 mod settings_tests {
-    use super::{own_page_ok, server_add_args, settings_url, welcome_url, APP_COMMANDS};
+    use super::{
+        manager_pid, own_page_ok, restart_outcome, server_add_args, settings_url, starting_html,
+        welcome_url, APP_COMMANDS,
+    };
 
     /// docs/settings-page.md S1 and docs/onboarding.md Section 6: a setting changes only from the
     /// app's own pages, Settings and Welcome - not from the viewer the same window shows, which a
@@ -2811,6 +2890,93 @@ mod settings_tests {
         ] {
             assert!(html.contains("<html lang=\"en\">"), "{file} does not declare its language");
         }
+    }
+
+    /// daemon-lifecycle.md Section 6: a restart of a daemon a login job runs is decided after the
+    /// shell waited for the socket. The CLI's success is a restart, and so is a refusal after which a
+    /// new process answers - launchd retrying a start that lost the store lock for a moment; a
+    /// refusal that left the same process says why; a daemon that never answered is a failure that
+    /// names `supragnosis status`. A failed state is healed whenever the state is read, and Settings
+    /// follows the daemon after a restart until it answers, for a minute at most.
+    #[test]
+    fn a_restart_says_what_it_came_to() {
+        let refused = || Some((false, "2 managers claim the daemon".to_string()));
+        assert_eq!(
+            restart_outcome(Some((true, "restarted".into())), Some(1), Some(2), true),
+            Ok("restarted".into())
+        );
+        assert_eq!(
+            restart_outcome(Some((false, "exited with status 1".into())), Some(1), Some(2), true),
+            Ok("restarted".into()),
+            "a refusal that launchd's retry settled is reported as the failure that passed"
+        );
+        assert_eq!(
+            restart_outcome(refused(), Some(1), Some(1), true),
+            Err("restart refused: 2 managers claim the daemon".into())
+        );
+        let late = restart_outcome(refused(), Some(1), None, false).unwrap_err();
+        assert!(late.contains("30 seconds") && late.contains("`supragnosis status`"), "{late}");
+        assert!(late.contains("2 managers"), "the CLI's reason is dropped: {late}");
+        assert!(restart_outcome(Some((true, String::new())), Some(1), None, false).is_err());
+        assert!(restart_outcome(None, None, None, true).is_err());
+        let st = serde_json::json!({ "managers": [{ "type": "launchd", "pid": 4242 }] });
+        assert_eq!(manager_pid(Some(&st)), Some(4242));
+        assert_eq!(manager_pid(Some(&serde_json::json!({ "managers": [] }))), None);
+
+        let src = include_str!("main.rs");
+        let body = |src: &'static str, sig: &str| -> &'static str {
+            let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
+            &src[at..at + src[at..].find("\n}\n").expect("it closes")]
+        };
+        for reader in ["async fn refresh_status(", "async fn settings_state_of("] {
+            assert!(
+                body(src, reader).contains("heal_failed(app).await"),
+                "{reader} keeps a stale failure"
+            );
+        }
+        assert!(
+            body(src, "async fn restart_daemon(")
+                .contains("wait_for_socket(&sock, Duration::from_secs(30))"),
+            "a restart races the login job it restarted"
+        );
+        let js = include_str!("../assets/settings.js");
+        assert!(body(js, "function restartDaemon(").contains(".then(watchDaemon)"));
+        assert!(body(js, "async function load(").contains("if (daemonUnsettled()) watchDaemon();"));
+        let watch = body(js, "function watchDaemon(");
+        for part in [
+            "if (watch) return;",
+            "Date.now() + 60000",
+            "setTimeout(tick, 2000)",
+            "watch = null; return;",
+        ] {
+            assert!(watch.contains(part), "the page does not follow the daemon: {part}");
+        }
+        assert_eq!(
+            js.matches("restartDaemon())").count(),
+            2,
+            "a Restart button does not follow the daemon"
+        );
+    }
+
+    /// docs/design-system.md Section 6, U26: in the app the title bar drags the window from anywhere
+    /// but its controls. Tauri's handler counts a bare data-tauri-drag-region only for a press on that
+    /// element itself, and since the bar became a Mac toolbar its two groups cover all of it but the
+    /// padding; so the header drags deep, the search's results opt out, and the splash and the remote
+    /// page, whose text covers their middle, drag deep too.
+    #[test]
+    fn the_title_bar_drags_the_window_but_not_its_controls() {
+        let shell = include_str!("../assets/shell-init.js");
+        assert!(shell.contains("header.setAttribute(\"data-tauri-drag-region\", \"deep\");"));
+        assert!(shell.contains("results.setAttribute(\"data-tauri-drag-region\", \"false\")"));
+        assert!(
+            !shell.contains("h1.setAttribute(\"data-tauri-drag-region\""),
+            "a bare attribute on the title stops a press on its scope from dragging"
+        );
+        assert!(starting_html("x").contains("<body data-tauri-drag-region=\"deep\""));
+        let src = include_str!("main.rs");
+        let pages = &src[..src.find("#[cfg(test)]").expect("the tests")];
+        assert_eq!(pages.matches("<body data-tauri-drag-region=\"deep\"").count(), 2);
+        assert!(!pages.contains("<body data-tauri-drag-region style="));
     }
 
     /// docs/design-system.md Section 10, U19: a button that shows only an icon is named by its act and

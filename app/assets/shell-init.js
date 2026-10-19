@@ -80,12 +80,15 @@
       });
 
     // Title bar unification: the header is the window drag handle (and double-click zooms, like
-    // a real title bar - both need the window permissions in capabilities/default.json). The
-    // drag handler only fires when the mousedown target itself carries the attribute, so the
-    // header's inputs/buttons stay interactive; the title text is chrome, so it drags too.
-    header.setAttribute("data-tauri-drag-region", "");
-    var h1 = header.querySelector("h1");
-    if (h1) h1.setAttribute("data-tauri-drag-region", "");
+    // a real title bar - both need the window permissions in capabilities/default.json). "deep"
+    // drags from anywhere in the header: the bare attribute counts only a press on the header
+    // itself, and since the title bar became a Mac toolbar its two groups (.tlead, .ttrail) cover
+    // all of it but the padding. Tauri's handler still leaves buttons, links, inputs and
+    // interactive roles their own clicks. The search's results open inside the header, so their
+    // list opts out.
+    header.setAttribute("data-tauri-drag-region", "deep");
+    var results = header.querySelector("#searchPop");
+    if (results) results.setAttribute("data-tauri-drag-region", "false");
     if (!onSettings) takeOverGear();
   });
 

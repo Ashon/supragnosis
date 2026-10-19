@@ -775,13 +775,15 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (26, &[c(
-        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, no other navigation, and one bar on every page with the star first",
+        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, no other navigation, one bar on every page with the star first, and in the app it drags the window from anywhere but its controls",
         // crates/supragnosis-viz/tests/titlebar.rs: the viewer's bar, the app pages' bars, and the
-        // star and the leading group's rules the app's stylesheet shares with the viewer's.
+        // star and the leading group's rules the app's stylesheet shares with the viewer's;
+        // app/src/main.rs: the drag region the shell gives every page's header.
         Evidence::Scenario(&[
             "the_viewer_title_bar_is_a_mac_toolbar",
             "the_app_pages_go_back_to_the_graph",
             "every_page_has_one_title_bar",
+            "the_title_bar_drags_the_window_but_not_its_controls",
         ]),
     )]),
     (27, &[c(
@@ -1220,11 +1222,14 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             ),
         ),
         c(
-            "the app never discards the CLI's exit status: a refused restart or install says why",
+            "the app's restart waits for the socket and then says what it came to: a refusal that left the same process says why, one launchd settled is a restart, a daemon that never answered is a failure, and a failed state whose socket answers is attached to again",
+            Evidence::Scenario(&["a_restart_says_what_it_came_to"]),
+        ),
+        c(
+            "the app never discards the CLI's exit status: a refused install says why",
             Evidence::Deferred(
-                "restart_daemon and set_login route the status through cli_outcome and no test calls either. Revisit \
-                 when cli_outcome is pinned on a failing Output and the two commands' messages on a refused CLI are \
-                 asserted",
+                "set_login routes the status through cli_outcome and no test calls it. Revisit when cli_outcome is \
+                 pinned on a failing Output and the switch's message on a refused CLI is asserted",
             ),
         ),
     ]),

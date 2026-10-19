@@ -118,6 +118,13 @@ function actionButton(key, label, iconName, cls, run, name) {
   }, busy ? icon("spin", "i-spin") : iconName ? icon(iconName) : null, label);
 }
 
+// Restart, from either of This Mac's buttons. However it went, the page then follows the daemon
+// until it answers (watchDaemon): a restart reported as failed can still come back under launchd.
+function restartDaemon() {
+  return act("restart", "daemon_restart", null, { title: "Daemon restarted", failTitle: "The restart did not finish" })
+    .then(watchDaemon);
+}
+
 async function act(key, cmd, args, opts) {
   if (pending.size) return;
   pending.add(key);
@@ -253,7 +260,7 @@ function renderDaemon() {
         h("div", { class: "title", text: drift ? "Update ready - restart to load " + d.installed : st.title || "Unknown" }),
         h("div", { class: "sub mono", text: drift ? d.running + " is running" : st.detail || "" })),
       drift ? h("div", { class: "end" },
-        actionButton("restart", "Restart", "restart", "primary", () => act("restart", "daemon_restart", null, { title: "Daemon restarted" }))) : null)));
+        actionButton("restart", "Restart", "restart", "primary", () => restartDaemon())) : null)));
 
   const store = d.store || {};
   const owed = store.owed_projections;
@@ -282,7 +289,7 @@ function renderDaemon() {
           h("div", { class: "title", text: "Restart the daemon" }),
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
         h("div", { class: "end" }, remote || drift ? null :
-          actionButton("restart", "Restart", "restart", "", () => act("restart", "daemon_restart", null, { title: "Daemon restarted" }))))),
+          actionButton("restart", "Restart", "restart", "", () => restartDaemon())))),
     h("div", { class: "group-title", text: "Search" }),
     h("div", { class: "card" }, searchRow(d, remote)),
     h("div", { class: "group-title", text: "Store" }),
@@ -724,6 +731,31 @@ async function load() {
     loadError = String(e);
   }
   render();
+  if (daemonUnsettled()) watchDaemon();
+}
+
+// Whether This Mac's daemon is on its way somewhere: not answering, starting, or failed. A remote
+// profile leaves this Mac's daemon out of it.
+function daemonUnsettled() {
+  const d = state && state.daemon;
+  if (!d || d.remote) return false;
+  return !d.answering || !d.running || /starting|FAILED/.test(d.line || "");
+}
+
+// While the daemon is unsettled the page reads its state again every two seconds, for up to a
+// minute, so a restart that is still coming up - or one reported as failed while launchd brought the
+// daemon back - shows what is true without waiting for the window to be focused again.
+let watch = null; // { until } while the page follows the daemon; one watch at a time
+function watchDaemon() {
+  if (watch) return;
+  watch = { until: Date.now() + 60000 };
+  const tick = async () => {
+    // A load while an act is running would read the act's middle; wait for its own load.
+    if (!pending.size) await load();
+    if (!daemonUnsettled() || Date.now() > watch.until) { watch = null; return; }
+    setTimeout(tick, 2000);
+  };
+  setTimeout(tick, 2000);
 }
 
 window.addEventListener("hashchange", () => { render(); document.getElementById("pane").scrollTop = 0; });
