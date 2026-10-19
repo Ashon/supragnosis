@@ -3663,11 +3663,11 @@ function regionSimOf() {
 // graph the page has since replaced (an older `gen`) is dropped.
 const layout = (() => {
   let worker = null, engine = null, gen = 0, lastGraph = null, shownNow = false;
-  const lastSet = {}, stats = { steps: 0, stepMs: 0 };
+  const lastSet = {}, stats = { steps: 0, stepMs: 0, graphMs: 0 };
   const apply = st => {
     if (st.gen !== gen) return;
     alpha = st.alpha; overlapOwed = st.overlapOwed; simMotion = st.motion;
-    stats.steps = st.steps; stats.stepMs = st.stepMs;
+    stats.steps = st.steps; stats.stepMs = st.stepMs; stats.graphMs = st.graphMs;
     const n = Math.min(nodes.length, st.x.length);
     for (let i = 0; i < n; i++) { const v = nodes[i]; v.x = st.x[i]; v.y = st.y[i]; }
   };

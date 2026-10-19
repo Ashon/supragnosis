@@ -843,9 +843,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (36, &[c(
         "a fresh layout starts from its communities' layout, found by label propagation, and a saved one skips it",
-        Evidence::Deferred(
-            "Section 14 step 34 is planned: a fresh layout starts from scattered positions. Revisit when step 34 lands",
-        ),
+        // scale.rs reads communitiesOf, takeGraph and multilevel in viewer-sim.js.
+        Evidence::Scenario(&["a_fresh_layout_starts_from_its_communities"]),
     )]),
     (37, &[
         c(

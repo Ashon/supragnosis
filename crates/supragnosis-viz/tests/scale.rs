@@ -409,3 +409,48 @@ fn the_log_draws_its_newest_rows() {
         "an observation the Log does not hold cannot be opened"
     );
 }
+
+/// U36: a fresh layout starts from its communities. Label propagation over the relations finds them
+/// in a fixed order, the lower label on a tie; a community smaller than COMMUNITY_MIN joins the
+/// neighbour it shares the most relations with; the graph of communities is laid out first, with
+/// isolated nodes on a ring outside it, and each member starts on a spiral in its community's disc;
+/// the full layout continues from MULTI_ALPHA. A graph most of whose nodes the layout already holds,
+/// or one the page moved, does not start over.
+#[test]
+fn a_fresh_layout_starts_from_its_communities() {
+    let lpa = &SIM[SIM.find("function communitiesOf(").expect("communitiesOf")..];
+    let lpa = &lpa[..lpa.find("\n}\n").expect("it closes")];
+    for part in [
+        "if (c > most || (c === most && l < best)) { best = l; most = c; }",
+        "if (!changed) break;",
+        "for (const l of [...members.keys()].sort((a, b) => a - b)) {",
+        "if (best >= 0) { into[own] = best; size[best] += size[own]; }",
+    ] {
+        assert!(lpa.contains(part), "the communities are not found as Section 27.6 says: {part}");
+    }
+    let take = engine("takeGraph");
+    assert!(
+        take.contains("comm = communitiesOf(N, ea, eb);")
+            && take.contains("if (!g.moved && N >= MULTI_MIN && fresh >= 0.8 * N) multilevel();"),
+        "a fresh layout does not start from its communities"
+    );
+    let multi = engine("multilevel");
+    for part in [
+        "if (size[of[i]] === 1 && deg[i] === 0) alone[of[i]] = 1;",
+        "const c = coarseLayout(back.length, lsize, llinks, cx, cy), placed = new Float64Array(K);",
+        "alpha = Math.min(alpha, MULTI_ALPHA);",
+    ] {
+        assert!(
+            multi.contains(part),
+            "the communities' layout is not carried to their members: {part}"
+        );
+    }
+    for c in [
+        "const MULTI_MIN = 200;",
+        "const MULTI_ALPHA = 0.3;",
+        "const COMMUNITY_MIN = 6;",
+        "const COARSE_WORK = 2e7;",
+    ] {
+        assert!(SIM.contains(c), "the multilevel start's bounds moved: {c}");
+    }
+}

@@ -80,6 +80,110 @@ const SHOWN_STEP_MS = 1000 / 60;
 function radiusOfDegree(degree) { return Math.min(NODE_R_MAX, NODE_R_BASE + Math.sqrt(degree || 0) * NODE_R_SCALE); }
 function hullSizeNorm(size) { return Math.max(0, Math.min(1, (size - 2) / (HULL_SIZE_REF - 2))); }
 
+// --- the multilevel start (Section 27.6, U36) ----------------------------------------------------
+// A fresh layout of many nodes starts from its communities: they are found by label propagation, the
+// graph of communities is laid out first, each member starts on a spiral within its community's
+// disc, and the full layout continues from a cooler start, so it reveals in fewer steps. The forces
+// are the full layout's own; only where they begin changes.
+const MULTI_MIN = 200;        // nodes from which a fresh layout starts from its communities
+const MULTI_ALPHA = 0.3;      // how hot the full layout starts once its communities are placed
+const LPA_ROUNDS = 12;        // label propagation's rounds, at most
+const COARSE_STEPS = 160;     // the graph of communities' own settle, at most
+const COARSE_WORK = 2e7;      // pairs it meets in all: fewer steps for many communities
+const COMMUNITY_MIN = 6;      // a smaller community joins the neighbour it shares the most relations with
+const COARSE_SPACING = 22;    // world px per sqrt(member): a community's disc
+
+// Communities by label propagation over the relations (Raghavan and others, 2007): every node starts
+// as its own, and in a fixed order takes the label most of its neighbours carry, the lower label on a
+// tie, until a round changes nothing - so a graph gives the same communities every time. A node with
+// no relation stays alone. The labels come back numbered from 0 in order of first appearance.
+function communitiesOf(n, ea, eb) {
+  const start = new Int32Array(n + 1);
+  for (let e = 0; e < ea.length; e++) { start[ea[e] + 1]++; start[eb[e] + 1]++; }
+  for (let i = 0; i < n; i++) start[i + 1] += start[i];
+  const adj = new Int32Array(start[n]), cur = start.slice(0, n);
+  for (let e = 0; e < ea.length; e++) { adj[cur[ea[e]]++] = eb[e]; adj[cur[eb[e]]++] = ea[e]; }
+  const label = new Int32Array(n), count = new Int32Array(n), seen = new Int32Array(n);
+  for (let i = 0; i < n; i++) label[i] = i;
+  for (let round = 0; round < LPA_ROUNDS; round++) {
+    let changed = 0;
+    for (let i = 0; i < n; i++) {
+      const a = start[i], b = start[i + 1];
+      if (a === b) continue;
+      let t = 0;
+      for (let k = a; k < b; k++) { const l = label[adj[k]]; if (count[l]++ === 0) seen[t++] = l; }
+      let best = -1, most = 0;
+      for (let k = 0; k < t; k++) { const l = seen[k], c = count[l]; if (c > most || (c === most && l < best)) { best = l; most = c; } }
+      for (let k = 0; k < t; k++) count[seen[k]] = 0;
+      if (best !== label[i]) { label[i] = best; changed++; }
+    }
+    if (!changed) break;
+  }
+  // On a sparse graph propagation leaves many communities of two or three. Each smaller than
+  // COMMUNITY_MIN joins, in label order, the community its members share the most relations with -
+  // the lower label on a tie - so the graph of communities is the communities a reader would see.
+  const size = new Int32Array(n), into = new Int32Array(n);
+  for (let i = 0; i < n; i++) { size[label[i]]++; into[i] = i; }
+  const root = l => { while (into[l] !== l) l = into[l] = into[into[l]]; return l; };
+  const members = new Map();
+  for (let i = 0; i < n; i++) if (size[label[i]] < COMMUNITY_MIN) { const l = label[i]; if (!members.has(l)) members.set(l, []); members.get(l).push(i); }
+  for (const l of [...members.keys()].sort((a, b) => a - b)) {
+    const own = root(l);
+    if (size[own] >= COMMUNITY_MIN) continue;
+    let t = 0;
+    for (const i of members.get(l)) for (let k = start[i]; k < start[i + 1]; k++) {
+      const o = root(label[adj[k]]);
+      if (o !== own && count[o]++ === 0) seen[t++] = o;
+    }
+    let best = -1, most = 0;
+    for (let k = 0; k < t; k++) { const o = seen[k], c = count[o]; if (c > most || (c === most && o < best)) { best = o; most = c; } }
+    for (let k = 0; k < t; k++) count[seen[k]] = 0;
+    if (best >= 0) { into[own] = best; size[best] += size[own]; }
+  }
+  const at = new Int32Array(n).fill(-1), of = new Int32Array(n);
+  let K = 0;
+  for (let i = 0; i < n; i++) { const l = root(label[i]); if (at[l] < 0) at[l] = K++; of[i] = at[l]; }
+  return { of, count: K };
+}
+
+// The graph of communities laid out on its own: each a disc of COARSE_SPACING x sqrt(its members),
+// pushed apart from every other and off any it overlaps, and pulled toward the communities it shares
+// relations with, around (cx, cy). Few enough to meet every pair.
+function coarseLayout(K, size, links, cx, cy) {
+  const R = new Float64Array(K), x = new Float64Array(K), y = new Float64Array(K), vx = new Float64Array(K), vy = new Float64Array(K);
+  for (let c = 0; c < K; c++) R[c] = COARSE_SPACING * Math.sqrt(size[c]);
+  // The largest nearest the centre, on a spiral that leaves each its disc's room.
+  const order = Array.from({ length: K }, (_, c) => c).sort((a, b) => size[b] - size[a] || a - b);
+  let area = 0;
+  order.forEach((c, k) => {
+    area += R[c] * R[c];
+    const a = k * 2.39996, r = 1.15 * Math.sqrt(area);
+    x[c] = cx + r * Math.cos(a); y[c] = cy + r * Math.sin(a);
+  });
+  const steps = Math.max(30, Math.min(COARSE_STEPS, Math.floor(COARSE_WORK / Math.max(1, K * K / 2))));
+  for (let s = 0, heat = 1; s < steps; s++, heat *= 1 - 4 / steps) {
+    for (let i = 0; i < K; i++) for (let j = i + 1; j < K; j++) {
+      let dx = x[j] - x[i], dy = y[j] - y[i];
+      const d = Math.hypot(dx, dy) || 0.01, want = R[i] + R[j] + COLLIDE_PAD;
+      dx /= d; dy /= d;
+      let f = 0.02 * R[i] * R[j] / Math.max(d, want) * heat;
+      if (d < want) f += (want - d) * 0.25;
+      vx[i] -= f * dx; vy[i] -= f * dy; vx[j] += f * dx; vy[j] += f * dy;
+    }
+    for (const [i, j, w] of links) {
+      let dx = x[j] - x[i], dy = y[j] - y[i];
+      const d = Math.hypot(dx, dy) || 0.01, f = (d - (R[i] + R[j] + COLLIDE_PAD)) * 0.01 * Math.min(1, w / 3) * heat;
+      dx /= d; dy /= d;
+      vx[i] += f * dx; vy[i] += f * dy; vx[j] -= f * dx; vy[j] -= f * dy;
+    }
+    for (let c = 0; c < K; c++) {
+      vx[c] = (vx[c] + (cx - x[c]) * 0.002 * heat) * 0.6; vy[c] = (vy[c] + (cy - y[c]) * 0.002 * heat) * 0.6;
+      x[c] += vx[c]; y[c] += vy[c];
+    }
+  }
+  return { x, y, R };
+}
+
 // --- the engine ---------------------------------------------------------------------------------
 // The layout's whole state. `graph` takes the page's nodes, relations and contexts as arrays: each
 // node's index in the graph before (`prev`, -1 for a new one) lets a node that stays keep the
@@ -94,7 +198,8 @@ function createLayout() {
   let ws = new Int32Array(0), wsCount = 0, wsNamed = new Uint8Array(0), wsNamedCount = 0, typ = new Int32Array(0);
   let ea = new Int32Array(0), eb = new Int32Array(0);
   let regCount = 0, regStart = new Int32Array(1), regMem = new Int32Array(0), regDrawn = new Int32Array(0), mark = new Int32Array(0);
-  let alpha = 1, overlapOwed = 0, motion = 0, steps = 0, stepMs = 0;   // the last two say what a step costs
+  let alpha = 1, overlapOwed = 0, motion = 0, steps = 0, stepMs = 0, graphMs = 0;   // what a step and a graph cost
+  let comm = { of: new Int32Array(0), count: 0 };   // the graph's communities (multilevel start, semantic zoom)
   // What the page says about the moment: modes, the window's centre, the zoom (the coast is measured
   // on the screen), the held and the focused node, and the group targets of group mode.
   const p = { hullForce: true, clusterMode: false, wsMode: false, wcx: 0, wcy: 0, camS: 1, drag: -1, dragX: 0, dragY: 0, focus: -1, targets: null };
@@ -107,6 +212,11 @@ function createLayout() {
   let regCx = new Float64Array(0), regCy = new Float64Array(0), regR = new Float64Array(0), regSx = new Float64Array(0), regSy = new Float64Array(0);
 
   function graph(g) {
+    const t0 = performance.now();
+    takeGraph(g);
+    graphMs = performance.now() - t0;
+  }
+  function takeGraph(g) {
     const n = g.deg.length, nx = new Float64Array(n), ny = new Float64Array(n), nvx = new Float64Array(n), nvy = new Float64Array(n);
     const nc = new Float64Array(n), ncs = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
@@ -128,6 +238,54 @@ function createLayout() {
     regStart = g.regStart; regMem = g.regMem; regDrawn = g.regDrawn; regCount = regStart.length - 1;
     mark = new Int32Array(N).fill(-1);
     gen = g.gen;
+    comm = communitiesOf(N, ea, eb);
+    // A fresh layout of many nodes - most of them new to it, none moved by the page - starts from its
+    // communities (U36).
+    let fresh = 0;
+    for (let i = 0; i < N; i++) if (!(g.prev && g.prev[i] >= 0)) fresh++;
+    if (!g.moved && N >= MULTI_MIN && fresh >= 0.8 * N) multilevel();
+  }
+  // The communities' layout, carried to their members: the k-th member of a community, in index order,
+  // starts at k on a spiral within its disc; the full layout then continues from MULTI_ALPHA.
+  function multilevel() {
+    const K = comm.count, of = comm.of, size = new Float64Array(K);
+    let cx = 0, cy = 0;
+    for (let i = 0; i < N; i++) { size[of[i]]++; cx += x[i]; cy += y[i]; }
+    cx /= N; cy /= N;
+    // A node with no relation is a community of one with nothing to lay it out against: it waits on a
+    // ring outside the others, and the repulsion takes it from there as it always did.
+    const alone = new Uint8Array(K);
+    for (let i = 0; i < N; i++) if (size[of[i]] === 1 && deg[i] === 0) alone[of[i]] = 1;
+    const between = new Map();
+    for (let e = 0; e < E; e++) {
+      const a = of[ea[e]], b = of[eb[e]];
+      if (a === b) continue;
+      const key = a < b ? a * K + b : b * K + a;
+      between.set(key, (between.get(key) || 0) + 1);
+    }
+    const links = [];
+    for (const [key, w] of between) links.push([Math.floor(key / K), key % K, w]);
+    // The communities that are laid out, by a dense index of their own.
+    const laid = new Int32Array(K).fill(-1), back = [];
+    for (let k = 0; k < K; k++) if (!alone[k]) { laid[k] = back.length; back.push(k); }
+    const lsize = Float64Array.from(back, k => size[k]);
+    const llinks = links.filter(([a, b]) => laid[a] >= 0 && laid[b] >= 0).map(([a, b, w]) => [laid[a], laid[b], w]);
+    const c = coarseLayout(back.length, lsize, llinks, cx, cy), placed = new Float64Array(K);
+    let reach = 0;
+    for (let j = 0; j < back.length; j++) reach = Math.max(reach, Math.hypot(c.x[j] - cx, c.y[j] - cy) + c.R[j]);
+    let outside = 0;
+    for (let i = 0; i < N; i++) {
+      const k = of[i];
+      if (alone[k]) {
+        const a = outside * 2.39996, r = reach + COLLIDE_PAD + 30 * Math.sqrt(outside++);
+        x[i] = cx + r * Math.cos(a); y[i] = cy + r * Math.sin(a);
+      } else {
+        const d = laid[k], j = placed[k]++, a = j * 2.39996, r = 0.9 * c.R[d] * Math.sqrt((j + 0.5) / size[k]);
+        x[i] = c.x[d] + r * Math.cos(a); y[i] = c.y[d] + r * Math.sin(a);
+      }
+      vx[i] = 0; vy[i] = 0;
+    }
+    alpha = Math.min(alpha, MULTI_ALPHA);
   }
   function set(q) { Object.assign(p, q); }
   function wake(a) { alpha = Math.max(alpha, a); }
@@ -137,7 +295,7 @@ function createLayout() {
   // Whether the layout still moves: force applies, the last collision pass is owed, a node is held,
   // or the coast is still visible on the screen (Section 26.3, U28).
   function warm() { return N > 0 && (alpha >= ALPHA_MIN || overlapOwed > 0 || p.drag >= 0 || motion * p.camS > MOTION_MIN_PX); }
-  function state() { return { gen, alpha, overlapOwed, motion, steps, stepMs }; }
+  function state() { return { gen, alpha, overlapOwed, motion, steps, stepMs, graphMs }; }
 
   // The near-force grid: a counting sort of the nodes into square cells at least `cell` wide, grown
   // so the cells stay within about four per node (Section 26.4, U29).

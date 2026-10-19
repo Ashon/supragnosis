@@ -19,8 +19,8 @@
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
 > The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38 - and
-> steps 31-33, the poll that asks first, region forces that scale and the layout on its own thread,
-> are built.
+> steps 31-34, the poll that asks first, region forces that scale, the layout on its own thread and
+> the multilevel start, are built.
 
 ## 1. Why this exists
 
@@ -1701,7 +1701,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    separation among drawn regions; the bench's graph gains a store's contexts.
 33. **The layout on its own thread** [built] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
    in a worker, and on the page's thread when none starts.
-34. **The multilevel start** [planned] (Section 27.6; U36): communities, their layout first.
+34. **The multilevel start** [built] (Section 27.6; U36): communities, their layout first.
 35. **Clipping** [planned] (Section 27.7; U37): the grid index of positions and of relations' boxes.
 36. **Semantic zoom** [planned] (Section 27.8; U38): communities folded into bodies by their size on
    the screen, with the crossfade.
@@ -2557,6 +2557,18 @@ Guarded by `the_layout_steps_on_its_own_thread`.
   community's disc, and the full layout continues from a cooler start, so it reveals in fewer steps
   (U36). This is the multilevel scheme of Walshaw's and of sfdp, with one level.
 - **A saved layout skips it**, and the communities are kept for semantic zoom.
+- **Small communities join their neighbours.** On the bench's graph, sparse as a store's is,
+  propagation left 1,285 communities at 10,000 entities, half of them of three or fewer, and the
+  communities' layout, every pair of them for 160 steps, took 1.6 seconds, and at 20,000 6.3. A
+  community smaller than six now joins, in label order, the one its members share the most relations
+  with, the lower label on a tie; a node with no relation waits on a ring outside the others; and the
+  communities' layout meets at most 20 million pairs in all, taking fewer steps when they are many.
+
+The first picture of 10,000 entities came in 2.8 seconds in Chrome and 2.4 in WebKit, where it took
+6.2 and 5.5, and of 20,000 in 5.5 and 5.0, where it took 11.3; the layout reveals in about 60 steps
+where it took about 120.
+
+Guarded by `a_fresh_layout_starts_from_its_communities`.
 
 ### 27.7 Clipping
 
