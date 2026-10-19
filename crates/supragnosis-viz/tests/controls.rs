@@ -75,3 +75,39 @@ fn the_viewers_controls_say_what_they_are() {
         "the map's canvas has no name"
     );
 }
+
+/// Section 5 and 10: View holds two choices with one name each - Regions and Boundaries, each a radio
+/// group of three - a switch that turns the single keys off, and no option drawn dimmed for being off.
+#[test]
+fn view_holds_two_choices_with_one_name_each() {
+    let css = include_str!("../assets/viewer.css");
+    assert!(
+        !PAGE.contains("id=\"hyperBtn\"") && !PAGE.contains("id=\"regionsBtn\""),
+        "hulls and all regions are still two switches"
+    );
+    for v in ["data-v=\"all\"", "data-v=\"selected\"", "data-v=\"off\""] {
+        assert!(PAGE.contains(v), "Regions has no {v}");
+    }
+    assert!(
+        SCRIPT.contains("radioGroup(regionsSeg, \"Regions\")"),
+        "Regions is not a radio group"
+    );
+    assert!(
+        SCRIPT.contains("radioGroup(legendBoundaryEl, \"Boundaries\")"),
+        "Boundaries is not a radio group"
+    );
+    for label in ["\"Workspace\"", "\"Origin\"", "\"None\""] {
+        assert!(SCRIPT.contains(label), "a boundary mode is not named {label}");
+    }
+    assert!(
+        PAGE.contains("id=\"keysBtn\" class=\"tog on\""),
+        "the single keys cannot be turned off"
+    );
+    assert!(
+        SCRIPT.contains("if (!singleKeys && [\"[\", \"]\", \"/\", \"b\"].includes(e.key)) return;")
+    );
+    assert!(
+        !css.contains("button.tog { opacity"),
+        "an option that is off is drawn as if disabled"
+    );
+}

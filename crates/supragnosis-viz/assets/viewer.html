@@ -140,27 +140,34 @@
 <!-- View options live OFF the primary panels (they are preferences, not data): a compact
      checkbox popover behind the HUD's view button, map-tool style. Same button ids and .tog/.on
      mechanics as before - only the presentation moved. -->
-<div id="viewpop">
+<div id="viewpop" role="group" aria-label="View">
+  <!-- Two choices with one name each (design-system.md Section 5): which regions are drawn, and which
+       boundaries. Each is one choice of three, so each is a radio group. -->
+  <div class="grp"><span class="ghdr" id="lRegions">Regions</span>
+    <div id="regionsSeg" class="seg" aria-labelledby="lRegions"><button type="button" data-v="all" title="every context region, faint, and the active node's at full strength">All</button><button type="button" data-v="selected" title="only the regions of the node you point at or select">Selected</button><button type="button" data-v="off" title="no regions">Off</button></div></div>
+  <div class="grp"><span class="ghdr" id="lBoundaries">Boundaries<kbd class="keyhint" title="press b to cycle Workspace / Origin / None">b</kbd></span>
+    <div id="legendBoundary" class="seg" aria-labelledby="lBoundaries"></div></div>
+  <!-- On/off view state: each is a switch that says on or off, and an option that is off is drawn at
+       full strength (Section 4). -->
   <div class="grp"><span class="ghdr">Layout</span><div class="btns">
-    <button id="followBtn" class="tog on" title="follow agent activity: workspace + camera">follow</button>
-    <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">peers</button>
-    <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">group</button>
-    <button id="hyperBtn" class="tog on" title="draw the hyperedge hull overlay (co-occurrence sets, size>=3). The cohesion force is on by default - Principle 11">hulls</button>
-    <button id="regionsBtn" class="tog on" title="draw every context region as a cloud; off, only the regions of the node you point at or select">all regions</button>
+    <button id="followBtn" class="tog on" title="frame new activity in the scope on screen; activity elsewhere is a notice">Follow activity</button>
+    <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">Peers</button>
+    <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">Group by type</button>
   </div></div>
   <div class="grp"><span class="ghdr">Show</span><div class="btns">
-    <button id="labelsBtn" class="tog on" title="toggle node/hull labels">labels</button>
-    <button id="edgesBtn" class="tog on" title="toggle edges">edges</button>
-    <button id="arrowsBtn" class="tog on" title="toggle edge direction arrowheads">arrows</button>
-    <button id="footBtn" class="tog on" title="toggle session footprint rings">footprint</button>
-    <button id="pulseBtn" class="tog on" title="toggle live activity pulses">pulses</button>
-    <button id="histBtn" class="tog on" title="toggle superseded (past) edges">history</button>
-    <button id="miniBtn" class="tog on" title="toggle the minimap (whole-graph overview + viewport; click/drag to pan)">minimap</button>
+    <button id="labelsBtn" class="tog on" title="node and region names">Labels</button>
+    <button id="edgesBtn" class="tog on" title="relations">Edges</button>
+    <button id="arrowsBtn" class="tog on" title="a relation's direction">Arrows</button>
+    <button id="footBtn" class="tog on" title="the glow on what this session used">Footprint</button>
+    <button id="pulseBtn" class="tog on" title="the ring a node pulses with when it is touched">Pulses</button>
+    <button id="histBtn" class="tog on" title="relations that were superseded, dashed">History</button>
+    <button id="miniBtn" class="tog on" title="the whole graph and the window on it; click or drag to pan">Minimap</button>
   </div></div>
-  <!-- The boundaries are a view mode (design-system.md Section 6): a three-way control, still cycled
-       by b. -->
-  <div class="grp"><span class="ghdr">Boundaries<kbd class="keyhint" title="press b to cycle workspace / origin / off">b</kbd></span>
-    <div id="legendBoundary"></div></div>
+  <!-- The single keys - / b [ ] - act from anywhere outside a text field; this turns them off
+       (design-system.md Section 10, WCAG 2.1.4). -->
+  <div class="grp"><span class="ghdr">Keys</span><div class="btns">
+    <button id="keysBtn" class="tog on" title="/ search, b boundaries, [ and ] panels - from anywhere outside a text field">Single-key shortcuts</button>
+  </div></div>
   <button id="reload" title="re-fetch the graph now (it also refreshes on its own)">reload</button>
 </div>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor

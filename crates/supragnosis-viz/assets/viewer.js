@@ -2970,28 +2970,29 @@ function drawWsHulls(ctx, hullLabels) {
 // it drew was "why is it grouping by workspace", which is what a control with no affordance earns.
 // "b" still cycles, for whoever finds it.
 const BOUNDARY_MODES = [
-  ["workspace", "each workspace is a sharing unit, and no entity is in two"],
-  ["origin", "who signed for each entity - regions OVERLAP where two peers both attested it"],
-  ["off", "no boundaries"],
+  ["workspace", "each workspace is a sharing unit, and no entity is in two", "Workspace"],
+  ["origin", "who signed for each entity - regions OVERLAP where two peers both attested it", "Origin"],
+  ["off", "no boundaries", "None"],
 ];
 function renderBoundaryChips() {
   if (!legendBoundaryEl) return;
   legendBoundaryEl.innerHTML = "";
-  for (const [mode, why] of BOUNDARY_MODES) {
+  for (const [mode, why, label] of BOUNDARY_MODES) {
     const el = document.createElement("button");
     el.type = "button";
-    el.className = "lg" + (boundaryMode === mode ? "" : " off");
+    el.className = boundaryMode === mode ? "on" : "";
     const sw = document.createElement("span");
     sw.className = "sw";
     // Dashed swatch for the two that draw, hollow for off - the same outline the layer uses.
     if (mode === "off") { sw.style.background = "transparent"; sw.style.border = "1px dashed #666"; }
     else { sw.style.background = "transparent"; sw.style.border = "1px dashed " + hyperColor(mode + ":swatch"); }
     el.appendChild(sw);
-    el.appendChild(document.createTextNode(mode));
+    el.appendChild(document.createTextNode(label));
     el.title = why + " (b cycles the three)";
     el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); wake(0.5); };   // workspaces cohere only in one mode
     legendBoundaryEl.appendChild(el);
   }
+  radioGroup(legendBoundaryEl, "Boundaries");   // one choice of three (Section 4)
 }
 
 // --- Region clouds, mixed in OKLCH (docs/design-system.md Section 5) ------------------------------
@@ -4189,10 +4190,35 @@ const peersBtn = document.getElementById("peersBtn");
 peersBtn.onclick = () => { peersOn = !peersOn; setSwitch(peersBtn, peersOn); };
 const clusterBtn = document.getElementById("clusterBtn");
 clusterBtn.onclick = () => { clusterMode = !clusterMode; setSwitch(clusterBtn, clusterMode); wake(0.6); poll(); };
-const hyperBtn = document.getElementById("hyperBtn");
-// Overlay is render-only (the draw loop shows it next frame) - do not reheat the sim. Fetch hyperedge
-// data only if we do not already have it (e.g. when leaving group mode, where it was cleared).
-hyperBtn.onclick = () => { hyperMode = !hyperMode; setSwitch(hyperBtn, hyperMode); if (hyperMode && !hyperedges.length) poll(); };
+// The view menu's stored choices: each switch, the Regions choice and the single keys.
+const VIEW_PREFS = ["followBtn", "clusterBtn", "labelsBtn", "edgesBtn", "arrowsBtn", "footBtn",
+  "pulseBtn", "histBtn", "miniBtn", "keysBtn"];
+let viewPrefsReady = false;   // false while stored choices are replayed, so the replay stores nothing
+function saveViewPrefs() {
+  if (!viewPrefsReady) return;
+  const now = { v: 5, regions: regionsValue() };
+  for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
+  try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
+}
+// Regions: All, Selected or Off (design-system.md Section 5) - one choice over the two switches it
+// replaced, "hulls" and "all regions". Render-only (the draw loop shows it next frame), so the sim is
+// not reheated; the hyperedges are fetched only if they are not already here.
+const regionsSeg = document.getElementById("regionsSeg");
+function regionsValue() { return !hyperMode ? "off" : allRegions ? "all" : "selected"; }
+function setRegions(v) {
+  hyperMode = v !== "off"; allRegions = v === "all";
+  if (hyperMode && !hyperedges.length) poll();
+  renderRegionsSeg(); saveViewPrefs(); requestFrame();
+}
+function renderRegionsSeg() {
+  for (const b of regionsSeg.querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === regionsValue());
+  radioGroup(regionsSeg, "Regions");
+}
+regionsSeg.querySelectorAll("button").forEach(b => { b.onclick = () => setRegions(b.dataset.v); });
+// The single keys - / b [ ] - can be turned off (Section 10, WCAG 2.1.4).
+let singleKeys = true;
+const keysBtn = document.getElementById("keysBtn");
+keysBtn.onclick = () => { singleKeys = !singleKeys; setSwitch(keysBtn, singleKeys); };
 // The panels and their title-bar toggles (docs/design-system.md Section 6): each panel opens and
 // closes on its own, with its toggle or [ and ], and the choice persists across reloads. A panel is
 // part of the frame beside the map's window - body.dl / body.dr move the window's edges - and
@@ -4240,6 +4266,7 @@ window.addEventListener("keydown", e => {
     return;
   }
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+  if (!singleKeys && ["[", "]", "/", "b"].includes(e.key)) return;   // turned off in View (WCAG 2.1.4)
   if (e.key === "[") toggleDock(true);
   else if (e.key === "]") toggleDock(false);
   else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -4312,7 +4339,7 @@ document.getElementById("settingsBtn").onclick = openSettings;
 // Settings > Sync page, as it takes the gear's.
 document.getElementById("syncPill").onclick = () => { settingsTab = "sync"; openSettings(); };
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; setSwitch(e.currentTarget, showMini); };
-document.getElementById("regionsBtn").onclick = e => { allRegions = !allRegions; setSwitch(e.currentTarget, allRegions); };
+
 // The contested pill and the review pill open the Review page, where contested beliefs wait under
 // Needs you.
 document.getElementById("contestedPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
@@ -4322,8 +4349,6 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
 // peers is left out on purpose: it switches itself on for a hub, so a stored "off" would fight that.
 {
   for (const b of document.querySelectorAll("button.tog")) setSwitch(b, b.classList.contains("on"));
-  const VIEW_PREFS = ["followBtn", "clusterBtn", "hyperBtn", "regionsBtn", "labelsBtn", "edgesBtn",
-    "arrowsBtn", "footBtn", "pulseBtn", "histBtn", "miniBtn"];
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("supra.view") || "{}") || {}; } catch (_) { saved = {}; }
   // Any click stored every choice, so a stored minimap is rarely one anyone made: 0.6.0 and 0.6.1
@@ -4332,17 +4357,22 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
   // the same case from 0.6.4, when it starts on: a stored "off" before then is forgotten once.
   if (!(saved.v >= 3)) delete saved.miniBtn;
   if (!(saved.v >= 4)) delete saved.regionsBtn;
+  // Before 0.7.0 Regions was two switches, "hulls" and "all regions"; their stored choices become the
+  // one choice now (Section 5).
+  if (!saved.regions && (typeof saved.hyperBtn === "boolean" || typeof saved.regionsBtn === "boolean")) {
+    saved.regions = saved.hyperBtn === false ? "off" : saved.regionsBtn === false ? "selected" : "all";
+  }
+  viewPrefsReady = false;
   for (const id of VIEW_PREFS) {
     const b = document.getElementById(id);
     if (!b) continue;
     // Replay a stored choice through the button's own handler, so its state and side effects agree.
     if (typeof saved[id] === "boolean" && saved[id] !== b.classList.contains("on")) b.click();
-    b.addEventListener("click", () => {
-      const now = { v: 4 };
-      for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
-      try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
-    });
+    b.addEventListener("click", saveViewPrefs);
   }
+  if (["all", "selected", "off"].includes(saved.regions)) setRegions(saved.regions);
+  else renderRegionsSeg();
+  viewPrefsReady = true;
 }
 
 // Restore the workspace selection from the URL (deep link / reload) before the first poll.
