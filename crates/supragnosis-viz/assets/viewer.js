@@ -248,6 +248,19 @@ function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) sett
 let rafId = null;
 function requestFrame() { if (rafId === null) rafId = requestAnimationFrame(draw); }
 hearForcedColors();
+// The root's text size over the default 16 pixels (Section 10, U21). The map draws its labels on a
+// canvas, which rem does not reach, so every label size there is multiplied by it. A browser's text
+// size and the app's View menu set the root; the app says "rootsize" when it does.
+let TEXT_SCALE = 1;
+function readTextScale() {
+  TEXT_SCALE = (parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16) / 16;
+}
+readTextScale();
+addEventListener("rootsize", () => {
+  readTextScale();
+  fitStats();
+  requestFrame();
+});
 FORCED_COLORS.addEventListener("change", () => {
   hearForcedColors();
   assignColors();
@@ -292,7 +305,13 @@ function zoomAt(sx, sy, f) {
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
 const TOP_INSET = 49;      // the frame's header (viewer.css) - compensated in centering/fit
-const BOTTOM_INSET = 28;   // the frame's status bar
+let BOTTOM_INSET = 28;     // the frame's status bar, which grows with the root's text size
+function readBarHeight() {
+  const bar = document.getElementById("statusbar");
+  if (bar && bar.offsetHeight) BOTTOM_INSET = bar.offsetHeight;
+}
+readBarHeight();
+addEventListener("rootsize", readBarHeight);
 const DOCK_L = 260, DOCK_R = 300;   // the panels' widths (viewer.css) - reserved so content stays in the map's window
 function insetL() { return dockLEl.classList.contains("on") && !sheetWindow() ? DOCK_L : 0; }
 function insetR() {
@@ -311,7 +330,7 @@ function insetB() {
   const panel = detailEl.classList.contains("on") ? detailEl : sheet;
   if (!panel) return BOTTOM_INSET;
   const h = panel.getBoundingClientRect().height;
-  return h ? 36 + h + 8 : BOTTOM_INSET;   // 36 = the panel's bottom offset (match the CSS)
+  return h ? BOTTOM_INSET + 8 + h + 8 : BOTTOM_INSET;   // the panel sits 8 above the bar (match the CSS)
 }
 // Smoothly bring ONE node to the screen center (focus-to-zoom). If zoomed too far out, zoom in
 // slightly. Used where there is nothing but the node to frame: the activity feed following a single
@@ -410,7 +429,15 @@ function showStats(cur, s, regions) {
   counts.className = "counts";
   counts.textContent = line.slice(scope.length);
   document.getElementById("stats").replaceChildren(head, counts);
+  fitStats();
 }
+// A line that does not fit gives up its counts before it cuts the scope's name (Section 6).
+function fitStats() {
+  const el = document.getElementById("stats");
+  el.classList.remove("tight");
+  el.classList.toggle("tight", el.scrollWidth > el.clientWidth);
+}
+addEventListener("resize", fitStats);
 // Status bar: only say when the graph is stale, and only then say since when.
 function sayLate(reason) {
   // The reason is poll's: the HTTP status, the server's own error, or that it did not answer.
@@ -3641,14 +3668,14 @@ function draw() {
       // active and the largest contexts win placement; one overlapping a placed name is skipped.
       const cand = hullLabels
         .map(l => {
-          const fs = 13;
+          const fs = 13 * TEXT_SCALE;
           return { l, px: l.cx*cam.s + cam.x, py: l.cy*cam.s + cam.y - fs * 0.8, fs };
         })
         .filter(o => o.px > -80 && o.px < innerWidth + 80 && o.py > -30 && o.py < innerHeight + 30)
         .sort((a, b) => (b.l.hot - a.l.hot) || (b.l.size - a.l.size));
       for (const o of cand) {
         const l = o.l;
-        ctx.font = "500 " + o.fs + "px " + NAME_FAMILY;   // measures the placement box
+        ctx.font = "500 " + o.fs + "px " + NAME_FAMILY;   // measures the placement box; o.fs is 13 * TEXT_SCALE
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
         if (labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
         labelBoxes.push({ x, y, w, h });
@@ -3803,7 +3830,7 @@ function draw() {
     ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
     ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
     ctx.fillStyle = SURFACE; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "600 " + (11 / cam.s) + "px " + KIND_FAMILY;
+    ctx.font = "600 " + (11 * TEXT_SCALE / cam.s) + "px " + KIND_FAMILY;
     ctx.fillText("!", bx, by + 0.5 / cam.s);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
@@ -3906,13 +3933,13 @@ function draw() {
     // out - its node is still there, and hovering it names it.
     const rank = o => (o.n === focus ? 2 : 0) + (o.n === hover ? 1 : 0);
     want.sort((a, b) => rank(b) - rank(a) || (b.n.degree || 0) - (a.n.degree || 0));
-    ctx.font = "500 12px " + NAME_FAMILY;
+    ctx.font = "500 " + 12 * TEXT_SCALE + "px " + NAME_FAMILY;
     for (const o of want) {
       const w = ctx.measureText(o.n.name).width + 4, h = 15, x = o.px - 2, y = o.py - h / 2;
       if (rank(o) === 0 && labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
       labelBoxes.push({ x, y, w, h });
       ctx.globalAlpha = o.on ? 1 : 0.25;
-      drawLabel(o.n.name, "500", 12, (o.n === focus || o.n === hover) ? INK : INK2, "0px", 1.5, o.px, o.py, "left");
+      drawLabel(o.n.name, "500", 12 * TEXT_SCALE, (o.n === focus || o.n === hover) ? INK : INK2, "0px", 1.5, o.px, o.py, "left");
     }
     ctx.globalAlpha = 1;
     // (Group / hull labels are drawn in their own pass right after the hulls - see drawHullLabels below.)
@@ -3922,7 +3949,7 @@ function draw() {
       edgeLabels.sort((p, q) => p.len - q.len);
       const shown = Math.min(edgeLabels.length, EDGE_LABEL_MAX);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "11px " + KIND_FAMILY;   // relation kinds, at the scale's floor (docs/design-system.md Section 4)
+      ctx.font = 11 * TEXT_SCALE + "px " + KIND_FAMILY;   // relation kinds, at the scale's floor (docs/design-system.md Section 4)
       // Pill and text on whole device pixels: fillText snaps to the grid and the pill path does not, so
       // at a fractional point the text sits off-centre in its pill by a different amount every frame.
       const snap = v => Math.round(v * DPR) / DPR;
@@ -3940,7 +3967,7 @@ function draw() {
       }
       const omitted = edgeLabels.length - shown, an = focus || hover;
       if (omitted > 0 && an) {
-        ctx.font = "11px " + NAME_FAMILY;
+        ctx.font = 11 * TEXT_SCALE + "px " + NAME_FAMILY;
         const t = "+" + omitted + " more", px = snap(an.x*cam.s + cam.x), py = snap(an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15), w = ctx.measureText(t).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);

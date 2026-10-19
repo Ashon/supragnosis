@@ -727,11 +727,15 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (21, &[c(
         "every font size the viewer and the app's pages draw is one of six steps through a rem token, running text and control labels at 13 or more and nothing under 11, the map's labels scaling with the root, the app's menu setting the root's size and keeping it, and no text cut short but where focus or a press shows it whole",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 4, 10 and 14 step 18, not built. Revisit when \
-             the viewer's and the app pages' stylesheets set no font size in pixels and View has \
-             Make Text Bigger",
-        ),
+        // crates/supragnosis-viz/tests/type_scale.rs reads the three stylesheets and the map's
+        // label sizes; the app's tests read View's text size items and the page load that applies it.
+        Evidence::Scenario(&[
+            "every_font_size_is_a_token_in_rem",
+            "text_and_control_labels_are_body_size",
+            "the_maps_labels_scale_with_the_root",
+            "cut_text_can_be_read_whole",
+            "view_sets_the_root_text_size",
+        ]),
     )]),
     (22, &[c(
         "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, checkboxes, radios and switches take the accent, and no line is dashed or dotted",
@@ -3087,6 +3091,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/screens.rs"),
     include_str!("../../supragnosis-viz/tests/settle.rs"),
     include_str!("../../supragnosis-viz/tests/places.rs"),
+    include_str!("../../supragnosis-viz/tests/type_scale.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

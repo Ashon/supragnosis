@@ -38,6 +38,14 @@
     --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
     --gold-glass:rgba(217,165,68,0.12); --ok:#56b3a2; --bad:#e07a5f;
     --ok-ink:#78c8b8; --warn-ink:#e9af60; --bad-ink:#fca18a;
+    /* Six sizes, in rem so a person's own text size scales them, given by role (Section 4, U21):
+       a page's title, a sheet's, a section's; body - text a person reads to act and every control's
+       label, as a Mac's Body; small - a second line, a description, a hint, a panel's heading;
+       caption - a count, a time, a key cap. */
+    --text-page:1.5rem; --text-sheet:1.125rem; --text-section:0.9375rem;
+    --text-body:0.8125rem; --text-small:0.75rem; --text-caption:0.6875rem;
+    /* The status bar's height: 28 pixels at the default size, growing with its text (Section 10). */
+    --bar:1.75rem;
     /* A pill's tint: its signal at 12%, measured under the pill's text (Section 3). */
     --ok-glass:rgba(86,179,162,0.12); --bad-glass:rgba(224,122,95,0.12);
     --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -47,7 +55,7 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
   body { background:var(--surface); color:var(--ink2); overflow:hidden;
-         font:13px/1.5 var(--sans);
+         font:var(--text-body)/1.5 var(--sans);
          /* Light text on near-black. macOS's default smoothing dilates glyph stems, which on a dark
             ground reads as bold and soft - most visibly at 1x, under the 10-13px this panel lives at.
             Grayscale antialiasing draws them at their designed weight. The same two lines the landing
@@ -76,7 +84,7 @@
      header is the frame's top edge (design-system.md Section 6), so it is the frame's surface. */
   header { position:fixed; top:0; left:0; right:0; z-index:13; height:49px; padding:0 14px;
            display:flex; gap:9px; align-items:center; background:var(--panel); }
-  h1 { font:600 13px/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink);
+  h1 { font:600 var(--text-body)/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink);
        display:flex; align-items:center; gap:7px; }
   /* The inline asterisk mark. pointer-events:none keeps the shell's drag-region hit on the h1
      itself (the drag handler only fires when the mousedown target carries the attribute). */
@@ -87,7 +95,7 @@
   /* A control is a filled surface with no edge (Section 4): a text field is named by its label or
      placeholder, and hover lightens rather than turning gold. */
   :where(input, button) { background:var(--panel-2); border:0; color:var(--ink);
-                          padding:5px 9px; border-radius:8px; font:inherit; font-size:12px; }
+                          padding:5px 9px; border-radius:8px; font:inherit; font-size:var(--text-body); }
   input::placeholder { color:var(--muted); }
   :where(input):focus { background:var(--panel-3); }
   :where(button) { cursor:pointer; transition:background-color 0.12s ease, color 0.12s ease; }
@@ -107,9 +115,9 @@
   /* The search sits at the title bar's centre (Section 6), whatever the name beside it measures. */
   .searchwrap { position:absolute; left:50%; transform:translateX(-50%); width:min(380px, 36vw);
                 display:flex; align-items:center; }
-  #search { width:100%; height:30px; padding:0 30px 0 11px; font-size:13px; }
+  #search { width:100%; height:30px; padding:0 30px 0 11px; font-size:var(--text-body); }
   .slashkey { position:absolute; right:7px; pointer-events:none;
-              font:600 11px/1 var(--mono); color:var(--muted); background:var(--panel-3);
+              font:600 var(--text-caption)/1 var(--mono); color:var(--muted); background:var(--panel-3);
               border-radius:4px; padding:3px 5px; transition:opacity 0.12s ease; }
   /* Out of the way as soon as the field is in use - focused, or already carrying a term. */
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
@@ -121,25 +129,27 @@
                box-shadow:0 18px 40px #000a, 0 2px 8px #0006; }
   .searchpop[hidden] { display:none; }
   .sp-head { display:flex; justify-content:space-between; gap:10px; padding:3px 6px 6px;
-             color:var(--muted); font:11px/1.3 var(--mono); }
+             color:var(--muted); font:var(--text-caption)/1.3 var(--mono); }
   .sp-mode { color:var(--muted); }
-  .sp-sec { padding:8px 8px 4px; color:var(--muted); font:600 12px/1.3 var(--sans); }
+  .sp-sec { padding:8px 8px 4px; color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); }
   .sp-row { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:6px 8px;
-            border-radius:8px; background:none; color:var(--ink2); font:13px/1.4 var(--sans); }
+            border-radius:8px; background:none; color:var(--ink2); font:var(--text-body)/1.4 var(--sans); }
   .sp-row:hover { background:var(--panel-2); color:var(--ink); }
   .sp-row.on { background:var(--select); color:var(--ink); }
+  /* The option moved to shows its name and snippet whole (Section 10, U21). */
+  .sp-row.on .sp-name, .sp-row.on .sp-snip { white-space:normal; -webkit-line-clamp:unset; line-clamp:unset; display:block; }
   .sp-row .dot { width:8px; height:8px; border-radius:2px; flex:none; align-self:center; }
   .sp-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sp-k { flex:none; color:var(--muted); font:11px/1.3 var(--mono); }
+  .sp-k { flex:none; color:var(--muted); font:var(--text-caption)/1.3 var(--mono); }
   .sp-row.off .sp-name { color:var(--muted); }
   /* How a related hit was reached (Section 8), and the row that widens the scope. */
-  .sp-why { flex:none; margin-left:auto; color:var(--muted); font-size:11px; }
+  .sp-why { flex:none; margin-left:auto; color:var(--muted); font-size:var(--text-small); }
   .sp-widen { color:var(--ink); }
   .sp-snip { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-  .sp-note { padding:6px 8px 8px; color:var(--muted); font-size:12px; line-height:1.45; }
+  .sp-note { padding:6px 8px 8px; color:var(--muted); font-size:var(--text-small); line-height:1.45; }
   .sp-note.bad { color:var(--bad-ink); }
   /* A key that works where it is shown (b beside Boundaries) - the same filled cap as "/", inline. */
-  .keyhint { font:600 11px/1 var(--mono); color:var(--muted); background:var(--panel-3);
+  .keyhint { font:600 var(--text-caption)/1 var(--mono); color:var(--muted); background:var(--panel-3);
              border-radius:4px; padding:2px 5px; margin-left:6px; vertical-align:1px; }
   /* Notices: what a write did. Top centre, under the header and clear of both docks, the HUD and the
      inspector at the bottom (whose acts most writes come from); the same shape as the settings page's
@@ -148,43 +158,43 @@
             display:grid; gap:6px; width:min(420px, calc(100vw - 32px)); pointer-events:none; }
   .toast { display:flex; gap:9px; align-items:flex-start; padding:9px 10px 9px 12px; border-radius:12px;
            background:var(--panel-2); color:var(--ink);
-           box-shadow:0 12px 32px rgba(0,0,0,0.45); font:12px/1.45 var(--sans); pointer-events:auto; }
+           box-shadow:0 12px 32px rgba(0,0,0,0.45); font:var(--text-body)/1.45 var(--sans); pointer-events:auto; }
   .toast .tk { width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none; margin-top:5px; }
   .toast.bad .tk { background:var(--bad); }
   .toast .tb { flex:1; min-width:0; }
   .toast .tt { font-weight:500; }
-  .toast .td { color:var(--muted); font-size:12px; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
-  .toast button { padding:0 6px; font-size:13px; line-height:18px; color:var(--muted); background:none; }
+  .toast .td { color:var(--muted); font-size:var(--text-small); overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
+  .toast button { padding:0 6px; font-size:var(--text-body); line-height:18px; color:var(--muted); background:none; }
   /* A notice's one action, such as Undo. */
-  .toast button.tact { align-self:center; padding:2px 10px; border-radius:6px; font-size:12px; color:var(--ink); background:var(--panel-3); }
+  .toast button.tact { align-self:center; padding:2px 10px; border-radius:6px; font-size:var(--text-body); color:var(--ink); background:var(--panel-3); }
   /* Computed belief diff on the selected proposal - a before -> after row per change, so accepting
      is a decision about a visible delta rather than about a proposal's title. */
   .ddiff { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
-  .drow { display:flex; align-items:center; gap:5px; flex-wrap:wrap; font-size:11px; }
-  .dk { color:var(--muted); font-size:11px; }
+  .drow { display:flex; align-items:center; gap:5px; flex-wrap:wrap; font-size:var(--text-body); }
+  .dk { color:var(--muted); font-size:var(--text-small); }
   .dfrom { color:var(--muted); text-decoration:line-through; }
   .darr { color:var(--muted); }
   .dto { color:var(--ink); font-weight:600; }
-  .dsettled { color:var(--ok-ink); font-size:11px; }
-  .dcreated { color:var(--ink2); font-size:11px; }
+  .dsettled { color:var(--ok-ink); font-size:var(--text-small); }
+  .dcreated { color:var(--ink2); font-size:var(--text-small); }
   .dother { color:var(--muted); }
   /* Blocking check failures. Red-adjacent on purpose: this is the one thing in the panel that
      means "accepting will not work", as opposed to "here is what accepting would do". */
   .cblock { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
-  .crow { display:flex; align-items:baseline; gap:5px; flex-wrap:wrap; font-size:11px; }
-  .cbad { color:var(--bad-ink); font-size:11px; }
+  .crow { display:flex; align-items:baseline; gap:5px; flex-wrap:wrap; font-size:var(--text-body); }
+  .cbad { color:var(--bad-ink); font-size:var(--text-body); }
   .ck { color:var(--ink); }
   .cd { color:var(--muted); }
-  .dnote { color:var(--muted); font-size:11px; font-style:italic; margin:4px 0 2px; }
-  .hint { color:var(--muted); font-size:12px; }
-  #status { color:var(--muted); font-size:12px; margin-left:auto; white-space:nowrap; }
+  .dnote { color:var(--muted); font-size:var(--text-small); font-style:italic; margin:4px 0 2px; }
+  .hint { color:var(--muted); font-size:var(--text-small); }
+  #status { color:var(--muted); font-size:var(--text-small); margin-left:auto; white-space:nowrap; }
   #wschips { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:2px 0 4px; }
   #wschips .wshead { flex-basis:100%; margin:10px 0 4px; }
   /* Why the page opened on All (design-system.md Section 6). */
-  #wschips .wsnote { flex-basis:100%; margin-top:2px; color:var(--muted); font-size:12px; }
-  .lbl { color:var(--muted); font-size:11px; margin-right:2px; }
+  #wschips .wsnote { flex-basis:100%; margin-top:2px; color:var(--muted); font-size:var(--text-small); }
+  .lbl { color:var(--muted); font-size:var(--text-small); margin-right:2px; }
   .chip,.lg { padding:3px 10px; border-radius:8px; background:var(--panel-2); cursor:pointer;
-              font-size:12px; color:var(--ink2); user-select:none;
+              font-size:var(--text-body); color:var(--ink2); user-select:none;
               transition:background-color 0.12s ease, color 0.12s ease; }
   .chip:hover { background:var(--panel-3); color:var(--ink); }
   .chip.on { background:var(--select); color:var(--gold-bright); }
@@ -194,11 +204,11 @@
   .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
   #tip { position:fixed; pointer-events:none; z-index:10; display:none; max-width:320px;
          background:var(--panel-2); border-radius:8px;
-         padding:7px 10px; font-size:12px; color:var(--ink2); box-shadow:0 8px 28px #000c; }
+         padding:7px 10px; font-size:var(--text-body); color:var(--ink2); box-shadow:0 8px 28px #000c; }
   #tip b { color:var(--ink); font-family:var(--sans); }
   #tip .k { color:var(--muted); }
   /* Type-definition tooltip (legend chips): the definition reads as prose, like the glossary. */
-  #tip .tdef { font:13px/1.45 var(--sans); color:var(--ink); margin:3px 0 2px; }
+  #tip .tdef { font:var(--text-body)/1.45 var(--sans); color:var(--ink); margin:3px 0 2px; }
   #tip .tdef.none { font-style:italic; color:var(--muted); }
   /* The map's window (design-system.md Section 6). The header, the panels and the status bar are
      one surface, --panel, and the map is a window cut into it: this element paints the frame around
@@ -209,14 +219,14 @@
   body.dl { --win-l:260px; }
   body.dr { --win-r:300px; }
   body.sheet { --win-r:360px; }
-  #mapwin { position:fixed; top:49px; bottom:28px; left:var(--win-l); right:var(--win-r); z-index:3;
+  #mapwin { position:fixed; top:49px; bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:3;
             pointer-events:none; border-radius:16px; box-shadow:0 0 0 100vmax var(--panel);
             transition:left .18s ease, right .18s ease; }
   /* The camera is one toolbar at the window's lower right; the minimap, off until View turns it
      on, and the View menu open above it. Both float over the map, so they are surfaces with a
      shadow. The minimap's backing store is DPR-scaled in JS from this CSS size. inset:auto FIRST:
      the global `canvas` rule sets inset:0, and its top/left would win over right/bottom. */
-  #hud { position:fixed; right:calc(var(--win-r) + 16px); bottom:44px; z-index:8; display:flex;
+  #hud { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 16px); z-index:8; display:flex;
          padding:3px; background:var(--panel); border-radius:12px; box-shadow:0 8px 24px #0007; }
   #hud button { width:32px; height:32px; padding:0; display:flex; align-items:center;
                 justify-content:center; background:none; border-radius:9px; color:var(--ink2); }
@@ -226,20 +236,20 @@
   /* The eye stays lit while its popover is open: the popover is detached, so the button is the
      only anchor telling you where it came from. */
   #hud button.on { background:var(--select); color:var(--gold-bright); }
-  #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:90px; z-index:7;
+  #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:7;
              width:168px; height:154px; background:var(--panel); border-radius:12px;
              box-shadow:0 8px 24px #0007; cursor:crosshair; display:none; }
   #minimap.on { display:block; }
   #empty { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
-           gap:6px; padding:0 24px; text-align:center; color:var(--muted); font:13px/1.5 var(--sans); pointer-events:none; }
-  #empty .e-title { color:var(--ink); font-size:15px; font-weight:600; }
+           gap:6px; padding:0 24px; text-align:center; color:var(--muted); font:var(--text-body)/1.5 var(--sans); pointer-events:none; }
+  #empty .e-title { color:var(--ink); font-size:var(--text-section); font-weight:600; }
   #empty .e-ws { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:8px; max-width:560px; }
   #empty .e-ws .chip { pointer-events:auto; }
   /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
      hidden until it settles, so the user sees a calm spinner instead of nodes flying around. */
   #loader { position:fixed; inset:0; display:none; flex-direction:column; align-items:center;
             justify-content:center; gap:13px; z-index:6; pointer-events:none;
-            color:var(--muted); font:12px/1.4 var(--sans); }
+            color:var(--muted); font:var(--text-small)/1.4 var(--sans); }
   #loader.on { display:flex; }
   #loader .spin { width:34px; height:34px; border-radius:50%; border:2px solid var(--panel-3);
                   border-top-color:var(--ink2); animation:ldspin 0.8s linear infinite; }
@@ -252,7 +262,7 @@
   #log { position:fixed; left:calc(var(--win-l) + 16px); top:65px; z-index:6; width:280px; max-width:38vw;
          display:flex; flex-direction:column; gap:4px; pointer-events:none; }
   #log .row { background:var(--panel); border-radius:8px; box-shadow:0 6px 18px #0006;
-              padding:5px 10px; font-size:11px; color:var(--ink2); animation:logfade 8s forwards; }
+              padding:5px 10px; font-size:var(--text-small); color:var(--ink2); animation:logfade 8s forwards; }
   #log .row b { color:var(--ink); font-weight:600; }
   #log .row .t { color:var(--muted); margin-right:5px; }
   @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
@@ -261,17 +271,17 @@
      status bar, in place of the Log while a node is focused - at the bottom it covered the part of the
      map being inspected. Header block (name / meta / description) stays put; relations then evidence
      stack and scroll. Part of the frame, like the panels (Section 6): no edge, no shadow. */
-  #detail { position:fixed; top:49px; right:0; bottom:28px; width:360px; margin:0;
+  #detail { position:fixed; top:49px; right:0; bottom:var(--bar); width:360px; margin:0;
             z-index:8; overflow:hidden; display:none; background:var(--panel);
-            padding:14px 18px 16px; font-size:12px; color:var(--ink2); }
+            padding:14px 18px 16px; font-size:var(--text-body); color:var(--ink2); }
   #detail.on { display:flex; flex-direction:column; }
-  #detail h2 { font:600 15px/1.4 var(--sans); margin:0 52px 2px 0; color:var(--ink); }
-  #detail .meta { color:var(--muted); font-size:11px; margin-bottom:4px; display:flex; align-items:center;
+  #detail h2 { font:600 var(--text-section)/1.4 var(--sans); margin:0 52px 2px 0; color:var(--ink); }
+  #detail .meta { color:var(--muted); font-size:var(--text-small); margin-bottom:4px; display:flex; align-items:center;
                   gap:6px; flex-wrap:wrap; }
   /* The values the whole scope shares, stated once instead of on every node (docs/inspector.md D3).
      Quiet and pushed right: it qualifies the line rather than competing with the node's own fields. */
-  #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:11px; }
-  #detail .desc { color:var(--ink); font:13px/1.45 var(--sans); margin:2px 0 6px; opacity:.9; }
+  #detail .meta .scopeline { margin-left:auto; color:var(--muted); font-size:var(--text-small); }
+  #detail .desc { color:var(--ink); font:var(--text-body)/1.45 var(--sans); margin:2px 0 6px; opacity:.9; }
   /* Two regions (docs/inspector.md Section 6): relations, grouped by kind, and the evidence log. The
      relation side gets the larger share - its chips wrap, so width is what it turns into rows saved. */
   #detail .rels { display:grid; grid-template-columns:minmax(0,1fr); gap:14px;
@@ -280,11 +290,11 @@
   /* While the sheet is open it takes the right side: the Log steps aside, and the window and the
      corner controls follow --win-r. */
   body.sheet #dockR { display:none; }
-  #detail .sec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:4px 0 8px; }
+  #detail .sec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:4px 0 8px; }
   /* A relation group: the kind said once (mono - it is an identifier), then its members as chips
      (sans - they are names). A superseded edge stays listed, dashed and dimmed, never dropped (P4). */
   #detail .rgroup { margin:0 0 7px; }
-  #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:11px; color:var(--muted); margin:0 0 3px; }
+  #detail .rghead { display:flex; align-items:baseline; gap:6px; font-size:var(--text-small); color:var(--muted); margin:0 0 3px; }
   /* Relation kinds are identifiers, set in the identifier face (docs/design-system.md Section 4): the
      inspector's relation headers here, and the edge legend's entries. */
   #detail .rghead, #legendEdges .lg { font-family:var(--mono); }
@@ -294,13 +304,13 @@
   #detail .rghead .rct { color:var(--muted); }
   #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
   #detail .rchip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-                   font:12px/1.55 var(--sans); color:var(--ink); background:var(--panel-2);
+                   font:var(--text-body)/1.55 var(--sans); color:var(--ink); background:var(--panel-2);
                    border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
   #detail .rchip:hover { background:var(--panel-3); }
   /* A superseded relation keeps a dashed edge: the line says "past" (U9's list). */
   #detail .rchip.past { opacity:.6; background:none; border:1px dashed var(--muted); padding:2px 7px; }
   #detail .rchip .dot { width:7px; height:7px; border-radius:2px; margin-right:5px; vertical-align:0; }
-  #detail .rmore { font:11px/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
+  #detail .rmore { font:var(--text-caption)/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
                    border-radius:8px; padding:1px 8px; }
   #detail .dot { width:9px; height:9px; border-radius:3px; flex:0 0 auto; display:inline-block; }
   /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
@@ -320,12 +330,12 @@
   #detail .grow svg { display:block; }
   /* The sheet is already full height; the grow control is for the bottom panel a phone gets. */
   #detail .grow { display:none; }
-  #detail .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 5px; }
+  #detail .empty { color:var(--muted); font:italic var(--text-body)/1.5 var(--sans); padding:2px 5px; }
   /* The panels (design-system.md Section 6): part of the frame beside the map's window, from under
      the header to above the status bar, each opened and closed by its title-bar toggle or [ and ]. */
   /* A panel slides off instead of popping (visibility flips after the transform settles, so a
      hidden panel takes no clicks); the window's edge follows on the same curve. */
-  .dock { position:fixed; top:49px; bottom:28px; z-index:7; display:flex; flex-direction:column;
+  .dock { position:fixed; top:49px; bottom:var(--bar); z-index:7; display:flex; flex-direction:column;
           background:var(--panel); padding:8px 16px 16px;
           visibility:hidden; opacity:0;
           transition:transform .18s ease, opacity .18s ease, visibility 0s linear .18s; }
@@ -340,14 +350,16 @@
   .railbody { flex:1 1 auto; min-height:0; overflow-y:auto; }
   /* A heading on a panel (Section 4): sentence case, muted, spaced from what is above it rather than
      ruled off. */
-  .rsec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:20px 0 8px; }
+  .rsec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:20px 0 8px; }
   #dockR > .rsec:first-child { margin-top:10px; }
   .rsec .ct { color:var(--muted); font-weight:400; margin-left:4px; }
   /* IDE-style bottom status bar (full width, below the rails). */
-  #statusbar { position:fixed; left:0; right:0; bottom:0; height:28px; z-index:9; display:flex;
+  #statusbar { position:fixed; left:0; right:0; bottom:0; height:var(--bar); z-index:9; display:flex;
                align-items:center; gap:14px; padding:0 14px; background:var(--panel);
-               font-size:11px; letter-spacing:.03em; color:var(--muted); }
+               font-size:var(--text-small); letter-spacing:.03em; color:var(--muted); }
   #statusbar #stats { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* Where the line does not fit, it gives up its counts before it cuts the scope's name (Section 6). */
+  #statusbar #stats.tight .counts { display:none; }
   #statusbar #status { margin-left:auto; white-space:nowrap; }
   #statusbar #session { white-space:nowrap; }
   .dock .panels { flex:1 1 auto; min-height:0; overflow-y:auto; }
@@ -356,18 +368,18 @@
   /* Grouped toggles inside the Layers section. */
   .grp { margin-bottom:7px; }
   .grp:last-child { margin-bottom:2px; }
-  .ghdr { color:var(--muted); font:600 12px/1.3 var(--sans); display:block; margin:2px 0 6px; }
+  .ghdr { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); display:block; margin:2px 0 6px; }
   /* View options popover: preferences live off the primary panels, behind the HUD's view
      button (map-tool convention). Options render as compact monospace checkbox rows -
      "[x] labels" - because they are on/off view state, not actions. */
-  #viewpop { position:fixed; right:calc(var(--win-r) + 16px); bottom:90px; z-index:9; display:none;
+  #viewpop { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:9; display:none;
              flex-direction:column; width:248px; background:var(--panel); border-radius:12px;
              padding:10px 12px; box-shadow:0 18px 40px #000a, 0 2px 8px #0006; }
   #viewpop.on { display:flex; }
   #viewpop .btns { display:flex; flex-direction:column; gap:1px; }
   #viewpop button.tog { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;
                         min-height:24px; text-align:left; background:none; border:none; padding:2px 3px;
-                        font-size:12px; color:var(--ink2); border-radius:4px; }
+                        font-size:var(--text-body); color:var(--ink2); border-radius:4px; }
   /* The switch's track: a knob at the left on a panel tone when off, at the right on the selection
      tone, in gold, when on (Section 4: gold says selected). */
   #viewpop button.tog::after { content:""; flex:none; width:26px; height:14px; border-radius:7px;
@@ -378,45 +390,45 @@
   /* Regions and Boundaries: one choice of three each, a segmented control (Sections 4, 5). */
   #viewpop .seg { display:flex; gap:2px; padding:2px; border-radius:8px; background:var(--panel-2); }
   #viewpop .seg button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:24px;
-                         padding:2px 6px; font-size:12px; color:var(--ink2); background:none; border:none; border-radius:6px; }
+                         padding:2px 6px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:6px; }
   #viewpop .seg button.on { background:var(--select); color:var(--gold-bright); }
   #viewpop .seg .sw { width:10px; height:10px; border-radius:3px; flex:none; }
-  #viewpop #reload { margin-top:7px; padding:4px 8px; font-size:11px; }
+  #viewpop #reload { margin-top:7px; padding:4px 8px; font-size:var(--text-body); }
   /* Legend chips live in the dock sections now. */
   #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   /* Glossary entries. */
   #glossaryBody .item { padding:5px 0 6px; }
-  #glossaryBody .gsec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:10px 0 4px; }
+  #glossaryBody .gsec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:10px 0 4px; }
   #glossaryBody .gsec:first-child { margin-top:0; }
-  #glossaryBody .nm { color:var(--ink); font-weight:600; font-size:12px; }
-  #glossaryBody .src { color:var(--muted); font-size:11px; margin-left:5px; }
-  #glossaryBody .def { color:var(--ink2); font:13px/1.45 var(--sans); margin-top:1px; opacity:.95; }
-  #glossaryBody .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 0; }
+  #glossaryBody .nm { color:var(--ink); font-weight:600; font-size:var(--text-body); }
+  #glossaryBody .src { color:var(--muted); font-size:var(--text-caption); margin-left:5px; }
+  #glossaryBody .def { color:var(--ink2); font:var(--text-body)/1.45 var(--sans); margin-top:1px; opacity:.95; }
+  #glossaryBody .empty { color:var(--muted); font:italic var(--text-body)/1.5 var(--sans); padding:2px 0; }
   /* Curation signals, on the Review page's Suggestions and Health (design-system.md Section 7). */
-  .rv-detail .csec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:18px 0 6px; }
+  .rv-detail .csec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:18px 0 6px; }
   .rv-detail .csec:first-child { margin-top:0; }
   /* A suspected secret is not housekeeping - it reads as an alert, above the hygiene signals. */
   .rv-detail .csec.hot { color:var(--bad-ink); }
   .rv-detail .grp { padding:6px 0; }
   .rv-detail .grp.secret { background:rgba(224,122,95,0.1); border-radius:8px; padding:6px 10px; }
-  .rv-detail .gk { color:var(--ink); font-size:12px; }
+  .rv-detail .gk { color:var(--ink); font-size:var(--text-body); }
   .rv-detail .chips { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
   .nchip { padding:3px 9px; min-height:24px; border-radius:8px; background:var(--panel-2); cursor:pointer;
-           font:12px/1.5 var(--sans); color:var(--ink2); }
+           font:var(--text-body)/1.5 var(--sans); color:var(--ink2); }
   .nchip:hover { background:var(--panel-3); color:var(--ink); }
-  .nchip .ty { color:var(--muted); font-size:11px; margin-left:4px; }
-  .rv-detail .gb { padding:5px 0; font-size:12px; color:var(--ink2); }
+  .nchip .ty { color:var(--muted); font-size:var(--text-caption); margin-left:4px; }
+  .rv-detail .gb { padding:5px 0; font-size:var(--text-body); color:var(--ink2); }
   .rv-detail .gb .sz { color:var(--ink); font-weight:600; margin-right:5px; }
-  .rv-detail .gb .reify { padding:2px 9px; font-size:12px; margin-left:6px; }
+  .rv-detail .gb .reify { padding:2px 9px; font-size:var(--text-body); margin-left:6px; }
   /* Merge band suggestions: a ~ b pair with the similarity/shared-neighbor score and a propose action. */
-  .rv-detail .ms { display:flex; align-items:center; gap:6px; padding:5px 0; font-size:12px; flex-wrap:wrap; }
+  .rv-detail .ms { display:flex; align-items:center; gap:6px; padding:5px 0; font-size:var(--text-body); flex-wrap:wrap; }
   .rv-detail .ms .msx { color:var(--muted); }
-  .rv-detail .ms .mssim { color:var(--muted); font-size:11px; margin-left:auto; }
-  .rv-detail .ms .propmerge { padding:2px 10px; font-size:12px; }
+  .rv-detail .ms .mssim { color:var(--muted); font-size:var(--text-caption); margin-left:auto; }
+  .rv-detail .ms .propmerge { padding:2px 10px; font-size:var(--text-body); }
   .rv-detail .reifyform { display:inline-flex; gap:4px; margin-left:6px; }
-  .rv-detail .reifyform input { width:150px; padding:2px 8px; font-size:12px; }
-  .rv-detail .reifyform button { padding:2px 9px; font-size:12px; }
-  .rv-detail .empty { color:var(--muted); font:italic 13px/1.5 var(--sans); padding:2px 0; }
+  .rv-detail .reifyform input { width:150px; padding:2px 8px; font-size:var(--text-body); }
+  .rv-detail .reifyform button { padding:2px 9px; font-size:var(--text-body); }
+  .rv-detail .empty { color:var(--muted); font:italic var(--text-body)/1.5 var(--sans); padding:2px 0; }
   /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
      .hot = tier-tied (the dashed amber ring on the canvas): mediation invited; otherwise the list is
      informational (the conflict was resolved by trust but stays queryable). */
@@ -427,33 +439,33 @@
   .contested.folded { padding:2px 7px; }
   .contested.folded .cbody { display:none; padding-top:2px; }
   .contested.folded.open .cbody { display:block; }
-  .contested .cfold { width:100%; text-align:left; padding:2px 0; font-size:11px; letter-spacing:.04em;
+  .contested .cfold { width:100%; text-align:left; padding:2px 0; font-size:var(--text-small); letter-spacing:.04em;
                       color:var(--muted); background:none; border:none; cursor:pointer; }
   .contested .cfold:hover { color:var(--ink); }
-  .contested .chead { color:var(--bad-ink); font:600 12px/1.3 var(--sans); margin-bottom:4px; }
-  .contested .crow { display:flex; align-items:center; gap:6px; padding:1.5px 0; font-size:12px; color:var(--ink2); }
+  .contested .chead { color:var(--bad-ink); font:600 var(--text-body)/1.3 var(--sans); margin-bottom:4px; }
+  .contested .crow { display:flex; align-items:center; gap:6px; padding:1.5px 0; font-size:var(--text-body); color:var(--ink2); }
   .contested .crow.cur .cv { color:var(--ink); font-weight:600; }
-  .contested .crow .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .contested .crow .ctier { color:var(--muted); font-size:11px; margin-left:auto; }
+  .contested .crow .cv { overflow-wrap:anywhere; min-width:0; }
+  .contested .crow .ctier { color:var(--muted); font-size:var(--text-caption); margin-left:auto; }
   /* The value shown now is marked as shown, not as preferred: every value's Confirm has the same
      weight (design-system.md Section 7, U18). */
-  .contested .crow .curtag { color:var(--muted); font-size:11px; background:var(--panel-3); border-radius:999px; padding:0 6px; }
-  .contested .crow .cwho { color:var(--muted); font-size:11px; }
+  .contested .crow .curtag { color:var(--muted); font-size:var(--text-caption); background:var(--panel-3); border-radius:999px; padding:0 6px; }
+  .contested .crow .cwho { color:var(--muted); font-size:var(--text-caption); }
   /* Every value's Confirm sits at the row's end, the same on every row; a row too narrow for its
      who-line wraps that line, not the act. */
   .contested .crow { flex-wrap:wrap; }
   .contested .crow > .confirm { margin-left:auto; }
-  .contested .confirm { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; min-height:24px; }
+  .contested .confirm { padding:0 8px; font-size:var(--text-body); letter-spacing:.04em; border-radius:5px; flex:0 0 auto; min-height:24px; }
   /* The question a Confirm asks, in place, before anything is cast. */
   .contested .cask { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:2px 0 4px; padding:6px 8px;
-                     border-radius:8px; background:var(--panel-2); color:var(--ink); font-size:12px; }
+                     border-radius:8px; background:var(--panel-2); color:var(--ink); font-size:var(--text-body); }
   .contested .cacts { display:flex; gap:6px; margin-left:auto; }
-  .contested .neither { margin-top:6px; font-size:12px; color:var(--ink2); }
+  .contested .neither { margin-top:6px; font-size:var(--text-body); color:var(--ink2); }
   .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box; }
   .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
   .contested .copyline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
   .contested .copyline code { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; padding:4px 6px; border-radius:6px;
-                              background:var(--surface); color:var(--ink); font:11px/1.4 var(--mono); }
+                              background:var(--surface); color:var(--ink); font:var(--text-small)/1.4 var(--mono); }
   /* Observation log rows - the workspace Log tab and the node inspector's log column share one row
      style. A row is a compact list item (content-first: a quiet meta line of tier dot + compact time
      over the content, 2-line); clicking it opens the observation detail card. A light divider list,
@@ -462,22 +474,25 @@
   .obs .ohead { display:block; width:100%; padding:7px 8px; cursor:pointer; border-radius:8px; }
   .obs .ohead:hover { background:var(--panel-2); }
   .obs .ometa { display:flex; align-items:center; gap:6px; margin-bottom:2px; }
-  .obs .owhen { color:var(--muted); font-size:11px; white-space:nowrap; }
+  .obs .owhen { color:var(--muted); font-size:var(--text-small); }
   /* Trust tier as a quiet color ramp: dim (unverified) -> neutral -> teal (host-signed) -> gold. */
   /* A row's tier mark is the Trust legend's ring swatch, a little smaller (Section 9). */
   .tsw.tmark { width:10px; height:10px; flex:0 0 auto; }
-  .obs .otext { color:var(--ink); font:12px/1.55 var(--sans); opacity:.92;
+  .obs .otext { color:var(--ink); font:var(--text-body)/1.55 var(--sans);
                 overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; }
-  .osec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:12px 0 4px; }
-  .prow { display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
+  /* Cut to two lines in the list, whole on the row's focus (Section 10, U21); pressing it opens the
+     observation whole. */
+  .obs .ohead:focus .otext, .obs .ohead:focus-visible .otext { -webkit-line-clamp:unset; line-clamp:unset; display:block; }
+  .osec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:12px 0 4px; }
+  .prow { display:flex; gap:6px; align-items:center; font-size:var(--text-small); color:var(--ink2); padding:1px 0; flex-wrap:wrap; }
   .prow .phost { color:var(--ink); }
   .prow .pobo { color:var(--muted); }
-  .prow .ptier { color:var(--ink2); font-size:11px; }
-  .prow .pconf { color:var(--muted); font-size:11px; }
-  .prow .pwhen { color:var(--muted); font-size:11px; margin-left:auto; }
+  .prow .ptier { color:var(--ink2); font-size:var(--text-caption); }
+  .prow .pconf { color:var(--muted); font-size:var(--text-caption); }
+  .prow .pwhen { color:var(--muted); font-size:var(--text-caption); margin-left:auto; }
   .oids, .echips { display:flex; gap:4px; flex-wrap:wrap; }
-  .oid { font:11px var(--mono); color:var(--muted); background:var(--panel-2); border-radius:6px; padding:1px 5px; }
-  .echip { font:12px/1.5 var(--sans); color:var(--ink2); background:var(--panel-2); border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
+  .oid { font:var(--text-caption) var(--mono); color:var(--muted); background:var(--panel-2); border-radius:6px; padding:1px 5px; }
+  .echip { font:var(--text-body)/1.5 var(--sans); color:var(--ink2); background:var(--panel-2); border-radius:8px; padding:3px 8px; min-height:24px; cursor:pointer; }
   .echip:hover { color:var(--ink); background:var(--panel-3); }
   /* Observation detail card: a focused, dismissable view of one observation (full content +
      provenance + lineage + entities/relations). The single detail surface for both the node log
@@ -493,32 +508,32 @@
                     min-height:24px; min-width:24px; display:flex; align-items:center; justify-content:center; }
   #obscard .close:hover { color:var(--ink); background:var(--panel-2); }
   #obscard .close svg { display:block; }
-  .oc-meta { display:flex; align-items:center; gap:7px; margin:0 22px 8px 0; font-size:11px; color:var(--muted); }
+  .oc-meta { display:flex; align-items:center; gap:7px; margin:0 22px 8px 0; font-size:var(--text-small); color:var(--muted); }
   .oc-meta .octier { color:var(--ink2); }
   .oc-meta .ocwhen { margin-left:auto; }
-  .oc-content { color:var(--ink); font:13px/1.6 var(--sans); white-space:pre-wrap; }
-  .ocrel { font:12px/1.45 var(--sans); color:var(--ink2); padding:1px 0; }
-  .ocrel .rk { color:var(--muted); font:11px var(--mono); }
-  .prow .poid { color:var(--muted); font:11px var(--mono); }
-  .ocid { margin-top:14px; font:11px var(--mono); color:var(--muted); }
+  .oc-content { color:var(--ink); font:var(--text-body)/1.6 var(--sans); white-space:pre-wrap; }
+  .ocrel { font:var(--text-body)/1.45 var(--sans); color:var(--ink2); padding:1px 0; }
+  .ocrel .rk { color:var(--muted); font:var(--text-caption) var(--mono); }
+  .prow .poid { color:var(--muted); font:var(--text-caption) var(--mono); }
+  .ocid { margin-top:14px; font:var(--text-caption) var(--mono); color:var(--muted); }
   /* Inspector "why (evidence & decision)" disclosure: per-field decision + supporting log. */
   #detail .why { margin:4px 0 2px; }
-  #detail .whytoggle { width:100%; text-align:left; padding:5px 9px; font-size:12px;
+  #detail .whytoggle { width:100%; text-align:left; padding:5px 9px; font-size:var(--text-body);
                        color:var(--muted); background:var(--panel-2); border-radius:8px; cursor:pointer; }
   #detail .whytoggle:hover { color:var(--ink); background:var(--panel-3); }
   #detail .why .whybody { display:none; margin-top:5px; max-height:230px; overflow-y:auto; }
   #detail .why.open .whybody { display:block; }
   .wfield { background:var(--panel-2); border-radius:8px; padding:6px 9px; margin-bottom:6px; }
   .wfield.hot { background:rgba(224,122,95,0.1); }
-  .wfhead { color:var(--muted); font:600 12px/1.3 var(--sans); margin-bottom:3px; }
+  .wfhead { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin-bottom:3px; }
   .wfhead .wtag { color:var(--bad-ink); margin-left:4px; }
-  .cand { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink2); padding:1.5px 0; }
-  .cand .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cand { display:flex; align-items:center; gap:6px; font-size:var(--text-body); color:var(--ink2); padding:1.5px 0; }
+  .cand .cv { overflow-wrap:anywhere; min-width:0; }
   .cand.winner .cv { color:var(--ink); font-weight:600; }
-  .cand .crole { font-size:11px; color:var(--muted); }
+  .cand .crole { font-size:var(--text-small); color:var(--muted); }
   .cand.winner .crole { color:var(--ink2); }
-  .cand .ctier { color:var(--muted); font-size:11px; margin-left:auto; }
-  .cand .cobs { font:11px var(--mono); color:var(--muted); flex:0 0 auto; }
+  .cand .ctier { color:var(--muted); font-size:var(--text-caption); margin-left:auto; }
+  .cand .cobs { font:var(--text-caption) var(--mono); color:var(--muted); flex:0 0 auto; }
   .pacts button[disabled] { opacity:0.45; cursor:not-allowed; }
   /* The type definitions in the filters dock (moved from the Types tab): a disclosure under the
      legend, its summary styled as the section heads around it. */
@@ -534,10 +549,10 @@
 
 /* Observation card, proposal event: the readable line leads, the stored text stays beneath it for
    audit, and a target with no node left is listed but not offered as a jump. */
-.card .ocraw { font:11px/1.4 var(--mono); color:var(--muted); word-break:break-all; margin:2px 0 4px; }
-.card .ocprop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:12px/1.4 var(--sans); }
+.card .ocraw { font:var(--text-small)/1.4 var(--mono); color:var(--muted); word-break:break-all; margin:2px 0 4px; }
+.card .ocprop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:var(--text-body)/1.4 var(--sans); }
 .card .ocprop .pkind { color:var(--ink); }
-.card .ocprop .pstate { font:11px/1 var(--mono); color:var(--muted); }
+.card .ocprop .pstate { font:var(--text-caption)/1 var(--mono); color:var(--muted); }
 .card .ocprop .pstate.merged { color:var(--ok-ink); }
 .card .ocprop .pstate.blocked { color:var(--bad-ink); }
 .card .echip.off { opacity:.5; cursor:default; text-decoration:line-through; }
@@ -548,7 +563,7 @@
      form. */
   #settings { width:min(560px,92vw); max-height:82vh; padding:0; border:0;
             border-radius:12px; background:var(--panel); color:var(--ink2);
-            font:12px/1.5 var(--mono); box-shadow:0 18px 60px rgba(0,0,0,0.55); }
+            font:var(--text-body)/1.5 var(--mono); box-shadow:0 18px 60px rgba(0,0,0,0.55); }
   #settings::backdrop { background:rgba(8,9,13,0.62); }
   #settings .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
                     padding:12px 14px 4px; }
@@ -564,10 +579,10 @@
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */
   #glossaryBody .gws { margin-left:6px; padding:0 6px; background:var(--panel-2);
-                       border-radius:6px; color:var(--muted); font-size:11px; }
+                       border-radius:6px; color:var(--muted); font-size:var(--text-caption); }
   /* Segments, as on the Review page: the open one is selected (Section 4). */
   #settings .stabs { display:flex; gap:4px; padding:8px 14px 0; }
-  #settings .stab { flex:0 0 auto; padding:5px 11px; font:500 12px/1.5 var(--sans);
+  #settings .stab { flex:0 0 auto; padding:5px 11px; font:500 var(--text-body)/1.5 var(--sans);
                     background:none; color:var(--muted); border-radius:8px; cursor:pointer; }
   #settings .stab:hover { color:var(--ink); background:var(--panel-2); }
   #settings .stab.on { color:var(--gold-bright); background:var(--select); }
@@ -577,7 +592,7 @@
   #settings .kv dt { color:var(--muted); }
   #settings .kv dd { margin:0; color:var(--ink); }
   #settings .kv dd a { color:var(--ink); }
-  #settings .fsec { margin:14px 0 6px; color:var(--muted); font:600 12px/1.3 var(--sans); }
+  #settings .fsec { margin:14px 0 6px; color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); }
   #settings .fsec:first-child { margin-top:0; }
   #settings .prow { padding:8px 10px; margin-bottom:6px; border-radius:8px; background:var(--panel-2); }
   #settings .pid { color:var(--ink); }
@@ -605,7 +620,7 @@
   /* The Trust legend: the four ring styles the map draws (design-system.md Section 5), and what a
      ring reads. A tier the scope does not hold is dimmed when the scope holds only one. */
   #legendTrust { display:flex; flex-wrap:wrap; gap:4px 12px; margin:2px 0 6px; }
-  .tlg { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink2); }
+  .tlg { display:inline-flex; align-items:center; gap:6px; font-size:var(--text-body); color:var(--ink2); }
   /* A tier the scope does not hold, when the scope holds one: its text at full strength in --muted,
      its swatch faded, and "none here" said to a screen reader. */
   .tlg.off { color:var(--muted); }
@@ -617,9 +632,9 @@
   .tsw.t-agent_extracted { border:1px solid transparent; }
   .tsw.t-host_signed { border:1.5px solid var(--ink); }
   .tsw.t-human_confirmed { border:2px solid var(--gold-bright); }
-  .tnote { flex-basis:100%; color:var(--muted); font:12px/1.4 var(--sans); }
+  .tnote { flex-basis:100%; color:var(--muted); font:var(--text-small)/1.4 var(--sans); }
   /* A status pill: a count that needs reading, on the status bar's right (Section 6). */
-  #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:999px; font:500 11px/1.5 var(--sans);
+  #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:999px; font:500 var(--text-body)/1.5 var(--sans);
                       background:var(--panel-2); color:var(--ink2); white-space:nowrap; }
   #statusbar .spill.bad { color:var(--bad-ink); background:var(--bad-glass); }
   #statusbar .spill.warn { color:var(--gold-bright); background:var(--gold-glass); }
@@ -627,47 +642,47 @@
   #statusbar .spill:hover { filter:brightness(1.25); }
   /* The Review page (design-system.md Section 7): over the canvas, between the header and the status
      bar - a queue on the left, the selected item on the right. */
-  #reviewPage { position:fixed; top:49px; bottom:28px; left:0; right:0; z-index:11; display:grid;
+  #reviewPage { position:fixed; top:49px; bottom:var(--bar); left:0; right:0; z-index:11; display:grid;
                 grid-template-columns:320px minmax(0,1fr); background:var(--panel); font-family:var(--sans); }
   #reviewPage[hidden] { display:none; }
   .rv-queue { display:flex; flex-direction:column; min-height:0; padding:14px 16px; gap:12px; }
-  .rv-head { display:flex; align-items:baseline; gap:10px; }
-  .rv-head h2 { margin:0; font:600 18px/1.2 var(--sans); color:var(--ink); }
-  .rv-scope { color:var(--muted); font:11px var(--mono); }
-  .rv-close { margin-left:auto; color:var(--muted); font-size:12px; text-decoration:none;
+  .rv-head { display:flex; align-items:baseline; gap:4px 10px; flex-wrap:wrap; }
+  .rv-head h2 { margin:0; font:600 var(--text-sheet)/1.2 var(--sans); color:var(--ink); }
+  .rv-scope { color:var(--muted); font:var(--text-small) var(--mono); }
+  .rv-close { margin-left:auto; color:var(--muted); font-size:var(--text-body); text-decoration:none;
               display:inline-flex; align-items:center; min-height:24px; padding:0 4px; }
   .rv-close:hover { color:var(--ink); }
   .rv-seg { display:flex; flex-wrap:wrap; gap:4px; }
-  .rv-segb { padding:4px 10px; border-radius:8px; font-size:12px; color:var(--muted); background:var(--panel-2); }
+  .rv-segb { padding:4px 10px; border-radius:8px; font-size:var(--text-body); color:var(--muted); background:var(--panel-2); }
   .rv-segb.on { color:var(--gold-bright); background:var(--select); }
   .rv-list { overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:4px; }
-  .rv-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:8px; font:13px/1.4 var(--sans);
+  .rv-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:8px; font:var(--text-body)/1.4 var(--sans);
              color:var(--ink); background:none; }
   .rv-item:hover { background:var(--panel-2); color:var(--ink); }
   .rv-item.on { background:var(--select); }
-  .rv-k { display:inline-block; margin-right:6px; font:500 11px/1 var(--mono); color:var(--muted); }
+  .rv-k { display:inline-block; margin-right:6px; font:500 var(--text-caption)/1 var(--mono); color:var(--muted); }
   .rv-k.bad { color:var(--bad-ink); }
-  .rv-st { display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px; font:11px/1.4 var(--mono);
+  .rv-st { display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px; font:var(--text-caption)/1.4 var(--mono);
            color:var(--muted); background:var(--panel-3); }
   .rv-st.blocked { color:var(--bad-ink); background:var(--bad-glass); }
   .rv-st.merged { color:var(--ok-ink); background:var(--ok-glass); }
   .rv-t { display:block; margin-top:3px; }
   /* The selected item: a window into the page's frame, as the map is one on the Graph page. */
-  .rv-detail { overflow-y:auto; padding:20px 28px 32px; color:var(--ink2); font-size:13px;
+  .rv-detail { overflow-y:auto; padding:20px 28px 32px; color:var(--ink2); font-size:var(--text-body);
                background:var(--surface); border-radius:16px 0 0 16px; }
   .rv-detail > * { max-width:820px; }
-  .rv-detail h3 { margin:0 0 6px; font:600 18px/1.3 var(--sans); color:var(--ink); }
+  .rv-detail h3 { margin:0 0 6px; font:600 var(--text-sheet)/1.3 var(--sans); color:var(--ink); }
   .rv-detail .why { margin:4px 0 8px; line-height:1.5; }
-  .rv-detail .sec { color:var(--muted); font:600 12px/1.3 var(--sans); margin:18px 0 6px; }
+  .rv-detail .sec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:18px 0 6px; }
   .rv-detail .hint { color:var(--muted); }
   .rv-block { background:rgba(224,122,95,0.1); border-radius:8px; padding:9px 12px; color:var(--ink); line-height:1.5; }
   .rv-block b { color:var(--bad-ink); }
   .rv-acts { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 8px; }
-  .rv-acts .btn { padding:6px 12px; border-radius:8px; font:500 13px/1 var(--sans); }
+  .rv-acts .btn { padding:6px 12px; border-radius:8px; font:500 var(--text-body)/1 var(--sans); }
   .rv-acts .btn.p { background:var(--accent); color:#171204; }
   .rv-acts .btn.p:hover { background:var(--gold-bright); color:#171204; }
   .rv-acts .btn[disabled] { opacity:.45; cursor:not-allowed; }
-  .rv-detail kbd, .rv-acts kbd { font:500 11px/1 var(--mono); background:var(--panel-3); color:var(--ink2);
+  .rv-detail kbd, .rv-acts kbd { font:500 var(--text-caption)/1 var(--mono); background:var(--panel-3); color:var(--ink2);
                                  border-radius:4px; padding:2px 5px; margin-left:4px; }
   .rv-acts .btn.p kbd { background:rgba(23,18,4,0.14); color:#171204; }
   /* The panel toggles at the title bar's right (Section 6): Lucide's panel-left and panel-right. */
@@ -682,13 +697,13 @@
   #tierNote { white-space:nowrap; }
   /* The strip: the Log folded (Section 6). The newest observation of the scope, one line, at the
      window's lower left while the right side is empty; clicking it opens the Log. */
-  #strip { position:fixed; left:calc(var(--win-l) + 16px); bottom:44px; z-index:8; display:none;
+  #strip { position:fixed; left:calc(var(--win-l) + 16px); bottom:calc(var(--bar) + 16px); z-index:8; display:none;
            align-items:center; gap:9px; max-width:min(640px, calc(100vw - var(--win-l) - var(--win-r) - 200px));
            padding:8px 14px; background:var(--panel); border-radius:12px; box-shadow:0 8px 24px #0007;
-           font:13px/1.4 var(--sans); color:var(--ink2); text-align:left; }
+           font:var(--text-body)/1.4 var(--sans); color:var(--ink2); text-align:left; }
   #strip.on { display:flex; }
   #strip:hover { background:var(--panel-2); }
-  #strip .w { color:var(--muted); font-size:12px; white-space:nowrap; }
+  #strip .w { color:var(--muted); font-size:var(--text-small); white-space:nowrap; }
   #strip .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   #strip .t.bad { color:var(--bad-ink); }
   /* From 760 to 1200 pixels one panel shows at a time, over the map (Section 6): the frame keeps its
@@ -710,10 +725,10 @@
   @media (max-width: 759px) {
     .searchwrap { position:relative; left:auto; transform:none; flex:1 1 auto; width:auto; min-width:0; }
     .searchpop { position:fixed; top:57px; left:16px; right:16px; width:auto; transform:none; }
-    #dockL, #dockR { top:auto; bottom:36px; left:8px; right:8px; width:auto; max-height:55vh; }
+    #dockL, #dockR { top:auto; bottom:calc(var(--bar) + 8px); left:8px; right:8px; width:auto; max-height:55vh; }
     #dockL:not(.on), #dockR:not(.on) { transform:translateY(110%); }
-    #detail { top:auto; left:8px; right:8px; bottom:36px; width:auto; max-height:55vh; }
-    #strip { left:8px; right:8px; bottom:36px; max-width:none; }
+    #detail { top:auto; left:8px; right:8px; bottom:calc(var(--bar) + 8px); width:auto; max-height:55vh; }
+    #strip { left:8px; right:8px; bottom:calc(var(--bar) + 8px); max-width:none; }
     #detail .grow { display:inline-flex; }
     #detail.tall { max-height:80vh; }
     #reviewPage { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }

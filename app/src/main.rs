@@ -1480,6 +1480,69 @@ fn read_prefs(app: &tauri::AppHandle) -> WelcomePrefs {
         .unwrap_or_default()
 }
 
+/// The root's text size the View menu sets (design-system.md Section 10, U21), kept in view.json.
+/// Every rem size of the viewer and the app's pages follows the root; the webview itself is not
+/// zoomed, so the title bar keeps its height and the traffic lights their place.
+struct TextScale(Mutex<f64>);
+
+/// A text size held to 100%-200% in steps of 12.5%.
+fn clamp_text_scale(scale: f64) -> f64 {
+    (scale.clamp(1.0, 2.0) * 8.0).round() / 8.0
+}
+
+/// The next text size: a step up (+1), a step down (-1), or Actual Size (0).
+fn step_text_scale(scale: f64, step: i32) -> f64 {
+    if step == 0 {
+        return 1.0;
+    }
+    clamp_text_scale(scale + 0.125 * f64::from(step))
+}
+
+/// The script that gives a page the root's text size and tells the viewer's map to read it again.
+fn text_scale_script(scale: f64) -> String {
+    format!(
+        "document.documentElement.style.fontSize = \"{}%\"; window.dispatchEvent(new Event(\"rootsize\"));",
+        scale * 100.0
+    )
+}
+
+fn view_prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("view.json"))
+}
+
+/// The kept text size; 100% when the file is missing or unreadable.
+fn read_text_scale(app: &tauri::AppHandle) -> f64 {
+    view_prefs_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["text_scale"].as_f64())
+        .map_or(1.0, clamp_text_scale)
+}
+
+/// Steps the text size, keeps it, and gives it to the page on screen.
+fn set_text_scale(app: &tauri::AppHandle, step: i32) -> tauri::Result<()> {
+    let Some(state) = app.try_state::<TextScale>() else {
+        return Ok(());
+    };
+    let scale = {
+        let mut s = state.0.lock().unwrap();
+        *s = step_text_scale(*s, step);
+        *s
+    };
+    if let Some(path) = view_prefs_path(app) {
+        let kept = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| {
+            std::fs::write(&path, serde_json::json!({ "text_scale": scale }).to_string())
+        });
+        if let Err(e) = kept {
+            tracing::warn!(error = %e, "the text size was not kept");
+        }
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        w.eval(text_scale_script(scale))?;
+    }
+    Ok(())
+}
+
 fn write_prefs(app: &tauri::AppHandle, p: WelcomePrefs) -> Result<(), String> {
     let path = prefs_path(app).ok_or("the app's settings directory is not known")?;
     if let Some(dir) = path.parent() {
@@ -2024,7 +2087,18 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
     )
     .title(&app.package_info().name)
     .inner_size(1280.0, 860.0)
-    .initialization_script(include_str!("../assets/shell-init.js"));
+    .initialization_script(include_str!("../assets/shell-init.js"))
+    // Each page the window loads - the viewer, Settings, Setup - takes the kept text size (U21).
+    .on_page_load(|w, payload| {
+        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+            if let Some(state) = w.app_handle().try_state::<TextScale>() {
+                let scale = *state.0.lock().unwrap();
+                if scale != 1.0 {
+                    let _ = w.eval(text_scale_script(scale));
+                }
+            }
+        }
+    });
     // Merge the title bar into the viewer header: the macOS title bar becomes a transparent
     // overlay (traffic lights float over the content, no title text), and shell-init.js turns
     // the header into the drag region with its left edge padded clear of the lights.
@@ -2246,6 +2320,7 @@ fn main() {
             app.manage(AppsHint(Mutex::new(None)));
             app.manage(Attention(Mutex::new(None)));
             app.manage(VizSock(sock.clone()));
+            app.manage(TextScale(Mutex::new(read_text_scale(app.handle()))));
 
             // The app menu keeps the platform's own items - Edit above all, without which a
             // credential cannot be pasted into the settings page - and gains the two pages:
@@ -2258,9 +2333,31 @@ fn main() {
                         MenuItem::with_id(app, "graph", "Graph", true, Some("CmdOrCtrl+1"))?;
                     let review =
                         MenuItem::with_id(app, "review", "Review", true, Some("CmdOrCtrl+2"))?;
+                    // Text that can grow (design-system.md Section 10, U21): the root's size,
+                    // not the webview's zoom, so the title bar and its traffic lights stay put.
+                    let bigger = MenuItem::with_id(
+                        app,
+                        "text-bigger",
+                        "Make Text Bigger",
+                        true,
+                        Some("CmdOrCtrl+="),
+                    )?;
+                    let smaller = MenuItem::with_id(
+                        app,
+                        "text-smaller",
+                        "Make Text Smaller",
+                        true,
+                        Some("CmdOrCtrl+-"),
+                    )?;
+                    let actual =
+                        MenuItem::with_id(app, "text-actual", "Actual Size", true, Some("CmdOrCtrl+0"))?;
                     sub.insert(&graph, 0)?;
                     sub.insert(&review, 1)?;
                     sub.insert(&PredefinedMenuItem::separator(app)?, 2)?;
+                    sub.insert(&bigger, 3)?;
+                    sub.insert(&smaller, 4)?;
+                    sub.insert(&actual, 5)?;
+                    sub.insert(&PredefinedMenuItem::separator(app)?, 6)?;
                 } else if text == name {
                     let item = MenuItem::with_id(
                         app,
@@ -2278,6 +2375,9 @@ fn main() {
                     "settings" => show_settings(app, None),
                     "graph" => show_graph(app),
                     "review" => show_review(app),
+                    "text-bigger" => set_text_scale(app, 1),
+                    "text-smaller" => set_text_scale(app, -1),
+                    "text-actual" => set_text_scale(app, 0),
                     _ => Ok(()),
                 };
                 if let Err(e) = shown {
@@ -2774,6 +2874,36 @@ mod settings_tests {
                 "a splash keeps the old look"
             );
         }
+    }
+
+    /// design-system.md Section 10 and U21: View sets the root's text size from 100% to 200%, every
+    /// rem size follows it, the choice is kept, and each page the window loads is given it. The
+    /// webview itself is not zoomed, so the title bar keeps its height and its traffic lights.
+    #[test]
+    fn view_sets_the_root_text_size() {
+        let main = include_str!("main.rs");
+        for part in [
+            "\"Make Text Bigger\"",
+            "Some(\"CmdOrCtrl+=\")",
+            "\"Make Text Smaller\"",
+            "Some(\"CmdOrCtrl+-\")",
+            "\"Actual Size\"",
+            "Some(\"CmdOrCtrl+0\")",
+            "fn text_scale_script(",
+            ".on_page_load(",
+            "\"view.json\"",
+        ] {
+            assert!(main.contains(part), "the root text size is missing {part}");
+        }
+        assert!(
+            !main.contains(concat!(".zoom_hotkeys", "_enabled(true)")),
+            "the webview zooms, title bar and all"
+        );
+        assert_eq!(super::step_text_scale(1.0, 1), 1.125);
+        assert_eq!(super::step_text_scale(2.0, 1), 2.0);
+        assert_eq!(super::step_text_scale(1.0, -1), 1.0);
+        assert_eq!(super::step_text_scale(1.5, 0), 1.0);
+        assert!(super::text_scale_script(1.25).contains("fontSize = \"125%\""));
     }
 
     #[test]

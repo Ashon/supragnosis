@@ -6,7 +6,7 @@
 body { background: var(--panel); }
 .wpage { flex: 1; overflow-y: auto; outline: none; background: var(--surface); border-radius: 16px 16px 0 0; }
 .wcol { max-width: 680px; margin: 0 auto; padding: 34px 32px 28px; }
-.wintro h2 { margin: 0 0 6px; color: var(--ink); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.wintro h2 { margin: 0 0 6px; color: var(--ink); font-size: var(--text-page); font-weight: 600; letter-spacing: -0.01em; }
 .wintro p { margin: 0 0 22px; color: var(--muted); max-width: 60ch; }
 
 /* A step: its number (a check once done), its name and state, the sentence setup said, its controls,
@@ -15,13 +15,13 @@ body { background: var(--panel); }
 .step + .step { margin-top: 10px; }
 .step .num {
   width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; grid-row: span 3;
-  background: var(--panel-3); color: var(--ink2); font: 600 12px/1 var(--mono);
+  background: var(--panel-3); color: var(--ink2); font: 600 var(--text-small)/1 var(--mono);
 }
 .step .num.done { background: var(--ok-glass); color: var(--ok-ink); }
 .step .num.attention, .step .num.failed { background: var(--warn-glass); color: var(--warn-ink); }
 .step .num .i { width: 14px; height: 14px; }
 .step .shead { display: flex; align-items: center; gap: 9px; min-height: 28px; flex-wrap: wrap; }
-.step .shead h3 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; }
+.step .shead h3 { margin: 0; color: var(--ink); font-size: var(--text-section); font-weight: 600; }
 .step .say { margin: 2px 0 0; color: var(--ink2); }
 .step .say.quiet { color: var(--muted); }
 .step .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
@@ -41,23 +41,23 @@ body { background: var(--panel); }
 .apps .row .btn:not(.primary):hover:not(:disabled) { background: var(--select); }
 .pill .i-spin { width: 11px; height: 11px; animation: spin 0.8s linear infinite; }
 /* A command a sentence names: mono, and kept on one line. */
-.step code { font: 12px/1.4 var(--mono); color: var(--ink); white-space: nowrap; }
+.step code { font: var(--text-small)/1.4 var(--mono); color: var(--ink); white-space: nowrap; }
 
 /* The download's progress. */
 .bar { height: 6px; border-radius: 999px; background: var(--panel-3); overflow: hidden; margin-top: 12px; }
 .bar > span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.4s ease; }
 .bar.busy > span { width: 35%; animation: slide 1.2s ease-in-out infinite; }
-.barnote { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.barnote { margin-top: 6px; color: var(--muted); font-size: var(--text-small); }
 
 /* What to ask a connected app. */
 .ask { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 10px 10px 14px; border-radius: 10px; background: var(--panel-2); }
-.ask q { flex: 1; color: var(--ink); font: 13px/1.5 var(--mono); quotes: none; }
+.ask q { flex: 1; color: var(--ink); font: var(--text-body)/1.5 var(--mono); quotes: none; }
 
 /* A step's log drawer (D8): the commands it ran, their output, the files they changed, and how
    each run ended - text a person can select and copy. */
 .drawer-toggle {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; padding: 2px 4px 2px 0; min-height: 24px; border: 0;
-  background: none; color: var(--muted); font: 500 12px/1.4 var(--sans); cursor: pointer;
+  background: none; color: var(--muted); font: 500 var(--text-body)/1.4 var(--sans); cursor: pointer;
 }
 .drawer-toggle:hover { color: var(--ink2); }
 .drawer-toggle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; border-radius: 4px; }
@@ -65,7 +65,7 @@ body { background: var(--panel); }
 .drawer-toggle[aria-expanded="true"] .i { transform: rotate(90deg); }
 .drawer {
   margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface); max-height: 260px; overflow: auto;
-  font: 12px/1.6 var(--mono); color: var(--ink2); -webkit-user-select: text; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: var(--text-small)/1.6 var(--mono); color: var(--ink2); -webkit-user-select: text; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .drawer .l-cmd { color: var(--gold-bright); }
 .drawer .l-cmd::before { content: "$ "; color: var(--muted); }
@@ -80,7 +80,7 @@ body { background: var(--panel); }
   flex: none; display: flex; align-items: center; gap: 16px; padding: 12px 20px;
   background: var(--panel);
 }
-.wfoot .privacy { flex: 1; max-width: 34em; margin: 0; color: var(--muted); font-size: 12px; }
+.wfoot .privacy { flex: 1; max-width: 34em; margin: 0; color: var(--muted); font-size: var(--text-small); }
 /* The page's acts read right to left - Set up, the default, comes first in tab order and is drawn
    rightmost; the copy buttons sit at the left, by the privacy line. */
 .wactions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; flex: none; }

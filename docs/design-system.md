@@ -14,7 +14,7 @@
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U26),
-> is designed - steps 17-23 - and its defects are fixed (step 17).
+> is designed - steps 17-23 - and steps 17 and 18, its defects and reading, are built.
 
 ## 1. Why this exists
 
@@ -301,9 +301,9 @@ surface token, `--select` among them.
   that does not load falls back to the system stack the token names after it. The files are the ones
   their authors publish, unmodified, with their licenses beside them.
 - **Six sizes** in the viewer and on the Settings and Setup pages, each a token in rem so that a
-  person's own text size scales them (U21): `--fs-page` 24 (a page's title), `--fs-sheet` 18 (a
-  sheet's title), `--fs-section` 15 (a section), `--fs-body` 13, `--fs-small` 12 and `--fs-caption`
-  11. They follow a Mac's text styles where a Mac has one - Body and Headline 13, Callout 12,
+  person's own text size scales them (U21): `--text-page` 24 (a page's title), `--text-sheet` 18 (a
+  sheet's title), `--text-section` 15 (a section), `--text-body` 13, `--text-small` 12 and
+  `--text-caption` 11. They follow a Mac's text styles where a Mac has one - Body and Headline 13, Callout 12,
   Subheadline 11, Title 3 15 - and each is given by role, not by the room left:
   - 13 for what a person reads to act or to choose: running text, an observation's text, a row's
     first line, the inspector's rows, a notice, and the label of every control - a button, a field, a
@@ -1302,8 +1302,15 @@ U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.r
 `text_on_a_pill_reads_over_its_tint` lays each tint on the two panels, `a_signal_drawn_as_text_takes_its_ink`
 reads every color property of the four stylesheets, and `faint_is_retired` keeps `--faint` out. U23 is
 guarded by `increase_contrast_and_forced_colors_are_heard` in the same file: each stylesheet's Increase
-Contrast block, and the map's palette under forced colors. U21, U22, U24 and U25 are designed and not
-yet guarded; steps 18-21 build each with its test (Section 14).
+Contrast block, and the map's palette under forced colors.
+
+U21 is guarded by `crates/supragnosis-viz/tests/type_scale.rs`: `every_font_size_is_a_token_in_rem`
+reads every font declaration of the viewer's, the Settings page's and Setup's stylesheets,
+`text_and_control_labels_are_body_size` holds the roles Section 4 gives at 13, and
+`the_maps_labels_scale_with_the_root` and `cut_text_can_be_read_whole` read the map's label sizes and
+every clamp; `view_sets_the_root_text_size` in the app's tests holds View's three items, the kept size
+and the page load that gives it to each page. U22, U24, U25 and U26 are designed and not yet
+guarded; steps 19-21 and 23 build each with its test (Section 14).
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -1510,7 +1517,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    checkboxes in the accent, the search field named with its scope, the status line's short form on
    a phone, the privacy line held to 34em, and the app's starting splash on the tokens and the
    reading stack, which falls to the system's face there, since nothing serves the fonts yet.
-18. **Reading** [colors built] (Sections 3, 4, 10; U7, U21, U23): `--ink2` and `--muted` raised and
+18. **Reading** [built] (Sections 3, 4, 10; U7, U21, U23): `--ink2` and `--muted` raised and
    `--faint` retired into `--muted` in all three stylesheets and the scripts, the marks that move
    with them - the unverified ring with its swatch, the active edges, the owed outline, and the
    stage's and the scenes' palettes - the signals' text tokens
@@ -1987,3 +1994,20 @@ changed it:
     not only the Log's; a scene's canvas is outside the site's label floor; the ledger's labels give
     way where the columns are narrow; gold keeps its four meanings; the steps carry their state; and
     the owed rows name what will be seen when they are built.
+
+## 25. What building the third pass changed
+
+- **The tools' sizes are `--text-*`.** Section 4 first named them `--fs-*`, but the landing already
+  names `--fs-body` and `--fs-small` for its own scale, at 18 and 15 pixels, and U7 holds a name two
+  stylesheets share to one value.
+- **The status bar's height moved into step 18.** At 200% its 28 fixed pixels cut the review pill in
+  half, so `--bar` is a rem token now, every panel and the camera above the bar read it, and the map's
+  framing reads the bar's height again when the root's size changes.
+- **The tints were never a token in the viewer.** Its pills drew their signals at 13% from literals;
+  they read `--ok-glass` and `--bad-glass` at 12%, the Settings page's values.
+- **A mark could not keep the old `--muted`.** The unverified ring drew `#8e96a5` while its legend
+  swatch read the token, so the ring is `--muted` too.
+- **The forced-colors map covers its regions.** A region's name and a boundary drew from the type band;
+  under forced colors both are `CanvasText`.
+- **Panel headings and pills follow their roles.** The Review page's heading wraps rather than cuts
+  its link at 200%, and the Log's who-line wraps instead of being clipped.
