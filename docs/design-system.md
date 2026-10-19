@@ -236,7 +236,8 @@ One vocabulary, the one the viewer and the settings page already share, with one
 | `--ink` | `#e9e4d6` | primary text: names, values, headings |
 | `--ink2` | `#cad2de` | body text: what a person reads to act, a row's text, a panel's heading |
 | `--muted` | `#b0b8c7` | secondary text: counts, times, hints, placeholders |
-| `--accent` / `--gold-bright` | `#d9a544` / `#f0c469` | the accent, and human-confirmed; gold drawn as text is `--gold-bright` |
+| `--accent` / `--gold-bright` | `#d9a544` / `#f0c469` | the brand gold - the mark, fills and tints - and gold as a line: the human-confirmed ring, focus |
+| `--gold-ink` | `#f0c469` | gold drawn as text: a selected choice, a pill that waits for a person |
 | `--ok` / `--ok-ink` | `#56b3a2` / `#78c8b8` | success, connected, healthy; the second when it is text |
 | `--warn` / `--warn-ink` | `#e0a24a` / `#e9af60` | needs attention; the second when it is text |
 | `--bad` / `--bad-ink` | `#e07a5f` / `#fca18a` | error, blocked, contested; the second when it is text |
@@ -260,7 +261,11 @@ table asks Lc 90 of body text at 14 pixels and Lc 75 at 18, which no tier but `-
 11-pixel text. The floors lift every tier off the bottom of APCA's scale, where Lc 30 to 45 is left to
 text no one has to read, and size does the rest (Section 4). The lowest pair of `--muted` measures
 Lc 60.2 and 7.36:1, of `--ink2` Lc 75.3 and 9.64:1. A signal's color is a mark's; drawn as text it
-takes its `-ink` token, and gold drawn as text is `--gold-bright`. A pill's tint is a token too -
+takes its `-ink` token, and gold drawn as text is `--gold-ink`. The brand gold, `--accent`, is the
+same `#d9a544` in both appearances and is never darkened: the mark is drawn in it, a logotype outside
+the text floors (WCAG 1.4.3's exception), and fills and tints carry it, with dark text on a gold fill.
+On the site, which draws its small gold labels in the brand's own hue, that text is `--accent-ink`,
+`#e1af54`, the brand gold raised only to the floor. A pill's tint is a token too -
 `--ok-glass`, `--warn-glass`, `--bad-glass` and `--gold-glass`, each its signal at 12% - and the
 text on a tint is measured over it on `--panel` and on `--panel-2`. A tier is not made by dimming:
 what matters less is set smaller, lighter in weight or further down, in a color that still reads
@@ -279,10 +284,11 @@ value is held to the floors the dark ones meet (U7) on the light surfaces:
 |---|---|---|
 | `--surface` / `--panel` | `#fcfbf8` / `#f3f1ec` | the map's ground, lightest, and the frame around it |
 | `--panel-2` / `--panel-3` | `#ebe8e1` / `#e3dfd7` | controls and rows, and hover |
-| `--select` | `#e8e0cd` | the accent at 14% over `--panel`, opaque |
+| `--select` | `#efe5d1` | the brand gold at 16% over `--panel`, opaque |
 | `--line` / `--line-soft` | `#dcd8cf` / `#e7e4dd` | the lines Section 4 keeps |
 | `--ink` / `--ink2` / `--muted` | `#16181e` / `#3b404b` / `#5c6370` | Lc 85.9, 75.5 and 61.6 at their lowest |
-| `--accent` / `--gold-bright` | `#a8740f` / `#744a00` | the accent, and gold as text and as the human-confirmed ring |
+| `--accent` / `--gold-bright` | `#d9a544` / `#af7c04` | the brand gold, unchanged; and gold as a line, its hue deepened only to the 3:1 a line needs |
+| `--gold-ink` | `#16181e` | gold drawn as text is the ink here: text on the light ground is dark, and the gold stays in the fill or tint behind it |
 | `--ok` / `--ok-ink` | `#1d7a6a` / `#02665a` | success; the second as text |
 | `--warn` / `--warn-ink` | `#b7791f` / `#875400` | needs attention; the second as text |
 | `--bad` / `--bad-ink` | `#c4512f` / `#9f3816` | error and contested; the second as text |
@@ -360,7 +366,7 @@ surface token, `--select` among them.
   label is placed by the fallback's measure and drawn in the face.
 - **Focus is visible on every control**: a 2px `--gold-bright` outline, offset 2px - an outline on
   `:focus-visible`, not a border.
-- **A selected item sits on `--select`**, its text `--gold-bright` when it is a choice (a chip, a
+- **A selected item sits on `--select`**, its text `--gold-ink` when it is a choice (a chip, a
   segment). It takes no border, and a rounded box never takes a rail on one side: the rail bends
   around the corners and reads as a bracket. Hover lightens a control to `--panel-3` and its text to
   `--ink`; hover is not gold.
@@ -475,9 +481,9 @@ ground, but a mark on a light ground is told by being darker: every color has OK
 `#647700`, `#4f995a`, `#0097b6`, `#006fcb`, `#4b29bb`, `#6e2093`, `#a6468a`, `#c0748e` in the first
 tone and `#758a00`, `#007322`, `#006176`, `#1a5998`, `#736fbf`, `#9b74b2`, `#753963`, `#d7307e` in the
 second; they were found by a search over each color's lightness and chroma inside what the screen can
-show. Two signals moved for it: the light `--ok` is a deeper teal, since the cyan hue could otherwise
-sit near neither it nor the neutrals, and the light `--gold-bright` a deeper gold, since the olive
-could otherwise sit near none of the golds. A type keeps its slot, and so its hue, in
+show. One signal moved for it: the light `--ok` is a deeper teal, since the cyan hue could otherwise
+sit near neither it nor the neutrals. The band is measured against the brand gold and the light line
+gold too. A type keeps its slot, and so its hue, in
 both appearances. The map redraws when the appearance changes: its palette, its band, the regions'
 clouds and names, and the labels' halos.
 
@@ -1282,6 +1288,11 @@ social image.
 - **Gold stays gold.** A Mac lets the person's accent color replace an app's. Here gold says
   selected, human confirmed, waiting for a person and focus (Section 4), so following the person's
   accent would change what the map says.
+- **The brand gold does not darken for the light ground.** The light appearance first darkened the
+  accent to read as text, which turned the mark brown. Text on the light ground is dark anyway, so gold
+  need not be text there: it stays in the mark, the fills and the tints, the ink carries the words,
+  and only a thin line - a ring, a focus outline - deepens, to the 3:1 a line needs. The author asked
+  for this (2026-10-19).
 - **The status bar keeps Review and the gear.** Apple's guidelines keep controls and important
   information away from a window's bottom. The title bar holds no navigation but the way back
   (Section 6), Review's count is where the person already looks, and the menu bar reaches both -
@@ -1319,7 +1330,7 @@ social image.
 | **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision. Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
 | **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
 | **U6** | The viewer's search answers with the engine's ranking, each group of Section 8 in that order, and its mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
-| **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 and APCA Lc 60 on every surface token, and `--ink2` Lc 75; a signal drawn as text takes its `-ink` token and gold `--gold-bright`, and text on a pill's tint meets the same floor over it. |
+| **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 and APCA Lc 60 on every surface token, and `--ink2` Lc 75; a signal drawn as text takes its `-ink` token and gold `--gold-ink`, the brand gold `--accent` in both appearances with the mark drawn in it, and text on a pill's tint meets the same floor over it. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 | **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, an owed clause or the chosen column on the principles ledger, a control's own glyph, or under Increase Contrast a control's edge. |
 | **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's own functions, a ring is human confirmed at the viewer's width, the coral badge is contested, a relation is the viewer's neutral line, and every other color it draws is a landing token. The second machine draws every ring and badge the first draws, since it replays the same log. Each scene ends within five seconds and then draws nothing until it is asked again; under reduced motion each scene is its resting frame; the canvas is hidden from assistive technology and each step says its scene in its own words (P2, P6, P18). |
@@ -2105,6 +2116,10 @@ changed it:
   label size, and the chapters' names stay.
 - **The landing's pictures were retaken.** The viewer's picture shows the third pass's title bar, type
   and rings, and the stage's poster its rings by weight and its thin lines.
+- **The mark was swept into a rule for text.** Step 18 moved every gold drawn as text to the bright
+  gold, and the mark, which is not text, went with it, as did the site's eyebrows and principle
+  numbers; the light appearance then drew the mark brown. The mark is the brand gold again everywhere,
+  and the site's small gold labels take `--accent-ink`.
 - **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
   redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
   the map stops drawing once nothing else does.

@@ -43,9 +43,9 @@ const PALETTE = { OTHER, EDGE_OTHER, EDGE, EDGE_HI, EDGE_OLD, EDGE_NEUTRAL, EDGE
 // the dark ones, and the map redraws when the system's appearance changes.
 const LIGHT = matchMedia("(prefers-color-scheme: light)");
 const PALETTE_LIGHT = {
-  OTHER: "#5c6370", EDGE_OTHER: "#a0a6b0", EDGE: "#c9c5bc", EDGE_HI: "#744a00", EDGE_OLD: "#b3a39b",
+  OTHER: "#5c6370", EDGE_OTHER: "#a0a6b0", EDGE: "#c9c5bc", EDGE_HI: "#af7c04", EDGE_OLD: "#b3a39b",
   EDGE_NEUTRAL: "#6b7383", EDGE_ACTIVE: "#3b404b", INK: "#16181e", INK2: "#3b404b", SURFACE: "#fcfbf8",
-  GOLD: "#a8740f", TEAL: "#1d7a6a", BAD: "#c4512f",
+  GOLD: "#af7c04", TEAL: "#1d7a6a", BAD: "#c4512f",
 };
 function systemColor(name) {
   const probe = document.createElement("span");

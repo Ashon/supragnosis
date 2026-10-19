@@ -38,6 +38,8 @@
     --accent:#d9a544; --gold-bright:#f0c469; --gold-dim:rgba(217,165,68,0.35);
     --gold-glass:rgba(217,165,68,0.12); --ok:#56b3a2; --bad:#e07a5f;
     --ok-ink:#78c8b8; --warn-ink:#e9af60; --bad-ink:#fca18a;
+    /* Gold drawn as text: the bright gold here, the ink on the light ground (Section 3). */
+    --gold-ink:#f0c469;
     /* Six sizes, in rem so a person's own text size scales them, given by role (Section 4, U21):
        a page's title, a sheet's, a section's; body - text a person reads to act and every control's
        label, as a Mac's Body; small - a second line, a description, a hint, a panel's heading;
@@ -61,11 +63,11 @@
      light value meets the floors the dark ones do on the light surfaces. */
   @media (prefers-color-scheme: light) {
     :root { color-scheme:light;
-      --surface:#fcfbf8; --panel:#f3f1ec; --panel-2:#ebe8e1; --panel-3:#e3dfd7; --select:#e8e0cd;
+      --surface:#fcfbf8; --panel:#f3f1ec; --panel-2:#ebe8e1; --panel-3:#e3dfd7; --select:#efe5d1;
       --ink:#16181e; --ink2:#3b404b; --muted:#5c6370;
       --line:#dcd8cf; --line-soft:#e7e4dd;
-      --accent:#a8740f; --gold-bright:#744a00; --gold-dim:rgba(168,116,15,0.35);
-      --gold-glass:rgba(168,116,15,0.12); --ok:#1d7a6a; --bad:#c4512f;
+      --accent:#d9a544; --gold-bright:#af7c04; --gold-ink:#16181e; --gold-dim:rgba(217,165,68,0.35);
+      --gold-glass:rgba(217,165,68,0.12); --ok:#1d7a6a; --bad:#c4512f;
       --ok-ink:#02665a; --warn-ink:#875400; --bad-ink:#9f3816;
       --ok-glass:rgba(29,122,106,0.12); --bad-glass:rgba(196,81,47,0.12);
       --shadow:rgba(60,45,20,0.16); --shadow-soft:rgba(60,45,20,0.1); --scrim:rgba(40,32,20,0.28); }
@@ -107,7 +109,8 @@
   .tlead { display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0; }
   .ttrail { display:flex; align-items:center; gap:6px; flex:none; }
   /* The inline asterisk mark. pointer-events:none keeps the shell's drag-region hit on the header. */
-  .mark { display:flex; color:var(--gold-bright); margin-right:4px; }
+  /* The mark is a logotype in the brand gold, the same in both appearances (Section 3). */
+  .mark { display:flex; color:var(--accent); margin-right:4px; }
   .mark svg { flex:none; pointer-events:none; }
   #placeTitle { margin:0 0 0 4px; font:600 var(--text-body)/1.3 var(--sans); color:var(--ink); white-space:nowrap; }
   #placeTitle .tscope { margin-left:8px; color:var(--muted); font-weight:400; }
@@ -225,7 +228,7 @@
               font-size:var(--text-body); color:var(--ink2); user-select:none;
               transition:background-color 0.12s ease, color 0.12s ease; }
   .chip:hover { background:var(--panel-3); color:var(--ink); }
-  .chip.on { background:var(--select); color:var(--gold-bright); }
+  .chip.on { background:var(--select); color:var(--gold-ink); }
   .lg { display:inline-flex; align-items:center; gap:6px; background:none; padding:3px 8px; }
   .lg:hover { background:var(--panel-2); color:var(--ink); }
   .lg.off { opacity:0.38; }
@@ -279,7 +282,7 @@
                     stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
   /* The eye stays lit while its popover is open: the popover is detached, so the button is the
      only anchor telling you where it came from. */
-  #hud button.on { background:var(--select); color:var(--gold-bright); }
+  #hud button.on { background:var(--select); color:var(--gold-ink); }
   #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:7;
              width:168px; height:154px; background:var(--panel); border-radius:var(--r-surface);
              box-shadow:0 8px 24px var(--shadow-soft); cursor:crosshair; display:none; }
@@ -441,7 +444,7 @@
   #viewpop .seg { display:flex; gap:2px; padding:2px; border-radius:var(--r-control); background:var(--panel-2); }
   #viewpop .seg button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:28px;
                          padding:2px 6px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:var(--r-inset); }
-  #viewpop .seg button.on { background:var(--select); color:var(--gold-bright); }
+  #viewpop .seg button.on { background:var(--select); color:var(--gold-ink); }
   #viewpop .seg .sw { width:10px; height:10px; border-radius:var(--r-mark); flex:none; }
   #viewpop #reload { margin-top:7px; padding:4px 8px; font-size:var(--text-body); }
   /* Legend chips live in the dock sections now. */
@@ -635,7 +638,7 @@
   #settings .stab { flex:0 0 auto; padding:5px 11px; font:500 var(--text-body)/1.5 var(--sans);
                     background:none; color:var(--muted); border-radius:var(--r-control); cursor:pointer; }
   #settings .stab:hover { color:var(--ink); background:var(--panel-2); }
-  #settings .stab.on { color:var(--gold-bright); background:var(--select); }
+  #settings .stab.on { color:var(--gold-ink); background:var(--select); }
   #settingsBody { padding:10px 12px 14px; overflow:auto; max-height:calc(82vh - 74px); }
   /* About: a definition list of what this build is. */
   #settings .kv { display:grid; grid-template-columns:max-content 1fr; gap:3px 12px; }
@@ -687,7 +690,7 @@
   #statusbar .spill { margin-left:8px; padding:4px 10px; min-height:24px; box-sizing:border-box; border-radius:var(--r-capsule); font:500 var(--text-body)/1.5 var(--sans);
                       background:var(--panel-2); color:var(--ink2); white-space:nowrap; }
   #statusbar .spill.bad { color:var(--bad-ink); background:var(--bad-glass); }
-  #statusbar .spill.warn { color:var(--gold-bright); background:var(--gold-glass); }
+  #statusbar .spill.warn { color:var(--gold-ink); background:var(--gold-glass); }
   #statusbar .spill.ok { color:var(--ok-ink); background:var(--ok-glass); }
   #statusbar .spill:hover { filter:brightness(1.25); }
   /* The Review page (design-system.md Section 7): over the canvas, between the header and the status
@@ -705,7 +708,7 @@
   /* One row of tabs at the queue's width (a Mac's tab view does not wrap); it wraps only when text grows. */
   .rv-seg { display:flex; flex-wrap:wrap; gap:4px; }
   .rv-segb { padding:4px 8px; min-height:28px; border-radius:var(--r-control); font-size:var(--text-body); color:var(--muted); background:var(--panel-2); }
-  .rv-segb.on { color:var(--gold-bright); background:var(--select); }
+  .rv-segb.on { color:var(--gold-ink); background:var(--select); }
   .rv-list { overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:4px; }
   .rv-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:var(--r-control); font:var(--text-body)/1.4 var(--sans);
              color:var(--ink); background:none; }

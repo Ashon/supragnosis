@@ -12,12 +12,13 @@ const LANDING: &str = include_str!("../../../site/style.css");
 /// Declared by every surface (Section 3).
 const CORE: &[&str] = &["--surface", "--panel", "--line", "--ink", "--muted", "--accent"];
 /// What text is drawn in, and what it is drawn on. A signal drawn as text takes its `-ink` token, and
-/// gold drawn as text is `--gold-bright` (Section 3).
+/// gold drawn as text is `--gold-ink` in the tools and `--accent-ink` on the site (Section 3).
 const TEXT: &[&str] = &[
     "--ink",
     "--ink2",
     "--muted",
-    "--gold-bright",
+    "--gold-ink",
+    "--accent-ink",
     "--ok-ink",
     "--warn-ink",
     "--bad-ink",
@@ -212,7 +213,7 @@ fn text_on_a_pill_reads_over_its_tint() {
         ("--ok-ink", "--ok-glass"),
         ("--warn-ink", "--warn-glass"),
         ("--bad-ink", "--bad-glass"),
-        ("--gold-bright", "--gold-glass"),
+        ("--gold-ink", "--gold-glass"),
     ];
     let mut low = Vec::new();
     let mut seen = 0;
@@ -345,7 +346,7 @@ fn the_light_appearance_meets_the_same_floors() {
             ("--ok-ink", "--ok-glass"),
             ("--warn-ink", "--warn-glass"),
             ("--bad-ink", "--bad-glass"),
-            ("--gold-bright", "--gold-glass"),
+            ("--gold-ink", "--gold-glass"),
         ] {
             let (Some(fg), Some(tint)) = (value(&light, ink), value(&light, glass)) else {
                 continue;
@@ -462,16 +463,28 @@ fn a_signal_drawn_as_text_takes_its_ink() {
         ("welcome.css", include_str!("../../../app/assets/welcome.css")),
         ("site/style.css", LANDING),
     ] {
-        let flat: String = css.split_whitespace().collect();
+        let mut clean = String::new();
+        let mut rest = css;
+        while let Some(k) = rest.find("/*") {
+            clean.push_str(&rest[..k]);
+            rest = rest[k..].find("*/").map_or("", |e| &rest[k + e + 2..]);
+        }
+        clean.push_str(rest);
+        let flat: String = clean.split_whitespace().collect();
         for token in ["--bad", "--ok", "--warn", "--accent"] {
-            let mut rest = flat.as_str();
             let needle = format!("color:var({token})");
-            while let Some(i) = rest.find(&needle) {
-                let before = rest[..i].chars().last();
-                if !matches!(before, Some(c) if c == '-' || c.is_ascii_alphanumeric()) {
-                    found.push(format!("{file}: color:var({token})"));
+            for (i, _) in flat.match_indices(&needle) {
+                let before = flat[..i].chars().last();
+                if matches!(before, Some(c) if c == '-' || c.is_ascii_alphanumeric()) {
+                    continue;
                 }
-                rest = &rest[i + needle.len()..];
+                // The mark is a logotype, drawn in the brand gold itself (Section 3).
+                let open = flat[..i].rfind('{').unwrap_or(0);
+                let selector = &flat[flat[..open].rfind(['}', ';']).map_or(0, |j| j + 1)..open];
+                if token == "--accent" && LOGOS.contains(&selector) {
+                    continue;
+                }
+                found.push(format!("{file}: {selector} color:var({token})"));
             }
         }
     }
@@ -479,6 +492,54 @@ fn a_signal_drawn_as_text_takes_its_ink() {
         found.is_empty(),
         "a signal drawn as text in the mark's color:\n  {}",
         found.join("\n  ")
+    );
+}
+
+/// The product's mark in each stylesheet, whitespace dropped: a logotype, outside the text floors.
+const LOGOS: &[&str] = &[".mark", ".wordmark::before"];
+
+/// Section 3: the brand gold is the same in both appearances, and the mark is drawn in it. Gold drawn
+/// as text is `--gold-ink` - the bright gold on the dark, the ink on the light, where the gold stays in
+/// the fill - and gold drawn as a line is `--gold-bright`, on the light the brand's hue deepened only
+/// to the 3:1 a line needs.
+#[test]
+fn the_brand_gold_is_one_gold() {
+    for (file, css) in
+        [("viewer.css", VIEWER), ("settings.css", SETTINGS), ("site/style.css", LANDING)]
+    {
+        assert_eq!(
+            value(&tokens(css), "--accent"),
+            Some("#d9a544"),
+            "{file}: the brand gold moved"
+        );
+    }
+    for (file, css) in [("viewer.css", VIEWER), ("settings.css", SETTINGS)] {
+        let light = light_tokens(css);
+        assert_eq!(
+            value(&light, "--accent"),
+            Some("#d9a544"),
+            "{file}: the light brand gold is darker"
+        );
+        assert_eq!(
+            value(&light, "--gold-ink"),
+            value(&light, "--ink"),
+            "{file}: light gold text is not the ink"
+        );
+        let line = value(&light, "--gold-bright").expect("a light line gold");
+        for ground in ["--surface", "--panel", "--panel-2"] {
+            let ratio = contrast(line, value(&light, ground).expect("a light ground"));
+            assert!(ratio >= 3.0, "{file}: the light gold line is {ratio:.2}:1 on {ground}");
+        }
+    }
+    let viewer: String = VIEWER.split_whitespace().collect();
+    assert!(
+        viewer.contains(".mark{display:flex;color:var(--accent);"),
+        "the viewer's mark is not the brand gold"
+    );
+    let site: String = LANDING.split_whitespace().collect();
+    assert!(
+        site.contains("content:\"*\";color:var(--accent);"),
+        "the landing's mark is not the brand gold"
     );
 }
 

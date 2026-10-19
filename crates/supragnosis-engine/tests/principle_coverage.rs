@@ -598,12 +598,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // crates/supragnosis-viz/tests/design_tokens.rs: every var() of the three stylesheets.
         Evidence::Scenario(&["every_token_a_stylesheet_reads_is_declared"]),
     ), c(
-        "every text token meets APCA Lc 60 on every surface token and the body token Lc 75, a signal drawn as text takes its -ink token and gold --gold-bright, and text on a pill's tint meets the same floor over it",
+        "every text token meets APCA Lc 60 on every surface token and the body token Lc 75, a signal drawn as text takes its -ink token and gold --gold-ink, the brand gold is one gold in both appearances, and text on a pill's tint meets the same floor over it",
         // crates/supragnosis-viz/tests/design_tokens.rs: APCA 0.0.98G over the three :root blocks,
         // every color property of the four stylesheets, and each pill's tint laid on the panels.
         Evidence::Scenario(&[
             "every_text_token_reads_on_every_surface_by_apca",
             "a_signal_drawn_as_text_takes_its_ink",
+            "the_brand_gold_is_one_gold",
             "text_on_a_pill_reads_over_its_tint",
             "faint_is_retired",
         ]),

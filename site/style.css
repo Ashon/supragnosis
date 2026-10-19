@@ -40,6 +40,8 @@
   --ok: #56b3a2;
   --bad: #e07a5f;
   --bad-ink: #fca18a;
+  /* The brand gold drawn as small text, its hue at the text floor; the mark itself is --accent. */
+  --accent-ink: #e1af54;
   /* Six corners (design-system.md Section 3, U22). */
   --r-window: 16px;
   --r-surface: 12px;
@@ -139,7 +141,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--gold-bright);
+  color: var(--accent-ink);
   margin-bottom: 18px;
 }
 .eyebrow span { color: var(--muted); text-transform: none; letter-spacing: 0.02em; }
@@ -152,7 +154,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding-block: 18px;
 }
 .wordmark { font: 600 var(--fs-small) var(--mono); color: var(--ink); white-space: nowrap; }
-.wordmark::before { content: "* "; color: var(--gold-bright); }
+.wordmark::before { content: "* "; color: var(--accent); }
 .wordmark:hover { text-decoration: none; }
 .site-head nav {
   display: flex;
@@ -448,7 +450,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .legend i, .states i, .clauses .bar i, .cl i { display: inline-block; width: 14px; height: 9px; border-radius: var(--r-mark); flex: none; }
 .detail { background: var(--panel); border-radius: var(--r-window); padding: 18px 20px; min-width: 0; display: none; }
 .js .detail { display: block; }
-.detail .dn, .pn { font: 600 var(--fs-label) var(--mono); color: var(--gold-bright); }
+.detail .dn, .pn { font: 600 var(--fs-label) var(--mono); color: var(--accent-ink); }
 .detail h3, .detail .dt { margin: 4px 0 6px; }
 .detail .dl { font-size: var(--fs-small); margin-bottom: 12px; }
 .cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
@@ -582,7 +584,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .held h3 { margin: 32px 0 8px; }
 .held p { max-width: 62ch; }
 .given { background: var(--panel); border-radius: var(--r-surface); padding: 14px 16px; overflow-x: auto; font: var(--fs-label)/1.7 var(--mono); color: var(--ink2); margin: 14px 0 0; }
-.given b { color: var(--gold-bright); font-weight: 500; }
+.given b { color: var(--accent-ink); font-weight: 500; }
 .p-close { display: flex; flex-wrap: wrap; gap: 10px; padding-block: 28px 8px; }
 .p-close a { font-size: var(--fs-small); padding: 13px 16px; border-radius: var(--r-surface); background: var(--panel); color: var(--ink); }
 .p-close a.pri { background: var(--select); color: var(--gold-bright); }

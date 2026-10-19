@@ -26,6 +26,7 @@
   --warn: #e0a24a; --warn-glass: rgba(224,162,74,0.12);
   --bad: #e07a5f; --bad-glass: rgba(224,122,95,0.12);
   --ok-ink: #78c8b8; --warn-ink: #e9af60; --bad-ink: #fca18a; /* a signal drawn as text */
+  --gold-ink: #f0c469; /* gold drawn as text: the ink on the light ground */
   /* Six sizes in rem, given by role (docs/design-system.md Section 4, U21). */
   --text-page: 1.5rem; --text-sheet: 1.125rem; --text-section: 0.9375rem;
   --text-body: 0.8125rem; --text-small: 0.75rem; --text-caption: 0.6875rem;
@@ -42,11 +43,11 @@
    with the viewer's light values. */
 @media (prefers-color-scheme: light) {
   :root { color-scheme: light;
-    --surface: #fcfbf8; --panel: #f3f1ec; --panel-2: #ebe8e1; --panel-3: #e3dfd7; --select: #e8e0cd;
+    --surface: #fcfbf8; --panel: #f3f1ec; --panel-2: #ebe8e1; --panel-3: #e3dfd7; --select: #efe5d1;
     --ink: #16181e; --ink2: #3b404b; --muted: #5c6370;
     --line: #dcd8cf; --line-soft: #e7e4dd;
-    --accent: #a8740f; --gold-bright: #744a00; --gold-glass: rgba(168,116,15,0.12);
-    --gold-dim: rgba(168,116,15,0.35);
+    --accent: #d9a544; --gold-bright: #af7c04; --gold-ink: #16181e; --gold-glass: rgba(217,165,68,0.12);
+    --gold-dim: rgba(217,165,68,0.35);
     --ok: #1d7a6a; --ok-glass: rgba(29,122,106,0.12);
     --warn: #b7791f; --warn-glass: rgba(183,121,31,0.12);
     --bad: #c4512f; --bad-glass: rgba(196,81,47,0.12);
@@ -99,13 +100,13 @@ header h1 { margin: 0; color: var(--ink); font: 600 var(--text-body)/1.3 var(--s
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .navitem:hover { background: var(--panel-2); color: var(--ink); }
-.navitem[aria-current="page"] { background: var(--select); color: var(--gold-bright); }
+.navitem[aria-current="page"] { background: var(--select); color: var(--gold-ink); }
 .navitem:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
 .navitem .tile {
   width: 26px; height: 26px; border-radius: var(--r-control); display: grid; place-items: center;
   background: var(--panel-3); color: var(--ink2); flex: none;
 }
-.navitem[aria-current="page"] .tile { background: var(--panel-3); color: var(--gold-bright); }
+.navitem[aria-current="page"] .tile { background: var(--panel-3); color: var(--gold-ink); }
 .navitem .label { flex: 1; font-weight: 500; }
 .navitem .meta { color: var(--muted); font: var(--text-caption)/1 var(--mono); }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
@@ -163,7 +164,7 @@ header h1 { margin: 0; color: var(--ink); font: 600 var(--text-body)/1.3 var(--s
 .pill.warn .dot { background: var(--warn); }
 .pill.bad { background: var(--bad-glass); color: var(--bad-ink); }
 .pill.bad .dot { background: var(--bad); }
-.pill.gold { background: var(--gold-glass); color: var(--gold-bright); }
+.pill.gold { background: var(--gold-glass); color: var(--gold-ink); }
 
 /* Buttons: primary (gold), secondary (panel), quiet (text), danger (red on hover or by role). */
 .btn {
