@@ -216,6 +216,18 @@ tasks:
       - cargo deny --all-features check
       - cargo deny --manifest-path app/Cargo.toml --config deny.toml --all-features check
 
+  scenarios:
+    desc: The end-to-end scenarios (docs/e2e.md) and their count - what scenarios.yml runs
+    # Each scenario starts this tree's binary in a throwaway home; nothing of yours is read or
+    # written. SUPRAGNOSIS_SCENARIO_KEEP=1 keeps a failing scenario's home and daemon log.
+    cmds:
+      - |
+        set -eu
+        out=$(mktemp)
+        trap 'rm -f "$out"' EXIT
+        cargo test --locked -p supragnosis-cli --features scenarios --test 'scenario_*' {{.CLI_ARGS}} 2>&1 | tee "$out" || true
+        node scenarios/check.mjs --doc docs/e2e.md --rust "$out"
+
   coverage:
     desc: Line coverage of the server workspace - what coverage.yml measures for the README badge
     # Needs `cargo install cargo-llvm-cov` and rustup's llvm-tools-preview component. Not part of

@@ -8,7 +8,8 @@
 > Section 14 (what guards what), [compatibility.md](compatibility.md) Section 6 (the CLI's
 > machine-read answers) and [onboarding.md](onboarding.md) (the first run).
 >
-> Status: **specified; the daemon's half is built** (Section 11 step 2), the scenarios are not.
+> Status: **partly built** (Section 11): the daemon's half, the Rust harness with A1-A4 and A8, and
+> the scenario check with its badge. The browser, the app's pages and the other scenarios are not.
 
 ## 1. Why this exists
 
@@ -234,7 +235,7 @@ and whether they pass.
     output, and Playwright's JSON report;
   - it matches the two. A scenario with no test is unbuilt. A test whose id is in no table fails the
     check, because a story that is not written down is not counted.
-- **The badge** reads `e2e | 14/17`: scenarios passing over scenarios specified.
+- **The badge** reads `e2e | 14/18`: scenarios passing over scenarios specified.
   - It is green when every specified scenario passes.
   - It is gold while some are unbuilt and every built one passes.
   - It is red when a built scenario fails.
@@ -308,7 +309,7 @@ browser. `task test:e2e` stays the model evaluations.
 2. **The daemon's half:** the bound-address file and a normal exit on SIGTERM, each with a test.
    [built; the hub's sync listener writes its line with A6]
 3. **The Rust harness, A1-A4 and A8**, behind the `scenarios` feature, and the scenario check with
-   its badge (J8).
+   its badge (J8). [built]
 4. **The browser harness and B1-B6:** the proxy, the Node MCP seed, and Playwright on the system
    Chrome. B5 needs the empty-workspace message from PR #168.
 5. **The app's pages, C1-C3:** the app's command examples and the stand-in. C2 and C3 need the
@@ -330,7 +331,7 @@ browser. `task test:e2e` stays the model evaluations.
 - **D4. No pixel comparisons.** Screenshots are evidence (J4).
 - **D5. The desktop window is out of scope.** There is no WebDriver for the macOS webview. The pages
   are covered with the app's own examples (J7), and the window by the clean run.
-- **D6. Two badges.** Scenario coverage (`14/17`) says how much of the written story is guarded.
+- **D6. Two badges.** Scenario coverage (`14/18`) says how much of the written story is guarded.
   Line coverage under the scenarios says how much of the code a real session reaches.
 
 ## 13. Closure map
@@ -388,3 +389,8 @@ it. Sixteen findings changed it:
 - **No random path prefix on the proxy.** The draft put every proxied path under a prefix chosen per
   run. The viewer's page fetches its API by root-relative paths (`/api/graph`), so a prefix breaks
   the page. The `Host` and `Origin` checks carry what the prefix was for.
+- **The badges branch holds every badge.** coverage.yml replaced the branch with its one file, which
+  would have erased the scenario badge on every main push. Both workflows now replace their own file
+  and keep the others, with a lease on the commit they read, and retry when they race.
+- **A tool's refusal is an answer with an `error` field**, not always an MCP tool error: a secret
+  refused at ingest comes back that way. The harness reads both as a refusal.

@@ -58,3 +58,11 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 3
+  # The browser scenarios' Playwright (docs/e2e.md Section 4.2), a test-only dependency.
+  - package-ecosystem: npm
+    directory: /scenarios/web
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3

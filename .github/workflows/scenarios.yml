@@ -1,0 +1,130 @@
+# The end-to-end scenarios (docs/e2e.md): the product's binary started as its users start it, each
+# scenario in a home of its own, and the count of the scenarios docs/e2e.md names that are built and
+# passing, published as the README's e2e badge.
+#
+# The Rust scenarios are behind the CLI's `scenarios` feature, so rust.yml and coverage.yml run
+# neither them nor their daemons. The check runs even when a scenario fails: a red badge is the point.
+name: scenarios
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "app/assets/**"
+      - "scenarios/**"
+      - "docs/e2e.md"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/scenarios.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "app/assets/**"
+      - "scenarios/**"
+      - "docs/e2e.md"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/scenarios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scenarios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenarios:
+    name: end-to-end scenarios
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # A failing scenario's home - with each daemon's log - is kept for the artifact below.
+      SUPRAGNOSIS_SCENARIO_KEEP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: install rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: scenarios
+
+      - name: ontology scenarios
+        run: |
+          set -o pipefail
+          cargo test --locked -p supragnosis-cli --features scenarios --test 'scenario_*' 2>&1 | tee rust-scenarios.txt
+
+      - name: scenario check
+        if: always()
+        run: node scenarios/check.mjs --doc docs/e2e.md --rust rust-scenarios.txt --badge e2e.json --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: keep the daemons' logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-homes
+          path: /tmp/sg-*/daemon.log
+          retention-days: 7
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: e2e-badge
+          path: e2e.json
+          retention-days: 7
+
+  publish:
+    name: publish the badge
+    needs: scenarios
+    # Published from main only, red or green - a failing scenario is what the badge is for.
+    if: always() && github.ref == 'refs/heads/main' && needs.scenarios.result != 'cancelled'
+    runs-on: ubuntu-22.04
+    # The one job that writes. It checks out nothing and runs no code from the tree.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-badge
+
+      - name: push to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          FILE: e2e.json
+        run: |
+          set -euo pipefail
+          # The badges branch is one commit holding every badge's file. This replaces its own file
+          # and keeps the others; the lease is the commit it read, so a publish racing another one
+          # (coverage.yml and scenarios.yml both run on a main push) reads again and retries.
+          export GIT_AUTHOR_NAME="github-actions[bot]" GIT_COMMITTER_NAME="github-actions[bot]"
+          export GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          new="$PWD/$FILE"
+          work=$(mktemp -d) && cd "$work" && git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          for attempt in 1 2 3 4 5; do
+            rm -rf tree .git/index && mkdir tree
+            base=""
+            if git fetch -q --depth=1 origin badges 2>/dev/null; then
+              base=$(git rev-parse FETCH_HEAD)
+              git --work-tree=tree checkout -q "$base" -- .
+              rm -f .git/index
+            fi
+            cp "$new" "tree/$FILE"
+            git --work-tree=tree add -A
+            commit=$(git commit-tree "$(git write-tree)" -m "$FILE at ${SHA}")
+            if git push -q --force-with-lease="refs/heads/badges:${base}" origin "${commit}:refs/heads/badges"; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          exit 1

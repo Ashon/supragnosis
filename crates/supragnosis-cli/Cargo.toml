@@ -23,6 +23,15 @@ default = []
 # Enables fastembed(ONNX local embedding). It is a heavy dependency, so opt-in - when off, it degrades to keyword search.
 # In a build with it on, the runtime default embedder becomes fastembed (can be overridden via SUPRAGNOSIS_EMBED).
 fastembed = ["supragnosis-embed/fastembed"]
+# The end-to-end scenarios (docs/e2e.md Section 4.1): integration tests that start this binary as
+# their users do. Off by default, so rust.yml and coverage.yml run them neither twice nor as unit
+# coverage; scenarios.yml turns it on.
+scenarios = []
+
+[[test]]
+name = "scenario_ontology"
+path = "tests/scenario_ontology.rs"
+required-features = ["scenarios"]
 
 [dependencies]
 supragnosis-core.workspace = true

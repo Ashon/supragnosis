@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/Ashon/supragnosis/actions/workflows/rust.yml/badge.svg)](https://github.com/Ashon/supragnosis/actions/workflows/rust.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAshon%2Fsupragnosis%2Fbadges%2Fcoverage.json)](https://github.com/Ashon/supragnosis/actions/workflows/coverage.yml)
+[![End-to-end scenarios](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAshon%2Fsupragnosis%2Fbadges%2Fe2e.json)](https://github.com/Ashon/supragnosis/actions/workflows/scenarios.yml)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 An embedded, file-based knowledge server for MCP clients. Agents shed observations as a
