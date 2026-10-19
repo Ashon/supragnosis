@@ -14,9 +14,8 @@
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
-> is designed - steps 17-24 - and steps 17, 18 and 24, its defects, reading and the light appearance,
-> are built, with steps 19-21 and 23: lines, shapes and targets, words on the screen, the map's List,
-> and the title bar.
+> is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
+> map's List, the site's type, the title bar and the light appearance.
 
 ## 1. Why this exists
 
@@ -1604,7 +1603,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    line under their names, and every tooltip is written through one helper with a name and its key.
 21. **The map's List** [built] (Section 6; U24): the table, its selection kept with the map's, and the
    canvas's name.
-22. **The site's type** [designed] (Sections 11, 11a): labels in Pretendard, nothing under the label
+22. **The site's type** [built] (Sections 11, 11a): labels in Pretendard, nothing under the label
    size, the ledger's labels as numbers, running text at 1.5, and the landing's picture of the viewer
    retaken once steps 18-21 have changed how it looks.
 23. **The title bar** [built] (Sections 6, 6a; U26): on the Graph page the filters toggle and the
@@ -2099,6 +2098,13 @@ changed it:
 - **The search trails, so its list opens under it toward the left.** Its list was centred under a
   centred field; at the trailing end it would have run off the window, so it is anchored to the
   field's right edge. On the Review page the panel toggles go, since no panel is there.
+- **The wordmark stays mono.** It is a logotype, the product's name drawn as its mark, not a label;
+  every other label on the site is Pretendard now, and the counters and step numbers take tabular
+  figures.
+- **The ledger's numbers give way below 1000 pixels**, where a column grows narrower than "24" at the
+  label size, and the chapters' names stay.
+- **The landing's pictures were retaken.** The viewer's picture shows the third pass's title bar, type
+  and rings, and the stage's poster its rings by weight and its thin lines.
 - **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
   redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
   the map stops drawing once nothing else does.

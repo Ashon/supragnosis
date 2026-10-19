@@ -180,3 +180,53 @@ fn cut_text_can_be_read_whole() {
         "nothing tells the status line it is tight"
     );
 }
+
+const LANDING: &str = include_str!("../../../site/style.css");
+
+/// Sections 11 and 11a: the site sets commands, identifiers and its uppercase eyebrows in IBM Plex
+/// Mono and its labels in Pretendard; no text of its pages is set below its label size; and running
+/// text runs at a line height of 1.5 or more. Before the third pass 61% of its texts were mono and the
+/// ledger's labels were 10 pixels.
+#[test]
+fn the_site_sets_its_labels_in_its_reading_face() {
+    const MONO: &[&str] = &[
+        "code",
+        ".eyebrow",
+        ".wordmark",
+        ".snip",
+        ".code",
+        ".given",
+        ".tools dt",
+        ".props .pref",
+        ".detail .dn, .pn",
+        ".p-answers .kind",
+    ];
+    let mut wrong = Vec::new();
+    for (sel, body) in rules(LANDING) {
+        if sel.starts_with(":root") {
+            continue;
+        }
+        if body.contains("var(--mono)") && !MONO.contains(&sel.as_str()) {
+            wrong.push(format!("{sel} is mono"));
+        }
+        for decl in body.split(';').map(str::trim) {
+            if (decl.starts_with("font:") || decl.starts_with("font-size:"))
+                && decl
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || c == '.'))
+                    .any(|w| w.ends_with("px") && w[..w.len() - 2].parse::<f64>().is_ok())
+            {
+                wrong.push(format!("{sel} sets a size in pixels: {decl}"));
+            }
+        }
+    }
+    for sel in [".sub", ".cl li", ".qs button"] {
+        let (_, body) = rules(LANDING)
+            .into_iter()
+            .find(|(s, _)| s == sel)
+            .unwrap_or_else(|| panic!("no rule {sel}"));
+        if !body.contains("line-height: 1.5") {
+            wrong.push(format!("{sel} runs under a line height of 1.5"));
+        }
+    }
+    assert!(wrong.is_empty(), "the site's type:\n  {}", wrong.join("\n  "));
+}
