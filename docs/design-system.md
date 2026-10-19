@@ -548,7 +548,10 @@ toggle. The product's name is not the title: a window's title names what it show
 the menu bar already name the app. The bar holds no navigation but the way back: on every page but the
 Graph, "< Graph" takes the filters toggle's place, Esc and Cmd+[ take it too, and Cmd+1 goes there
 from anywhere. On the Review page the title is "Review" with its scope, which the page's own heading
-gave before. Below 760 pixels the title gives its room to the search field.
+gave before. Below 760 pixels the title gives its room to the search field. Every page has this one
+bar: the star leads on the Review, Settings and Setup pages as on the Graph, and the way back and the
+title stand where the Review page has them, so moving between pages changes the words in the bar and
+never where they sit. Only the trailing end differs, since the app's pages have no search.
 
 **The frame and the map's window.** The header, the two panels and the status bar are one surface,
 `--panel`, and the map is a window cut into it with 16px corners: the panels sit beside the map, not
@@ -654,8 +657,8 @@ Their rules are in those documents, and the second pass changes four things in t
 pass a fifth:
 
 - **The app's pages go back; they do not close** (U26). Settings and Setup are pages of the main
-  window, so the leading end of their title bar holds "< Graph", where the crumb was, and the x at the
-  trailing end goes: an x in a window's corner reads as closing the window, which a Mac's traffic
+  window, so the leading end of their title bar holds, after the star, "< Graph", where the crumb
+  was, and the x at the trailing end goes: an x in a window's corner reads as closing the window, which a Mac's traffic
   lights already do. The title is the page's - "Setup", or the Settings pane on screen, "Server" - and
   Esc and Cmd+[ go back too (settings-page.md Section 3.0).
 
@@ -1348,7 +1351,7 @@ social image.
 | **U22** | Every corner the viewer's, the app pages' (`settings.css`, `welcome.css`, `shell.css`) and the landing's stylesheets draw is one of Section 3's radius tokens, none, or a dot's circle; a part inside a rounded part takes the outer radius less the space between them; a pill and a large control are capsules, and the controls of one row share one size; a checkbox, a radio and a switch take the accent; and no line is dashed or dotted, on a page or on a canvas. |
 | **U23** | Under `prefers-contrast: more` every text token takes the next stronger one, every control, chip and field draws an edge of 3:1 on its surface, and the focus ring is 3 pixels; under `forced-colors: active` the map redraws in the system's colors, keeps every mark it draws, and widens the human-confirmed ring. |
 | **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and search, sorted by type and name, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
-| **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; and it holds no other navigation. |
+| **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; it holds no other navigation; and every page's bar is one bar, the star first and the way back and the title where the Review page has them. |
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
@@ -1620,7 +1623,8 @@ and it fails when one of them appears in the viewer's source other than as an ar
 23. **The title bar** [built] (Sections 6, 6a; U26): on the Graph page the filters toggle and the
    scope's title at the leading end and the search and the right panel's toggle at the trailing end;
    "< Graph" on the Review, Settings and Setup pages with Esc and Cmd+[; the product's name, the
-   crumbs and the x gone; and settings-page.md's and onboarding.md's title bars with it.
+   crumbs and the x gone; the star leading on every page, with the way back and the title where the
+   Review page has them; and settings-page.md's and onboarding.md's title bars with it.
 24. **Light and dark** [built] (Sections 3, 5, 10; U27): the light values in the viewer's and the
    Settings page's stylesheets, shadows and scrims as tokens, Increase Contrast in both, the light
    band and palette in the viewer's script with the map's redraw on a change, and the starting splash
@@ -2120,6 +2124,12 @@ changed it:
   gold, and the mark, which is not text, went with it, as did the site's eyebrows and principle
   numbers; the light appearance then drew the mark brown. The mark is the brand gold again everywhere,
   and the site's small gold labels take `--accent-ink`.
+- **The app's pages lost the star with their crumb.** Step 23 took the crumb out of the Settings and
+  Setup title bars and the star went with it, so their "< Graph" stood 24 pixels and their title 25
+  pixels left of where the Review page has them, though settings-page.md Section 3.0 asks for the
+  viewer's mark on both pages. The app's pages take the viewer's leading group - the same star, its
+  spacing and its title's margin - and a browser measures the star, the way back and the title at
+  the same places on the Review, Settings and Setup pages in both appearances.
 - **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
   redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
   the map stops drawing once nothing else does.

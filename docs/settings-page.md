@@ -58,7 +58,8 @@ been, and the graph keeps its title bar to itself.
   its peers. Both are on this page - About and Sync - so in the app the gear leads to one place, not
   two.
 - **The title bar is the viewer's on both pages.** Same row height, surface and mark, with the
-  traffic lights over it in the same place. Since design-system.md Section 14 step 7 the title bar is
+  traffic lights over it in the same place, and the star, "< Graph" and the title where the viewer's
+  Review page has them. Since design-system.md Section 14 step 7 the title bar is
   the frame's `--panel` with no glass and no rule under it, on both pages. Since design-system.md
   Section 14 step 23 it is a Mac toolbar: it names the place on screen, not the product, and the
   settings page's title is the pane on screen - "Server", "AI apps" - after "< Graph". One stylesheet
