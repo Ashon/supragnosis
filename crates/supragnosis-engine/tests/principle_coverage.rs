@@ -810,9 +810,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (30, &[c(
         "what the map draws follows the screen: culled outside the window, three sizes of a node by its radius on screen, one path per look, and names by a per-cell budget",
-        Evidence::Deferred(
-            "Section 14 step 28 is planned: every node and relation is drawn one by one at full detail. Revisit when step 28 lands",
-        ),
+        // scale.rs reads draw, lodOf, labelGrid and zoomAt.
+        Evidence::Scenario(&["what_the_map_draws_follows_the_screen"]),
     )]),
     (31, &[c(
         "at 10,000 entities the map pans and zooms within 16.7 ms at p95 and shows its first picture within 10 seconds on the reference Mac in Chrome and WebKit",

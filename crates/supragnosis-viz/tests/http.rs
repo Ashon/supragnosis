@@ -552,15 +552,22 @@ fn the_map_rings_read_the_effective_tier() {
 }
 
 /// design-system.md U3 (Principle 6): a contested node is marked wherever it is drawn, and counted
-/// whatever hides it. The badge pass runs after the nodes at full strength, skipping only a type the
-/// legend does not draw at all, and the status bar's count is taken over every loaded node.
+/// whatever hides it. The badge pass runs after the nodes at full strength, at any size on the
+/// screen, skipping only a type the legend does not draw at all and a node outside the window (its
+/// `_vis`, whose window is grown by the badge), and the status bar's count is taken over every
+/// loaded node.
 #[test]
 fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
     let js = include_str!("../assets/viewer.js");
-    let pass = "ctx.globalAlpha = 1;\n  for (const n of nodes) {\n    if (!n.contested || typeOff.has(n.type)) continue;";
+    let pass = "ctx.globalAlpha = 1;\n  for (const n of nodes) {\n    if (!n.contested || !n._vis) continue;";
     assert!(
         js.contains(pass),
         "the contested badge is drawn in its own full-strength pass, skipping only undrawn types"
+    );
+    assert!(
+        js.contains("n._vis = !typeOff.has(n.type) && n.x >= vx0 && n.x <= vx1 && n.y >= vy0 && n.y <= vy1;")
+            && js.contains("const reachOut = NODE_R_MAX + 16 + 9 / cam.s;"),
+        "a node counts as drawn when its type is shown and it, its glow or its badge meets the window"
     );
     let count = js
         .lines()

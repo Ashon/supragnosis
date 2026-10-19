@@ -16,8 +16,8 @@
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
-> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and steps 25-27, the bench, the
-> simulation at rest and the grid, are built.
+> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and steps 25-28, the bench, the
+> simulation at rest, the grid and drawing less, are built.
 
 ## 1. Why this exists
 
@@ -1388,7 +1388,7 @@ social image.
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U28** | Drawing never moves the layout: a pan, a zoom, a hover, a highlight or a selection redraws the map without a simulation step, and a layout that has come to rest visits no pair of nodes until something warms it. |
 | **U29** | The layout's near forces - repulsion within its range, collision and crowding - meet each node with only the nodes in its own and the adjacent cells of a grid as large as their longest reach, so a step costs in proportion to the nodes and their neighbours, and the forces are those every pair would give. |
-| **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 6 pixels on screen is drawn without its ring and its relations without arrowheads, and one under 2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
+| **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 3 pixels of radius on screen is drawn without its ring and the relations into it straight and without arrowheads, and one under 1.2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
 | **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
@@ -1674,7 +1674,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    it steps.
 27. **The grid** [built] (Section 26.4; U29): near forces from a uniform grid, scratch arrays reused,
    and the parallel-edge lanes kept with the edges rather than rebuilt each frame.
-28. **Drawing less** [planned] (Section 26.5; U30): culling, one path per look, the three sizes of a
+28. **Drawing less** [built] (Section 26.5; U30): culling, one path per look, the three sizes of a
    node, the label grid, and the zoom floor that follows the graph.
 29. **Still layers** [planned] (Section 26.6): the region field and the minimap's dots drawn when they
    change, and moved as bitmaps while the camera moves.
@@ -2265,21 +2265,25 @@ it is taken.
 - **One path per look.** Relations that share a color, an opacity and a width are one path and one
   stroke, and their arrowheads one path and one fill. Nodes that share a fill and an opacity are one
   path; a node's halo is a disc of the surface color under it, drawn the same way, rather than a
-  stroke for each node.
+  stroke for each node. An arrowhead is a triangle left open, since the fill closes it: closed one by
+  one in a path of thousands, the heads took Chrome 80 ms a frame at a reading zoom on 10,000
+  entities.
 - **Three sizes of a node** (U30), by its radius on the screen:
-  - from 6 pixels, as now: halo, fill, trust ring, the contested badge, and arrowheads when they are
-    on;
-  - from 2 pixels: halo and fill, with relations straight and without arrowheads;
-  - under 2 pixels: a square of its type's color, without a halo.
+  - from 3 pixels, as now: halo, fill, trust ring, and the relations into it in their lanes with
+    arrowheads when they are on;
+  - from 1.2 pixels: halo and fill, with the relations into it straight and without arrowheads;
+  - under 1.2 pixels: a square of its type's color, without a halo.
 
   A hovered, selected or active node and its relations are drawn at the first size whatever their
-  size, so a highlight reads; a relation shorter than 2 pixels on the screen is not drawn. The
-  contested badge keeps its pass (U3) from 4 pixels.
-- **Names by a budget.** The screen is a grid of 100-pixel cells. In each, the names of the
-  best-connected nodes are placed first, two at most, and a name is checked against the names in its
-  own and the adjacent cells only. The hovered, selected and active nodes are always named.
+  size, so a highlight reads; a relation shorter than 2 pixels on the screen is not drawn. A visible
+  contested node keeps its badge at any size, in its own pass (U3).
+- **Names by a budget.** The hubs among the nodes in view are named, as now, the cut set by how many
+  are in view. A name is checked against the names in the 100-pixel cells it covers only, and each
+  cell anchors two names at most; the hovered and selected nodes are always named.
 - **The zoom floor follows the graph.** Zooming out stops where the whole map fits the window, so a
   map of any size can be seen whole.
+
+Guarded by `what_the_map_draws_follows_the_screen`.
 
 ### 26.6 Layers that do not move are not redrawn
 
@@ -2301,4 +2305,18 @@ label grid and settings; ECharts' large symbol drawing; d3-force's many-body and
 ForceAtlas2 and Jacomy and others, PLOS ONE 2014; Barnes and Hut, Nature 1986; Zhao and others, 2025,
 on web graph libraries; Horak and others, 2018; Game Programming Patterns, Spatial Partition and Dirty
 Flag; Gaffer on Games, Fix your timestep.
+
+### 26.9 What building it changed
+
+- **The sizes of a node are 3 and 1.2 pixels, not 6 and 2.** A node with no relations is 4 world
+  pixels in radius, so at 6 a map of ordinary size, framed at its usual zoom, lost its rings and its
+  arrowheads. At 3 the maps people read today look as they did, and only a map zoomed out to hold
+  thousands of nodes draws less.
+- **The contested badge is not thinned.** U3 keeps it at full strength through every other dimming;
+  a size rule would have been one more way to mute it.
+- **Names keep the hub cut.** The per-cell budget alone named more nodes than before on a map of
+  ordinary size; the cut by the nodes in view stays, and the grid and its budget bound what it lets
+  through.
+- **ESLint knows `Path2D`.** One path per look is a `Path2D` per look, and the viewer's lint names
+  every browser API it may use.
 

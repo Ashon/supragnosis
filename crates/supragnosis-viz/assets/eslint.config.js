@@ -22,7 +22,7 @@ export default [
         addEventListener: "readonly", clearTimeout: "readonly", document: "readonly",
         EventSource: "readonly", fetch: "readonly", history: "readonly", innerHeight: "readonly",
         innerWidth: "readonly", localStorage: "readonly", location: "readonly",
-        matchMedia: "readonly", performance: "readonly", removeEventListener: "readonly",
+        matchMedia: "readonly", Path2D: "readonly", performance: "readonly", removeEventListener: "readonly",
         requestAnimationFrame: "readonly", setInterval: "readonly", setTimeout: "readonly",
         URL: "readonly", URLSearchParams: "readonly", window: "readonly",
       },

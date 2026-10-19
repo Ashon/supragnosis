@@ -297,6 +297,49 @@ const NODE_R_SCALE = 3.4;      // sqrt(degree) coefficient
 const NODE_R_MAX = 28;         // radius upper bound (prevents hub runaway)
 const REPULSE_HUB_MAX = 2.5;   // hub-hub repulsion weight cap (prevents divergence)
 function nodeRadius(n) { return Math.min(NODE_R_MAX, NODE_R_BASE + Math.sqrt(n.degree || 0) * NODE_R_SCALE); }
+// Level of detail (design-system.md Section 26.5, U30): the radius on the screen, in pixels, from which
+// a node is drawn full - halo, fill, trust ring, lanes and arrowheads into it - and below which it is
+// a square of its color. At the sizes a map is read at nothing changes; a map zoomed out far enough
+// to hold thousands of nodes stops drawing what no one could see.
+const LOD_FULL = 3, LOD_DOT = 1.2;
+const LOD_FULL_TIER = 2, LOD_SMALL_TIER = 1, LOD_DOT_TIER = 0;
+const LANE_MAX = 46;      // the furthest a lane of parallel relations bends, in world units
+const EDGE_MIN_PX = 2;    // a relation shorter than this on the screen is not drawn
+function lodOf(n, act) {
+  if (n === hover || n === focus || (act && act.ns.has(n.id))) return LOD_FULL_TIER;
+  const rs = nodeRadius(n) * cam.s;
+  return rs >= LOD_FULL ? LOD_FULL_TIER : rs >= LOD_DOT ? LOD_SMALL_TIER : LOD_DOT_TIER;
+}
+// Placed names on a grid of LABEL_CELL-pixel cells (Section 26.5): a name is checked only against
+// the names in the cells it covers, and a cell is the anchor of at most LABEL_PER_CELL of the names
+// the budget places. It replaces a list every name was checked against, which grew with the square
+// of the names on the screen.
+const LABEL_CELL = 100, LABEL_PER_CELL = 2;
+function labelGrid() {
+  const cells = new Map(), anchors = new Map();
+  const key = (cx, cy) => (cx + 4096) * 8192 + (cy + 4096);
+  const span = (x, y, w, h, fn) => {
+    const x0 = Math.floor(x / LABEL_CELL), x1 = Math.floor((x + w) / LABEL_CELL);
+    const y0 = Math.floor(y / LABEL_CELL), y1 = Math.floor((y + h) / LABEL_CELL);
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (fn(key(cx, cy)) === false) return false;
+    return true;
+  };
+  return {
+    fits: (x, y, w, h) => span(x, y, w, h, k => {
+      for (const p of cells.get(k) || []) if (x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y) return false;
+      return true;
+    }),
+    add(x, y, w, h) {
+      const box = { x, y, w, h };
+      span(x, y, w, h, k => { const l = cells.get(k); if (l) l.push(box); else cells.set(k, [box]); });
+    },
+    full: (px, py) => (anchors.get(key(Math.floor(px / LABEL_CELL), Math.floor(py / LABEL_CELL))) || 0) >= LABEL_PER_CELL,
+    anchor(px, py) {
+      const k = key(Math.floor(px / LABEL_CELL), Math.floor(py / LABEL_CELL));
+      anchors.set(k, (anchors.get(k) || 0) + 1);
+    },
+  };
+}
 // Node stroke thickness (world units): proportional to radius + a screen-px floor. It reflects
 // cam.s (current zoom), so it scales with the marker on zoom yet keeps a minimum thickness on
 // zoom-out. Shared by draw and the edge endpoints.
@@ -379,10 +422,20 @@ function easeCam() {
   if (Math.abs(camT.x - cam.x) < 0.25) cam.x = camT.x;
   if (Math.abs(camT.y - cam.y) < 0.25) cam.y = camT.y;
 }
+// The furthest the map zooms out (design-system.md Section 26.5): 0.15, or as far as it takes to see
+// the whole map in its window, whichever is further - a map of any size can be seen whole.
+const SCALE_LEAST = 0.005;
+function scaleFloor() {
+  const box = boundsOf(nodes);
+  if (!box) return 0.15;
+  const w = mapWindow(), gw = Math.max(1, box.c - box.a), gh = Math.max(1, box.d - box.b);
+  const fit = Math.min((w.r - w.l) / gw, (w.b - w.t) / gh) * 0.9;
+  return Math.max(SCALE_LEAST, Math.min(0.15, fit));
+}
 // Change the target scale while keeping the world point under the cursor fixed (converges smoothly via easing).
 function zoomAt(sx, sy, f) {
   const wx = (sx - camT.x) / camT.s, wy = (sy - camT.y) / camT.s;
-  camT.s = Math.max(0.15, Math.min(4, camT.s * f));
+  camT.s = Math.max(scaleFloor(), Math.min(4, camT.s * f));
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
 const TOP_INSET = 49;      // the frame's header (viewer.css) - compensated in centering/fit
@@ -3028,7 +3081,7 @@ function boundsOf(list) {
 function frameBox({ a, b, c, d }, L, R, T, B, pad, hi) {
   const vw = Math.max(1, R - L - pad*2), vh = Math.max(1, B - T - pad*2);
   const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
-  camT.s = Math.max(0.15, Math.min(hi, Math.min(vw / gw, vh / gh)));
+  camT.s = Math.max(SCALE_LEAST, Math.min(hi, Math.min(vw / gw, vh / gh)));
   camT.x = (L + R)/2 - (a+c)/2*camT.s;
   camT.y = (T + B)/2 - (b+d)/2*camT.s;
 }
@@ -3818,8 +3871,8 @@ function draw() {
   // While a node is active, its own hulls are emphasized and the rest fade. Labels are collected per hull.
   let hullLabels = [];
   // Every label placed this frame - region names first, then node names - so the second pass avoids
-  // the first. Screen-space boxes {x, y, w, h}.
-  const labelBoxes = [];
+  // the first: screen-space boxes on a grid of cells (labelGrid).
+  const labelBoxes = labelGrid();
   if (hyperMode && hyperedges.length) {
     const nb = new Map(nodes.map(n => [n.id, n]));
     const items = [];
@@ -3880,8 +3933,8 @@ function draw() {
         const l = o.l;
         ctx.font = "500 " + o.fs + "px " + NAME_FAMILY;   // measures the placement box; o.fs is 13 * TEXT_SCALE
         const w = ctx.measureText(l.text).width + o.fs*0.5, h = o.fs*1.3, x = o.px - w/2, y = o.py - h/2;
-        if (labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
-        labelBoxes.push({ x, y, w, h });
+        if (!labelBoxes.fits(x, y, w, h)) continue;
+        labelBoxes.add(x, y, w, h);
         // Blend into the map without a chip: a crisp background-color halo (a cutout that matches the
         // canvas) keeps the group-color name sharp over the hull fills; lower idle opacity lets it recede.
         // The label fades as one unit (drawLabel), so the halo no longer darkens its own glyphs.
@@ -3897,32 +3950,67 @@ function draw() {
   // Relation labels for the active node's edges - collected during the edge draw (which has the curve
   // geometry), rendered later in the label pass. Only when a node is active and labels are on.
   const edgeLabels = (act && showLabels) ? [] : null;
+  // What the frame draws (design-system.md Section 26.5, U30). The map's window in world units, grown
+  // by the most a node's decoration reaches past its disc, so nothing that could touch the window is
+  // left out; and each node's size on the screen, which decides how much of it is drawn: full from
+  // LOD_FULL pixels of radius, its halo and fill from LOD_DOT, and a square of its color below that.
+  // A hovered, selected or active node is drawn full whatever its size, so a highlight reads. The
+  // window is grown by the largest node and its glow, and by the contested badge, which keeps its
+  // size on the screen whatever the zoom.
+  const reachOut = NODE_R_MAX + 16 + 9 / cam.s;
+  const vx0 = (insetL() - cam.x) / cam.s - reachOut, vx1 = (innerWidth - insetR() - cam.x) / cam.s + reachOut;
+  const vy0 = -cam.y / cam.s - reachOut, vy1 = (innerHeight - insetB() - cam.y) / cam.s + reachOut;
+  for (let k = 0; k < nodes.length; k++) {
+    const n = nodes[k];
+    n._i = k;
+    n._vis = !typeOff.has(n.type) && n.x >= vx0 && n.x <= vx1 && n.y >= vy0 && n.y <= vy1;
+    n._lod = lodOf(n, act);
+  }
   if (showEdges) {
-    // Parallel-edge lanes: group visible edges by unordered node pair, so multiple links between the
-    // same two nodes - a reciprocal pair (a<->b) OR several verbs in one direction (a->b) - fan out
-    // into distinct arcs instead of stacking on one line. Same visibility filters as the loop.
-    const pairList = new Map();
-    for (let di = 0; di < edges.length; di++) {
-      const de = edges[di];
-      if (typeOff.has(de.a.type) || typeOff.has(de.b.type) || edgeTypeOff.has(de.type) || (de.valid_to && !showSuperseded)) continue;
-      const pk = de.a.id < de.b.id ? de.a.id + "|" + de.b.id : de.b.id + "|" + de.a.id;
-      if (!pairList.has(pk)) pairList.set(pk, []);
-      pairList.get(pk).push(di);
-    }
+    // Parallel-edge lanes: relations between the same two nodes - a reciprocal pair (a<->b) or several
+    // verbs in one direction (a->b) - fan out into distinct arcs instead of stacking on one line. A
+    // relation is drawn when its straight span, grown by the widest lane, meets the window; every
+    // relation of one pair shares that span, so the lanes are worked out from the drawn ones alone,
+    // keyed by the pair's two indices rather than a string per relation.
+    const pairKey = nodes.length + 1;
+    const lanes = new Map(), drawn = [];
     for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
+      if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
+      if (edgeTypeOff.has(e.type)) continue;                 // edge-kind toggle (legend)
+      if (e.valid_to && !showSuperseded) continue;           // hide superseded (past) edges (history toggle)
+      if (Math.max(e.a.x, e.b.x) + LANE_MAX < vx0 || Math.min(e.a.x, e.b.x) - LANE_MAX > vx1
+        || Math.max(e.a.y, e.b.y) + LANE_MAX < vy0 || Math.min(e.a.y, e.b.y) - LANE_MAX > vy1) continue;
+      drawn.push(i);
+      const ia = e.a._i, ib = e.b._i, pk = ia < ib ? ia * pairKey + ib : ib * pairKey + ia;
+      const lst = lanes.get(pk);
+      if (lst) lst.push(i); else lanes.set(pk, [i]);
+    }
+    // One path per look: relations that share a color, an opacity and a width are one stroke, and
+    // their arrowheads one fill. The dimmest go first, so a highlight lies on top.
+    const looks = new Map();
+    const lookOf = (alpha, color, width) => {
+      const key = color + "|" + width + "|" + alpha;
+      let l = looks.get(key);
+      if (!l) { l = { alpha, color, width, line: new Path2D(), heads: null }; looks.set(key, l); }
+      return l;
+    };
+    for (const i of drawn) {
     const e = edges[i];
-    if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
-    if (edgeTypeOff.has(e.type)) continue;                 // edge-kind toggle (legend)
-    if (e.valid_to && !showSuperseded) continue;           // hide superseded (past) edges (history toggle)
     const dx = e.b.x-e.a.x, dy = e.b.y-e.a.y, d = Math.hypot(dx,dy) || 1, ux = dx/d, uy = dy/d;
+    // Hovering an edge-kind chip treats its edges as hot (weight + arrowhead) - same language as
+    // node hover, so "what does this relation connect" reads instantly.
+    const hot = act ? act.es.has(i) : (edgeTypeHl ? e.type === edgeTypeHl : false);
+    // A relation under 2 pixels on the screen is not drawn; nor is one whose ends overlap.
+    if (!hot && d * cam.s < EDGE_MIN_PX) continue;
     // Grow each radius by half of that node's stroke so the edge meets outside the node stroke (the
     // stroke is radius-proportional, so it differs per endpoint) - the arrowhead tip touches the outer
     // stroke boundary, connecting with no gap/penetration, and it holds on zoom.
     const ar = nodeRadius(e.a) + nodeStrokeW(e.a)/2, br = nodeRadius(e.b) + nodeStrokeW(e.b)/2, room = d - ar - br;
     if (room <= 0.5) continue;   // (temporary) overlap - skip this frame's edge
-    // Hovering an edge-kind chip treats its edges as hot (flow animation + weight) - same language as
-    // node hover, so "what does this relation connect" reads instantly.
-    const hot = act ? act.es.has(i) : (edgeTypeHl ? e.type === edgeTypeHl : false);
+    // A relation into a node drawn full keeps its lane and its arrowhead; into a smaller one it is a
+    // straight line (Section 26.5), since a lane's bend and a head shorter than a pixel read as noise.
+    const full = hot || e.b._lod === LOD_FULL_TIER;
     // The line starts at the source node's edge and ends at the arrowhead base (or the tip if arrows are off).
     // Arrowhead length in WORLD units (proportional to the target node, bounded 7..16) so it scales
     // with zoom like the node markers. A fixed screen size looked tiny on large/zoomed-in nodes and
@@ -3934,9 +4022,10 @@ function draw() {
     // straight (quadratic control on the midpoint = the original straight line). sign uses a canonical
     // perpendicular (smaller id -> larger id) so lanes stay distinct regardless of each edge's
     // direction - a reciprocal pair opens into a lens, several one-way verbs into a fan.
-    const pk = e.a.id < e.b.id ? e.a.id + "|" + e.b.id : e.b.id + "|" + e.a.id;
-    const lst = pairList.get(pk) || [i], lane = lst.indexOf(i) - (lst.length - 1) / 2;
-    const off = lane * Math.min(d * 0.30, 46) * (e.a.id < e.b.id ? 1 : -1);
+    const ia = e.a._i, ib = e.b._i;
+    const lst = lanes.get(ia < ib ? ia * pairKey + ib : ib * pairKey + ia) || [i];
+    const lane = full ? lst.indexOf(i) - (lst.length - 1) / 2 : 0;
+    const off = lane * Math.min(d * 0.30, LANE_MAX) * (e.a.id < e.b.id ? 1 : -1);
     const cpx = (sx0 + tipx)/2 + (-uy)*off, cpy = (sy0 + tipy)/2 + ux*off;   // quadratic control point
     // Tip tangent = control -> tip; the line end and arrowhead align to it (reduces to ux,uy when straight).
     let tdx = tipx - cpx, tdy = tipy - cpy; const tdl = Math.hypot(tdx, tdy) || 1; tdx /= tdl; tdy /= tdl;
@@ -3953,42 +4042,53 @@ function draw() {
     // 1.0 and the rest dim. Group mode is a separate emphasis that makes cross-group links stand out.
     // Legend hover outranks the rest: node-type chip -> both-endpoint edges bright, one-endpoint dim
     // halo, others faded; edge-kind chip -> matching edges full, others faded.
-    ctx.globalAlpha = typeHl
+    const alpha = typeHl
       ? (e.a.type === typeHl && e.b.type === typeHl ? 0.9 : (e.a.type === typeHl || e.b.type === typeHl) ? 0.45 : 0.05)
       : edgeTypeHl
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
     // A relation's kind is said by its label, not a color (Section 5); an active edge or one whose kind
     // the legend points at is drawn brighter. A superseded edge is EDGE_OLD, thin (a past signal).
-    ctx.strokeStyle = e.valid_to ? EDGE_OLD
+    const color = e.valid_to ? EDGE_OLD
       : (hot || edgeTypeHl === e.type) ? EDGE_ACTIVE : EDGE_NEUTRAL;
     // Constant thickness on screen; a past relation is the thinnest line.
-    ctx.lineWidth = (e.valid_to ? 0.8 : hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;
+    const look = lookOf(alpha, color, (e.valid_to ? 0.8 : hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s);
     // An active edge says its direction with an arrowhead even when the view's arrows are off: lines
     // are solid (Section 4), so nothing marches along it.
-    const arrow = showArrows || hot;
+    const arrow = full && (showArrows || hot);
     // Without an arrowhead, draw the curve to the node edge (tip); with one, to the arrowhead base.
     const endx = arrow ? basex : tipx, endy = arrow ? basey : tipy;
-    ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.quadraticCurveTo(cpx, cpy, endx, endy); ctx.stroke();
+    look.line.moveTo(sx0, sy0);
+    if (off) look.line.quadraticCurveTo(cpx, cpy, endx, endy); else look.line.lineTo(endx, endy);
     if (arrow) {
-      // Arrowhead: base -> tip along the tip tangent (points the way the curve arrives).
-      const hw = alen * 0.55;
-      ctx.beginPath(); ctx.moveTo(tipx, tipy);
-      ctx.lineTo(basex - tdy*hw, basey + tdx*hw);
-      ctx.lineTo(basex + tdy*hw, basey - tdx*hw);
-      ctx.closePath(); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+      // Arrowhead: base -> tip along the tip tangent (points the way the curve arrives). The heads are
+      // filled, and a fill closes each triangle, so none is closed here: closing every one of a few
+      // thousand in one path cost Chrome 80 ms a frame.
+      const hw = alen * 0.55, h = look.heads || (look.heads = new Path2D());
+      h.moveTo(tipx, tipy);
+      h.lineTo(basex - tdy*hw, basey + tdx*hw);
+      h.lineTo(basex + tdy*hw, basey - tdx*hw);
     }
+    }
+    for (const l of [...looks.values()].sort((p, q) => p.alpha - q.alpha)) {
+      ctx.globalAlpha = l.alpha; ctx.strokeStyle = l.color; ctx.lineWidth = l.width;
+      ctx.stroke(l.line);
+      if (l.heads) { ctx.fillStyle = l.color; ctx.fill(l.heads); }
     }
   }
+  // Nodes, one path per look (Section 26.5): the decorations under a node first - the selection's
+  // halo and this session's footprint glow, soft discs, so the rings stay trust's alone (Section 5) -
+  // then, for each opacity, every halo as a disc of the surface's color and every fill of one type's
+  // color as one path, then the rings and the group mode's bridge marks over them. A node's halo was
+  // a stroke of its own; a disc under a smaller fill draws the same ring, and draws it in one fill.
+  const lit = [], dim = [];
   for (const n of nodes) {
-    if (typeOff.has(n.type)) continue;
+    if (!n._vis) continue;
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : true;
-    const base = on ? 1 : 0.12;
-    const r = nodeRadius(n);
-    // Under the node: the selection's halo and this session's footprint glow - soft discs, so the
-    // rings stay trust's alone (docs/design-system.md Section 5).
+    (on ? lit : dim).push(n);
+    const base = on ? 1 : 0.12, r = nodeRadius(n);
     if (n === anchor) {
       ctx.globalAlpha = base * 0.2; ctx.fillStyle = INK;
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 8, 0, 7); ctx.fill();
@@ -3996,7 +4096,7 @@ function draw() {
     // The footprint is a light centred on the node that fades out. It was a disc dropped below the
     // node, which read as a circle out of place; a crisp disc on the centre would read as a ring, and
     // rings belong to trust.
-    if (showFootprint && footprint.has(n.id)) {
+    if (showFootprint && footprint.has(n.id) && n._lod !== LOD_DOT_TIER) {
       const glow = ctx.createRadialGradient(n.x, n.y, r * 0.8, n.x, n.y, r + 13);
       const teal = LIGHT.matches ? "29,122,106" : "86,179,162";   // --ok in each appearance
       glow.addColorStop(0, "rgba(" + teal + "," + (LIGHT.matches ? 0.35 : 0.55) + ")");
@@ -4004,18 +4104,39 @@ function draw() {
       ctx.globalAlpha = base; ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 13, 0, 7); ctx.fill();
     }
+  }
+  for (const [group, base] of [[dim, 0.12], [lit, 1]]) {
+    if (!group.length) continue;
     ctx.globalAlpha = base;
-    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
-    ctx.fillStyle = typeColor[n.type] || OTHER; ctx.fill();
-    // Default stroke (background-color halo): sharpens the node boundary and separates it from edges/neighbors (visibility).
-    // Being the background color, it stays a cutout that matches the background even when the theme changes.
-    ctx.lineWidth = nodeStrokeW(n); ctx.strokeStyle = SURFACE; ctx.stroke();
-    trustRing(n, r);
-    // Group mode: a bridge node (linked to another group) carries a small square at its upper left -
-    // a cross-group transit point, marked without a ring.
-    if (clusterMode && bridgeSet.has(n.id)) {
-      const q = 5 / cam.s;
-      ctx.fillStyle = INK; ctx.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
+    // Halos: the surface's color, one fill. A square node has none.
+    const halo = new Path2D();
+    for (const n of group) {
+      if (n._lod === LOD_DOT_TIER) continue;
+      const r = nodeRadius(n) + nodeStrokeW(n) / 2;
+      halo.moveTo(n.x + r, n.y); halo.arc(n.x, n.y, r, 0, 7);
+    }
+    ctx.fillStyle = SURFACE; ctx.fill(halo);
+    // Fills: one path per type's color - a disc inside the halo, or a square of the node's size.
+    const fills = new Map();
+    for (const n of group) {
+      const color = typeColor[n.type] || OTHER;
+      let f = fills.get(color);
+      if (!f) { f = new Path2D(); fills.set(color, f); }
+      const r = nodeRadius(n);
+      if (n._lod === LOD_DOT_TIER) { f.rect(n.x - r, n.y - r, 2 * r, 2 * r); continue; }
+      const inner = Math.max(0.5, r - nodeStrokeW(n) / 2);
+      f.moveTo(n.x + inner, n.y); f.arc(n.x, n.y, inner, 0, 7);
+    }
+    for (const [color, f] of fills) { ctx.fillStyle = color; ctx.fill(f); }
+    for (const n of group) {
+      if (n._lod !== LOD_FULL_TIER) continue;
+      trustRing(n, nodeRadius(n));
+      // Group mode: a bridge node (linked to another group) carries a small square at its upper left -
+      // a cross-group transit point, marked without a ring.
+      if (clusterMode && bridgeSet.has(n.id)) {
+        const r = nodeRadius(n), q = 5 / cam.s;
+        ctx.fillStyle = INK; ctx.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
+      }
     }
   }
   // Contested beliefs (resolution.md R6): a badge at the node's upper right, drawn in its own pass at
@@ -4023,7 +4144,7 @@ function draw() {
   // the competing values with the mediation act.
   ctx.globalAlpha = 1;
   for (const n of nodes) {
-    if (!n.contested || typeOff.has(n.type)) continue;
+    if (!n.contested || !n._vis) continue;
     const r = nodeRadius(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
     ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
     ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
@@ -4037,7 +4158,7 @@ function draw() {
   for (const [id, ttl] of pulses) {
     const n = nodeById(id);
     if (!n || ttl <= 0 || typeOff.has(n.type)) { pulses.delete(id); continue; }
-    if (showPulses && !REDUCED_MOTION) {
+    if (showPulses && !REDUCED_MOTION && n._vis) {
       const t = 1 - ttl/60;
       ctx.globalAlpha = (1 - t) * 0.85;
       ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n) + 3 + t*22, 0, 7);
@@ -4132,8 +4253,11 @@ function draw() {
     ctx.font = "500 " + 12 * TEXT_SCALE + "px " + NAME_FAMILY;
     for (const o of want) {
       const w = ctx.measureText(o.n.name).width + 4, h = 15, x = o.px - 2, y = o.py - h / 2;
-      if (rank(o) === 0 && labelBoxes.some(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y)) continue;
-      labelBoxes.push({ x, y, w, h });
+      // A name the budget places must fit, and its cell must have room (Section 26.5); the hovered and
+      // focused nodes are always named.
+      if (rank(o) === 0 && ((inView > 40 && labelBoxes.full(o.px, o.py)) || !labelBoxes.fits(x, y, w, h))) continue;
+      labelBoxes.add(x, y, w, h);
+      labelBoxes.anchor(o.px, o.py);
       ctx.globalAlpha = o.on ? 1 : 0.25;
       drawLabel(o.n.name, "500", 12 * TEXT_SCALE, (o.n === focus || o.n === hover) ? INK : INK2, "0px", 1.5, o.px, o.py, "left");
     }
