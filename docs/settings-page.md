@@ -301,7 +301,9 @@ No setting was changed while checking.
 - **The page carries the title bar's traffic-light padding itself.** The shell's init script gives
   the viewer that padding by injecting a style element, and the settings page's policy refuses
   inline style. The page's own stylesheet holds the rule instead; the script still toggles the
-  fullscreen class it depends on.
+  fullscreen class it depends on - on each transition, which the shell announces, and on load, when
+  it asks the window, since a page opened while the window is already full screen saw no
+  transition and kept the room for lights that were not there.
 - **The app menu is the platform's default plus Settings...** A custom menu would have to restate
   Edit, without which a credential cannot be pasted into the page. Inserting one item into the
   default menu keeps Edit as the platform defines it.
