@@ -1461,15 +1461,16 @@ and it fails when one of them appears in the viewer's source other than as an ar
    principles page's glossary, its ledger by chapter on phones and its scenes played by a press.
    Merging it publishes the site, so it merges on the author's word, right before the release that
    carries step 15.
-17. **The third pass's defects** [designed]: the Trust legend's off entries drawn at full strength and saying
-   they are off, the Review page's key caps in `--ink2`, the eight short targets and the phone's
-   Review tabs and acts brought to the floor before step 19 (24, 28 below 760), Setup's checkboxes in the
-   accent, the search field named with its scope, the status line's short form on a phone, the
-   privacy line held to 34em, and the app's starting splash on the tokens and Pretendard.
+17. **The third pass's defects** [designed]: the Trust legend's off entries drawn at full strength
+   and saying they are off, the Review page's key caps in `--ink2`, the eight short targets and the
+   phone's Review tabs and acts brought to the floor before step 19 (24, 28 below 760), Setup's
+   checkboxes in the accent, the search field named with its scope, the status line's short form on
+   a phone, the privacy line held to 34em, and the app's starting splash on the tokens and the
+   reading stack, which falls to the system's face there, since nothing serves the fonts yet.
 18. **Reading** [designed] (Sections 3, 4, 10; U7, U21, U23): `--ink2` and `--muted` raised and
    `--faint` retired into `--muted` in all three stylesheets and the scripts, the marks that move
    with them - the unverified ring with its swatch, the active edges, the owed outline, and the
-   stage's and the scenes' palettes, with the landing's picture retaken - the signals' text tokens
+   stage's and the scenes' palettes - the signals' text tokens
    and the pills' tints as tokens, measured; Increase Contrast and forced colors, with U9's guard
    admitting the edges Increase Contrast draws; the six sizes as rem tokens given by role, the map's
    labels scaled with the root, the app's root-size menu items, and every clamp and ellipsis Section
@@ -1483,8 +1484,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    line under their names, and every tooltip is written through one helper with a name and its key.
 21. **The map's List** [designed] (Section 6; U24): the table, its selection kept with the map's, and the
    canvas's name.
-22. **The site's type** [designed] (Sections 11, 11a): labels in Pretendard, nothing under the label size, the
-   ledger's labels as numbers, and running text at 1.5.
+22. **The site's type** [designed] (Sections 11, 11a): labels in Pretendard, nothing under the label
+   size, the ledger's labels as numbers, running text at 1.5, and the landing's picture of the viewer
+   retaken once steps 18-21 have changed how it looks.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21.
