@@ -102,11 +102,12 @@ function sectionHead(id) {
 
 // A button that runs one CLI call: it shows progress while the call runs, and every other action
 // waits for it, since two CLI writes at once could race on the same file.
-function actionButton(key, label, iconName, cls, run) {
+function actionButton(key, label, iconName, cls, run, name) {
   const busy = pending.has(key);
   return h("button", {
     class: "btn " + (cls || "") + (busy ? " busy" : ""),
     disabled: pending.size > 0,
+    "aria-label": name || null,
     on: { click: run },
   }, busy ? icon("spin", "i-spin") : iconName ? icon(iconName) : null, label);
 }
@@ -141,7 +142,7 @@ function renderServer() {
     const end = [];
     if (p.active && status.text) end.push(h("span", { class: "pill " + status.kind }, h("span", { class: "dot" }), status.text));
     if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label })));
-    if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p)));
+    if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p), "Remove " + p.label));
     return h("div", { class: "row" },
       h("span", { class: "radio" + (p.active ? " on" : ""), "aria-hidden": "true" }),
       h("div", { class: "body" },
@@ -546,7 +547,7 @@ function field(id, label, input, help, optional) {
     h("label", { for: id }, label, optional ? h("span", { class: "opt", text: "optional" }) : null),
     h("div", { class: "input" }, input),
     help ? h("div", { class: "help", text: help }) : null,
-    h("div", { class: "err", hidden: true }));
+    h("div", { class: "err", id: id + "-err", hidden: true }));
 }
 
 function openAddServer() {
@@ -592,8 +593,20 @@ function openAddServer() {
       const err = el.querySelector(".err");
       err.hidden = !msg;
       err.textContent = msg || "";
+      const input = el.querySelector("input");
+      if (msg) {
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("aria-describedby", el.dataset.field + "-err");
+      } else {
+        input.removeAttribute("aria-invalid");
+        input.removeAttribute("aria-describedby");
+      }
     }
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      const first = form.querySelector(".field.invalid input");
+      if (first) first.focus();
+      return;
+    }
     // The credential leaves the field the moment it is handed over, whatever the CLI answers (S2).
     cred.value = "";
     submit.disabled = true;
@@ -610,7 +623,9 @@ function openAddServer() {
         await load();
       }
     } catch (e) {
-      error.replaceChildren(icon("alert"), h("div", { class: "grow selectable", text: String(e) }));
+      error.replaceChildren(icon("alert"), h("div", { class: "grow selectable" },
+        h("div", { text: String(e) }),
+        h("div", { text: "For safety the credential was cleared. Paste it again." })));
       error.hidden = false;
       submit.disabled = false;
       submit.classList.remove("busy");

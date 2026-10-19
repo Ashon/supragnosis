@@ -2653,6 +2653,28 @@ mod settings_tests {
         }
     }
 
+    /// docs/design-system.md Section 10, U19: a button that shows only an icon is named by its act and
+    /// its object, and a refused form says which field and why - to a screen reader too - with focus
+    /// moved to the first such field. A refusal from the CLI says that the credential was cleared.
+    #[test]
+    fn the_settings_page_names_its_buttons_and_its_errors() {
+        let js = include_str!("../assets/settings.js");
+        let body = |name: &str| {
+            let at = js.find(&format!("function {name}(")).expect(name);
+            &js[at..at + js[at..].find("\n}\n").expect("it closes")]
+        };
+        assert!(body("actionButton").contains("\"aria-label\""), "an icon button cannot be named");
+        assert!(js.contains("\"Remove \" + p.label"), "the remove button has no name");
+        let add = body("openAddServer");
+        for part in ["aria-invalid", "aria-describedby", ".focus()"] {
+            assert!(add.contains(part), "the form's errors do not use {part}");
+        }
+        assert!(
+            add.contains("For safety the credential was cleared. Paste it again."),
+            "a refusal does not say the credential was cleared"
+        );
+    }
+
     /// Settings > About names where the source lives, and its hint points there for the dependency
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing
