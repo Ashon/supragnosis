@@ -664,16 +664,22 @@ function createLayout() {
 
 // --- as a worker --------------------------------------------------------------------------------
 // The page sends {kind: "graph"}, {kind: "set"}, {kind: "wake"}, {kind: "cool"} and {kind: "shown"}; the worker steps
-// while the layout is warm and sends {kind: "state"} with the positions as 32-bit floats. Behind the
-// loader it steps as fast as it can and reports at most every frame's worth of time; once the map
-// shows, it takes at most one step every SHOWN_STEP_MS.
+// while the layout is warm and sends {kind: "state"}, with the positions as 32-bit floats when a step
+// or a graph has moved them since the last. Behind the loader it steps as fast as it can and reports
+// at most every frame's worth of time; once the map shows, it takes at most one step every
+// SHOWN_STEP_MS.
 if (typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope) {
   const L = createLayout();
-  let shown = false, timer = 0;
+  let shown = false, timer = 0, sentGen = -1, sentSteps = -1;
+  // A message that moves nothing - the camera's place at rest, a cooling - is answered without the
+  // positions, so the page keeps what it has worked out from them (Section 27.7).
   const report = () => {
+    const st = L.state();
+    if (st.gen === sentGen && st.steps === sentSteps) { self.postMessage({ kind: "state", ...st }); return; }
+    sentGen = st.gen; sentSteps = st.steps;
     const { x, y, n } = L.positions(), fx = new Float32Array(n), fy = new Float32Array(n);
     for (let i = 0; i < n; i++) { fx[i] = x[i]; fy[i] = y[i]; }
-    self.postMessage({ kind: "state", ...L.state(), x: fx, y: fy }, [fx.buffer, fy.buffer]);
+    self.postMessage({ kind: "state", ...st, x: fx, y: fy }, [fx.buffer, fy.buffer]);
   };
   const run = () => {
     timer = 0;

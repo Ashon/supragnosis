@@ -848,10 +848,10 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (37, &[
         c(
-            "a frame touches what the window holds: a grid of node positions and of relations' boxes answers what is drawn, named, badged, pulsing or under the pointer",
-            Evidence::Deferred(
-                "Section 14 step 35 is planned: a frame passes over every node and relation. Revisit when step 35 lands",
-            ),
+            "a frame touches what the window holds: a grid of node positions and of relations' midpoints answers what is drawn, named, badged, pulsing or under the pointer",
+            // scale.rs reads sceneOf, nodesIn, relationsIn, draw, nodeAt and what bumps positionsGen;
+            // a frame was measured to draw what it drew before, pixel for pixel (Section 27.7).
+            Evidence::Scenario(&["a_frame_touches_what_the_window_holds"]),
         ),
         c(
             "the Log lists the scope's newest 200 observations, asks for one more to know there are more, wires its rows by their place and shows more on request",

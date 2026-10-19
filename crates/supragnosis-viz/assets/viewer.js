@@ -229,6 +229,9 @@ let panning = null, downPos = null, userMoved = false, firstData = true, needFit
 // still owed, and the largest move of its last step in world units - the settle test the cooling
 // schedule cannot give. The layout itself is viewer-sim.js's, in a worker or here.
 let alpha = 1, overlapOwed = 0, simMotion = 0;
+// Bumped whenever the nodes' positions change - a layout report, a new graph, a drag - so what is
+// kept from them (the scene grid, the regions' geometry, the minimap) knows when to work them out again.
+let positionsGen = 0;
 // Reduced motion (same respect the landing pays to prefers-reduced-motion): instead of animating
 // the violent early rearrangement behind a loader, burst-step the sim to convergence within one
 // frame and reveal the layout already still.
@@ -586,6 +589,7 @@ function applyGraph(g) {
   for (const e of edges) if (e.a.type !== e.b.type) { bridgeSet.add(e.a.id); bridgeSet.add(e.b.id); }
   assignColors();
   layoutGraph(warm);   // after the colors: group mode's targets are by type
+  positionsGen++;
   renderLegend();
   noteTrustAndContest();
   const s = g.stats || {};
@@ -2919,7 +2923,7 @@ addEventListener("resize", resize);
 const miniEl = document.getElementById("minimap"), mctx = miniEl.getContext("2d");
 const MINI_W = 168, MINI_H = 154, MINI_PAD = 10;   // height matches the HUD column (see viewer.css)
 let miniT = { k: 1, ox: 0, oy: 0 };   // world -> minimap: m = w * k + o (kept for the pan handler)
-const miniStill = { c: null, x: null, look: "", xy: null, types: [], dirty: true, at: 0, k: 1, ox: 0, oy: 0 };
+const miniStill = { c: null, x: null, look: "", nodes: null, hyper: null, gen: -1, src: [], dirty: true, at: 0, k: 1, ox: 0, oy: 0 };
 // While the layout moves, the miniature is painted at most this often - an overview needs no more -
 // and at once when it comes to rest (design-system.md Section 27.5).
 const MINI_MOVING_MS = 250;
@@ -2979,44 +2983,35 @@ function paintMiniDots(src, dpr, mx, my) {
   L.x.putImageData(L.img, 0, 0);
   return L.c;
 }
-// Whether the kept miniature shows these nodes - where they are, their degree and their type - in this
-// look; compared in place and left as the new key. By content, not by which arrays hold it: a poll
-// that brings the same graph brings new arrays.
-function miniStillSame(src, look) {
-  const m = miniStill;
-  let same = m.look === look && m.xy !== null && m.xy.length === 3 * src.length;
-  m.look = look;
-  if (!same) { m.xy = new Float64Array(3 * src.length); m.types = new Array(src.length); }
-  const xy = m.xy, ty = m.types;
-  for (let i = 0; i < src.length; i++) {
-    const n = src[i], d = n.degree || 0;
-    if (same && (xy[3 * i] !== n.x || xy[3 * i + 1] !== n.y || xy[3 * i + 2] !== d || ty[i] !== n.type)) same = false;
-    xy[3 * i] = n.x; xy[3 * i + 1] = n.y; xy[3 * i + 2] = d; ty[i] = n.type;
-  }
-  return same;
-}
 function drawMinimap() {
-  const src = nodes.filter(n => !typeOff.has(n.type));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(","),
+    edges.length, hyperedges.length, Object.keys(typeColor).map(t => t + ":" + typeColor[t]).join(",")].join("|");
+  const m = miniStill;
+  // What the miniature shows changed - its look, the graph, its contexts or a position (positionsGen,
+  // Section 27.7) - so it is owed a paint; otherwise a frame neither filters the nodes nor bounds them again.
+  if (m.look !== look || m.nodes !== nodes || m.hyper !== hyperedges || m.gen !== positionsGen) {
+    m.look = look; m.nodes = nodes; m.hyper = hyperedges; m.gen = positionsGen; m.dirty = true;
+    m.src = nodes.filter(n => !typeOff.has(n.type));
+  }
+  const src = m.src;
   const on = showMini && src.length > 0;
   miniEl.classList.toggle("on", on);
   if (!on) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (miniEl.width !== MINI_W * dpr) { miniEl.width = MINI_W * dpr; miniEl.height = MINI_H * dpr; }
-  let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
-  for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
-  const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
-  const k = Math.min((MINI_W - MINI_PAD*2) / gw, (MINI_H - MINI_PAD*2) / gh);
-  const ox = (MINI_W - gw*k)/2 - a*k, oy = (MINI_H - gh*k)/2 - b*k;
   // Everything renders inside the panel's rounded outline (radius matches the 10px
   // border-radius in viewer.css, minus the half-pixel stroke inset) - without the clip, dots
   // and the viewport stroke land in the corner cut zones and get sliced by the CSS rounding.
   const R = 9.5;
   const round = mctx.roundRect !== undefined;
-  const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(","),
-    edges.length, hyperedges.length, Object.keys(typeColor).map(t => t + ":" + typeColor[t]).join(",")].join("|");
-  const m = miniStill;
-  if (!miniStillSame(src, look)) m.dirty = true;
-  if (m.dirty && (!simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {
+  // The first miniature is painted at once: a small map can show within MINI_MOVING_MS of the page's
+  // start, and the frame would have no miniature to draw.
+  if (m.dirty && (!m.c || !simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {
+    let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
+    for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
+    const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
+    const k = Math.min((MINI_W - MINI_PAD*2) / gw, (MINI_H - MINI_PAD*2) / gh);
+    const ox = (MINI_W - gw*k)/2 - a*k, oy = (MINI_H - gh*k)/2 - b*k;
     paintMiniature(src, dpr, k, ox, oy, R, round);
     m.dirty = false; m.at = performance.now(); m.k = k; m.ox = ox; m.oy = oy;
   } else if (m.dirty) requestFrame();   // still owed: painted when the layout rests or the wait ends
@@ -3236,19 +3231,12 @@ function hullReach(ms) {
 // shape - kept while every node stands where it stood and the regions and the filters are the same
 // (design-system.md Section 26.6, U32). Worked out every frame, a large map's regions made thousands
 // of small objects a frame, and the collector's pauses were a zoom's slowest frames.
-const regionGeo = { nodes: null, hyper: null, filt: "", xy: null, list: [] };
+const regionGeo = { nodes: null, hyper: null, filt: "", gen: -1, list: [] };
 function regionGeometry() {
-  const r = regionGeo, N = nodes.length, filt = [...typeOff].join(",");
-  let same = r.nodes === nodes && r.hyper === hyperedges && r.filt === filt && r.xy !== null && r.xy.length === 2 * N;
-  if (!same) r.xy = new Float64Array(2 * N);
-  const xy = r.xy;
-  for (let i = 0; i < N; i++) {
-    const v = nodes[i];
-    if (same && (xy[2 * i] !== v.x || xy[2 * i + 1] !== v.y)) same = false;
-    xy[2 * i] = v.x; xy[2 * i + 1] = v.y;
-  }
-  if (same) return r.list;
-  r.nodes = nodes; r.hyper = hyperedges; r.filt = filt; r.list = [];
+  const r = regionGeo, filt = [...typeOff].join(",");
+  // The nodes stand where they stood while no position has changed (positionsGen, Section 27.7).
+  if (r.nodes === nodes && r.hyper === hyperedges && r.filt === filt && r.gen === positionsGen) return r.list;
+  r.nodes = nodes; r.hyper = hyperedges; r.filt = filt; r.gen = positionsGen; r.list = [];
   const nb = nodesById();
   for (const h of hyperedges) {
     const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
@@ -3633,6 +3621,115 @@ function convexHull(pts) {
   lo.pop(); up.pop();
   return lo.concat(up);
 }
+// The scene grid (design-system.md Section 27.7, U37): every node counting-sorted into square cells of
+// about four nodes each, and every relation into the cell of its midpoint - one whose ends lie more
+// than REL_SPAN cells apart on either axis is kept in a list every query reads. A relation's box,
+// grown by the widest lane, meets a window only if its midpoint lies within half that span and a lane
+// of it, so a query reads the midpoint cells of the window grown by as much. It is rebuilt when the
+// positions have moved since (positionsGen); a frame asks it what a box holds rather than passing
+// over every node and relation. A box that holds every node is answered with every index at once, and
+// one that covers more than an eighth of the cells by a pass over the nodes, which answers in order
+// without the sort the cells' answer needs.
+const REL_SPAN = 4;
+const scene = { gen: -1, nodes: null, edges: null, cell: 1, x0: 0, y0: 0, x1: 0, y1: 0, w: 0, h: 0,
+  start: new Int32Array(1), order: new Int32Array(0), rStart: new Int32Array(1), rOrder: new Int32Array(0),
+  long: new Int32Array(0), allNodes: new Int32Array(0), allRels: new Int32Array(0), buf: new Int32Array(0) };
+function sceneOf() {
+  const g = scene;
+  if (g.gen === positionsGen && g.nodes === nodes && g.edges === edges) return g;
+  g.gen = positionsGen; g.nodes = nodes; g.edges = edges;
+  const N = nodes.length, E = edges.length;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const v of nodes) {
+    if (v.x < minX) minX = v.x; if (v.x > maxX) maxX = v.x;
+    if (v.y < minY) minY = v.y; if (v.y > maxY) maxY = v.y;
+  }
+  if (!N) { minX = minY = maxX = maxY = 0; }
+  const cell = Math.max(2 * NODE_R_MAX, Math.sqrt(Math.max(1, (maxX - minX) * (maxY - minY)) / Math.max(1, N / 4)));
+  const w = Math.floor((maxX - minX) / cell) + 1, h = Math.floor((maxY - minY) / cell) + 1, cells = w * h;
+  Object.assign(g, { cell, x0: minX, y0: minY, x1: maxX, y1: maxY, w, h });
+  const at = (vx, vy) => Math.min(w - 1, Math.max(0, Math.floor((vx - minX) / cell))) + Math.min(h - 1, Math.max(0, Math.floor((vy - minY) / cell))) * w;
+  const start = new Int32Array(cells + 1), cellOf = new Int32Array(N);
+  for (let i = 0; i < N; i++) { const c = at(nodes[i].x, nodes[i].y); cellOf[i] = c; start[c + 1]++; }
+  for (let c = 0; c < cells; c++) start[c + 1] += start[c];
+  const order = new Int32Array(N), cur = start.slice(0, cells);
+  for (let i = 0; i < N; i++) order[cur[cellOf[i]]++] = i;
+  g.start = start; g.order = order;
+  // Relations by the cell of their midpoint, the long ones in a list of their own.
+  const span = REL_SPAN * cell, rCell = new Int32Array(E), rStart = new Int32Array(cells + 1), long = [];
+  for (let k = 0; k < E; k++) {
+    const e = edges[k];
+    if (Math.abs(e.a.x - e.b.x) > span || Math.abs(e.a.y - e.b.y) > span) { rCell[k] = -1; long.push(k); continue; }
+    const c = at((e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2);
+    rCell[k] = c; rStart[c + 1]++;
+  }
+  for (let c = 0; c < cells; c++) rStart[c + 1] += rStart[c];
+  const rOrder = new Int32Array(rStart[cells]), rCur = rStart.slice(0, cells);
+  for (let k = 0; k < E; k++) if (rCell[k] >= 0) rOrder[rCur[rCell[k]]++] = k;
+  g.rStart = rStart; g.rOrder = rOrder; g.long = Int32Array.from(long);
+  if (g.allNodes.length !== N) g.allNodes = Int32Array.from({ length: N }, (_, i) => i);
+  if (g.allRels.length !== E) g.allRels = Int32Array.from({ length: E }, (_, i) => i);
+  if (g.buf.length < Math.max(N, E)) g.buf = new Int32Array(Math.max(N, E));
+  return g;
+}
+// The cells a world box covers, clamped to the grid, or null when it misses the grid altogether.
+function sceneCells(g, x0, y0, x1, y1) {
+  const cx0 = Math.floor((x0 - g.x0) / g.cell), cx1 = Math.floor((x1 - g.x0) / g.cell);
+  const cy0 = Math.floor((y0 - g.y0) / g.cell), cy1 = Math.floor((y1 - g.y0) / g.cell);
+  if (cx1 < 0 || cy1 < 0 || cx0 >= g.w || cy0 >= g.h) return null;
+  return [Math.max(0, cx0), Math.min(g.w - 1, cx1), Math.max(0, cy0), Math.min(g.h - 1, cy1)];
+}
+// Whether a world box holds every node, so every index answers it.
+function sceneHeld(g, x0, y0, x1, y1) { return x0 <= g.x0 && y0 <= g.y0 && x1 >= g.x1 && y1 >= g.y1; }
+// Whether cells cover more than an eighth of the grid, where a pass costs less than the cells and a sort.
+function sceneMost(g, c) { return 8 * (c[1] - c[0] + 1) * (c[3] - c[2] + 1) > g.w * g.h; }
+const NONE = new Int32Array(0);
+// The nodes a world box holds, by index, in the order they are drawn in. The answer is read, not kept.
+function nodesIn(x0, y0, x1, y1) {
+  const g = sceneOf();
+  if (sceneHeld(g, x0, y0, x1, y1)) return g.allNodes;
+  const c = sceneCells(g, x0, y0, x1, y1);
+  if (!c) return NONE;
+  const buf = g.buf;
+  let n = 0;
+  if (sceneMost(g, c)) {
+    for (let i = 0; i < nodes.length; i++) { const v = nodes[i]; if (v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1) buf[n++] = i; }
+    return buf.slice(0, n);
+  }
+  for (let y = c[2]; y <= c[3]; y++) for (let x = c[0]; x <= c[1]; x++) {
+    const cc = x + y * g.w;
+    for (let k = g.start[cc]; k < g.start[cc + 1]; k++) {
+      const i = g.order[k], v = nodes[i];
+      if (v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1) buf[n++] = i;
+    }
+  }
+  return buf.slice(0, n).sort();
+}
+// The relations whose box may meet a world box, each once, in their order; the caller still tests them.
+function relationsIn(x0, y0, x1, y1) {
+  const g = sceneOf();
+  if (sceneHeld(g, x0, y0, x1, y1)) return g.allRels;
+  const grow = REL_SPAN * g.cell / 2 + LANE_MAX, c = sceneCells(g, x0 - grow, y0 - grow, x1 + grow, y1 + grow);
+  if (c && sceneMost(g, c)) return g.allRels;
+  if (!c) return g.long;
+  // The cells' relations, sorted, merged with the long ones, which are kept in order.
+  const buf = g.buf, long = g.long;
+  let n = 0;
+  for (let y = c[2]; y <= c[3]; y++) for (let x = c[0]; x <= c[1]; x++) {
+    const cc = x + y * g.w;
+    for (let k = g.rStart[cc]; k < g.rStart[cc + 1]; k++) buf[n++] = g.rOrder[k];
+  }
+  const near = buf.subarray(0, n).sort(), out = new Int32Array(n + long.length);
+  let i = 0, j = 0, o = 0;
+  while (i < n && j < long.length) out[o++] = near[i] < long[j] ? near[i++] : long[j++];
+  while (i < n) out[o++] = near[i++];
+  while (j < long.length) out[o++] = long[j++];
+  return out;
+}
+// Whether a node is drawn this frame: its type is shown and it meets the window (stamped in draw).
+let drawFrame = 0;
+function onScreen(n) { return n._vf === drawFrame; }
+
 // The contexts' membership as index arrays into the nodes (design-system.md Section 27.4, U34), kept
 // while the page holds the same nodes and contexts: `start[h]` to `start[h + 1]` of `mem` are context
 // h's members, and `drawn` the contexts of three or more - the regions the map draws. The layout
@@ -3668,8 +3765,11 @@ const layout = (() => {
     if (st.gen !== gen) return;
     alpha = st.alpha; overlapOwed = st.overlapOwed; simMotion = st.motion;
     stats.steps = st.steps; stats.stepMs = st.stepMs; stats.graphMs = st.graphMs;
+    // A report without positions moved nothing, and what is kept from them stands (Section 27.7).
+    if (!st.x) return;
     const n = Math.min(nodes.length, st.x.length);
     for (let i = 0; i < n; i++) { const v = nodes[i]; v.x = st.x[i]; v.y = st.y[i]; }
+    positionsGen++;
   };
   // No worker, or one that failed to start: the engine runs here, from the positions the page holds.
   const here = () => {
@@ -3981,12 +4081,17 @@ function draw() {
   const reachOut = NODE_R_MAX + 16 + 9 / cam.s;
   const vx0 = (insetL() - cam.x) / cam.s - reachOut, vx1 = (innerWidth - insetR() - cam.x) / cam.s + reachOut;
   const vy0 = -cam.y / cam.s - reachOut, vy1 = (innerHeight - insetB() - cam.y) / cam.s + reachOut;
-  for (let k = 0; k < nodes.length; k++) {
+  // The nodes the window holds, from the scene grid (Section 27.7, U37), stamped for this frame.
+  drawFrame++;
+  const vis = [];
+  for (const k of nodesIn(vx0, vy0, vx1, vy1)) {
     const n = nodes[k];
-    n._i = k;
-    n._vis = !typeOff.has(n.type) && n.x >= vx0 && n.x <= vx1 && n.y >= vy0 && n.y <= vy1;
-    n._lod = lodOf(n, act);
+    if (typeOff.has(n.type)) continue;
+    n._vf = drawFrame; n._lod = lodOf(n, act);
+    vis.push(n);
   }
+  // A relation's end outside the window is still sized by its radius on the screen.
+  const lodNow = n => (onScreen(n) ? n._lod : lodOf(n, act));
   if (showEdges) {
     // Parallel-edge lanes: relations between the same two nodes - a reciprocal pair (a<->b) or several
     // verbs in one direction (a->b) - fan out into distinct arcs instead of stacking on one line. A
@@ -3995,7 +4100,7 @@ function draw() {
     // keyed by the pair's two indices rather than a string per relation.
     const pairKey = nodes.length + 1;
     const lanes = new Map(), drawn = [];
-    for (let i = 0; i < edges.length; i++) {
+    for (const i of relationsIn(vx0, vy0, vx1, vy1)) {
       const e = edges[i];
       if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
       if (edgeTypeOff.has(e.type)) continue;                 // edge-kind toggle (legend)
@@ -4003,7 +4108,7 @@ function draw() {
       if (Math.max(e.a.x, e.b.x) + LANE_MAX < vx0 || Math.min(e.a.x, e.b.x) - LANE_MAX > vx1
         || Math.max(e.a.y, e.b.y) + LANE_MAX < vy0 || Math.min(e.a.y, e.b.y) - LANE_MAX > vy1) continue;
       drawn.push(i);
-      const ia = e.a._i, ib = e.b._i, pk = ia < ib ? ia * pairKey + ib : ib * pairKey + ia;
+      const ia = e.a._k, ib = e.b._k, pk = ia < ib ? ia * pairKey + ib : ib * pairKey + ia;
       const lst = lanes.get(pk);
       if (lst) lst.push(i); else lanes.set(pk, [i]);
     }
@@ -4031,7 +4136,7 @@ function draw() {
     if (room <= 0.5) continue;   // (temporary) overlap - skip this frame's edge
     // A relation into a node drawn full keeps its lane and its arrowhead; into a smaller one it is a
     // straight line (Section 26.5), since a lane's bend and a head shorter than a pixel read as noise.
-    const full = hot || e.b._lod === LOD_FULL_TIER;
+    const full = hot || lodNow(e.b) === LOD_FULL_TIER;
     // The line starts at the source node's edge and ends at the arrowhead base (or the tip if arrows are off).
     // Arrowhead length in WORLD units (proportional to the target node, bounded 7..16) so it scales
     // with zoom like the node markers. A fixed screen size looked tiny on large/zoomed-in nodes and
@@ -4043,7 +4148,7 @@ function draw() {
     // straight (quadratic control on the midpoint = the original straight line). sign uses a canonical
     // perpendicular (smaller id -> larger id) so lanes stay distinct regardless of each edge's
     // direction - a reciprocal pair opens into a lens, several one-way verbs into a fan.
-    const ia = e.a._i, ib = e.b._i;
+    const ia = e.a._k, ib = e.b._k;
     const lst = lanes.get(ia < ib ? ia * pairKey + ib : ib * pairKey + ia) || [i];
     const lane = full ? lst.indexOf(i) - (lst.length - 1) / 2 : 0;
     const off = lane * Math.min(d * 0.30, LANE_MAX) * (e.a.id < e.b.id ? 1 : -1);
@@ -4103,8 +4208,7 @@ function draw() {
   // color as one path, then the rings and the group mode's bridge marks over them. A node's halo was
   // a stroke of its own; a disc under a smaller fill draws the same ring, and draws it in one fill.
   const lit = [], dim = [];
-  for (const n of nodes) {
-    if (!n._vis) continue;
+  for (const n of vis) {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : true;
@@ -4164,8 +4268,8 @@ function draw() {
   // full strength, so neither focus dimming nor label thinning can mute it (U3). The inspector shows
   // the competing values with the mediation act.
   ctx.globalAlpha = 1;
-  for (const n of nodes) {
-    if (!n.contested || !n._vis) continue;
+  for (const n of vis) {
+    if (!n.contested) continue;
     const r = nodeRadius(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
     ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
     ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
@@ -4179,7 +4283,7 @@ function draw() {
   for (const [id, ttl] of pulses) {
     const n = nodeById(id);
     if (!n || ttl <= 0 || typeOff.has(n.type)) { pulses.delete(id); continue; }
-    if (showPulses && !REDUCED_MOTION && n._vis) {
+    if (showPulses && !REDUCED_MOTION && onScreen(n)) {
       const t = 1 - ttl/60;
       ctx.globalAlpha = (1 - t) * 0.85;
       ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n) + 3 + t*22, 0, 7);
@@ -4247,15 +4351,14 @@ function draw() {
     // only hubs (degree >= cut) + hover/focus/active, the cut set by the nodes in view rather than the
     // graph's - zooming into a large graph's cluster then names it progressively, where a cut from the
     // whole graph left it unnamed until 1.4x. Label avoidance still keeps the names apart.
-    let inView = 0;
     const wl = insetL(), wr = innerWidth - insetR(), wb = innerHeight - insetB();
-    for (const n of nodes) {
-      const sx = n.x * cam.s + cam.x, sy = n.y * cam.s + cam.y;
-      if (sx >= wl && sx <= wr && sy >= 0 && sy <= wb) inView++;
-    }
+    const inView = nodesIn((wl - cam.x) / cam.s, -cam.y / cam.s, (wr - cam.x) / cam.s, (wb - cam.y) / cam.s).length;
     const cut = inView <= 40 ? 0 : Math.max(4, Math.round(inView / 25));
     const want = [];
-    for (const n of nodes) {
+    // A name reaches up to 600 pixels right of its node, so the box it is looked for in reaches as far left.
+    const named = nodesIn((-605 - cam.x) / cam.s - NODE_R_MAX, (-20 - cam.y) / cam.s, (innerWidth - cam.x) / cam.s, (innerHeight + 20 - cam.y) / cam.s);
+    for (const k of named) {
+      const n = nodes[k];
       if (typeOff.has(n.type)) continue;
       // Legend hover: label exactly the highlighted set (bypasses the degree cut - hover is transient).
       const lg = typeHl ? n.type === typeHl : edgeTypeHl ? lgEndpoints.has(n.id) : null;
@@ -4325,9 +4428,10 @@ function draw() {
 }
 
 function nodeAt(sx, sy) {
-  const [wx, wy] = toWorld(sx, sy);
+  const [wx, wy] = toWorld(sx, sy), reach = NODE_R_MAX + 6;
   let best = null, bd = 1e9;
-  for (const n of nodes) {
+  for (const k of nodesIn(wx - reach, wy - reach, wx + reach, wy + reach)) {
+    const n = nodes[k];
     if (typeOff.has(n.type)) continue;
     const d = Math.hypot(n.x - wx, n.y - wy);
     if (d < nodeRadius(n) + 6 && d < bd) { bd = d; best = n; }
@@ -4367,7 +4471,7 @@ canvas.addEventListener("mousedown", ev => {
   }
 });
 addEventListener("mousemove", ev => {
-  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; wake(0.3); showTip(null); return; }
+  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; positionsGen++; wake(0.3); showTip(null); return; }
   if (panning) {
     // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
     cam.x = camT.x = panning.px + (ev.clientX - panning.sx);

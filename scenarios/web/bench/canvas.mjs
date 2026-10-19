@@ -1,5 +1,5 @@
 // The scale bench (docs/design-system.md Section 26.1): what the map costs as a workspace grows. A
-// seeded synthetic graph answers /api/graph and /api/hypergraph in the browser, and the viewer's own
+// seeded synthetic graph answers /api/graph and /api/hypergraph from the bench's proxy, and the viewer's own
 // functions - draw and nodeAt, globals of its classic script - are timed from outside, so the script
 // under measure is the one that ships. The layout's steps, in a worker or not (Section 27.5), are
 // read from what it reports: layout.stats(), its steps so far and what the last one cost. A measurement, not a test: CI does not run it, since
@@ -15,8 +15,9 @@
 // layout is followed to rest.
 import { chromium, webkit } from "@playwright/test";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
-import { startDaemon, startProxy } from "../harness.mjs";
+import { startDaemon } from "../harness.mjs";
 
 const SIZES = (process.env.SIZES || "500,1000,2000,5000,10000").split(",").map(Number);
 const BROWSER = process.env.BROWSER || "chromium";
@@ -107,7 +108,27 @@ function pct(samples, p) {
 
 const launcher = BROWSER === "webkit" ? webkit : chromium;
 const daemon = await startDaemon();
-const proxy = await startProxy(daemon);
+// The bench's proxy: the scenario harness's, except that the graph and the hypergraph of the size
+// being measured are answered here, as the daemon answers them (Section 27.3) - with an ETag, and a
+// 304 to a poll that asks with the one the page holds. Without, every poll applied the same graph
+// again, which the daemon has not made the page do since.
+const served = new Map();
+const proxyServer = http.createServer((req, res) => {
+  const it = served.get(req.url.split("?")[0]);
+  if (it) {
+    if (req.headers["if-none-match"] === it.tag) { res.writeHead(304, { ETag: it.tag }).end(); return; }
+    res.writeHead(200, { "Content-Type": "application/json", ETag: it.tag }).end(it.body);
+    return;
+  }
+  const up = http.request({ socketPath: daemon.sock, path: req.url, method: req.method, headers: { ...req.headers, host: "viz" } }, u => {
+    res.writeHead(u.statusCode, u.headers);
+    u.pipe(res);
+  });
+  up.on("error", e => { if (!res.headersSent) res.writeHead(502); res.end(String(e)); });
+  req.pipe(up);
+});
+await new Promise(ok => proxyServer.listen(0, "127.0.0.1", ok));
+const proxy = { url: `http://127.0.0.1:${proxyServer.address().port}/`, close: () => new Promise(ok => { proxyServer.closeAllConnections(); proxyServer.close(() => ok()); }) };
 const browser = await launcher.launch(BROWSER === "webkit" ? {} : { channel: "chrome" });
 const rows = [];
 try {
@@ -115,8 +136,8 @@ try {
     const { graph: g, hyper: h } = graph(n);
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: "dark" });
     const page = await context.newPage();
-    await page.route(/\/api\/graph/, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(g) }));
-    await page.route(/\/api\/hypergraph/, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(h) }));
+    served.set("/api/graph", { body: JSON.stringify(g), tag: `"bench-graph-${n}"` });
+    served.set("/api/hypergraph", { body: JSON.stringify(h), tag: `"bench-hyper-${n}"` });
     const started = Date.now();
     await page.goto(proxy.url + "?workspace=bench");
     await page.waitForFunction(() => typeof draw === "function" && typeof layout === "object");

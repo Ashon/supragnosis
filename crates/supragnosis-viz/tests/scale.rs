@@ -132,10 +132,11 @@ fn what_the_map_draws_follows_the_screen() {
     // in one path made a frame at a reading zoom eighty times slower in Chrome.
     assert!(!draw.contains("h.closePath()"), "the arrowheads' path closes every head again");
     for part in [
-        "n._vis = !typeOff.has(n.type) && n.x >= vx0 && n.x <= vx1 && n.y >= vy0 && n.y <= vy1;",
+        "for (const k of nodesIn(vx0, vy0, vx1, vy1)) {",
+        "if (typeOff.has(n.type)) continue;\n    n._vf = drawFrame; n._lod = lodOf(n, act);",
+        "for (const i of relationsIn(vx0, vy0, vx1, vy1)) {",
         "Math.max(e.a.x, e.b.x) + LANE_MAX < vx0",
-        "if (!n._vis) continue;",
-        "if (!n.contested || !n._vis) continue;",
+        "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
     ] {
         assert!(draw.contains(part), "the frame draws what is off the screen: {part}");
     }
@@ -151,7 +152,7 @@ fn what_the_map_draws_follows_the_screen() {
         assert!(lod.contains(part), "the level of detail is not the screen's: {part}");
     }
     for part in [
-        "const full = hot || e.b._lod === LOD_FULL_TIER;",
+        "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
         "const arrow = full && (showArrows || hot);",
         "if (n._lod !== LOD_FULL_TIER) continue;",
         "if (n._lod === LOD_DOT_TIER) { f.rect(",
@@ -222,8 +223,8 @@ fn still_layers_move_with_the_camera() {
     let mini = function("drawMinimap");
     for part in [
         "const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(\",\"),",
-        "if (!miniStillSame(src, look)) m.dirty = true;",
-        "if (m.dirty && (!simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {",
+        "if (m.look !== look || m.nodes !== nodes || m.hyper !== hyperedges || m.gen !== positionsGen) {",
+        "if (m.dirty && (!m.c || !simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {",
         "paintMiniature(src, dpr, k, ox, oy, R, round);",
         "mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);",
         "drawMiniWindow(m.k, m.ox, m.oy, R, round);",
@@ -243,21 +244,17 @@ fn still_layers_move_with_the_camera() {
         "the minimap draws each dot through the canvas again"
     );
     assert!(
-        function("miniStillSame").contains(
-            "if (same && (xy[3 * i] !== n.x || xy[3 * i + 1] !== n.y || xy[3 * i + 2] !== d || ty[i] !== n.type)) same = false;"
-        ) && mini.contains("edges.length, hyperedges.length, Object.keys(typeColor)"),
+        mini.contains("edges.length, hyperedges.length, Object.keys(typeColor)")
+            && mini.contains("m.src = nodes.filter(n => !typeOff.has(n.type));"),
         "the miniature's key lost an input"
     );
     // The regions' members and hulls are kept while the nodes stand still; only the reach, which
     // follows the zoom, is taken again each frame.
     let geo = function("regionGeometry");
-    for part in [
-        "let same = r.nodes === nodes && r.hyper === hyperedges && r.filt === filt && r.xy !== null && r.xy.length === 2 * N;",
-        "if (same && (xy[2 * i] !== v.x || xy[2 * i + 1] !== v.y)) same = false;",
-        "if (same) return r.list;",
-    ] {
-        assert!(geo.contains(part), "the regions are worked out every frame again: {part}");
-    }
+    assert!(
+        geo.contains("if (r.nodes === nodes && r.hyper === hyperedges && r.filt === filt && r.gen === positionsGen) return r.list;"),
+        "the regions are worked out every frame again"
+    );
     let draw = function("draw");
     assert!(
         draw.contains("for (const it of regionGeometry()) {")
@@ -453,4 +450,70 @@ fn a_fresh_layout_starts_from_its_communities() {
     ] {
         assert!(SIM.contains(c), "the multilevel start's bounds moved: {c}");
     }
+}
+
+/// U37: a frame touches what the window holds, not every node. The scene grid counting-sorts the
+/// nodes into cells and the relations into the cells of their midpoints - a long one into a list every
+/// query reads - and is rebuilt only when a position has changed (positionsGen), which a report from
+/// the layout that moved nothing does not say; the frame's nodes, relations, badges, pulses and names,
+/// and the hit test, come from its queries; and what is kept from the positions - the regions'
+/// geometry, the minimap - is keyed on positionsGen rather than read node by node.
+#[test]
+fn a_frame_touches_what_the_window_holds() {
+    let grid = function("sceneOf");
+    for part in [
+        "if (g.gen === positionsGen && g.nodes === nodes && g.edges === edges) return g;",
+        "if (Math.abs(e.a.x - e.b.x) > span || Math.abs(e.a.y - e.b.y) > span) { rCell[k] = -1; long.push(k); continue; }",
+        "const c = at((e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2);",
+    ] {
+        assert!(grid.contains(part), "the scene grid is not kept as Section 27.7 says: {part}");
+    }
+    assert!(
+        function("nodesIn").contains("return buf.slice(0, n).sort();"),
+        "the nodes come out of their drawing order"
+    );
+    assert!(
+        function("relationsIn").contains("while (j < long.length) out[o++] = long[j++];"),
+        "long relations are dropped"
+    );
+    for name in ["nodesIn", "relationsIn"] {
+        let f = function(name);
+        assert!(
+            f.contains("if (sceneHeld(g, x0, y0, x1, y1)) return g.all")
+                && f.contains("sceneMost(g, c)"),
+            "{name} sorts the whole map when the window holds most of it"
+        );
+    }
+    let draw = function("draw");
+    for part in [
+        "for (const n of vis) {\n    const on = typeHl ? n.type === typeHl",
+        "for (const n of vis) {\n    if (!n.contested) continue;",
+        "if (showPulses && !REDUCED_MOTION && onScreen(n)) {",
+        "const inView = nodesIn(",
+        "for (const k of named) {",
+    ] {
+        assert!(draw.contains(part), "a frame passes over every node again: {part}");
+    }
+    assert!(
+        !draw.contains("for (const n of nodes) {\n    if (!n._vis)") && !draw.contains("n._vis"),
+        "the frame marks every node again"
+    );
+    assert!(
+        draw.contains("for (const i of relationsIn(vx0, vy0, vx1, vy1)) {"),
+        "a frame passes over every relation again"
+    );
+    assert!(
+        function("nodeAt")
+            .contains("for (const k of nodesIn(wx - reach, wy - reach, wx + reach, wy + reach)) {"),
+        "the hit test passes over every node again"
+    );
+    for (name, part) in [("applyGraph", "positionsGen++;"), ("layoutGraph", "nodes[i]._k = i;")] {
+        assert!(function(name).contains(part), "{name} does not say the positions moved: {part}");
+    }
+    assert!(SCRIPT.contains("for (let i = 0; i < n; i++) { const v = nodes[i]; v.x = st.x[i]; v.y = st.y[i]; }\n    positionsGen++;"), "a layout report does not say the positions moved");
+    assert!(
+        SCRIPT.contains("if (!st.x) return;")
+            && SIM.contains("if (st.gen === sentGen && st.steps === sentSteps) { self.postMessage({ kind: \"state\", ...st }); return; }"),
+        "a report that moved nothing says the positions moved"
+    );
 }

@@ -19,8 +19,8 @@
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
 > The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38 - and
-> steps 31-34, the poll that asks first, region forces that scale, the layout on its own thread and
-> the multilevel start, are built.
+> steps 31-35, the poll that asks first, region forces that scale, the layout on its own thread, the
+> multilevel start and clipping, are built.
 
 ## 1. Why this exists
 
@@ -1399,7 +1399,7 @@ social image.
 | **U34** | The layout's region forces grow with the regions' members, not with their pairs or their number: membership is kept as index arrays while the graph and its contexts are unchanged, a step allocates nothing per region, the shared-member test marks one region's members and reads the other's, and only regions of three or more members - the ones the map draws - push apart, while every context of two or more keeps its pull. |
 | **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once every 16.7 ms after, and hands back positions; when no worker can start, the same file steps on the page's thread as before; and while the layout moves, the minimap's miniature is painted at most four times a second, its dots drawn into a pixel buffer. |
 | **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it, and semantic zoom (U38) folds the same communities. |
-| **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their boxes; and the Log lists the scope's newest 200 observations, asking for one more to know there are more, wires its rows by their place, and shows more on request. |
+| **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their midpoints; and the Log lists the scope's newest 200 observations, asking for one more to know there are more, wires its rows by their place, and shows more on request. |
 | **U38** | A community smaller than 24 pixels on the screen is drawn as one body - a disc for its members, its count and, where it fits, its best-connected member's name - the relations between two bodies as one line as wide as their number, and from 24 to 48 pixels the members fade in as the body fades out; a hovered, selected, active, pulsing or contested node is never folded. |
 | **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads, the nodes in their three sizes and the bodies, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
@@ -1702,7 +1702,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 33. **The layout on its own thread** [built] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
    in a worker, and on the page's thread when none starts.
 34. **The multilevel start** [built] (Section 27.6; U36): communities, their layout first.
-35. **Clipping** [planned] (Section 27.7; U37): the grid index of positions and of relations' boxes.
+35. **Clipping** [built] (Section 27.7; U37): the grid index of positions and of relations' midpoints.
 36. **Semantic zoom** [planned] (Section 27.8; U38): communities folded into bodies by their size on
    the screen, with the crossfade.
 37. **WebGL** [planned] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
@@ -2228,9 +2228,12 @@ written for.
 `scenarios/web/bench/canvas.mjs` starts a daemon with the scenario harness, serves the viewer through
 its proxy, and answers `/api/graph` and `/api/hypergraph` itself with a seeded synthetic graph:
 communities of 20 to 60 entities in twelve types, about 1.3 relations per entity inside a community
-and 0.2 across, and a region for every twelve entities. The viewer's script is not changed for it; its
-functions `stepSim`, `draw` and `nodeAt` are timed from outside, since the script is a classic one and
-they are its globals. For each size it reports the time to the first picture, a settling step, the
+and 0.2 across, a region for every twelve entities, and a context of two for every relation between
+two of those groups, as a store filled through `observe` holds (Section 27.1). It answers as the
+daemon does, with an ETag and a `304` to a poll that asks with it (Section 27.3); without, every poll
+applied the same graph again. The viewer's script is not changed for it; its functions `draw` and
+`nodeAt` are timed from outside, since the script is a classic one and they are its globals, and the
+layout's steps are read from what the layout reports (Section 27.5). For each size it reports the time to the first picture, a settling step, the
 frames of a two-second pan and of ten wheel steps - each split into simulation and drawing - and a hover's
 hit test, as the 50th and 95th percentiles; with `BREAKDOWN=1` it also times, within a pan's and a
 zoom's frames, the region field, the workspace outlines and the minimap. It takes the pan again at a
@@ -2574,13 +2577,43 @@ Guarded by `a_fresh_layout_starts_from_its_communities`.
 
 A uniform grid of the node positions, rebuilt when they move and kept while they rest, answers the
 window's questions: which nodes are drawn, which can be named, badged or pulse, and which is under the
-pointer. The relations are kept in a grid of the cells their boxes cover. A frame then costs what the
-window holds rather than what the map holds (U37).
+pointer. A frame then costs what the window holds rather than what the map holds (U37).
+
+- **The grid.** The nodes are counting-sorted into square cells of about four nodes each, never
+  narrower than the largest node. A query reads the cells a box covers and answers the indices in the
+  order the nodes are drawn in, so what a frame draws, and in what order, is what it drew before. A
+  box that holds every node is answered with every index at once, and one that covers more than an
+  eighth of the cells by a pass over the nodes, which answers in order without a sort: over that much
+  of the map, the cells and the sort cost more than the pass they save.
+- **Relations by their midpoints.** A relation is kept in the cell of its midpoint, and one whose
+  ends lie more than four cells apart on either axis in a list, kept in order, that every query
+  merges into its answer. A relation's box,
+  grown by the widest lane, meets a window only if its midpoint lies within two cells and a lane of
+  it, so a query reads the midpoint cells of the window grown by as much. Kept in every cell its box
+  covered, as first built, the relations made the grid cost more to build than a frame saved while
+  the layout moved.
+- **Built when the positions move.** A counter, raised when the layout reports positions, a graph
+  arrives or a node is dragged, says when the positions have moved; the grid, the regions' geometry
+  and the minimap are worked out again when it has changed, rather than compared node by node. The
+  layout's worker reports the positions only when a step or a graph has moved them: the camera's place
+  at rest goes to it with every pan, and a report for each had the grid built again every frame.
+- **The same picture.** Checked against a pass over every node and relation in 40 windows of every
+  size, the grid answered the same nodes and missed no relation; and at a camera held still, a
+  10,000-entity map was drawn as it was before, pixel for pixel.
+
+Measured against step 34 at 10,000 entities, in three runs of each taken in turn: in WebKit the
+moving layout went from 53 frames a second to 58 and a pan's 95th percentile from 11 ms to 8; in
+Chrome the frames stayed within the runs' own spread, at 10,000 and at 20,000, where a frame's cost
+is its drawing and the passes the grid replaced were a fraction of a millisecond; and a hover's hit
+test fell under 0.05 ms. The grid's worth grows with the map: what a frame asks of it costs what the
+window holds.
 
 The Log is clipped the same way: it lists the scope's newest 200 observations, asks for one more to
 know there are more, and shows 200 more on request; its count reads "200+" until they are all shown.
 Its rows are wired by their place in the list rather than found again in it, and an observation it
 does not hold - a curation finding's, a search hit's - is read from the scope's log once.
+
+Guarded by `a_frame_touches_what_the_window_holds` and `the_log_draws_its_newest_rows`.
 
 ### 27.8 Semantic zoom
 
