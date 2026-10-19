@@ -803,9 +803,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["drawing_never_moves_the_layout"]),
     )]),
     (29, &[c(
-        "near forces meet each node with only the nodes of its own and the adjacent grid cells, giving the forces every pair would give",
-        // scale.rs reads stepSim and binGrid; the equality to every pair was measured once, in a
-        // browser, from one position on 2,000 nodes (Section 26.4).
+        "the layout's forces come from grids: pair by pair within a node's own and the adjacent cells, per cell beyond them out to the repulsion's range, and region pushes only between regions in reach",
+        // scale.rs reads stepSim, binGrid and nodeById; the accuracy was measured once, in a browser,
+        // from one position on 2,000 nodes (Section 26.4).
         Evidence::Scenario(&["near_forces_come_from_a_grid"]),
     )]),
     (30, &[c(

@@ -264,6 +264,9 @@ const MOTION_MIN_PX = 0.05;   // screen px per frame below which the picture is 
 // pan and hover pay for every pair of nodes.
 const OVERLAP_STEPS = 90;
 let overlapOwed = 0;
+// How many cells span the repulsion's range while force applies (Section 26.4): the near field is a
+// node's own cell and the eight around it, the far field the rest of the range, cell by cell.
+const FAR_SPLIT = 6;
 // Reduced motion (same respect the landing pays to prefers-reduced-motion): instead of animating
 // the violent early rearrangement behind a loader, burst-step the sim to convergence within one
 // frame and reveal the layout already still.
@@ -1278,7 +1281,14 @@ async function refreshEmpty() {
 }
 
 // --- Live MCP activity (SSE) --------------------------------------------------------
-function nodeById(id) { return nodes.find(n => n.id === id); }
+function nodeById(id) { return nodesById().get(id); }
+// The nodes by id, kept until the node list is replaced (applyGraph builds a new one), so a step or
+// a frame does not build its own map, and a lookup does not walk the list.
+let byIdOf = null, byIdMap = new Map();
+function nodesById() {
+  if (byIdOf !== nodes) { byIdOf = nodes; byIdMap = new Map(nodes.map(n => [n.id, n])); }
+  return byIdMap;
+}
 // Escape for both element-text and quoted-attribute contexts. Quotes must be escaped too: entity/type
 // names come from untrusted observe calls (including federation sync - Principle 18, writes are an attack
 // surface), and they are interpolated into `title="..."` / `data-id="..."` attributes below; without quote
@@ -3503,7 +3513,11 @@ function drawLabel(text, weight, size, color, spacing, halo, x, y, align) {
 // The near-force grid (design-system.md Section 26.4, U29), kept between steps: a counting sort of the
 // nodes into cells, so a cell's nodes are gridOrder[gridStart[c] .. gridStart[c + 1]).
 let gridOrder = new Int32Array(0), gridStart = new Int32Array(0), gridCursor = new Int32Array(0);
-let gridCell = new Int32Array(0), gridW = 0, gridH = 0;
+let gridCell = new Int32Array(0), gridW = 0, gridH = 0, gridSize = 0;
+// The far field's per-cell sums (Section 26.4): how many nodes a cell holds, where their centre is,
+// their radii, and how many of them are in each workspace - kept between steps like the grid.
+let farN = new Float64Array(0), farX = new Float64Array(0), farY = new Float64Array(0), farR = new Float64Array(0);
+let farWs = new Int32Array(0), nodeWs = new Int32Array(0);
 // The step's per-node scratch, kept between steps rather than allocated in each.
 let scrCdx = new Float64Array(0), scrCdy = new Float64Array(0), scrRad = new Float64Array(0), scrNear = new Float32Array(0);
 
@@ -3519,6 +3533,7 @@ function binGrid(N, cell) {
   }
   const area = Math.max(1, (maxX - minX) * (maxY - minY));
   cell = Math.max(cell, Math.sqrt(area / (4 * N + 64)));
+  gridSize = cell;
   gridW = Math.floor((maxX - minX) / cell) + 1;
   gridH = Math.floor((maxY - minY) / cell) + 1;
   const cells = gridW * gridH;
@@ -3578,9 +3593,13 @@ function stepSim() {
   // of its own cell and the adjacent ones: the pairs every-pair would have found within reach, and
   // no others. A cell pairs with itself and four forward neighbours, so each pair is met once, and the
   // lower index goes first, as it did, so a coincident pair still parts the same way.
+  // While force applies the cells are a quarter of the repulsion's range: pairs in a node's own and
+  // the adjacent cells are met one by one - every collision and every crowd among them, since a cell
+  // is never narrower than those reaches - and the repulsion of the cells beyond, out to the range,
+  // is taken from each cell as a whole (the far field, below).
   const reach = active ? Math.max(range, DENSITY_R) : 2 * NODE_R_MAX + COLLIDE_PAD;
   const reach2 = reach * reach;
-  if (pairs) binGrid(N, reach);
+  if (pairs) binGrid(N, active ? Math.max(DENSITY_R, 2 * NODE_R_MAX + COLLIDE_PAD, range / FAR_SPLIT) : reach);
   const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];
   if (pairs) for (let cy = 0; cy < gridH; cy++) for (let cx = 0; cx < gridW; cx++) {
     const c = cx + cy * gridW, c0 = gridStart[c], c1 = gridStart[c + 1];
@@ -3628,6 +3647,65 @@ function stepSim() {
     }
   }
 
+  // The far field (design-system.md Section 26.4): beyond a node's own and the adjacent cells, out to
+  // the repulsion's range, each cell pushes as one body at its nodes' centre - its count weighted as
+  // every pair would weight it, by the node's radius and the cell's mean radius and by how many of
+  // its nodes are in another workspace. It is the one approximation the layout makes (Barnes-Hut's,
+  // with a cell's width against its distance at most a half), and it replaces the many far pairs a
+  // dense map gives every node, which kept a step at 151 ms on 5,000 nodes with the grid alone.
+  if (active && gridW * gridH > 9) {
+    const cells = gridW * gridH;
+    if (farN.length < cells) {
+      farN = new Float64Array(cells * 2); farX = new Float64Array(cells * 2);
+      farY = new Float64Array(cells * 2); farR = new Float64Array(cells * 2);
+    }
+    farN.fill(0, 0, cells); farX.fill(0, 0, cells); farY.fill(0, 0, cells); farR.fill(0, 0, cells);
+    let wsCount = 0;
+    if (wsApart) {
+      const wsIndex = new Map();
+      if (nodeWs.length < N) nodeWs = new Int32Array(N * 2);
+      for (let k = 0; k < N; k++) {
+        const w = nodes[k].workspace || "";
+        let x = wsIndex.get(w);
+        if (x === undefined) { x = wsIndex.size; wsIndex.set(w, x); }
+        nodeWs[k] = x;
+      }
+      wsCount = wsIndex.size;
+      if (farWs.length < cells * wsCount) farWs = new Int32Array(cells * wsCount * 2);
+      farWs.fill(0, 0, cells * wsCount);
+    }
+    for (let k = 0; k < N; k++) {
+      const c = gridCell[k], v = nodes[k];
+      farN[c]++; farX[c] += v.x; farY[c] += v.y; farR[c] += rad[k];
+      if (wsCount) farWs[c * wsCount + nodeWs[k]]++;
+    }
+    const span = Math.ceil(range / gridSize), range2 = range * range, floor2 = MIN_SEP * MIN_SEP;
+    for (let i = 0; i < N; i++) {
+      const a = nodes[i];
+      if (pinned(a)) continue;
+      const ci = gridCell[i], cx = ci % gridW, cy = (ci - cx) / gridW;
+      for (let oy = -span; oy <= span; oy++) {
+        const y = cy + oy;
+        if (y < 0 || y >= gridH) continue;
+        for (let ox = -span; ox <= span; ox++) {
+          if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) continue;   // near cells were met pair by pair
+          const x = cx + ox;
+          if (x < 0 || x >= gridW) continue;
+          const c = x + y * gridW, n = farN[c];
+          if (!n) continue;
+          const mx = farX[c] / n - a.x, my = farY[c] / n - a.y, dd = mx * mx + my * my;
+          if (dd >= range2) continue;
+          const d = Math.sqrt(dd) || 0.5;
+          const same = wsCount ? farWs[c * wsCount + nodeWs[i]] : n;
+          const count = same + (n - same) * WS_CROSS_REPULSE;
+          const w = Math.min(REPULSE_HUB_MAX, (rad[i] + farR[c] / n) / (2 * NODE_R_BASE)) * count;
+          const rf = repulse * alpha * w * (1 - d / range) / Math.max(dd, floor2);
+          a.vx -= rf * mx / d; a.vy -= rf * my / d;
+        }
+      }
+    }
+  }
+
   // Residual overlap is cleaned up by the collision displacement below, for the steps the cooling
   // owes and no longer: the pass ends as soon as nothing overlaps.
   // Do not reheat here - wake only from 'events' like a new node/drag/resize
@@ -3661,7 +3739,7 @@ function stepSim() {
   // the shared node, preserving the overlap relationship (C1: overlap = connective tissue).
   // Default organizer; group mode takes precedence (suppressed while clusterMode is on) so the two never fight.
   if (hullForce && !clusterMode && active && hyperedges.length) {
-    const nb = new Map(nodes.map(n => [n.id, n]));
+    const nb = nodesById();
     // Geometry: members + centroid + mean radius (clamped to a cap - so a huge grab-bag cannot push the whole layout)
     // + member id set (for share detection).
     const hgs = [];
@@ -3687,14 +3765,30 @@ function stepSim() {
     // a connected context and must stay attached (C1), and pushing every pair at high density blows up the whole layout.
     // Accumulate each hull's net displacement, clamp it to the cap (HULL_MAX_PUSH), then apply it to members to prevent divergence.
     const sepx = new Array(hgs.length).fill(0), sepy = new Array(hgs.length).fill(0);
-    for (let i = 0; i < hgs.length; i++) for (let j = i + 1; j < hgs.length; j++) {
-      const a = hgs[i], b = hgs[j];
-      if (hullsShareMember(a.ids, b.ids)) continue;   // do not push a connected context (C1)
-      const dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 0.01;
-      const want = a.r + b.r + HULL_PAD;
-      if (d < want) {
-        const mag = (want - d) * HULL_SEP * alpha, ux = dx / d * mag, uy = dy / d * mag;
-        sepx[i] -= ux; sepy[i] -= uy; sepx[j] += ux; sepy[j] += uy;
+    // Only regions within reach of each other push, and their centres are then at most
+    // 2 * HULL_R_CAP + HULL_PAD apart: the centres are binned into cells that wide and a region meets
+    // only those of its own and the adjacent cells (design-system.md Section 26.4) - the pushes every
+    // pair gives - and the shared-member test, the costly one, runs only for a pair close enough to
+    // push. Every pair, with the test first, was 72 ms of a step at 838 regions.
+    const RC = 2 * HULL_R_CAP + HULL_PAD, cellOf = new Map();
+    const hk = (x, y) => (x + 32768) * 65536 + (y + 32768);
+    for (let i = 0; i < hgs.length; i++) {
+      const k = hk(Math.floor(hgs[i].cx / RC), Math.floor(hgs[i].cy / RC));
+      const l = cellOf.get(k);
+      if (l) l.push(i); else cellOf.set(k, [i]);
+    }
+    for (let i = 0; i < hgs.length; i++) {
+      const a = hgs[i], gx = Math.floor(a.cx / RC), gy = Math.floor(a.cy / RC);
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        for (const j of cellOf.get(hk(gx + ox, gy + oy)) || []) {
+          if (j <= i) continue;
+          const b = hgs[j];
+          const dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 0.01;
+          const want = a.r + b.r + HULL_PAD;
+          if (d >= want || hullsShareMember(a.ids, b.ids)) continue;   // a connected context stays (C1)
+          const mag = (want - d) * HULL_SEP * alpha, ux = dx / d * mag, uy = dy / d * mag;
+          sepx[i] -= ux; sepy[i] -= uy; sepx[j] += ux; sepy[j] += uy;
+        }
       }
     }
     for (let i = 0; i < hgs.length; i++) {
@@ -3874,7 +3968,7 @@ function draw() {
   // the first: screen-space boxes on a grid of cells (labelGrid).
   const labelBoxes = labelGrid();
   if (hyperMode && hyperedges.length) {
-    const nb = new Map(nodes.map(n => [n.id, n]));
+    const nb = nodesById();
     const items = [];
     for (const h of hyperedges) {
       const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context

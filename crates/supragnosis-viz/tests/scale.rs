@@ -60,34 +60,45 @@ fn drawing_never_moves_the_layout() {
     );
 }
 
-/// U29: the layout's near forces come from a grid. Every force the pair loop applies acts within a
-/// reach, so the nodes are binned into cells as wide as the longest reach in use and each node meets
-/// only its own and the adjacent cells - never every pair - with pairs beyond reach skipped before
-/// any work. Measured equal to every pair's forces, to the last bits of the sum's order, on 2,000
-/// nodes from one position (Section 26.4).
+/// U29: the layout's forces come from grids. Within a node's own and the adjacent cells - cells a
+/// sixth of the repulsion's range, never narrower than collision's or crowding's reach - every pair
+/// is met one by one, exactly; beyond them, out to the range, a cell pushes as one body (the far
+/// field, Barnes-Hut's approximation); regions push apart only from a grid of their own reach, with
+/// the costly shared-member test after the distance. No loop visits every pair of nodes or regions.
 #[test]
 fn near_forces_come_from_a_grid() {
     let step = function("stepSim");
     assert!(
-        !step.contains("for (let j = i + 1; j < N; j++)"),
+        !step.contains("for (let j = i + 1; j < N; j++)")
+            && !step.contains("for (let j = i + 1; j < hgs.length; j++)"),
         "the layout visits every pair again"
     );
     for part in [
-        "const reach = active ? Math.max(range, DENSITY_R) : 2 * NODE_R_MAX + COLLIDE_PAD;",
-        "if (pairs) binGrid(N, reach);",
+        "if (pairs) binGrid(N, active ? Math.max(DENSITY_R, 2 * NODE_R_MAX + COLLIDE_PAD, range / FAR_SPLIT) : reach);",
         "const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];",
         "if (dx * dx + dy * dy >= reach2) continue;",
         "const i = gi < gj ? gi : gj, j = gi < gj ? gj : gi;",
+        "if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) continue;",
+        "const count = same + (n - same) * WS_CROSS_REPULSE;",
+        "const RC = 2 * HULL_R_CAP + HULL_PAD",
+        "if (d >= want || hullsShareMember(a.ids, b.ids)) continue;",
     ] {
-        assert!(step.contains(part), "the grid's pairing changed: {part}");
+        assert!(step.contains(part), "the grids' pairing changed: {part}");
     }
-    // A cell is never narrower than the reach, so no pair within reach is missed.
-    let bin = function("binGrid");
-    assert!(bin.contains("cell = Math.max(cell, "), "a cell can shrink below the reach");
-    // The step's scratch is kept between steps.
+    assert!(SCRIPT.contains("const FAR_SPLIT = 6;"), "the far field's cells moved");
+    // A cell is never narrower than the reach it is binned for, so no pair within reach is missed.
+    assert!(
+        function("binGrid").contains("cell = Math.max(cell, "),
+        "a cell can shrink below the reach"
+    );
+    // The step's scratch and its lookups are kept between steps.
     assert!(
         !step.contains("new Array(N)") && !step.contains("new Float32Array(N)"),
         "the step allocates per-node scratch again"
+    );
+    assert!(
+        !step.contains("new Map(nodes.map(") && function("nodeById").contains("nodesById()"),
+        "a step or a lookup builds its own map of the nodes"
     );
 }
 

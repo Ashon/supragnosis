@@ -1387,7 +1387,7 @@ social image.
 | **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; it holds no other navigation; every page's bar is one bar, the star first and the way back and the title where the Review page has them; and in the app it drags the window from anywhere but its controls, and clears the traffic lights only while they are shown. |
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U28** | Drawing never moves the layout: a pan, a zoom, a hover, a highlight or a selection redraws the map without a simulation step, and a layout that has come to rest visits no pair of nodes until something warms it. |
-| **U29** | The layout's near forces - repulsion within its range, collision and crowding - meet each node with only the nodes in its own and the adjacent cells of a grid as large as their longest reach, so a step costs in proportion to the nodes and their neighbours, and the forces are those every pair would give. |
+| **U29** | The layout's forces come from grids, never from every pair: collision, crowding and repulsion pair by pair within a node's own and the adjacent cells, the repulsion of the cells beyond, out to its range, from each cell as one body, and the push between regions only between regions in reach of each other; so a step costs in proportion to the nodes, the cells around them and the regions near each other. |
 | **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 3 pixels of radius on screen is drawn without its ring and the relations into it straight and without arrowheads, and one under 1.2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
 | **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
@@ -1672,8 +1672,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 26. **The simulation at rest** [built] (Section 26.3; U28): the simulation on its own clock, no step
    in a frame that only redraws, the collision pass ended with the settle, and the recenter only while
    it steps.
-27. **The grid** [built] (Section 26.4; U29): near forces from a uniform grid, scratch arrays reused,
-   and the parallel-edge lanes kept with the edges rather than rebuilt each frame.
+27. **The grid** [built] (Section 26.4; U29): near forces pair by pair from a uniform grid, the far
+   field per cell, region pushes from a grid of their reach, and scratch arrays and the node lookup
+   kept between steps.
 28. **Drawing less** [built] (Section 26.5; U30): culling, one path per look, the three sizes of a
    node, the label grid, and the zoom floor that follows the graph.
 29. **Still layers** [planned] (Section 26.6): the region field and the minimap's dots drawn when they
@@ -2241,22 +2242,30 @@ would be its own document. Nothing in this section assumes it.
 
 Guarded by `drawing_never_moves_the_layout`.
 
-### 26.4 Near forces come from a grid
+### 26.4 The layout's forces come from grids
 
 Repulsion acts within its range, collision within two radii and the padding, crowding within
-`DENSITY_R`. Each step bins the nodes into a uniform grid whose cell is the longest of those reaches,
-and each node meets only the nodes of its own and the eight adjacent cells: the same forces every pair
-would give, at a cost in proportion to the nodes and their neighbours (U29). The step's scratch arrays
-are kept between steps, and the lanes of parallel relations are worked out when the relations change,
-not in every frame. While the layout only clears its last overlaps the reach is a collision's, two
-of the largest radii and the padding, so that pass costs less still. One step from the same
-positions on 2,000 nodes gave every pair's positions and velocities to within 5 x 10^-13, the order
-of the sums; guarded by `near_forces_come_from_a_grid`.
+`DENSITY_R`. Each step bins the nodes into a uniform grid by counting sort, and no loop visits every
+pair (U29):
 
-If a step at the budget's size still costs too much - a dense workspace puts many nodes in one range -
-repulsion beyond a near radius may be taken from Barnes-Hut cells (theta 0.9, each cell weighted by its
-members' summed radius). That is the one approximation the layout may make, and it is measured before
-it is taken.
+- **Near, pair by pair.** The cells are a sixth of the repulsion's range, never narrower than
+  crowding's or collision's reach. A node meets the nodes of its own and the eight adjacent cells
+  one by one - every collision and every crowd it has, and the repulsion of everything that near.
+  While the layout only clears its last overlaps the cells are a collision's reach, so that pass
+  costs less still.
+- **Far, per cell.** Beyond those cells, out to the range, each cell pushes as one body at its nodes'
+  centre, its count weighted as every pair would weight it: by the node's radius and the cell's mean
+  radius, and by how many of its nodes are in another workspace. This is Barnes-Hut's approximation,
+  the one the layout makes: from the same positions on 2,000 nodes, a step's velocities stood within
+  0.21 of every pair's at the 95th percentile, of velocities near 60.
+- **Regions, near each other.** Two regions push apart only within their radii and the padding, so
+  their centres are binned into cells that wide, a region meets only those of its own and the
+  adjacent cells, and the shared-member test runs only for a pair close enough to push.
+
+The step's scratch arrays and the nodes' lookup by id are kept between steps. The lanes of parallel
+relations are worked out from the drawn relations alone (Section 26.5).
+
+Guarded by `near_forces_come_from_a_grid`.
 
 ### 26.5 Drawing does less
 
@@ -2293,7 +2302,8 @@ change and recomputed once the camera rests; the minimap moves only its frame.
 
 ### 26.7 What this is not
 
-It is not a new layout: the grid gives the forces every pair gives. It does not hide relations while
+It is not a new layout: the forces are the ones every pair gives, exactly near a node and within a
+fraction of them beyond its neighbouring cells (Section 26.4). It does not hide relations while
 the map moves, as some renderers do, since the picture should not change under the hand. It is not a
 WebGL renderer (Section 26.2).
 
@@ -2319,4 +2329,11 @@ Flag; Gaffer on Games, Fix your timestep.
   through.
 - **ESLint knows `Path2D`.** One path per look is a `Path2D` per look, and the viewer's lint names
   every browser API it may use.
+- **The far field was taken.** With the grid alone a step on 5,000 nodes stayed at 151 ms: on a large
+  map the repulsion reaches 960 world pixels and a node has hundreds of neighbours inside it. With
+  the far field per cell it is 36 ms. Profiled at 10,000, the push between 838 regions then took 116
+  of a step's 163 ms - 350,000 pairs, each tested for a shared member before its distance - and the
+  regions' own grid, testing the distance first, brought the step to 64 ms, and cells of a sixth of
+  the range to 48. In the bench the first picture of 10,000 came in 7.6 seconds, where the grid
+  alone took 56, and of 20,000 in 22.
 
