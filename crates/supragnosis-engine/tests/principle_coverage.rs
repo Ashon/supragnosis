@@ -760,10 +760,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (24, &[c(
         "the map's window offers List, a table of the entities the map draws in its scope, filters and search, sorted by type and name, each row naming type, trust, relations and workspace and selecting its node, and the canvas's name says what it draws and that List holds it",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 6 and 14 step 21, not built. Revisit when the \
-             camera toolbar's first button is List",
-        ),
+        // crates/supragnosis-viz/tests/list.rs: the button, the rows, the columns, the selection,
+        // Esc, the filters and the canvas's name.
+        Evidence::Scenario(&["the_map_has_a_list"]),
     )]),
     (25, &[c(
         "a tooltip holds a name and its key and nothing a person needs to act, written through one helper at most five words before its key, and what a control does is said on the screen",
@@ -3114,6 +3113,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/type_scale.rs"),
     include_str!("../../supragnosis-viz/tests/shapes.rs"),
     include_str!("../../supragnosis-viz/tests/tooltips.rs"),
+    include_str!("../../supragnosis-viz/tests/list.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

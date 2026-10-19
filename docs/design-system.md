@@ -15,7 +15,7 @@
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is designed - steps 17-24 - and steps 17, 18 and 24, its defects, reading and the light appearance,
-> are built, with step 19's lines, shapes and targets and step 20's words on the screen.
+> are built, with steps 19-21: lines, shapes and targets, words on the screen, and the map's List.
 
 ## 1. Why this exists
 
@@ -1355,8 +1355,10 @@ reads every font declaration of the viewer's, the Settings page's and Setup's st
 every clamp; `view_sets_the_root_text_size` in the app's tests holds View's three items, the kept size
 and the page load that gives it to each page. U22's line half is guarded by `lines_are_thin_and_solid` in
 `design_tokens.rs`, which reads the four stylesheets and the three scripts that draw for a dash, and
-the viewer's rings and their swatches for their weights. U24 and U26 are designed and not yet
-guarded; steps 21 and 23 build each with its test (Section 14).
+the viewer's rings and their swatches for their weights. U24 is guarded by `the_map_has_a_list` in
+`crates/supragnosis-viz/tests/list.rs`: List's place in the camera toolbar, its rows' filter and
+order, its columns, a row selecting its node, Esc, the filters it follows and the canvas's name. U26
+is designed and not yet guarded; step 23 builds it with its test (Section 14).
 
 The rest of U22 is guarded by `crates/supragnosis-viz/tests/shapes.rs`: `every_corner_is_a_radius_token`
 reads every radius of the viewer's, the app pages' and the landing's stylesheets, and
@@ -1597,7 +1599,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    target on the viewer and the app's pages at 28, 44 under a coarse pointer.
 20. **Said on the screen** [built] (Section 4; U25): View's options and the search mode say what they do in a
    line under their names, and every tooltip is written through one helper with a name and its key.
-21. **The map's List** [designed] (Section 6; U24): the table, its selection kept with the map's, and the
+21. **The map's List** [built] (Section 6; U24): the table, its selection kept with the map's, and the
    canvas's name.
 22. **The site's type** [designed] (Sections 11, 11a): labels in Pretendard, nothing under the label
    size, the ledger's labels as numbers, running text at 1.5, and the landing's picture of the viewer
@@ -2088,6 +2090,9 @@ changed it:
   their names, and View scrolls when they do not fit; the search says what it searched; the merge
   suggestions say once what Propose does; a similarity and a grouping rung say their numbers in words;
   and an edge's description is a line under its chips.
+- **List keeps the person's place.** A poll redrew the table and dropped the focused row, so the
+  table gives focus back to the same row when it redraws; while List is on, the minimap, which is the
+  map's, is not drawn over it. Its rows are told apart by a step of tone, as U9 asks.
 - **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
   redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
   the map stops drawing once nothing else does.

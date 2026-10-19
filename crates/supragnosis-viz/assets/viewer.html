@@ -12,6 +12,7 @@
 <!-- The map's window (design-system.md Section 6): paints the frame around a rounded opening over
      the full-window canvas. Decoration only. -->
 <div id="mapwin" aria-hidden="true"></div>
+<section id="listwin" hidden aria-label="Entities"></section>
 <div id="empty"><div class="e-title">Nothing here yet.</div><div class="e-sub">Ask a connected AI app to remember something, or pick a workspace that holds knowledge.</div></div>
 <div id="loader"><div class="spin"></div><span>settling layout...</span></div>
 <header>
@@ -189,6 +190,11 @@
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">
+  <!-- List (design-system.md Section 6, U24): the map's entities as a table, the map for a screen
+       reader and for anyone who cannot tell its colors apart. Lucide's list (ISC). -->
+  <button id="listBtn" title="List" aria-label="List" aria-pressed="false" aria-controls="listwin">
+    <svg viewBox="0 0 18 18"><path d="M7 4.5h8.5M7 9h8.5M7 13.5h8.5M3 4.5h.01M3 9h.01M3 13.5h.01"/></svg>
+  </button>
   <button id="viewBtn" title="View options" aria-label="View options" aria-expanded="false" aria-controls="viewpop">
     <svg viewBox="0 0 18 18"><path d="M1.5 9s3-5 7.5-5 7.5 5 7.5 5-3 5-7.5 5-7.5-5-7.5-5z"/><circle cx="9" cy="9" r="2.4"/></svg>
   </button>

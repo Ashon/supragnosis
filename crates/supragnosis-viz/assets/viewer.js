@@ -69,6 +69,57 @@ function hearColors() {
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
+// --- List (docs/design-system.md Section 6, U24) -------------------------------------------------
+// The entities the map draws as a table - the same scope, filters and search - sorted by type and
+// name. A row selects its node as a click on the map does; List again, or Esc in the table, gives the
+// map back with that node selected.
+const listBtn = document.getElementById("listBtn"), listWin = document.getElementById("listwin");
+let listOn = false;
+function listRows() {
+  return nodes.filter(n => !typeOff.has(n.type))
+    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+}
+function renderList() {
+  if (!listOn || !listWin) return;
+  const rows = listRows();
+  const many = new Set(rows.map(n => n.workspace)).size > 1;
+  // Redrawing keeps the person's place (Section 10): the focused row keeps focus.
+  const had = listWin.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+  listWin.innerHTML = html`<table class="ltable"><thead><tr><th scope="col">Name</th><th scope="col">Type</th>${
+    html`<th scope="col">Trust</th><th scope="col" class="n">Relations</th>`}${many ? html`<th scope="col">Workspace</th>` : ""}</tr></thead><tbody>${
+    rows.map(n => html`<tr${n === focus ? html` class="on"` : ""}><td><button type="button" class="lrow" data-id="${n.id}">${
+      html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>${n.name}</button></td>`}${
+      html`<td>${n.type}</td><td>${tierName(n.trust_tier)}</td><td class="n">${n.degree}</td>`}${
+      many ? html`<td>${n.workspace}</td>` : ""}</tr>`)}</tbody></table>`;
+  listWin.querySelectorAll(".lrow").forEach(b => {
+    b.onclick = () => {
+      const n = nodeById(b.dataset.id);
+      if (!n) return;
+      focus = n; renderDetail(n); focusView(n);
+      for (const r of listWin.querySelectorAll("tr.on")) r.classList.remove("on");
+      b.closest("tr").classList.add("on");
+    };
+  });
+  if (had) {
+    const again = [...listWin.querySelectorAll(".lrow")].find(b => b.dataset.id === had);
+    if (again) again.focus();
+  }
+}
+function setList(on) {
+  listOn = on;
+  listWin.hidden = !on;
+  listBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  document.body.classList.toggle("listing", on);   // the minimap is the map's, not the table's
+  if (on) {
+    renderList();
+    const row = listWin.querySelector("tr.on .lrow") || listWin.querySelector(".lrow");
+    if (row) row.focus();
+  } else listBtn.focus();
+}
+listBtn.onclick = () => setList(!listOn);
+listWin.addEventListener("keydown", e => {
+  if (e.key === "Escape") { e.stopPropagation(); setList(false); }
+});
 // The single workspace-selection state ("" = the node default, "*" = all). Shaped like the old
 // header <input> ({value}) so every reader keeps working; the WRITERS are the left-rail chips,
 // the URL restore, and follow-mode - selection has exactly one UI (the chips) and the status bar
@@ -446,6 +497,8 @@ function showStats(cur, s, regions) {
   counts.textContent = line.slice(scope.length);
   document.getElementById("stats").replaceChildren(head, counts);
   fitStats();
+  // The canvas says what it draws and where else it is (Section 6, U24).
+  canvas.setAttribute("aria-label", "Map of " + line.slice(scope.length + 3) + ". List shows them as a table.");
 }
 // A line that does not fit gives up its counts before it cuts the scope's name (Section 6).
 function fitStats() {
@@ -876,6 +929,7 @@ function renderLegend() {
   nodeCtEl.textContent = nodeKeys.length || "";
   edgeCtEl.textContent = edgeKeys.length || "";
   renderBoundaryChips();
+  renderList();
 }
 
 // Legend chip tooltip: the type's glossary definition (T-Box), anchored beside the chip. A type
