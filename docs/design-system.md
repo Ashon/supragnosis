@@ -16,8 +16,8 @@
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
-> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and steps 25-28, the bench, the
-> simulation at rest, the grid and drawing less, are built.
+> many nodes (Section 26, U28-U32), is specified - steps 25-30 - and steps 25-29, the bench, the
+> simulation at rest, the grids, drawing less and still layers, are built.
 
 ## 1. Why this exists
 
@@ -1390,6 +1390,7 @@ social image.
 | **U29** | The layout's forces come from grids, never from every pair: collision, crowding and repulsion pair by pair within a node's own and the adjacent cells, the repulsion of the cells beyond, out to its range, from each cell as one body, and the push between regions only between regions in reach of each other; so a step costs in proportion to the nodes, the cells around them and the regions near each other. |
 | **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 3 pixels of radius on screen is drawn without its ring and the relations into it straight and without arrowheads, and one under 1.2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
 | **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
+| **U32** | Layers that do not change when only the camera moves are not worked out again for it: the region field is kept with the camera it was worked out for and drawn moved and scaled by the camera's change, and worked out again once the camera rests, when the moved field would leave the window uncovered or be scaled past half or double, and when a region, its strength or the appearance changes; the minimap's miniature is a bitmap of its own, painted when the nodes, their positions, the filters or the look change, under the window's frame drawn each frame; and the regions' members and hulls are kept while the nodes stand still. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
@@ -1677,8 +1678,8 @@ and it fails when one of them appears in the viewer's source other than as an ar
    kept between steps.
 28. **Drawing less** [built] (Section 26.5; U30): culling, one path per look, the three sizes of a
    node, the label grid, and the zoom floor that follows the graph.
-29. **Still layers** [planned] (Section 26.6): the region field and the minimap's dots drawn when they
-   change, and moved as bitmaps while the camera moves.
+29. **Still layers** [built] (Section 26.6; U32): the region field kept with its camera and moved as a
+   bitmap while only the camera moves, and the minimap's miniature painted only when it changes.
 30. **Measured** [planned] (Section 26.2; U31): the bench at 10,000 and 20,000 in Chrome and WebKit
    against the budget. A WebGL renderer is decided from these numbers and gets its own document;
    nothing in steps 26-29 assumes it.
@@ -2296,9 +2297,31 @@ Guarded by `what_the_map_draws_follows_the_screen`.
 
 ### 26.6 Layers that do not move are not redrawn
 
-The region field and the minimap's dots are drawn into their own bitmaps when the layout, the regions
-or the appearance change. While only the camera moves, the field's bitmap is drawn with the camera's
-change and recomputed once the camera rests; the minimap moves only its frame.
+- **The region field moves with the camera.** The field is kept with the camera it was worked out
+  for. While the regions, their strengths and the appearance are unchanged and only the camera moves,
+  the kept image is drawn moved and scaled by the camera's change. It is worked out again 150 ms
+  after the camera rests; at once when the moved image would leave part of the window uncovered or
+  be scaled past half or double; and on any frame where a region, its strength or the appearance
+  changed. While the layout is still, the field is worked out a quarter of the window's longer side
+  beyond each edge, so a pan has field to move into; while the layout steps, every frame works it
+  out anyway, and no margin is paid. What the zoom alone changes - a region's reach past its members,
+  which holds the nodes' halos at a width on the screen, and the fade of a region wider than the
+  window's share - is brought up to date when the field is worked out at rest.
+- **The field's cell grows with its work.** A cloud costs a sum for every cell its box covers, so
+  zoomed into a large map, where hundreds of clouds each span the window, 4-pixel cells came to tens
+  of millions of sums. The cell is the smallest of 4, 8, 16 and 32 pixels that keeps the clouds'
+  cells and the field's own within 3 million. At the fitted view of 10,000 entities it stays at 4
+  pixels; a cloud wide enough to need a coarser cell has no detail it loses.
+- **The minimap's miniature is a bitmap.** Its regions, relations and dots are painted into a bitmap
+  of their own when the nodes - where they are, their degree and their type - the filters or the look
+  change; each frame draws that bitmap and the window's frame over it. The key is what the miniature
+  shows, not which arrays hold it, since a poll that brings the same graph brings new arrays.
+- **The regions' geometry is kept.** Each region's members in the drawn types and its hull are kept
+  while every node stands where it stood and the regions and the filters are the same. Only the
+  hull's reach past its members, which holds the nodes' halos and so follows the zoom, is taken
+  again each frame, without making anything new.
+
+Guarded by `still_layers_move_with_the_camera`.
 
 ### 26.7 What this is not
 
@@ -2336,4 +2359,27 @@ Flag; Gaffer on Games, Fix your timestep.
   regions' own grid, testing the distance first, brought the step to 64 ms, and cells of a sixth of
   the range to 48. In the bench the first picture of 10,000 came in 7.6 seconds, where the grid
   alone took 56, and of 20,000 in 22.
+- **The field is keyed on what the regions are.** A region's reach past its members holds the nodes'
+  halos, which keep a width on the screen, so every frame of a zoom changed every region's ellipse,
+  and a key of the ellipses worked the field out on most of them: 22 ms of a zoom's 32 at 10,000.
+  Keyed on each region's centre, axis and members' reach instead, a zoom moves the kept field like a
+  pan does.
+- **The rest of a frame was found by profiling.** The label pass read the window's insets three
+  times per node, and every region was named and coloured each frame though only the active node's
+  are shown; the insets are read once a frame and a region is named only when it is shown, which
+  took a pan's frame at 20,000 from 24.2 ms at the median to 15.3. With the still layers, a pan's
+  frame at 10,000 went from 28.5 ms at the median to 8.8 and a zoom's from 38.4 to 6.2. The map at
+  rest is drawn as before, pixel for pixel, but for the minimap's dot edges, a few levels apart
+  where its bitmap is composited.
+- **The regions' geometry is kept, and the minimap is keyed on what it shows.** Measured in WebKit,
+  a zoom's slowest frames at 10,000 were 15 to 20 ms with the regions shown and 10 to 14 without them:
+  every frame worked out every region's members and hull again, thousands of small objects a frame,
+  and the collector's pauses landed in the zoom. The same measure found the minimap painted again
+  mid-zoom, 6 to 8 ms, when the poll brought the same graph in new arrays.
+- **The field's cell grows with its work.** The bench measured the pan and the zoom at the fitted
+  view, where the field had been measured too. Zoomed in on 10,000 entities, from 0.3 to 2.4, working
+  the field out took 130 to 450 ms in Chrome and 120 to 570 in WebKit: once when the camera rested,
+  and on every frame while the layout moved, up to a second in WebKit after a node was let go. With
+  the cell growing it is 7 to 16 ms in Chrome and 6 to 35 in WebKit at every zoom, but for one reading
+  of 107 ms in WebKit, which compiles the same loop differently by the order it is called in.
 

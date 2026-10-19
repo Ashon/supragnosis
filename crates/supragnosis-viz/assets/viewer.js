@@ -2924,12 +2924,31 @@ function resize() {
 addEventListener("resize", resize);
 
 // --- Minimap (map-tool convention): whole-graph overview + viewport rectangle -------------------
-// Redrawn by the rAF loop each frame (dots + one rect - cheap). The world->minimap transform fits
-// the VISIBLE node bounds (typeOff respected, same set fitView uses), so the overview always
-// matches what the main canvas can show. Click/drag pans the camera (scale unchanged).
+// Drawn by the rAF loop each frame: the miniature is kept as a bitmap of its own, painted again only
+// when the nodes, their positions or the look change, and each frame draws that bitmap and the
+// window's frame over it (Section 26.6). The world->minimap transform fits the VISIBLE node bounds
+// (typeOff respected, same set fitView uses), so the overview always matches what the main canvas
+// can show. Click/drag pans the camera (scale unchanged).
 const miniEl = document.getElementById("minimap"), mctx = miniEl.getContext("2d");
 const MINI_W = 168, MINI_H = 154, MINI_PAD = 10;   // height matches the HUD column (see viewer.css)
 let miniT = { k: 1, ox: 0, oy: 0 };   // world -> minimap: m = w * k + o (kept for the pan handler)
+const miniStill = { c: null, x: null, look: "", xy: null, types: [] };
+// Whether the kept miniature shows these nodes - where they are, their degree and their type - in this
+// look; compared in place and left as the new key. By content, not by which arrays hold it: a poll
+// that brings the same graph brings new arrays.
+function miniStillSame(src, look) {
+  const m = miniStill;
+  let same = m.look === look && m.xy !== null && m.xy.length === 3 * src.length;
+  m.look = look;
+  if (!same) { m.xy = new Float64Array(3 * src.length); m.types = new Array(src.length); }
+  const xy = m.xy, ty = m.types;
+  for (let i = 0; i < src.length; i++) {
+    const n = src[i], d = n.degree || 0;
+    if (same && (xy[3 * i] !== n.x || xy[3 * i + 1] !== n.y || xy[3 * i + 2] !== d || ty[i] !== n.type)) same = false;
+    xy[3 * i] = n.x; xy[3 * i + 1] = n.y; xy[3 * i + 2] = d; ty[i] = n.type;
+  }
+  return same;
+}
 function drawMinimap() {
   const src = nodes.filter(n => !typeOff.has(n.type));
   const on = showMini && src.length > 0;
@@ -2937,8 +2956,6 @@ function drawMinimap() {
   if (!on) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (miniEl.width !== MINI_W * dpr) { miniEl.width = MINI_W * dpr; miniEl.height = MINI_H * dpr; }
-  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  mctx.clearRect(0, 0, MINI_W, MINI_H);
   let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
   for (const n of src) { a = Math.min(a,n.x); b = Math.min(b,n.y); c = Math.max(c,n.x); d = Math.max(d,n.y); }
   const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
@@ -2950,13 +2967,36 @@ function drawMinimap() {
   // and the viewport stroke land in the corner cut zones and get sliced by the CSS rounding.
   const R = 9.5;
   const round = mctx.roundRect !== undefined;
+  const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(","),
+    edges.length, hyperedges.length, Object.keys(typeColor).map(t => t + ":" + typeColor[t]).join(",")].join("|");
+  if (!miniStillSame(src, look)) paintMiniature(src, dpr, k, ox, oy, R, round);
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.clearRect(0, 0, MINI_W, MINI_H);
+  mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);
   mctx.save();
   if (round) {
     mctx.beginPath();
     mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
     mctx.clip();
   }
-  // A faithful miniature: hyperedge hulls (under), edge connections, then nodes sized by degree.
+  drawMiniWindow(k, ox, oy, R, round);
+  mctx.restore();
+}
+// The miniature into its own bitmap: hyperedge hulls (under), edge connections, then nodes sized by
+// degree, inside the panel's rounded outline.
+function paintMiniature(src, dpr, k, ox, oy, R, round) {
+  const m = miniStill;
+  if (!m.c) { m.c = document.createElement("canvas"); m.x = m.c.getContext("2d"); }
+  if (m.c.width !== MINI_W * dpr) { m.c.width = MINI_W * dpr; m.c.height = MINI_H * dpr; }
+  const mctx = m.x;
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.clearRect(0, 0, MINI_W, MINI_H);
+  mctx.save();
+  if (round) {
+    mctx.beginPath();
+    mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
+    mctx.clip();
+  }
   const mx = n => n.x * k + ox, my = n => n.y * k + oy;
   // Hulls (hyperedge overlay) - the graph's own clouds (hullGeom + paintCloud), scaled into the
   // minimap via a world->minimap transform, so a region looks the same in both. Only while the
@@ -3002,6 +3042,9 @@ function drawMinimap() {
     mctx.strokeStyle = SURFACE;
     mctx.stroke();
   }
+  mctx.restore();
+}
+function drawMiniWindow(k, ox, oy, R, round) {
   // Viewport rectangle: the map window's corners in world coords, mapped in and clamped to the frame.
   // A corner that is clamped onto the frame corner takes the PANEL's radius (the rect then traces
   // the rounded outline instead of slicing through it); free corners keep a small radius.
@@ -3028,7 +3071,6 @@ function drawMinimap() {
   } else {
     mctx.strokeRect(x1, y1, w, h);
   }
-  mctx.restore();
 }
 // Click/drag pans: center the camera on the pointed world position, at the current zoom.
 function miniPan(ev) {
@@ -3133,12 +3175,45 @@ function hullSizeNorm(size) { return Math.max(0, Math.min(1, (size - 2) / (HULL_
 // Geometry of one hyperedge hull: the convex hull of the member centers, an outward expansion radius r
 // (largest member glyph + gap), and the member centroid (for the label). Returns null when degenerate.
 function hullGeom(ms) {
-  let cx = 0, cy = 0, r = 0;
-  for (const m of ms) { cx += m.x; cy += m.y; const g = nodeRadius(m) + nodeStrokeW(m) / 2; if (g > r) r = g; }
-  cx /= ms.length; cy /= ms.length; r += HULL_NODE_GAP;
+  let cx = 0, cy = 0;
+  for (const m of ms) { cx += m.x; cy += m.y; }
+  cx /= ms.length; cy /= ms.length;
   const pts = ms.map(m => ({ x: m.x, y: m.y })), hull = convexHull(pts);
   if (hull.length < 3) return null;
-  return { hull, r, cx, cy, pts };
+  return { hull, r: hullReach(ms), cx, cy, pts };
+}
+// How far a hull reaches past its members' centres: the widest node with its halo, and the gap. The
+// halo keeps a width on the screen, so the reach follows the zoom.
+function hullReach(ms) {
+  let r = 0;
+  for (const m of ms) { const g = nodeRadius(m) + nodeStrokeW(m) / 2; if (g > r) r = g; }
+  return r + HULL_NODE_GAP;
+}
+// The regions as the map draws them - each one's members in the drawn types, its hull and its cloud's
+// shape - kept while every node stands where it stood and the regions and the filters are the same
+// (design-system.md Section 26.6, U32). Worked out every frame, a large map's regions made thousands
+// of small objects a frame, and the collector's pauses were a zoom's slowest frames.
+const regionGeo = { nodes: null, hyper: null, filt: "", xy: null, list: [] };
+function regionGeometry() {
+  const r = regionGeo, N = nodes.length, filt = [...typeOff].join(",");
+  let same = r.nodes === nodes && r.hyper === hyperedges && r.filt === filt && r.xy !== null && r.xy.length === 2 * N;
+  if (!same) r.xy = new Float64Array(2 * N);
+  const xy = r.xy;
+  for (let i = 0; i < N; i++) {
+    const v = nodes[i];
+    if (same && (xy[2 * i] !== v.x || xy[2 * i + 1] !== v.y)) same = false;
+    xy[2 * i] = v.x; xy[2 * i + 1] = v.y;
+  }
+  if (same) return r.list;
+  r.nodes = nodes; r.hyper = hyperedges; r.filt = filt; r.list = [];
+  const nb = nodesById();
+  for (const h of hyperedges) {
+    const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
+    if (ms.length < 3) continue;
+    const g = hullGeom(ms);
+    if (g) r.list.push({ h, id: h.id, ms, g, shape: cloudShape(g), hue: regionHue(h.id), hot: false, lgHit: false, alpha: 0 });
+  }
+  return r.list;
 }
 // Trace the outward-offset rounded hull as a SINGLE closed path: each edge is pushed out by r (past the
 // node glyphs) and consecutive edges are joined by a corner arc sampled into short segments. Filling this
@@ -3318,7 +3393,7 @@ function cloudShape(g) {
     ru = Math.max(ru, Math.abs(dx * ux + dy * uy)); rv = Math.max(rv, Math.abs(-dx * uy + dy * ux));
   }
   const pad = g.r * CLOUD_REACH, R = ru + pad;
-  return { cx: g.cx, cy: g.cy, th, R, Rv: Math.max(rv + pad, R * 0.35) };
+  return { cx: g.cx, cy: g.cy, th, R, Rv: Math.max(rv + pad, R * 0.35), ru, rv };
 }
 // The density across a cloud, by distance from its centre as a fraction of its radius: most of it
 // stays over the members before it fades out, so a member at the far end of a long region still sits
@@ -3341,21 +3416,106 @@ function paintCloud(c, g, rgb, alpha) {
 // would (1 - the product of what each cloud leaves uncovered); the colour is the clouds' weighted mix.
 // All share one lightness and chroma, so only the hue mixes: by the clouds' weighted circular mean,
 // with the chroma eased only where the hues oppose (two opposite hues have no mean to keep).
-const cloudField = { c: null, x: null, img: null, w: 0, h: 0, W: null, A: null, B: null, P: null };
+//
+// The field is kept between frames with the camera it was worked out for (Section 26.6). While the
+// regions and the look are unchanged and only the camera moves, the kept image is drawn moved and
+// scaled by the camera's change; it is worked out again once the camera has rested CLOUD_REST_MS,
+// when the moved image no longer covers the window, or when it would be scaled past half or double.
+// While the layout is still, the field is worked out CLOUD_MARGIN beyond each edge of the window, so a
+// pan has field to move into; while it steps, every frame works it out anyway, so no margin is paid.
+const CLOUD_MARGIN = 0.25;              // of the window's longer side, beyond each edge
+const CLOUD_REST_MS = 150;
+// The field's cell grows with its work. A cloud costs a sum for every cell its box covers, so zoomed
+// into a large map, where hundreds of clouds each span the window, 4-pixel cells came to tens of
+// millions of sums; the cell is the smallest of 4, 8, 16 and 32 pixels that keeps the work - the
+// clouds' cells and the field's own - within CLOUD_WORK. A cloud that wide on the screen has no detail
+// a coarser cell loses, and the image is smoothed up to the window either way.
+const CLOUD_CELL_MAX = 32, CLOUD_WORK = 3e6;
+const cloudField = {
+  c: null, x: null, img: null, w: 0, h: 0, W: null, A: null, B: null, P: null,
+  key: null, look: "", any: false, s: 1, cx: 0, cy: 0, m: 0, cell: CLOUD_CELL, due: false, timer: 0,
+};
+// Whether the regions are the ones the kept field was worked out from: each one's centre, axis and
+// members' reach along it, hue and strength, compared in place and left as the new key. The padding
+// past the members is left out: it holds the nodes' halos, kept to a width on the screen, so it
+// changes with the zoom, and the camera's change is the one the kept field is moved by.
+function cloudKeySame(f, items) {
+  const n = items.length * 7;
+  let same = f.key !== null && f.key.length === n;
+  if (!same) f.key = new Float64Array(n);
+  const k = f.key;
+  for (let i = 0, o = 0; i < items.length; i++, o += 7) {
+    const it = items[i], sh = it.shape;
+    if (same && (k[o] !== sh.cx || k[o + 1] !== sh.cy || k[o + 2] !== sh.ru || k[o + 3] !== sh.rv
+      || k[o + 4] !== sh.th || k[o + 5] !== it.alpha || k[o + 6] !== it.hue)) same = false;
+    k[o] = sh.cx; k[o + 1] = sh.cy; k[o + 2] = sh.ru; k[o + 3] = sh.rv; k[o + 4] = sh.th; k[o + 5] = it.alpha; k[o + 6] = it.hue;
+  }
+  return same;
+}
+// The field's work at this camera, in square pixels: every cloud's box within the field, which reaches
+// `margin` pixels past the window, and the field itself.
+function cloudWork(items, margin) {
+  const W = innerWidth + 2 * margin, H = innerHeight + 2 * margin;
+  let work = W * H;
+  for (const it of items) {
+    if (it.alpha <= 0) continue;
+    const sh = it.shape, cs = Math.cos(sh.th), sn = Math.sin(sh.th), Ru = sh.R * cam.s, Rv = sh.Rv * cam.s;
+    const ex = Math.hypot(Ru * cs, Rv * sn), ey = Math.hypot(Ru * sn, Rv * cs);
+    const px = sh.cx * cam.s + cam.x + margin, py = sh.cy * cam.s + cam.y + margin;
+    const bw = Math.min(W, px + ex) - Math.max(0, px - ex), bh = Math.min(H, py + ey) - Math.max(0, py - ey);
+    if (bw > 0 && bh > 0) work += bw * bh;
+  }
+  return work;
+}
+function cloudCellFor(items, margin) {
+  const work = cloudWork(items, margin);
+  let cell = CLOUD_CELL;
+  while (cell < CLOUD_CELL_MAX && work / (cell * cell) > CLOUD_WORK) cell *= 2;
+  return cell;
+}
+// The kept field on the screen, moved and scaled from the camera it was worked out for to this one.
+function blitCloudField(f, k, ox, oy) {
+  if (!f.any) return;
+  const e = f.cell * k;
+  ctx.save();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(f.c, -f.m * e + ox, -f.m * e + oy, f.w * e, f.h * e);
+  ctx.restore();
+}
 function drawCloudField(items) {
-  const w = Math.ceil(innerWidth / CLOUD_CELL), h = Math.ceil(innerHeight / CLOUD_CELL), n = w * h, f = cloudField;
+  const f = cloudField;
+  const look = cloudL() + " " + cloudC() + " " + innerWidth + " " + innerHeight + " " + edges.length;
+  const same = cloudKeySame(f, items) && f.look === look;
+  if (same && !f.due) {
+    const k = cam.s / f.s, ox = cam.x - f.cx * k, oy = cam.y - f.cy * k;
+    if (k === 1 && ox === 0 && oy === 0) { blitCloudField(f, 1, 0, 0); return; }
+    const e = f.cell * k, x0 = -f.m * e + ox, y0 = -f.m * e + oy;
+    if (k > 0.5 && k < 2 && x0 <= 0 && y0 <= 0 && x0 + f.w * e >= innerWidth && y0 + f.h * e >= innerHeight) {
+      blitCloudField(f, k, ox, oy);
+      clearTimeout(f.timer);
+      f.timer = setTimeout(() => { f.due = true; requestFrame(); }, CLOUD_REST_MS);
+      return;
+    }
+  }
+  clearTimeout(f.timer);
+  f.due = false; f.look = look; f.s = cam.s; f.cx = cam.x; f.cy = cam.y;
+  const margin = simWarm() ? 0 : CLOUD_MARGIN * Math.max(innerWidth, innerHeight);
+  const cell = cloudCellFor(items, margin), m = Math.ceil(margin / cell);
+  const w = Math.ceil(innerWidth / cell) + 2 * m, h = Math.ceil(innerHeight / cell) + 2 * m, n = w * h;
   if (f.w !== w || f.h !== h) {
     f.c = document.createElement("canvas"); f.c.width = w; f.c.height = h; f.x = f.c.getContext("2d");
     f.img = f.x.createImageData(w, h); f.w = w; f.h = h;
     f.W = new Float32Array(n); f.A = new Float32Array(n); f.B = new Float32Array(n); f.P = new Float32Array(n);
   }
+  f.m = m; f.cell = cell;
   f.W.fill(0); f.A.fill(0); f.B.fill(0); f.P.fill(1);
   let any = false;
   for (const it of items) {
-    const sh = it.shape, k = cam.s / CLOUD_CELL;
-    const px = (sh.cx * cam.s + cam.x) / CLOUD_CELL, py = (sh.cy * cam.s + cam.y) / CLOUD_CELL;
+    const sh = it.shape, k = cam.s / cell;
+    const px = (sh.cx * cam.s + cam.x) / cell + m, py = (sh.cy * cam.s + cam.y) / cell + m;
     const Ru = sh.R * k, Rv = sh.Rv * k, cs = Math.cos(sh.th), sn = Math.sin(sh.th);
-    const across = Math.max(Ru, Rv) * CLOUD_CELL, fit = CLOUD_FADE_AT * Math.min(innerWidth, innerHeight);
+    const across = Math.max(Ru, Rv) * cell, fit = CLOUD_FADE_AT * Math.min(innerWidth, innerHeight);
     const fade = across > fit ? Math.max(0.15, (fit / across) ** 1.5) : 1;
     const ex = Math.hypot(Ru * cs, Rv * sn), ey = Math.hypot(Ru * sn, Rv * cs);
     const x0 = Math.max(0, Math.floor(px - ex)), x1 = Math.min(w - 1, Math.ceil(px + ex));
@@ -3373,6 +3533,7 @@ function drawCloudField(items) {
       }
     }
   }
+  f.any = any;
   if (!any) return;
   const d = f.img.data, rgb = [0, 0, 0];
   for (let i = 0; i < n; i++) {
@@ -3385,11 +3546,7 @@ function drawCloudField(items) {
     d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = Math.round(255 * cover);
   }
   f.x.putImageData(f.img, 0, 0);
-  ctx.save();
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(f.c, 0, 0, w * CLOUD_CELL, h * CLOUD_CELL);
-  ctx.restore();
+  blitCloudField(f, 1, 0, 0);
 }
 
 function roundedHullPath(c, g) {
@@ -3968,31 +4125,24 @@ function draw() {
   // the first: screen-space boxes on a grid of cells (labelGrid).
   const labelBoxes = labelGrid();
   if (hyperMode && hyperedges.length) {
-    const nb = nodesById();
     const items = [];
-    for (const h of hyperedges) {
-      const hot = hlAnchor && h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
+    for (const it of regionGeometry()) {
+      const hot = !!hlAnchor && it.h.members.includes(hlAnchor.id);   // is the active (click/hover) node a member of this context
       // Every context is drawn as a cloud by default, the active node's at full strength and the
       // rest faded (design-system.md Section 5); as flat hulls they had overlapped into one slab,
       // which is why only the active node's were drawn. "all regions" off in the view menu draws
       // the active node's alone.
       if (!allRegions && !hot) continue;
-      const ms = h.members.map(id => nb.get(id)).filter(m => m && !typeOff.has(m.type));
-      if (ms.length < 3) continue;
-      const g = hullGeom(ms);
-      if (!g) continue;
+      // A kept hull's reach follows the zoom, and its cloud's shape with it.
+      const reach = hullReach(it.ms);
+      if (reach !== it.g.r) { it.g.r = reach; it.shape = cloudShape(it.g); }
       // Legend-chip hover: does this context contain any highlighted member? Hulls without one fade,
       // so the highlighted type/relation stands out against the hull layer too (same inspection language).
-      const lgHit = typeHl ? ms.some(m => m.type === typeHl)
-        : edgeTypeHl ? ms.some(m => lgEndpoints.has(m.id))
+      it.lgHit = typeHl ? it.ms.some(m => m.type === typeHl)
+        : edgeTypeHl ? it.ms.some(m => lgEndpoints.has(m.id))
         : false;
-      // Named by its two best-connected members other than the active node, with the count, so the
-      // regions around one node read as what else is in them rather than as that node five times.
-      const named = ms.filter(m => !hlAnchor || m.id !== hlAnchor.id)
-        .sort((a, b) => (b.degree || 0) - (a.degree || 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-        .slice(0, 2).map(m => m.name);
-      const top = Math.min(...g.hull.map(p => p.y)) - g.r;
-      items.push({ g, shape: cloudShape(g), hue: regionHue(h.id), col: regionLabelColor(h.id), hot, lgHit, text: named.join(", ") + " (" + ms.length + ")", top, size: ms.length });
+      it.hot = hot;
+      items.push(it);
     }
     const lgActive = !!(typeHl || edgeTypeHl);
     for (const it of items) {
@@ -4000,8 +4150,15 @@ function draw() {
         : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
       // The name sits above the region's upper edge, outside it, where no member's label is. Only
       // the active node's regions are named: names are placed before the nodes', which avoid them,
-      // so twenty region names at rest would push the map's own names out.
-      if (it.hot) hullLabels.push({ cx: it.g.cx, cy: it.top, text: it.text, col: it.col, hot: it.hot, lgHit: it.lgHit, size: it.size });
+      // so twenty region names at rest would push the map's own names out. A region is named by its
+      // two best-connected members other than the active node, with the count, so the regions around
+      // one node read as what else is in them rather than as that node five times.
+      if (!it.hot) continue;
+      const named = it.ms.filter(m => !hlAnchor || m.id !== hlAnchor.id)
+        .sort((a, b) => (b.degree || 0) - (a.degree || 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .slice(0, 2).map(m => m.name);
+      const top = Math.min(...it.g.hull.map(p => p.y)) - it.g.r;
+      hullLabels.push({ cx: it.g.cx, cy: top, text: named.join(", ") + " (" + it.ms.length + ")", col: regionLabelColor(it.id), hot: it.hot, lgHit: it.lgHit, size: it.ms.length });
     }
     drawCloudField(items);   // every cloud at once, mixed in OKLCH
     ctx.globalAlpha = 1;
@@ -4321,9 +4478,10 @@ function draw() {
     // graph's - zooming into a large graph's cluster then names it progressively, where a cut from the
     // whole graph left it unnamed until 1.4x. Label avoidance still keeps the names apart.
     let inView = 0;
+    const wl = insetL(), wr = innerWidth - insetR(), wb = innerHeight - insetB();
     for (const n of nodes) {
       const sx = n.x * cam.s + cam.x, sy = n.y * cam.s + cam.y;
-      if (sx >= insetL() && sx <= innerWidth - insetR() && sy >= 0 && sy <= innerHeight - insetB()) inView++;
+      if (sx >= wl && sx <= wr && sy >= 0 && sy <= wb) inView++;
     }
     const cut = inView <= 40 ? 0 : Math.max(4, Math.round(inView / 25));
     const want = [];

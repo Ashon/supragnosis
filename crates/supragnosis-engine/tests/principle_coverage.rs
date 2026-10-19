@@ -819,6 +819,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Revisit when step 30 has measured it, to record the numbers beside this clause",
         ),
     )]),
+    (32, &[c(
+        "the region field is kept with its camera and moved as a bitmap while only the camera moves, and the minimap's miniature is painted only when it changes",
+        // scale.rs reads drawCloudField, cloudKeySame, drawMinimap and miniStillSame.
+        Evidence::Scenario(&["still_layers_move_with_the_camera"]),
+    )]),
 ];
 
 // docs/onboarding.md Section 11 - from install to the first entry, inside the app (O rows).

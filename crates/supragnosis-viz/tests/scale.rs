@@ -158,3 +158,79 @@ fn what_the_map_draws_follows_the_screen() {
         "zooming out stops short of the whole map"
     );
 }
+
+/// U32: layers that do not move are not redrawn. The region field is kept with the camera it was
+/// worked out for, from a key of every region's centre, axis, members' reach, hue and strength and of
+/// the look - not of what the zoom alone changes, the halo's padding and the fade - on cells that grow
+/// with the clouds' work; while only
+/// the camera moves it is drawn moved and scaled, and it is worked out again once the camera has
+/// rested, when the moved field would leave the window uncovered or be scaled past half or double, or
+/// when the key changes - with a margin beyond the window while the layout is still. The minimap's
+/// miniature is a bitmap of its own, painted when the nodes, their positions or the look change. The
+/// regions' members and hulls are kept while the nodes stand still.
+#[test]
+fn still_layers_move_with_the_camera() {
+    let field = function("drawCloudField");
+    for part in [
+        "const same = cloudKeySame(f, items) && f.look === look;",
+        "if (k === 1 && ox === 0 && oy === 0) { blitCloudField(f, 1, 0, 0); return; }",
+        "if (k > 0.5 && k < 2 && x0 <= 0 && y0 <= 0 && x0 + f.w * e >= innerWidth && y0 + f.h * e >= innerHeight) {",
+        "f.timer = setTimeout(() => { f.due = true; requestFrame(); }, CLOUD_REST_MS);",
+        "const margin = simWarm() ? 0 : CLOUD_MARGIN * Math.max(innerWidth, innerHeight);",
+    ] {
+        assert!(field.contains(part), "the region field no longer moves with the camera: {part}");
+    }
+    assert!(
+        SCRIPT.contains("const CLOUD_MARGIN = 0.25;")
+            && SCRIPT.contains("const CLOUD_REST_MS = 150;"),
+        "the field's margin or its rest moved"
+    );
+    // The field's cell grows with its work, so zoomed into a large map it stays within a budget.
+    assert!(
+        field.contains("const cell = cloudCellFor(items, margin), m = Math.ceil(margin / cell);")
+            && function("cloudCellFor").contains(
+                "while (cell < CLOUD_CELL_MAX && work / (cell * cell) > CLOUD_WORK) cell *= 2;"
+            )
+            && SCRIPT.contains("const CLOUD_CELL_MAX = 32, CLOUD_WORK = 3e6;")
+            && function("blitCloudField").contains("const e = f.cell * k;"),
+        "the field's cell no longer grows with its work"
+    );
+    // The key holds everything the field is worked out from besides the camera.
+    assert!(
+        function("cloudKeySame").contains(
+            "k[o] = sh.cx; k[o + 1] = sh.cy; k[o + 2] = sh.ru; k[o + 3] = sh.rv; k[o + 4] = sh.th; k[o + 5] = it.alpha; k[o + 6] = it.hue;"
+        ) && field.contains("const look = cloudL() + \" \" + cloudC() + \" \" + innerWidth + \" \" + innerHeight + \" \" + edges.length;"),
+        "the field's key lost an input"
+    );
+    let mini = function("drawMinimap");
+    for part in [
+        "const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(\",\"),",
+        "if (!miniStillSame(src, look)) paintMiniature(src, dpr, k, ox, oy, R, round);",
+        "mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);",
+    ] {
+        assert!(mini.contains(part), "the minimap paints its miniature every frame again: {part}");
+    }
+    assert!(
+        function("miniStillSame").contains(
+            "if (same && (xy[3 * i] !== n.x || xy[3 * i + 1] !== n.y || xy[3 * i + 2] !== d || ty[i] !== n.type)) same = false;"
+        ) && mini.contains("edges.length, hyperedges.length, Object.keys(typeColor)"),
+        "the miniature's key lost an input"
+    );
+    // The regions' members and hulls are kept while the nodes stand still; only the reach, which
+    // follows the zoom, is taken again each frame.
+    let geo = function("regionGeometry");
+    for part in [
+        "let same = r.nodes === nodes && r.hyper === hyperedges && r.filt === filt && r.xy !== null && r.xy.length === 2 * N;",
+        "if (same && (xy[2 * i] !== v.x || xy[2 * i + 1] !== v.y)) same = false;",
+        "if (same) return r.list;",
+    ] {
+        assert!(geo.contains(part), "the regions are worked out every frame again: {part}");
+    }
+    let draw = function("draw");
+    assert!(
+        draw.contains("for (const it of regionGeometry()) {")
+            && draw
+                .contains("if (reach !== it.g.r) { it.g.r = reach; it.shape = cloudShape(it.g); }"),
+        "the map's regions do not come from the kept geometry"
+    );
+}
