@@ -8,8 +8,8 @@
 > [settings-page.md](settings-page.md) (the app's own pages) and
 > [semantic-retrieval.md](semantic-retrieval.md) (the search model).
 >
-> Status: **the daemon, the CLI and the app are built** (Section 13 steps 2 and 3); Linux and the
-> clean run are not. The choices it records were made by the author on 2026-10-18 from a storyboard.
+> Status: **the daemon, the CLI, the app and Linux are built** (Section 13 steps 2-4); the clean
+> run is not. The choices it records were made by the author on 2026-10-18 from a storyboard.
 
 ## 1. Why this exists
 
@@ -135,8 +135,8 @@ deploy/systemd/README.md tells people to copy - is never overwritten (L5) and co
 is enabled and answering. `status`, `restart` and `stop` recognize the unit as they recognize the
 LaunchAgent (L2). The unit binds and authenticates as the daemon does by default (L7) and needs no
 administrator rights (L8). Where `systemctl --user` is unavailable, as in many containers, the step
-is `attention` and names the `serve` command. Until Section 13 step 4 lands, setup installs nothing
-on Linux: the step is `attention` and names the unit deploy/systemd/README.md has to copy.
+is `attention` and names the `serve` command. daemon-lifecycle.md Section 4, "On Linux", has the
+unit's rules.
 
 ### 4.2 Connect your AI apps
 

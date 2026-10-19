@@ -4,7 +4,7 @@
 > one thing believes it is responsible. This document fixes the answer to the first two so that the
 > third cannot arise unnoticed.
 >
-> Status: **specification, with Section 8 steps 1-4 built.** Sections 4, 6 and 7 carry corrections
+> Status: **specification, with Section 8 steps 1-5 built.** Sections 4, 6 and 7 carry corrections
 > that building and releasing them forced; they are recorded in place rather than edited away.
 > Section 11 (the 2026-10 review's corrections) is built.
 
@@ -64,8 +64,9 @@ error.
 **Every manager the product has ever installed is recognized**, whether or not the product still
 installs it: the canonical label `com.supragnosis.daemon`; Homebrew's `sh.brew.supragnosis-server`
 and its older forms (`homebrew.mxcl.supragnosis-server`, and both shapes for the retired formula
-token `supragnosis`); the pre-0.1.2 label `com.ashon.supragnosis`; and the pidfile. A manager the
-code does not know about is how today's incident stayed invisible.
+token `supragnosis`); the pre-0.1.2 label `com.ashon.supragnosis`; and the pidfile. On Linux they are
+the user unit `supragnosis.service` and the units `brew services` would create there (Section 4,
+"On Linux"). A manager the code does not know about is how today's incident stayed invisible.
 
 **The decision is a pure function of observations.** The CLI observes which of those labels launchd
 has loaded (and which of them has a live pid), whether the pidfile names a live process, and whether
@@ -157,6 +158,58 @@ replacing the file whole, for the test harness that asked (e2e.md Section 3.1). 
 fixed address writes nothing, since its address is already known. Guarded by
 `a_daemon_on_port_zero_says_where_it_listens_and_exits_normally_on_sigterm`.
 
+### On Linux: a systemd user unit
+
+The always-on daemon on Linux is the systemd **user** unit `supragnosis.service`, at
+`~/.config/systemd/user/supragnosis.service` (under `$XDG_CONFIG_HOME` when it is set), in the
+person's own manager. It has the name of the unit deploy/systemd/README.md has people copy, so one
+name is one manager whoever wrote the file. `service install` and `service uninstall` own it as they
+own the LaunchAgent, and the rules above hold with these readings:
+
+- **Generated, from the shipped unit.** The generated unit carries every directive of
+  `deploy/systemd/supragnosis.service` - the start limit in `[Unit]`, the stop by SIGTERM,
+  `UMask=0077` and only the hardening a user manager can enforce (the README's two gotchas) - with
+  `ExecStart=<program> serve`, one `Environment=` line per variable the job carries
+  (`SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373` its one of its own) and the marker comment. The program
+  path is chosen as for the plist, so a Linuxbrew keg names its `opt` link. Output goes to the
+  journal, `journalctl --user -u supragnosis`. Guarded by
+  `the_generated_unit_carries_the_shipped_directives_and_the_marker`.
+- **Install** writes the unit, runs `systemctl --user daemon-reload` and `systemctl --user enable
+  --now supragnosis.service`, and then waits for the daemon to answer (L4): a unit systemd reports
+  failed, or restarting after a non-zero exit for three seconds running, fails the install and names
+  the journal.
+- **Lingering.** A user manager stops with the person's last session, so install asks `loginctl
+  enable-linger` when `loginctl show-user` says lingering is off. polkit lets a person turn it on for
+  themselves on most distributions. Where it refuses, install still succeeds and prints the `sudo
+  loginctl enable-linger <user>` an administrator has to run, and `setup` reports the step as
+  attention until it is on. Uninstall leaves lingering as it is, since other units may need it.
+- **Recognition (L2).** The CLI asks `systemctl --user show` about the canonical unit and about the
+  units `brew services` creates on Linux, `homebrew.supragnosis-server.service` and
+  `homebrew.supragnosis.service`. A unit is a manager while it is enabled or active: an enabled unit
+  starts the daemon at the next login even after a `stop`, and a unit restarting after a failure is
+  still trying. `restart` runs `systemctl --user restart`; `stop` runs `systemctl --user stop` and
+  says the unit starts again at the next login unless it is uninstalled; and `restart`, when the
+  canonical unit is installed but neither enabled nor active, starts it. Guarded by
+  `a_unit_manages_while_enabled_or_active`.
+- **The operator's file is theirs (L5).** A unit at the canonical path without the marker - the
+  copied one - is never overwritten. It is the canonical manager all the same, so `status`,
+  `restart` and `stop` act on it, and `setup` reports the step done when it is enabled and
+  answering. `--take-over` moves it aside to `~/.supragnosis/systemd/supragnosis.service.<timestamp>`
+  and carries its `Environment=` assignments into the generated unit, as a plist's
+  EnvironmentVariables are carried; its other lines - an `ExecStart` with flags of its own, a hub's
+  ordering after the network - are not, and install says so. Guarded by
+  `a_copied_units_environment_is_read_as_systemd_quotes_it`.
+- **Where `systemctl --user` does not work** - a container, a session without a user bus - install
+  fails with the reason and names `supragnosis serve`, and `setup` reports the step as attention.
+- **No exposure, no privilege (L7, L8).** The unit's environment passes the same refusal as the
+  plist's, and nothing install runs needs an administrator. Lingering is the one act that may, and it
+  is asked of polkit and reported, never escalated.
+
+`status --json` names a unit as a manager of type `systemd`, with its unit, source, process and last
+exit, and its `service` object gives the unit's name, path, state and lingering. The object's `plist`
+field keeps its name and holds the unit's path, so a reader of schema 1 needs no branch
+(compatibility.md Section 6).
+
 ## 5. Version drift is reported where it is read
 
 The daemon answers `/api/about` with its version over the viewer socket, and the CLI knows its own.
@@ -228,19 +281,22 @@ which is the reason the shell attaches rather than owns.
 4. **Homebrew and documents** (Section 7). Last, because the formula change is what moves existing
    users, and the steps before it are what they move to. All four land before the next release,
    whose note carries the migration.
+5. **Linux** (Section 4, "On Linux"): the generated user unit, lingering, and the recognition of the
+   unit and of Homebrew's units, in the release that carries the Setup page (onboarding.md Section
+   13 step 4).
 
 ## 9. Invariants
 
 | | Invariant |
 |---|---|
 | **L1** | At most one manager owns the daemon. `install` refuses while another is loaded unless told to take over, and while something it cannot name answers or holds the store even then; `restart` and `stop` refuse on a conflict and name the managers. |
-| **L2** | Every manager the product has installed is recognized by `status`, `restart` and `stop`, including retired labels. |
+| **L2** | Every manager the product has installed is recognized by `status`, `restart` and `stop`, including retired labels, and on Linux the user unit and Homebrew's units. |
 | **L3** | Version drift is visible: `status` and the tray show running and installed versions when they differ, and an unanswering daemon's version is unknown, not assumed. |
 | **L4** | Lifecycle failures are loud: every CLI lifecycle command exits non-zero on failure with the reason - including a job it loaded that does not come up - and the app never discards that exit status. |
-| **L5** | The operator's file is theirs: `install` never overwrites a plist it did not generate, and nothing deletes one - it is moved aside. |
+| **L5** | The operator's file is theirs: `install` never overwrites a plist or a unit it did not generate, and nothing deletes one - it is moved aside. |
 | **L6** | The daemon's lifetime is not the app's. Quitting the app never stops a launchd-managed daemon. The app stops a daemon it did not spawn only through the Start at Login switch: off uninstalls the job, and on takes over from another manager, stopping what that manager ran (Section 4). |
-| **L7** | The generated job adds no exposure: loopback MCP, the viewer's unix socket, the bearer token unchanged. Nothing in the plist widens a bind or disables auth, and `install` refuses an environment that would. |
-| **L8** | No new privilege: a user LaunchAgent in the `gui/<uid>` domain, no administrator rights, no helper tool. |
+| **L7** | The generated job adds no exposure: loopback MCP, the viewer's unix socket, the bearer token unchanged. Nothing in the plist or the unit widens a bind or disables auth, and `install` refuses an environment that would. |
+| **L8** | No new privilege: a user LaunchAgent in the `gui/<uid>` domain or a unit in the person's own systemd manager, no administrator rights, no helper tool; lingering is asked of polkit, never escalated. |
 | **L9** | A signal goes only to a supragnosis process. A pidfile naming any other process is stale, and is cleared rather than acted on. |
 
 ## 10. Closure map
