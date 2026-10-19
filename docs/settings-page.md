@@ -89,7 +89,7 @@ The sections follow.
 Which server this Mac's AI apps use (remote-server.md Section 3).
 
 - **The profiles.** "This Mac" first, then each remote profile with its URL, the active one
-  marked. The list is a radio group whose choice is Use (design-system.md Section 6a). The active one also shows its state: answers, refused the credential, or does not
+  marked "Active"; every other row has Use, and no radio is drawn (design-system.md Section 6a). The active one also shows its state: answers, refused the credential, or does not
   answer.
 - **Use** makes a profile the active one. **Remove** deletes a remote profile and its credential.
   Removing the active profile is allowed: AI apps go back to this Mac, and the page says so.
@@ -112,9 +112,9 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
   Disconnect. A click is the consent to replace the entry that is there, as the tray's was. An app
   a click could do nothing for - not installed, its settings unreadable - has no button.
 - **The CLI's next step stays beside the app it concerns** ("quit Claude and open it again").
-- **Claude Code's row carries a switch for its capture hook**, "Save the why behind each commit"
-  (client-connect.md Section 12): on runs `connect claude-code`, off runs `connect claude-code
-  --no-capture`.
+- **Claude Code's row carries a switch for its capture hook** while it is connected through the
+  bridge, "Save the why behind each commit" (client-connect.md Section 12): on runs `connect
+  claude-code`, off runs `connect claude-code --no-capture`. Any other row shows no switch.
 
 ### 3.3 This Mac's daemon
 
@@ -168,7 +168,7 @@ at a different server.
   viewer are two pages of one window. So it grants the commands to the main window.
 - **Each command checks its caller, and that is the lock.** It refuses unless the calling window
   is showing one of the app's own pages - its scheme, host and path - at the top level (S1). Those
-  are this page and the Welcome page (onboarding.md Section 6), both bundled with the app; their
+  are this page and the Setup page (onboarding.md Section 6), both bundled with the app; their
   commands are declared and granted together.
   - A viewer page that frames the settings page cannot call through the frame, because the top
     level is still the viewer.
@@ -187,8 +187,8 @@ The tray keeps what a menu does well - glancing and opening:
   its version. If something needs doing - version drift, a refused credential, an unanswering
   server, no AI app connected - the line says so and points to Settings.
 - **Open Viewer.**
-- **Finish Setup...**, while any step of Setup is not done and not set aside with "Not now"
-  (onboarding.md Section 6). Turning Start at Login off by choice settles the daemon's step.
+- **Finish Setup...**, while the daemon is not kept running or no AI app is connected (onboarding.md
+  Section 6). Turning Start at Login off by choice settles the daemon's half.
 - **Settings...**
 - **Quit Supragnosis.**
 

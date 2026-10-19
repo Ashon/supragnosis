@@ -232,16 +232,16 @@ document's history and in its file.
 
 **When it shows.** On the first launch, and on a later launch while step 4.1 or 4.2 is not done,
 unless the person closed it with "Finish later" or turned Start at Login off by choice. The app
-remembers only those two things. While any step is not done and not set aside with "Not now", the
-tray offers "Finish Setup...", and the Settings page's About section offers "Open Setup" at any time
-(settings-page.md Section 3.5).
+remembers only those two things. While either step is not done, the tray offers "Finish Setup...",
+and the Settings page's About section offers "Open Setup" at any time (settings-page.md Section 3.5).
 
 **Before anything is applied** the page shows the plan with its defaults - Start at Login on, every
 installed app without an entry checked, the model to download - and one "Set up" button applies them.
 Every item of the plan is a checkbox whose label is its row, including an app's "Switch to the
-bridge" and the daemon's "Take over", which wait for Set up like the rest; Set up is the default
-button. Once the plan has run, each card keeps its own act for later: the switch, a row's Connect or
-Disconnect, "Not now".
+bridge" and the daemon's "Take over", which wait for Set up like the rest and start unchecked, since
+each replaces what the person set up (O8); Set up is the default button. Once the plan has run, each
+card keeps its own act for later, which acts when pressed: the switch, a row's Connect or Disconnect,
+"Not now".
 
 **What it shows.** Four cards, one per step, each with its state, its sentence, and its act: the
 Start at Login switch, a row per AI app with Connect and its helper, the model's progress with "Not
@@ -255,8 +255,8 @@ cannot read, so the cards could not follow it; it puts a shell inside the app an
 it; and it adds a pseudo-terminal and a terminal widget to the app. The drawer shows what was run and
 what it changed, and the cards stay the truth about state.
 
-**The privacy line** at the foot: "Your memory stays on this Mac. It is shared only if you add a
-remote server or set up sync." (O6). Adding a server changes which server the AI apps use, and sync
+**The privacy line** at the foot: "Supragnosis keeps your memory on this Mac. It is shared only if you
+add a remote server or set up sync." (O6). Adding a server changes which server the AI apps use, and sync
 is set up in supragnosis.toml, so the line names both.
 
 **Who may act.** The page is the app's own, and it changes settings the way the Settings page does:
@@ -351,10 +351,10 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
   missing, not failed, and is tried again (**SR2**); `embed fetch` takes `--events`.
 - **settings-page.md Section 3.3**: This Mac's daemon section shows the search state and offers the
   download.
-- **settings-page.md Section 3.5**: About offers "Run setup again".
-- **settings-page.md Section 4**: the Welcome page is a caller the app's commands admit, alongside the
+- **settings-page.md Section 3.5**: About offers "Open Setup".
+- **settings-page.md Section 4**: the Setup page is a caller the app's commands admit, alongside the
   Settings page, with its commands declared and granted the same way.
-- **settings-page.md Section 5**: the tray offers "Finish setup..." while the daemon or the apps are not
+- **settings-page.md Section 5**: the tray offers "Finish Setup..." while the daemon or the apps are not
   set up.
 - **remote-viewer.md Section 3.2**: `/api/clients` is refused on the read tier.
 - **prompts.md Section 4**: `brief` says what an empty workspace means.

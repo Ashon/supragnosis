@@ -161,8 +161,9 @@ the inspector's baseline reads (inspector.md D4).
 `search_knowledge` too, so it belongs to semantic-retrieval.md, measured on real stores before it is
 set.
 
-**It adds no write path.** Undoing a confirmation is the demotion `/api/resolve` already casts
-(Section 7), and "Neither is right" asks an agent to record the right value. The console still
+**It adds no new write path.** Undoing a confirmation is a demotion, the gated act resolution.md
+Section 5 already defines, and `/api/resolve` gains a `kind` that casts it, on a path the read tier
+already refuses (U1). "Neither is right" asks an agent to record the right value. The console still
 observes nothing.
 
 ## 3. Tokens
@@ -271,12 +272,13 @@ surface token, `--select` among them.
   `role="switch"` with `aria-checked`: Start at Login, View's labels and edges. A checkbox is a choice
   that a button confirms: the Setup page's plan, with the whole row as its label. One choice among a
   few is a radio group or a segmented control (`role="radiogroup"`): View's Regions and Boundaries,
-  the Settings page's server list. A chip that filters is a button with `aria-pressed`: workspaces,
-  types and relations. A row of segments that changes what a page shows is a tab list: the Review
+  and the workspace chips, which choose one scope. A chip that filters is a button with
+  `aria-pressed`: types and relations. A row of segments that changes what a page shows is a tab list: the Review
   page's. An option that is off is drawn at full strength and says it is off. Dimming means a control
   cannot be used now, and such a control says why.
 - **Gold says one of four things** in the viewer and on the Settings page: selected, human confirmed,
-  waiting for a person (the review pill and the one action a decision asks for), and keyboard focus.
+  waiting for a person (Review in the status bar while something waits, and the one action a
+  decision asks for), and keyboard focus.
   The mark keeps its gold. Headings, frames, hover, counts and the map's ground are not gold. The
   landing presents the product rather than operating it, and also keeps gold for its links and its
   one call to action.
@@ -295,7 +297,7 @@ One channel, one meaning:
 | glow | this session's footprint | a soft `--ok` light centred on the node and fading out, drawn beneath it, replacing the teal ring |
 | pulse | activity | one expanding ring, none under reduced motion |
 | edge | relation | neutral; on the active node's edges, brighter and labelled with the kind |
-| region | context (hyperedge) | only the active node's contexts by default |
+| region | context (hyperedge) | every region faint at rest, the active node's at full strength (Regions: All, the default) |
 
 **Rings belong to trust.** The selection ring becomes a halo, the footprint ring a glow, and two
 marks that draw rings today change shape: a merge preview shows its fold arrows and dims the rest
@@ -315,7 +317,7 @@ is unverified therefore shows no rings and says so, rather than a dashed ring on
 
 **A contested node is marked wherever it is drawn** (U3). Label thinning, zoom and focus dimming
 leave the badge at full strength. A type the legend hides is not drawn at all, so the status bar's
-contested pill counts the contested nodes of the loaded scope whether the legend shows them or not
+contested count counts the contested nodes of the loaded scope whether the legend shows them or not
 (P6).
 
 **Colors are keyed by name, from a band that cannot be read as a signal** (U16). The band is sixteen
@@ -325,11 +327,12 @@ colors: eight hues in two tones.
   `--gold-bright`, `--ok` and `--bad`, so no type reads as human confirmed, healthy or contested. That
   leaves the greens from 109 to 155 degrees, and the blues, violets, pinks and reds from 205 around to
   11.
-- **Bright enough to see.** Every color has OKLCH lightness 0.62 or more, which is 5.5:1 or more on
-  `--surface`, well past the 3:1 a mark needs (WCAG 1.4.11).
-- **Measured apart.** In the first tone the eight hues stand at least 0.09 apart in OKLab, and at
-  least 0.11 from every signal and neutral the map draws. In the second tone every color stands at
-  least 0.055 from every other color of the band.
+- **Bright enough to see.** Every color has OKLCH lightness 0.62 or more and measures 5.5:1 or more
+  on `--surface`, well past the 3:1 a mark needs (WCAG 1.4.11). Lightness alone does not promise the
+  contrast - a violet at 0.62 measures 5.1:1 - so both are measured.
+- **Measured apart.** In the first tone the eight hues stand at least 0.09 apart in OKLab, at least
+  0.11 from every signal and at least 0.10 from every neutral the map draws. In the second tone every
+  color stands at least 0.06 from every other color of the band and 0.08 from every signal.
 - **How a type gets its color.** An FNV-1a hash of the name picks a preferred hue. In name order,
   each type of the view takes the first free hue from its preferred one, in the first tone, then in
   the second. Up to eight types on a screen are told apart by hue, and up to sixteen by hue and tone.
@@ -439,8 +442,11 @@ On the Graph page:
   time does not tick at every poll.
 - **Review is always in the status bar** on the local console (U20). It reads "Review" when nothing
   waits and "2 to review (1 contested)" when something does: one count, the items under Needs you,
-  with the contested beliefs counted once, inside it. The parenthesis is the loaded scope's contested
-  count, which U3 asks the bar to keep whatever the legend hides. It is a button, the Graph page's way
+  and in the parenthesis how many of them are contested beliefs. Needs you lists only beliefs that
+  tie on trust (resolution.md Section 4.1), so those are the loaded scope's contested nodes, which U3
+  asks the bar to count whatever the legend hides; before the curation read answers, the graph's
+  count stands in. A conflict that trust settled is listed under Health, so a confirmation takes its
+  item off the count. It is a button, the Graph page's way
   to Review wherever Cmd+2 does not reach, and it is not in the title bar, which holds no navigation.
   On the read tier, where nothing is decided, there is no Review entry, and the bar keeps the
   contested count alone as a pill ("1 contested").
@@ -451,10 +457,13 @@ opens on All and says so beside the chips: "Showing all workspaces - default is 
 use is always a selected chip, All among them, and it is called All, never "(all)" or "*". An empty
 default means the wrong scope, not an absence of knowledge (P5).
 
-**Follow moves the camera, not the reader** (U20). With follow on, a write in the scope on screen
-frames its nodes. A write in another workspace is a notice that names the workspace and who wrote, as
-the Log's who-line does, with Show. The scope, the selection and the open sheet stay as the person
-left them: changing what a person is reading is the person's act (WCAG 3.2.5).
+**Follow moves the camera, not the reader** (U20). With follow on, activity in the scope on screen,
+a write or an agent's read, frames the nodes it touched. A write in another workspace is a notice
+that names the workspace, with Show; a read elsewhere says nothing. The scope, the selection and the
+open sheet stay as the person left them: changing what a person is reading is the person's act
+(WCAG 3.2.5). Only the knowledge itself can move the selection: when a merge folds the selected entity
+into another, the selection follows it there, and when a sync or a merge leaves it out of the scope,
+the sheet says so and closes.
 
 The dock's Peers tab is the only place that lists known peers with "not admitted", "admitted, not
 shared" and "surface unknown". Those rows move into Settings > Sync, and into the viewer's own
@@ -486,21 +495,28 @@ Their rules are in those documents, and the second pass changes four things in t
 - **The plan is checkboxes, and Set up is the default.** Every item of Setup's plan is a checkbox
   whose label is its whole row, since the plan is a choice the Set up button confirms (Section 4).
   Set up is the default button, which Return presses, and the first control after the plan in tab
-  order. Copy log and Copy diagnostics sit at the left, beside the privacy line. While the plan runs
+  order. Copy log and Copy diagnostics sit at the left, beside the privacy line. An item that replaces
+  what the person set up - an app's "Switch to the bridge", the daemon's "Take over" - starts
+  unchecked (onboarding.md O8). While the plan runs
   the foot says "Setting up... 2 of 3"; when it ends the heading says "Supragnosis is set up"; the
   page tells a step that is already running from one that failed.
 - **Every sentence is one the code keeps.** The plan says that nothing changes until Set up, so every
   act in the plan waits for it: "Switch to the bridge" and "Take over" are items of the plan, not
-  buttons that run at once. "Finish Setup..." stays in the tray while any step is not done, unless
-  the person set that step aside with "Not now". The privacy line says what is true: "Your memory
-  stays on this Mac. It is shared only if you add a remote server or set up sync."
+  buttons that run at once. Once the plan has run, each card's own buttons act when pressed, and the
+  page says so above the cards. The way back is named where it always is: "Open Setup" in Settings >
+  About, while "Finish Setup..." stays in the tray only as onboarding.md Section 6 has it. The privacy
+  line says what is true: "Supragnosis keeps your memory on this Mac. It is shared only if you add a
+  remote server or set up sync."
 - **The Settings page says each fact once.** Version drift is one card at the top of This Mac,
   "Update ready - restart to load 0.7.0", with the one Restart. A section's dot appears only when the
-  section needs attention, with words a screen reader reads. The server list is a radio group whose
-  choice is Use, so a radio that cannot be pressed is not drawn. A sync peer is one row. Claude Code's
-  row in AI apps carries a switch, "Save the why behind each commit", which turns its capture hook on
-  and off (client-connect.md Section 12): on runs `connect claude-code`, and off runs `connect
-  claude-code --no-capture`, which then removes the hook from an app that is already connected.
+  section needs attention, with words a screen reader reads. The server list is a list: the active
+  row says Active and every other row has Use, and the radios that could not be pressed go. A sync
+  peer is one row. Claude Code's row in AI apps, while it is connected through the bridge, carries a
+  switch, "Save the why behind each commit", which turns its capture hook on and off
+  (client-connect.md Section 12): on runs `connect claude-code`, and off runs `connect claude-code
+  --no-capture`, which then removes the hook and keeps the bridge. A row connected another way, or
+  whose capture state the listing does not report, shows no switch, so the switch never connects or
+  replaces anything.
 
 ## 7. The Review page
 
@@ -508,10 +524,11 @@ Everything that waits for a person's decision, in one place, split in three:
 
 - **Needs you**: suspected secrets first, as an alert; then open proposals; then this node's dream
   drafts, listed apart from published proposals and marked as drafts (dreaming.md Section 8); then
-  contested beliefs.
+  contested beliefs - those that tie on trust (resolution.md Section 4.1).
 - **Suggestions**: merge suggestions, name variants and cross-workspace collisions. Each offers
   "Propose", which opens a proposal and decides nothing.
-- **Health**: overloaded contexts, unlinked entities, merge cycles and type axis collisions, folded
+- **Health**: overloaded contexts, unlinked entities, merge cycles, type axis collisions and the
+  conflicts trust settled, folded
   by default. P22 wants curation where the reader already is, not a second job.
 
 An item shows, in this order: what it would do in one sentence; for a draft, its confidence; the
@@ -555,16 +572,27 @@ U4 governs the Review page's controls.
   2.1). For a tie: "Two sources disagree on Postgres's type. Both are Agent claims, so the newer one
   is shown until you decide." For a conflict that trust settled: "The Human confirmed value is
   shown."
-- **Each value is a row that says who said it and when, with the same act at the same weight**:
-  Confirm. No value's button is filled or gold while the other's is not, and the shown value is
-  marked as shown, not as preferred.
-- **Confirm asks once, in place**: "Confirm Database? It becomes Human confirmed, and the other value
-  stays listed." The two buttons are Confirm and Cancel. The act is the promotion `/api/resolve`
-  casts today.
-- **The notice that follows offers Undo**, and stays until it is dismissed, as an error does. Undo is
-  a demotion of the observation just confirmed back to the tier it had: a second gated event that
-  `/api/resolve` already casts. The log keeps both (P3), and the fold returns the belief to where it
-  was.
+- **Each value is a row that says its tier, who said it and when, with the same act at the same
+  weight**: Confirm. The tier, the time and the asserting observation's first attestation come from
+  `/api/explain`, which the inspector already reads. No value's button is filled or gold while the
+  other's is not, and the shown value is marked as shown, not as preferred.
+- **Confirm asks once, in place**: "Confirm Database? It becomes Human confirmed, and Service stays
+  listed." The two buttons are Confirm and Cancel. The act is the promotion `/api/resolve` casts
+  today.
+- **When the shown value is already Human confirmed**, confirming the other would tie them again, so
+  the other row's act is "Confirm instead", and its question says both halves: "Confirm Service
+  instead? Database goes back to Agent, and Service becomes Human confirmed." It casts a demotion of
+  the shown value to the tier it has without any person's verdict, which `/api/explain` answers for
+  each candidate, and the promotion of the chosen one.
+- **The notice that follows offers Undo**, and stays until it is dismissed, as an error does. Undo
+  casts the reverse: a demotion of the observation just confirmed to the tier its row showed before,
+  and after "Confirm instead" a confirmation of the value it demoted. The log keeps every event (P3).
+  A demotion is a ceiling (resolution.md Section 5): until a person confirms that observation again,
+  a later attestation that would raise its tier does not, and the notice says so beside Undo, in
+  words: "Undo keeps Database at Agent until someone confirms it again".
+- **Every act is filed in the workspace of the observation it changes**, whatever scope is on screen.
+  From All, `/api/resolve` would otherwise file it in the node default, where the fold that reads the
+  observation's own workspace never sees it.
 - **"Neither is right"** opens a sentence to give an agent, with Copy: "Record the correct type of
   Postgres in supragnosis." A correction is an assertion the log must hold before anyone can confirm
   it (resolution.md Section 4.2), and the console observes nothing.
@@ -592,15 +620,18 @@ map give one answer.
 **The answer says how each hit was reached, and over what** (U15).
 
 - **The field names its scope**: "Search billing", "Search all workspaces".
-- **Two groups.** "Contains "checkout"" holds the hits the keyword surface matched. "Related by
-  meaning" holds the hits that only the semantic surface or the graph's neighbors reached. Each group
+- **Two groups.** "Contains "checkout"" holds the hits the keyword surface matched. "Related" holds
+  the rest, and each of its rows says how it was reached: "near in meaning" for a hit only the
+  semantic surface found, "linked to a match" for a neighbor the graph's enrichment added. Each group
   keeps the engine's order. The path answers each hit with how it was reached, read from the lists the
-  fusion consumed, and the ranking itself is unchanged (U6). In keyword mode the second group is not
-  drawn, and the mode label says why.
+  fusion and the enrichment consumed, through a viewer function beside `search_canonical`, so the
+  ranking and the MCP tool's answer are unchanged (U6). In keyword mode "Related" holds the neighbors
+  alone, and the mode label says that meaning was not searched.
 - **An empty scope says so, and offers the wider one.** When no hit in the scope contains the words,
   the first group says "No item in billing contains "checkout"." Its first row is then "Search all
-  workspaces (3 matches)" when the wider scope holds some. A second request to the same path counts
-  them, over the reader's grants on the read tier.
+  workspaces (3 found)" when the wider scope holds some. A second request to the same path counts
+  them, over the reader's grants on the read tier, and an answer that reached the path's limit says
+  "20+", since the limit cuts the keyword list before it is counted.
 - **Nothing is chosen until the person moves.** The field is a combobox with a list and no automatic
   selection (WAI-ARIA's combobox pattern): ArrowDown moves to the first row, and Enter acts only on
   the row the person moved to. Once a row is chosen, the field shows its name.
@@ -635,12 +666,12 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 names, which are Unverified, Agent, Host signed and Human confirmed. The identifiers stay in tooltips
 and in cards' footers.
 
-**The Log speaks in sentences** (U17). A row says what happened in words, and a who-line under it says
-the tier, who and when: "You confirmed a claim: "We render the checkout page..."" over
-"Human confirmed - this node - 8:54 AM"; "Merge proposed: PostgreSQL into Postgres" over
-"Agent - laptop-3 - 8:55 AM".
-Who is named as the strip names a host (Section 6). Every kind of event the stream sends has its
-sentence, and a kind the page does not know reads "Something changed", with the kind in the tooltip.
+**The Log speaks in sentences** (U17). A proposal event says what happened to which proposal in
+words - "Merge proposed: PostgreSQL into Postgres", "Claim confirmation accepted" - and a who-line
+under each row says the tier, who and when: "Agent - laptop-3 - 8:55 AM". Who is named as the strip
+names a host (Section 6). Every kind of proposal the engine opens and every event it can carry has
+its sentence, and one the page cannot phrase reads "Something changed", with the stored text in its
+card. An id that is a hash is left out of the line; one that is a name is said whole.
 Rows from one minute show the time once, on the first. A row's mark is the ring the map draws for its
 tier (Section 5): dashed `--muted` for Unverified, none for Agent, a thin `--ink` ring for Host signed,
 `--gold-bright` for Human confirmed.
@@ -659,7 +690,7 @@ a state keeps one word on every page that shows it.
 | Healthy - nothing owed | Up to date |
 | Peers, client, local +N | Sync, Spoke, this node +N |
 | settling layout... | Arranging 168 items |
-| accepted claim_promotion: 9f778c20 | You confirmed a claim: "We render the checkout page..." |
+| accepted claim_promotion: 9f778c20 | Claim confirmation accepted |
 | opened entity_merge: PostgreS -> Postgres | Merge proposed: PostgreSQL into Postgres |
 | ws (all) / nodes 20 / edges 14 / Component 3, ... / hyperedges 10 (hull 4) | All workspaces - 20 entities, 14 relations, 10 regions |
 | (all), * | All |
@@ -695,6 +726,9 @@ principles page - to one floor (U19):
   first such field (WCAG 3.3.1).
 - **A press lands.** A control a pointer presses is at least 24 by 24 pixels with its spacing (WCAG
   2.5.8), and 28 below 760 pixels wide, where a finger presses it.
+- **A single key can be turned off.** The view's single keys - /, b, [ and ] - act from anywhere
+  outside a text field, and the viewer's settings has a switch that turns them off (WCAG 2.1.4). The
+  keys that decide act only within their list or item (Section 7).
 - **Progress is announced.** A step that runs shows its progress as `role="progressbar"` with its
   value, and a step's end, success or failure, is said in a polite live region (WCAG 4.1.3). A page
   that has finished its work says so in its heading, not only in a notice that leaves.
@@ -1022,8 +1056,9 @@ social image.
   the title bar. The title bar holds no navigation (Section 6), the review count already sat in the
   status bar, and an entry that stays when nothing waits keeps the page one press away.
 - **Undo is a demotion, not a deletion.** The log is append-only (P3): undoing a confirmation appends
-  the gated event that reverses it, which `/api/resolve` already casts. A recall would also remove
-  the value from view, and that is a different act.
+  the gated event that reverses it, which resolution.md Section 5 defines and `/api/resolve` gains a
+  `kind` for. Its cost is the ceiling a demotion leaves, which the notice names. A recall would also
+  remove the value from view, and that is a different act.
 - **"Neither is right" asks an agent.** A field where a person types the right value would add an
   assertion to a console that reads and decides but has never asserted. An agent records the
   correction, and the person confirms it here (resolution.md Section 4.2).
@@ -1045,7 +1080,7 @@ social image.
 | **U3** | A contested node is marked wherever it is drawn, at every zoom, label and focus state, and the status bar counts the contested nodes of the loaded scope whatever the legend hides (P6). |
 | **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision. Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
 | **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
-| **U6** | The viewer's search answers with the engine's ranking and mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
+| **U6** | The viewer's search answers with the engine's ranking, each group of Section 8 in that order, and its mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
 | **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
 | **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, an owed clause or the chosen column on the principles ledger, or a control's own glyph. |
@@ -1054,12 +1089,12 @@ social image.
 | **U12** | The principles page states only what the code states: its ledger, counts and clause lists are written from the coverage registry and the build fails when they differ; every principle of principles.md has its block and every Appendix A row its entry; every case names held clauses and is replayed by a test of the code that owns it or held by those clauses' tests; and the page's script takes every value it draws as the product's behavior from the cases and names no trust tier itself (P1, P5, P16). |
 | **U13** | The principles page never draws an owed clause as working: every owed beat or branch names, in the registry's words, a clause the registry does not hold and is drawn in the owed style, every tension's owed tag is derived from the clauses it names, and the build fails otherwise (P5). |
 | **U14** | The principles page draws the viewer's marks with the viewer's meanings and every other mark as its own, every color a landing token; each demo and scene plays at most once on its own, can be stopped while it plays, and rests drawing nothing; under reduced motion each beat and demo state is its resting frame; every canvas is hidden from assistive technology, a caption is announced only after the reader acts, and without a script the page draws no empty frame (P2, P6, P18). |
-| **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count (P5, P19). |
-| **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more; the band's first tone stands 0.09 apart in OKLab and 0.11 from every signal and neutral the map draws, and its second 0.055 from every color of the band; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
-| **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name, every kind of event the stream sends has a sentence and a who-line naming tier, who and when, a row's mark is the map's ring for its tier, and a place keeps one name wherever it is reached (P2). |
-| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast, and is undone by a demotion the log keeps; the console asserts no value of its own (P3, P6, P23). |
-| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a single-key shortcut acts only while focus is in its list or item; every target a pointer presses is at least 24 pixels; and nothing but a focusable code block scrolls sideways at 320 pixels. |
-| **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you with each contested belief counted once; and nothing but the person changes the scope, the selection or the open sheet - follow frames writes in the scope on screen and names the others in a notice (P22, P24). |
+| **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each related row saying which, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count, or "20+" at the limit (P5, P19). |
+| **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
+| **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; and a place keeps one name wherever it is reached (P2). |
+| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value - and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
+| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 24 pixels with its spacing, 28 below 760 pixels wide; and nothing but a focusable code block scrolls sideways at 320 pixels. |
+| **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -1198,14 +1233,19 @@ and it fails when one of them appears in the viewer's source other than as an ar
 13. **The defects** [designed]: the seventeen found in Section 1's pass that ask no design question,
    each fixed as it is - in the viewer, search's chosen row and its field, the status bar's overflow
    and its empty counts, the Review page's keys and focus, the controls' states, names and targets;
-   in the engine, `propose` turning names into ids, and the Review page showing names whole; on the
+   in the engine, `propose` turning names into ids, the Review page showing names whole, and a gate act
+   from All filed in its observation's workspace instead of the node default; on the
    app's pages, the download that locks the Settings page, a running step lost on leaving Setup, its
    three sentences, its progress, the server list's unnamed button and the dialog's focus; on the
    site, the cut install command, the ledger on phones, the owed contrast, the header's spacing and
    the heading order.
-14. **The Graph page** [designed] (U15, U18, U20): search's groups and scope (Section 8); the first
-   view, the status bar, Review's entry and follow (Section 6); the Log's sentences (Section 9);
-   View's Regions and Boundaries (Section 5); and settling a contested value (Section 7).
+14. **The Graph page** [designed] (U15, U18, U20): search's groups and scope, with the viewer's
+   search function that says how each hit was reached (Section 8); the first view, the status bar,
+   Review's entry with Needs you's tie-only contested items, and follow (Section 6); the Log's
+   who-lines (Section 9); View's Regions and Boundaries and the switch for single keys (Sections 5,
+   10); and settling a contested value, with `/api/resolve`'s demotion kind and each explain
+   candidate's tier before any verdict (Section 7). U8's guard follows the contested pill to the read
+   tier.
 15. **The app's pages** [designed] (Section 6a): Setup's name, its plan and its sentences; the
    Settings page's one card per fact, its radio group, its peers, and the capture switch with
    `connect claude-code --no-capture` removing the hook. It ships with the Setup page itself
@@ -1250,6 +1290,10 @@ proposal and the read tier.
   connected through the bridge removes the capture hook, which today it leaves in place.
 - **The search path** (step 14): `/api/search` answers each hit with how it was reached. The MCP
   tool's answer is unchanged.
+- **The resolve and explain paths** (step 14): `/api/resolve` takes `kind=claim_demotion` beside its
+  promotion and files either in the observation's workspace; `/api/explain` answers each candidate's
+  tier before any person's verdict. Both stay viewer paths, refused or read as remote-viewer.md
+  Section 3 has them.
 - **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
   "this node" (Section 9). The read tier's answer is unchanged.
@@ -1515,3 +1559,41 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   Concept that later takes its type, and no order contests it; the engine agrees on the stage's
   project, whose digest is the same on every order the replay tries.
 
+## 19. What the second pass's review changed
+
+The second pass (steps 12-16) was reviewed once against the code before it was built. Thirteen
+findings changed it:
+
+1. **Undo was not a path that existed.** `/api/resolve` only promotes, and the fold takes the higher
+   of a promotion and the tier it had, so a "promotion" down does nothing. The path gains a demotion
+   kind, the target tier is the one the row showed before, and the ceiling a demotion leaves is said
+   (Sections 2, 7, 12).
+2. **Confirm could not settle a Human confirmed value.** Confirming the other value tied them again.
+   That row's act is "Confirm instead", which demotes the shown value to its tier before any verdict
+   (Section 7).
+3. **The Review count would never come back to "Review".** Needs you listed every conflict with
+   competitors, and a confirmation leaves the competitors. It now lists only ties; a settled conflict
+   is under Health (Sections 6, 7).
+4. **Search's second group mixed two things, and its count was a page.** Neighbors are not related by
+   meaning, and keyword mode adds them too. One "Related" group says per row how a hit was reached,
+   and a count at the limit says "20+" (Section 8).
+5. **Lightness did not promise contrast.** A violet at 0.62 measures 5.1:1, and a first-tone hue sat
+   0.109 from `--muted`; both are measured now, with their own thresholds (Section 5).
+6. **The single-key rule contradicted the viewer's own keys.** /, b, [ and ] act from anywhere; they
+   can be turned off instead, and only the deciding keys are scoped (Section 10, U19).
+7. **A radio group of servers would switch every AI app on each arrow press.** The list keeps Use on
+   each row (Section 6a).
+8. **The plan's new items had no default, and the new tray rule held a step nobody could set aside.**
+   Replacing items start unchecked; the tray keeps onboarding.md's rule, and the way back is named in
+   About (Section 6a).
+9. **The capture switch could connect an app.** It shows only on a row connected through the bridge
+   (Section 6a).
+10. **Stale text.** The contested pill, the gold rule's review pill, the regions' default and the
+    Setup page's old names elsewhere were brought in line.
+11. **The event stream carries no tier, author or time.** The who-line is the observation rows', and
+    the follow notice names the workspace (Sections 6, 9, U17).
+12. **A confirmation from All landed in the node default**, where the fold that reads the
+    observation's workspace never sees it. Every gate act is filed in its observation's workspace
+    (Section 7, step 13).
+13. **Absolute and overstated words.** U20 now says what happens when a merge or a sync takes the
+    selection away, and the privacy line says what supragnosis keeps rather than what never leaves.

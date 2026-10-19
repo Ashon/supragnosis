@@ -662,35 +662,35 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     )]),
     (16, &[c(
-        "no type color reads as a signal: the band stands 25 degrees of OKLCH hue from the signal tokens at lightness 0.62 or more, its tones measured apart, up to eight types take eight hues, relation kinds draw no color, and every copy of the band is the viewer's",
+        "no type color reads as a signal: the band stands 25 degrees of OKLCH hue from the signal tokens at lightness 0.62 or more and 5.5:1 on the ground, its tones measured apart, up to eight types take eight hues, relation kinds draw no color, and every copy of the band is the viewer's",
         Evidence::Deferred(
             "designed in design-system.md Sections 5 and 14 step 12, not built. Revisit when the \
              band replaces the generated slots in the viewer and its two copies",
         ),
     )]),
     (17, &[c(
-        "no line a person reads first spells a system identifier: tiers by their legend names, every event kind with a sentence and a who-line, a row's mark the map's ring for its tier, one name for one place",
+        "no line a person reads first spells a system identifier: tiers by their legend names, every proposal kind and event with a sentence and no hash id, each observation row with a who-line and the map's ring for its tier, one name for one place",
         Evidence::Deferred(
             "designed in design-system.md Sections 9 and 14 step 12, not built. Revisit when the \
              tier names and the event sentences are the viewer's only spellings",
         ),
     )]),
     (18, &[c(
-        "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast, and is undone by a demotion the log keeps",
+        "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast, is undone by the reverse gated events the log keeps, and is filed in the workspace of the observation it changes",
         Evidence::Deferred(
             "designed in design-system.md Sections 7 and 14 step 14, not built. Revisit when the \
              contested block draws one Confirm per value with Undo",
         ),
     )]),
     (19, &[c(
-        "every control names itself, is the kind its act is and exposes its state; dialogs hold focus; single-key shortcuts act only in their region; targets are 24 pixels; nothing but a focusable code block scrolls sideways at 320 pixels",
+        "every control names itself, is the kind its act is and exposes its state; dialogs hold focus; deciding keys act only in their region and the view's single keys can be turned off; targets are 24 pixels, 28 on a phone; nothing but a focusable code block scrolls sideways at 320 pixels",
         Evidence::Deferred(
             "designed in design-system.md Sections 4, 10 and 14 steps 12-16, not built. Revisit when \
              the control helpers and their guards are in the viewer and the app's shared script",
         ),
     )]),
     (20, &[c(
-        "on the local console the status bar always holds the way to Review with one count, and nothing but the person changes the scope, the selection or the open sheet",
+        "on the local console the status bar always holds the way to Review with one count over tie-only contested items, and follow never changes the scope, the selection or the open sheet",
         Evidence::Deferred(
             "designed in design-system.md Sections 6 and 14 step 14, not built. Revisit when Review \
              is a permanent status bar entry and follow frames without switching the workspace",
