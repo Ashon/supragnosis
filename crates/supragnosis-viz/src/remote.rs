@@ -321,10 +321,11 @@ fn read_value(
                 hits.extend(out.hits);
             }
             hits.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
+                b.hit
+                    .score
+                    .partial_cmp(&a.hit.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.id.cmp(&b.id))
+                    .then_with(|| a.hit.id.cmp(&b.hit.id))
             });
             hits.truncate(limit);
             let mut v = serde_json::json!({ "mode": mode, "hits": hits });

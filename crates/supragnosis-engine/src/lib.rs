@@ -105,6 +105,36 @@ pub struct SearchOutput {
     pub hits: Vec<SearchHit>,
 }
 
+/// The (kind, id) of the hits one stage of a search held.
+type HitSet = HashSet<(SearchHitKind, String)>;
+
+/// How a viewer search hit was reached (design-system.md Section 8, U15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reached {
+    /// The keyword surface matched it: it contains the query's words.
+    Words,
+    /// Only the semantic surface found it: it is near the query in meaning.
+    Meaning,
+    /// The graph's enrichment added it as a neighbor of a hit.
+    Neighbor,
+}
+
+/// A viewer search hit: the search's own hit and how it was reached.
+#[derive(Debug, Clone, Serialize)]
+pub struct ViewerHit {
+    #[serde(flatten)]
+    pub hit: SearchHit,
+    pub reached: Reached,
+}
+
+/// The viewer's search answer: the surface used and the hits, in the search's order.
+#[derive(Serialize)]
+pub struct ViewerSearch {
+    pub mode: SearchMode,
+    pub hits: Vec<ViewerHit>,
+}
+
 /// An entity + its relations (lookup response). `entity.kind` carries the POLICY-selected belief
 /// (the view is a projection; the log keeps every assertion), and the belief overlay fields say
 /// whether that choice was contested and what else was asserted (resolution.md Section 4.2).
@@ -1290,6 +1320,10 @@ pub struct CandidateRow {
     /// "winner" | "alias" | "competitor".
     pub role: &'static str,
     pub trust_tier: TrustTier,
+    /// The tier the representative observation has without any person's verdict: the max
+    /// receiver-evaluated tier over its attestations, before gate events. What "Confirm instead"
+    /// demotes a confirmed value back to (design-system.md Section 7).
+    pub base_tier: TrustTier,
     pub hlc: Hlc,
     pub observation: String,
 }
@@ -4406,9 +4440,14 @@ impl Engine {
         // and fold order as project_entities/belief_fold - so the ranking matches the projection.
         let mut name_cands: Vec<BeliefCandidate> = Vec::new();
         let mut kind_cands: Vec<BeliefCandidate> = Vec::new();
+        let mut bases: HashMap<String, TrustTier> = HashMap::new();
         for obs in self.log(ws.as_deref(), cx)?.iter() {
             let obs_ws = obs.workspace().to_string();
             let eff = effective_tier(obs, &gates);
+            bases.insert(
+                obs.id.clone(),
+                obs.provenance.iter().map(evaluated_tier).max().unwrap_or_default(),
+            );
             let hlc = ordering_hlc(obs);
             for ea in &obs.assertions.entities {
                 if canon(Entity::make_id(&obs_ws, &ea.name)) != canon_id {
@@ -4450,7 +4489,12 @@ impl Engine {
                 field: "canonical_name",
                 winner: view.entity.canonical_name.clone(),
                 contested: name_contested,
-                candidates: candidate_rows(&name_cands, &view.entity.canonical_name, "alias"),
+                candidates: candidate_rows(
+                    &name_cands,
+                    &view.entity.canonical_name,
+                    "alias",
+                    &bases,
+                ),
             },
             // kind: the projected kind is the winner; non-winning kinds are competitors (R7).
             // contested is get_entity's own flag (the identical resolve_kind result).
@@ -4458,7 +4502,7 @@ impl Engine {
                 field: "kind",
                 winner: view.entity.kind.clone(),
                 contested: view.contested,
-                candidates: candidate_rows(&kind_cands, &view.entity.kind, "competitor"),
+                candidates: candidate_rows(&kind_cands, &view.entity.kind, "competitor", &bases),
             },
         ];
 
@@ -4484,7 +4528,20 @@ impl Engine {
         workspace: Option<&str>,
         limit: usize,
     ) -> Result<SearchOutput, StoreError> {
+        Ok(self.search_traced(query, workspace, limit)?.0)
+    }
+
+    /// [`Engine::search`], with the two sets the viewer reads to say how each hit was reached: the
+    /// hits the keyword surface matched, and every hit the fusion held before the graph's enrichment
+    /// added neighbors. The ranking is the search's own; nothing here reorders it.
+    fn search_traced(
+        &self,
+        query: &str,
+        workspace: Option<&str>,
+        limit: usize,
+    ) -> Result<(SearchOutput, HitSet, HitSet), StoreError> {
         let keyword = self.store.search(query, workspace, limit)?;
+        let matched: HitSet = keyword.iter().map(|h| (h.kind, h.id.clone())).collect();
 
         // The query embedding is computed once and shared by the observation/entity semantic searches.
         // An embedding failure is a degrade (keyword only, Principle 19), but a store failure is an Err -
@@ -4509,34 +4566,49 @@ impl Engine {
         };
 
         // Graph enrichment: fill the spare slots with the 1-hop neighbors of the top entity hits.
+        let fused_set: HitSet = fused.iter().map(|h| (h.kind, h.id.clone())).collect();
         let hits = self.enrich_with_graph(fused, workspace, limit)?;
-        Ok(SearchOutput { mode, hits })
+        Ok((SearchOutput { mode, hits }, matched, fused_set))
     }
 
     /// Search as the viewer asks it (design-system.md Section 8): the function `search_knowledge`
     /// answers with, its ranking and mode unchanged, with entity hits forwarded through accepted
     /// merges, so a hit names the entity the graph draws and never a merged-away id the viewer would
     /// otherwise have to resolve itself (inspector.md D5). Two hits that forward to one entity keep
-    /// the first, the higher ranked. The MCP tool's own answer is untouched.
+    /// the first, the higher ranked. Each hit says how it was reached - its words matched, it is near
+    /// in meaning, or it is a neighbor the enrichment added - read from the lists the search itself
+    /// consumed, so the viewer can group them (U15) without ranking anything. The MCP tool's own
+    /// answer is untouched.
     pub fn search_canonical(
         &self,
         query: &str,
         workspace: Option<&str>,
         limit: usize,
-    ) -> Result<SearchOutput, StoreError> {
-        let mut out = self.search(query, workspace, limit)?;
+    ) -> Result<ViewerSearch, StoreError> {
+        let (out, matched, fused) = self.search_traced(query, workspace, limit)?;
         let fwd = self.merge_forwarding(workspace, &ReadCtx::default())?;
         let mut seen = HashSet::new();
-        out.hits.retain_mut(|h| {
-            if h.kind != SearchHitKind::Entity {
-                return true;
+        let mut hits = Vec::with_capacity(out.hits.len());
+        for mut hit in out.hits {
+            let key = (hit.kind, hit.id.clone());
+            let reached = if matched.contains(&key) {
+                Reached::Words
+            } else if fused.contains(&key) {
+                Reached::Meaning
+            } else {
+                Reached::Neighbor
+            };
+            if hit.kind == SearchHitKind::Entity {
+                if let Some(c) = fwd.get(&hit.id) {
+                    hit.id = c.clone();
+                }
+                if !seen.insert(hit.id.clone()) {
+                    continue;
+                }
             }
-            if let Some(c) = fwd.get(&h.id) {
-                h.id = c.clone();
-            }
-            seen.insert(h.id.clone())
-        });
-        Ok(out)
+            hits.push(ViewerHit { hit, reached });
+        }
+        Ok(ViewerSearch { mode: out.mode, hits })
     }
 
     /// Graph enrichment: adds the 1-hop neighbors of the top entity hits (seeds) to the results. A neighbor is a weaker
@@ -5079,6 +5151,7 @@ fn candidate_rows(
     cands: &[BeliefCandidate],
     winner: &str,
     loser_role: &'static str,
+    bases: &HashMap<String, TrustTier>,
 ) -> Vec<CandidateRow> {
     // value -> (highest tier, representative observation id, that candidate's hlc).
     let mut best: BTreeMap<&str, (TrustTier, &str, &Hlc)> = BTreeMap::new();
@@ -5095,6 +5168,7 @@ fn candidate_rows(
             value: value.to_string(),
             role: if value == winner { "winner" } else { loser_role },
             trust_tier: tier,
+            base_tier: bases.get(obs).copied().unwrap_or(tier),
             hlc: hlc.clone(),
             observation: obs.to_string(),
         })

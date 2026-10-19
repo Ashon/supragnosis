@@ -122,6 +122,45 @@ async fn the_local_surface_names_its_node() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// Each hit of the viewer's search says how it was reached (design-system.md Section 8, U15): its
+/// words matched, it is only near in meaning, or the graph's enrichment added it as a neighbor. The
+/// groups are read from the lists the search consumed, so a hit that contains the query is never
+/// filed under "related", and a neighbor that does not contain it is never filed under "contains".
+#[tokio::test]
+async fn every_viewer_search_hit_says_how_it_was_reached() {
+    // Keyword mode reaches rmcp only through the relation; with an embedder, the semantic surface
+    // finds it first, by its nearness to the query.
+    for (embed, rmcp_reached) in [(false, "neighbor"), (true, "meaning")] {
+        let store = Arc::new(InMemoryStore::new());
+        let mut engine = Engine::new(store, "h", "ws");
+        if embed {
+            engine = engine.with_embedder(Arc::new(HashingEmbedder::default()));
+        }
+        let engine = Arc::new(engine);
+        observe_depends(&engine);
+        let sock =
+            serve_uds(if embed { "search-meaning" } else { "search-words" }, engine, ev_channel())
+                .await;
+        let r = json_get(&uds_get(&sock, "/api/search?q=supragnosis&workspace=ws").await);
+        let hits = r["hits"].as_array().expect("hits");
+        let reached = |name: &str| {
+            hits.iter()
+                .find(|h| h["kind"] == "entity" && h["snippet"] == name)
+                .map(|h| h["reached"].as_str().unwrap_or("").to_string())
+        };
+        assert_eq!(reached("supragnosis").as_deref(), Some("words"), "the word matched: {r}");
+        assert_eq!(reached("rmcp").as_deref(), Some(rmcp_reached), "how rmcp was reached: {r}");
+        for h in hits {
+            let how = h["reached"].as_str().unwrap_or("");
+            assert!(["words", "meaning", "neighbor"].contains(&how), "every hit says how: {h}");
+            if h["snippet"].as_str().is_some_and(|s| s.to_lowercase().contains("supragnosis")) {
+                assert_eq!(how, "words", "a hit holding the word is a word match: {h}");
+            }
+        }
+        let _ = std::fs::remove_file(&sock);
+    }
+}
+
 /// design-system.md U6 (Principles 5, 19, 21; inspector.md D5): the viewer's search answers with the
 /// engine's ranking and mode label, and an entity hit is the entity the graph draws - an id an accepted
 /// merge folded away forwards to its canonical one, so the page never re-resolves identity. A missing
@@ -1001,6 +1040,25 @@ async fn viz_resolve_files_in_the_observations_workspace_and_can_be_undone() {
     assert_eq!(props.as_array().map(Vec::len), Some(1), "filed in billing: {props}");
     let none = json_get(&uds_get(&sock, "/api/proposals?workspace=default").await);
     assert_eq!(none.as_array().map(Vec::len), Some(0), "nothing filed in the default: {none}");
+
+    // The explain read says what each value is without a person's verdict - what "Confirm instead"
+    // would demote the confirmed one back to.
+    let id = g["nodes"][0]["id"].as_str().expect("the node's id").to_string();
+    let ex = json_get(&uds_get(&sock, &format!("/api/explain?entity={id}")).await);
+    let kind = ex["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["field"] == "kind")
+        .expect("kind field");
+    let tool = kind["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["value"] == "Tool")
+        .expect("Tool row");
+    assert_eq!(tool["trust_tier"], "human_confirmed", "explain: {ex}");
+    assert_eq!(tool["base_tier"], "agent_extracted", "explain: {ex}");
 
     // Undo: the demotion back to the tier it had - the belief ties on trust again.
     let r = json_get(&uds_get(&sock, &format!("/api/resolve?observation={first}&tier=agent_extracted&kind=claim_demotion&workspace=*")).await);
