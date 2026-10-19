@@ -141,6 +141,7 @@ pub struct ProposeRequest {
     ///   console. Open it, comment on it, and point the person to the Review panel.
     pub kind: String,
     /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
+    /// For entity_merge an entity may also be named by its name in the workspace; it is stored as its id.
     /// For entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.
     pub targets: Vec<String>,
     /// For entity_merge: the canonical target id the other targets fold into (must be one of targets).

@@ -350,7 +350,7 @@
             ]
           },
           "targets": {
-            "description": "Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).\nFor entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.",
+            "description": "Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).\nFor entity_merge an entity may also be named by its name in the workspace; it is stored as its id.\nFor entity_split this is exactly one PROPOSAL id - the entity_merge being reversed.",
             "items": {
               "type": "string"
             },

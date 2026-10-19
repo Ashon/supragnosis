@@ -785,12 +785,17 @@ fn review_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
-/// `/api/resolve?observation=<id>[&observation=<id>...]&tier=<tier>[&workspace=<ws>][&rationale=<text>]` -
+/// `/api/resolve?observation=<id>[&observation=<id>...]&tier=<tier>[&kind=claim_demotion][&workspace=<ws>][&rationale=<text>]` -
 /// mediate a contested belief from the curation console (resolution.md Section 4.2): opens a
-/// claim_promotion for the chosen observation(s) at the requested tier and immediately casts the
-/// Console merge verdict. Both steps are gated appended events (I1/I18) - the projection changes only
-/// because the fold consumes the verdict, never by a direct write. Solo self-approval is the P23
-/// exception, and the verdict stays self-attested.
+/// claim_promotion for the chosen observation(s) at the requested tier - or, with
+/// `kind=claim_demotion`, the demotion that undoes one (design-system.md Section 7) - and immediately
+/// casts the Console merge verdict. Both steps are gated appended events (I1/I18) - the projection
+/// changes only because the fold consumes the verdict, never by a direct write. Solo self-approval is
+/// the P23 exception, and the verdict stays self-attested.
+///
+/// The act is filed in the workspace of the observations it changes, whatever scope the console
+/// shows: from All the query says `*`, which would file it in the node default, where the fold that
+/// reads the observations' own workspace never sees it.
 fn resolve_response(engine: &Engine, query: &str) -> Response {
     let param = |k: &str| {
         query
@@ -818,11 +823,49 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
             body: err_body("resolve needs at least one ?observation=<id> (the asserting observation of the value you confirm)"),
         };
     }
-    let workspace = write_workspace(param("workspace"));
+    let kind = match param("kind").as_deref() {
+        None | Some("claim_promotion") => "claim_promotion",
+        Some("claim_demotion") => "claim_demotion",
+        Some(other) => {
+            return Response {
+                status: "400 Bad Request",
+                content_type: "application/json",
+                body: err_body(&format!(
+                    "resolve casts claim_promotion or claim_demotion, not '{other}'"
+                )),
+            }
+        }
+    };
+    let mut homes = std::collections::BTreeSet::new();
+    for id in &observations {
+        match engine.get_observation(id) {
+            Ok(Some(o)) => homes.extend(o.provenance.first().map(|p| p.workspace.clone())),
+            // An observation that is not here is refused by propose, with its own reason.
+            Ok(None) => {}
+            Err(e) => {
+                return Response {
+                    status: "500 Internal Server Error",
+                    content_type: "application/json",
+                    body: err_body(&e.to_string()),
+                }
+            }
+        }
+    }
+    if homes.len() > 1 {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(&format!(
+                "the observations are in different workspaces ({}) - resolve them one workspace at a time",
+                homes.into_iter().collect::<Vec<_>>().join(", ")
+            )),
+        };
+    }
+    let workspace = homes.into_iter().next().or_else(|| write_workspace(param("workspace")));
     let rationale = param("rationale");
     let proposal = match engine.propose(supragnosis_engine::ProposeInput {
         workspace: workspace.clone(),
-        kind: "claim_promotion".into(),
+        kind: kind.into(),
         targets: observations,
         into: None,
         tier: Some(tier),

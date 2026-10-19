@@ -2176,6 +2176,28 @@ impl Engine {
     /// Open a proposal (Principle 23). Records an `opened` event as an observation; the observation id
     /// becomes the proposal id. Validates only well-formedness (kind known, targets present, entity_merge
     /// has a valid `into`) - it does not yet commit or check the canon.
+    /// The id an entity_merge target names (design-system.md Section 14 step 13). An entity id is
+    /// kept. Anything else is read as a name and turned into `Entity::make_id(workspace, name)` - the
+    /// id `observe` gives that name - when that entity exists. An id-shaped target that is not here is
+    /// kept too, since on a spoke it may not have synced yet, and the referential-integrity check says
+    /// so; a name that names nothing is refused here, with the reason, rather than stored and blocked.
+    fn merge_target_id(&self, workspace: &str, target: &str) -> Result<String, ObserveError> {
+        if self.store.get_entity(target)?.is_some() {
+            return Ok(target.to_string());
+        }
+        let id = Entity::make_id(workspace, target);
+        if self.store.get_entity(&id)?.is_some() {
+            return Ok(id);
+        }
+        if target.len() == 64 && target.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(target.to_string());
+        }
+        Err(ObserveError::Invalid(format!(
+            "entity_merge target '{target}' is neither an entity id nor the name of an entity in \
+             workspace '{workspace}' - name it as observe did, or use the id a search hit carries"
+        )))
+    }
+
     pub fn propose(&self, input: ProposeInput) -> Result<String, ObserveError> {
         reject_reserved_source_ref(input.source_ref.as_deref())?;
         if !PROPOSAL_KINDS.contains(&input.kind.as_str()) {
@@ -2189,7 +2211,22 @@ impl Engine {
                 "a proposal needs at least one non-empty target id".into(),
             ));
         }
+        let mut input = input;
         if input.kind == "entity_merge" {
+            // An agent names entities by name as readily as by id. A target that is a name is turned
+            // into the id `observe` gave that name in this workspace, before anything is checked or
+            // stored, so the proposal holds ids and is never blocked for naming what exists.
+            let ws = input.workspace.clone().unwrap_or_else(|| self.default_workspace.clone());
+            for t in input.targets.iter_mut() {
+                *t = self.merge_target_id(&ws, t)?;
+            }
+            // `into` must be one of the targets, and the check below says so in those words when it
+            // names nothing the targets hold.
+            if let Some(into) = input.into.as_mut() {
+                if let Ok(id) = self.merge_target_id(&ws, into) {
+                    *into = id;
+                }
+            }
             if input.targets.len() < 2 {
                 return Err(ObserveError::Invalid(
                     "entity_merge needs at least 2 target ids (the entities to merge)".into(),
@@ -5812,6 +5849,64 @@ mod tests {
             .is_err());
     }
 
+    /// An entity_merge may name its entities by name: each is stored as the id `observe` gave that name
+    /// in the workspace, so the proposal is not blocked for naming what exists. A name that names
+    /// nothing is refused at open, with the target named; an id-shaped target that is not here is kept,
+    /// for the referential-integrity check to say so (design-system.md Section 14 step 13).
+    #[test]
+    fn a_merge_named_by_name_holds_ids() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws1");
+        engine
+            .observe(ObserveInput {
+                content: "PostgreSQL and Postgres".into(),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![
+                    EntityInput { name: "PostgreSQL".into(), kind: None, description: None },
+                    EntityInput { name: "Postgres".into(), kind: None, description: None },
+                ],
+                relations: vec![],
+            })
+            .expect("observe");
+        let merge = |targets: Vec<&str>, into: &str| ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: targets.into_iter().map(String::from).collect(),
+            into: Some(into.into()),
+            tier: None,
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        };
+        let (sql, pg) = (Entity::make_id("ws1", "PostgreSQL"), Entity::make_id("ws1", "Postgres"));
+        // Names, an id beside a name, and a name in another case all land on the same ids.
+        for (targets, into) in [
+            (vec!["PostgreSQL", "Postgres"], "Postgres"),
+            (vec![sql.as_str(), "Postgres"], pg.as_str()),
+            (vec!["postgresql", "POSTGRES"], "postgres"),
+        ] {
+            let pid = engine.propose(merge(targets, into)).expect("open the merge");
+            let p = engine.get_proposal(Some("ws1"), &pid).unwrap().expect("stored");
+            assert_eq!(p.targets, vec![sql.clone(), pg.clone()]);
+            assert_eq!(p.into.as_deref(), Some(pg.as_str()));
+            assert_eq!(p.state, "open", "a merge of named entities is not blocked");
+        }
+        // A name that names nothing is refused, and the refusal names it.
+        let err = engine.propose(merge(vec!["PostgreSQL", "MySQL"], "PostgreSQL")).unwrap_err();
+        assert!(err.to_string().contains("'MySQL'"), "{err}");
+        // An id that is not here yet is kept: the integrity check reports it.
+        let elsewhere = "ab".repeat(32);
+        let pid = engine
+            .propose(merge(vec![sql.as_str(), elsewhere.as_str()], &sql))
+            .expect("kept");
+        let p = engine.get_proposal(Some("ws1"), &pid).unwrap().unwrap();
+        assert_eq!(p.targets, vec![sql.clone(), elsewhere.clone()]);
+    }
+
     /// A tbox_change carries its affected T-Box types through the opened payload and the fold, so the
     /// viewer has a structured belief-diff hint to highlight (Principle 23 / M3.5b). Relation names are
     /// normalized (matching the graph's edge kinds); entity names are kept verbatim.
@@ -5844,13 +5939,15 @@ mod tests {
         assert_eq!(p.affected_types[1].name, "Driver");
         assert_eq!(p.affected_types[1].target, TypeTarget::Entity);
 
-        // An entity_merge carries no affected_types (the field folds to empty).
+        // An entity_merge carries no affected_types (the field folds to empty). Its targets are ids of
+        // entities not in this log, which propose keeps for the integrity check.
+        let (id_a, id_b) = ("a".repeat(64), "b".repeat(64));
         let mid = engine
             .propose(ProposeInput {
                 workspace: None,
                 kind: "entity_merge".into(),
-                targets: vec!["idA".into(), "idB".into()],
-                into: Some("idB".into()),
+                targets: vec![id_a, id_b.clone()],
+                into: Some(id_b),
                 tier: None,
                 rationale: None,
                 affected_types: vec![],

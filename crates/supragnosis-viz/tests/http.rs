@@ -961,6 +961,63 @@ async fn viz_resolve_settles_a_contested_belief() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// A confirmation made from the All view is filed in the observation's own workspace, and undoing it is
+/// the demotion `kind=claim_demotion` casts (design-system.md Section 7, U18): from `workspace=*` the act
+/// used to land in the node default, where the fold reading the observation's workspace never saw it.
+#[tokio::test]
+async fn viz_resolve_files_in_the_observations_workspace_and_can_be_undone() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "default"));
+    let observe_kind = |kind: &str| ObserveInput {
+        content: format!("cozo is a {kind}"),
+        workspace: Some("billing".into()),
+        source_ref: None,
+        confidence: None,
+        on_behalf_of: None,
+        derived_from: vec![],
+        entities: vec![EntityInput {
+            description: None,
+            name: "cozo".into(),
+            kind: Some(kind.into()),
+        }],
+        relations: vec![],
+    };
+    let first = engine.observe(observe_kind("Tool")).unwrap().observation_id;
+    engine.observe(observe_kind("Library")).unwrap();
+    let sock = serve_uds("resolve-ws", engine, ev_channel()).await;
+
+    let r = json_get(
+        &uds_get(
+            &sock,
+            &format!("/api/resolve?observation={first}&tier=human_confirmed&workspace=*"),
+        )
+        .await,
+    );
+    assert!(r["proposal_id"].is_string(), "resolve: {r}");
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=billing").await);
+    assert_eq!(g["nodes"][0]["type"], "Tool", "graph: {g}");
+    assert_eq!(g["nodes"][0]["trust_tier"], "human_confirmed");
+    let props = json_get(&uds_get(&sock, "/api/proposals?workspace=billing").await);
+    assert_eq!(props.as_array().map(Vec::len), Some(1), "filed in billing: {props}");
+    let none = json_get(&uds_get(&sock, "/api/proposals?workspace=default").await);
+    assert_eq!(none.as_array().map(Vec::len), Some(0), "nothing filed in the default: {none}");
+
+    // Undo: the demotion back to the tier it had - the belief ties on trust again.
+    let r = json_get(&uds_get(&sock, &format!("/api/resolve?observation={first}&tier=agent_extracted&kind=claim_demotion&workspace=*")).await);
+    assert!(r["proposal_id"].is_string(), "undo: {r}");
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=billing").await);
+    assert_eq!(g["nodes"][0]["contested"], true, "after undo: {g}");
+    assert_eq!(g["nodes"][0]["trust_tier"], "agent_extracted");
+
+    let bad = uds_get(
+        &sock,
+        &format!("/api/resolve?observation={first}&tier=agent_extracted&kind=recall"),
+    )
+    .await;
+    assert!(bad.contains("400"), "an unknown kind is refused: {bad}");
+    let _ = std::fs::remove_file(&sock);
+}
+
 /// The reify promotion path over the socket (Principle 11): a recurring co-occurrence context is
 /// asserted as a group entity + member_of relations through /api/reify - an ordinary observation
 /// carrying derived_from lineage - and the graph gains the first-class structure while the
