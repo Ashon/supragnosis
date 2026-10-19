@@ -265,3 +265,23 @@ fn the_landing_links_the_principles_page() {
         "the footer links the document, not the page"
     );
 }
+
+/// docs/design-system.md Section 11a: an owed clause is an empty cell with a --muted outline and the
+/// chosen column has a --gold-bright one, so both measure as marks (WCAG 1.4.11); the detail panel puts
+/// no heading under the page's own; and a "/" between two shown clauses is not read aloud.
+#[test]
+fn the_principles_ledger_marks_owed_and_chosen_clearly() {
+    let rule = |sel: &str| {
+        let at = CSS.find(&format!("{sel} {{")).unwrap_or_else(|| panic!("no rule {sel}"));
+        let body = &CSS[at + sel.len() + 2..];
+        body[..body.find('}').expect("it closes")].to_string()
+    };
+    let owed = rule(".cell.o");
+    assert!(owed.contains("background: none") && owed.contains("border: 1px solid var(--muted)"), "an owed cell is a filled block: {owed}");
+    let chosen = rule(".sky .col[aria-current=\"true\"]");
+    assert!(chosen.contains("border: 1px solid var(--gold-bright)"), "the chosen column is not outlined: {chosen}");
+    assert!(!SCRIPT.contains("el(\"h3\", null, $(\"h3\", art).textContent)"), "the detail panel inserts a heading");
+    assert!(!PAGE.contains("</span> / <span data-clause"), "a separator is read aloud");
+    assert!(PAGE.contains("<span class=\"sep\" aria-hidden=\"true\"> / </span>"), "the separators are not hidden from a screen reader");
+}
+

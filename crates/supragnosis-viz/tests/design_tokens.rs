@@ -239,7 +239,13 @@ const VIEWER_LINES: &[(&str, &str)] = &[
     ("#mapwin", "paints the frame around the map's window: a surface, not a line"),
 ];
 const SETTINGS_LINES: &[(&str, &str)] = &[];
-const LANDING_LINES: &[(&str, &str)] = &[];
+const LANDING_LINES: &[(&str, &str)] = &[
+    (".cell.o", "an owed clause on the principles ledger, an empty cell outlined in --muted"),
+    (
+        ".sky .col[aria-current=\"true\"]",
+        "the chosen column of the principles ledger, outlined in --gold-bright",
+    ),
+];
 
 /// The declarations of a stylesheet that draw a line outside its list, and the listed selectors
 /// that drew one.

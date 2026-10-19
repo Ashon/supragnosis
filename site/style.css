@@ -419,9 +419,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sky .grp[data-n="7"] { flex-grow: 7; }
 .sky .grp + .grp { margin-left: 9px; }
 .sky .cols .grp { align-items: flex-end; height: 100%; }
-.sky .col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; gap: 2px; padding: 3px 2px; border-radius: 5px; }
+.sky .col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; gap: 2px; padding: 3px 2px; border-radius: 5px; border: 1px solid transparent; box-sizing: border-box; }
 .sky .col:hover { background: var(--panel-2); text-decoration: none; }
-.sky .col[aria-current="true"] { background: var(--select); }
+.sky .col[aria-current="true"] { background: var(--select); border: 1px solid var(--gold-bright); box-sizing: border-box; }
 .sky .cell { display: block; height: 9px; border-radius: 2px; flex: none; }
 .sky .labs { margin-top: 6px; }
 .sky .labs span { flex: 1 1 0; min-width: 0; text-align: center; font: 10px/1 var(--mono); color: var(--faint); overflow: hidden; }
@@ -430,7 +430,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cell.t { background: var(--ink); }
 .cell.s { background: repeating-linear-gradient(135deg, var(--ink2) 0 3px, var(--muted) 3px 5px); }
 .cell.p { background: color-mix(in srgb, var(--bad) 32%, var(--panel)); }
-.cell.o { background: var(--panel-3); }
+.cell.o { background: none; border: 1px solid var(--muted); box-sizing: border-box; }
 .p-ledger .count { font-size: var(--fs-small); margin: 14px 0 0; }
 .p-ledger .count b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; padding: 0; list-style: none; font-size: var(--fs-label); }
@@ -439,7 +439,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .detail { background: var(--panel); border-radius: 14px; padding: 18px 20px; min-width: 0; display: none; }
 .js .detail { display: block; }
 .detail .dn, .pn { font: 600 var(--fs-label) var(--mono); color: var(--accent); }
-.detail h3 { margin: 4px 0 6px; }
+.detail h3, .detail .dt { margin: 4px 0 6px; }
 .detail .dl { font-size: var(--fs-small); margin-bottom: 12px; }
 .cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
 .cl li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 10px; font-size: var(--fs-small); line-height: 1.45; }

@@ -177,7 +177,7 @@
             <li data-t="4.7"><span class="bn">2</span> <span class="bk">Unstated</span> <span class="bc">A confidence nobody stated stays unstated. Nothing fills it in with a guess.</span></li>
             <li data-t="6.6"><span class="bn">3</span> <span class="bk">Trace back</span> <span class="bc">Any answer points back to the entry it came from, with all of this attached.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="2">an attestation carries its acting host, principal, workspace and time, and an unstated confidence stays unstated</span> / <span data-clause="2">a query result can carry its provenance: a hit dereferences to its observation, with its attestations and delegation chain</span></p>
+            <p class="shows">Shows <span data-clause="2">an attestation carries its acting host, principal, workspace and time, and an unstated confidence stays unstated</span><span class="sep" aria-hidden="true"> / </span><span data-clause="2">a query result can carry its provenance: a hit dereferences to its observation, with its attestations and delegation chain</span></p>
           </figure>
           <!-- registry:clauses:2 -->
           <details class="clauses">
@@ -290,7 +290,7 @@
               </div>
             </div>
             <p class="cap"><span class="ow"><span class="owed">owed</span> <span data-owed="5">a destroyed id answers as destroyed, recording the act and never the content</span></span></p>
-            <p class="shows">Shows <span data-clause="5">absence is a well-formed answer, never an error</span> / <span data-clause="5">absent is distinguished from unavailable, rather than collapsing into an empty result</span> / <span data-clause="5">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span> / <span data-clause="5">an id outside the caller&#x27;s grants answers as unknown, and a named scope outside them is refused by name</span></p>
+            <p class="shows">Shows <span data-clause="5">absence is a well-formed answer, never an error</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">absent is distinguished from unavailable, rather than collapsing into an empty result</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">an id outside the caller&#x27;s grants answers as unknown, and a named scope outside them is refused by name</span></p>
           </figure>
         </article>
         <article class="pr big" id="p6" aria-labelledby="t-p6">
@@ -320,7 +320,7 @@
               <li data-k="1">A second machine says Cache. Both are agents, so trust cannot decide: the answer shows the latest value and says it is contested.</li>
               <li data-k="2">You confirmed Database in the console. Trust settled it, so the flag clears. The Cache claim stays in the log, and the conflict stays in the curation report.</li>
             </ul>
-            <p class="shows">Shows <span data-clause="6">a conflict that trust does not settle surfaces as contested instead of resolving silently</span> / <span data-clause="6">a defeated assertion stays in the log and is reinstated by re-resolution</span></p>
+            <p class="shows">Shows <span data-clause="6">a conflict that trust does not settle surfaces as contested instead of resolving silently</span><span class="sep" aria-hidden="true"> / </span><span data-clause="6">a defeated assertion stays in the log and is reinstated by re-resolution</span></p>
           </figure>
         </article>
         <article class="pr" id="p7" aria-labelledby="t-p7">
@@ -374,7 +374,7 @@
             <li data-t="4.4"><span class="bn">2</span> <span class="bk">Defined</span> <span class="bc">With a plain-language definition, it enters the vocabulary.</span></li>
             <li data-t="6.4"><span class="bn">3</span> <span class="bk">Left blank</span> <span class="bc">A description already written survives a later entry that leaves it blank.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="8">a type cannot enter the vocabulary without a natural-language definition</span> / <span data-clause="8">a description already captured, an entity&#x27;s or a relation&#x27;s, is never erased by a later omission, and a blank description is an omission</span></p>
+            <p class="shows">Shows <span data-clause="8">a type cannot enter the vocabulary without a natural-language definition</span><span class="sep" aria-hidden="true"> / </span><span data-clause="8">a description already captured, an entity&#x27;s or a relation&#x27;s, is never erased by a later omission, and a blank description is an omission</span></p>
           </figure>
           <!-- registry:clauses:8 -->
           <details class="clauses">
@@ -399,7 +399,7 @@
             <li data-t="5"><span class="bn">2</span> <span class="bk">Both axes</span> <span class="bc">A proposal would add member_of as an entity type while it is already a relation type. The name is surfaced, and the merge is blocked.</span></li>
             <li data-t="6.4"><span class="bn">3</span> <span class="bk">Inference</span> <span class="bc">Contradictions derived by inference are next. <span class="ow"><span class="owed">owed</span> <span data-owed="9">subtype cycles and domain/range coherence are checked</span></span></span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="9">conflicting definitions of one type surface as contested</span> / <span data-clause="9">a name defined on both T-Box axes is surfaced, and blocks a tbox_change merge</span></p>
+            <p class="shows">Shows <span data-clause="9">conflicting definitions of one type surface as contested</span><span class="sep" aria-hidden="true"> / </span><span data-clause="9">a name defined on both T-Box axes is surfaced, and blocks a tbox_change merge</span></p>
           </figure>
           <!-- registry:clauses:9 -->
           <details class="clauses">
@@ -424,7 +424,7 @@
             <li data-t="3.2"><span class="bn">1</span> <span class="bk">Extend</span> <span class="bc">Your vocabulary grows through the log: new types arrive as entries, and the core model is not touched.</span></li>
             <li data-t="5.8"><span class="bn">2</span> <span class="bk">Migrate</span> <span class="bc">When the core itself changes, a migration comes with it, and every older log still reads.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="10">the domain vocabulary extends through the log without touching the core model</span> / <span data-clause="10">a change to the core model comes with a migration path</span></p>
+            <p class="shows">Shows <span data-clause="10">the domain vocabulary extends through the log without touching the core model</span><span class="sep" aria-hidden="true"> / </span><span data-clause="10">a change to the core model comes with a migration path</span></p>
           </figure>
           <!-- registry:clauses:10 -->
           <details class="clauses">
@@ -448,7 +448,7 @@
             <li data-t="4.4"><span class="bn">2</span> <span class="bk">Said together</span> <span class="bc">Names said together form a context: a derived view identified by its members, beside the ordinary relations.</span></li>
             <li data-t="6.6"><span class="bn">3</span> <span class="bk">Promote</span> <span class="bc">Promoting the context writes an ordinary entry. It names its members as its lineage and starts at the lowest trust; raising it goes through the gate. <span class="ow"><span class="owed">owed</span> <span data-owed="11">type candidates are induced from repeated co-occurrence</span></span></span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="11">no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written</span> / <span data-clause="11">second-order structure is a derived view identified by its member set, coexisting with binary relations rather than replacing them</span> / <span data-clause="11">promoting a recurring context is an ordinary gated assertion that carries its lineage</span></p>
+            <p class="shows">Shows <span data-clause="11">no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written</span><span class="sep" aria-hidden="true"> / </span><span data-clause="11">second-order structure is a derived view identified by its member set, coexisting with binary relations rather than replacing them</span><span class="sep" aria-hidden="true"> / </span><span data-clause="11">promoting a recurring context is an ordinary gated assertion that carries its lineage</span></p>
           </figure>
           <!-- registry:clauses:11 -->
           <details class="clauses">
@@ -536,7 +536,7 @@
             <li data-t="4"><span class="bn">2</span> <span class="bk">Sync</span> <span class="bc">When they sync, it is one entry, counted once.</span></li>
             <li data-t="6.2"><span class="bn">3</span> <span class="bk">After a merge</span> <span class="bc">Merge pg into Postgres, and asking for pg still resolves, forwarded to Postgres.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="14">identifiers are content-derived, collision-resistant and independent of notation</span> / <span data-clause="14">an identifier stays resolvable after the thing it names is merged away</span></p>
+            <p class="shows">Shows <span data-clause="14">identifiers are content-derived, collision-resistant and independent of notation</span><span class="sep" aria-hidden="true"> / </span><span data-clause="14">an identifier stays resolvable after the thing it names is merged away</span></p>
           </figure>
           <!-- registry:clauses:14 -->
           <details class="clauses">
@@ -565,7 +565,7 @@
             <li data-t="4.4"><span class="bn">2</span> <span class="bk">Merge</span> <span class="bc">A reviewer&#x27;s verdict merges them.</span></li>
             <li data-t="6.8"><span class="bn">3</span> <span class="bk">Split</span> <span class="bc">A split is a new proposal. Merged, it separates them again, and the merge stays in the log.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="15">the substrate proposes identity candidates rather than leaving them to the operator</span> / <span data-clause="15">a proposed identity is committed by the gate, never by the generator</span> / <span data-clause="15">a merge and a split are both reversible</span></p>
+            <p class="shows">Shows <span data-clause="15">the substrate proposes identity candidates rather than leaving them to the operator</span><span class="sep" aria-hidden="true"> / </span><span data-clause="15">a proposed identity is committed by the gate, never by the generator</span><span class="sep" aria-hidden="true"> / </span><span data-clause="15">a merge and a split are both reversible</span></p>
           </figure>
           <!-- registry:clauses:15 -->
           <details class="clauses">
@@ -625,7 +625,7 @@
             <li data-t="4.6"><span class="bn">2</span> <span class="bk">Allow oss</span> <span class="bc">Allow another workspace, and from the next sync it travels too.</span></li>
             <li data-t="6.8"><span class="bn">3</span> <span class="bk">A secret</span> <span class="bc">Text shaped like a credential is refused at the door, and the refusal does not repeat it.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="17">sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included</span> / <span data-clause="17">credential-shaped text is refused at every local ingest door, and the refusal does not repeat it</span></p>
+            <p class="shows">Shows <span data-clause="17">sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included</span><span class="sep" aria-hidden="true"> / </span><span data-clause="17">credential-shaped text is refused at every local ingest door, and the refusal does not repeat it</span></p>
           </figure>
           <!-- registry:clauses:17 -->
           <details class="clauses">
@@ -699,7 +699,7 @@
             <li data-t="4.6"><span class="bn">2</span> <span class="bk">Model missing</span> <span class="bc">Without the model, search falls back to keywords and says so. A write never waits for it.</span></li>
             <li data-t="6.8"><span class="bn">3</span> <span class="bk">Suggest</span> <span class="bc">Similarity can suggest that two names are one thing. Only a verdict commits it.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="19">a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span> / <span data-clause="19">embedding similarity only generates identity candidates; a merge commits only through a verdict</span></p>
+            <p class="shows">Shows <span data-clause="19">a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span><span class="sep" aria-hidden="true"> / </span><span data-clause="19">embedding similarity only generates identity candidates; a merge commits only through a verdict</span></p>
           </figure>
           <!-- registry:clauses:19 -->
           <details class="clauses">
@@ -725,7 +725,7 @@
             <li data-t="4.4"><span class="bn">2</span> <span class="bk">No way out</span> <span class="bc">An arrow from the core out to storage cannot be written: the core has no IO dependency to call.</span></li>
             <li data-t="6.4"><span class="bn">3</span> <span class="bk">In memory</span> <span class="bc">So all engine logic runs against an in-memory adapter, which is how the rules are tested exactly.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="20">dependencies point inward only</span> / <span data-clause="20">all engine logic runs against an in-memory adapter</span></p>
+            <p class="shows">Shows <span data-clause="20">dependencies point inward only</span><span class="sep" aria-hidden="true"> / </span><span data-clause="20">all engine logic runs against an in-memory adapter</span></p>
           </figure>
           <!-- registry:clauses:20 -->
           <details class="clauses">
@@ -750,7 +750,7 @@
             <li data-t="5.8"><span class="bn">3</span> <span class="bk">A mistake</span> <span class="bc">A failed call says what was wrong and how to call it instead: here, an id that is not on this node, and where a real one comes from.</span></li>
             <li data-t="7.2"><span class="bn">4</span> <span class="bk">Query?</span> <span class="bc">There is no query language to pass through, so a query in one has nowhere to go.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="21">a failure tells the caller how to correct itself, since the caller is a model with no human beside it</span> / <span data-clause="21">no query-language passthrough exists; the pinned tool list would show one</span></p>
+            <p class="shows">Shows <span data-clause="21">a failure tells the caller how to correct itself, since the caller is a model with no human beside it</span><span class="sep" aria-hidden="true"> / </span><span data-clause="21">no query-language passthrough exists; the pinned tool list would show one</span></p>
           </figure>
           <!-- registry:clauses:21 -->
           <details class="clauses">
@@ -844,7 +844,7 @@
               <li data-k="merge">The verdict commits. pg now forwards to Postgres, and the old id still resolves.</li>
               <li data-k="reject">Rejected, and nothing was deleted. Both names and every entry stay; a rejection is not a negation.</li>
             </ul>
-            <p class="shows">Shows <span data-clause="23">no merge without a diff: what a verdict would overturn is computed before it is cast</span> / <span data-clause="23">no proposal state blocks or delays an observe</span> / <span data-clause="23">a merged verdict has the commit effect its kind promises</span> / <span data-clause="23">a rejection is not a negation, and no verdict deletes an assertion</span> / <span data-clause="14">P14: an identifier stays resolvable after the thing it names is merged away</span></p>
+            <p class="shows">Shows <span data-clause="23">no merge without a diff: what a verdict would overturn is computed before it is cast</span><span class="sep" aria-hidden="true"> / </span><span data-clause="23">no proposal state blocks or delays an observe</span><span class="sep" aria-hidden="true"> / </span><span data-clause="23">a merged verdict has the commit effect its kind promises</span><span class="sep" aria-hidden="true"> / </span><span data-clause="23">a rejection is not a negation, and no verdict deletes an assertion</span><span class="sep" aria-hidden="true"> / </span><span data-clause="14">P14: an identifier stays resolvable after the thing it names is merged away</span></p>
           </figure>
         </article>
       </div>
@@ -872,7 +872,7 @@
             <li data-t="4.4"><span class="bn">2</span> <span class="bk">Hub lost</span> <span class="bc">The hub cannot be reached. Sync turns off, every local read keeps working, and sync_status says what to change.</span></li>
             <li data-t="6.6"><span class="bn">3</span> <span class="bk">Unknown key</span> <span class="bc">A setting this build does not know refuses to start, because a misspelled key would otherwise do nothing in silence. A public address without TLS refuses too.</span></li>
             </ol>
-            <p class="shows">Shows <span data-clause="24">a subsystem that cannot come up leaves the node serving, and says what it disabled</span> / <span data-clause="24">the workaround reaches the operator&#x27;s own surface, not only a startup log</span> / <span data-clause="24">refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written</span> / <span data-clause="19">P19: a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span></p>
+            <p class="shows">Shows <span data-clause="24">a subsystem that cannot come up leaves the node serving, and says what it disabled</span><span class="sep" aria-hidden="true"> / </span><span data-clause="24">the workaround reaches the operator&#x27;s own surface, not only a startup log</span><span class="sep" aria-hidden="true"> / </span><span data-clause="24">refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written</span><span class="sep" aria-hidden="true"> / </span><span data-clause="19">P19: a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span></p>
           </figure>
           <!-- registry:clauses:24 -->
           <details class="clauses">

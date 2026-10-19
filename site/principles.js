@@ -1161,7 +1161,7 @@ function ledger() {
     const tally = $(".clauses .tally", art), list = $(".clauses ul", art);
     const dl = el("p", {class: "dl"}, tally ? tally.textContent + ". " : ""), link = el("a", {href: "#p" + p}, "Read the principle");
     dl.append(link);
-    detail.replaceChildren(el("span", {class: "dn"}, "P" + p), el("h3", null, $("h3", art).textContent), dl, ...(list ? [list.cloneNode(true)] : []));
+    detail.replaceChildren(el("span", {class: "dn"}, "P" + p), el("p", {class: "dt"}, $("h3", art).textContent), dl, ...(list ? [list.cloneNode(true)] : []));
   }
   cols.forEach(a => a.addEventListener("click", e => { e.preventDefault(); pick(a); }));
   pick(cols.find(c => c.dataset.p === "3") || cols[0]);
