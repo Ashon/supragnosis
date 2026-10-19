@@ -499,20 +499,27 @@ impl Client {
             Client::ClaudeCode => env.find("claude"),
             Client::Codex => env.find("codex"),
             Client::Gemini => env.find("gemini"),
+            // The app bundle's CLI only on macOS: a Linux machine can see a Mac's /Applications
+            // (OrbStack mounts it), and running that binary from Linux reaches the Mac's VS Code.
             Client::VsCode => {
                 let bundled = PathBuf::from(
                     "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
                 );
-                bundled.is_file().then_some(bundled).or_else(|| env.find("code"))
+                (cfg!(target_os = "macos") && bundled.is_file())
+                    .then_some(bundled)
+                    .or_else(|| env.find("code"))
             }
             Client::ClaudeDesktop | Client::Cursor => None,
         }
     }
 
     pub fn installed(self, env: &Env) -> bool {
+        // An app bundle counts only on macOS, for the reason `cli` gives: elsewhere a /Applications
+        // can be a Mac's, seen through a VM, and its apps are not this machine's.
         let app = |name: &str| {
-            Path::new("/Applications").join(name).exists()
-                || env.home.join("Applications").join(name).exists()
+            cfg!(target_os = "macos")
+                && (Path::new("/Applications").join(name).exists()
+                    || env.home.join("Applications").join(name).exists())
         };
         match self {
             Client::ClaudeDesktop => app("Claude.app"),
