@@ -149,6 +149,8 @@
   .toast .tt { font-weight:500; }
   .toast .td { color:var(--muted); font-size:12px; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
   .toast button { padding:0 6px; font-size:13px; line-height:18px; color:var(--muted); background:none; }
+  /* A notice's one action, such as Undo. */
+  .toast button.tact { align-self:center; padding:2px 10px; border-radius:6px; font-size:12px; color:var(--ink); background:var(--panel-3); }
   /* Computed belief diff on the selected proposal - a before -> after row per change, so accepting
      is a decision about a visible delta rather than about a proposal's title. */
   .ddiff { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }
@@ -418,13 +420,25 @@
   .contested .crow.cur .cv { color:var(--ink); font-weight:600; }
   .contested .crow .cv { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .contested .crow .ctier { color:var(--faint); font-size:11px; margin-left:auto; }
-  /* "current" tag on the winning row - marks which value is shown now, so "keep" vs "use this" read clearly. */
-  .contested .crow .curtag { color:var(--muted); font-size:11px; margin-left:auto; }
-  /* Committed (human-confirmed) belief: a filled chip, not the plain "current" text - reads as settled. */
-  .contested .crow .curtag.confirmed { color:#171204; background:var(--accent); border-radius:4px; padding:0 6px; }
+  /* The value shown now is marked as shown, not as preferred: every value's Confirm has the same
+     weight (design-system.md Section 7, U18). */
+  .contested .crow .curtag { color:var(--muted); font-size:11px; background:var(--panel-3); border-radius:999px; padding:0 6px; }
+  .contested .crow .cwho { color:var(--faint); font-size:11px; }
+  /* Every value's Confirm sits at the row's end, the same on every row; a row too narrow for its
+     who-line wraps that line, not the act. */
+  .contested .crow { flex-wrap:wrap; }
+  .contested .crow > .confirm { margin-left:auto; }
   .contested .confirm { padding:0 8px; font-size:11px; letter-spacing:.04em; border-radius:5px; flex:0 0 auto; min-height:24px; }
-  .contested .crow.cur .confirm { background:var(--accent); color:#171204; font-weight:600; }
-  .contested .crow.cur .confirm:hover { background:var(--gold-bright); color:#171204; }
+  /* The question a Confirm asks, in place, before anything is cast. */
+  .contested .cask { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:2px 0 4px; padding:6px 8px;
+                     border-radius:8px; background:var(--panel-2); color:var(--ink); font-size:12px; }
+  .contested .cacts { display:flex; gap:6px; margin-left:auto; }
+  .contested .neither { margin-top:6px; font-size:12px; color:var(--ink2); }
+  .contested .neither summary { cursor:pointer; color:var(--muted); }
+  .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
+  .contested .copyline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
+  .contested .copyline code { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; padding:4px 6px; border-radius:6px;
+                              background:var(--surface); color:var(--ink); font:11px/1.4 var(--mono); }
   /* Observation log rows - the workspace Log tab and the node inspector's log column share one row
      style. A row is a compact list item (content-first: a quiet meta line of tier dot + compact time
      over the content, 2-line); clicking it opens the observation detail card. A light divider list,

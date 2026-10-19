@@ -1066,7 +1066,10 @@ function markupOf(v) {
 // shape: a success leaves by itself, an error stays until it is dismissed, at most four at a time.
 // Built from text nodes, never markup: an error string can carry an entity name.
 const toastsEl = document.getElementById("toasts");
-function toast(kind, title, detail) {
+// A notice may carry one action - { label, note, run } - such as Undo: the note says what the
+// action does, in words beside it, and the notice stays until it is used or dismissed, as an error
+// does, so the action is not taken away while it is being read.
+function toast(kind, title, detail, action) {
   if (!toastsEl) return;
   const el = document.createElement("div");
   el.className = "toast " + kind;
@@ -1075,17 +1078,25 @@ function toast(kind, title, detail) {
   const t = document.createElement("div"); t.className = "tt"; t.textContent = title;
   body.appendChild(t);
   if (detail) { const d = document.createElement("div"); d.className = "td"; d.textContent = detail; body.appendChild(d); }
+  if (action && action.note) { const n = document.createElement("div"); n.className = "td"; n.textContent = action.note; body.appendChild(n); }
+  el.append(tick, body);
+  if (action) {
+    const act = document.createElement("button");
+    act.type = "button"; act.className = "tact"; act.textContent = action.label;
+    act.onclick = () => { el.remove(); action.run(); };
+    el.appendChild(act);
+  }
   const close = document.createElement("button"); close.textContent = "x"; close.setAttribute("aria-label", "dismiss");
   close.onclick = () => el.remove();
-  el.append(tick, body, close);
+  el.appendChild(close);
   toastsEl.prepend(el);
-  if (kind === "ok") setTimeout(() => el.remove(), 4500);
+  if (kind === "ok" && !action) setTimeout(() => el.remove(), 4500);
   while (toastsEl.children.length > 4) toastsEl.lastChild.remove();
 }
 // One console write: GET path+query (the viewer's writes are GETs on the 0600 socket - see the review
 // handler below), then a notice saying what happened. Returns the parsed answer, or null when the
 // write did not land.
-async function consoleWrite(path, query, said) {
+async function consoleWrite(path, query, said, action) {
   let r;
   try { r = await fetch(path + query, { cache: "no-store" }); }
   catch (e) { toast("bad", "Could not reach the server", "Nothing was changed. Is the daemon running?"); return null; }
@@ -1095,7 +1106,7 @@ async function consoleWrite(path, query, said) {
     toast("bad", r.status === 403 ? "This view is read-only" : "Refused", (body && body.error) || ("HTTP " + r.status));
     return null;
   }
-  toast("ok", said);
+  toast("ok", said, null, action);
   return body || {};
 }
 
@@ -1114,11 +1125,11 @@ function renderGlossary() {
       spansWorkspaces ? html`<span class="gws">${String(x.workspace || "")}</span>` : "",
       html`<span class="src">${x.sources} src</span>`,
       html`<div class="def">${x.description}</div>`];
-    // Contested definitions reuse the shared contested UI (keep / use this), so a type conflict and
-    // an entity-kind conflict read identically - one mediation pattern (IR5).
+    // Contested definitions take the same settling rows as an entity's type, so a type conflict and
+    // an entity-type conflict read identically - one mediation pattern (IR5).
     if (x.competitors && x.competitors.length) {
-      parts.push(html`<div class="contested${x.contested ? " hot" : ""}">${
-        contestedRows(x.description, "", x.def_source, x.competitors, x.contested)}</div>`);
+      parts.push(html`<div class="contested${x.contested ? " hot" : ""}">${contestedRows({ name: x.name, field: "definition",
+        current: x.description, curObs: x.def_source, tier: "", competitors: x.competitors, contested: x.contested })}</div>`);
     }
     return html`${parts}</div>`;
   };
@@ -1130,9 +1141,7 @@ function renderGlossary() {
   // A contested definition opens the list, so its mediation act is in view (P6); otherwise the list
   // stays as the person left it.
   if (glossaryTypes.some(x => x.contested)) document.getElementById("defsBox").open = true;
-  glossaryBodyEl.querySelectorAll(".confirm").forEach(b => {
-    b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
-  });
+  wireSettle(glossaryBodyEl, renderGlossary);
 }
 
 // Fetch the glossary for the current workspace, then render (only meaningful while the section is open).
@@ -1274,9 +1283,7 @@ function wireCuration(host) {
       focus = n; renderDetail(n); focusView(n);
     };
   });
-  host.querySelectorAll(".confirm").forEach(b => {
-    b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
-  });
+  wireSettle(host, () => { reviewSig = ""; renderReview(); });
   // Name this group (Principle 11 promotion path): name the context, assert it as a group entity
   // through /api/reify (an ordinary lineage-bearing observation - free ingest, no gate on the
   // assertion). DOM-built inline form (no innerHTML sink for the user-typed name).
@@ -1475,7 +1482,8 @@ function itemDetail(it, local) {
     const c = it.c;
     return [html`<h3>${c.name}: which value?</h3>`,
       html`<p class="why">Two values tie on trust, so supragnosis does not pick one for you. The other value stays in the log and can be chosen again.</p>`,
-      html`<div class="contested hot">${contestedRows(c.current, "", c.kind_source, c.competitors || [], c.contested)}</div>`,
+      html`<div class="contested hot">${contestedRows({ name: c.name, field: c.field === "kind" ? "type" : c.field, entity: c.id,
+        current: c.current, curObs: c.kind_source, tier: "", competitors: c.competitors || [], contested: c.contested })}</div>`,
       local ? "" : html`<p class="why">This view is read-only.</p>`];
   }
   const p = it.p, v = reviewView && reviewView.id === p.id ? reviewView : null;
@@ -2220,46 +2228,138 @@ function connectEvents() {
   } catch (_) { /* EventSource unsupported - works with polling alone */ }
 }
 
-// Confirm one side of a contested belief (resolution.md Section 4.2): /api/resolve opens a
-// claim_promotion for the asserting observation and casts the Console merge verdict - the human
-// console is the only surface that can grant human_confirmed (Section 6). Both are gated appended
-// events; the belief changes because the fold consumes the verdict, never by a direct write.
-async function resolveBelief(obs) {
-  if (!obs) return;
+// --- Settling a contested value (docs/design-system.md Section 7, U18) ---------------------------
+// Confirming a value is the promotion /api/resolve casts (resolution.md Section 4.2): a claim_promotion
+// of the asserting observation with the Console merge verdict, both gated appended events - the
+// human console is the only surface that grants human_confirmed (Section 6). Every value offers the
+// same act at the same weight; it asks once, in place, saying what it will do; and the notice that
+// follows offers Undo, the demotion that reverses it, so the log keeps both (P3). When the shown
+// value is already Human confirmed, confirming another would only tie them again, so that act is
+// "Confirm instead": the shown value is demoted to its tier before any verdict, and the chosen one
+// confirmed. The console asserts no value of its own - "Neither is right" hands an agent a sentence.
+let settleAsk = null;       // the observation whose question is open; survives the poll's redraw
+let settleNeither = null;   // the block whose "Neither is right" is open; survives it too
+function settleQuery(obs, tier, kind) {
   const ws = wsInput.value.trim();
-  const q = "?observation=" + encodeURIComponent(obs) + "&tier=human_confirmed"
-    + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-  await consoleWrite("/api/resolve", q, "Confirmed - this value is now human confirmed");
+  return "?observation=" + encodeURIComponent(obs) + "&tier=" + encodeURIComponent(tier)
+    + (kind ? "&kind=" + kind : "") + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+}
+// What an observation's tier is without any person's verdict, from /api/explain's base_tier.
+async function baseTierOf(entity, obs) {
+  try {
+    const r = await fetch("/api/explain?entity=" + encodeURIComponent(entity), { cache: "no-store" });
+    if (!r.ok) return null;
+    const ex = await r.json();
+    for (const f of ex.fields || []) for (const c of f.candidates || []) if (c.observation === obs) return c.base_tier;
+  } catch (_) { /* the caller says nothing was changed */ }
+  return null;
+}
+// a: the chosen value - { obs, was, value }, the belief - { name, field, entity }, and for "Confirm
+// instead" the shown value it replaces - { instead, curObs, curValue }.
+async function settleValue(a) {
+  if (a.instead) {
+    const base = await baseTierOf(a.entity, a.curObs);
+    if (!base) { toast("bad", "Could not read " + a.curValue + "'s tier", "Nothing was changed."); return; }
+    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, base, "claim_demotion"),
+      a.curValue + " goes back to " + tierName(base))) return;
+  }
+  const undo = {
+    label: "Undo",
+    note: "Undo keeps " + a.value + " at " + tierName(a.was) + " until someone confirms it again.",
+    run: async () => {
+      if (!await consoleWrite("/api/resolve", settleQuery(a.obs, a.was, "claim_demotion"),
+        "Undone - " + a.value + " is " + tierName(a.was) + " again")) return;
+      if (a.instead) await consoleWrite("/api/resolve", settleQuery(a.curObs, "human_confirmed"),
+        a.curValue + " is Human confirmed again");
+      await poll();
+    },
+  };
+  await consoleWrite("/api/resolve", settleQuery(a.obs, "human_confirmed"),
+    "Confirmed " + a.value + " as " + a.name + "'s " + a.field, undo);
   await poll();   // re-fold: the ring drops, the panel updates, the proposal shows as merged
 }
+// Who said each value and when, from the explain read: its asserting observation's first attestation.
+const settleWho = new Map();   // entity id -> { at, by: Map(observation -> "who - when") }
+async function fillSettleWho(host, entity) {
+  if (!entity || !host.querySelector(".cwho")) return;
+  let got = settleWho.get(entity);
+  if (!got || Date.now() - got.at > 10000) {
+    try {
+      const r = await fetch("/api/explain?entity=" + encodeURIComponent(entity), { cache: "no-store" });
+      if (!r.ok) return;
+      const ex = await r.json();
+      const by = new Map();
+      for (const o of ex.supporting || []) {
+        const a = (o.attestations || [])[0];
+        if (a) by.set(o.id, [writerOf(a), obsWhen(a.observed_at)].filter(Boolean).join(" - "));
+      }
+      got = { at: Date.now(), by };
+      settleWho.set(entity, got);
+    } catch (_) { return; }   // the rows stand without it
+  }
+  host.querySelectorAll(".cwho").forEach(el => { el.textContent = got.by.get(el.dataset.who) || ""; });
+}
 
-// The contested-belief block of the inspector / curation panel: the current value and each surviving
-// competitor, with a confirm button per value (the mediation act). `cur` marks the policy winner.
-function contestedRows(current, tier, curObs, competitors, contested) {
-  // Once the belief is human_confirmed there is nothing higher to promote to, so the confirm buttons
-  // are hidden and the box reads as COMMITTED (not a lingering confirm dialog - the losing value
-  // stays listed for reference, Principle 3/6, but without an action). Below that tier the actions
-  // stay: "keep" locks in the value shown now (so recency cannot flip it), "use this" switches to a
-  // competing value - both promote that value's observation to human_confirmed (a gated console verdict).
-  const committed = String(tier) === "human_confirmed";
-  const row = (v, t, obs, cur) => html`${[
-    html`<div class="crow${cur ? " cur" : ""}"><span class="cv">${v}</span>`,
-    cur
-      ? html`<span class="curtag${committed ? " confirmed" : ""}">${committed ? "confirmed" : "current"}</span>`
-      : html`<span class="ctier">${tierName(t)}</span>`,
-    obs && !committed
-      ? html`<button class="confirm" data-obs="${obs}" title="${cur ? "lock in the current value (mark it human-confirmed so recency cannot flip it)" : "make this the confirmed value instead (mark it human-confirmed)"}">${cur ? "keep" : "use this"}</button>`
-      : "",
-    html`</div>`]}`;
-  const head = committed
-    ? (contested
-        ? "human-confirmed - competing values still tie (both confirmed)"
-        : "confirmed by a human - this belief is settled")
-    : (contested
-        ? "these values tie on trust - confirm which is correct"
-        : "resolved by trust - other asserted values shown for reference");
-  return html`<div class="chead">${head}</div>${row(current, tier, curObs, true)}${
-    competitors.map(c => row(c.value, c.trust_tier, c.observation, false))}`;
+// The rows of a contested belief: why the shown value is shown, then each value with its tier, who
+// said it and when, and the act. `o`: { name, field, entity, current, curObs, tier, competitors,
+// contested } - `tier` is the shown value's own tier where it is known ("" where it is not), and
+// `entity` the node a "Confirm instead" reads its tier from (absent for a type definition).
+function contestedRows(o) {
+  const comps = o.competitors || [];
+  const committed = String(o.tier) === "human_confirmed";
+  const tied = o.contested && comps.length ? comps[0].trust_tier : "";
+  const curTier = committed ? "human_confirmed" : (tied || o.tier || "");
+  const local = surfaceKind === "local";
+  const head = o.contested && committed
+    ? "These values are all Human confirmed, so the newer one is shown until you decide."
+    : o.contested
+      ? "Two sources disagree on " + o.name + "'s " + o.field + ". Both are " + tierName(tied) + " claims, so the newer one is shown until you decide."
+      : committed ? "The Human confirmed value is shown." : "The value with the higher trust is shown.";
+  const values = [o.current, ...comps.map(c => c.value)];
+  const row = (value, tier, obs, shown) => {
+    const instead = committed && !shown;
+    const act = local && obs && !(committed && shown) && !(instead && !o.entity)
+      ? html`<button type="button" class="confirm" data-settle="ask" data-obs="${obs}">${instead ? "Confirm instead" : "Confirm"}</button>`
+      : "";
+    const asking = local && settleAsk === obs && act;
+    const others = values.filter(v => v !== value);
+    const ctx = { obs, was: tier || "agent_extracted", value, name: o.name, field: o.field, entity: o.entity || "",
+      instead, curObs: o.curObs, curValue: o.current };
+    const question = instead
+      ? "Confirm " + value + " instead? " + o.current + " goes back to its tier before any verdict, and " + value + " becomes Human confirmed."
+      : "Confirm " + value + "? It becomes Human confirmed, and " + others.join(", ") + (others.length > 1 ? " stay" : " stays") + " listed.";
+    return html`${[
+      html`<div class="crow${shown ? " cur" : ""}"><span class="cv">${value}</span>`,
+      shown ? html`<span class="curtag">shown</span>` : "",
+      tier ? html`<span class="ctier">${tierName(tier)}</span>` : "",
+      html`<span class="cwho" data-who="${obs || ""}"></span>`,
+      act, html`</div>`,
+      asking ? html`<div class="cask" role="group" aria-label="${"Confirm " + value}"><span>${question}</span><span class="cacts"><button type="button" class="confirm" data-settle="yes" data-ctx="${JSON.stringify(ctx)}">Confirm</button><button type="button" class="quiet" data-settle="no">Cancel</button></span></div>` : ""]}`;
+  };
+  const say = "Record the correct " + o.field + " of " + o.name + " in supragnosis.";
+  const key = o.name + "|" + o.field;
+  return html`<div class="chead">${head}</div>${row(o.current, curTier, o.curObs, true)}${
+    comps.map(c => row(c.value, c.trust_tier, c.observation, false))}${
+    local ? html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary>Neither is right</summary><div class="nhelp">Ask an agent to record the right value, then confirm it here.</div><div class="copyline"><code>${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">Copy</button></div></details>` : ""}`;
+}
+// The block's acts, wired after each draw; `redraw` draws the block's surface again.
+function wireSettle(host, redraw) {
+  host.querySelectorAll("[data-settle]").forEach(b => {
+    b.onclick = async ev => {
+      ev.stopPropagation();
+      const k = b.dataset.settle;
+      if (k === "ask") { settleAsk = b.dataset.obs; redraw(); const yes = host.querySelector('[data-settle="yes"]'); if (yes) yes.focus(); }
+      else if (k === "no") { const obs = settleAsk; settleAsk = null; redraw(); const back = [...host.querySelectorAll('[data-settle="ask"]')].find(x => x.dataset.obs === obs); if (back) back.focus(); }
+      else if (k === "yes") { settleAsk = null; const a = JSON.parse(b.dataset.ctx); redraw(); await settleValue(a); }
+      else if (k === "copy") {
+        try { await window.navigator.clipboard.writeText(b.dataset.text); toast("ok", "Copied - give it to an agent"); }
+        catch (_) { toast("bad", "Could not copy", b.dataset.text); }
+      }
+    };
+  });
+  host.querySelectorAll("details.neither").forEach(d => {
+    d.addEventListener("toggle", () => { settleNeither = d.open ? d.dataset.key : (settleNeither === d.dataset.key ? null : settleNeither); });
+  });
 }
 
 // The inspector's silence rule (docs/inspector.md Sections 3-4): a field is silent when it has ONE
@@ -2285,16 +2385,20 @@ function scopeBaseline() {
 // to a line that still says it exists, so it stays one act away (D2, P6 keeps it queryable).
 // `inspector_never_folds_a_contested_belief` pins this shape.
 let foldOpen = null;   // node id whose resolved-by-trust block is expanded - survives the poll re-render
+// A node's type, as the settling rows read a belief.
+function nodeBelief(node) {
+  return { name: node.name, field: "type", entity: node.id, current: node.type, curObs: node.kind_source,
+    tier: node.trust_tier, competitors: node.competitors || [], contested: !!node.contested };
+}
 function contestedBlock(node) {
-  if (node.contested) return html`<div class="contested hot">${
-    contestedRows(node.type, node.trust_tier, node.kind_source, node.competitors || [], true)}</div>`;
+  if (node.contested) return html`<div class="contested hot">${contestedRows(nodeBelief(node))}</div>`;
   const cmp = node.competitors || [];
   if (!cmp.length) return html``;
-  const settled = String(node.trust_tier) === "human_confirmed" ? "confirmed by a human" : "resolved by trust";
+  const settled = String(node.trust_tier) === "human_confirmed" ? "Human confirmed" : "Settled by trust";
   return html`${[
     html`<div class="contested folded${foldOpen === node.id ? " open" : ""}">`,
-    html`<button class="cfold" type="button">${settled} - ${cmp.length} other kind${cmp.length > 1 ? "s" : ""} asserted</button>`,
-    html`<div class="cbody">${contestedRows(node.type, node.trust_tier, node.kind_source, cmp, false)}</div></div>`]}`;
+    html`<button class="cfold" type="button">${settled} - ${cmp.length} other type${cmp.length > 1 ? "s" : ""} asserted</button>`,
+    html`<div class="cbody">${contestedRows(nodeBelief(node))}</div></div>`]}`;
 }
 
 // The inspector "why (evidence & decision)" body from /api/explain: per-field belief resolution
@@ -2441,9 +2545,8 @@ function renderDetail(node) {
   detailEl.querySelectorAll(".rmore").forEach(b => {
     b.onclick = () => { relOpen.keys.add(b.dataset.key); renderDetail(node); };
   });
-  detailEl.querySelectorAll(".confirm").forEach(b => {
-    b.onclick = (ev) => { ev.stopPropagation(); resolveBelief(b.dataset.obs); };
-  });
+  wireSettle(detailEl, () => renderDetail(node));
+  fillSettleWho(detailEl, node.id);
   const fold = detailEl.querySelector(".contested.folded");
   if (fold) fold.querySelector(".cfold").onclick = () => {
     foldOpen = fold.classList.toggle("open") ? node.id : null;
