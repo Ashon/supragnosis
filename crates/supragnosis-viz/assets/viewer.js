@@ -258,6 +258,12 @@ const SETTLE_ENTER = 0.5, REVEAL_ALPHA = 0.08;
 // schedule cannot give, since alpha says how hard the sim is pushing and not whether anything moved.
 let simMotion = 0;
 const MOTION_MIN_PX = 0.05;   // screen px per frame below which the picture is not changing
+// The settle's last collision pass (design-system.md Section 26.3): once the layout cools, the
+// overlaps the cooling left are cleared for at most this many steps, and then no pair is visited
+// until something warms the layout again. It used to run in every frame for good, which made every
+// pan and hover pay for every pair of nodes.
+const OVERLAP_STEPS = 90;
+let overlapOwed = 0;
 // Reduced motion (same respect the landing pays to prefers-reduced-motion): instead of animating
 // the violent early rearrangement behind a loader, burst-step the sim to convergence within one
 // frame and reveal the layout already still.
@@ -298,6 +304,13 @@ function nodeStrokeW(n) { return Math.min(NODE_STROKE_MAX / cam.s, Math.max(node
 // Wake the simulation (discrete wakeup). Called only from events: new node/deletion (applyGraph),
 // drag, focus. Never called from a continuous condition (overlap) - prevents endless reheating after settling.
 function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) settling = true; requestFrame(); }
+// Whether the layout still moves, and so whether a frame steps it (design-system.md Section 26.3,
+// U28): settling, applying force, a node held, the last collision pass owed, or still coasting on
+// the screen. Otherwise a frame only redraws - a pan, a zoom or a hover never steps the layout.
+function simWarm() {
+  return settling || alpha >= ALPHA_MIN || drag !== null || overlapOwed > 0
+    || simMotion * cam.s > MOTION_MIN_PX;
+}
 
 // --- render scheduling: draw when something moves, not every frame ------------------------------
 // stepSim already goes dormant (no force is applied below ALPHA_MIN), but draw() re-scheduled itself
@@ -345,6 +358,7 @@ for (const ev of ["mousedown", "mousemove", "mouseup", "wheel", "keydown", "inpu
 function animating() {
   return settling                                                 // loader phase, sim mid-flight
     || alpha >= ALPHA_MIN                                         // the sim still applies force
+    || overlapOwed > 0                                            // the settle's last collision pass
     // ...and, after force stops, while anything is still visibly coasting. Measured on screen, so
     // the threshold means the same thing at any zoom: below a twentieth of a pixel per frame there
     // is nothing left to show.
@@ -3440,6 +3454,10 @@ function stepSim() {
   const cooling = alpha >= ALPHA_MIN;
   if (cooling) alpha += (0 - alpha) * ALPHA_DECAY;
   const active = alpha >= ALPHA_MIN;   // dormant once cooling is done - no force is applied
+  // The step that cools the layout owes the last collision pass; a layout at rest visits no pair.
+  if (cooling && !active) overlapOwed = OVERLAP_STEPS;
+  const pairs = active || overlapOwed > 0;
+  let overlapped = false;
   const pinned = v => v === drag || v === focus;
 
   // Scale by node count: more nodes spread wider (repulsion range/strength up, center attraction down).
@@ -3460,7 +3478,7 @@ function stepSim() {
   // workspace pushing each node of a small one kept the small one strung out across the map.
   const wsApart = boundaryMode === "workspace" && !clusterMode && new Set(nodes.map(n => n.workspace).filter(Boolean)).size > 1;
 
-  for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+  if (pairs) for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
     const a = nodes[i], b = nodes[j];
     let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
     if (d < 0.5) {
@@ -3482,14 +3500,17 @@ function stepSim() {
     // Collision minimum gap = sum of the two radii + padding -> a node with more neighbors (larger) gets wider spacing around it.
     const minD = rad[i] + rad[j] + COLLIDE_PAD;
     if (d < minD) {
+      overlapped = true;
       const push = (minD - d) / 2;
       cdx[i] -= dx*push; cdy[i] -= dy*push; cdx[j] += dx*push; cdy[j] += dy*push;
     }
   }
 
-  // Residual overlap is cleaned up by the collision displacement below, pushing each frame (position correction applies even while dormant).
+  // Residual overlap is cleaned up by the collision displacement below, for the steps the cooling
+  // owes and no longer: the pass ends as soon as nothing overlaps.
   // Do not reheat here - wake only from 'events' like a new node/drag/resize
   // (removes the problem of reheating every frame after settling).
+  if (!active && overlapOwed > 0) overlapOwed = overlapped ? overlapOwed - 1 : 0;
   if (active) {
     // Each node's crowd, smoothed over frames so a link's length does not flicker as its ends move,
     // and the graph's average crowd that a link's ends are measured against.
@@ -3666,11 +3687,18 @@ function stepSim() {
     const shifted = Math.hypot(offx, offy);
     if (shifted > simMotion) simMotion = shifted;
   }
+  // The coast ends once it is too slow to see on the screen, and the layout is then at rest: its
+  // velocities and its motion are dropped, so a zoom into it later magnifies no motion that would
+  // step it again (U28). A wake starts it afresh.
+  if (!active && overlapOwed === 0 && !drag && simMotion * cam.s <= MOTION_MIN_PX) {
+    for (const v of nodes) { v.vx = 0; v.vy = 0; }
+    simMotion = 0;
+  }
 }
 
 function draw() {
   rafId = null;
-  stepSim();
+  if (simWarm()) stepSim();
   easeCam();
   // Reduced motion: settle synchronously (bounded - alpha decays multiplicatively, so convergence
   // takes ~110 steps; the cap only guards a pathological graph from locking the frame).

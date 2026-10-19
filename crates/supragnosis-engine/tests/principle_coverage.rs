@@ -799,9 +799,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (28, &[c(
         "drawing never moves the layout: a pan, zoom, hover, highlight or selection redraws without a simulation step, and a layout at rest visits no pair",
-        Evidence::Deferred(
-            "Section 14 step 26 is planned: draw() steps the simulation in every frame and the collision pass runs after cooling. Revisit when step 26 lands",
-        ),
+        // crates/supragnosis-viz/tests/scale.rs reads draw, simWarm, stepSim and animating.
+        Evidence::Scenario(&["drawing_never_moves_the_layout"]),
     )]),
     (29, &[c(
         "near forces meet each node with only the nodes of its own and the adjacent grid cells, giving the forces every pair would give",
@@ -3245,6 +3244,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/tooltips.rs"),
     include_str!("../../supragnosis-viz/tests/list.rs"),
     include_str!("../../supragnosis-viz/tests/titlebar.rs"),
+    include_str!("../../supragnosis-viz/tests/scale.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

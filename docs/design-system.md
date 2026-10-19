@@ -16,7 +16,8 @@
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
-> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and its bench, step 25, is built.
+> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and steps 25-26, the bench and the
+> simulation at rest, are built.
 
 ## 1. Why this exists
 
@@ -1668,7 +1669,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 
 25. **The scale bench** [built] (Section 26.1): `scenarios/web/bench/canvas.mjs`, the synthetic graph
    and the timings of Section 1's table, run before and after every step below and in both engines.
-26. **The simulation at rest** [planned] (Section 26.3; U28): the simulation on its own clock, no step
+26. **The simulation at rest** [built] (Section 26.3; U28): the simulation on its own clock, no step
    in a frame that only redraws, the collision pass ended with the settle, and the recenter only while
    it steps.
 27. **The grid** [planned] (Section 26.4; U29): near forces from a uniform grid, scratch arrays reused,
@@ -2232,8 +2233,13 @@ would be its own document. Nothing in this section assumes it.
 - **At rest no pair is visited.** The collision correction that ran after cooling - to clear the last
   overlaps - ends with the settle: it runs until no pair overlaps or for a bounded number of steps, and
   stops. A drag, a new node or a changed filter warms the layout again, as `wake` does now.
+- **A zoom does not find it moving.** The coast after the forces stop is measured on the screen, and
+  it ends once it moves nothing by a twentieth of a pixel a frame; what is left of it is dropped then,
+  so zooming into a map at rest magnifies no motion that would step the layout again.
 - **The recenter runs while the layout steps.** The drift it corrects comes from the steps' clamps; a
   layout at rest does not drift.
+
+Guarded by `drawing_never_moves_the_layout`.
 
 ### 26.4 Near forces come from a grid
 
