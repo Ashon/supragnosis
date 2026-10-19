@@ -11,7 +11,8 @@
 > foundations, the map, the places, the Review page, search, the landing's picture, the three
 > surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
-> U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5).
+> U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). **Steps
+> 12-16 are designed, not built**: the second pass over every screen (Section 1, U15-U20).
 
 ## 1. Why this exists
 
@@ -99,6 +100,49 @@ the drawing was heavy.
 - **Off the scale.** The Settings page still drew 11.5, 12.5 and 15.5px, and the viewer set 600 in
   25 places.
 
+**Measured again across every screen**, on 2026-10-19 after step 11: the release build on a made-up
+store, at 1440, 900 and 390 pixels wide, each screen's accessibility tree and tab order recorded, and
+read by four reviewers against WCAG 2.2, Apple's Human Interface Guidelines and Nielsen's heuristics.
+They found 53 problems, and these are the ones that ask for a rule:
+
+- **Search was confident and wrong.** With billing selected, "checkout", a word billing does not
+  hold, answered "12 hits". The semantic surface ranks every observation by nearness, and the list did
+  not say which hits contain the words and which are only near them. The first row was chosen before
+  anyone moved, so ArrowDown and Enter opened the second, and the field kept the query.
+- **The first view was empty and did not say why.** The node default workspace is empty by design,
+  and the viewer opened on it. Its chip was not among the chips, while the Log beside it counted two
+  entries.
+- **System words were still the first line.** The Log read "accepted claim_promotion: 9f778c20", its
+  fourteen rows each said "8:54 AM", and none said who. Tier ids such as `agent_extracted` were
+  printed where `TIER_NAME` already had a name for them. The status bar ran "ws (all) / nodes 20 /
+  edges 14 / Component 3, Concept 4 ..." for nearly 1000 pixels, over the legend.
+- **Type colors were not told apart, and one read as a signal.** Concept, Database and Metric drew
+  nearly one green. Service sat beside the contested coral, and Decision measured 2.87:1 on the
+  ground. The relation legend showed colors the map draws only on the active node's edges.
+- **One idea had four names, and a switch moved the reader.** "hulls", "all regions", "Boundaries"
+  and the status bar's "hull" named two displays. An option that was off looked disabled. With
+  follow on, a write elsewhere changed the workspace and closed the inspector.
+- **Settling a contested value leaned one way.** "keep" was gold and filled and "use this" grey.
+  What either did was said in a tooltip, nothing undid it, and nothing said why the shown value was
+  shown.
+- **The way to Review was a count that vanished.** "2 to review" already held "1 contested", which
+  was shown beside it as a third item. With nothing waiting the pill went, and the way to the page
+  went with it.
+- **One page had four names.** The first-run page was "welcome" in its crumb, "Set up supragnosis"
+  in its title, "Finish setup..." in the tray and "Run setup again" in About. It mixed switches with
+  unlabelled checkboxes. Three of its sentences promised what the code does not do.
+- **The Settings page said one thing three times.** Version drift drew three Restart buttons, every
+  section carried a green dot, the server list's radios could not be pressed, and sync peers were
+  listed twice.
+- **Phones and keyboards.** At 390 pixels the status bar pushed the gear, the only way to Settings,
+  off the screen. The landing's install command was cut at `ashon/tap/`, and the principles ledger's
+  columns were 8.5 pixels wide. The Review page's tabs did not move with the arrow keys, A and R
+  decided from anywhere on the page, toggles did not expose their state, and focus left the Add server
+  dialog.
+
+Seventeen of the 53 were defects that ask no design question; Section 14 step 13 fixes them as they
+are. The rest change what the sections below say.
+
 ## 2. What this is NOT
 
 **It is not a change to what the server decides.** No fold, check, tier or verdict changes. One read
@@ -111,6 +155,15 @@ resource changes; the viewer's search calls the function `search_knowledge` call
 including the contested block's inline actions (D1). This document moves the panel, renames its
 lines in plain words and adds marks to the map, and every mark it adds reads the same effective tier
 the inspector's baseline reads (inspector.md D4).
+
+**It does not put a floor under the semantic surface.** The viewer groups what search answers
+(Section 8) and hides none of it. A similarity floor would change what agents get from
+`search_knowledge` too, so it belongs to semantic-retrieval.md, measured on real stores before it is
+set.
+
+**It adds no write path.** Undoing a confirmation is the demotion `/api/resolve` already casts
+(Section 7), and "Neither is right" asks an agent to record the right value. The console still
+observes nothing.
 
 ## 3. Tokens
 
@@ -209,9 +262,19 @@ surface token, `--select` among them.
   - a legend swatch of a line the map draws: the Trust legend's rings and the boundaries' dashes;
   - the dashed chip of a superseded relation, in `--muted`;
   - the dashed box around a contested value, in `--bad`, the contested color;
+  - on the principles page's ledger, an owed clause's `--muted` outline and the chosen column's
+    `--gold-bright` one (Section 11a);
   - a control's own glyph: a radio's circle, a switch's track, the loader's spinner.
 
   On the canvas the rings, edges and boundaries are the data and stay.
+- **Each control is the kind its act is** (U19). A switch applies at once and says on or off, as
+  `role="switch"` with `aria-checked`: Start at Login, View's labels and edges. A checkbox is a choice
+  that a button confirms: the Setup page's plan, with the whole row as its label. One choice among a
+  few is a radio group or a segmented control (`role="radiogroup"`): View's Regions and Boundaries,
+  the Settings page's server list. A chip that filters is a button with `aria-pressed`: workspaces,
+  types and relations. A row of segments that changes what a page shows is a tab list: the Review
+  page's. An option that is off is drawn at full strength and says it is off. Dimming means a control
+  cannot be used now, and such a control says why.
 - **Gold says one of four things** in the viewer and on the Settings page: selected, human confirmed,
   waiting for a person (the review pill and the one action a decision asks for), and keyboard focus.
   The mark keeps its gold. Headings, frames, hover, counts and the map's ground are not gold. The
@@ -231,7 +294,7 @@ One channel, one meaning:
 | halo | selected | a soft `--ink` disc behind the node, replacing the selection ring |
 | glow | this session's footprint | a soft `--ok` light centred on the node and fading out, drawn beneath it, replacing the teal ring |
 | pulse | activity | one expanding ring, none under reduced motion |
-| edge | relation | neutral by default; kind color and label only on the active node's edges |
+| edge | relation | neutral; on the active node's edges, brighter and labelled with the kind |
 | region | context (hyperedge) | only the active node's contexts by default |
 
 **Rings belong to trust.** The selection ring becomes a halo, the footprint ring a glow, and two
@@ -255,23 +318,46 @@ leave the badge at full strength. A type the legend hides is not drawn at all, s
 contested pill counts the contested nodes of the loaded scope whether the legend shows them or not
 (P6).
 
-**Colors are keyed by name.** An FNV-1a hash of the name picks one of 48 slots of the generated band,
-and a slot already taken in the view probes forward in name order. Two types never share a color on
-one screen, and a type keeps its color in every view where no earlier name collides with its slot -
-which is not every view, and the legend is what names a color.
+**Colors are keyed by name, from a band that cannot be read as a signal** (U16). The band is sixteen
+colors: eight hues in two tones.
+
+- **No hue near a signal.** Every hue sits at least 25 degrees of OKLCH hue from `--accent`,
+  `--gold-bright`, `--ok` and `--bad`, so no type reads as human confirmed, healthy or contested. That
+  leaves the greens from 109 to 155 degrees, and the blues, violets, pinks and reds from 205 around to
+  11.
+- **Bright enough to see.** Every color has OKLCH lightness 0.62 or more, which is 5.5:1 or more on
+  `--surface`, well past the 3:1 a mark needs (WCAG 1.4.11).
+- **Measured apart.** In the first tone the eight hues stand at least 0.09 apart in OKLab, and at
+  least 0.11 from every signal and neutral the map draws. In the second tone every color stands at
+  least 0.055 from every other color of the band.
+- **How a type gets its color.** An FNV-1a hash of the name picks a preferred hue. In name order,
+  each type of the view takes the first free hue from its preferred one, in the first tone, then in
+  the second. Up to eight types on a screen are told apart by hue, and up to sixteen by hue and tone.
+  Past sixteen a color is shared, and what tells two such types apart is pointing at or focusing a
+  legend entry, which lights that type's nodes and dims the rest.
+
+A type keeps its color in every view where no earlier name takes its hue. That is fewer views than
+the 48 generated slots kept, and the legend is what names a color. The landing's stage and the
+principles page copy the band with the viewer's functions (U10, U14).
+
+**Relation kinds draw no color.** At rest a relation is the neutral line. On the active node's edges
+it is drawn brighter, in `--ink2`, and labelled with its kind in the identifier face. The relation
+legend draws each kind as that line. Thirty kinds in a band of sixteen colors would say nothing, and
+a legend of colors the map draws only on a hover promised what the map does not show.
 
 **Every region is drawn, and the active node's are named.** A region is a cloud in its context's
 color: one ellipse laid along its members, densest over them and fading to nothing past the
 outermost, with no edge. A region says what was said together, which is a looser fact than a
 boundary, and an edge would read as a line no fact asks for (Section 4). At rest every region is
 drawn, faint; while a node is active its own regions are drawn at full strength and the rest fade.
-View's "all regions" off draws the active node's alone. Only the active node's regions are named, by
+View's **Regions** says which are drawn: All, Selected (the active node's alone) or Off. Only the active node's regions are named, by
 two of their members other than it, with the count: "proposal gate, claim_demotion defect (4)" -
 every context of a hub was once named after the hub, so selecting one titled five regions alike.
 Region names are placed before node labels, which avoid them, so names for every region at rest
 would push the map's own names out. A region's name sits outside its upper edge, 13px at medium
 weight whatever the region's size. The minimap draws the same clouds. Each region's hue comes from its
-context's id, and every region shares one lightness and one chroma in OKLCH, so no region reads
+context's id, mapped onto the band's arcs so that no cloud is gold, coral or teal, and every region
+shares one lightness and one chroma in OKLCH, so no region reads
 brighter or heavier for its hue; where clouds overlap they are mixed in OKLCH too - lightness and
 chroma kept, hues by their weighted circular mean - not by the canvas, whose compositing mixes in
 sRGB and meets two hues in a grey or a brown neither of them is.
@@ -321,10 +407,11 @@ On the Graph page:
 
 - **The left panel is the filters**: workspaces, types, relations, the type definitions, and the
   Trust legend, which says what a ring reads (Section 5). The boundaries' legend is a view mode: it
-  moves into View as a three-way control (workspace, origin, off), which b still cycles. The Types
+  moves into View as **Boundaries** - Workspace, Origin or None - which b still cycles. The Types
   tab's rows move here before the tab goes: a contested type definition with its confirm act, an axis
-  collision, and the types that are defined but have no node in the loaded graph. The legend's hover
-  shows only the winning definition; the full entry opens in place.
+  collision, and the types that are defined but have no node in the loaded graph. Pointing at or
+  focusing a legend entry lights its nodes and dims the rest, and its tooltip shows only the winning
+  definition; the full entry opens in place.
 - **The right side shows one thing at a time**: the inspector as a sheet while a node is focused,
   otherwise the Log. The inspector moves there from the bottom, where it covered the part of the map
   being inspected. Its two regions, relations then evidence, stack in the sheet (inspector.md Section 6).
@@ -344,9 +431,30 @@ On the Graph page:
   the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
   once, since any click stored every choice and most were never made, and View remembers it from then
   on.
-- **The status bar is the window's state**: the scope and its counts on the left; on the right,
-  pills for what waits, what is contested, sync and semantic search, then the gear. A pill is tinted,
-  not outlined.
+- **The status bar is the window's state, said once.** On the left, the scope and its counts in
+  words: "All workspaces - 20 entities, 14 relations, 10 regions". Counts per type are the legend
+  entries' to show, not the bar's. On the right: the way to Review, the sync pill, the search mode,
+  then the gear. A pill is tinted, not outlined. How fresh the map is goes unsaid while it is fresh;
+  once a poll fails, the bar says "Not updated since 8:54 - the server is not answering", and the
+  time does not tick at every poll.
+- **Review is always in the status bar** on the local console (U20). It reads "Review" when nothing
+  waits and "2 to review (1 contested)" when something does: one count, the items under Needs you,
+  with the contested beliefs counted once, inside it. The parenthesis is the loaded scope's contested
+  count, which U3 asks the bar to keep whatever the legend hides. It is a button, the Graph page's way
+  to Review wherever Cmd+2 does not reach, and it is not in the title bar, which holds no navigation.
+  On the read tier, where nothing is decided, there is no Review entry, and the bar keeps the
+  contested count alone as a pill ("1 contested").
+
+**The first view is where the knowledge is.** The viewer opens on the scope the address names, or
+else on the node default. When the default holds nothing while other workspaces hold knowledge, it
+opens on All and says so beside the chips: "Showing all workspaces - default is empty". The scope in
+use is always a selected chip, All among them, and it is called All, never "(all)" or "*". An empty
+default means the wrong scope, not an absence of knowledge (P5).
+
+**Follow moves the camera, not the reader** (U20). With follow on, a write in the scope on screen
+frames its nodes. A write in another workspace is a notice that names the workspace and who wrote, as
+the Log's who-line does, with Show. The scope, the selection and the open sheet stay as the person
+left them: changing what a person is reading is the person's act (WCAG 3.2.5).
 
 The dock's Peers tab is the only place that lists known peers with "not admitted", "admitted, not
 shared" and "surface unknown". Those rows move into Settings > Sync, and into the viewer's own
@@ -360,7 +468,39 @@ tier's banner already says why.
 
 By width: from 1200 pixels the filters, the map's window and the right panel sit side by side; from
 760 the frame keeps its header and status bar and one panel at a time lies over the map, a surface
-with a shadow; below 760 the panel is a sheet from the bottom.
+with a shadow; below 760 the panel is a sheet from the bottom. Below 760 the status bar keeps the
+scope's name, Review and the gear, and gives up the counts first, then the pills' words. The gear
+never leaves the screen, and nothing scrolls sideways at 320 pixels (WCAG 1.4.10).
+
+## 6a. The app's own pages
+
+The Settings page (settings-page.md) and the first-run page (onboarding.md Section 6) are the app's.
+Their rules are in those documents, and the second pass changes four things in them:
+
+- **One name: Setup.** The first-run page is Setup everywhere: its crumb is `supragnosis / setup`, its
+  title "Set up supragnosis", the tray's item "Finish Setup..." and About's act "Open Setup". "Welcome"
+  fits only the first visit, and the page is reached three ways after it. A state has one word on
+  both pages: an AI app that waits for the person's act "Needs you", on Setup as in Settings. A
+  control that both pages offer, such as an AI app's row or the model's download, is built once in the
+  app's shared script and drawn by both.
+- **The plan is checkboxes, and Set up is the default.** Every item of Setup's plan is a checkbox
+  whose label is its whole row, since the plan is a choice the Set up button confirms (Section 4).
+  Set up is the default button, which Return presses, and the first control after the plan in tab
+  order. Copy log and Copy diagnostics sit at the left, beside the privacy line. While the plan runs
+  the foot says "Setting up... 2 of 3"; when it ends the heading says "Supragnosis is set up"; the
+  page tells a step that is already running from one that failed.
+- **Every sentence is one the code keeps.** The plan says that nothing changes until Set up, so every
+  act in the plan waits for it: "Switch to the bridge" and "Take over" are items of the plan, not
+  buttons that run at once. "Finish Setup..." stays in the tray while any step is not done, unless
+  the person set that step aside with "Not now". The privacy line says what is true: "Your memory
+  stays on this Mac. It is shared only if you add a remote server or set up sync."
+- **The Settings page says each fact once.** Version drift is one card at the top of This Mac,
+  "Update ready - restart to load 0.7.0", with the one Restart. A section's dot appears only when the
+  section needs attention, with words a screen reader reads. The server list is a radio group whose
+  choice is Use, so a radio that cannot be pressed is not drawn. A sync peer is one row. Claude Code's
+  row in AI apps carries a switch, "Save the why behind each commit", which turns its capture hook on
+  and off (client-connect.md Section 12): on runs `connect claude-code`, and off runs `connect
+  claude-code --no-capture`, which then removes the hook from an app that is already connected.
 
 ## 7. The Review page
 
@@ -386,6 +526,13 @@ once the item's diff and checks are on screen, so stepping fast through the list
 on an item not yet shown. A recall asks for a second, explicit act: its effect is the strongest the
 console casts, and one keystroke should not carry it.
 
+**Keys act where the person is** (U19). A, R, J and K act only while focus is in the list or the
+item; anywhere else they are letters (WCAG 2.1.4). Each control names its key in
+`aria-keyshortcuts`, not in its name, so it is read as "Accept" and not "Accept A". Skip is a button
+as well as J. The segments - Needs you, Suggestions, Health, Decided - are tabs that move with the
+arrow keys. After a decision redraws the list, focus lands on the next item, or on the list when none
+is left. While the page is open, the map and the panels behind it are inert.
+
 **What follows a decision is said plainly.** An accepted merge offers "Un-merge", which opens the
 split proposal (unmerge.md) and states its two consequences: the separated pair is never suggested
 again (unmerge.md S5), and merging them later needs a proposal distinguishable from this one
@@ -398,11 +545,32 @@ not listed when its diff is computable and empty (proposal-workflow.md Section 1
 the list by the person's act or by the expiry dreaming.md Section 5.3 sets, which counts as the
 person's no.
 
-**The inspector keeps its own act.** A contested belief's "use this" in the inspector stays where it
-is, under D1: it is the mediation act at the point of reading, and it is listed on the Review page
-too. U4 governs the Review page's controls.
+**The inspector keeps its own act.** A contested belief's act in the inspector stays where it is,
+under D1: it is the mediation act at the point of reading, and it is listed on the Review page too.
+U4 governs the Review page's controls.
 
-The count of items under Needs you is the status bar's review pill. The tray menu's "Review (N)..."
+**Settling a contested value** (U18) is drawn the same in the inspector and on the Review page:
+
+- **It says first why the shown value is shown**, in the policy's own terms (resolution.md Section
+  2.1). For a tie: "Two sources disagree on Postgres's type. Both are Agent claims, so the newer one
+  is shown until you decide." For a conflict that trust settled: "The Human confirmed value is
+  shown."
+- **Each value is a row that says who said it and when, with the same act at the same weight**:
+  Confirm. No value's button is filled or gold while the other's is not, and the shown value is
+  marked as shown, not as preferred.
+- **Confirm asks once, in place**: "Confirm Database? It becomes Human confirmed, and the other value
+  stays listed." The two buttons are Confirm and Cancel. The act is the promotion `/api/resolve`
+  casts today.
+- **The notice that follows offers Undo**, and stays until it is dismissed, as an error does. Undo is
+  a demotion of the observation just confirmed back to the tier it had: a second gated event that
+  `/api/resolve` already casts. The log keeps both (P3), and the fold returns the belief to where it
+  was.
+- **"Neither is right"** opens a sentence to give an agent, with Copy: "Record the correct type of
+  Postgres in supragnosis." A correction is an assertion the log must hold before anyone can confirm
+  it (resolution.md Section 4.2), and the console observes nothing.
+
+The way to these items is Review in the status bar (Section 6), whose count is the items under Needs
+you. The tray menu's "Review (N)..."
 item counts the proposals that wait on this Mac's daemon, across its workspaces, and is in the menu
 only while some do; contested beliefs and suspected secrets need the curation read, which the tray
 does not make every minute. On a remote profile the tray stays as remote-viewer.md Section 6 has it.
@@ -416,10 +584,26 @@ whole page.
 Cmd+K, or "/", opens a search bar over the canvas. The query goes to a new read path,
 `/api/search?q=...&workspace=...`, which calls the engine function behind `search_knowledge` and
 answers what it answers: entities and observations in its deterministic order, with the mode label
-saying whether the keyword or the hybrid surface answered (P19). The bar groups the two, Enter focuses
-an entity or opens an observation's card, and the canvas frames the result. While the bar is open,
-the map lights the entities the search returned, not names that merely contain the typed text, so
-the list and the map give one answer.
+saying whether the keyword or the hybrid surface answered (P19). Enter on a row focuses an entity or
+opens an observation's card, and the canvas frames the result. While the bar is open, the map lights
+the entities the search returned, not names that merely contain the typed text, so the list and the
+map give one answer.
+
+**The answer says how each hit was reached, and over what** (U15).
+
+- **The field names its scope**: "Search billing", "Search all workspaces".
+- **Two groups.** "Contains "checkout"" holds the hits the keyword surface matched. "Related by
+  meaning" holds the hits that only the semantic surface or the graph's neighbors reached. Each group
+  keeps the engine's order. The path answers each hit with how it was reached, read from the lists the
+  fusion consumed, and the ranking itself is unchanged (U6). In keyword mode the second group is not
+  drawn, and the mode label says why.
+- **An empty scope says so, and offers the wider one.** When no hit in the scope contains the words,
+  the first group says "No item in billing contains "checkout"." Its first row is then "Search all
+  workspaces (3 matches)" when the wider scope holds some. A second request to the same path counts
+  them, over the reader's grants on the read tier.
+- **Nothing is chosen until the person moves.** The field is a combobox with a list and no automatic
+  selection (WAI-ARIA's combobox pattern): ArrowDown moves to the first row, and Enter acts only on
+  the row the person moved to. Once a row is chosen, the field shows its name.
 
 The path's read-tier policy is `Read`, never `Served`: the workspace is resolved over the reader's
 grants as `/api/graph` resolves it (remote-viewer.md V3). A union - `*` on the read tier - is searched
@@ -447,6 +631,23 @@ Hashes and ids live in footers and cards. One line never states two contradictor
 named by its id; it is called "this node" only when the id is the one `/api/surface` reports for the
 node serving the page, since every unconfigured node calls itself `localhost`.
 
+**A tier is named, never spelled** (U17). Every place that shows a tier uses the Trust legend's
+names, which are Unverified, Agent, Host signed and Human confirmed. The identifiers stay in tooltips
+and in cards' footers.
+
+**The Log speaks in sentences** (U17). A row says what happened in words, and a who-line under it says
+the tier, who and when: "You confirmed a claim: "We render the checkout page..."" over
+"Human confirmed - this node - 8:54 AM"; "Merge proposed: PostgreSQL into Postgres" over
+"Agent - laptop-3 - 8:55 AM".
+Who is named as the strip names a host (Section 6). Every kind of event the stream sends has its
+sentence, and a kind the page does not know reads "Something changed", with the kind in the tooltip.
+Rows from one minute show the time once, on the first. A row's mark is the ring the map draws for its
+tier (Section 5): dashed `--muted` for Unverified, none for Agent, a thin `--ink` ring for Host signed,
+`--gold-bright` for Human confirmed.
+
+**One place, one name** (U17). The first-run page is **Setup** wherever it is reached (Section 6a), and
+a state keeps one word on every page that shows it.
+
 | Today | Shown |
 |---|---|
 | the Proposals and Review tabs | Review |
@@ -458,6 +659,15 @@ node serving the page, since every unconfigured node calls itself `localhost`.
 | Healthy - nothing owed | Up to date |
 | Peers, client, local +N | Sync, Spoke, this node +N |
 | settling layout... | Arranging 168 items |
+| accepted claim_promotion: 9f778c20 | You confirmed a claim: "We render the checkout page..." |
+| opened entity_merge: PostgreS -> Postgres | Merge proposed: PostgreSQL into Postgres |
+| ws (all) / nodes 20 / edges 14 / Component 3, ... / hyperedges 10 (hull 4) | All workspaces - 20 entities, 14 relations, 10 regions |
+| (all), * | All |
+| hulls / all regions / hull | Regions |
+| keep / use this | Confirm, for every value |
+| agent_extracted, host_signed | Agent, Host signed |
+| welcome / Finish setup... / Run setup again | Setup / Finish Setup... / Open Setup |
+| Needs switching | Needs you |
 
 ## 10. Keyboard, motion and contrast
 
@@ -471,6 +681,27 @@ node serving the page, since every unconfigured node calls itself `localhost`.
   purpose: labels the map dims to put the focus forward. Until step 7 the panels were translucent
   glass whose ground was whatever the canvas showed through; they are opaque `--panel` from step 7,
   so their text is inside the pairs.
+
+The second pass holds every surface - the viewer, the Settings and Setup pages, the landing and the
+principles page - to one floor (U19):
+
+- **Every control says what it is and what state it is in.** It has a name, and its kind and state
+  are those Section 4 gives it. A button that shows only an icon is named by its act and its object:
+  "Remove team-hub", not an empty name. Each page declares its language, `<html lang="en">`, and the
+  map's canvas has a label that says what it draws.
+- **A dialog holds focus.** It has a name, it moves focus into itself when it opens, Tab stays inside
+  it, the page behind it is inert, and closing it gives focus back to what opened it. A form that is
+  refused marks the refused field `aria-invalid`, says why beside the field, and moves focus to the
+  first such field (WCAG 3.3.1).
+- **A press lands.** A control a pointer presses is at least 24 by 24 pixels with its spacing (WCAG
+  2.5.8), and 28 below 760 pixels wide, where a finger presses it.
+- **Progress is announced.** A step that runs shows its progress as `role="progressbar"` with its
+  value, and a step's end, success or failure, is said in a polite live region (WCAG 4.1.3). A page
+  that has finished its work says so in its heading, not only in a notice that leaves.
+- **Redrawing keeps the person's place.** A list redrawn by a poll or a decision keeps focus on the
+  same item, or on its successor when that item went.
+- **Nothing scrolls sideways** at 320 pixels except a code block, which takes focus (`tabindex="0"`)
+  so that a keyboard can scroll it.
 
 ## 11. The landing
 
@@ -506,6 +737,13 @@ or later), and no account. The version is stamped on deploy by one substitution 
 with no other attribute. Nothing in the hero waits for a script or an animation to be seen. The
 install script the hero links to says what its binary searches with: the release is built with the
 local embedding model, and the script's keyword-only notice predates that.
+
+**After the command, the next step.** Under the install command one line says what follows it: "Then
+connect an agent: `supragnosis connect claude-code`, or Connect in the app. All steps ->", which
+links to Get started, and the header gains Install beside its other links. Below 560 pixels the
+command wraps and its Copy button sits on its own line; a code block that still scrolls takes focus.
+The hero's picture of a question and an Accept chip is a picture: no pointer, no hover, nothing that
+looks pressable. The header's links stand at least 24 pixels apart, a finger's width (Section 10).
 
 **The stage** is one canvas beside the five steps. Each step is a sentence, a short paragraph and one
 snippet of the product's own text, and the scene beside it shows the same thing happen to a made-up
@@ -634,6 +872,20 @@ Under it is the count of each state. It shows no ratio and no score: the registr
 asserts none (principles.md Appendix B.1), and a ratio on the page would be read instead of the clauses.
 Pressing a column shows that principle's clauses, each with its state, beside the ledger. The
 columns, the counts and every principle's clauses are written into the page from the registry (U12).
+An owed block is drawn as an empty cell with a 1px `--muted` outline, and the chosen column with a
+`--gold-bright` outline: on the ground, a filled owed block measured 1.17:1 and the chosen column
+1.26:1, so 28 of the 108 clauses could hardly be seen and the ledger looked less owed than it is
+(WCAG 1.4.11). Both outlines are lines that carry a fact (U9).
+
+**Owed is defined where it is first read.** The hero's subhead says what owed means - a clause the
+code does not yet guarantee - and a short glossary under the ledger's counts names each word the page
+uses once: clause, tested, by construction, pinned, owed, tension. One concept keeps one name on the
+whole page.
+
+**On a phone.** Below 900 pixels the ledger is six rows, one per chapter, and pressing a principle
+moves to its block (`#pN`) instead of changing a panel below the screen. Each scene has "Play scene",
+and none plays only because it scrolled into view. A separator such as "/" is drawn by CSS with empty
+alternative text, so a screen reader does not read it, and "Copied" is announced.
 
 **A principle** is a block with its number, a short title, one line, a reason of a sentence or two,
 its animation, its clauses - folded, in an element the browser's find still opens - and two links,
@@ -754,6 +1006,35 @@ social image.
 - **Every principle animates, the owed ones as owed.** Animating only what works would hide the debt
   the ledger shows; drawing an owed demand in its own style keeps the pictures and the ledger saying
   the same thing.
+- **Search groups by how a hit was reached, not by kind.** Splitting entities from observations was
+  the cheaper change, and each group would still have mixed hits that contain the words with hits
+  that are only near them, which is the difference the person could not see.
+- **No floor in the page.** Cutting meaning hits below a similarity in the viewer would answer the
+  person differently from the agent beside them (Section 8). Whether the engine needs a floor is
+  semantic-retrieval.md's question.
+- **Sixteen designed colors, not 48 generated ones.** The 48 slots kept a type's color across more
+  views, but any five types drew two of them close enough to read as one, and some drew a signal's
+  color. The trade is fewer stable colors for colors that differ on the screen in front of the
+  person; the legend names a color either way.
+- **A relation kind has no color.** Its name, drawn on the active node's edges, says more than a hue
+  from a band that types already fill.
+- **The way to Review is the status bar, not the title bar.** The reviewers drew a Review button in
+  the title bar. The title bar holds no navigation (Section 6), the review count already sat in the
+  status bar, and an entry that stays when nothing waits keeps the page one press away.
+- **Undo is a demotion, not a deletion.** The log is append-only (P3): undoing a confirmation appends
+  the gated event that reverses it, which `/api/resolve` already casts. A recall would also remove
+  the value from view, and that is a different act.
+- **"Neither is right" asks an agent.** A field where a person types the right value would add an
+  assertion to a console that reads and decides but has never asserted. An agent records the
+  correction, and the person confirms it here (resolution.md Section 4.2).
+- **Follow frames, it does not move the reader.** Switching the workspace to follow a write was what
+  follow did, and it took the reader away from what they were reading. A notice with Show keeps that
+  as one press away.
+- **Setup, not Welcome.** "Welcome" fits the first visit, and the page is reached three times more
+  after it, from the tray and from About. "Setup" says what the page is for on every visit.
+- **Checkboxes in the plan, switches in Settings.** A switch applies at once, which is what Settings
+  does. The plan is applied by its button, and a switch there promised an act that had not happened
+  yet.
 
 ## 13. Invariants
 
@@ -767,12 +1048,18 @@ social image.
 | **U6** | The viewer's search answers with the engine's ranking and mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
 | **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 on every surface token. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
-| **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph. |
+| **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, an owed clause or the chosen column on the principles ledger, or a control's own glyph. |
 | **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's own functions, a ring is human confirmed at the viewer's width, the coral badge is contested, a relation is the viewer's neutral line, and every other color it draws is a landing token. The second machine draws every ring and badge the first draws, since it replays the same log. Each scene ends within five seconds and then draws nothing until it is asked again; under reduced motion each scene is its resting frame; the canvas is hidden from assistive technology and each step says its scene in its own words (P2, P6, P18). |
 | **U11** | Every face a surface names first in its reading or identifier stack ships with that surface and is served from its own origin, and no surface fetches a font from another host. The viewer, the Settings page and the landing name the same stacks. |
 | **U12** | The principles page states only what the code states: its ledger, counts and clause lists are written from the coverage registry and the build fails when they differ; every principle of principles.md has its block and every Appendix A row its entry; every case names held clauses and is replayed by a test of the code that owns it or held by those clauses' tests; and the page's script takes every value it draws as the product's behavior from the cases and names no trust tier itself (P1, P5, P16). |
 | **U13** | The principles page never draws an owed clause as working: every owed beat or branch names, in the registry's words, a clause the registry does not hold and is drawn in the owed style, every tension's owed tag is derived from the clauses it names, and the build fails otherwise (P5). |
 | **U14** | The principles page draws the viewer's marks with the viewer's meanings and every other mark as its own, every color a landing token; each demo and scene plays at most once on its own, can be stopped while it plays, and rests drawing nothing; under reduced motion each beat and demo state is its resting frame; every canvas is hidden from assistive technology, a caption is announced only after the reader acts, and without a script the page draws no empty frame (P2, P6, P18). |
+| **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count (P5, P19). |
+| **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more; the band's first tone stands 0.09 apart in OKLab and 0.11 from every signal and neutral the map draws, and its second 0.055 from every color of the band; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
+| **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name, every kind of event the stream sends has a sentence and a who-line naming tier, who and when, a row's mark is the map's ring for its tier, and a place keeps one name wherever it is reached (P2). |
+| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast, and is undone by a demotion the log keeps; the console asserts no value of its own (P3, P6, P23). |
+| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a single-key shortcut acts only while focus is in its list or item; every target a pointer presses is at least 24 pixels; and nothing but a focusable code block scrolls sideways at 320 pixels. |
+| **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you with each contested belief counted once; and nothing but the person changes the scope, the selection or the open sheet - follow frames writes in the scope on screen and names the others in a notice (P22, P24). |
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -843,6 +1130,12 @@ markup; and the page carries no style of its own. U9 and U11 hold
 it through `no_border_draws_an_area` and `every_face_ships_with_its_surface`, which reads the page's
 links. `the_landing_links_the_principles_page` holds the landing's four links to it.
 
+U15-U20 are designed, not built. Section 14 step 12 adds their guards before the screens change: source
+tripwires in the viewer's tests for the band, the words and the controls, the same band read from the
+landing's and the principles page's copies, and browser scenarios that press what
+the rules govern - search, settling a contested value, Review, follow and the dialogs - at 1440 and
+390 pixels. Each row's registry entry stays owed until its guard runs.
+
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
 the read tier's own policy table, so a write added later is covered without anyone extending a list,
@@ -896,6 +1189,32 @@ and it fails when one of them appears in the viewer's source other than as an ar
    demos and nineteen scenes, the tensions, the landing's three links, and `site/principles.js` in the
    front-end lint. Merging it publishes the site, so it merges on the author's word.
 
+12. **The foundation** [designed] (U16, U17, U19, and the guards of U15-U20): the band in the viewer
+   and its two copies, relation kinds without color, and region hues on the band's arcs (Section 5);
+   the tier names and the event sentences in one table each, and Setup's name (Section 9); the
+   control helpers in the viewer and in the app's shared script: switch, pressed, radio group, tabs,
+   the dialog that holds focus, and the live region; and the guards, which hold at once the rules
+   that need no screen change and stay owed for the rest until steps 13-16 meet them.
+13. **The defects** [designed]: the seventeen found in Section 1's pass that ask no design question,
+   each fixed as it is - in the viewer, search's chosen row and its field, the status bar's overflow
+   and its empty counts, the Review page's keys and focus, the controls' states, names and targets;
+   in the engine, `propose` turning names into ids, and the Review page showing names whole; on the
+   app's pages, the download that locks the Settings page, a running step lost on leaving Setup, its
+   three sentences, its progress, the server list's unnamed button and the dialog's focus; on the
+   site, the cut install command, the ledger on phones, the owed contrast, the header's spacing and
+   the heading order.
+14. **The Graph page** [designed] (U15, U18, U20): search's groups and scope (Section 8); the first
+   view, the status bar, Review's entry and follow (Section 6); the Log's sentences (Section 9);
+   View's Regions and Boundaries (Section 5); and settling a contested value (Section 7).
+15. **The app's pages** [designed] (Section 6a): Setup's name, its plan and its sentences; the
+   Settings page's one card per fact, its radio group, its peers, and the capture switch with
+   `connect claude-code --no-capture` removing the hook. It ships with the Setup page itself
+   (onboarding.md Section 13 step 3).
+16. **The site** [designed] (Sections 11, 11a): the landing's next step and Install link, the
+   principles page's glossary, its ledger by chapter on phones and its scenes played by a press.
+   Merging it publishes the site, so it merges on the author's word, right before the release that
+   carries step 15.
+
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
 proposal and the read tier.
@@ -918,6 +1237,19 @@ proposal and the read tier.
   serves the page's own assets - no workspace is involved - with a long cache, since the path is
   versioned.
 - **settings-page.md** (step 10): the Settings page's policy gains `font-src 'self'`.
+- **inspector.md D1** stands (step 14): the contested block keeps its place, stays expanded and keeps
+  its actions, which become those Section 7 draws - one Confirm per value with its confirmation, Undo
+  in the notice, and "Neither is right".
+- **settings-page.md Sections 3.1-3.5 and 5** (step 15): the server list as a radio group, the capture
+  switch, drift as one card, one row per peer, About's "Open Setup", and the tray's "Finish
+  Setup..." (Section 6a).
+- **onboarding.md Section 6** (step 15): the page is Setup, its plan is checkboxes, its acts wait for
+  Set up, the tray item stays while any step is not done, and the privacy line is the one Section 6a
+  gives.
+- **client-connect.md Section 12** (step 15): `connect claude-code --no-capture` on an app already
+  connected through the bridge removes the capture hook, which today it leaves in place.
+- **The search path** (step 14): `/api/search` answers each hit with how it was reached. The MCP
+  tool's answer is unchanged.
 - **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
   "this node" (Section 9). The read tier's answer is unchanged.
@@ -941,6 +1273,11 @@ proposal and the read tier.
 | inspector.md D5 - the viewer never re-resolves identity | Section 8; U6 |
 | remote-viewer.md Section 6 - the read tier offers nothing it refuses | Sections 6, 7 |
 | dreaming.md Section 8 - drafts wait apart, decided by the person | Section 7; U5 |
+| P5, P19 - search says what it searched and how it matched | Section 8; U15 |
+| P6, P18 - no type color reads as a signal | Section 5; U16 |
+| P2 - who said it, in the reader's words | Sections 6, 9; U17 |
+| P3, P6, P23 - a contested value is settled by a gated act that can be reversed | Section 7; U18 |
+| P22, P24 - the way to a decision stays where the reader is, and nothing moves them | Section 6; U20 |
 
 ## 17. What the review changed
 

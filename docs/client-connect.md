@@ -348,7 +348,9 @@ the text says "workspace", not "only this workspace".
 - **`supragnosis connect claude-code` registers the hook beside the bridge**, in
   `~/.claude/settings.json`: one `PostToolUse` entry with matcher `Bash` and one `SessionStart`
   entry, each with the single command `<program> hook claude-code`, `<program>` chosen as the bridge's
-  is. `--no-capture` registers the bridge alone. `connect --remove claude-code` removes both. The
+  is. `--no-capture` registers the bridge alone, and on an app already connected through the bridge
+  it removes the hook and keeps the bridge, which is the Settings page's capture switch turned off
+  (design-system.md Section 6a). `connect --remove claude-code` removes both. The
   listing (`connect`, `connect --json`) reports `capture: on | off` beside the entry kind - an added
   field, so the JSON schema stays at its number - and the app's row says it.
 - **The edit follows C3.** The file is copied aside first; only an entry whose command names

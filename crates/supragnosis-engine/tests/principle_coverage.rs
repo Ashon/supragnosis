@@ -654,6 +654,48 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "no_border_draws_an_area",
         ]),
     )]),
+    (15, &[c(
+        "the viewer's search says how each hit was reached and over what scope: word matches grouped apart from meaning and neighbor hits in the engine's order, the scope named, no row chosen before the person moves, and an empty scope offering the wider one with its count",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 8 and 14 step 14, not built. Revisit when the \
+             search path answers how each hit was reached and the bar draws the two groups",
+        ),
+    )]),
+    (16, &[c(
+        "no type color reads as a signal: the band stands 25 degrees of OKLCH hue from the signal tokens at lightness 0.62 or more, its tones measured apart, up to eight types take eight hues, relation kinds draw no color, and every copy of the band is the viewer's",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 5 and 14 step 12, not built. Revisit when the \
+             band replaces the generated slots in the viewer and its two copies",
+        ),
+    )]),
+    (17, &[c(
+        "no line a person reads first spells a system identifier: tiers by their legend names, every event kind with a sentence and a who-line, a row's mark the map's ring for its tier, one name for one place",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 9 and 14 step 12, not built. Revisit when the \
+             tier names and the event sentences are the viewer's only spellings",
+        ),
+    )]),
+    (18, &[c(
+        "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast, and is undone by a demotion the log keeps",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 7 and 14 step 14, not built. Revisit when the \
+             contested block draws one Confirm per value with Undo",
+        ),
+    )]),
+    (19, &[c(
+        "every control names itself, is the kind its act is and exposes its state; dialogs hold focus; single-key shortcuts act only in their region; targets are 24 pixels; nothing but a focusable code block scrolls sideways at 320 pixels",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 4, 10 and 14 steps 12-16, not built. Revisit when \
+             the control helpers and their guards are in the viewer and the app's shared script",
+        ),
+    )]),
+    (20, &[c(
+        "on the local console the status bar always holds the way to Review with one count, and nothing but the person changes the scope, the selection or the open sheet",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 6 and 14 step 14, not built. Revisit when Review \
+             is a permanent status bar entry and follow frames without switching the workspace",
+        ),
+    )]),
 ];
 
 // docs/onboarding.md Section 11 - from install to the first entry, inside the app (O rows).

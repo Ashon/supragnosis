@@ -223,20 +223,25 @@ the first request and of the last, in memory only.
 - **What it is not:** a record of what an app did, or a condition any step waits on. It says an app
   reached the daemon since the daemon started; a restart forgets it.
 
-## 6. The app: Welcome
+## 6. The app: Setup
 
 **A page in the main window**, `assets/welcome.html`, under the same title bar with the crumb
-`supragnosis / welcome` (settings-page.md Section 3.0): no new window, no navigation in the title bar.
+`supragnosis / setup` (settings-page.md Section 3.0): no new window, no navigation in the title bar.
+It is called Setup wherever it is reached (design-system.md Section 6a); "Welcome" names it in this
+document's history and in its file.
 
 **When it shows.** On the first launch, and on a later launch while step 4.1 or 4.2 is not done,
 unless the person closed it with "Finish later" or turned Start at Login off by choice. The app
-remembers only those two things. While either step is not done, the tray offers "Finish setup...",
-and the Settings page's About section offers "Run setup again" at any time
+remembers only those two things. While any step is not done and not set aside with "Not now", the
+tray offers "Finish Setup...", and the Settings page's About section offers "Open Setup" at any time
 (settings-page.md Section 3.5).
 
 **Before anything is applied** the page shows the plan with its defaults - Start at Login on, every
 installed app without an entry checked, the model to download - and one "Set up" button applies them.
-Each card keeps its own act for later: the switch, a row's Connect or Disconnect, "Not now".
+Every item of the plan is a checkbox whose label is its row, including an app's "Switch to the
+bridge" and the daemon's "Take over", which wait for Set up like the rest; Set up is the default
+button. Once the plan has run, each card keeps its own act for later: the switch, a row's Connect or
+Disconnect, "Not now".
 
 **What it shows.** Four cards, one per step, each with its state, its sentence, and its act: the
 Start at Login switch, a row per AI app with Connect and its helper, the model's progress with "Not
@@ -250,8 +255,9 @@ cannot read, so the cards could not follow it; it puts a shell inside the app an
 it; and it adds a pseudo-terminal and a terminal widget to the app. The drawer shows what was run and
 what it changed, and the cards stay the truth about state.
 
-**The privacy line** at the foot: nothing leaves this Mac, and sync stays off until a server is added
-in Settings (O6).
+**The privacy line** at the foot: "Your memory stays on this Mac. It is shared only if you add a
+remote server or set up sync." (O6). Adding a server changes which server the AI apps use, and sync
+is set up in supragnosis.toml, so the line names both.
 
 **Who may act.** The page is the app's own, and it changes settings the way the Settings page does:
 it joins that page as a caller the app's commands admit (settings-page.md Section 4), and its commands

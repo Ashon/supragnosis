@@ -89,7 +89,7 @@ The sections follow.
 Which server this Mac's AI apps use (remote-server.md Section 3).
 
 - **The profiles.** "This Mac" first, then each remote profile with its URL, the active one
-  marked. The active one also shows its state: answers, refused the credential, or does not
+  marked. The list is a radio group whose choice is Use (design-system.md Section 6a). The active one also shows its state: answers, refused the credential, or does not
   answer.
 - **Use** makes a profile the active one. **Remove** deletes a remote profile and its credential.
   Removing the active profile is allowed: AI apps go back to this Mac, and the page says so.
@@ -112,11 +112,15 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
   Disconnect. A click is the consent to replace the entry that is there, as the tray's was. An app
   a click could do nothing for - not installed, its settings unreadable - has no button.
 - **The CLI's next step stays beside the app it concerns** ("quit Claude and open it again").
+- **Claude Code's row carries a switch for its capture hook**, "Save the why behind each commit"
+  (client-connect.md Section 12): on runs `connect claude-code`, off runs `connect claude-code
+  --no-capture`.
 
 ### 3.3 This Mac's daemon
 
 - **The daemon's state:** the version and who runs it (login item, this app, Homebrew,
-  `supragnosis start`), version drift when there is any, and the store's health - owed projections
+  `supragnosis start`), version drift when there is any - one card at the top of the section,
+  "Update ready - restart to load 0.7.0", holding the section's only Restart while it shows - and the store's health - owed projections
   and the last recovery (crash-recovery.md K5).
 - **Start at Login** is a switch, with the behaviour daemon-lifecycle.md Section 6 gave the tray's
   check item: on is `service install --take-over`, off is `service uninstall`.
@@ -135,7 +139,7 @@ Peers tab showed, read from this Mac's daemon, and not shown while a remote prof
 - **This node:** its id and its role - a spoke that syncs to hubs, or a hub that serves peers.
 - **Hubs this Mac syncs to:** each one's address, version and reachability, and per workspace
   whether this Mac or the hub is ahead.
-- **On a hub, each admitted peer and what it may read.** Each workspace is a chip with one act: stop
+- **On a hub, each admitted peer and what it may read**, one row per peer. Each workspace is a chip with one act: stop
   sharing it.
   - The act asks first. It takes effect at once, and the daemon writes it to supragnosis.toml.
   - It is the viewer console's narrowing act (`POST /api/peer/share`), narrow-only as the daemon
@@ -146,8 +150,8 @@ Peers tab showed, read from this Mac's daemon, and not shown while a remote prof
 ### 3.5 About
 
 The app's, the CLI's and the daemon's versions, where the CLI and the data live, the license and the
-source. It is the viewer dialog's About, with the app's own facts added. **Run setup again** opens
-the Welcome page (onboarding.md Section 6), which shows only what is not done.
+source. It is the viewer dialog's About, with the app's own facts added. **Open Setup** opens the
+Setup page (onboarding.md Section 6), which shows only what is not done.
 
 ## 4. Who may change a setting
 
@@ -183,8 +187,8 @@ The tray keeps what a menu does well - glancing and opening:
   its version. If something needs doing - version drift, a refused credential, an unanswering
   server, no AI app connected - the line says so and points to Settings.
 - **Open Viewer.**
-- **Finish setup...**, while the daemon is not kept running or no AI app is connected (onboarding.md
-  Section 6). Turning Start at Login off by choice settles the daemon's half.
+- **Finish Setup...**, while any step of Setup is not done and not set aside with "Not now"
+  (onboarding.md Section 6). Turning Start at Login off by choice settles the daemon's step.
 - **Settings...**
 - **Quit Supragnosis.**
 
