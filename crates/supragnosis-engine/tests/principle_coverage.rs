@@ -775,11 +775,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (26, &[c(
-        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, and no other navigation",
-        // crates/supragnosis-viz/tests/titlebar.rs: the viewer's bar and the app pages' bars.
+        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, no other navigation, and one bar on every page with the star first",
+        // crates/supragnosis-viz/tests/titlebar.rs: the viewer's bar, the app pages' bars, and the
+        // star and the leading group's rules the app's stylesheet shares with the viewer's.
         Evidence::Scenario(&[
             "the_viewer_title_bar_is_a_mac_toolbar",
             "the_app_pages_go_back_to_the_graph",
+            "every_page_has_one_title_bar",
         ]),
     )]),
     (27, &[c(

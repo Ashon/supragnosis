@@ -64,14 +64,20 @@ body {
   font: var(--text-body)/1.5 var(--sans); -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Title bar: the viewer's (viewer.css "header" and "h1"), so moving changes content, not chrome.
-   The frame's surface with no rule under it (docs/design-system.md Section 14 step 7). */
+/* ---- Title bar: the viewer's (viewer.css "header", ".tlead", ".mark", "#placeTitle" and ".tback"),
+   so moving between pages changes the words in the bar, never where they sit (design-system.md
+   Section 6, U26). The frame's surface with no rule under it (Section 14 step 7). */
 header {
   flex: none; height: 49px; display: flex; gap: 9px; align-items: center; padding: 0 14px;
   background: var(--panel); position: relative; z-index: 3;
 }
-/* The pane's title, after the way back (design-system.md Section 6a, U26). */
-header h1 { margin: 0; color: var(--ink); font: 600 var(--text-body)/1.3 var(--sans); white-space: nowrap; }
+/* The leading group: the star, the way back, the pane's title (design-system.md Section 6a, U26). */
+.tlead { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+/* The mark is a logotype in the brand gold, the same in both appearances (Section 3).
+   pointer-events:none keeps the shell's drag-region hit on the header. */
+.mark { display: flex; color: var(--accent); margin-right: 4px; }
+.mark svg { flex: none; pointer-events: none; }
+header h1 { margin: 0 0 0 4px; color: var(--ink); font: 600 var(--text-body)/1.3 var(--sans); white-space: nowrap; }
 /* The way back to the graph, at the title bar's leading end, where a Mac puts it. */
 .tback {
   display: inline-flex; align-items: center; gap: 2px; min-height: 28px; padding: 0 8px 0 4px;

@@ -10,6 +10,7 @@ const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const WELCOME_HTML: &str = include_str!("../../../app/assets/welcome.html");
 const SETTINGS_JS: &str = include_str!("../../../app/assets/settings.js");
 const KIT: &str = include_str!("../../../app/assets/kit.js");
+const SETTINGS_CSS: &str = include_str!("../../../app/assets/settings.css");
 
 /// A page's `<header>`, comments dropped.
 fn header(html: &str) -> String {
@@ -117,4 +118,92 @@ fn the_app_pages_go_back_to_the_graph() {
         KIT.contains("e.key === \"[\" && (e.metaKey || e.ctrlKey)"),
         "Cmd+[ does not go back on the app's pages"
     );
+}
+
+/// A stylesheet's first rule for exactly `selector` - the base rule, before any media query restates
+/// it - as its declarations, each value's spacing made one space. Comments are dropped first.
+fn rule(css: &str, selector: &str) -> std::collections::BTreeMap<String, String> {
+    let mut clean = String::new();
+    let mut rest = css;
+    while let Some(i) = rest.find("/*") {
+        clean.push_str(&rest[..i]);
+        rest = rest[i..].find("*/").map_or("", |j| &rest[i + j + 2..]);
+    }
+    clean.push_str(rest);
+    let body = clean
+        .split('}')
+        .find_map(|chunk| {
+            let (head, body) = chunk.split_once('{')?;
+            (head.trim() == selector && !body.contains('{')).then_some(body)
+        })
+        .unwrap_or_else(|| panic!("no rule for {selector}"));
+    body.split(';')
+        .filter_map(|d| d.split_once(':'))
+        .map(|(k, v)| (k.trim().to_string(), v.split_whitespace().collect::<Vec<_>>().join(" ")))
+        .collect()
+}
+
+/// U26: every page's title bar is one bar. The star leads on the Settings and Setup pages as on the
+/// viewer's, drawn from the same markup, and the app's stylesheet gives the bar, its leading group,
+/// the star, the way back and the title the viewer's own values, so moving between pages changes the
+/// words in the bar and never where they sit. Measured in a browser, the star, "< Graph" and the
+/// title stand at the same places on the Review, Settings and Setup pages.
+#[test]
+fn every_page_has_one_title_bar() {
+    let mark = |html: &str| {
+        let bar = header(html);
+        let at = bar.find("<span class=\"mark\">").expect("the title bar has no star");
+        bar[at..at + bar[at..].find("</span>").expect("it closes")].to_string()
+    };
+    let star = mark(HTML);
+    for (file, html) in [("settings.html", SETTINGS_HTML), ("welcome.html", WELCOME_HTML)] {
+        assert_eq!(mark(html), star, "{file}: the star is not the viewer's");
+        let bar = header(html);
+        let at = |needle: &str| bar.find(needle).unwrap_or_else(|| panic!("{file}: no {needle}"));
+        assert!(
+            at("class=\"tlead\"") < at("class=\"mark\"")
+                && at("class=\"mark\"") < at("id=\"close\"")
+                && at("id=\"close\"") < at("id=\"pageTitle\""),
+            "{file}: the leading group is not the star, the way back and the title"
+        );
+    }
+    // The viewer's selector, the app's, and the properties that place and draw what the bar holds.
+    // Only the header's position differs: the viewer's is fixed over its canvas.
+    let shared: [(&str, &str, &[&str]); 6] = [
+        (
+            "header",
+            "header",
+            &["height", "display", "gap", "align-items", "padding", "background"],
+        ),
+        (".tlead", ".tlead", &["display", "align-items", "gap", "flex", "min-width"]),
+        (".mark", ".mark", &["display", "color", "margin-right"]),
+        (".mark svg", ".mark svg", &["flex", "pointer-events"]),
+        ("#placeTitle", "header h1", &["margin", "font", "color", "white-space"]),
+        (
+            ".tback",
+            ".tback",
+            &[
+                "display",
+                "align-items",
+                "gap",
+                "min-height",
+                "padding",
+                "color",
+                "text-decoration",
+                "font-size",
+                "border-radius",
+            ],
+        ),
+    ];
+    for (viewer, app, props) in shared {
+        let (v, a) = (rule(CSS, viewer), rule(SETTINGS_CSS, app));
+        for prop in props {
+            assert_eq!(
+                a.get(*prop),
+                v.get(*prop),
+                "the app's {app} {prop} is not the viewer's {viewer}"
+            );
+            assert!(v.contains_key(*prop), "the viewer's {viewer} sets no {prop}");
+        }
+    }
 }
