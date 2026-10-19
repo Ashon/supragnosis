@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.7.0](docs/releases/v0.7.0.md) | Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux. |
 | [v0.6.5](docs/releases/v0.6.5.md) | Upgrade the server, then restart once; `supragnosis setup` takes a first run to its first entry. |
 | [v0.6.4](docs/releases/v0.6.4.md) | Upgrade the server, then restart once; every region drawn, workspaces together, links untangled. |
 | [v0.6.3](docs/releases/v0.6.3.md) | Upgrade the server and the app, then restart once; one typeface everywhere, and regions are clouds. |
