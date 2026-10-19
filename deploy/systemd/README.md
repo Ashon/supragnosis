@@ -1,14 +1,33 @@
 # Running supragnosis on Linux (systemd user service)
 
-The Linux counterpart to the macOS LaunchAgent that `supragnosis service install` generates
-(docs/daemon-lifecycle.md). Written while standing up the first federation hub
-(`docs/federation.md` Phase 6), so the gotchas below are the ones actually hit, not anticipated.
+`supragnosis service install` generates this unit, enables it and asks for lingering, as it generates
+the LaunchAgent on macOS (docs/daemon-lifecycle.md Section 4, "On Linux"); `supragnosis setup` runs it
+as its first step. The unit here is the one it starts from, and a copy for a hub that wants flags of
+its own. Written while standing up the first federation hub (`docs/federation.md` Phase 6), so the
+gotchas below are the ones actually hit, not anticipated.
 
 A **user** unit, not a system one: the store, the node key, and the config all live under
 `~/.supragnosis`, so nothing here needs root - which matters, because a machine you only have
 password sudo on is exactly where an always-on hub tends to live.
 
 ## Install
+
+```sh
+supragnosis service install         # writes ~/.config/systemd/user/supragnosis.service, enables it
+supragnosis status                  # names the unit, and says when lingering is off
+journalctl --user -u supragnosis -f
+```
+
+`service install` carries the environment of a unit it replaces, refuses an environment that would
+widen the bind or turn off auth, and asks `loginctl enable-linger` itself; where polkit refuses,
+`sudo loginctl enable-linger "$USER"` is the one step left to an administrator. `supragnosis
+service uninstall` disables it and removes the file.
+
+### By hand
+
+A copied unit is yours: `service install` never overwrites a unit it did not generate, and `status`,
+`restart` and `stop` act on it all the same. `service install --take-over` moves it aside to
+`~/.supragnosis/systemd/` and carries its `Environment=` lines into a generated one.
 
 ```sh
 mkdir -p ~/.config/systemd/user

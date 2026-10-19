@@ -1,5 +1,6 @@
-; supragnosis as a systemd **user** service (Linux). Counterpart to the LaunchAgent that
-; `supragnosis service install` generates on macOS.
+; supragnosis as a systemd **user** service (Linux). `supragnosis service install` generates this
+; unit with these directives (docs/daemon-lifecycle.md Section 4, "On Linux"); copy it by hand only
+; for a hub that wants flags of its own, and `service install` then leaves the copy as it is.
 ;
 ; Deliberately a user unit, not a system one: the store, the node key, and the config all live
 ; under ~/.supragnosis, and a user unit needs no root to install or restart. It does need lingering

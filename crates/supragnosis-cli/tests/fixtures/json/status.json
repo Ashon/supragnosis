@@ -52,6 +52,8 @@
   "service": {
     "label": "com.supragnosis.daemon",
     "plist": "/Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist",
-    "state": "generated"
+    "path": "/Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist",
+    "state": "generated",
+    "linger": null
   }
 }

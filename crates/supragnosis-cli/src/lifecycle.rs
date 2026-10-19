@@ -1,8 +1,9 @@
 //! Daemon lifecycle decisions (docs/daemon-lifecycle.md).
 //!
-//! Everything here is a pure function of what was observed - which launchd labels are loaded, whether
-//! the pidfile names a live process, whether the daemon answers - so the rules are tested as tables
-//! and run on every platform. Only observing and acting shell out, and that lives in main.rs.
+//! Everything here is a pure function of what was observed - which launchd labels are loaded or which
+//! systemd user units are enabled or active, whether the pidfile names a live process, whether the
+//! daemon answers - so the rules are tested as tables and run on every platform. Only observing and
+//! acting shell out, and that lives in main.rs.
 
 /// Who installed a launchd job, which decides how it is described and retired (Section 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +34,21 @@ pub const KNOWN_LABELS: &[(&str, LabelKind)] = &[
     ("com.ashon.supragnosis", LabelKind::Retired),
 ];
 
-/// A loaded launchd job under one of [`KNOWN_LABELS`].
+/// The one always-on manager on Linux: a systemd user unit (Section 4, "On Linux"). It has the name
+/// of the unit deploy/systemd/README.md has people copy, so one name is one manager whoever wrote
+/// the file.
+pub const CANONICAL_UNIT: &str = "supragnosis.service";
+
+/// Every systemd user unit that runs the daemon (L2): the canonical one, and the units `brew
+/// services` creates on Linux - the formula has no service block now, but an older one did.
+pub const KNOWN_UNITS: &[(&str, LabelKind)] = &[
+    (CANONICAL_UNIT, LabelKind::Canonical),
+    ("homebrew.supragnosis-server.service", LabelKind::Homebrew("supragnosis-server")),
+    ("homebrew.supragnosis.service", LabelKind::Homebrew("supragnosis")),
+];
+
+/// A loaded launchd job under one of [`KNOWN_LABELS`], or a systemd user unit under one of
+/// [`KNOWN_UNITS`] that is enabled or active; `label` is then the unit's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
     pub label: &'static str,
@@ -52,6 +67,8 @@ pub enum Manager {
         pid: u32,
     },
     Launchd(Job),
+    /// A systemd user unit (Linux).
+    Systemd(Job),
 }
 
 impl Manager {
@@ -59,21 +76,25 @@ impl Manager {
     pub fn describe(&self) -> String {
         match self {
             Manager::Pidfile { pid } => format!("pidfile (supragnosis start), pid {pid}"),
-            Manager::Launchd(j) => {
-                let proc = match (j.pid, j.last_exit) {
-                    (Some(pid), _) => format!("pid {pid}"),
-                    (None, Some(code)) => format!("not running, last exit {code}"),
-                    (None, None) => "not running".to_string(),
-                };
-                let origin = match j.kind {
-                    LabelKind::Canonical => "canonical".to_string(),
-                    LabelKind::Homebrew(token) => format!("brew services {token}"),
-                    LabelKind::Retired => "retired label".to_string(),
-                };
-                format!("launchd {} ({origin}), {proc}", j.label)
-            }
+            Manager::Launchd(j) => format!("launchd {}", describe_job(j)),
+            Manager::Systemd(j) => format!("systemd {}", describe_job(j)),
         }
     }
+}
+
+/// A job or unit's name, origin and process, the part of [`Manager::describe`] both share.
+fn describe_job(j: &Job) -> String {
+    let proc = match (j.pid, j.last_exit) {
+        (Some(pid), _) => format!("pid {pid}"),
+        (None, Some(code)) => format!("not running, last exit {code}"),
+        (None, None) => "not running".to_string(),
+    };
+    let origin = match j.kind {
+        LabelKind::Canonical => "canonical".to_string(),
+        LabelKind::Homebrew(token) => format!("brew services {token}"),
+        LabelKind::Retired => "retired label".to_string(),
+    };
+    format!("{} ({origin}), {proc}", j.label)
 }
 
 /// What the lifecycle commands observed.
@@ -82,6 +103,8 @@ pub struct Observed {
     /// The pidfile's process, only when it is alive (a stale pidfile manages nothing).
     pub pidfile: Option<u32>,
     pub jobs: Vec<Job>,
+    /// The systemd user units that manage the daemon: enabled, or active (Linux).
+    pub units: Vec<Job>,
     /// Whether the MCP address accepts a connection.
     pub answering: bool,
     /// Whether a process holds the store open for writing (Section 11). A stdio server binds no
@@ -111,6 +134,7 @@ pub fn classify(o: &Observed) -> Situation {
         managers.push(Manager::Pidfile { pid });
     }
     managers.extend(o.jobs.iter().cloned().map(Manager::Launchd));
+    managers.extend(o.units.iter().cloned().map(Manager::Systemd));
     match managers.len() {
         0 if o.answering || o.store_held => Situation::Unrecognized,
         0 => Situation::Stopped,
@@ -159,13 +183,14 @@ pub fn refuse_exposure(
         return Ok(());
     }
     Err(format!(
-        "the generated job would run with:\n  {}\nA login job adds no exposure (daemon-lifecycle.md L7). Remove the setting from --env, or from the plist being replaced, and install again; a daemon that needs it can be run by hand",
+        "the generated job would run with:\n  {}\nA login job adds no exposure (daemon-lifecycle.md L7). Remove the setting from --env, or from the plist or unit being replaced, and install again; a daemon that needs it can be run by hand",
         refused.join("\n  ")
     ))
 }
 
 /// What `service install` retires before installing the canonical job, or why it refuses (Section 4,
-/// L1, L5). `hand_written` is whether the canonical plist exists without the generator's marker.
+/// L1, L5). `hand_written` is the refusal for the canonical file when it exists without the
+/// generator's marker - [`HAND_WRITTEN_PLIST`] or [`HAND_WRITTEN_UNIT`] - and `None` otherwise.
 ///
 /// An unrecognized holder is refused even under --take-over. Take-over retires managers by name, and
 /// this one has none: the likeliest is a daemon the desktop app spawned, which has no pidfile and no
@@ -174,7 +199,7 @@ pub fn refuse_exposure(
 pub fn plan_install(
     o: &Observed,
     take_over: bool,
-    hand_written: bool,
+    hand_written: Option<&str>,
 ) -> Result<Vec<Manager>, String> {
     if classify(o) == Situation::Unrecognized {
         return Err(UNRECOGNIZED_HOLDER.to_string());
@@ -188,6 +213,13 @@ pub fn plan_install(
             .cloned()
             .map(Manager::Launchd),
     );
+    others.extend(
+        o.units
+            .iter()
+            .filter(|j| j.kind != LabelKind::Canonical)
+            .cloned()
+            .map(Manager::Systemd),
+    );
     if !take_over {
         if !others.is_empty() {
             let list: Vec<String> = others.iter().map(|m| format!("  {}", m.describe())).collect();
@@ -196,14 +228,19 @@ pub fn plan_install(
                 list.join("\n")
             ));
         }
-        if hand_written {
-            return Err(format!(
-                "~/Library/LaunchAgents/{CANONICAL_LABEL}.plist was written by hand. --take-over moves it aside (to ~/.supragnosis/launchd/) and carries its EnvironmentVariables into the generated job"
-            ));
+        if let Some(why) = hand_written {
+            return Err(why.to_string());
         }
     }
     Ok(others)
 }
+
+/// Why install leaves a hand-written plist at the canonical path (L5).
+pub const HAND_WRITTEN_PLIST: &str = "~/Library/LaunchAgents/com.supragnosis.daemon.plist was written by hand. --take-over moves it aside (to ~/.supragnosis/launchd/) and carries its EnvironmentVariables into the generated job";
+
+/// Why install leaves a unit it did not generate at the canonical path - the one deploy/systemd has
+/// people copy (L5).
+pub const HAND_WRITTEN_UNIT: &str = "~/.config/systemd/user/supragnosis.service was not generated by this command (deploy/systemd/README.md has people copy it). --take-over moves it aside (to ~/.supragnosis/systemd/) and carries its Environment= lines into the generated unit";
 
 /// The refusal a lifecycle command gives on a conflict: every manager, which one is serving, and the
 /// command that resolves it.
@@ -238,6 +275,244 @@ pub fn parse_launchctl_list(out: &str) -> (Option<u32>, Option<i64>) {
         field("PID").and_then(|v| v.parse().ok()),
         field("LastExitStatus").and_then(|v| v.parse().ok()),
     )
+}
+
+/// What `systemctl --user show <unit>` says about one unit, read from the properties main.rs asks
+/// for: LoadState, ActiveState, UnitFileState, MainPID, ExecMainStatus and
+/// ExecMainExitTimestampMonotonic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitShow {
+    pub loaded: bool,
+    pub active: String,
+    pub unit_file: String,
+    pub pid: Option<u32>,
+    /// The main process's last exit status, once it has exited at least once - as launchd's
+    /// LastExitStatus appears only then.
+    pub last_exit: Option<i64>,
+}
+
+impl UnitShow {
+    /// A unit manages the daemon while it is enabled or active (Section 4, "On Linux"): an enabled
+    /// unit starts it at the next login even after a `stop`, and one restarting after a failure is
+    /// still trying. Installed but neither is a file, not a manager - as a plist that is not loaded.
+    pub fn manages(&self) -> bool {
+        let enabled = matches!(
+            self.unit_file.as_str(),
+            "enabled" | "enabled-runtime" | "linked" | "linked-runtime" | "alias"
+        );
+        let active = matches!(
+            self.active.as_str(),
+            "active" | "activating" | "deactivating" | "reloading" | "refreshing"
+        );
+        self.loaded && (enabled || active)
+    }
+}
+
+/// Reads `systemctl --user show` output: `Key=Value` lines.
+pub fn parse_systemctl_show(out: &str) -> UnitShow {
+    let field = |key: &str| {
+        out.lines().find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            (k.trim() == key).then(|| v.trim().to_string())
+        })
+    };
+    let pid = field("MainPID").and_then(|v| v.parse::<u32>().ok()).filter(|p| *p != 0);
+    let exited = field("ExecMainExitTimestampMonotonic")
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|t| t != 0);
+    UnitShow {
+        loaded: field("LoadState").as_deref() == Some("loaded"),
+        active: field("ActiveState").unwrap_or_default(),
+        unit_file: field("UnitFileState").unwrap_or_default(),
+        pid,
+        last_exit: if exited { field("ExecMainStatus").and_then(|v| v.parse().ok()) } else { None },
+    }
+}
+
+/// One value in a unit file's own quoting: double quotes around it, a backslash before a backslash
+/// or a quote, and a percent sign doubled, since systemd expands `%` specifiers in these lines.
+fn unit_quote(v: &str) -> Result<String, String> {
+    if v.contains(['\n', '\r']) {
+        return Err(format!("{v:?}: a unit file cannot hold a line break in a value"));
+    }
+    Ok(format!(
+        "\"{}\"",
+        v.replace('\\', "\\\\").replace('"', "\\\"").replace('%', "%%")
+    ))
+}
+
+/// The canonical systemd user unit, generated (Section 4, "On Linux"). It carries every directive of
+/// `deploy/systemd/supragnosis.service` - what a user manager can enforce, where systemd reads it -
+/// with `ExecStart` naming `program serve`, one `Environment=` line per variable the job carries, and
+/// a `ReadWritePaths=` line for each directory in `writable` the daemon must write outside
+/// `~/.supragnosis` (a data directory or viewer socket the environment moved).
+pub fn render_unit(
+    program: &str,
+    env: &std::collections::BTreeMap<String, String>,
+    writable: &[String],
+    version: &str,
+) -> Result<String, String> {
+    let mut env_lines = String::new();
+    if !env.contains_key("RUST_LOG") {
+        env_lines.push_str("Environment=RUST_LOG=info\n");
+    }
+    for (k, v) in env {
+        if k.is_empty() || k.contains(|c: char| c.is_whitespace() || c == '=' || c == '"') {
+            return Err(format!("{k:?} is not a name a unit's Environment= can hold"));
+        }
+        env_lines.push_str(&format!("Environment={}\n", unit_quote(&format!("{k}={v}"))?));
+    }
+    let mut paths = String::new();
+    for w in writable {
+        paths.push_str(&format!("ReadWritePaths={}\n", unit_quote(w)?));
+    }
+    let program = unit_quote(program)?;
+    Ok(format!(
+        r#"; {GENERATED_MARKER} (v{version}). Regenerate rather than edit: install rewrites
+; everything here except the Environment= lines, which it carries forward. Its directives are those
+; of deploy/systemd/supragnosis.service (docs/daemon-lifecycle.md Section 4, "On Linux").
+
+[Unit]
+Description=supragnosis - the agent-first ontology server
+Documentation=https://supragnosis.dev/
+Documentation=https://github.com/Ashon/supragnosis/blob/main/docs/daemon-lifecycle.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart={program} serve
+Restart=on-failure
+RestartSec=5s
+{env_lines}KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.supragnosis
+{paths}RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=default.target
+"#
+    ))
+}
+
+/// The `Environment=` assignments of a unit file, as systemd reads them: each line holds one or more
+/// assignments split at whitespace, a quoted one kept whole with its quotes removed and its escapes
+/// read. `%h`, `%u` and `%%` are expanded with `home` and `user`; any other specifier is refused,
+/// since carrying it into the generated unit would change what it means. An `EnvironmentFile=` is
+/// refused too: its contents are not in the file to carry.
+pub fn parse_unit_env(
+    text: &str,
+    home: &str,
+    user: &str,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let mut env = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with("EnvironmentFile=") {
+            return Err(format!(
+                "the unit reads its environment from a file ({line}), which install cannot carry - move those settings into Environment= lines, or pass them with --env"
+            ));
+        }
+        let Some(rest) = line.strip_prefix("Environment=") else {
+            continue;
+        };
+        for word in unit_words(rest)? {
+            let word = expand_specifiers(&word, home, user)?;
+            let Some((k, v)) = word.split_once('=') else {
+                return Err(format!("Environment={rest}: {word:?} is not KEY=VALUE"));
+            };
+            env.insert(k.to_string(), v.to_string());
+        }
+    }
+    Ok(env)
+}
+
+/// Splits a unit line's value into words the way systemd does for Environment=: whitespace
+/// separates, double or single quotes group, and inside double quotes a backslash escapes.
+fn unit_words(s: &str) -> Result<Vec<String>, String> {
+    let mut words = Vec::new();
+    let mut cur = String::new();
+    let mut in_word = false;
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' | '\'' => {
+                in_word = true;
+                loop {
+                    match chars.next() {
+                        None => return Err(format!("{s}: an unclosed quote")),
+                        Some(q) if q == c => break,
+                        Some('\\') if c == '"' => match chars.next() {
+                            Some('n') => cur.push('\n'),
+                            Some('t') => cur.push('\t'),
+                            Some(e) => cur.push(e),
+                            None => return Err(format!("{s}: a trailing backslash")),
+                        },
+                        Some(o) => cur.push(o),
+                    }
+                }
+            }
+            c if c.is_whitespace() => {
+                if in_word {
+                    words.push(std::mem::take(&mut cur));
+                    in_word = false;
+                }
+            }
+            '\\' => {
+                in_word = true;
+                match chars.next() {
+                    Some(e) => cur.push(e),
+                    None => return Err(format!("{s}: a trailing backslash")),
+                }
+            }
+            o => {
+                in_word = true;
+                cur.push(o);
+            }
+        }
+    }
+    if in_word {
+        words.push(cur);
+    }
+    Ok(words)
+}
+
+fn expand_specifiers(word: &str, home: &str, user: &str) -> Result<String, String> {
+    let mut out = String::new();
+    let mut chars = word.chars();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('%') => out.push('%'),
+            Some('h') => out.push_str(home),
+            Some('u') => out.push_str(user),
+            Some(o) => {
+                return Err(format!(
+                    "{word:?} uses the specifier %{o}, which install does not expand - write the value out, or pass it with --env"
+                ))
+            }
+            None => return Err(format!("{word:?} ends in a lone %")),
+        }
+    }
+    Ok(out)
+}
+
+/// Where a unit the product did not write goes instead of being deleted (L5).
+pub fn moved_aside_unit_path(home: &str, unix_secs: u64) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{home}/.supragnosis/systemd/{CANONICAL_UNIT}.{unix_secs}"))
 }
 
 /// The running daemon's version against this binary's (Section 5).
@@ -425,6 +700,7 @@ mod tests {
                     jobs: vec![canonical.clone()],
                     answering: true,
                     store_held: true,
+                    ..Default::default()
                 },
                 Situation::Conflict(vec![Manager::Pidfile { pid: 7 }, Manager::Launchd(canonical)]),
             ),
@@ -447,29 +723,30 @@ mod tests {
         );
         let app_child = Observed { answering: true, ..Default::default() };
         for take_over in [false, true] {
-            let refused = plan_install(&app_child, take_over, false).unwrap_err();
+            let refused = plan_install(&app_child, take_over, None).unwrap_err();
             assert_eq!(refused, UNRECOGNIZED_HOLDER, "take_over={take_over}");
         }
 
         // Nothing there: install, retiring nothing.
-        assert_eq!(plan_install(&Observed::default(), false, false), Ok(vec![]));
+        assert_eq!(plan_install(&Observed::default(), false, None), Ok(vec![]));
         // The canonical job is replaced, never listed as something to retire.
         let ours =
             Observed { jobs: vec![canonical.clone()], answering: true, ..Default::default() };
-        assert_eq!(plan_install(&ours, false, false), Ok(vec![]));
+        assert_eq!(plan_install(&ours, false, None), Ok(vec![]));
 
         // Another manager: refused by name without --take-over, retired with it (L1).
         let theirs =
             Observed { jobs: vec![canonical, brew.clone()], answering: true, ..Default::default() };
-        let refused = plan_install(&theirs, false, false).unwrap_err();
+        let refused = plan_install(&theirs, false, None).unwrap_err();
         assert!(refused.contains("sh.brew.supragnosis-server") && refused.contains("--take-over"));
-        assert_eq!(plan_install(&theirs, true, false), Ok(vec![Manager::Launchd(brew)]));
+        assert_eq!(plan_install(&theirs, true, None), Ok(vec![Manager::Launchd(brew)]));
         let pidfile = Observed { pidfile: Some(7), answering: true, ..Default::default() };
-        assert_eq!(plan_install(&pidfile, true, false), Ok(vec![Manager::Pidfile { pid: 7 }]));
+        assert_eq!(plan_install(&pidfile, true, None), Ok(vec![Manager::Pidfile { pid: 7 }]));
 
         // A person's plist is not overwritten without --take-over, which moves it aside (L5).
-        assert!(plan_install(&Observed::default(), false, true).unwrap_err().contains("by hand"));
-        assert_eq!(plan_install(&Observed::default(), true, true), Ok(vec![]));
+        let hand = Some(HAND_WRITTEN_PLIST);
+        assert!(plan_install(&Observed::default(), false, hand).unwrap_err().contains("by hand"));
+        assert_eq!(plan_install(&Observed::default(), true, hand), Ok(vec![]));
     }
 
     /// Section 11: a stdio server holds the store and answers nothing. Held with no manager is
@@ -479,7 +756,7 @@ mod tests {
     fn a_store_held_by_no_manager_is_unrecognized() {
         let stdio = Observed { store_held: true, ..Default::default() };
         assert_eq!(classify(&stdio), Situation::Unrecognized);
-        assert_eq!(plan_install(&stdio, true, false), Err(UNRECOGNIZED_HOLDER.to_string()));
+        assert_eq!(plan_install(&stdio, true, None), Err(UNRECOGNIZED_HOLDER.to_string()));
         let ours = job(CANONICAL_LABEL, LabelKind::Canonical, Some(1), None);
         let running = Observed {
             jobs: vec![ours.clone()],
@@ -639,5 +916,142 @@ mod tests {
         assert!(msg.contains("com.supragnosis.daemon (canonical), pid 2292"));
         assert!(msg.contains("sh.brew.supragnosis-server (brew services supragnosis-server), not running, last exit 1"));
         assert!(msg.contains("service install --take-over"));
+    }
+
+    /// Section 4, "On Linux": what `systemctl --user show` says decides whether a unit manages the
+    /// daemon - enabled or active - and a unit that does is a manager like a loaded launchd job:
+    /// one is acted on, two are a conflict, and Homebrew's is retired by take-over.
+    #[test]
+    fn a_unit_manages_while_enabled_or_active() {
+        let show = |active: &str, file: &str, pid: &str, status: &str, exited: &str| {
+            parse_systemctl_show(&format!(
+                "LoadState=loaded\nActiveState={active}\nUnitFileState={file}\nMainPID={pid}\nExecMainStatus={status}\nExecMainExitTimestampMonotonic={exited}\n"
+            ))
+        };
+        let running = show("active", "enabled", "4242", "0", "0");
+        assert_eq!((running.pid, running.last_exit), (Some(4242), None));
+        assert!(running.manages());
+        let stopped_enabled = show("inactive", "enabled", "0", "0", "123");
+        assert_eq!((stopped_enabled.pid, stopped_enabled.last_exit), (None, Some(0)));
+        assert!(stopped_enabled.manages(), "an enabled unit starts it at the next login");
+        let restarting = show("activating", "disabled", "0", "1", "456");
+        assert_eq!(restarting.last_exit, Some(1));
+        assert!(restarting.manages(), "a unit restarting after a failure is still trying");
+        assert!(show("failed", "enabled", "0", "1", "789").manages());
+        assert!(!show("inactive", "disabled", "0", "0", "0").manages(), "a file, not a manager");
+        assert!(!show("failed", "disabled", "0", "1", "9").manages());
+        let missing = parse_systemctl_show(
+            "LoadState=not-found\nActiveState=inactive\nUnitFileState=\nMainPID=0\n",
+        );
+        assert!(!missing.manages());
+
+        let unit = job(CANONICAL_UNIT, LabelKind::Canonical, Some(4242), None);
+        let brew = job(
+            "homebrew.supragnosis-server.service",
+            LabelKind::Homebrew("supragnosis-server"),
+            None,
+            Some(1),
+        );
+        let one = Observed { units: vec![unit.clone()], answering: true, ..Default::default() };
+        assert_eq!(classify(&one), Situation::One(Manager::Systemd(unit.clone())));
+        assert_eq!(
+            Manager::Systemd(unit.clone()).describe(),
+            "systemd supragnosis.service (canonical), pid 4242"
+        );
+        let two = Observed {
+            pidfile: Some(7),
+            units: vec![unit.clone()],
+            answering: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            classify(&two),
+            Situation::Conflict(vec![Manager::Pidfile { pid: 7 }, Manager::Systemd(unit.clone())])
+        );
+        // The canonical unit is replaced, Homebrew's is retired by name (L1).
+        let theirs =
+            Observed { units: vec![unit, brew.clone()], answering: true, ..Default::default() };
+        assert!(plan_install(&theirs, false, None).unwrap_err().contains("homebrew.supragnosis"));
+        assert_eq!(plan_install(&theirs, true, None), Ok(vec![Manager::Systemd(brew)]));
+        // A copied unit is not overwritten without --take-over (L5).
+        let refused = plan_install(&Observed::default(), false, Some(HAND_WRITTEN_UNIT));
+        assert!(refused.unwrap_err().contains("~/.config/systemd/user/supragnosis.service"));
+
+        let mut names: Vec<&str> = KNOWN_UNITS.iter().map(|(n, _)| *n).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), KNOWN_UNITS.len(), "a unit listed twice");
+        let canonical: Vec<_> =
+            KNOWN_UNITS.iter().filter(|(_, k)| *k == LabelKind::Canonical).collect();
+        assert_eq!(canonical, vec![&(CANONICAL_UNIT, LabelKind::Canonical)]);
+    }
+
+    /// Section 4, "On Linux": the generated unit is the shipped one's directives with the generated
+    /// program, environment and marker, so a hub that copied the shipped unit loses nothing it set by
+    /// being taken over, and the README's two gotchas stay fixed in both.
+    #[test]
+    fn the_generated_unit_carries_the_shipped_directives_and_the_marker() {
+        const SHIPPED: &str = include_str!("../../../deploy/systemd/supragnosis.service");
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("SUPRAGNOSIS_HTTP_ADDR".to_string(), "127.0.0.1:7373".to_string());
+        env.insert("SUPRAGNOSIS_HOST".to_string(), "my \"host\" 100%".to_string());
+        let unit = render_unit(
+            "/home/me/.local/bin/supragnosis",
+            &env,
+            &["/data/sg".to_string()],
+            "0.7.0",
+        )
+        .unwrap();
+        assert!(is_generated(&unit) && !is_generated(SHIPPED));
+        for line in SHIPPED.lines().map(str::trim) {
+            // ExecStart is generated, and a Documentation= line is a pointer, not behaviour: the
+            // shipped unit points at the hub's document, the generated one at the lifecycle's.
+            let generated = ["ExecStart=", "Documentation="];
+            if line.is_empty()
+                || line.starts_with(';')
+                || generated.iter().any(|g| line.starts_with(g))
+            {
+                continue;
+            }
+            assert!(unit.lines().any(|l| l == line), "the generated unit lacks {line:?}");
+        }
+        assert!(unit.contains("ExecStart=\"/home/me/.local/bin/supragnosis\" serve\n"));
+        assert!(unit.contains("Environment=\"SUPRAGNOSIS_HTTP_ADDR=127.0.0.1:7373\"\n"));
+        assert!(unit.contains("Environment=\"SUPRAGNOSIS_HOST=my \\\"host\\\" 100%%\"\n"));
+        assert!(unit.contains("ReadWritePaths=\"/data/sg\"\n"));
+        // The start limit lives in [Unit], where systemd reads it (deploy/systemd/README.md).
+        let service = unit.find("[Service]").unwrap();
+        assert!(unit.find("StartLimitBurst=5").unwrap() < service);
+        assert!(render_unit("/x", &env, &["a\nb".to_string()], "0").is_err());
+    }
+
+    /// L5's carrying, on Linux: a copied unit's Environment= lines are read the way systemd reads
+    /// them, so what take-over carries is what the daemon ran with - and what the generator writes
+    /// reads back the same.
+    #[test]
+    fn a_copied_units_environment_is_read_as_systemd_quotes_it() {
+        let copied = "[Service]\nExecStart=%h/.local/bin/supragnosis serve\nEnvironment=RUST_LOG=info\nEnvironment=\"SUPRAGNOSIS_HOST=hub one\" SUPRAGNOSIS_WORKSPACE=w\nEnvironment=SUPRAGNOSIS_DATA_DIR=%h/data 'SUPRAGNOSIS_EMBED=none'\n";
+        let env = parse_unit_env(copied, "/home/me", "me").unwrap();
+        let want: Vec<(&str, &str)> = vec![
+            ("RUST_LOG", "info"),
+            ("SUPRAGNOSIS_DATA_DIR", "/home/me/data"),
+            ("SUPRAGNOSIS_EMBED", "none"),
+            ("SUPRAGNOSIS_HOST", "hub one"),
+            ("SUPRAGNOSIS_WORKSPACE", "w"),
+        ];
+        assert_eq!(env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect::<Vec<_>>(), want);
+        assert!(parse_unit_env("EnvironmentFile=/etc/sg.env\n", "/h", "u").is_err());
+        assert!(parse_unit_env("Environment=SUPRAGNOSIS_HOST=%n\n", "/h", "u").is_err());
+        assert!(parse_unit_env("Environment=\"SUPRAGNOSIS_HOST=x\n", "/h", "u").is_err());
+
+        let mut odd = std::collections::BTreeMap::new();
+        odd.insert("SUPRAGNOSIS_HOST".to_string(), "a \"b\" \\c 50% 'd'".to_string());
+        let unit = render_unit("/bin/supragnosis", &odd, &[], "0").unwrap();
+        let back = parse_unit_env(&unit, "/h", "u").unwrap();
+        assert_eq!(back.get("SUPRAGNOSIS_HOST"), odd.get("SUPRAGNOSIS_HOST"));
+        assert_eq!(
+            moved_aside_unit_path("/home/me", 42),
+            std::path::PathBuf::from("/home/me/.supragnosis/systemd/supragnosis.service.42")
+        );
     }
 }

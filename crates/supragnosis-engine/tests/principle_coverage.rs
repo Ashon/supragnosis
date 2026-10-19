@@ -886,9 +886,11 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
             ),
             c(
                 "a Linux user unit overwrites no unit it did not generate, adds no exposure and needs no privilege",
-                Evidence::Deferred(
-                    "docs/onboarding.md Section 13 step 4 (Linux) is not built: setup installs nothing there yet and names the unit to copy. Revisit when it lands",
-                ),
+                Evidence::Scenario(&[
+                    "setup_keeps_a_linux_unit_and_asks_for_lingering",
+                    "the_generated_unit_carries_the_shipped_directives_and_the_marker",
+                    "no_lifecycle_command_asks_for_privilege",
+                ]),
             ),
         ],
     ),
@@ -1173,6 +1175,10 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["classification_counts_managers_not_processes"]),
         ),
         c(
+            "on Linux the canonical user unit and Homebrew's units are managers while enabled or active, and are acted on and refused like launchd jobs",
+            Evidence::Scenario(&["a_unit_manages_while_enabled_or_active"]),
+        ),
+        c(
             "the retired and Homebrew labels stay in the recognized set",
             Evidence::Deferred(
                 "KNOWN_LABELS carries com.ashon.supragnosis and four Homebrew spellings, and \
@@ -1224,19 +1230,25 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (5, &[
         c(
-            "install never overwrites a plist it did not generate: a hand-written one is refused without --take-over",
+            "install never overwrites a plist or a unit it did not generate: a hand-written one is refused without --take-over",
             Evidence::Scenario(&[
                 "install_refuses_a_holder_it_cannot_name",
                 "the_generated_plist_is_marked_escaped_and_carries_env_verbatim",
+                "a_unit_manages_while_enabled_or_active",
+                "the_generated_unit_carries_the_shipped_directives_and_the_marker",
             ]),
         ),
         c(
-            "nothing deletes an operator's plist: take-over and uninstall move it aside under ~/.supragnosis/launchd",
+            "take-over carries a copied unit's Environment= assignments as systemd reads them, and refuses what it cannot carry",
+            Evidence::Scenario(&["a_copied_units_environment_is_read_as_systemd_quotes_it"]),
+        ),
+        c(
+            "nothing deletes an operator's plist or unit: take-over and uninstall move it aside under ~/.supragnosis/launchd or ~/.supragnosis/systemd",
             Evidence::Deferred(
-                "the destination is pinned (env_args_configure_the_daemon_and_nothing_else) but the act is \
-                 `move_aside`, a rename reached from service_install and service_uninstall, and nothing asserts a \
-                 rename rather than a remove. Revisit when the service commands' file steps run against a temp HOME \
-                 in a test",
+                "the destinations are pinned (env_args_configure_the_daemon_and_nothing_else, \
+                 a_copied_units_environment_is_read_as_systemd_quotes_it) but the act is `move_file_aside`, a rename \
+                 reached from the install and uninstall of both platforms, and nothing asserts a rename rather than \
+                 a remove. Revisit when the service commands' file steps run against a temp HOME in a test",
             ),
         ),
     ]),
@@ -1269,16 +1281,15 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&[
                 "env_args_configure_the_daemon_and_nothing_else",
                 "the_generated_plist_is_marked_escaped_and_carries_env_verbatim",
+                "the_generated_unit_carries_the_shipped_directives_and_the_marker",
             ]),
         ),
     ]),
     (8, &[c(
-        "the job is a user LaunchAgent in the gui/<uid> domain: no administrator rights, no helper tool",
-        Evidence::Deferred(
-            "the plist path is ~/Library/LaunchAgents and every launchctl target is gui/{uid}, with no sudo, \
-             SMJobBless or helper anywhere - a reading of the source, not a guard. Revisit when a source scan pins \
-             the launchctl targets, or when a Linux manager joins and the domain stops being one constant",
-        ),
+        "the job is a user LaunchAgent in the gui/<uid> domain or a unit in the person's own systemd manager: no administrator rights, no helper tool, and lingering asked of polkit, never escalated",
+        // main.rs's lifecycle section, read: systemctl only with --user, launchctl only at gui/<uid>,
+        // one loginctl call for this user's linger, and no sudo, pkexec or doas.
+        Evidence::Scenario(&["no_lifecycle_command_asks_for_privilege"]),
     )]),
     (9, &[
         c(

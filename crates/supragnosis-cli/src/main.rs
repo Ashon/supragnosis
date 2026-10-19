@@ -86,7 +86,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: PrincipalCmd,
     },
-    /// The always-on daemon as a login item (macOS LaunchAgent com.supragnosis.daemon)
+    /// The always-on daemon as a login item (the LaunchAgent com.supragnosis.daemon on macOS, the systemd user unit supragnosis.service on Linux)
     Service {
         #[command(subcommand)]
         cmd: ServiceCmd,
@@ -176,18 +176,18 @@ enum EmbedCmd {
 
 #[derive(Subcommand)]
 enum ServiceCmd {
-    /// Generate the LaunchAgent and load it: the daemon starts now and at every login
+    /// Generate the LaunchAgent (macOS) or the user unit (Linux) and load it: the daemon starts now and at every login
     Install(ServiceInstallArgs),
-    /// Unload the LaunchAgent and retire its plist: the daemon stops and no longer starts at login
+    /// Unload the LaunchAgent or the user unit and retire its file: the daemon stops and no longer starts at login
     Uninstall,
 }
 
-// Read only by the macOS implementation; elsewhere `service` refuses before looking at them.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+// Read by the macOS and Linux implementations; elsewhere `service` refuses before looking at them.
+#[cfg_attr(not(unix), allow(dead_code))]
 #[derive(Args, Clone, Default)]
 struct ServiceInstallArgs {
     /// Retire every other manager first (a brew services job, a pidfile daemon, a retired label) and
-    /// move a hand-written plist aside instead of refusing.
+    /// move a hand-written plist or a copied unit aside instead of refusing.
     #[arg(long)]
     take_over: bool,
     /// Set a SUPRAGNOSIS_* variable in the job's environment (repeatable). Variables a replaced plist
@@ -2268,12 +2268,21 @@ fn setup_observe(app_daemon: Option<u32>) -> Result<setup::Observed> {
     let situation = lifecycle::classify(&observed);
     let app_child = app_daemon
         .is_some_and(|p| i32::try_from(p).is_ok_and(|p| pid_alive(p) && pid_is_supragnosis(p)));
+    // The login manager setup can install into: the LaunchAgent, the user unit where a user manager
+    // answers, and none where it does not (docs/onboarding.md Section 4.1).
+    let platform = if cfg!(target_os = "macos") {
+        setup::Platform::Launchd
+    } else if systemd_user_available().is_ok() {
+        setup::Platform::Systemd { linger: linger_state() }
+    } else {
+        setup::Platform::Without
+    };
     let runner = setup::runner(
         &situation,
         observed.answering,
-        canonical_plist_state(),
+        canonical_service_state(),
         app_child,
-        cfg!(target_os = "macos"),
+        platform,
     );
 
     // First contact is this daemon's, so it says nothing about apps that use a remote one.
@@ -3413,6 +3422,93 @@ fn launchd_jobs() -> Vec<lifecycle::Job> {
     Vec::new()
 }
 
+/// Every systemd user unit under a name the product runs the daemon as (L2) that manages it now:
+/// enabled, or active (daemon-lifecycle.md Section 4, "On Linux"). Empty where there is no user
+/// manager to ask, and everywhere but Linux.
+#[cfg(unix)]
+fn systemd_units() -> Vec<lifecycle::Job> {
+    if !cfg!(target_os = "linux") {
+        return Vec::new();
+    }
+    lifecycle::KNOWN_UNITS
+        .iter()
+        .filter_map(|&(label, kind)| {
+            let st = unit_show(label)?;
+            st.manages().then_some(lifecycle::Job {
+                label,
+                kind,
+                pid: st.pid,
+                last_exit: st.last_exit,
+            })
+        })
+        .collect()
+}
+
+/// What the person's systemd manager says about one unit; `None` when it cannot be asked.
+#[cfg(unix)]
+fn unit_show(unit: &str) -> Option<lifecycle::UnitShow> {
+    let out = std::process::Command::new("systemctl")
+        .args(["--user", "show", unit])
+        .args(["-p", "LoadState", "-p", "ActiveState", "-p", "UnitFileState", "-p", "MainPID"])
+        .args(["-p", "ExecMainStatus", "-p", "ExecMainExitTimestampMonotonic"])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| lifecycle::parse_systemctl_show(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// Whether this session can reach a systemd user manager, and why not when it cannot - no systemctl,
+/// or no user bus, as in many containers.
+#[cfg(unix)]
+fn systemd_user_available() -> std::result::Result<(), String> {
+    match std::process::Command::new("systemctl")
+        .args(["--user", "show-environment"])
+        .output()
+    {
+        Err(e) => Err(format!("systemctl was not found ({e})")),
+        Ok(o) if !o.status.success() => {
+            let why = String::from_utf8_lossy(&o.stderr).trim().to_string();
+            Err(if why.is_empty() { "systemctl --user did not answer".to_string() } else { why })
+        }
+        Ok(_) => Ok(()),
+    }
+}
+
+/// The user name, for lingering and a unit's `%u`.
+#[cfg(unix)]
+fn current_user() -> Option<String> {
+    let out = std::process::Command::new("id").arg("-un").output().ok()?;
+    let name = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (out.status.success() && !name.is_empty()).then_some(name)
+}
+
+/// Whether the person's systemd manager outlives their sessions: logind keeps one file per lingering
+/// user. `None` when the user name is not known.
+#[cfg(unix)]
+fn linger_state() -> Option<bool> {
+    let user = current_user()?;
+    Some(std::path::Path::new("/var/lib/systemd/linger").join(user).exists())
+}
+
+/// Runs `systemctl --user` with these arguments; a failure carries systemctl's own words (L4).
+#[cfg(unix)]
+fn systemctl_user(args: &[&str]) -> Result<()> {
+    let out = std::process::Command::new("systemctl")
+        .arg("--user")
+        .args(args)
+        .output()
+        .context("failed to run systemctl")?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "systemctl --user {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// What the lifecycle commands decide from. Reads only - a stale pidfile is cleared by the commands
 /// that act, never by `status`.
 #[cfg(unix)]
@@ -3427,6 +3523,7 @@ fn observe_with(store: Option<&std::path::Path>) -> lifecycle::Observed {
     lifecycle::Observed {
         pidfile: live_pidfile().and_then(|p| u32::try_from(p).ok()),
         jobs: launchd_jobs(),
+        units: systemd_units(),
         answering: port_open(&status_http_addr()),
         store_held: store.is_some_and(supragnosis_store::redb_in_use),
     }
@@ -3570,7 +3667,7 @@ fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
 #[cfg(target_os = "macos")]
 fn launchd_bootstrap_canonical() -> Result<()> {
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
-    let plist = canonical_plist_path();
+    let plist = canonical_service_path();
     let st = std::process::Command::new("launchctl")
         .arg("bootstrap")
         .arg(format!("gui/{uid}"))
@@ -3595,6 +3692,41 @@ fn launchd_kickstart(job: &lifecycle::Job) -> Result<()> {
 #[cfg(all(unix, not(target_os = "macos")))]
 fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
     anyhow::bail!("launchd job {} reported on a system without launchd", job.label)
+}
+
+/// Restart a systemd user unit in place. Its program is the path an upgrade repoints, so the new
+/// binary is what starts (daemon-lifecycle.md Section 4, "On Linux").
+#[cfg(unix)]
+fn systemd_restart(job: &lifecycle::Job) -> Result<()> {
+    systemctl_user(&["restart", job.label])?;
+    println!("restarted systemd unit {} (MCP server + viewer).", job.label);
+    await_daemon(job.label)
+}
+
+/// Stop a systemd user unit. It stays enabled, so it starts again at the next login - said here,
+/// because "stopped" alone would be true only until then.
+#[cfg(unix)]
+fn systemd_stop(job: &lifecycle::Job) -> Result<()> {
+    systemctl_user(&["stop", job.label])?;
+    match job.kind {
+        lifecycle::LabelKind::Homebrew(token) => println!(
+            "stopped systemd unit {}. It is Homebrew's and starts again at the next login - retire it with `brew services stop {token}`.",
+            job.label
+        ),
+        _ => println!(
+            "stopped systemd unit {}. While it is enabled it starts again at the next login - `supragnosis restart` starts it now, `supragnosis service uninstall` keeps it off.",
+            job.label
+        ),
+    }
+    Ok(())
+}
+
+/// Start the installed canonical unit - `restart` when it is installed but neither enabled nor active.
+#[cfg(unix)]
+fn systemd_start_canonical() -> Result<()> {
+    systemctl_user(&["start", lifecycle::CANONICAL_UNIT])?;
+    println!("started systemd unit {} (MCP server + viewer).", lifecycle::CANONICAL_UNIT);
+    await_daemon(lifecycle::CANONICAL_UNIT)
 }
 
 /// Prints how to connect an AI app, on `start` and `status` - where a person looking for it looks.
@@ -3692,9 +3824,10 @@ fn stop() -> Result<()> {
         }
         Situation::One(Manager::Pidfile { pid }) => stop_pidfile(pid as i32),
         Situation::One(Manager::Launchd(job)) => launchd_bootout(&job),
+        Situation::One(Manager::Systemd(job)) => systemd_stop(&job),
         Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
         Situation::Unrecognized => anyhow::bail!(
-            "a daemon is responding on {} but no known manager runs it (no pidfile, no known launchd label) - stop it via its own supervisor.",
+            "a daemon is responding on {} but no known manager runs it (no pidfile, no known launchd label or systemd unit) - stop it via its own supervisor.",
             status_http_addr()
         ),
     }
@@ -3708,7 +3841,13 @@ fn restart(cfg: Config) -> Result<()> {
         // Stopped, but the canonical job is installed (a `stop` unloaded it): reload THAT job. Starting
         // a pidfile daemon here would leave the login item installed beside it - two owners again
         // at the next login (L1).
-        Situation::Stopped if canonical_plist_state() != "absent" => launchd_bootstrap_canonical(),
+        Situation::Stopped if canonical_service_state() != "absent" => {
+            if cfg!(target_os = "linux") {
+                systemd_start_canonical()
+            } else {
+                launchd_bootstrap_canonical()
+            }
+        }
         // Nothing installed and nothing running - start a fresh self-managed daemon.
         Situation::Stopped => start(cfg),
         Situation::One(Manager::Pidfile { pid }) => {
@@ -3720,25 +3859,25 @@ fn restart(cfg: Config) -> Result<()> {
             launchd_kickstart(&job)?;
             await_daemon(job.label)
         }
+        Situation::One(Manager::Systemd(job)) => systemd_restart(&job),
         Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
         Situation::Unrecognized => anyhow::bail!(
-            "something no known manager runs is serving {} or holding the store (no pidfile, no known launchd label) - cannot restart it from here.\n{}",
+            "something no known manager runs is serving {} or holding the store (no pidfile, no known launchd label or systemd unit) - cannot restart it from here.\n{}",
             status_http_addr(),
             lifecycle::UNRECOGNIZED_HOLDER
         ),
     }
 }
 
-/// After a launchd restart, wait briefly for the new process and say which version it serves - a
-/// restart's whole point after an upgrade is the version, and "restarted" alone does not show it.
+/// L4: after loading or restarting a launchd job or a systemd unit, it counts as up only when the
+/// daemon answers, and then says which version it serves - a restart's whole point after an upgrade
+/// is the version, and "restarted" alone does not show it. It counts as failed when its manager shows
+/// it failing - no process and a non-zero last exit - for three seconds running: a job crash-looping
+/// on the store lock sits like that between respawns, as does a unit waiting out `RestartSec`, while
+/// one being restarted shows its previous exit only for a moment. A slow start that is still running
+/// is reported as slow, not failed: a daemon repaying owed projections before it binds
+/// (crash-recovery.md K3) can take a while.
 #[cfg(unix)]
-/// L4: after loading or restarting a launchd job, the job counts as up only when the daemon answers.
-/// It counts as failed when launchd shows it failing - no process and a non-zero last exit - for
-/// three seconds running: a KeepAlive job crash-looping on the store lock sits like that between
-/// respawns, while one being restarted shows its previous exit only for a moment. A slow start that
-/// is still running is reported as slow, not failed: a daemon repaying owed projections before it
-/// binds (crash-recovery.md K3) can take a while.
-#[cfg(target_os = "macos")]
 fn await_daemon(label: &str) -> Result<()> {
     let here = env!("CARGO_PKG_VERSION");
     let tick = std::time::Duration::from_millis(250);
@@ -3754,24 +3893,24 @@ fn await_daemon(label: &str) -> Result<()> {
             }
             return Ok(());
         }
-        let job = launchd_jobs().into_iter().find(|j| j.label == label);
+        let job = launchd_jobs().into_iter().chain(systemd_units()).find(|j| j.label == label);
         let failing = job
             .as_ref()
             .is_some_and(|j| j.pid.is_none() && j.last_exit.is_some_and(|c| c != 0));
         failing_for = if failing { failing_for + 1 } else { 0 };
         if failing_for >= 12 {
             let code = job.and_then(|j| j.last_exit).unwrap_or_default();
+            let (manager, log) = if cfg!(target_os = "linux") {
+                ("systemd", format!("`journalctl --user -u {label}`"))
+            } else {
+                ("launchd", log_dir().join("supragnosis.err.log").display().to_string())
+            };
             anyhow::bail!(
-                "{label} is loaded but not running - it exited with status {code} and launchd is retrying it. The reason is in {}",
-                log_dir().join("supragnosis.err.log").display()
+                "{label} is loaded but not running - it exited with status {code} and {manager} is retrying it. The reason is in {log}"
             );
         }
     }
     println!("  still starting - `supragnosis status` shows the version once the daemon answers");
-    Ok(())
-}
-#[cfg(not(target_os = "macos"))]
-fn await_daemon(_label: &str) -> Result<()> {
     Ok(())
 }
 
@@ -3790,8 +3929,11 @@ struct StatusFacts<'a> {
     /// First contact (docs/onboarding.md Section 5): the AI apps that reached the daemon since it
     /// started; null when it does not answer, or does not record them.
     clients: Option<serde_json::Value>,
+    /// The canonical LaunchAgent's plist, or the canonical user unit on Linux, and its state.
     plist: std::path::PathBuf,
     plist_state: &'static str,
+    /// Whether the person's systemd manager outlives their sessions; null off Linux, or unknown.
+    linger: Option<bool>,
 }
 
 /// One line on semantic retrieval, from the daemon's health report (semantic-retrieval.md SR3):
@@ -3848,6 +3990,17 @@ fn status_document(f: &StatusFacts) -> serde_json::Value {
                 "pid": j.pid, "last_exit": j.last_exit,
             })
         }
+        Manager::Systemd(j) => {
+            let (source, formula) = match j.kind {
+                lifecycle::LabelKind::Canonical => ("canonical", None),
+                lifecycle::LabelKind::Homebrew(t) => ("homebrew", Some(t)),
+                lifecycle::LabelKind::Retired => ("retired", None),
+            };
+            serde_json::json!({
+                "type": "systemd", "unit": j.label, "label": j.label, "source": source,
+                "formula": formula, "pid": j.pid, "last_exit": j.last_exit,
+            })
+        }
     };
     serde_json::json!({
         "schema": JSON_SCHEMA,
@@ -3874,10 +4027,14 @@ fn status_document(f: &StatusFacts) -> serde_json::Value {
         "semantic": f.health.as_ref().and_then(|h| h.get("semantic")).cloned(),
         "server": f.server,
         "clients": f.clients,
+        // `plist` keeps its name in schema 1 and holds the unit's path on Linux; `path` says the same
+        // without the name (daemon-lifecycle.md Section 4, "On Linux").
         "service": {
-            "label": lifecycle::CANONICAL_LABEL,
+            "label": canonical_service_label(),
             "plist": f.plist,
+            "path": f.plist,
             "state": f.plist_state,
+            "linger": f.linger,
         },
     })
 }
@@ -3914,8 +4071,9 @@ fn status(json: bool) -> Result<()> {
             health,
             server,
             clients: if observed.answering { first_contacts() } else { None },
-            plist: canonical_plist_path(),
-            plist_state: canonical_plist_state(),
+            plist: canonical_service_path(),
+            plist_state: canonical_service_state(),
+            linger: if cfg!(target_os = "linux") { linger_state() } else { None },
         };
         println!("{}", status_document(&facts));
         return Ok(());
@@ -3930,11 +4088,7 @@ fn status(json: bool) -> Result<()> {
             // Where a person lands on a first run, or after a restart that did not bring it back
             // (docs/onboarding.md Section 7): how to run it now, how to keep it, and setup.
             println!("  start   supragnosis start            runs it until you log out");
-            if cfg!(target_os = "macos") {
-                println!("  keep    supragnosis service install  runs it now and at every login");
-            } else {
-                println!("  keep    deploy/systemd/README.md     a user unit that runs it at every login");
-            }
+            println!("  keep    supragnosis service install  runs it now and at every login");
             println!("  setup   supragnosis setup            the whole first run, step by step");
             return Ok(());
         }
@@ -3949,7 +4103,9 @@ fn status(json: bool) -> Result<()> {
             println!("CONFLICT: {}", lifecycle::conflict_message(ms));
         }
         Situation::Unrecognized if observed.answering => {
-            println!("running (unrecognized manager - no pidfile, no known launchd label)");
+            println!(
+                "running (unrecognized manager - no pidfile, no known launchd label or systemd unit)"
+            );
         }
         Situation::Unrecognized => {
             println!(
@@ -4016,13 +4172,23 @@ fn status(json: bool) -> Result<()> {
             ),
         }
     }
-    match canonical_plist_state() {
-        "generated" => println!("  login   starts at login ({})", lifecycle::CANONICAL_LABEL),
-        "hand_written" => println!(
-            "  login   starts at login ({}, hand-written plist)",
-            lifecycle::CANONICAL_LABEL
-        ),
+    let label = canonical_service_label();
+    match canonical_service_state() {
+        "generated" => println!("  login   starts at login ({label})"),
+        "hand_written" if cfg!(target_os = "linux") => {
+            println!("  login   starts at login ({label}, a unit not generated by service install)")
+        }
+        "hand_written" => println!("  login   starts at login ({label}, hand-written plist)"),
         _ => println!("  login   not installed - supragnosis service install"),
+    }
+    // A user manager stops with the person's last session unless it lingers (Section 4, "On Linux").
+    if cfg!(target_os = "linux")
+        && canonical_service_state() != "absent"
+        && linger_state() == Some(false)
+    {
+        println!(
+            "  linger  off - it stops when you log out; `loginctl enable-linger` keeps it running"
+        );
     }
     if matches!(situation, Situation::One(_)) {
         println!("  control supragnosis restart | supragnosis stop");
@@ -4030,27 +4196,46 @@ fn status(json: bool) -> Result<()> {
     Ok(())
 }
 
-// --- The canonical LaunchAgent (docs/daemon-lifecycle.md Section 4) --------------------------
+// --- The canonical LaunchAgent and user unit (docs/daemon-lifecycle.md Section 4) ------------
 
-/// Where the canonical plist lives, and what kind of file is there now.
+/// The canonical manager's name: the LaunchAgent's label, or the user unit's name on Linux.
 #[cfg(unix)]
-fn canonical_plist_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
-        .join("Library/LaunchAgents")
+fn canonical_service_label() -> &'static str {
+    if cfg!(target_os = "linux") {
+        lifecycle::CANONICAL_UNIT
+    } else {
+        lifecycle::CANONICAL_LABEL
+    }
+}
+
+/// Where the canonical plist lives - or on Linux the canonical user unit, under `$XDG_CONFIG_HOME`
+/// when it is set, as systemd reads it.
+#[cfg(unix)]
+fn canonical_service_path() -> std::path::PathBuf {
+    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    if cfg!(target_os = "linux") {
+        let config = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .filter(|v| v.starts_with('/'))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
+        return config.join("systemd/user").join(lifecycle::CANONICAL_UNIT);
+    }
+    home.join("Library/LaunchAgents")
         .join(format!("{}.plist", lifecycle::CANONICAL_LABEL))
 }
 
 /// absent | generated | hand_written - the state the app's Start at Login item reflects.
 #[cfg(unix)]
-fn canonical_plist_state() -> &'static str {
-    match std::fs::read_to_string(canonical_plist_path()) {
+fn canonical_service_state() -> &'static str {
+    match std::fs::read_to_string(canonical_service_path()) {
         Err(_) => "absent",
         Ok(text) if lifecycle::is_generated(&text) => "generated",
         Ok(_) => "hand_written",
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn unix_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -4089,7 +4274,12 @@ fn plist_env(path: &std::path::Path) -> Result<std::collections::BTreeMap<String
 #[cfg(target_os = "macos")]
 fn move_aside(path: &std::path::Path, label: &str) -> Result<std::path::PathBuf> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let dst = lifecycle::moved_aside_path(&home, label, unix_secs());
+    move_file_aside(path, lifecycle::moved_aside_path(&home, label, unix_secs()))
+}
+
+/// Move a file the product did not write to `dst`, keeping it (L5).
+#[cfg(unix)]
+fn move_file_aside(path: &std::path::Path, dst: std::path::PathBuf) -> Result<std::path::PathBuf> {
     if let Some(dir) = dst.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -4112,7 +4302,7 @@ fn launchctl_quiet(args: &[&str]) -> bool {
 /// Wait for the MCP port to close and the store to be released after a job is booted out, so the
 /// next owner does not race the last one for the store lock. False when either is still held after
 /// ten seconds.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn wait_until_released(store: Option<&std::path::Path>) -> bool {
     for _ in 0..100 {
         if !port_open(&status_http_addr()) && !store.is_some_and(supragnosis_store::redb_in_use) {
@@ -4123,14 +4313,20 @@ fn wait_until_released(store: Option<&std::path::Path>) -> bool {
     false
 }
 
-/// A Homebrew job is retired by Homebrew: the plist is its file, and only `brew services stop`
-/// removes it from LaunchAgents (a bootout alone would let it load again at the next login).
-#[cfg(target_os = "macos")]
+/// A Homebrew job is retired by Homebrew: the plist or the unit is its file, and only `brew services
+/// stop` removes it (a bootout or a `systemctl stop` alone would let it start again at the next login).
+#[cfg(unix)]
 fn brew_services_stop(token: &str) -> Result<()> {
-    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        .iter()
-        .map(std::path::PathBuf::from)
-        .find(|p| p.exists());
+    let home = std::env::var("HOME").unwrap_or_default();
+    let brew = [
+        "/opt/homebrew/bin/brew".to_string(),
+        "/usr/local/bin/brew".to_string(),
+        "/home/linuxbrew/.linuxbrew/bin/brew".to_string(),
+        format!("{home}/.linuxbrew/bin/brew"),
+    ]
+    .iter()
+    .map(std::path::PathBuf::from)
+    .find(|p| p.exists());
     let Some(brew) = brew else {
         anyhow::bail!(
             "a brew services job ({token}) owns the daemon but brew was not found - run `brew services stop {token}` and install again"
@@ -4146,13 +4342,33 @@ fn brew_services_stop(token: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+/// `service install`: the LaunchAgent on macOS, the user unit on Linux.
+#[cfg(unix)]
 fn service_install(args: ServiceInstallArgs) -> Result<()> {
+    if cfg!(target_os = "linux") {
+        systemd_install(args)
+    } else {
+        launchd_install(args)
+    }
+}
+
+/// `service uninstall`: the LaunchAgent on macOS, the user unit on Linux.
+#[cfg(unix)]
+fn service_uninstall() -> Result<()> {
+    if cfg!(target_os = "linux") {
+        systemd_uninstall()
+    } else {
+        launchd_uninstall()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn launchd_install(args: ServiceInstallArgs) -> Result<()> {
     use lifecycle::{LabelKind, Manager};
     let home = std::env::var("HOME").context("HOME is not set")?;
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
-    let plist = canonical_plist_path();
-    let state = canonical_plist_state();
+    let plist = canonical_service_path();
+    let state = canonical_service_state();
 
     // The job's environment: whatever the plist being replaced set, verbatim, then --env on top.
     let mut env = if state == "absent" { Default::default() } else { plist_env(&plist)? };
@@ -4174,8 +4390,9 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
 
     // L1 and L5: refuse to share, refuse a holder nothing names, and refuse to overwrite a person's
     // file - the first and last unless told to take over.
-    let others = lifecycle::plan_install(&observed, args.take_over, state == "hand_written")
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let hand = (state == "hand_written").then_some(lifecycle::HAND_WRITTEN_PLIST);
+    let others =
+        lifecycle::plan_install(&observed, args.take_over, hand).map_err(|e| anyhow::anyhow!(e))?;
 
     let exe = std::env::current_exe()?.canonicalize()?;
     let program = lifecycle::stable_program(&exe, |p| p.exists());
@@ -4190,6 +4407,8 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
     for m in &others {
         match m {
             Manager::Pidfile { pid } => stop_pidfile(*pid as i32)?,
+            // Units exist only on Linux, which installs through systemd_install.
+            Manager::Systemd(_) => {}
             Manager::Launchd(job) => match job.kind {
                 LabelKind::Homebrew(token) => {
                     brew_services_stop(token)?;
@@ -4263,11 +4482,11 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn service_uninstall() -> Result<()> {
+fn launchd_uninstall() -> Result<()> {
     use lifecycle::LabelKind;
     let uid = launchd_uid().context("could not determine uid (id -u) for the launchd domain")?;
-    let plist = canonical_plist_path();
-    let state = canonical_plist_state();
+    let plist = canonical_service_path();
+    let state = canonical_service_state();
     let observed = observe();
     if observed.jobs.iter().any(|j| j.kind == LabelKind::Canonical) {
         launchctl_quiet(&["bootout", &format!("gui/{uid}/{}", lifecycle::CANONICAL_LABEL)]);
@@ -4301,13 +4520,237 @@ fn service_uninstall() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
-fn service_install(_args: ServiceInstallArgs) -> Result<()> {
-    anyhow::bail!("service install manages a macOS LaunchAgent; on Linux use the systemd user unit in deploy/systemd/")
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launchd_install(_args: ServiceInstallArgs) -> Result<()> {
+    anyhow::bail!("service install manages a macOS LaunchAgent or a Linux systemd user unit, and this system has neither - `supragnosis serve` runs the daemon in the foreground")
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launchd_uninstall() -> Result<()> {
+    anyhow::bail!("service uninstall manages a macOS LaunchAgent or a Linux systemd user unit, and this system has neither")
+}
+#[cfg(not(unix))]
+fn service_install(_args: ServiceInstallArgs) -> Result<()> {
+    anyhow::bail!("service install manages a macOS LaunchAgent or a Linux systemd user unit; use 'supragnosis serve --http <ADDR>' here")
+}
+#[cfg(not(unix))]
 fn service_uninstall() -> Result<()> {
-    anyhow::bail!("service uninstall manages a macOS LaunchAgent; on Linux use the systemd user unit in deploy/systemd/")
+    anyhow::bail!("service uninstall manages a macOS LaunchAgent or a Linux systemd user unit")
+}
+
+/// Why there is no user manager to install into, and what runs the daemon instead.
+#[cfg(unix)]
+fn no_user_manager(why: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "systemctl --user does not work here ({why}) - as in many containers, or a session without a user bus - so there is no user manager to keep the daemon running. `supragnosis serve` runs it in the foreground, and `supragnosis start` runs it until you log out"
+    )
+}
+
+/// The directories a unit's daemon writes outside `~/.supragnosis`, which `ProtectSystem=strict` and
+/// `ProtectHome=read-only` would otherwise refuse it: a data directory or viewer socket its
+/// environment moved elsewhere.
+#[cfg(unix)]
+fn unit_writable_paths(
+    env: &std::collections::BTreeMap<String, String>,
+    home: &str,
+) -> Vec<String> {
+    let state = std::path::PathBuf::from(home).join(".supragnosis");
+    let mut out: Vec<String> = Vec::new();
+    let data = env.get("SUPRAGNOSIS_DATA_DIR").map(std::path::PathBuf::from);
+    let sock = env
+        .get("SUPRAGNOSIS_VIZ_SOCK")
+        .and_then(|v| std::path::Path::new(v).parent().map(std::path::Path::to_path_buf));
+    for dir in [data, sock].into_iter().flatten() {
+        let d = dir.to_string_lossy().to_string();
+        if dir.is_absolute() && !dir.starts_with(&state) && !out.contains(&d) {
+            out.push(d);
+        }
+    }
+    out
+}
+
+/// `service install` on Linux (daemon-lifecycle.md Section 4, "On Linux"): the canonical user unit,
+/// generated, enabled and started, with lingering asked for. The rules are the LaunchAgent's - refuse
+/// to share, refuse a holder nothing names, never overwrite a file it did not write, carry the
+/// environment, add no exposure - read for a unit.
+#[cfg(unix)]
+fn systemd_install(args: ServiceInstallArgs) -> Result<()> {
+    use lifecycle::{LabelKind, Manager};
+    systemd_user_available().map_err(|why| no_user_manager(&why))?;
+    let home = std::env::var("HOME").context("HOME is not set")?;
+    let user = current_user().context("could not determine the user name (id -un)")?;
+    let unit = canonical_service_path();
+    let state = canonical_service_state();
+
+    // The unit's environment: whatever the unit being replaced set, read as systemd reads it, then
+    // --env on top (L5's carrying).
+    let mut env = if state == "absent" {
+        Default::default()
+    } else {
+        let text = std::fs::read_to_string(&unit)
+            .with_context(|| format!("failed to read {}", unit.display()))?;
+        lifecycle::parse_unit_env(&text, &home, &user)
+            .map_err(|e| anyhow::anyhow!("{}: {e}", unit.display()))?
+    };
+    for a in &args.env {
+        let (k, v) = lifecycle::parse_env_arg(a).map_err(|e| anyhow::anyhow!(e))?;
+        env.insert(k, v);
+    }
+    env.entry("SUPRAGNOSIS_HTTP_ADDR".to_string())
+        .or_insert_with(|| "127.0.0.1:7373".to_string());
+    lifecycle::refuse_exposure(&env, |a| parse_loopback_addr(a).is_ok())
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    let store = daemon_store_path(|k| env.get(k).cloned());
+    let observed = observe_with(store.as_deref());
+    let hand = (state == "hand_written").then_some(lifecycle::HAND_WRITTEN_UNIT);
+    let others =
+        lifecycle::plan_install(&observed, args.take_over, hand).map_err(|e| anyhow::anyhow!(e))?;
+
+    let exe = std::env::current_exe()?.canonicalize()?;
+    let program = lifecycle::stable_program(&exe, |p| p.exists());
+    let program_str = program.to_string_lossy().to_string();
+    if program_str.contains("/target/debug/") || program_str.contains("/target/release/") {
+        println!(
+            "note: the unit will run a build-tree binary ({program_str}); `cargo clean` removes it"
+        );
+    }
+    let writable = unit_writable_paths(&env, &home);
+    let text = lifecycle::render_unit(&program_str, &env, &writable, env!("CARGO_PKG_VERSION"))
+        .map_err(|e| anyhow::anyhow!("the unit cannot be written: {e}"))?;
+
+    for m in &others {
+        match m {
+            Manager::Pidfile { pid } => stop_pidfile(*pid as i32)?,
+            Manager::Systemd(job) => {
+                if let LabelKind::Homebrew(token) = job.kind {
+                    brew_services_stop(token)?;
+                    println!(
+                        "retired brew services unit {} (brew services stop {token})",
+                        job.label
+                    );
+                }
+            }
+            Manager::Launchd(_) => {}
+        }
+    }
+    // Whatever is at the canonical path stops before its file changes: a generated unit is
+    // rewritten, a copied one moved aside.
+    if state != "absent" || observed.units.iter().any(|j| j.kind == LabelKind::Canonical) {
+        let _ = systemctl_user(&["disable", "--now", lifecycle::CANONICAL_UNIT]);
+    }
+    if !wait_until_released(store.as_deref()) {
+        anyhow::bail!(
+            "{} still answers, or the store is still held, after retiring the managers above - something else holds it, so not installing beside it.\n{}",
+            status_http_addr(),
+            lifecycle::UNRECOGNIZED_HOLDER
+        );
+    }
+    let moved = if state == "hand_written" {
+        let to = move_file_aside(&unit, lifecycle::moved_aside_unit_path(&home, unix_secs()))?;
+        println!("moved the unit that was not generated aside: {}", to.display());
+        Some(to)
+    } else {
+        None
+    };
+
+    std::fs::create_dir_all(unit.parent().context("the unit path has no parent")?)?;
+    std::fs::create_dir_all(base_dir())?;
+    for dir in &writable {
+        std::fs::create_dir_all(dir).with_context(|| format!("failed to create {dir}"))?;
+    }
+    std::fs::write(&unit, text).with_context(|| format!("failed to write {}", unit.display()))?;
+    systemctl_user(&["daemon-reload"])?;
+    systemctl_user(&["enable", "--now", lifecycle::CANONICAL_UNIT])?;
+    println!("installed {} -> {}", lifecycle::CANONICAL_UNIT, unit.display());
+    println!("  program {program_str} serve");
+    for (k, v) in &env {
+        println!("  env     {k}={v}");
+    }
+    if let Some(to) = moved {
+        println!(
+            "  carried only the Environment= lines of the unit moved aside - compare the rest (an ExecStart with its own flags, ordering) with {}",
+            to.display()
+        );
+    }
+    // A user manager stops with the person's last session unless it lingers. polkit lets a person
+    // turn it on for themselves on most distributions; where it does not, an administrator has to
+    // (L8: asked, never escalated).
+    match linger_state() {
+        Some(true) => println!("  linger  on - it keeps running after you log out"),
+        _ => {
+            let out = std::process::Command::new("loginctl").arg("enable-linger").output();
+            match out {
+                Ok(o) if o.status.success() => println!(
+                    "  linger  turned on (loginctl enable-linger) - it keeps running after you log out"
+                ),
+                Ok(o) => println!(
+                    "  linger  off, and turning it on was refused ({}) - it stops when you log out until an administrator runs `sudo loginctl enable-linger {user}`",
+                    String::from_utf8_lossy(&o.stderr).trim()
+                ),
+                Err(e) => println!(
+                    "  linger  off, and loginctl could not be run ({e}) - it stops when you log out until an administrator runs `sudo loginctl enable-linger {user}`"
+                ),
+            }
+        }
+    }
+    println!(
+        "  the daemon starts now and at every login (supragnosis service uninstall to undo); its log is `journalctl --user -u {}`",
+        lifecycle::CANONICAL_UNIT
+    );
+    if args.no_model {
+        println!("  model   not fetched here (--no-model) - `supragnosis embed fetch` fetches it");
+    } else if let Err(e) = embed_fetch(true, false) {
+        println!("  model   not fetched: {e:#} - run `supragnosis embed fetch` when online");
+    }
+    await_daemon(lifecycle::CANONICAL_UNIT)
+}
+
+/// `service uninstall` on Linux: the canonical unit is disabled and stopped, and its file removed -
+/// or moved aside when this command did not write it (L5). Lingering is left as it is, since other
+/// units may need it.
+#[cfg(unix)]
+fn systemd_uninstall() -> Result<()> {
+    use lifecycle::LabelKind;
+    systemd_user_available().map_err(|why| no_user_manager(&why))?;
+    let home = std::env::var("HOME").context("HOME is not set")?;
+    let unit = canonical_service_path();
+    let state = canonical_service_state();
+    let observed = observe();
+    if state != "absent" || observed.units.iter().any(|j| j.kind == LabelKind::Canonical) {
+        let _ = systemctl_user(&["disable", "--now", lifecycle::CANONICAL_UNIT]);
+        wait_until_released(daemon_store_path(|k| std::env::var(k).ok()).as_deref());
+        println!("stopped and disabled {}", lifecycle::CANONICAL_UNIT);
+    }
+    match state {
+        "generated" => {
+            std::fs::remove_file(&unit)
+                .with_context(|| format!("failed to remove {}", unit.display()))?;
+            let _ = systemctl_user(&["daemon-reload"]);
+            println!("removed {} - the daemon no longer starts at login", unit.display());
+        }
+        "hand_written" => {
+            let to = move_file_aside(&unit, lifecycle::moved_aside_unit_path(&home, unix_secs()))?;
+            let _ = systemctl_user(&["daemon-reload"]);
+            println!(
+                "moved the unit that was not generated aside ({}) - the daemon no longer starts at login",
+                to.display()
+            );
+        }
+        _ => println!("no canonical unit is installed"),
+    }
+    let rest: Vec<String> = observed
+        .units
+        .iter()
+        .filter(|j| j.kind != LabelKind::Canonical)
+        .map(|j| format!("  systemd {}", j.label))
+        .collect();
+    if !rest.is_empty() {
+        println!("other managers are still enabled (not touched):\n{}", rest.join("\n"));
+    }
+    if linger_state() == Some(true) {
+        println!("lingering is left on - other units may need it (`loginctl disable-linger` turns it off)");
+    }
+    Ok(())
 }
 
 // Non-unix: daemon lifecycle unsupported - point to serve --http.
@@ -5263,9 +5706,74 @@ mod json_contract {
             ])),
             plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),
             plist_state: "generated",
+            linger: None,
         });
         assert_eq!(doc["schema"], JSON_SCHEMA);
         same_shape(&example("status"), &doc, "status").unwrap_or_else(|e| panic!("{e}"));
+
+        // On Linux a unit is a manager of type systemd, named as a unit and as a label, and the
+        // service object says whether the person's manager lingers (daemon-lifecycle.md Section 4,
+        // "On Linux"). Additive, so schema 1 holds (compatibility.md Section 6).
+        let unit = Job {
+            label: lifecycle::CANONICAL_UNIT,
+            kind: LabelKind::Canonical,
+            pid: Some(3),
+            last_exit: None,
+        };
+        let one = Situation::One(Manager::Systemd(unit));
+        let doc = status_document(&StatusFacts {
+            situation: &one,
+            answering: true,
+            store_held: true,
+            http: "127.0.0.1:7373".into(),
+            here: "1.0.0",
+            running: Some("1.0.0".into()),
+            health: None,
+            server: serde_json::json!({"name": "local", "remote": false}),
+            clients: None,
+            plist: std::path::PathBuf::from("/home/you/.config/systemd/user/supragnosis.service"),
+            plist_state: "generated",
+            linger: Some(false),
+        });
+        assert_eq!(doc["schema"], JSON_SCHEMA);
+        assert_eq!(
+            doc["managers"][0],
+            serde_json::json!({"type": "systemd", "unit": "supragnosis.service",
+                "label": "supragnosis.service", "source": "canonical", "formula": null,
+                "pid": 3, "last_exit": null})
+        );
+        assert_eq!(doc["service"]["linger"], false);
+        assert_eq!(doc["service"]["path"], doc["service"]["plist"]);
+    }
+
+    /// L8: nothing the lifecycle runs asks for privilege. Every systemctl call goes to the person's own
+    /// manager (`--user`), every launchctl target is their `gui/<uid>` domain, lingering is asked for
+    /// this user alone (no name, so polkit decides), and nothing runs sudo, pkexec or doas. Read from
+    /// the lifecycle's own code, between its two section comments.
+    #[test]
+    fn no_lifecycle_command_asks_for_privilege() {
+        let src = include_str!("main.rs");
+        let from = src.find("// The decisions are pure and live in `lifecycle.rs`").unwrap();
+        let to = src.find("// --- Federation configuration").unwrap();
+        let code = &src[from..to];
+        let calls = |name: &str| -> Vec<&str> {
+            code.match_indices(&format!("Command::new(\"{name}\")"))
+                .map(|(i, _)| &code[i..(i + 160).min(code.len())])
+                .collect()
+        };
+        for escalate in ["sudo", "pkexec", "doas"] {
+            assert!(calls(escalate).is_empty(), "the lifecycle runs {escalate}");
+        }
+        let systemctl = calls("systemctl");
+        assert!(systemctl.len() >= 3, "the lifecycle's systemctl calls moved out of reach");
+        for call in systemctl {
+            assert!(call.contains("\"--user\""), "a systemctl call without --user: {call}");
+        }
+        let loginctl = calls("loginctl");
+        assert_eq!(loginctl.len(), 1, "one loginctl call, the linger request");
+        assert!(loginctl[0].contains(".arg(\"enable-linger\").output()"), "{}", loginctl[0]);
+        assert!(code.contains("format!(\"gui/{uid}"));
+        assert!(!code.contains("\"system/") && !code.contains("format!(\"system/"));
     }
 
     /// `setup --events` and `embed fetch --events` (docs/onboarding.md Section 3): a schema line,
