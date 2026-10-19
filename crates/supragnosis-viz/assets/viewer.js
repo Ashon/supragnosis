@@ -792,7 +792,7 @@ async function renderFedSection(host) {
         for (const w of ws) {
           const armed = fedCfgArmed === a.node_id + "\u0000" + w;
           parts.push(html`<button type="button" class="wsc${armed ? " armed" : ""}" data-node="${a.node_id}" `,
-            html`data-ws="${w}" title="${armed ? "click again to stop sharing" : "stop sharing this workspace with this peer"}">`,
+            html`data-ws="${w}" title="${tipText(armed ? "Press again to stop" : "Stop sharing")}">`,
             html`${w}<span class="x">${armed ? "confirm" : "x"}</span></button>`);
         }
       }
@@ -1170,6 +1170,9 @@ function esc(s) { return String(s).replace(/[<&>"']/g, c => ({ "<": "&lt;", "&":
 // a fragment someone forgot to build with it shows up on screen as visible tags, not as markup.
 function Markup(s) { this.s = s; }
 Markup.prototype.toString = function () { return this.s; };
+// A tooltip names a control and its key, and explains nothing a person needs to act (Section 4, U25):
+// it shows only to a pointer that rests. Every tooltip the script writes goes through here.
+function tipText(name, key) { return key ? name + " (" + key + ")" : name; }
 function html(strings, ...values) {
   let out = strings[0];
   for (let i = 0; i < values.length; i++) out += markupOf(values[i]) + strings[i + 1];
@@ -1300,7 +1303,7 @@ function bandEmptyReason(band) {
 // page's Suggestions and Health (docs/design-system.md Section 7). Suspected secrets and contested
 // beliefs are items of Needs you instead, decided one at a time.
 function nchipHtml(n) {
-  return html`<button type="button" class="nchip" data-id="${n.id}" title="focus ${n.name} (deg ${n.degree}, ${n.sources} src)">${n.name}<span class="ty">${n.type}</span></button>`;
+  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.name}<span class="ty">${n.type}</span></button>`;
 }
 function curationParts(group) {
   if (!curation) return [html`<div class="empty">no signals yet</div>`];
@@ -1312,14 +1315,16 @@ function curationParts(group) {
     // opens an entity_merge through the gate, which then waits under Needs you.
     const ms = curation.merge_suggestions || [];
     parts.push(html`<div class="csec">possible duplicates, by meaning (${ms.length})</div>`);
+    // What Propose does is said here, once, rather than in each button's tooltip (Section 4, U25).
+    if (ms.length) parts.push(html`<p class="hint">Propose opens a merge of the pair, folding the first into the second; it then waits under Needs you.</p>`);
     parts.push(ms.length
       ? ms.map(m => [
           html`<div class="ms" data-a="${m.a}" data-b="${m.b}">`,
-          html`<button type="button" class="nchip" data-id="${m.a}" title="focus ${m.a_name}">${m.a_name}</button>`,
+          html`<button type="button" class="nchip" data-id="${m.a}" title="${tipText("Focus " + m.a_name)}">${m.a_name}</button>`,
           html`<span class="msx">~</span>`,
-          html`<button type="button" class="nchip" data-id="${m.b}" title="focus ${m.b_name}">${m.b_name}</button>`,
-          html`<span class="mssim" title="embedding similarity (retrieval aid) / shared neighbors">${m.similarity.toFixed(2)}${m.shared_neighbors ? " / " + m.shared_neighbors + "nb" : ""}</span>`,
-          html`<button class="propmerge" title="open a merge proposal for this pair (folds the first into the second); it then waits under Needs you">Propose</button>`,
+          html`<button type="button" class="nchip" data-id="${m.b}" title="${tipText("Focus " + m.b_name)}">${m.b_name}</button>`,
+          html`<span class="mssim">similar ${m.similarity.toFixed(2)}${m.shared_neighbors ? ", " + m.shared_neighbors + " shared neighbors" : ""}</span>`,
+          html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>`,
           html`</div>`])
       : html`<div class="empty">${bandEmptyReason(curation.merge_band)}</div>`);
     // Name variants: the deterministic sibling of the merge band (Principle 15/16). Entity ids already
@@ -1330,17 +1335,17 @@ function curationParts(group) {
     parts.push(html`<div class="csec">possible duplicates, by spelling (${nv.length})</div>`);
     parts.push(nv.length
       ? nv.map(v => {
-          const meta = html`<span class="mssim" title="which normalization rung grouped them / shared neighbors (structural corroboration)">${v.rung}${v.shared_neighbors ? " / " + v.shared_neighbors + "nb" : ""}</span>`;
+          const meta = html`<span class="mssim">grouped by ${v.rung}${v.shared_neighbors ? ", " + v.shared_neighbors + " shared neighbors" : ""}</span>`;
           const m = v.members || [];
           if (m.length === 2) {
             // data-src tells the server which surface produced this, so the proposal records the real
             // evidence instead of inheriting the merge band's "embedding-near" rationale.
             return [html`<div class="ms" data-a="${m[0].id}" data-b="${m[1].id}" data-src="variant:${v.rung}">`,
-              html`<button type="button" class="nchip" data-id="${m[0].id}" title="focus ${m[0].name}">${m[0].name}</button>`,
+              html`<button type="button" class="nchip" data-id="${m[0].id}" title="${tipText("Focus " + m[0].name)}">${m[0].name}</button>`,
               html`<span class="msx">~</span>`,
-              html`<button type="button" class="nchip" data-id="${m[1].id}" title="focus ${m[1].name}">${m[1].name}</button>`,
+              html`<button type="button" class="nchip" data-id="${m[1].id}" title="${tipText("Focus " + m[1].name)}">${m[1].name}</button>`,
               meta,
-              html`<button class="propmerge" title="open a merge proposal for this pair (folds the first into the second); it then waits under Needs you">Propose</button>`,
+              html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>`,
               html`</div>`];
           }
           return html`<div class="grp"><span class="gk">${v.key}</span>${meta}<div class="chips">${m.map(nchip)}</div></div>`;
@@ -1364,7 +1369,7 @@ function curationParts(group) {
     const gb = curation.grab_bags || [];
     parts.push(html`<div class="csec">overloaded contexts (${gb.length})</div>`);
     parts.push(gb.length
-      ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return html`<div class="gb" data-hid="${b.id}"><span class="sz">${b.size}</span>${nm}<button class="reify" title="assert this context as a group entity + member_of relations (a lineage-bearing observation - the hyperedge itself stays a derived view)">Name this group</button></div>`; })
+      ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return html`<div class="gb" data-hid="${b.id}"><span class="sz">${b.size}</span>${nm}<button class="reify" title="${tipText("Make it a group")}">Name this group</button></div>`; })
       : html`<div class="empty">none - no oversized clusters</div>`);
     const orph = curation.orphans || [];
     parts.push(html`<div class="csec">unlinked (${orph.length})</div>`);
@@ -1788,7 +1793,7 @@ function diffHtml(d) {
     const flag = settled ? html`<span class="dsettled">settles a contradiction</span>`
                : created ? html`<span class="dcreated">creates a contradiction</span>` : "";
     return [html`<div class="drow"><span class="dk">${b.field}</span>`,
-      html`<button type="button" class="nchip" data-id="${b.entity}" title="focus ${b.name}">${b.name}</button>`,
+      html`<button type="button" class="nchip" data-id="${b.entity}" title="${tipText("Focus " + b.name)}">${b.name}</button>`,
       html`<span class="dfrom">${b.from || "(none)"}</span><span class="darr">-&gt;</span>`,
       html`<span class="dto">${b.to || "(none)"}</span>${flag}</div>`];
   });
@@ -1869,7 +1874,7 @@ function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getT
 // gold (human-confirmed). The full tier text lives in the expanded provenance.
 // A tier's mark wherever a row or card shows one: the ring the map draws for that tier, as the Trust
 // legend draws it (design-system.md Section 9), so a mark means one thing on every surface.
-function tierDot(t) { return html`<span class="tsw tmark t-${String(t)}" title="${tierName(t)}"></span>`; }
+function tierDot(t) { return html`<span class="tsw tmark t-${String(t)}" title="${tipText(tierName(t))}"></span>`; }
 
 // Content-first row: a quiet meta line (tier dot + compact time) over the observation content (the
 // primary element, clamped to 2 lines). Host and the rest move to the expanded provenance.
@@ -1937,7 +1942,7 @@ function obsRowHtml(o, i, list) {
     .filter(Boolean).join(" - ");
   return html`${[
     html`<div class="obs" data-id="${o.id}">`,
-    html`<button type="button" class="ohead" title="open observation detail">`,
+    html`<button type="button" class="ohead" title="${tipText("Open the observation")}">`,
       html`<span class="ometa">${tierDot(o.effective_tier)}`,
         html`<span class="owhen">${who}</span></span>`,
       html`<span class="${cls}">${text}</span>`,
@@ -1951,7 +1956,7 @@ function obsRowHtml(o, i, list) {
 function obsCardHtml(o) {
   const a0 = (o.attestations || [])[0] || {};
   const parts = [html`<div class="card">`,
-    html`<button class="close" title="close" aria-label="close">`,
+    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close">`,
       html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
       html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`,
     html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${tierName(o.effective_tier)}</span>`,
@@ -1960,7 +1965,7 @@ function obsCardHtml(o) {
     // card is the dereference surface an id resolves to (P2/P14), so what is literally in the log
     // has to stay inspectable here even once it is no longer what the reader is shown.
     html`<div class="oc-content">${o.proposal ? proposalLine(o.proposal) : o.content}</div>`,
-    o.proposal ? html`<div class="ocraw" title="the text stored in the log - fixed inside the content address">${o.content}</div>` : "",
+    o.proposal ? html`<div class="ocraw">${o.content}</div>` : "",
     html`<div class="osec">provenance (${(o.attestations || []).length})</div>`];
   for (const a of o.attestations || []) {
     parts.push(html`<div class="prow"><span class="phost">${a.host}</span>`,
@@ -1988,15 +1993,15 @@ function obsCardHtml(o) {
         const into = p.into && t.id === p.into.id;
         const label = html`${t.name || String(t.id).slice(0, 8)}${into ? html` <span class="rk">kept</span>` : ""}`;
         return live
-          ? html`<button type="button" class="echip" data-id="${t.id}" title="focus ${t.name || t.id}">${label}</button>`
-          : html`<span class="echip off" title="folded away by this merge - no node to focus">${label}</span>`;
+          ? html`<button type="button" class="echip" data-id="${t.id}" title="${tipText("Focus " + (t.name || t.id))}">${label}</button>`
+          : html`<span class="echip off" title="${tipText("Folded away by this merge")}">${label}</span>`;
       };
       parts.push(html`<div class="osec">targets</div><div class="echips">${ts.map(chip)}</div>`);
     }
   }
   if (o.entities && o.entities.length)
     parts.push(html`<div class="osec">entities</div><div class="echips">${
-      o.entities.map(e => html`<button type="button" class="echip" data-id="${e.id}" title="focus ${e.name}">${e.name}</button>`)}</div>`);
+      o.entities.map(e => html`<button type="button" class="echip" data-id="${e.id}" title="${tipText("Focus " + e.name)}">${e.name}</button>`)}</div>`);
   if (o.relations && o.relations.length)
     parts.push(html`<div class="osec">relations</div>`,
       o.relations.map(r => html`<div class="ocrel">${r.from} <span class="rk">${r.type}</span> ${r.to}</div>`));
@@ -2580,7 +2585,7 @@ function candRowHtml(c) {
     html`<div class="cand ${c.role}"><span class="cv">${c.value}</span>`,
     html`<span class="crole">${c.role}</span>`,
     html`<span class="ctier">${tierName(c.trust_tier)}</span>`,
-    html`<span class="cobs" title="asserting observation ${c.observation}">${String(c.observation).slice(0, 8)}</span></div>`]}`;
+    html`<span class="cobs" title="${tipText("Observation " + c.observation)}">${String(c.observation).slice(0, 8)}</span></div>`]}`;
 }
 function fieldHtml(f) {
   return html`${[
@@ -2633,17 +2638,20 @@ function relationGroups(node) {
 function relationGroupHtml(g, open) {
   const shown = open ? g.items : g.items.slice(0, RELATION_CHIPS);
   const rest = g.items.length - shown.length;
-  // The edge's description stays one hover away, as it was on the row; a superseded edge says so.
+  // A superseded edge says so in its name; an edge's description is a line under the chips, on the
+  // screen rather than one hover away (Section 4, U25).
   const chip = ({ other, e }) => html`${[
     html`<button type="button" class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
-    html`title="${e.description || ((e.valid_to ? "superseded - " : "") + "focus " + other.name)}">`,
+    html`title="${tipText((e.valid_to ? "Superseded, focus " : "Focus ") + other.name)}">`,
     html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}</button>`]}`;
   return html`${[
     html`<div class="rgroup"><div class="rghead"><span class="rdir">${g.out ? "->" : "<-"}</span>`,
     html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
     html`<div class="rchips">${shown.map(chip)}`,
-    rest > 0 ? html`<button class="rmore" type="button" data-key="${g.key}" title="show the other ${rest}">+${rest}</button>` : "",
-    html`</div></div>`]}`;
+    rest > 0 ? html`<button class="rmore" type="button" data-key="${g.key}" title="${tipText("Show " + rest + " more")}">+${rest}</button>` : "",
+    html`</div>`,
+    shown.filter(x => x.e.description).map(x => html`<p class="rdesc"><b>${x.other.name}</b> ${x.e.description}</p>`),
+    html`</div>`]}`;
 }
 
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
@@ -2675,19 +2683,19 @@ function renderDetail(node) {
   // field has a second candidate: an alias spelling or a competing kind (Section 5).
   const disputed = (node.aliases || []).length > 0 || (node.competitors || []).length > 0;
   detailEl.innerHTML = html`${[
-    html`<button class="close" title="close" aria-label="close">`,
+    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close">`,
       html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
       html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
       html`</svg></button>`,
     // Taller / shorter: the height cap keeps the graph visible by default; this trades it for room.
-    html`<button class="grow" title="${detailTall ? "shorter panel" : "taller panel"}" aria-label="${detailTall ? "shorter panel" : "taller panel"}">`,
+    html`<button class="grow" title="${tipText(detailTall ? "Shorter panel" : "Taller panel")}" aria-label="${detailTall ? "Shorter panel" : "Taller panel"}">`,
       html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
       html`<path d="${detailTall ? "M3 4.5 L6 7.5 L9 4.5" : "M3 7.5 L6 4.5 L9 7.5"}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
       html`</svg></button>`,
     html`<h2>${node.name}</h2>`,
     html`<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`,
       html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tierName(tier)}</span>` : ""}`,
-      scopeSaid.length ? html`<span class="scopeline" title="these values are the same for every node in this view, so they are not repeated per node">All here: ${scopeSaid.join(", ")}</span>` : "",
+      scopeSaid.length ? html`<span class="scopeline">All here: ${scopeSaid.join(", ")}</span>` : "",
     html`</div>`,
     node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
     origin, workspace,
@@ -3064,9 +3072,9 @@ function drawWsHulls(ctx, hullLabels) {
 // it drew was "why is it grouping by workspace", which is what a control with no affordance earns.
 // "b" still cycles, for whoever finds it.
 const BOUNDARY_MODES = [
-  ["workspace", "each workspace is a sharing unit, and no entity is in two", "Workspace"],
-  ["origin", "who signed for each entity - regions OVERLAP where two peers both attested it", "Origin"],
-  ["off", "no boundaries", "None"],
+  ["workspace", "Each workspace is a sharing unit, and no entity is in two", "Workspace"],
+  ["origin", "Who signed for each entity; outlines overlap where two machines both did", "Origin"],
+  ["off", "No boundaries", "None"],
 ];
 function renderBoundaryChips() {
   if (!legendBoundaryEl) return;
@@ -3082,11 +3090,15 @@ function renderBoundaryChips() {
     else { sw.style.background = "transparent"; sw.style.border = "1px solid " + hyperColor(mode + ":swatch"); }
     el.appendChild(sw);
     el.appendChild(document.createTextNode(label));
-    el.title = why + " (b cycles the three)";
+    el.title = tipText(label, "b");
     el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); wake(0.5); };   // workspaces cohere only in one mode
     legendBoundaryEl.appendChild(el);
   }
   radioGroup(legendBoundaryEl, "Boundaries");   // one choice of three (Section 4)
+  // What the chosen boundaries draw, said under the choice (Section 4, U25).
+  const desc = document.getElementById("boundaryDesc");
+  const chosen = BOUNDARY_MODES.find(([mode]) => mode === boundaryMode);
+  if (desc && chosen) desc.textContent = chosen[1] + ". b cycles the three.";
 }
 
 // --- Region clouds, mixed in OKLCH (docs/design-system.md Section 5) ------------------------------
@@ -4082,8 +4094,8 @@ addEventListener("mouseup", ev => {
 const searchWrap = searchEl.closest(".searchwrap");
 const searchPop = document.getElementById("searchPop");
 const SEARCH_MODE = {
-  hybrid: ["keyword + meaning", "answered by the keyword and the semantic surface together"],
-  keyword: ["keyword only", "answered by the keyword surface alone - no semantic index here, so a miss is more likely a recall miss"],
+  hybrid: ["keyword + meaning", "Searched the words and what they mean."],
+  keyword: ["keyword only", "Searched the words only: this node has no meaning index, so a miss may be one the words did not catch."],
 };
 let searchAns = null;    // { q, ws, mode, hits, note } or { q, ws, error }
 let searchRows = [];     // the hits in the order the list shows them
@@ -4180,7 +4192,7 @@ function renderSearch() {
   const first = words.length
     ? [html`<div class="sp-sec">${"Contains \"" + searchAns.q + "\""}</div>`, words.map((h, i) => row(h, i))]
     : [html`<div class="sp-note">${"No item in " + scope + " contains \"" + searchAns.q + "\"."}</div>`, widen];
-  searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode" title="${modeWhy}">${modeWord}</span></div>${
+  searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode">${modeWord}</span></div><div class="sp-modewhy">${modeWhy}</div>${
     count || widen ? first : ""}${
     related.length ? [html`<div class="sp-sec">Related</div>`, related.map((h, i) => row(h, words.length + i))] : ""}${
     count ? "" : html`<div class="sp-note">${searchAns.note || "no hits - absence is unknown, not a negation"}</div>`}`;
@@ -4305,9 +4317,17 @@ function setRegions(v) {
   if (hyperMode && !hyperedges.length) poll();
   renderRegionsSeg(); saveViewPrefs(); requestFrame();
 }
+// What each choice of regions draws, said under the choice rather than in a tooltip (Section 4, U25).
+const REGION_WHY = {
+  all: "Every region faint, and the active node's at full strength.",
+  selected: "Only the regions of the node you point at or select.",
+  off: "No regions.",
+};
 function renderRegionsSeg() {
   for (const b of regionsSeg.querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === regionsValue());
   radioGroup(regionsSeg, "Regions");
+  const desc = document.getElementById("regionsDesc");
+  if (desc) desc.textContent = REGION_WHY[regionsValue()] || "";
 }
 regionsSeg.querySelectorAll("button").forEach(b => { b.onclick = () => setRegions(b.dataset.v); });
 // The single keys - / b [ ] - can be turned off (Section 10, WCAG 2.1.4).

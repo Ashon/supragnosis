@@ -7,6 +7,9 @@
 // ---- DOM helpers ---------------------------------------------------------------------------
 
 // h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.
+// A tooltip names a control and its key, and explains nothing a person needs to act
+// (docs/design-system.md Section 4, U25).
+function tip(name, key) { return key ? name + " (" + key + ")" : name; }
 function h(tag, props, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {

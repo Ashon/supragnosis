@@ -31,10 +31,10 @@
   <!-- The panel toggles (design-system.md Section 6), in place of the handles that rode the docks'
        edges: Lucide's panel-left and panel-right (ISC, https://lucide.dev). Keyboard: [ and ]. -->
   <div class="ptoggles">
-    <button id="panelL" type="button" aria-pressed="true" title="filters panel ([)" aria-label="filters panel">
+    <button id="panelL" type="button" aria-pressed="true" title="Filters panel ([)" aria-label="filters panel">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
     </button>
-    <button id="panelR" type="button" aria-pressed="true" title="log panel (])" aria-label="log panel">
+    <button id="panelR" type="button" aria-pressed="true" title="Log panel (])" aria-label="log panel">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
     </button>
   </div>
@@ -45,7 +45,7 @@
 <div id="log"></div>
 <!-- The strip: the Log folded (design-system.md Section 6). While the right side is empty it shows
      the scope's newest observation; clicking it opens the Log. Filled by viewer.js. -->
-<button id="strip" type="button" title="open the Log"></button>
+<button id="strip" type="button" title="Open the Log"></button>
 <div id="detail"></div>
 <!-- Observation detail card (a focused, dismissable view of one observation): a log row opens it, so
      the log lists stay compact. Populated by viewer.js; a backdrop click or Escape closes it. -->
@@ -80,7 +80,7 @@
 <section id="reviewPage" hidden aria-label="Review">
   <div class="rv-queue">
     <div class="rv-head"><h2>Review</h2><span class="rv-scope" id="rvScope"></span>
-      <a class="rv-close" href="#" title="back to the graph (Esc)">Graph</a></div>
+      <a class="rv-close" href="#" title="Back to the graph (Esc)">Graph</a></div>
     <div class="rv-seg" id="rvSeg"></div>
     <div class="rv-list" id="rvList"></div>
   </div>
@@ -96,16 +96,16 @@
        what waits in this scope and how many of those are contested beliefs. Absent on a read tier. -->
   <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (U3): on a read
        tier, where there is no Review entry; absent only when there are none (U8). -->
-  <button id="reviewPill" class="spill warn" type="button" hidden title="open the Review page"></button>
-  <button id="contestedPill" class="spill bad" type="button" hidden title="contested beliefs in this scope - open the list"></button>
+  <button id="reviewPill" class="spill warn" type="button" hidden title="Open the Review page"></button>
+  <button id="contestedPill" class="spill bad" type="button" hidden title="Contested beliefs"></button>
   <!-- What sync is doing (design-system.md Section 6, U8); opens Settings > Sync. Absent where sync is
        not set up and on a read tier. -->
-  <button id="syncPill" class="spill" type="button" hidden title="sync - open its settings"></button>
+  <button id="syncPill" class="spill" type="button" hidden title="Sync settings"></button>
   <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
        being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->
   <!-- The gear is Lucide's "settings" icon (ISC, https://lucide.dev), the set the desktop app uses.
        It replaced a hand-drawn circle with eight spokes, which read as a sun. -->
-  <button id="settingsBtn" title="settings" aria-label="settings">
+  <button id="settingsBtn" title="Settings" aria-label="Settings">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
   </button>
 </div>
@@ -119,7 +119,7 @@
     <span class="ftitle" id="settingsTitle">settings</span>
     <!-- Same glyph and hit target as the detail / observation card closers, so "close" looks the
          same everywhere it appears. `method="dialog"` closes without any script. -->
-    <button class="fclose" title="close (Esc)" aria-label="close">
+    <button class="fclose" title="Close (Esc)" aria-label="Close">
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
         <path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
       </svg>
@@ -136,7 +136,7 @@
      the rAF loop; click/drag pans the camera. Hidden while empty or toggled off - it precedes
      #viewpop/#hud in the DOM so `#minimap.on ~` sibling rules can shift them left only while
      the minimap is actually visible. -->
-<canvas id="minimap" title="minimap - click or drag to pan"></canvas>
+<canvas id="minimap" title="Minimap"></canvas>
 <!-- View options live OFF the primary panels (they are preferences, not data): a compact
      checkbox popover behind the HUD's view button, map-tool style. Same button ids and .tog/.on
      mechanics as before - only the presentation moved. -->
@@ -144,45 +144,61 @@
   <!-- Two choices with one name each (design-system.md Section 5): which regions are drawn, and which
        boundaries. Each is one choice of three, so each is a radio group. -->
   <div class="grp"><span class="ghdr" id="lRegions">Regions</span>
-    <div id="regionsSeg" class="seg" aria-labelledby="lRegions"><button type="button" data-v="all" title="every context region, faint, and the active node's at full strength">All</button><button type="button" data-v="selected" title="only the regions of the node you point at or select">Selected</button><button type="button" data-v="off" title="no regions">Off</button></div></div>
-  <div class="grp"><span class="ghdr" id="lBoundaries">Boundaries<kbd class="keyhint" title="press b to cycle Workspace / Origin / None">b</kbd></span>
-    <div id="legendBoundary" class="seg" aria-labelledby="lBoundaries"></div></div>
+    <div id="regionsSeg" class="seg" aria-labelledby="lRegions" aria-describedby="regionsDesc"><button type="button" data-v="all">All</button><button type="button" data-v="selected">Selected</button><button type="button" data-v="off">Off</button></div>
+    <!-- What the chosen option draws, said under the choice rather than in a tooltip (Section 4, U25). -->
+    <p class="vdesc" id="regionsDesc"></p></div>
+  <div class="grp"><span class="ghdr" id="lBoundaries">Boundaries<kbd class="keyhint" aria-hidden="true">b</kbd></span>
+    <div id="legendBoundary" class="seg" aria-labelledby="lBoundaries" aria-describedby="boundaryDesc"></div>
+    <p class="vdesc" id="boundaryDesc"></p></div>
   <!-- On/off view state: each is a switch that says on or off, and an option that is off is drawn at
-       full strength (Section 4). -->
+       full strength (Section 4). Each carries a line under its name that says what it shows, read with
+       it (aria-describedby), since a tooltip is seen by no keyboard and no finger (U25). -->
   <div class="grp"><span class="ghdr">Layout</span><div class="btns">
-    <button id="followBtn" class="tog on" title="frame new activity in the scope on screen; activity elsewhere is a notice">Follow activity</button>
-    <button id="peersBtn" class="tog" title="server mode: show federated peers as roaming cursor-dots that glide to the nodes they touch, instead of the camera chasing every remote hit (auto-on for a hub)">Peers</button>
-    <button id="clusterBtn" class="tog" title="group by type: type-circle layout, cross-group links kept visible (replaces the default hull organizer)">Group by type</button>
+    <button id="followBtn" class="tog on" aria-describedby="dFollow">Follow activity</button>
+    <p class="vdesc" id="dFollow">Frames new activity in this scope; activity elsewhere is a notice.</p>
+    <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
+    <p class="vdesc" id="dPeers">Other machines as dots that move to the nodes they touch. On by default on a hub.</p>
+    <button id="clusterBtn" class="tog" aria-describedby="dCluster">Group by type</button>
+    <p class="vdesc" id="dCluster">A circle of nodes for each type, with the links between groups kept.</p>
   </div></div>
   <div class="grp"><span class="ghdr">Show</span><div class="btns">
-    <button id="labelsBtn" class="tog on" title="node and region names">Labels</button>
-    <button id="edgesBtn" class="tog on" title="relations">Edges</button>
-    <button id="arrowsBtn" class="tog on" title="a relation's direction">Arrows</button>
-    <button id="footBtn" class="tog on" title="the glow on what this session used">Footprint</button>
-    <button id="pulseBtn" class="tog on" title="the ring a node pulses with when it is touched">Pulses</button>
-    <button id="histBtn" class="tog on" title="relations that were superseded, dashed">History</button>
-    <button id="miniBtn" class="tog on" title="the whole graph and the window on it; click or drag to pan">Minimap</button>
+    <button id="labelsBtn" class="tog on" aria-describedby="dLabels">Labels</button>
+    <p class="vdesc" id="dLabels">Names of nodes and regions.</p>
+    <button id="edgesBtn" class="tog on" aria-describedby="dEdges">Edges</button>
+    <p class="vdesc" id="dEdges">Relations between nodes.</p>
+    <button id="arrowsBtn" class="tog on" aria-describedby="dArrows">Arrows</button>
+    <p class="vdesc" id="dArrows">Which way each relation points. An active relation always shows it.</p>
+    <button id="footBtn" class="tog on" aria-describedby="dFoot">Footprint</button>
+    <p class="vdesc" id="dFoot">A glow on what this session used.</p>
+    <button id="pulseBtn" class="tog on" aria-describedby="dPulse">Pulses</button>
+    <p class="vdesc" id="dPulse">A ring when a node is touched.</p>
+    <button id="histBtn" class="tog on" aria-describedby="dHist">History</button>
+    <p class="vdesc" id="dHist">Relations that were superseded, drawn faint.</p>
+    <button id="miniBtn" class="tog on" aria-describedby="dMini">Minimap</button>
+    <p class="vdesc" id="dMini">The whole graph and the window on it; click or drag it to move.</p>
   </div></div>
   <!-- The single keys - / b [ ] - act from anywhere outside a text field; this turns them off
        (design-system.md Section 10, WCAG 2.1.4). -->
   <div class="grp"><span class="ghdr">Keys</span><div class="btns">
-    <button id="keysBtn" class="tog on" title="/ search, b boundaries, [ and ] panels - from anywhere outside a text field">Single-key shortcuts</button>
+    <button id="keysBtn" class="tog on" aria-describedby="dKeys">Single-key shortcuts</button>
+    <p class="vdesc" id="dKeys">/ search, b boundaries, [ and ] panels, from anywhere outside a text field.</p>
   </div></div>
-  <button id="reload" title="re-fetch the graph now (it also refreshes on its own)">reload</button>
+  <button id="reload" aria-describedby="dReload">Reload</button>
+  <p class="vdesc" id="dReload">Fetches the graph now; it also refreshes on its own.</p>
 </div>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">
-  <button id="viewBtn" title="view options (layout / show)" aria-label="view options" aria-expanded="false" aria-controls="viewpop">
+  <button id="viewBtn" title="View options" aria-label="View options" aria-expanded="false" aria-controls="viewpop">
     <svg viewBox="0 0 18 18"><path d="M1.5 9s3-5 7.5-5 7.5 5 7.5 5-3 5-7.5 5-7.5-5-7.5-5z"/><circle cx="9" cy="9" r="2.4"/></svg>
   </button>
-  <button id="zin" title="zoom in" aria-label="zoom in">
+  <button id="zin" title="Zoom in" aria-label="Zoom in">
     <svg viewBox="0 0 18 18"><path d="M9 4.5v9M4.5 9h9"/></svg>
   </button>
-  <button id="zout" title="zoom out" aria-label="zoom out">
+  <button id="zout" title="Zoom out" aria-label="Zoom out">
     <svg viewBox="0 0 18 18"><path d="M4.5 9h9"/></svg>
   </button>
-  <button id="fit" title="fit to view" aria-label="fit to view">
+  <button id="fit" title="Fit to view" aria-label="Fit to view">
     <svg viewBox="0 0 18 18"><path d="M6.5 2.5H4A1.5 1.5 0 0 0 2.5 4v2.5M11.5 2.5H14A1.5 1.5 0 0 1 15.5 4v2.5M15.5 11.5V14a1.5 1.5 0 0 1-1.5 1.5h-2.5M2.5 11.5V14A1.5 1.5 0 0 0 4 15.5h2.5"/></svg>
   </button>
 </div>

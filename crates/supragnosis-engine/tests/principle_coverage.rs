@@ -767,10 +767,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (25, &[c(
         "a tooltip holds a name and its key and nothing a person needs to act, written through one helper at most five words before its key, and what a control does is said on the screen",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 4 and 14 step 20, not built. Revisit when every \
-             tooltip of the viewer and the app's pages is written through one helper",
-        ),
+        // crates/supragnosis-viz/tests/tooltips.rs: every tooltip of the markup and the script, and
+        // View's and the search's words on the screen.
+        Evidence::Scenario(&[
+            "a_tooltip_names_and_explains_nothing",
+            "view_and_search_say_what_they_do_on_the_screen",
+        ]),
     )]),
     (26, &[c(
         "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, and no other navigation",
@@ -3111,6 +3113,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/places.rs"),
     include_str!("../../supragnosis-viz/tests/type_scale.rs"),
     include_str!("../../supragnosis-viz/tests/shapes.rs"),
+    include_str!("../../supragnosis-viz/tests/tooltips.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

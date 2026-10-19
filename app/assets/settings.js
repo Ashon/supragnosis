@@ -461,7 +461,7 @@ function renderSync() {
         chips = h("div", { class: "chips" }, shared.length
           ? shared.map((w) => h("span", { class: "chip" }, w,
               h("button", {
-                class: "chip-x", title: "Stop sharing " + w + " with this peer", "aria-label": "Stop sharing " + w,
+                class: "chip-x", title: tip("Stop sharing " + w), "aria-label": "Stop sharing " + w,
                 disabled: pending.size > 0, on: { click: () => confirmNarrow(peer, w) },
               }, icon("x"))))
           : [h("span", { class: "sub", text: "admitted, may read nothing" })]);

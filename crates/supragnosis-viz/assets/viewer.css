@@ -162,6 +162,8 @@
   .sp-row.off .sp-name { color:var(--muted); }
   /* How a related hit was reached (Section 8), and the row that widens the scope. */
   .sp-why { flex:none; margin-left:auto; color:var(--muted); font-size:var(--text-small); }
+  /* What the search searched, in words (Section 4, U25). */
+  .sp-modewhy { padding:0 8px 6px; color:var(--muted); font-size:var(--text-small); }
   .sp-widen { color:var(--ink); }
   .sp-snip { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .sp-note { padding:6px 8px 8px; color:var(--muted); font-size:var(--text-small); line-height:1.45; }
@@ -392,9 +394,15 @@
      "[x] labels" - because they are on/off view state, not actions. */
   #viewpop { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:9; display:none;
              flex-direction:column; width:248px; background:var(--panel); border-radius:var(--r-surface);
-             padding:10px 12px; box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft); }
+             padding:10px 12px; box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft);
+             max-height:calc(100vh - var(--bar) - 130px); overflow-y:auto; }
   #viewpop.on { display:flex; }
   #viewpop .btns { display:flex; flex-direction:column; gap:1px; }
+  /* A line under each of View's options that says what it shows (Section 4, U25). */
+  #viewpop .vdesc { margin:0 3px 6px; color:var(--muted); font-size:var(--text-small); line-height:1.4; }
+  #viewpop .vdesc:empty { display:none; }
+  /* An edge's description, on the screen under its chips. */
+  #detail .rdesc { margin:4px 0 0; color:var(--ink2); font-size:var(--text-small); }
   #viewpop button.tog { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:28px;
                         text-align:left; background:none; border:none; padding:2px 3px;
                         font-size:var(--text-body); color:var(--ink2); border-radius:var(--r-control); }
