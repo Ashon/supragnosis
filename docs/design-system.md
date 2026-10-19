@@ -14,7 +14,8 @@
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
-> is designed - steps 17-23 - and steps 17 and 18, its defects and reading, are built.
+> is designed - steps 17-24 - and steps 17, 18 and 24, its defects, reading and the light appearance,
+> are built, with step 19's lines.
 
 ## 1. Why this exists
 
@@ -281,7 +282,7 @@ value is held to the floors the dark ones meet (U7) on the light surfaces:
 | `--select` | `#e8e0cd` | the accent at 14% over `--panel`, opaque |
 | `--line` / `--line-soft` | `#dcd8cf` / `#e7e4dd` | the lines Section 4 keeps |
 | `--ink` / `--ink2` / `--muted` | `#16181e` / `#3b404b` / `#5c6370` | Lc 85.9, 75.5 and 61.6 at their lowest |
-| `--accent` / `--gold-bright` | `#a8740f` / `#825500` | the accent, and gold as text and as the human-confirmed ring |
+| `--accent` / `--gold-bright` | `#a8740f` / `#744a00` | the accent, and gold as text and as the human-confirmed ring |
 | `--ok` / `--ok-ink` | `#1d7a6a` / `#02665a` | success; the second as text |
 | `--warn` / `--warn-ink` | `#b7791f` / `#875400` | needs attention; the second as text |
 | `--bad` / `--bad-ink` | `#c4512f` / `#9f3816` | error and contested; the second as text |
@@ -471,11 +472,12 @@ colors: eight hues in two tones.
 **The light band** (U27) keeps each hue and its slot and is measured by the same rules on the light
 ground, but a mark on a light ground is told by being darker: every color has OKLCH lightness from
 0.42 to 0.67 and measures 3:1 or more on `--panel`, the 3:1 a mark needs. Its sixteen colors are
-`#465400`, `#329746`, `#0097b5`, `#005caa`, `#726bd0`, `#682c87`, `#ae4d92`, `#d76590` in the first
-tone and `#5d6e00`, `#007322`, `#00586b`, `#2175c8`, `#493d9d`, `#9458b5`, `#97387d`, `#8f2153` in the
-second; they were found by a search over each color's lightness at the widest chroma the screen can
-show, and the light `--ok` is a deeper teal than the dark one's lightness would give, since the cyan
-hue could otherwise sit near neither it nor the neutrals. A type keeps its slot, and so its hue, in
+`#647700`, `#4f995a`, `#0097b6`, `#006fcb`, `#4b29bb`, `#6e2093`, `#a6468a`, `#c0748e` in the first
+tone and `#758a00`, `#007322`, `#006176`, `#1a5998`, `#736fbf`, `#9b74b2`, `#753963`, `#d7307e` in the
+second; they were found by a search over each color's lightness and chroma inside what the screen can
+show. Two signals moved for it: the light `--ok` is a deeper teal, since the cyan hue could otherwise
+sit near neither it nor the neutrals, and the light `--gold-bright` a deeper gold, since the olive
+could otherwise sit near none of the golds. A type keeps its slot, and so its hue, in
 both appearances. The map redraws when the appearance changes: its palette, its band, the regions'
 clouds and names, and the labels' halos.
 
@@ -1356,6 +1358,12 @@ and the page load that gives it to each page. U22's line half is guarded by `lin
 the viewer's rings and their swatches for their weights. The rest of U22, and U24, U25 and U26, are
 designed and not yet guarded; steps 19-21 and 23 build each with its test (Section 14).
 
+U27 is guarded by `the_light_appearance_meets_the_same_floors` and `no_color_is_drawn_outside_the_tokens`
+in `design_tokens.rs`, which read each light `:root` - every dark color token redefined, the floors on
+the light surfaces and tints, Increase Contrast in the light - and every color the tools' stylesheets
+draw outside their tokens, and by `the_light_band_is_never_a_signal` in `type_band.rs`, which measures
+the light band by U16's rules on the light ground and reads the map's light palette and its redraw.
+
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
 `crates/supragnosis-viz/tests/http.rs`: the ring reads `trust_tier` and the scope's uniformity over
@@ -1587,7 +1595,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    scope's title at the leading end and the search and the right panel's toggle at the trailing end;
    "< Graph" on the Review, Settings and Setup pages with Esc and Cmd+[; the product's name, the
    crumbs and the x gone; and settings-page.md's and onboarding.md's title bars with it.
-24. **Light and dark** [designed] (Sections 3, 5, 10; U27): the light values in the viewer's and the
+24. **Light and dark** [built] (Sections 3, 5, 10; U27): the light values in the viewer's and the
    Settings page's stylesheets, shadows and scrims as tokens, Increase Contrast in both, the light
    band and palette in the viewer's script with the map's redraw on a change, and the starting splash
    in both; every step from here is judged in both appearances, with screenshots of each.

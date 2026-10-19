@@ -778,10 +778,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (27, &[c(
         "the viewer, the Settings page and Setup follow the system's appearance with none of their own: light values meet U7's floors, the light band keeps every slot and meets U16's rules on the light ground, no color is drawn outside the tokens, and the map redraws when the appearance changes",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 3, 5 and 14 step 24, not built. Revisit when the \
-             viewer's stylesheet answers prefers-color-scheme: light",
-        ),
+        // design_tokens.rs reads each light :root and every color outside the tokens; type_band.rs
+        // measures the light band and reads the map's light palette and its redraw.
+        Evidence::Scenario(&[
+            "the_light_appearance_meets_the_same_floors",
+            "no_color_is_drawn_outside_the_tokens",
+            "the_light_band_is_never_a_signal",
+        ]),
     )]),
 ];
 

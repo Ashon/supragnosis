@@ -8,6 +8,14 @@ const TYPE_BAND = [
   "#889d37", "#82d48c", "#3cd1f5", "#67acf7", "#8986de", "#c38fe3", "#c670ab", "#ff9abd",
   "#adc35e", "#53a45e", "#009cba", "#4c8fd8", "#aeadff", "#aa76c8", "#ffb7e6", "#e17da1",
 ];
+// The light band (Section 5, U27): each slot keeps its hue and is darker, so it is told on a light
+// ground - OKLCH lightness 0.42 to 0.67, 3:1 or more on the light --panel - found by a search under
+// U16's rules. TYPE_BAND holds whichever band the appearance draws; its dark values stay here too.
+const TYPE_BAND_LIGHT = [
+  "#647700", "#4f995a", "#0097b6", "#006fcb", "#4b29bb", "#6e2093", "#a6468a", "#c0748e",
+  "#758a00", "#007322", "#006176", "#1a5998", "#736fbf", "#9b74b2", "#753963", "#d7307e",
+];
+const TYPE_BAND_DARK = TYPE_BAND.slice();
 let OTHER = "#b0b8c7", EDGE_OTHER = "#5c6472";   // --muted: the unverified ring, as its legend swatch, and a type not in the map
 let EDGE = "#2b3345", EDGE_HI = "#f0c469", EDGE_OLD = "#4d4340";
 // A relation kind draws no color (Section 5): at rest a relation is one neutral line, and on the
@@ -31,6 +39,14 @@ let GOLD = "#d9a544", TEAL = "#56b3a2", BAD = "#e07a5f";   // --accent, --ok, --
 // human-confirmed ring, told from the host-signed one by its gold alone, is drawn twice as wide.
 const FORCED_COLORS = matchMedia("(forced-colors: active)");
 const PALETTE = { OTHER, EDGE_OTHER, EDGE, EDGE_HI, EDGE_OLD, EDGE_NEUTRAL, EDGE_ACTIVE, INK, INK2, SURFACE, GOLD, TEAL, BAD };
+// The light appearance (Section 3, U27): the map's palette mirrors the light tokens, as PALETTE does
+// the dark ones, and the map redraws when the system's appearance changes.
+const LIGHT = matchMedia("(prefers-color-scheme: light)");
+const PALETTE_LIGHT = {
+  OTHER: "#5c6370", EDGE_OTHER: "#a0a6b0", EDGE: "#c9c5bc", EDGE_HI: "#744a00", EDGE_OLD: "#b3a39b",
+  EDGE_NEUTRAL: "#6b7383", EDGE_ACTIVE: "#3b404b", INK: "#16181e", INK2: "#3b404b", SURFACE: "#fcfbf8",
+  GOLD: "#a8740f", TEAL: "#1d7a6a", BAD: "#c4512f",
+};
 function systemColor(name) {
   const probe = document.createElement("span");
   probe.style.color = name;
@@ -39,8 +55,10 @@ function systemColor(name) {
   probe.remove();
   return color;
 }
-function hearForcedColors() {
-  ({ OTHER, EDGE_OTHER, EDGE, EDGE_HI, EDGE_OLD, EDGE_NEUTRAL, EDGE_ACTIVE, INK, INK2, SURFACE, GOLD, TEAL, BAD } = PALETTE);
+function hearColors() {
+  ({ OTHER, EDGE_OTHER, EDGE, EDGE_HI, EDGE_OLD, EDGE_NEUTRAL, EDGE_ACTIVE, INK, INK2, SURFACE, GOLD, TEAL, BAD } =
+    LIGHT.matches ? PALETTE_LIGHT : PALETTE);
+  TYPE_BAND.splice(0, TYPE_BAND.length, ...(LIGHT.matches ? TYPE_BAND_LIGHT : TYPE_BAND_DARK));
   if (FORCED_COLORS.matches) {
     const text = systemColor("CanvasText");
     OTHER = EDGE_OTHER = EDGE = EDGE_OLD = EDGE_NEUTRAL = EDGE_ACTIVE = INK = INK2 = GOLD = TEAL = BAD = text;
@@ -246,7 +264,7 @@ function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) sett
 // fires after the whole event turn, so it sees the state the handler left.
 let rafId = null;
 function requestFrame() { if (rafId === null) rafId = requestAnimationFrame(draw); }
-hearForcedColors();
+hearColors();
 // The root's text size over the default 16 pixels (Section 10, U21). The map draws its labels on a
 // canvas, which rem does not reach, so every label size there is multiplied by it. A browser's text
 // size and the app's View menu set the root; the app says "rootsize" when it does.
@@ -260,12 +278,14 @@ addEventListener("rootsize", () => {
   fitStats();
   requestFrame();
 });
-FORCED_COLORS.addEventListener("change", () => {
-  hearForcedColors();
+function repaint() {
+  hearColors();
   assignColors();
   renderLegend();
   requestFrame();
-});
+}
+FORCED_COLORS.addEventListener("change", repaint);
+LIGHT.addEventListener("change", repaint);
 for (const ev of ["mousedown", "mousemove", "mouseup", "wheel", "keydown", "input", "resize"]) {
   addEventListener(ev, requestFrame, { capture: true, passive: true });
 }
@@ -3078,6 +3098,10 @@ function renderBoundaryChips() {
 // resolution - a cloud has no detail to lose - and is drawn smoothed up to the window.
 const CLOUD_L = 0.70, CLOUD_C = 0.12;   // the clouds' OKLCH lightness and chroma
 const LABEL_L = 0.82, LABEL_C = 0.10;   // a region's name, the same hue lighter, to read on the ground
+// On a light ground a cloud is a paler wash and a region's name the same hue darker (U27).
+const CLOUD_L_LIGHT = 0.82, CLOUD_C_LIGHT = 0.09, LABEL_L_LIGHT = 0.45, LABEL_C_LIGHT = 0.12;
+function cloudL() { return LIGHT.matches ? CLOUD_L_LIGHT : CLOUD_L; }
+function cloudC() { return LIGHT.matches ? CLOUD_C_LIGHT : CLOUD_C; }
 const CLOUD_CELL = 4;                   // CSS px per cell of the mixing field
 // A cloud wider than this share of the window is no longer a region you see but the ground you read
 // on (zoomed in, one region spans the window), so it fades by how much wider it is.
@@ -3094,7 +3118,8 @@ function regionHue(id) {
 }
 function regionLabelColor(id) {
   if (FORCED_COLORS.matches) return INK;
-  return "oklch(" + LABEL_L + " " + LABEL_C + " " + regionHue(id).toFixed(1) + ")";
+  const l = LIGHT.matches ? LABEL_L_LIGHT : LABEL_L, c = LIGHT.matches ? LABEL_C_LIGHT : LABEL_C;
+  return "oklch(" + l + " " + c + " " + regionHue(id).toFixed(1) + ")";
 }
 // OKLab -> sRGB in 0..255 (Ottosson's matrices), clamped into the gamut. The gamma step is a table.
 const SRGB_LUT = (() => {
@@ -3114,7 +3139,7 @@ function oklabToSrgb(L, a, b, out) {
 }
 function regionRgb(id) {
   const h = regionHue(id) * Math.PI / 180;
-  return oklabToSrgb(CLOUD_L, CLOUD_C * Math.cos(h), CLOUD_C * Math.sin(h), [0, 0, 0]);
+  return oklabToSrgb(cloudL(), cloudC() * Math.cos(h), cloudC() * Math.sin(h), [0, 0, 0]);
 }
 
 // A region's ellipse. It lies along the members' principal axis (their covariance), each radius the
@@ -3191,8 +3216,8 @@ function drawCloudField(items) {
     const wt = f.W[i], o = i * 4;
     if (wt <= 0) { d[o + 3] = 0; continue; }
     const vec = Math.hypot(f.A[i], f.B[i]) / wt;   // 1 where every hue agrees, toward 0 where they oppose
-    const c = vec > 1e-6 ? CLOUD_C * Math.pow(Math.min(1, vec), 0.35) / (vec * wt) : 0;
-    oklabToSrgb(CLOUD_L, f.A[i] * c, f.B[i] * c, rgb);
+    const c = vec > 1e-6 ? cloudC() * Math.pow(Math.min(1, vec), 0.35) / (vec * wt) : 0;
+    oklabToSrgb(cloudL(), f.A[i] * c, f.B[i] * c, rgb);
     const cover = CLOUD_COVER_MAX * (1 - Math.exp(-(1 - f.P[i]) / CLOUD_COVER_MAX));
     d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = Math.round(255 * cover);
   }
@@ -3288,7 +3313,7 @@ function haloDisc(radius, dpr) {
   return d;
 }
 function labelSprite(text, weight, size, color, spacing, halo) {
-  const key = [DPR, weight, size, color, spacing, halo, text].join("|");
+  const key = [DPR, SURFACE, weight, size, color, spacing, halo, text].join("|");
   let s = LABEL_SPRITES.get(key);
   if (s) { LABEL_SPRITES.delete(key); LABEL_SPRITES.set(key, s); return s; }   // LRU touch
   const font = weight + " " + size + "px " + NAME_FAMILY;
@@ -3790,8 +3815,9 @@ function draw() {
     // rings belong to trust.
     if (showFootprint && footprint.has(n.id)) {
       const glow = ctx.createRadialGradient(n.x, n.y, r * 0.8, n.x, n.y, r + 13);
-      glow.addColorStop(0, "rgba(86,179,162,0.55)");   // --ok
-      glow.addColorStop(1, "rgba(86,179,162,0)");
+      const teal = LIGHT.matches ? "29,122,106" : "86,179,162";   // --ok in each appearance
+      glow.addColorStop(0, "rgba(" + teal + "," + (LIGHT.matches ? 0.35 : 0.55) + ")");
+      glow.addColorStop(1, "rgba(" + teal + ",0)");
       ctx.globalAlpha = base; ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 13, 0, 7); ctx.fill();
     }

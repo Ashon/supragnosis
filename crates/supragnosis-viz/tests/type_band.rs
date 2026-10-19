@@ -205,3 +205,114 @@ fn every_category_color_comes_from_the_band() {
         }
     }
 }
+
+/// A token's value in the viewer's light appearance: the `:root` inside its
+/// `@media (prefers-color-scheme: light)` block.
+fn light_token(name: &str) -> String {
+    let at = CSS.find("@media (prefers-color-scheme: light) {").expect("a light appearance");
+    let root = &CSS[at..];
+    let root = &root[root.find(":root {").expect("its :root")..];
+    let root = &root[..root.find('}').expect("its :root closes")];
+    let decl = root
+        .split(';')
+        .map(str::trim)
+        .find(|d| d.starts_with(&format!("{name}:")))
+        .unwrap_or_else(|| panic!("the light appearance does not declare {name}"));
+    decl[name.len() + 1..].trim().to_lowercase()
+}
+
+/// A value of the map's light palette in the viewer's script: `NAME: "#rrggbb"` in `PALETTE_LIGHT`.
+fn light_const(name: &str) -> String {
+    let at = SCRIPT.find("const PALETTE_LIGHT = {").expect("a light palette");
+    let block = &SCRIPT[at..at + SCRIPT[at..].find('}').expect("it closes")];
+    let key = format!("{name}: \"#");
+    let i = block.find(&key).unwrap_or_else(|| panic!("PALETTE_LIGHT has no {name}"));
+    block[i + key.len() - 1..i + key.len() + 6].to_lowercase()
+}
+
+/// U27 and Section 5's light band: each type keeps its slot and hue, and the light band is measured
+/// by U16's rules on the light ground - a mark there is told by being darker, so every color has OKLCH
+/// lightness from 0.42 to 0.67 and measures 3:1 or more on the light `--panel`.
+#[test]
+fn the_light_band_is_never_a_signal() {
+    let dark = hex_list("TYPE_BAND");
+    let band = hex_list("TYPE_BAND_LIGHT");
+    assert_eq!(band.len(), 16, "the light band is eight hues in two tones");
+    let (first, second) = band.split_at(8);
+    let signals: Vec<(String, String)> =
+        SIGNALS.iter().map(|t| (t.to_string(), light_token(t))).collect();
+    let mut neutrals: Vec<(String, String)> =
+        NEUTRALS.iter().map(|t| (t.to_string(), light_token(t))).collect();
+    neutrals.push(("EDGE_NEUTRAL".into(), light_const("EDGE_NEUTRAL")));
+    let panel = light_token("--panel");
+    let mut bad = Vec::new();
+    for (c, d) in band.iter().zip(&dark) {
+        let (l, h) = lightness_hue(c);
+        if hue_gap(h, lightness_hue(d).1) > 3.0 {
+            bad.push(format!("{c} does not keep the hue of {d}"));
+        }
+        for (name, s) in &signals {
+            let gap = hue_gap(h, lightness_hue(s).1);
+            if gap < 25.0 {
+                bad.push(format!("{c} is {gap:.1} degrees of hue from {name}"));
+            }
+        }
+        if !(0.42..=0.67).contains(&l) {
+            bad.push(format!("{c} has OKLCH lightness {l:.3}, outside 0.42-0.67"));
+        }
+        let ratio = contrast(c, &panel);
+        if ratio < 3.0 {
+            bad.push(format!("{c} is {ratio:.2}:1 on the light --panel, under 3:1"));
+        }
+    }
+    for (i, a) in first.iter().enumerate() {
+        for b in &first[i + 1..] {
+            let d = distance(a, b);
+            if d < 0.09 {
+                bad.push(format!("first tone {a} and {b} are {d:.3} apart, under 0.09"));
+            }
+        }
+        for (name, s) in &signals {
+            let d = distance(a, s);
+            if d < 0.11 {
+                bad.push(format!("{a} is {d:.3} from {name}, under 0.11"));
+            }
+        }
+        for (name, n) in &neutrals {
+            let d = distance(a, n);
+            if d < 0.10 {
+                bad.push(format!("{a} is {d:.3} from {name}, under 0.10"));
+            }
+        }
+    }
+    for a in second {
+        for b in band.iter().filter(|b| *b != a) {
+            let d = distance(a, b);
+            if d < 0.06 {
+                bad.push(format!("second tone {a} and {b} are {d:.3} apart, under 0.06"));
+            }
+        }
+        for (name, s) in &signals {
+            let d = distance(a, s);
+            if d < 0.08 {
+                bad.push(format!("{a} is {d:.3} from {name}, under 0.08"));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "the light band reads as a signal:\n  {}", bad.join("\n  "));
+    assert_eq!(
+        light_const("EDGE_ACTIVE"),
+        light_token("--ink2"),
+        "a light active edge is --ink2"
+    );
+    assert_eq!(
+        light_const("EDGE_HI"),
+        light_token("--gold-bright"),
+        "a light ring is --gold-bright"
+    );
+    assert!(
+        SCRIPT.contains("LIGHT.addEventListener(\"change\", repaint)")
+            && SCRIPT.contains("[DPR, SURFACE, weight"),
+        "the map does not redraw, halos and all, when the appearance changes"
+    );
+}

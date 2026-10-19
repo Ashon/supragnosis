@@ -294,6 +294,153 @@ fn lines_are_thin_and_solid() {
     }
 }
 
+/// The custom properties of the `:root` inside a stylesheet's `@media (prefers-color-scheme: light)`
+/// block, read as `tokens` reads the first one.
+fn light_tokens(css: &str) -> Vec<(String, String)> {
+    let at = css.find("@media (prefers-color-scheme: light) {").expect("a light appearance");
+    tokens(&css[at..])
+}
+
+/// U27: the viewer and the app's pages follow the system's appearance. Every color token their dark
+/// `:root` declares has a light value, the two stylesheets agree on them, and the light values meet
+/// the floors the dark ones do: 4.5:1 and APCA Lc 60 for every text token on every light surface,
+/// Lc 75 for `--ink2`, and the same on a pill's tint. Under Increase Contrast each light text token
+/// takes the next stronger one.
+#[test]
+fn the_light_appearance_meets_the_same_floors() {
+    let sets = [("viewer.css", VIEWER), ("settings.css", SETTINGS)];
+    let mut low = Vec::new();
+    for (file, css) in sets {
+        let dark = tokens(css);
+        let light = light_tokens(css);
+        let flat: String = css.split_whitespace().collect();
+        assert!(
+            flat.contains("@media(prefers-color-scheme:light){:root{color-scheme:light;"),
+            "{file}: the light appearance does not set color-scheme"
+        );
+        for (name, v) in &dark {
+            let is_color = v.starts_with('#') || v.starts_with("rgba(");
+            if is_color && value(&light, name).is_none() {
+                low.push(format!("{file}: {name} has no light value"));
+            }
+        }
+        for text in TEXT {
+            let Some(fg) = value(&light, text) else {
+                continue;
+            };
+            let floor = if *text == "--ink2" { 75.0 } else { 60.0 };
+            for ground in SURFACES {
+                let Some(bg) = value(&light, ground) else {
+                    continue;
+                };
+                let (lc, ratio) = (apca(fg, bg), contrast(fg, bg));
+                if lc < floor || ratio < 4.5 {
+                    low.push(format!(
+                        "{file}: light {text} on {ground} is Lc {lc:.1}, {ratio:.2}:1"
+                    ));
+                }
+            }
+        }
+        for (ink, glass) in [
+            ("--ok-ink", "--ok-glass"),
+            ("--warn-ink", "--warn-glass"),
+            ("--bad-ink", "--bad-glass"),
+            ("--gold-bright", "--gold-glass"),
+        ] {
+            let (Some(fg), Some(tint)) = (value(&light, ink), value(&light, glass)) else {
+                continue;
+            };
+            for ground in ["--panel", "--panel-2"] {
+                let bg = over(tint, value(&light, ground).expect("a light panel"));
+                let lc = apca(fg, &bg);
+                if lc < 60.0 {
+                    low.push(format!("{file}: light {ink} on {glass} over {ground} is Lc {lc:.1}"));
+                }
+            }
+        }
+        let ink = value(&light, "--ink").expect("--ink").to_string();
+        let ink2 = value(&light, "--ink2").expect("--ink2").to_string();
+        let hc = "@media (prefers-contrast: more) and (prefers-color-scheme: light) {";
+        let at = css.find(hc).unwrap_or_else(|| panic!("{file}: no light Increase Contrast"));
+        let block: String = css[at..at + css[at..].find('}').expect("it closes")]
+            .split_whitespace()
+            .collect();
+        assert!(
+            block.contains(&format!("--ink2:{ink}")) && block.contains(&format!("--muted:{ink2}")),
+            "{file}: under Increase Contrast the light text tokens do not strengthen"
+        );
+    }
+    let (v, s) = (light_tokens(VIEWER), light_tokens(SETTINGS));
+    for (name, a) in &v {
+        if let Some(b) = value(&s, name) {
+            if a != b {
+                low.push(format!("light {name}: viewer.css {a} but settings.css {b}"));
+            }
+        }
+    }
+    assert!(low.is_empty(), "the light appearance falls short:\n  {}", low.join("\n  "));
+}
+
+/// The colors the tools' stylesheets draw outside their tokens: text on a solid gold or coral button,
+/// which reads on both grounds because the button carries its own fill (U27).
+const LITERAL_COLORS: &[&str] = &["#171204", "#17130a", "#1a0d09", "#ea8b72", "rgba(23,18,4,0.14)"];
+
+/// U27: no color the viewer, the Settings page and Setup draw is outside their tokens but the few
+/// listed, so nothing stays dark in the light appearance: shadows and scrims are tokens too.
+#[test]
+fn no_color_is_drawn_outside_the_tokens() {
+    let mut stray = Vec::new();
+    for (file, css) in [
+        ("viewer.css", VIEWER),
+        ("settings.css", SETTINGS),
+        ("welcome.css", include_str!("../../../app/assets/welcome.css")),
+    ] {
+        let mut clean = String::new();
+        let mut rest = css;
+        while let Some(i) = rest.find("/*") {
+            clean.push_str(&rest[..i]);
+            rest = rest[i..].find("*/").map_or("", |j| &rest[i + j + 2..]);
+        }
+        clean.push_str(rest);
+        // Every :root block - the dark one and those inside media queries - is where colors live.
+        let mut outside = String::new();
+        let mut rest = clean.as_str();
+        while let Some(i) = rest.find(":root {") {
+            outside.push_str(&rest[..i]);
+            rest = &rest[i + rest[i..].find('}').expect("a :root closes") + 1..];
+        }
+        outside.push_str(rest);
+        let flat: String = outside.split_whitespace().collect();
+        let mut at = 0;
+        while let Some(i) = flat[at..].find(['#', 'r']) {
+            let start = at + i;
+            let tail = &flat[start..];
+            let lit = if let Some(hex) = tail.strip_prefix('#') {
+                let n = hex.chars().take_while(|c| c.is_ascii_hexdigit()).count();
+                // An id selector such as #defsBox starts with hex letters; a color ends there.
+                let ends =
+                    !hex[n..].starts_with(|c: char| c.is_alphanumeric() || c == '-' || c == '_');
+                ((n == 3 || n == 4 || n == 6 || n == 8) && ends).then(|| &tail[..=n])
+            } else if tail.starts_with("rgba(") || tail.starts_with("rgb(") {
+                tail.find(')').map(|j| &tail[..=j])
+            } else {
+                None
+            };
+            match lit {
+                Some(l) if !LITERAL_COLORS.contains(&l.to_lowercase().as_str()) => {
+                    stray.push(format!("{file}: {l}"));
+                    at = start + l.len();
+                }
+                Some(l) => at = start + l.len(),
+                None => at = start + 1,
+            }
+        }
+    }
+    stray.sort();
+    stray.dedup();
+    assert!(stray.is_empty(), "a color drawn outside the tokens:\n  {}", stray.join("\n  "));
+}
+
 /// `--faint` is retired into `--muted` (Section 3): no stylesheet declares or reads it.
 #[test]
 fn faint_is_retired() {
