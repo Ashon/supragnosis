@@ -102,11 +102,20 @@
      header is the frame's top edge (design-system.md Section 6), so it is the frame's surface. */
   header { position:fixed; top:0; left:0; right:0; z-index:13; height:49px; padding:0 14px;
            display:flex; gap:9px; align-items:center; background:var(--panel); }
-  h1 { font:600 var(--text-body)/1.4 var(--mono); letter-spacing:0.04em; margin:0 6px 0 0; color:var(--ink);
-       display:flex; align-items:center; gap:7px; }
-  /* The inline asterisk mark. pointer-events:none keeps the shell's drag-region hit on the h1
-     itself (the drag handler only fires when the mousedown target carries the attribute). */
-  h1 svg { color:var(--gold-bright); flex:none; pointer-events:none; }
+  /* A Mac toolbar (Section 6, U26): the leading group - mark, filters toggle or the way back, the
+     place's title - and the trailing group - search, right panel's toggle. */
+  .tlead { display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0; }
+  .ttrail { display:flex; align-items:center; gap:6px; flex:none; }
+  /* The inline asterisk mark. pointer-events:none keeps the shell's drag-region hit on the header. */
+  .mark { display:flex; color:var(--gold-bright); margin-right:4px; }
+  .mark svg { flex:none; pointer-events:none; }
+  #placeTitle { margin:0 0 0 4px; font:600 var(--text-body)/1.3 var(--sans); color:var(--ink); white-space:nowrap; }
+  #placeTitle .tscope { margin-left:8px; color:var(--muted); font-weight:400; }
+  .tback { display:inline-flex; align-items:center; gap:2px; min-height:28px; padding:0 8px 0 4px; color:var(--ink2);
+           text-decoration:none; font-size:var(--text-body); border-radius:var(--r-control); }
+  .tback:hover { background:var(--panel-2); color:var(--ink); }
+  .tback[hidden] { display:none; }
+  .tback svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   /* The base for every input and button, at zero specificity (:where), so any component class
      overrides it whole: chips, legend entries, proposal and log rows are buttons now, and each keeps
      its own look (docs/design-system.md Section 10). */
@@ -130,9 +139,8 @@
   input:focus-visible { outline-offset:1px; }
   /* "/" hint riding inside the search field (see viewer.html). pointer-events:none so a click at the
      badge still lands on the input - it advertises the shortcut, it is not a control. */
-  /* The search sits at the title bar's centre (Section 6), whatever the name beside it measures. */
-  .searchwrap { position:absolute; left:50%; transform:translateX(-50%); width:min(380px, 36vw);
-                display:flex; align-items:center; }
+  /* The search sits at the title bar's trailing end, as a Mac toolbar's does (Section 6, U26). */
+  .searchwrap { position:relative; width:min(320px, 30vw); display:flex; align-items:center; }
   #search { width:100%; height:30px; padding:0 30px 0 11px; font-size:var(--text-body); }
   .slashkey { position:absolute; right:7px; pointer-events:none;
               font:600 var(--text-caption)/1 var(--mono); color:var(--muted); background:var(--panel-3);
@@ -141,7 +149,7 @@
   .searchwrap:focus-within .slashkey, .searchwrap.filled .slashkey { opacity:0; }
   /* The search answer (Section 8): a list under the field, floating over the map. Rows are buttons;
      the selected one sits on --select (Section 4). */
-  .searchpop { position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%);
+  .searchpop { position:absolute; top:calc(100% + 8px); right:0;
                width:min(460px, calc(100vw - 32px)); max-height:min(60vh, 460px); overflow-y:auto;
                background:var(--panel); border-radius:var(--r-surface); padding:6px;
                box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft); }
@@ -729,14 +737,15 @@
   .rv-detail kbd, .rv-acts kbd { font:500 var(--text-caption)/1 var(--mono); background:var(--panel-3); color:var(--ink2);
                                  border-radius:var(--r-inset); padding:2px 5px; margin-left:4px; }
   .rv-acts .btn.p kbd { background:rgba(23,18,4,0.14); color:#171204; }
-  /* The panel toggles at the title bar's right (Section 6): Lucide's panel-left and panel-right. */
-  .ptoggles { margin-left:auto; display:flex; gap:2px; }
-  .ptoggles button { width:30px; height:30px; padding:0; display:flex; align-items:center;
+  /* The panel toggles (Section 6): the filters' at the title bar's leading end, the right panel's at
+     its trailing end. Lucide's panel-left and panel-right. */
+  #panelL, #panelR { width:30px; height:30px; padding:0; display:flex; align-items:center;
                      justify-content:center; background:none; color:var(--muted); border-radius:var(--r-control); }
-  .ptoggles button:hover { background:var(--panel-2); color:var(--ink); }
-  .ptoggles button[aria-pressed="true"] { color:var(--ink); }
-  .ptoggles svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8;
-                  stroke-linecap:round; stroke-linejoin:round; }
+  #panelL[hidden], #panelR[hidden] { display:none; }
+  #panelL:hover, #panelR:hover { background:var(--panel-2); color:var(--ink); }
+  #panelL[aria-pressed="true"], #panelR[aria-pressed="true"] { color:var(--ink); }
+  #panelL svg, #panelR svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8;
+                             stroke-linecap:round; stroke-linejoin:round; }
   /* The status bar's word for the scope's one tier while the Trust legend is out of sight (U2). */
   #tierNote { white-space:nowrap; }
   /* The strip: the Log folded (Section 6). The newest observation of the scope, one line, at the
@@ -768,6 +777,10 @@
      inspector takes the same place; the minimap gives the corner back to the canvas. */
   @media (max-width: 759px) {
     .searchwrap { position:relative; left:auto; transform:none; flex:1 1 auto; width:auto; min-width:0; }
+    /* The title gives its room to the search field (Section 6). */
+    #placeTitle { display:none; }
+    .tlead { flex:none; }
+    .ttrail { flex:1 1 auto; min-width:0; }
     .searchpop { position:fixed; top:57px; left:16px; right:16px; width:auto; transform:none; }
     #dockL, #dockR { top:auto; bottom:calc(var(--bar) + 8px); left:8px; right:8px; width:auto; max-height:55vh; }
     #dockL:not(.on), #dockR:not(.on) { transform:translateY(110%); }

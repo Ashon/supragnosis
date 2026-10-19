@@ -69,21 +69,18 @@ header {
   flex: none; height: 49px; display: flex; gap: 9px; align-items: center; padding: 0 14px;
   background: var(--panel); position: relative; z-index: 3;
 }
-header h1 {
-  display: flex; align-items: center; gap: 7px; margin: 0 6px 0 0;
-  color: var(--ink); font: 600 var(--text-body)/1.4 var(--mono); letter-spacing: 0.04em;
+/* The pane's title, after the way back (design-system.md Section 6a, U26). */
+header h1 { margin: 0; color: var(--ink); font: 600 var(--text-body)/1.3 var(--sans); white-space: nowrap; }
+/* The way back to the graph, at the title bar's leading end, where a Mac puts it. */
+.tback {
+  display: inline-flex; align-items: center; gap: 2px; min-height: 28px; padding: 0 8px 0 4px;
+  border-radius: var(--r-control); color: var(--ink2); text-decoration: none; font-size: var(--text-body);
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
-header h1 svg { color: var(--gold-bright); flex: none; pointer-events: none; }
-header h1 .crumb { color: var(--muted); font-weight: 500; pointer-events: none; }
-header h1 .crumb::before { content: "/"; margin: 0 7px 0 1px; color: var(--muted); }
-/* The way back to the graph: a quiet close at the right end of the title bar. */
-.hclose {
-  margin-left: auto; width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-control);
-  color: var(--muted); transition: background-color 0.12s ease, color 0.12s ease;
-}
-.hclose:hover { color: var(--ink); background: var(--panel-2); }
-.hclose:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
-.hclose .i { width: 15px; height: 15px; }
+.tback:hover { color: var(--ink); background: var(--panel-2); }
+.tback:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
+.tback .i { width: 16px; height: 16px; }
+.i-back { --i: url(icons/chevron-left.svg); }
 
 /* ---- Layout: a section sidebar beside one content pane, as the platform's own settings are laid out.
    The title bar and the sidebar are the frame, on --panel; the pane is a window into it, on

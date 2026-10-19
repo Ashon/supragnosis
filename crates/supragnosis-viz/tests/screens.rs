@@ -250,10 +250,10 @@ fn the_third_pass_defects_on_the_viewer() {
         "#detail .rchip",
         ".nchip",
         ".echip",
-        ".rv-close",
     ] {
         assert!(rule(selector).contains("min-height:24px"), "{selector} is under 24 pixels");
     }
+    assert!(rule(".tback").contains("min-height:28px"), "the way back is under 28 pixels");
     let phone = phone_block();
     assert!(
         phone.contains(".rv-segb, .rv-acts .btn { min-height:28px; }"),

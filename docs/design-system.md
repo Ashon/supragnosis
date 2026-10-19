@@ -15,7 +15,8 @@
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is designed - steps 17-24 - and steps 17, 18 and 24, its defects, reading and the light appearance,
-> are built, with steps 19-21: lines, shapes and targets, words on the screen, and the map's List.
+> are built, with steps 19-21 and 23: lines, shapes and targets, words on the screen, the map's List,
+> and the title bar.
 
 ## 1. Why this exists
 
@@ -1358,7 +1359,9 @@ and the page load that gives it to each page. U22's line half is guarded by `lin
 the viewer's rings and their swatches for their weights. U24 is guarded by `the_map_has_a_list` in
 `crates/supragnosis-viz/tests/list.rs`: List's place in the camera toolbar, its rows' filter and
 order, its columns, a row selecting its node, Esc, the filters it follows and the canvas's name. U26
-is designed and not yet guarded; step 23 builds it with its test (Section 14).
+is guarded by `crates/supragnosis-viz/tests/titlebar.rs`: the viewer's bar in order - filters toggle,
+way back, title, search, right panel's toggle - with no product name, the Review page's heading moved
+into it and Cmd+[, and the app pages' "< Graph", their own titles and Cmd+[.
 
 The rest of U22 is guarded by `crates/supragnosis-viz/tests/shapes.rs`: `every_corner_is_a_radius_token`
 reads every radius of the viewer's, the app pages' and the landing's stylesheets, and
@@ -1604,7 +1607,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 22. **The site's type** [designed] (Sections 11, 11a): labels in Pretendard, nothing under the label
    size, the ledger's labels as numbers, running text at 1.5, and the landing's picture of the viewer
    retaken once steps 18-21 have changed how it looks.
-23. **The title bar** [designed] (Sections 6, 6a; U26): on the Graph page the filters toggle and the
+23. **The title bar** [built] (Sections 6, 6a; U26): on the Graph page the filters toggle and the
    scope's title at the leading end and the search and the right panel's toggle at the trailing end;
    "< Graph" on the Review, Settings and Setup pages with Esc and Cmd+[; the product's name, the
    crumbs and the x gone; and settings-page.md's and onboarding.md's title bars with it.
@@ -2093,6 +2096,9 @@ changed it:
 - **List keeps the person's place.** A poll redrew the table and dropped the focused row, so the
   table gives focus back to the same row when it redraws; while List is on, the minimap, which is the
   map's, is not drawn over it. Its rows are told apart by a step of tone, as U9 asks.
+- **The search trails, so its list opens under it toward the left.** Its list was centred under a
+  centred field; at the trailing end it would have run off the window, so it is anchored to the
+  field's right edge. On the Review page the panel toggles go, since no panel is there.
 - **A highlight is a still picture.** Dashes marched along an active edge every frame, so the map
   redrew 60 times a second while a node was held; a solid edge with an arrowhead does not move, and
   the map stops drawing once nothing else does.

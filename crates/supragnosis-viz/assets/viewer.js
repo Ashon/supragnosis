@@ -497,6 +497,7 @@ function showStats(cur, s, regions) {
   counts.textContent = line.slice(scope.length);
   document.getElementById("stats").replaceChildren(head, counts);
   fitStats();
+  renderPlace();
   // The canvas says what it draws and where else it is (Section 6, U24).
   canvas.setAttribute("aria-label", "Map of " + line.slice(scope.length + 3) + ". List shows them as a table.");
 }
@@ -1550,6 +1551,26 @@ let reviewSel = null;         // the key of the selected item
 let reviewView = null;        // {id, diff, checks} of the selected proposal, once fetched
 let recallArmed = null;       // a recall's id, after its first Accept (a recall asks twice)
 function reviewOpen() { return location.hash === "#review"; }
+// The title bar names the place on screen (Section 6, U26): the scope on the Graph page; Review and
+// its scope on the Review page, where "< Graph" takes the filters toggle's place and the panel toggles,
+// which have no panel there, go.
+function renderPlace() {
+  const onReview = reviewOpen();
+  const title = document.getElementById("placeTitle");
+  if (onReview) {
+    const scope = document.createElement("span");
+    scope.className = "tscope";
+    scope.textContent = statsScope(currentWs());
+    title.replaceChildren("Review", scope);
+  } else title.textContent = statsScope(currentWs());
+  document.getElementById("backGraph").hidden = !onReview;
+  document.getElementById("panelL").hidden = onReview;
+  document.getElementById("panelR").hidden = onReview;
+}
+// Cmd+[ goes back, as on a Mac; Esc does too (Section 6a, U26).
+addEventListener("keydown", e => {
+  if (e.key === "[" && (e.metaKey || e.ctrlKey) && reviewOpen()) { e.preventDefault(); location.hash = ""; }
+});
 const KIND_WORDS = {
   entity_merge: "Merge", entity_split: "Un-merge", claim_promotion: "Confirm a claim",
   claim_demotion: "Demote a claim", tbox_change: "Change a type", recall: "Recall",
@@ -1637,8 +1658,7 @@ function renderReview() {
   markTabs(segEl, [...segEl.children], segSel);
   // The strip keeps its element while its buttons are redrawn, so its arrow keys are wired once.
   if (!segEl.dataset.arrows) { arrowTabs(segEl); segEl.dataset.arrows = "1"; }
-  const cur = currentWs();
-  document.getElementById("rvScope").textContent = cur === "*" || cur === "all" ? "all workspaces" : (cur || "default");
+  renderPlace();
   const list = document.getElementById("rvList"), detail = document.getElementById("rvDetail");
   if (reviewSeg === "suggestions" || reviewSeg === "health") {
     list.innerHTML = html`<div class="hint">${reviewSeg === "suggestions"
@@ -1771,7 +1791,7 @@ function stepReview(by) {
   recallArmed = null;
   renderReview();
 }
-window.addEventListener("hashchange", () => { recallArmed = null; renderReview(); if (reviewOpen()) refreshCuration(); refreshStrip(); requestFrame(); });
+window.addEventListener("hashchange", () => { recallArmed = null; renderPlace(); renderReview(); if (reviewOpen()) refreshCuration(); refreshStrip(); requestFrame(); });
 window.addEventListener("keydown", e => {
   if (!reviewOpen()) return;
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;

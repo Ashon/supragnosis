@@ -46,8 +46,9 @@ been, and the graph keeps its title bar to itself.
 - **The graph's gear opens Settings.** The viewer's status bar has had a gear at its right end since
   the viewer had settings. In the app, that gear opens this page. The shell's init script takes the
   click before the viewer's own handler, so the viewer needs to know nothing of the app.
-- **The page closes back to the graph** with a quiet x at the right end of its title bar, or with
-  Esc when no dialog is open.
+- **The page goes back to the graph** with "< Graph" at the leading end of its title bar, where a
+  Mac puts the way back, or with Esc when no dialog is open, or with Cmd+[ (design-system.md Section
+  6a, U26).
 - **The keyboard does the same.** Cmd+, opens Settings from the app menu, where macOS users look for
   it, and Cmd+1 shows the graph from the View menu. The tray's Open Graph shows the graph, and
   Settings... shows the settings.
@@ -58,8 +59,10 @@ been, and the graph keeps its title bar to itself.
   two.
 - **The title bar is the viewer's on both pages.** Same row height, surface and mark, with the
   traffic lights over it in the same place. Since design-system.md Section 14 step 7 the title bar is
-  the frame's `--panel` with no glass and no rule under it, on both pages. The settings page says its name after the app's:
-  `supragnosis / settings`. One stylesheet draws that chrome on both pages (`assets/shell.css`):
+  the frame's `--panel` with no glass and no rule under it, on both pages. Since design-system.md
+  Section 14 step 23 it is a Mac toolbar: it names the place on screen, not the product, and the
+  settings page's title is the pane on screen - "Server", "AI apps" - after "< Graph". One stylesheet
+  draws that chrome on both pages (`assets/shell.css`):
   - the settings page links it from the app's own origin;
   - the viewer is the daemon's page, so the shell serves the same file on the viewer's origin, at
     `/__shell/`, and its init script links it there. The shell answers that path itself and never

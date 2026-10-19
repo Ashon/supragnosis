@@ -7,6 +7,12 @@
 // ---- DOM helpers ---------------------------------------------------------------------------
 
 // h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.
+// Cmd+[ goes back to the graph from the app's pages, as Esc does (docs/design-system.md Section 6a,
+// U26): the way back is the title bar's "< Graph".
+document.addEventListener("keydown", (e) => {
+  const back = document.getElementById("close");
+  if (e.key === "[" && (e.metaKey || e.ctrlKey) && back) { e.preventDefault(); location.href = back.href; }
+});
 // A tooltip names a control and its key, and explains nothing a person needs to act
 // (docs/design-system.md Section 4, U25).
 function tip(name, key) { return key ? name + " (" + key + ")" : name; }

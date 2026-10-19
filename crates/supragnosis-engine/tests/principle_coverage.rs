@@ -775,10 +775,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (26, &[c(
         "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, and no other navigation",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 6, 6a and 14 step 23, not built. Revisit when the \
-             title bar's leading end holds the filters toggle and the place's title",
-        ),
+        // crates/supragnosis-viz/tests/titlebar.rs: the viewer's bar and the app pages' bars.
+        Evidence::Scenario(&[
+            "the_viewer_title_bar_is_a_mac_toolbar",
+            "the_app_pages_go_back_to_the_graph",
+        ]),
     )]),
     (27, &[c(
         "the viewer, the Settings page and Setup follow the system's appearance with none of their own: light values meet U7's floors, the light band keeps every slot and meets U16's rules on the light ground, no color is drawn outside the tokens, and the map redraws when the appearance changes",
@@ -3114,6 +3115,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/shapes.rs"),
     include_str!("../../supragnosis-viz/tests/tooltips.rs"),
     include_str!("../../supragnosis-viz/tests/list.rs"),
+    include_str!("../../supragnosis-viz/tests/titlebar.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

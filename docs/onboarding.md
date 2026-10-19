@@ -225,8 +225,9 @@ the first request and of the last, in memory only.
 
 ## 6. The app: Setup
 
-**A page in the main window**, `assets/welcome.html`, under the same title bar with the crumb
-`supragnosis / setup` (settings-page.md Section 3.0): no new window, no navigation in the title bar.
+**A page in the main window**, `assets/welcome.html`, under the same title bar, titled "Setup" after
+its way back, "< Graph" (settings-page.md Section 3.0): no new window, and no navigation in the title
+bar but that way back.
 It is called Setup wherever it is reached (design-system.md Section 6a); "Welcome" names it in this
 document's history and in its file.
 

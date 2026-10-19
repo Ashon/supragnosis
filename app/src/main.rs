@@ -2912,7 +2912,10 @@ mod settings_tests {
         let js = include_str!("../assets/welcome.js");
         let settings = include_str!("../assets/settings.js");
         let main = include_str!("main.rs");
-        assert!(html.contains("<span class=\"crumb\">setup</span>"), "the crumb is not Setup");
+        assert!(
+            html.contains("<h1 id=\"pageTitle\">Setup</h1>"),
+            "the title bar does not say Setup"
+        );
         assert!(
             html.contains("Supragnosis keeps your memory on this Mac. It is shared only if you add a remote server or set up sync."),
             "the privacy line promises what the code does not keep"

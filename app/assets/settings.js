@@ -532,6 +532,8 @@ function renderSkeleton() {
 function render() {
   renderSidebar();
   const id = current();
+  // The title bar names the pane on screen (design-system.md Section 6a, U26).
+  document.getElementById("pageTitle").textContent = SECTIONS.find((s) => s.id === id).label;
   const pane = document.getElementById("pane");
   let body;
   if (loadError && !state) {
