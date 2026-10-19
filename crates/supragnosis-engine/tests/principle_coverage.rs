@@ -804,9 +804,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (29, &[c(
         "near forces meet each node with only the nodes of its own and the adjacent grid cells, giving the forces every pair would give",
-        Evidence::Deferred(
-            "Section 14 step 27 is planned: stepSim visits every pair. Revisit when step 27 lands",
-        ),
+        // scale.rs reads stepSim and binGrid; the equality to every pair was measured once, in a
+        // browser, from one position on 2,000 nodes (Section 26.4).
+        Evidence::Scenario(&["near_forces_come_from_a_grid"]),
     )]),
     (30, &[c(
         "what the map draws follows the screen: culled outside the window, three sizes of a node by its radius on screen, one path per look, and names by a per-cell budget",

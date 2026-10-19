@@ -3447,6 +3447,41 @@ function drawLabel(text, weight, size, color, spacing, halo, x, y, align) {
   ctx.drawImage(s.c, Math.round((left - s.ax) * DPR) / DPR, Math.round((y - s.ay) * DPR) / DPR, s.w, s.h);
 }
 
+// The near-force grid (design-system.md Section 26.4, U29), kept between steps: a counting sort of the
+// nodes into cells, so a cell's nodes are gridOrder[gridStart[c] .. gridStart[c + 1]).
+let gridOrder = new Int32Array(0), gridStart = new Int32Array(0), gridCursor = new Int32Array(0);
+let gridCell = new Int32Array(0), gridW = 0, gridH = 0;
+// The step's per-node scratch, kept between steps rather than allocated in each.
+let scrCdx = new Float64Array(0), scrCdy = new Float64Array(0), scrRad = new Float64Array(0), scrNear = new Float32Array(0);
+
+// Bins the nodes into square cells at least `cell` wide. A layout spread much wider than its nodes
+// would ask for more cells than nodes, so the cell grows instead - which keeps every pair within
+// reach in the same or an adjacent cell, since a cell never shrinks below the reach.
+function binGrid(N, cell) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const v = nodes[i];
+    if (v.x < minX) minX = v.x; if (v.x > maxX) maxX = v.x;
+    if (v.y < minY) minY = v.y; if (v.y > maxY) maxY = v.y;
+  }
+  const area = Math.max(1, (maxX - minX) * (maxY - minY));
+  cell = Math.max(cell, Math.sqrt(area / (4 * N + 64)));
+  gridW = Math.floor((maxX - minX) / cell) + 1;
+  gridH = Math.floor((maxY - minY) / cell) + 1;
+  const cells = gridW * gridH;
+  if (gridCell.length < N) { gridCell = new Int32Array(N * 2); gridOrder = new Int32Array(N * 2); }
+  if (gridStart.length < cells + 1) { gridStart = new Int32Array((cells + 1) * 2); gridCursor = new Int32Array((cells + 1) * 2); }
+  gridStart.fill(0, 0, cells + 1);
+  for (let i = 0; i < N; i++) {
+    const v = nodes[i];
+    const c = Math.floor((v.x - minX) / cell) + Math.floor((v.y - minY) / cell) * gridW;
+    gridCell[i] = c; gridStart[c + 1]++;
+  }
+  for (let c = 0; c < cells; c++) gridStart[c + 1] += gridStart[c];
+  gridCursor.set(gridStart.subarray(0, cells));
+  for (let i = 0; i < N; i++) gridOrder[gridCursor[gridCell[i]]++] = i;
+}
+
 function stepSim() {
   simMotion = 0;
   const N = nodes.length;
@@ -3468,19 +3503,51 @@ function stepSim() {
 
   // Collision displacement is accumulated per node, then clamped to a cap - stops a hub overlapping
   // many neighbors from flinging far in a single frame (instead of moving directly).
-  const cdx = new Array(N).fill(0), cdy = new Array(N).fill(0);
-  const near = active ? new Float32Array(N) : null;   // each node's crowd this frame
+  if (scrCdx.length < N) {
+    scrCdx = new Float64Array(N * 2); scrCdy = new Float64Array(N * 2);
+    scrRad = new Float64Array(N * 2); scrNear = new Float32Array(N * 2);
+  }
+  const cdx = scrCdx, cdy = scrCdy;
+  cdx.fill(0, 0, N); cdy.fill(0, 0, N);
+  const near = active ? scrNear : null;   // each node's crowd this frame
+  if (near) near.fill(0, 0, N);
   // The radius (degree-proportional) is computed once per frame and shared by repulsion weighting/collision separation.
-  const rad = new Array(N);
+  const rad = scrRad;
   for (let i = 0; i < N; i++) rad[i] = nodeRadius(nodes[i]);
   // While workspaces cohere (below), two of them push apart as wholes, so the repulsion between their
   // nodes is turned down: on a large graph its range reaches about 960px, and a hundred nodes of one
   // workspace pushing each node of a small one kept the small one strung out across the map.
   const wsApart = boundaryMode === "workspace" && !clusterMode && new Set(nodes.map(n => n.workspace).filter(Boolean)).size > 1;
 
-  if (pairs) for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+  // Near forces from a grid (design-system.md Section 26.4, U29). Every force in this loop acts within
+  // a reach - repulsion its range, crowding DENSITY_R, collision two radii and the padding - so the
+  // nodes are binned into cells as wide as the longest reach in use, and a node meets only the nodes
+  // of its own cell and the adjacent ones: the pairs every-pair would have found within reach, and
+  // no others. A cell pairs with itself and four forward neighbours, so each pair is met once, and the
+  // lower index goes first, as it did, so a coincident pair still parts the same way.
+  const reach = active ? Math.max(range, DENSITY_R) : 2 * NODE_R_MAX + COLLIDE_PAD;
+  const reach2 = reach * reach;
+  if (pairs) binGrid(N, reach);
+  const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];
+  if (pairs) for (let cy = 0; cy < gridH; cy++) for (let cx = 0; cx < gridW; cx++) {
+    const c = cx + cy * gridW, c0 = gridStart[c], c1 = gridStart[c + 1];
+    if (c0 === c1) continue;
+    for (let nb = -1; nb < FORWARD.length; nb++) {
+      let n0, n1;
+      if (nb < 0) { n0 = c0; n1 = c1; }
+      else {
+        const ox = cx + FORWARD[nb][0], oy = cy + FORWARD[nb][1];
+        if (ox < 0 || ox >= gridW || oy >= gridH) continue;
+        const o = ox + oy * gridW; n0 = gridStart[o]; n1 = gridStart[o + 1];
+        if (n0 === n1) continue;
+      }
+      for (let p = c0; p < c1; p++) for (let q = nb < 0 ? p + 1 : n0; q < n1; q++) {
+    const gi = gridOrder[p], gj = gridOrder[q];
+    const i = gi < gj ? gi : gj, j = gi < gj ? gj : gi;
     const a = nodes[i], b = nodes[j];
-    let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+    let dx = b.x - a.x, dy = b.y - a.y;
+    if (dx * dx + dy * dy >= reach2) continue;   // beyond every force's reach
+    let d = Math.hypot(dx, dy);
     if (d < 0.5) {
       // (Nearly) coincident coordinates have a zero direction and cannot be pushed apart - separate in a deterministic direction (prevents degeneracy).
       const ang = ((i * 7 + j * 13) % 628) / 100;
@@ -3503,6 +3570,8 @@ function stepSim() {
       overlapped = true;
       const push = (minD - d) / 2;
       cdx[i] -= dx*push; cdy[i] -= dy*push; cdx[j] += dx*push; cdy[j] += dy*push;
+    }
+      }
     }
   }
 

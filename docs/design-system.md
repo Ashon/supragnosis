@@ -16,8 +16,8 @@
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
-> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and steps 25-26, the bench and the
-> simulation at rest, are built.
+> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and steps 25-27, the bench, the
+> simulation at rest and the grid, are built.
 
 ## 1. Why this exists
 
@@ -1672,7 +1672,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 26. **The simulation at rest** [built] (Section 26.3; U28): the simulation on its own clock, no step
    in a frame that only redraws, the collision pass ended with the settle, and the recenter only while
    it steps.
-27. **The grid** [planned] (Section 26.4; U29): near forces from a uniform grid, scratch arrays reused,
+27. **The grid** [built] (Section 26.4; U29): near forces from a uniform grid, scratch arrays reused,
    and the parallel-edge lanes kept with the edges rather than rebuilt each frame.
 28. **Drawing less** [planned] (Section 26.5; U30): culling, one path per look, the three sizes of a
    node, the label grid, and the zoom floor that follows the graph.
@@ -2248,7 +2248,10 @@ Repulsion acts within its range, collision within two radii and the padding, cro
 and each node meets only the nodes of its own and the eight adjacent cells: the same forces every pair
 would give, at a cost in proportion to the nodes and their neighbours (U29). The step's scratch arrays
 are kept between steps, and the lanes of parallel relations are worked out when the relations change,
-not in every frame.
+not in every frame. While the layout only clears its last overlaps the reach is a collision's, two
+of the largest radii and the padding, so that pass costs less still. One step from the same
+positions on 2,000 nodes gave every pair's positions and velocities to within 5 x 10^-13, the order
+of the sums; guarded by `near_forces_come_from_a_grid`.
 
 If a step at the budget's size still costs too much - a dense workspace puts many nodes in one range -
 repulsion beyond a near radius may be taken from Barnes-Hut cells (theta 0.9, each cell weighted by its

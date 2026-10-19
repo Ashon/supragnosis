@@ -59,3 +59,34 @@ fn drawing_never_moves_the_layout() {
         "the last collision pass stops halfway"
     );
 }
+
+/// U29: the layout's near forces come from a grid. Every force the pair loop applies acts within a
+/// reach, so the nodes are binned into cells as wide as the longest reach in use and each node meets
+/// only its own and the adjacent cells - never every pair - with pairs beyond reach skipped before
+/// any work. Measured equal to every pair's forces, to the last bits of the sum's order, on 2,000
+/// nodes from one position (Section 26.4).
+#[test]
+fn near_forces_come_from_a_grid() {
+    let step = function("stepSim");
+    assert!(
+        !step.contains("for (let j = i + 1; j < N; j++)"),
+        "the layout visits every pair again"
+    );
+    for part in [
+        "const reach = active ? Math.max(range, DENSITY_R) : 2 * NODE_R_MAX + COLLIDE_PAD;",
+        "if (pairs) binGrid(N, reach);",
+        "const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];",
+        "if (dx * dx + dy * dy >= reach2) continue;",
+        "const i = gi < gj ? gi : gj, j = gi < gj ? gj : gi;",
+    ] {
+        assert!(step.contains(part), "the grid's pairing changed: {part}");
+    }
+    // A cell is never narrower than the reach, so no pair within reach is missed.
+    let bin = function("binGrid");
+    assert!(bin.contains("cell = Math.max(cell, "), "a cell can shrink below the reach");
+    // The step's scratch is kept between steps.
+    assert!(
+        !step.contains("new Array(N)") && !step.contains("new Float32Array(N)"),
+        "the step allocates per-node scratch again"
+    );
+}
