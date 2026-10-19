@@ -962,6 +962,16 @@ function renderChipsActive() {
   const cur = currentWs();
   chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.ws === cur));
   radioGroup(chipBar, "Workspace");
+  syncSearchScope();
+}
+// The search field's placeholder tells the person what scope the query will run in.
+function syncSearchScope() {
+  const cur = currentWs();
+  let ph;
+  if (cur === "*" || cur === "all") ph = "Search all workspaces";
+  else if (cur === "") ph = "Search default";
+  else ph = "Search " + cur;
+  searchEl.placeholder = ph;
 }
 async function loadWorkspaces() {
   try {
@@ -3802,7 +3812,7 @@ const SEARCH_MODE = {
 };
 let searchAns = null;    // { q, ws, mode, hits, note } or { q, ws, error }
 let searchRows = [];     // the hits in the order the list shows them
-let searchSel = 0, searchSeq = 0, searchTimer = 0;
+let searchSel = -1, searchSeq = 0, searchTimer = 0;   // -1 = nothing chosen yet
 
 function searchQuery() { return searchEl.value.trim(); }
 // An answer is shown only for the text in the field and the scope on the map; a workspace switch
@@ -3834,7 +3844,7 @@ async function runSearch() {
   }
   if (seq !== searchSeq) return;   // a newer query is on its way; this answer is for text no longer there
   searchAns = ans;
-  searchSel = 0;
+  searchSel = -1;   // the person has not moved yet - no row is chosen
   renderSearch();
   setSearchOpen(document.activeElement === searchEl);
 }
@@ -3874,11 +3884,13 @@ function renderSearch() {
     b.onmousedown = ev => ev.preventDefault();
     b.onclick = () => chooseSearch(Number(b.dataset.i));
   });
-  searchEl.setAttribute("aria-activedescendant", searchRows.length ? "sp" + searchSel : "");
+  searchEl.setAttribute("aria-activedescendant", searchRows.length && searchSel >= 0 ? "sp" + searchSel : "");
 }
 function moveSearch(d) {
   if (!searchRows.length) return;
-  searchSel = (searchSel + d + searchRows.length) % searchRows.length;
+  // The first press chooses a row: down starts at the top, up at the bottom. After that it cycles.
+  if (searchSel < 0) searchSel = d > 0 ? 0 : searchRows.length - 1;
+  else searchSel = (searchSel + d + searchRows.length) % searchRows.length;
   searchPop.querySelectorAll(".sp-row").forEach(b => {
     const on = Number(b.dataset.i) === searchSel;
     b.classList.toggle("on", on);
@@ -3893,6 +3905,7 @@ async function chooseSearch(i) {
   if (h.kind === "entity") {
     const n = searchNode(h);
     if (!n) return;   // listed, not drawn: the row already says so
+    searchEl.value = n.name; searchWrap?.classList.toggle("filled", true);
     closeSearch();
     if (reviewOpen()) location.hash = "";
     focus = n; renderDetail(n); focusView(n);
@@ -3909,6 +3922,7 @@ async function chooseSearch(i) {
     } catch (e) { /* reported below */ }
   }
   if (!o) { toast("bad", "Could not open the observation", "the log of this scope did not hold " + h.id.slice(0, 10)); return; }
+  searchEl.value = ""; searchWrap?.classList.toggle("filled", false);
   closeSearch();
   if (reviewOpen()) location.hash = "";
   showObsCard(o);
@@ -3939,9 +3953,9 @@ searchEl.addEventListener("keydown", ev => {
   } else if (ev.key === "Enter") {
     ev.preventDefault();
     clearTimeout(searchTimer);
-    // Enter on text the list has not answered yet asks first, then takes the top row.
-    if (searchFresh()) chooseSearch(searchSel);
-    else if (searchQuery()) runSearch().then(() => { if (searchFresh()) chooseSearch(0); });
+    // Enter on a chosen row picks it; otherwise ask first. No auto-pick of the top row.
+    if (searchFresh() && searchSel >= 0) chooseSearch(searchSel);
+    else if (searchQuery() && !searchFresh()) runSearch();
   } else if (ev.key === "Escape") {
     // Hand the keyboard back to the canvas, so "/" -> type -> Escape is a closed loop.
     // stopPropagation: the window handler reads Escape as "dismiss the obs card / view popover",
@@ -4118,6 +4132,6 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
   const qws = new URLSearchParams(location.search).get("workspace");
   if (qws !== null) wsInput.value = qws;
 }
-resize(); loadWorkspaces(); loadSurface().finally(poll); connectEvents(); detectServerMode();
+resize(); syncSearchScope(); loadWorkspaces(); loadSurface().finally(poll); connectEvents(); detectServerMode();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); setInterval(refreshPeerRoster, 5000); draw();
 loadSurface().then(() => { refreshSyncPill(); renderReview(); }); setInterval(refreshSyncPill, 5000);

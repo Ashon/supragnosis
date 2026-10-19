@@ -63,3 +63,25 @@ fn the_review_page_works_from_the_keyboard() {
     let keys = &SCRIPT[at..at + SCRIPT[at..].find("\n});").expect("it closes")];
     assert!(keys.contains("closest(\"#rvList, #rvDetail\")"), "A and R act from anywhere on the page");
 }
+
+/// Section 8: the search field is a combobox that chooses nothing until the person moves. Enter acts
+/// only on the row moved to, a chosen entity's name replaces the query, and the field names its scope.
+#[test]
+fn search_chooses_nothing_until_the_person_moves() {
+    assert!(function("runSearch").contains("searchSel = -1;"), "an answer arrives with a row chosen");
+    let mv = function("moveSearch");
+    assert!(mv.contains("searchSel < 0"), "moving from no choice is not handled");
+    let render = function("renderSearch");
+    assert!(render.contains("searchSel >= 0 ? \"sp\" + searchSel : \"\""), "the field points at a row nobody chose");
+    let at = SCRIPT.find("searchEl.addEventListener(\"keydown\"").expect("the search keys");
+    let keys = &SCRIPT[at..at + SCRIPT[at..].find("\n});").expect("it closes")];
+    assert!(keys.contains("searchSel >= 0"), "Enter acts with no row chosen");
+    assert!(!keys.contains("chooseSearch(0)"), "Enter takes the top row on its own");
+    let choose = function("chooseSearch");
+    assert!(choose.contains("searchEl.value = n.name;"), "the chosen name does not replace the query");
+    let scope = function("syncSearchScope");
+    for word in ["Search all workspaces", "Search default", "\"Search \" + "] {
+        assert!(scope.contains(word), "the field does not name its scope: {word}");
+    }
+    assert!(function("renderChipsActive").contains("syncSearchScope()"), "the scope's name is not kept current");
+}
