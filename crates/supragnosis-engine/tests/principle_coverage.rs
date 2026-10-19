@@ -860,10 +860,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     ]),
     (38, &[c(
-        "a community under 24 pixels on the screen is one body with its count, relations between bodies summed, a crossfade to 48 pixels, and a hovered, selected, active, pulsing or contested node never folded",
-        Evidence::Deferred(
-            "Section 14 step 36 is planned: every node is drawn as a node at every zoom. Revisit when step 36 lands",
-        ),
+        "a map zoomed out until a node with no relation is under 0.8 pixels is drawn as bodies around hubs - the best-connected node not yet taken and every node within 32 pixels - with counts and the hub's name, relations between bodies as one line, a crossfade to 1.6 pixels, and a hovered, selected, active, pulsing or contested node never folded",
+        // scale.rs reads bodiesOpenAt, gatherBodies, bodiesOf, draw, nodeAt and a body's click.
+        Evidence::Scenario(&["a_far_map_folds_into_bodies_around_hubs"]),
     )]),
     (39, &[c(
         "where WebGL2 renders to half-float targets the GPU draws the field, outlines, relations, arrowheads, nodes and bodies under a 2D canvas of text and badges, and the 2D canvas draws all of it otherwise",

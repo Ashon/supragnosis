@@ -29,7 +29,7 @@ export default [
         // radius, and the thresholds the page reads the layout's reports against.
         createLayout: "readonly", radiusOfDegree: "readonly", ALPHA_MIN: "readonly",
         REVEAL_ALPHA: "readonly", SETTLE_ENTER: "readonly", MOTION_MIN_PX: "readonly",
-        NODE_R_MAX: "readonly",
+        NODE_R_MAX: "readonly", NODE_R_BASE: "readonly",
       },
     },
     rules: {

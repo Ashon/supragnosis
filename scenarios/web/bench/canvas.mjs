@@ -279,16 +279,27 @@ try {
         Object.assign(row, { near_scale: NEAR_SCALE, pan_near_sim_calls: nearPan.sim, pan_near_p50: pct(nearPan.draw, 0.5), pan_near_p95: pct(nearPan.draw, 0.95) });
       }
       // A node near the middle, at the fitted view, held and dragged in a circle for two seconds and
-      // let go; the frames run until the layout rests again, or DRAG_LIMIT.
-      await page.evaluate(f => { camT.s = cam.s = f.s; camT.x = cam.x = f.x; camT.y = cam.y = f.y; requestFrame(); }, fit);
-      await page.waitForTimeout(600);
-      const grip = await page.evaluate(() => {
+      // let go; the frames run until the layout rests again, or DRAG_LIMIT. A map folded into bodies at
+      // the fitted view (Section 27.8) has no node to hold there, and is held at the reading zoom.
+      const gripAt = () => page.evaluate(() => {
         for (let r = 0; r < 300; r += 4) for (let a = 0; a < 6.28; a += 0.2) {
           const x = Math.round(710 + Math.cos(a) * r), y = Math.round(450 + Math.sin(a) * r);
           if (nodeAt(x, y)) return { x, y };
         }
         return null;
       });
+      await page.evaluate(f => { camT.s = cam.s = f.s; camT.x = cam.x = f.x; camT.y = cam.y = f.y; requestFrame(); }, fit);
+      await page.waitForTimeout(600);
+      let grip = await gripAt(), dragScale = fit.s;
+      if (!grip) {
+        await page.evaluate(scale => {
+          const w = mapWindow(), cx = (w.l + w.r) / 2, cy = (w.t + w.b) / 2, wx = (cx - cam.x) / cam.s, wy = (cy - cam.y) / cam.s;
+          camT.s = cam.s = scale; camT.x = cam.x = cx - wx * scale; camT.y = cam.y = cy - wy * scale; requestFrame();
+        }, NEAR_SCALE);
+        await page.waitForTimeout(600);
+        grip = await gripAt(); dragScale = NEAR_SCALE;
+      }
+      row.drag_scale = +dragScale.toFixed(3);
       if (grip) {
         const from = await page.evaluate(() => [__bench.draw.length, __bench.drawAt.length]);
         await page.mouse.move(grip.x, grip.y);

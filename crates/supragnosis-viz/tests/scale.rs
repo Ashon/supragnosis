@@ -133,7 +133,7 @@ fn what_the_map_draws_follows_the_screen() {
     assert!(!draw.contains("h.closePath()"), "the arrowheads' path closes every head again");
     for part in [
         "for (const k of nodesIn(vx0, vy0, vx1, vy1)) {",
-        "if (typeOff.has(n.type)) continue;\n    n._vf = drawFrame; n._lod = lodOf(n, act);",
+        "if (typeOff.has(n.type)) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;\n    n._lod = lodOf(n, act);",
         "for (const i of relationsIn(vx0, vy0, vx1, vy1)) {",
         "Math.max(e.a.x, e.b.x) + LANE_MAX < vx0",
         "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
@@ -515,5 +515,58 @@ fn a_frame_touches_what_the_window_holds() {
         SCRIPT.contains("if (!st.x) return;")
             && SIM.contains("if (st.gen === sentGen && st.steps === sentSteps) { self.postMessage({ kind: \"state\", ...st }); return; }"),
         "a report that moved nothing says the positions moved"
+    );
+}
+
+/// U38: a far map folds into bodies around hubs. The map folds by how large a node with no relation is
+/// on the screen, under 0.8 pixels, and opens by 1.6; a body is the best-connected node not yet taken
+/// and every node not yet taken within 32 pixels, at the zoom's nearest power of two, gathered again
+/// when that power, the graph or the filter changes and, while the layout moves, at most every half
+/// second; a hovered, selected, active, pulsing or contested node is never folded; a folded member is
+/// neither drawn nor under the pointer, and its relations go to its body; and a body's click frames
+/// its members.
+#[test]
+fn a_far_map_folds_into_bodies_around_hubs() {
+    assert!(
+        SCRIPT.contains("const BODY_FOLD_PX = 0.8, BODY_OPEN_PX = 1.6, BODY_REACH_PX = 32, BODY_REGATHER_MS = 500;"),
+        "the fold's sizes moved from Section 27.8"
+    );
+    assert!(
+        function("bodiesOpenAt")
+            .contains("(NODE_R_BASE * s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX)"),
+        "the map folds by another measure than a node's size on the screen"
+    );
+    let gather = function("gatherBodies");
+    for part in [
+        ".sort((p, q) => (nodes[q].degree || 0) - (nodes[p].degree || 0) || p - q);",
+        "const reach = BODY_REACH_PX / 2 ** level,",
+        "if (of[j] < 0 && !typeOff.has(w.type) && (w.x - v.x) ** 2 + (w.y - v.y) ** 2 <= r2) of[j] = k;",
+    ] {
+        assert!(gather.contains(part), "the bodies are not gathered around hubs: {part}");
+    }
+    assert!(
+        function("bodiesOf").contains(
+            "b.posGen !== positionsGen && (!simWarm() || now - b.at >= BODY_REGATHER_MS)"
+        ),
+        "the bodies are gathered every frame the layout moves"
+    );
+    let draw = function("draw");
+    for part in [
+        "const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);",
+        "if (oa === 0 || ob === 0) continue;",
+        "for (let j = 0; j < B.la.length; j++) {",
+        "drawLabel(String(B.size[k]),",
+    ] {
+        assert!(draw.contains(part), "the far map is not folded as Section 27.8 says: {part}");
+    }
+    assert!(
+        function("nodeAt")
+            .contains("if (typeOff.has(n.type) || (onScreen(n) && n._o === 0)) continue;"),
+        "a folded member is still under the pointer"
+    );
+    assert!(
+        SCRIPT
+            .contains("if (k >= 0) { fitView(bodyMembers(k)); userMoved = true; requestFrame(); }"),
+        "a body's click does not open it"
     );
 }

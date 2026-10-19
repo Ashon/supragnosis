@@ -1398,9 +1398,9 @@ social image.
 | **U33** | A poll that finds nothing new costs the page nothing: the graph, the hypergraph and the Log's observations answer with an ETag of their body, the viewer asks with it, an unchanged one answers 304 with no body, and the viewer keeps what it has without parsing or applying anything. |
 | **U34** | The layout's region forces grow with the regions' members, not with their pairs or their number: membership is kept as index arrays while the graph and its contexts are unchanged, a step allocates nothing per region, the shared-member test marks one region's members and reads the other's, and only regions of three or more members - the ones the map draws - push apart, while every context of two or more keeps its pull. |
 | **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once every 16.7 ms after, and hands back positions; when no worker can start, the same file steps on the page's thread as before; and while the layout moves, the minimap's miniature is painted at most four times a second, its dots drawn into a pixel buffer. |
-| **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it, and semantic zoom (U38) folds the same communities. |
+| **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it. |
 | **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their midpoints; and the Log lists the scope's newest 200 observations, asking for one more to know there are more, wires its rows by their place, and shows more on request. |
-| **U38** | A community smaller than 24 pixels on the screen is drawn as one body - a disc for its members, its count and, where it fits, its best-connected member's name - the relations between two bodies as one line as wide as their number, and from 24 to 48 pixels the members fade in as the body fades out; a hovered, selected, active, pulsing or contested node is never folded. |
+| **U38** | A map zoomed out until a node with no relation is under 0.8 pixels in radius is drawn as bodies, each the best-connected node not yet taken and every node not yet taken within 32 pixels of it - a disc for its members, its count and, where it fits, its hub's name - the relations between two bodies as one line as wide as their number, and up to 1.6 pixels the nodes fade in as the bodies fade out; a hovered, selected, active, pulsing or contested node is never folded. |
 | **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads, the nodes in their three sizes and the bodies, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
@@ -1703,8 +1703,8 @@ and it fails when one of them appears in the viewer's source other than as an ar
    in a worker, and on the page's thread when none starts.
 34. **The multilevel start** [built] (Section 27.6; U36): communities, their layout first.
 35. **Clipping** [built] (Section 27.7; U37): the grid index of positions and of relations' midpoints.
-36. **Semantic zoom** [planned] (Section 27.8; U38): communities folded into bodies by their size on
-   the screen, with the crossfade.
+36. **Semantic zoom** [built] (Section 27.8; U38): the far map folded into bodies around hubs, with
+   the crossfade.
 37. **WebGL** [planned] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
 38. **Measured** [planned] (Section 27.2; U40): the bench to 50,000 in both browsers and both
    renderers, the dev store through its daemon, and the app.
@@ -2559,7 +2559,7 @@ Guarded by `the_layout_steps_on_its_own_thread`.
   relations between two summed - is laid out first; each member starts on a spiral within its
   community's disc, and the full layout continues from a cooler start, so it reveals in fewer steps
   (U36). This is the multilevel scheme of Walshaw's and of sfdp, with one level.
-- **A saved layout skips it**, and the communities are kept for semantic zoom.
+- **A saved layout skips it.**
 - **Small communities join their neighbours.** On the bench's graph, sparse as a store's is,
   propagation left 1,285 communities at 10,000 entities, half of them of three or fewer, and the
   communities' layout, every pair of them for 160 steps, took 1.6 seconds, and at 20,000 6.3. A
@@ -2617,14 +2617,35 @@ Guarded by `a_frame_touches_what_the_window_holds` and `the_log_draws_its_newest
 
 ### 27.8 Semantic zoom
 
-- **Bodies.** A community whose disc is smaller than 24 pixels on the screen is drawn as one body: a
-  disc sized by its members, in the color most of them share, with its count and, where it fits, its
-  best-connected member's name. The relations between two bodies are one line, as wide as the
-  relations it stands for (U38).
-- **The crossfade.** From 24 to 48 pixels the members fade in as the body fades out, so a zoom unfolds
-  a community rather than swapping it.
+Specified first as the multilevel start's communities folded into bodies, it was measured before it
+was built: the communities do not stay together. On the bench's 10,000, the 405 communities of six or
+more had a median radius of 826 world units about their centre, their members a median 549 from it -
+three times a compact disc of their size - since past the start the layout's forces are the
+relations' and the regions', not the communities'. A body drawn for a community would stand where
+most of its members are not. A body gathers what is near on the screen instead, around a hub.
+
+- **When.** Zoomed out until a node with no relation is under 0.8 pixels in radius, the map is drawn
+  as bodies; from 1.6 pixels it is drawn as nodes; between the two the nodes fade in as the bodies
+  fade out, so a zoom unfolds the map rather than swapping it (U38). A node of 0.8 pixels is a
+  speck: at that size a map of thousands is noise, and a map small enough to fit at a reading zoom
+  never folds.
+- **Around hubs.** The nodes are taken best-connected first; each one not yet taken starts a body and
+  takes every node not yet taken within 32 pixels of it on the screen, measured at the zoom's nearest
+  power of two, so a pan or a small zoom keeps the bodies. They are gathered again when that power,
+  the graph or the type filter changes, when the layout comes to rest, and while it moves at most
+  every half second; where a body stands follows its members as they move. A body of one is its node.
+- **The body.** A disc at its members' mean, 4 pixels of radius and 1.5 more for every square root of
+  its number, at most 19, in the color most of its members share and a halo of the surface's, as a
+  node is drawn; its count inside it from a radius of 8 pixels, and its hub's name beside it where the
+  names leave room.
+- **Relations.** The relations between two bodies' members are one line between the bodies, as wide
+  as their number; a relation between a folded member and a node drawn as a node goes from the body
+  to the node; two members of one body draw nothing between them.
 - **Never folded.** A hovered, selected, active or pulsing node, and a contested one with its badge
   (U3), are drawn as nodes whatever the zoom; the body around them counts them all the same.
+- **Pointed at like a node.** A folded member is not under the pointer; its body is. Hovering a body
+  says its count, the type most of its members share and its three best-connected members, and a
+  click frames its members, which opens them; the selection stays as it was.
 - **The clouds and the minimap are unchanged.**
 
 ### 27.9 WebGL
@@ -2652,7 +2673,8 @@ hovered, selected, active, pulsing or contested is never folded.
 
 Raghavan, Albert and Kumara, Physical Review E 2007, on label propagation; Walshaw, Journal of Graph
 Algorithms and Applications 2003, and Hu, Mathematica Journal 2005, on multilevel force-directed
-layout; Elmqvist and Fekete, IEEE TVCG 2010, on hierarchical aggregation; sigma.js's WebGL programs;
+layout; Elmqvist and Fekete, IEEE TVCG 2010, on hierarchical aggregation; Mapbox's supercluster, on
+gathering points by zoom; sigma.js's WebGL programs;
 MDN, WebGL best practices and the EXT_color_buffer_float and EXT_float_blend extensions; Inigo Quilez
 on signed distance functions; the HTTP conditional requests of RFC 9110.
 
