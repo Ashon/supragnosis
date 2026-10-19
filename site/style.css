@@ -433,6 +433,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cell.o { background: none; border: 1px solid var(--muted); box-sizing: border-box; }
 .p-ledger .count { font-size: var(--fs-small); margin: 14px 0 0; }
 .p-ledger .count b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.gloss { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 14px 0 0; font-size: var(--fs-small); }
+.gloss dt { color: var(--ink); font-weight: 500; }
+.gloss dd { margin: 0; color: var(--ink2); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; padding: 0; list-style: none; font-size: var(--fs-label); }
 .legend li { display: inline-flex; align-items: center; gap: 7px; }
 .legend i, .states i, .clauses .bar i, .cl i { display: inline-block; width: 14px; height: 9px; border-radius: 2px; flex: none; }
@@ -583,13 +586,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .p-ledger > .detail { grid-column: 1; grid-row: auto; }
   .prs, .tlist { grid-template-columns: minmax(0, 1fr); }
   .states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sky .cols { flex-direction: column; align-items: stretch; height: auto; gap: 8px; }
+  .sky .grp { height: 56px; align-items: flex-end; }
+  .sky .grp + .grp { margin-left: 0; }
 }
 @media (max-width: 560px) {
   .cmd { flex-direction: column; }
   .cmd code { white-space: normal; overflow-wrap: anywhere; }
   .copy { padding: 10px 20px; }
   .sky .labs { display: none; }
-  .sky .cols { height: 136px; }
   .sky .cell { height: 7px; }
   .pr { padding: 18px 16px; }
   .scene, .demo { padding: 10px; }

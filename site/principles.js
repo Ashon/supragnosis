@@ -1163,7 +1163,7 @@ function ledger() {
     dl.append(link);
     detail.replaceChildren(el("span", {class: "dn"}, "P" + p), el("p", {class: "dt"}, $("h3", art).textContent), dl, ...(list ? [list.cloneNode(true)] : []));
   }
-  cols.forEach(a => a.addEventListener("click", e => { e.preventDefault(); pick(a); }));
+  cols.forEach(a => a.addEventListener("click", e => { if (window.matchMedia("(max-width: 899px)").matches) return; e.preventDefault(); pick(a); }));
   pick(cols.find(c => c.dataset.p === "3") || cols[0]);
 }
 

@@ -48,7 +48,7 @@
     <section class="p-hero wrap" id="top">
       <p class="eyebrow">Principles</p>
       <h1>How a shared memory stays honest.</h1>
-      <p class="sub">Twenty-four principles decide what supragnosis keeps, believes, shares and refuses. Each one is split into clauses, and each clause names the tests or the construction that hold it, or says that it is owed.</p>
+      <p class="sub">Twenty-four principles decide what supragnosis keeps, believes, shares and refuses. Each one is split into clauses, and each clause names the tests or the construction that hold it, or says that it is owed, which means the code does not yet guarantee it.</p>
       <div class="p-ledger">
         <!-- registry:ledger -->
         <div class="sky" role="group" aria-label="Clauses by principle">
@@ -110,6 +110,14 @@
         <p class="count"><b>108</b> clauses across <b>24</b> principles: <b>74</b> tested by name, <b>6</b> hold by construction, <b>28</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
         <ul class="legend"><li><i class="cell t"></i>Tested by name</li><li><i class="cell s"></i>Holds by construction</li><li><i class="cell p"></i>Owed, today's behavior pinned</li><li><i class="cell o"></i>Owed</li></ul>
         <!-- /registry:ledger -->
+        <dl class="gloss">
+          <dt>Clause</dt><dd>One demand a principle makes, small enough to check.</dd>
+          <dt>Tested</dt><dd>A test named in the registry checks it.</dd>
+          <dt>By construction</dt><dd>The code's shape makes it hold, so there is nothing to test.</dd>
+          <dt>Pinned</dt><dd>Owed, with today's behavior held by a test, so a change shows.</dd>
+          <dt>Owed</dt><dd>The code does not yet guarantee it.</dd>
+          <dt>Tension</dt><dd>Two principles that pull against each other, and the ruling between them.</dd>
+        </dl>
         <div class="detail" id="detail" aria-live="polite"></div>
       </div>
     </section>

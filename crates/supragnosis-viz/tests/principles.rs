@@ -285,3 +285,21 @@ fn the_principles_ledger_marks_owed_and_chosen_clearly() {
     assert!(PAGE.contains("<span class=\"sep\" aria-hidden=\"true\"> / </span>"), "the separators are not hidden from a screen reader");
 }
 
+/// Section 11a: owed is defined where it is first read, a glossary names each word the page uses
+/// once, and below 900 pixels the ledger is a row per chapter whose columns go to their principle.
+#[test]
+fn the_principles_page_says_what_its_words_mean_and_reads_on_a_phone() {
+    let sub = &PAGE[PAGE.find("<p class=\"sub\">").expect("the hero's subhead")..];
+    let sub = &sub[..sub.find("</p>").expect("it closes")];
+    assert!(sub.contains("does not yet guarantee"), "the hero does not say what owed means");
+    let end = PAGE.find("<!-- /registry:ledger -->").expect("the ledger's end");
+    let gloss = &PAGE[end..];
+    let gloss = &gloss[..gloss.find("</dl>").expect("a glossary after the ledger")];
+    for term in ["Clause", "Tested", "By construction", "Pinned", "Owed", "Tension"] {
+        assert!(gloss.contains(&format!("<dt>{term}</dt>")), "the glossary does not name {term}");
+    }
+    let phone = &CSS[CSS.rfind("@media (max-width: 899px)").expect("the narrow rules")..];
+    assert!(phone.contains(".sky .cols { flex-direction: column"), "the ledger is not a row per chapter on a phone");
+    assert!(SCRIPT.contains("matchMedia(\"(max-width: 899px)\").matches"), "a column on a phone does not go to its principle");
+}
+
