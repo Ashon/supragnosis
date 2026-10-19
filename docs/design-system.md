@@ -15,7 +15,8 @@
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
-> map's List, the site's type, the title bar and the light appearance.
+> map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
+> many nodes (Section 26, U28-U31), is specified - steps 25-30 - and its bench, step 25, is built.
 
 ## 1. Why this exists
 
@@ -197,6 +198,33 @@ The two missed contrasts, the short targets and five more ask no design question
 kinds of checkbox, the search field named only by its placeholder, the status line cut short at 390
 pixels, a privacy line 103 characters long, and the app's starting splash in the old tokens and the
 mono face - and Section 14 step 17 fixes them. The rest change Sections 3, 4, 5, 6, 6a, 10, 11 and 11a.
+
+Measured again on 2026-10-19 for a map of many nodes, in Chrome at 1440x900 at twice the pixels on
+the author's Mac, on synthetic graphs: communities of 20 to 60 entities, about 1.5 relations per
+entity and a region for every twelve, standing in for `/api/graph` and `/api/hypergraph` while the
+viewer's own functions were timed from outside it (Section 26.1):
+
+| Entities | Relations | First picture | One settling step | A frame while panning | Its simulation | Its drawing |
+|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 738 | 2.1 s | 2.7 ms | 16.7 ms | 2.4 ms | 3.9 ms |
+| 1,000 | 1,461 | 2.0 s | 10.9 ms | 16.7 ms | 6.2 ms | 6.1 ms |
+| 2,000 | 2,935 | 4.8 s | 41.8 ms | 33.3 ms | 36.1 ms | 10.3 ms |
+| 5,000 | 7,335 | 27 s | 244 ms | 183 ms | 214 ms | 26.5 ms |
+| 10,000 | 14,690 | 98 s | 875 ms | 833 ms | 763 ms | 55 ms |
+
+- **The map kept 60 frames a second to 1,000 entities.** From 2,000 the simulation took 85 to 90% of
+  every frame: it visits every pair of nodes, about 50 million at 10,000, and every frame runs it -
+  a pan, a zoom and a hover included - because its collision pass went on after the layout had come
+  to rest, and the frame that draws is the frame that steps.
+- **Drawing alone passed the budget between 2,000 and 5,000.** Every relation was its own path with
+  its own opacity and color, every node up to three discs and a stroke, nothing outside the window
+  was skipped, and a node a pixel wide was drawn as fully as one forty wide. The region field was
+  recomputed on the processor for every frame of a pan.
+- **At 10,000 the map did not read.** The nodes' halos covered their fills, and the communities the
+  graph was made of showed as one dark disc.
+
+Section 26 is what the fourth pass changes; the techniques it takes are the ones large-graph renderers
+publish (sigma.js, Cytoscape.js, d3-force, ForceAtlas2) and its sources are listed there.
 
 ## 2. What this is NOT
 
@@ -1357,6 +1385,10 @@ social image.
 | **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and search, sorted by type and name, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
 | **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; it holds no other navigation; every page's bar is one bar, the star first and the way back and the title where the Review page has them; and in the app it drags the window from anywhere but its controls, and clears the traffic lights only while they are shown. |
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
+| **U28** | Drawing never moves the layout: a pan, a zoom, a hover, a highlight or a selection redraws the map without a simulation step, and a layout that has come to rest visits no pair of nodes until something warms it. |
+| **U29** | The layout's near forces - repulsion within its range, collision and crowding - meet each node with only the nodes in its own and the adjacent cells of a grid as large as their longest reach, so a step costs in proportion to the nodes and their neighbours, and the forces are those every pair would give. |
+| **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 6 pixels on screen is drawn without its ring and its relations without arrowheads, and one under 2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
+| **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
@@ -1633,6 +1665,21 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Settings page's stylesheets, shadows and scrims as tokens, Increase Contrast in both, the light
    band and palette in the viewer's script with the map's redraw on a change, and the starting splash
    in both; every step from here is judged in both appearances, with screenshots of each.
+
+25. **The scale bench** [built] (Section 26.1): `scenarios/web/bench/canvas.mjs`, the synthetic graph
+   and the timings of Section 1's table, run before and after every step below and in both engines.
+26. **The simulation at rest** [planned] (Section 26.3; U28): the simulation on its own clock, no step
+   in a frame that only redraws, the collision pass ended with the settle, and the recenter only while
+   it steps.
+27. **The grid** [planned] (Section 26.4; U29): near forces from a uniform grid, scratch arrays reused,
+   and the parallel-edge lanes kept with the edges rather than rebuilt each frame.
+28. **Drawing less** [planned] (Section 26.5; U30): culling, one path per look, the three sizes of a
+   node, the label grid, and the zoom floor that follows the graph.
+29. **Still layers** [planned] (Section 26.6): the region field and the minimap's dots drawn when they
+   change, and moved as bitmaps while the camera moves.
+30. **Measured** [planned] (Section 26.2; U31): the bench at 10,000 and 20,000 in Chrome and WebKit
+   against the budget. A WebGL renderer is decided from these numbers and gets its own document;
+   nothing in steps 26-29 assumes it.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2141,3 +2188,108 @@ changed it:
   were told from by their dashes.
 - **Panel headings and pills follow their roles.** The Review page's heading wraps rather than cuts
   its link at 200%, and the Log's who-line wraps instead of being clipped.
+
+## 26. The map at scale
+
+The fourth pass (Section 1's last table). The map has to stay a map - movable, readable, and the same
+picture of the same knowledge - as a workspace grows past the size its drawing and its layout were
+written for.
+
+### 26.1 The bench
+
+`scenarios/web/bench/canvas.mjs` starts a daemon with the scenario harness, serves the viewer through
+its proxy, and answers `/api/graph` and `/api/hypergraph` itself with a seeded synthetic graph:
+communities of 20 to 60 entities in twelve types, about 1.3 relations per entity inside a community
+and 0.2 across, and a region for every twelve entities. The viewer's script is not changed for it; its
+functions `stepSim`, `draw` and `nodeAt` are timed from outside, since the script is a classic one and
+they are its globals. For each size it reports the time to the first picture, a settling step, the
+frames of a two-second pan and of ten wheel steps - each split into simulation and drawing - and a hover's
+hit test, as the 50th and 95th percentiles; with `BREAKDOWN=1` it also times, within a pan's and a
+zoom's frames, the region field, the workspace outlines and the minimap. It takes the pan again at a
+reading zoom (`NEAR_SCALE`, 0.6), where nodes are drawn full, and times the frames while the layout
+moves: from the reveal to rest, and from a node held and dragged for two seconds to rest again. `SIZES`, `BROWSER` (chromium or webkit) and
+`OUT` choose what it runs and where it writes; it is a measurement, not a test, and CI does not run it.
+
+### 26.2 The budget
+
+On the reference Mac - Apple silicon, at twice the pixels, 1440x900, in Chrome and in WebKit, which the
+desktop app runs on - at 10,000 entities and about 15,000 relations:
+
+- a frame of a pan or a zoom within 16.7 ms at the 95th percentile, with drawing about 10 ms of it;
+- a hover's hit test within 1 ms;
+- the first picture within 10 seconds of the data arriving.
+
+At 20,000 a pan holds 30 frames a second. Past that, step 30's numbers decide whether the map moves to
+WebGL - one instanced draw for the nodes, signed-distance discs and glyphs, picking by color - which
+would be its own document. Nothing in this section assumes it.
+
+### 26.3 The simulation runs only while it moves
+
+- **A frame that redraws does not step.** The simulation steps on its own clock: a frame steps it while
+  it is warm (alpha at or above its floor), while a node is held, and while the settle's last collision
+  pass is owed. A pan, a zoom, a hover, a legend highlight or a selection redraws the picture from the
+  positions it has (U28).
+- **At rest no pair is visited.** The collision correction that ran after cooling - to clear the last
+  overlaps - ends with the settle: it runs until no pair overlaps or for a bounded number of steps, and
+  stops. A drag, a new node or a changed filter warms the layout again, as `wake` does now.
+- **The recenter runs while the layout steps.** The drift it corrects comes from the steps' clamps; a
+  layout at rest does not drift.
+
+### 26.4 Near forces come from a grid
+
+Repulsion acts within its range, collision within two radii and the padding, crowding within
+`DENSITY_R`. Each step bins the nodes into a uniform grid whose cell is the longest of those reaches,
+and each node meets only the nodes of its own and the eight adjacent cells: the same forces every pair
+would give, at a cost in proportion to the nodes and their neighbours (U29). The step's scratch arrays
+are kept between steps, and the lanes of parallel relations are worked out when the relations change,
+not in every frame.
+
+If a step at the budget's size still costs too much - a dense workspace puts many nodes in one range -
+repulsion beyond a near radius may be taken from Barnes-Hut cells (theta 0.9, each cell weighted by its
+members' summed radius). That is the one approximation the layout may make, and it is measured before
+it is taken.
+
+### 26.5 Drawing does less
+
+- **Only what is in the window.** A node is drawn when its disc, grown by its halo and its ring, meets
+  the window; a relation when its bounding box does. A name, a badge or a pulse goes with its node.
+- **One path per look.** Relations that share a color, an opacity and a width are one path and one
+  stroke, and their arrowheads one path and one fill. Nodes that share a fill and an opacity are one
+  path; a node's halo is a disc of the surface color under it, drawn the same way, rather than a
+  stroke for each node.
+- **Three sizes of a node** (U30), by its radius on the screen:
+  - from 6 pixels, as now: halo, fill, trust ring, the contested badge, and arrowheads when they are
+    on;
+  - from 2 pixels: halo and fill, with relations straight and without arrowheads;
+  - under 2 pixels: a square of its type's color, without a halo.
+
+  A hovered, selected or active node and its relations are drawn at the first size whatever their
+  size, so a highlight reads; a relation shorter than 2 pixels on the screen is not drawn. The
+  contested badge keeps its pass (U3) from 4 pixels.
+- **Names by a budget.** The screen is a grid of 100-pixel cells. In each, the names of the
+  best-connected nodes are placed first, two at most, and a name is checked against the names in its
+  own and the adjacent cells only. The hovered, selected and active nodes are always named.
+- **The zoom floor follows the graph.** Zooming out stops where the whole map fits the window, so a
+  map of any size can be seen whole.
+
+### 26.6 Layers that do not move are not redrawn
+
+The region field and the minimap's dots are drawn into their own bitmaps when the layout, the regions
+or the appearance change. While only the camera moves, the field's bitmap is drawn with the camera's
+change and recomputed once the camera rests; the minimap moves only its frame.
+
+### 26.7 What this is not
+
+It is not a new layout: the grid gives the forces every pair gives. It does not hide relations while
+the map moves, as some renderers do, since the picture should not change under the hand. It is not a
+WebGL renderer (Section 26.2).
+
+### 26.8 Sources
+
+MDN, Optimizing canvas; web.dev, Improving HTML5 Canvas performance and Towards an animation
+smoothness metric; Cytoscape.js's performance notes and its canvas renderer's texture caches; sigma.js's
+label grid and settings; ECharts' large symbol drawing; d3-force's many-body and d3-quadtree; graphology's
+ForceAtlas2 and Jacomy and others, PLOS ONE 2014; Barnes and Hut, Nature 1986; Zhao and others, 2025,
+on web graph libraries; Horak and others, 2018; Game Programming Patterns, Spatial Partition and Dirty
+Flag; Gaffer on Games, Fix your timestep.
+

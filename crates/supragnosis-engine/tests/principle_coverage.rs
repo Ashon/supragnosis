@@ -797,6 +797,30 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "the_light_band_is_never_a_signal",
         ]),
     )]),
+    (28, &[c(
+        "drawing never moves the layout: a pan, zoom, hover, highlight or selection redraws without a simulation step, and a layout at rest visits no pair",
+        Evidence::Deferred(
+            "Section 14 step 26 is planned: draw() steps the simulation in every frame and the collision pass runs after cooling. Revisit when step 26 lands",
+        ),
+    )]),
+    (29, &[c(
+        "near forces meet each node with only the nodes of its own and the adjacent grid cells, giving the forces every pair would give",
+        Evidence::Deferred(
+            "Section 14 step 27 is planned: stepSim visits every pair. Revisit when step 27 lands",
+        ),
+    )]),
+    (30, &[c(
+        "what the map draws follows the screen: culled outside the window, three sizes of a node by its radius on screen, one path per look, and names by a per-cell budget",
+        Evidence::Deferred(
+            "Section 14 step 28 is planned: every node and relation is drawn one by one at full detail. Revisit when step 28 lands",
+        ),
+    )]),
+    (31, &[c(
+        "at 10,000 entities the map pans and zooms within 16.7 ms at p95 and shows its first picture within 10 seconds on the reference Mac in Chrome and WebKit",
+        Evidence::Deferred(
+            "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Revisit when step 30 has measured it, to record the numbers beside this clause",
+        ),
+    )]),
 ];
 
 // docs/onboarding.md Section 11 - from install to the first entry, inside the app (O rows).
