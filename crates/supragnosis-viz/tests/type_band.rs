@@ -10,7 +10,7 @@ const CSS: &str = include_str!("../assets/viewer.css");
 /// The tokens that mean something on the map: human confirmed, healthy, contested.
 const SIGNALS: &[&str] = &["--accent", "--gold-bright", "--ok", "--bad"];
 /// The neutrals the map draws beside a type: text, labels and the relation line.
-const NEUTRALS: &[&str] = &["--ink", "--ink2", "--muted", "--faint"];
+const NEUTRALS: &[&str] = &["--ink", "--ink2", "--muted"];
 
 /// A token's value in the viewer's `:root` block, which declares several on a line.
 fn token(name: &str) -> String {

@@ -1297,8 +1297,13 @@ social image.
 | **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; and it holds no other navigation. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
-U21-U25 and U7's APCA half are designed and not yet guarded; steps 18-21 build each with its test
-(Section 14).
+U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
+`every_text_token_reads_on_every_surface_by_apca` measures APCA 0.0.98G over the three `:root` blocks,
+`text_on_a_pill_reads_over_its_tint` lays each tint on the two panels, `a_signal_drawn_as_text_takes_its_ink`
+reads every color property of the four stylesheets, and `faint_is_retired` keeps `--faint` out. U23 is
+guarded by `increase_contrast_and_forced_colors_are_heard` in the same file: each stylesheet's Increase
+Contrast block, and the map's palette under forced colors. U21, U22, U24 and U25 are designed and not
+yet guarded; steps 18-21 build each with its test (Section 14).
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -1505,7 +1510,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    checkboxes in the accent, the search field named with its scope, the status line's short form on
    a phone, the privacy line held to 34em, and the app's starting splash on the tokens and the
    reading stack, which falls to the system's face there, since nothing serves the fonts yet.
-18. **Reading** [designed] (Sections 3, 4, 10; U7, U21, U23): `--ink2` and `--muted` raised and
+18. **Reading** [colors built] (Sections 3, 4, 10; U7, U21, U23): `--ink2` and `--muted` raised and
    `--faint` retired into `--muted` in all three stylesheets and the scripts, the marks that move
    with them - the unverified ring with its swatch, the active edges, the owed outline, and the
    stage's and the scenes' palettes - the signals' text tokens

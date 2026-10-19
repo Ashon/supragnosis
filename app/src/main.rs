@@ -461,7 +461,7 @@ fn remote_html(r: &RemoteServer) -> String {
         (false, _) => "it does not answer right now",
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#8e96a5;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
         name = esc(&r.name),
         url = esc(&r.url),
     )
@@ -470,7 +470,7 @@ fn remote_html(r: &RemoteServer) -> String {
 fn starting_html(status: &str) -> String {
     let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#8e96a5;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#8e96a5;margin-top:6px;font-size:12px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><body data-tauri-drag-region style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div style="color:#b0b8c7;margin-top:6px;font-size:12px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
     )
 }
 

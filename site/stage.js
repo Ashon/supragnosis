@@ -13,8 +13,8 @@
     bg: "#10131b",       // --panel, the stage's ground and every label's halo
     well: "#161a23",     // --panel-2, the log
     ink: "#e9e4d6",      // --ink
-    ink2: "#aab1bd",     // --ink2
-    muted: "#8e96a5",    // --muted
+    ink2: "#cad2de",     // --ink2
+    muted: "#b0b8c7",    // --muted
     gold: "#d9a544",     // --accent, a merge waiting for a person
     goldHi: "#f0c469",   // --gold-bright, human confirmed
     teal: "#56b3a2",     // --ok, an agent at work

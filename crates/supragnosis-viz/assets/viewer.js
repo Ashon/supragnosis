@@ -8,12 +8,12 @@ const TYPE_BAND = [
   "#889d37", "#82d48c", "#3cd1f5", "#67acf7", "#8986de", "#c38fe3", "#c670ab", "#ff9abd",
   "#adc35e", "#53a45e", "#009cba", "#4c8fd8", "#aeadff", "#aa76c8", "#ffb7e6", "#e17da1",
 ];
-const OTHER = "#8e96a5", EDGE_OTHER = "#5c6472";   // defensive neutral color for types not in the map
-const EDGE = "#2b3345", EDGE_HI = "#f0c469", EDGE_OLD = "#4d4340";
+let OTHER = "#b0b8c7", EDGE_OTHER = "#5c6472";   // --muted: the unverified ring, as its legend swatch, and a type not in the map
+let EDGE = "#2b3345", EDGE_HI = "#f0c469", EDGE_OLD = "#4d4340";
 // A relation kind draws no color (Section 5): at rest a relation is one neutral line, and on the
 // active node's edges it is drawn brighter and labelled with its kind. Thirty kinds in a band of
 // sixteen would say nothing, and the band is the types'.
-const EDGE_NEUTRAL = "#6b7383", EDGE_ACTIVE = "#aab1bd";   // --ink2
+let EDGE_NEUTRAL = "#6b7383", EDGE_ACTIVE = "#cad2de";   // --ink2
 const EDGE_ALPHA = 0.42;         // edge base opacity (low - recedes in a dense graph; raised for the darker ink). On hover/focus, connected edges activate to 1.0
 // The node stroke is proportional to the marker radius (scales with the marker on zoom - a
 // consistent ratio) + a screen-px floor (so it does not vanish on zoom-out). It is a background-color
@@ -23,8 +23,31 @@ const NODE_STROKE_MIN = 2;       // minimum stroke thickness (screen px)
 const NODE_STROKE_MAX = 5;       // maximum stroke thickness (screen px) - so a large hub does not thicken into a donut
 // Canvas palette - mirrors the CSS tokens (the landing's candlelight theme). SURFACE doubles as the
 // halo/cutout color, so it must match the body background exactly.
-const INK = "#e9e4d6", INK2 = "#aab1bd", SURFACE = "#08090d";
-const GOLD = "#d9a544", TEAL = "#56b3a2", BAD = "#e07a5f";   // --accent, --ok, --bad
+let INK = "#e9e4d6", INK2 = "#cad2de", SURFACE = "#08090d";
+let GOLD = "#d9a544", TEAL = "#56b3a2", BAD = "#e07a5f";   // --accent, --ok, --bad
+// Forced colors (docs/design-system.md Section 10, U23): the page takes the system's colors, and the
+// map redraws in them - "CanvasText" for names, edges and rings, "Canvas" for the ground and
+// "Highlight" for what is lit - keeping every mark it draws. Types lose their colors there, and the
+// human-confirmed ring, told from the host-signed one by its gold alone, is drawn twice as wide.
+const FORCED_COLORS = matchMedia("(forced-colors: active)");
+const PALETTE = { OTHER, EDGE_OTHER, EDGE, EDGE_HI, EDGE_OLD, EDGE_NEUTRAL, EDGE_ACTIVE, INK, INK2, SURFACE, GOLD, TEAL, BAD };
+function systemColor(name) {
+  const probe = document.createElement("span");
+  probe.style.color = name;
+  document.body.append(probe);
+  const color = window.getComputedStyle(probe).color;
+  probe.remove();
+  return color;
+}
+function hearForcedColors() {
+  ({ OTHER, EDGE_OTHER, EDGE, EDGE_HI, EDGE_OLD, EDGE_NEUTRAL, EDGE_ACTIVE, INK, INK2, SURFACE, GOLD, TEAL, BAD } = PALETTE);
+  if (FORCED_COLORS.matches) {
+    const text = systemColor("CanvasText");
+    OTHER = EDGE_OTHER = EDGE = EDGE_OLD = EDGE_NEUTRAL = EDGE_ACTIVE = INK = INK2 = GOLD = TEAL = BAD = text;
+    EDGE_HI = systemColor("Highlight");
+    SURFACE = systemColor("Canvas");
+  }
+}
 
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip"), statusEl = document.getElementById("status");
@@ -224,6 +247,13 @@ function wake(a = 0.7) { alpha = Math.max(alpha, a); if (a >= SETTLE_ENTER) sett
 // fires after the whole event turn, so it sees the state the handler left.
 let rafId = null;
 function requestFrame() { if (rafId === null) rafId = requestAnimationFrame(draw); }
+hearForcedColors();
+FORCED_COLORS.addEventListener("change", () => {
+  hearForcedColors();
+  assignColors();
+  renderLegend();
+  requestFrame();
+});
 for (const ev of ["mousedown", "mousemove", "mouseup", "wheel", "keydown", "input", "resize"]) {
   addEventListener(ev, requestFrame, { capture: true, passive: true });
 }
@@ -319,6 +349,7 @@ function stableColors(names) {
 }
 function assignColors() {
   typeColor = stableColors(new Set(nodes.map(n => n.type)));
+  if (FORCED_COLORS.matches) for (const t of Object.keys(typeColor)) typeColor[t] = INK;
   edgeKinds = [...new Set(edges.map(e => e.type))].sort();
 }
 
@@ -912,6 +943,7 @@ function trustRing(n, r) {
   ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5, 0, 7);
   if (t === "unverified") { ctx.setLineDash([3/cam.s, 3/cam.s]); ctx.lineWidth = 1.4/cam.s; ctx.strokeStyle = OTHER; }
   else if (t === "host_signed") { ctx.lineWidth = 1.2/cam.s; ctx.strokeStyle = INK; }
+  else if (FORCED_COLORS.matches) { ctx.lineWidth = 4.4/cam.s; ctx.strokeStyle = INK; }
   else { ctx.lineWidth = 2.2/cam.s; ctx.strokeStyle = EDGE_HI; }
   ctx.stroke(); ctx.setLineDash([]);
 }
@@ -3037,7 +3069,10 @@ function regionHue(id) {
   const t = ((h % 512) * 137.508) % 212;
   return t < 46 ? 109 + t : (205 + t - 46) % 360;
 }
-function regionLabelColor(id) { return "oklch(" + LABEL_L + " " + LABEL_C + " " + regionHue(id).toFixed(1) + ")"; }
+function regionLabelColor(id) {
+  if (FORCED_COLORS.matches) return INK;
+  return "oklch(" + LABEL_L + " " + LABEL_C + " " + regionHue(id).toFixed(1) + ")";
+}
 // OKLab -> sRGB in 0..255 (Ottosson's matrices), clamped into the gamut. The gamma step is a table.
 const SRGB_LUT = (() => {
   const t = new Uint8ClampedArray(4097);
@@ -3171,6 +3206,7 @@ function roundedHullPath(c, g) {
 }
 // A boundary's color: the band picked by the id's hash, so a dashed outline is never a signal's color.
 function hyperColor(id) {
+  if (FORCED_COLORS.matches) return INK;
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return TYPE_BAND[h % TYPE_BAND.length];
 }

@@ -10,10 +10,18 @@ const SETTINGS: &str = include_str!("../../../app/assets/settings.css");
 const LANDING: &str = include_str!("../../../site/style.css");
 
 /// Declared by every surface (Section 3).
-const CORE: &[&str] =
-    &["--surface", "--panel", "--line", "--ink", "--muted", "--faint", "--accent"];
-/// What text is drawn in, and what it is drawn on.
-const TEXT: &[&str] = &["--ink", "--ink2", "--muted", "--faint"];
+const CORE: &[&str] = &["--surface", "--panel", "--line", "--ink", "--muted", "--accent"];
+/// What text is drawn in, and what it is drawn on. A signal drawn as text takes its `-ink` token, and
+/// gold drawn as text is `--gold-bright` (Section 3).
+const TEXT: &[&str] = &[
+    "--ink",
+    "--ink2",
+    "--muted",
+    "--gold-bright",
+    "--ok-ink",
+    "--warn-ink",
+    "--bad-ink",
+];
 const SURFACES: &[&str] = &["--surface", "--panel", "--panel-2", "--panel-3", "--select"];
 
 /// The custom properties of a stylesheet's first `:root` block, comments removed, each value with its
@@ -129,6 +137,197 @@ fn every_text_token_meets_4_5_on_every_surface() {
     assert!(low.is_empty(), "text under 4.5:1:\n  {}", low.join("\n  "));
 }
 
+/// APCA 0.0.98G's lightness contrast, as a positive Lc for light text on a dark ground: the method
+/// Apple's guidelines name beside WCAG's ratio, and the one that sees what the ratio misses on a dark
+/// ground (Section 1's third measurement).
+fn apca(text: &str, ground: &str) -> f64 {
+    let y = |hex: &str| {
+        let hex = hex.strip_prefix('#').expect("a #rrggbb color");
+        let c = |i: usize| {
+            (f64::from(u8::from_str_radix(&hex[i..i + 2], 16).expect("hex")) / 255.0).powf(2.4)
+        };
+        0.2126729 * c(0) + 0.7151522 * c(2) + 0.0721750 * c(4)
+    };
+    let clamp = |v: f64| if v > 0.022 { v } else { v + (0.022 - v).powf(1.414) };
+    let (yt, yb) = (clamp(y(text)), clamp(y(ground)));
+    let s = if yb > yt {
+        (yb.powf(0.56) - yt.powf(0.57)) * 1.14
+    } else {
+        (yb.powf(0.65) - yt.powf(0.62)) * 1.14
+    };
+    if s.abs() < 0.1 {
+        0.0
+    } else {
+        (s.abs() - 0.027) * 100.0
+    }
+}
+
+/// The third pass's floor (U7): every text token measures APCA Lc 60 on every surface token, and
+/// `--ink2`, which carries what a person reads to act, Lc 75. WCAG's 4.5:1 held while 446 of the
+/// viewer's 496 texts were 11 or 12 pixels at Lc 59 and below.
+#[test]
+fn every_text_token_reads_on_every_surface_by_apca() {
+    assert!((apca("#e9e4d6", "#10131b") - 89.8).abs() < 0.2, "APCA is not 0.0.98G's");
+    let mut low = Vec::new();
+    let mut pairs = 0;
+    for (file, set) in &surfaces() {
+        for text in TEXT {
+            let Some(fg) = value(set, text) else { continue };
+            let floor = if *text == "--ink2" { 75.0 } else { 60.0 };
+            for ground in SURFACES {
+                let Some(bg) = value(set, ground) else {
+                    continue;
+                };
+                pairs += 1;
+                let lc = apca(fg, bg);
+                if lc < floor {
+                    low.push(format!("{file}: {text} on {ground} is Lc {lc:.1}, under {floor}"));
+                }
+            }
+        }
+    }
+    assert!(pairs >= 40, "the pairs were read ({pairs})");
+    assert!(low.is_empty(), "text under its APCA floor:\n  {}", low.join("\n  "));
+}
+
+/// A `#rrggbb` color or an `rgba(r,g,b,a)` tint laid over an opaque `#rrggbb` ground, as `#rrggbb`.
+fn over(tint: &str, ground: &str) -> String {
+    let g =
+        |i: usize| f64::from(u8::from_str_radix(&ground[1 + i * 2..3 + i * 2], 16).expect("hex"));
+    let inner = tint
+        .strip_prefix("rgba(")
+        .and_then(|t| t.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("a tint is rgba(): {tint}"));
+    let parts: Vec<f64> = inner.split(',').map(|v| v.parse().expect("a number")).collect();
+    let alpha = parts[3];
+    let mix = |i: usize| (parts[i] * alpha + g(i) * (1.0 - alpha)).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", mix(0), mix(1), mix(2))
+}
+
+/// Text on a pill's tint meets the same floor over it (Section 3, U7): the tint is its signal at 12%,
+/// laid on `--panel` and on `--panel-2`, where pills sit. `--ok-ink` read Lc 59.4 on the old 13% tint.
+#[test]
+fn text_on_a_pill_reads_over_its_tint() {
+    let pairs = [
+        ("--ok-ink", "--ok-glass"),
+        ("--warn-ink", "--warn-glass"),
+        ("--bad-ink", "--bad-glass"),
+        ("--gold-bright", "--gold-glass"),
+    ];
+    let mut low = Vec::new();
+    let mut seen = 0;
+    for (file, set) in &surfaces() {
+        for (ink, glass) in pairs {
+            let (Some(fg), Some(tint)) = (value(set, ink), value(set, glass)) else {
+                continue;
+            };
+            for ground in ["--panel", "--panel-2"] {
+                let bg = over(tint, value(set, ground).expect("a panel"));
+                seen += 1;
+                let lc = apca(fg, &bg);
+                if lc < 60.0 {
+                    low.push(format!("{file}: {ink} on {glass} over {ground} is Lc {lc:.1}"));
+                }
+            }
+        }
+    }
+    assert!(seen >= 12, "the tints were read ({seen})");
+    assert!(low.is_empty(), "pill text under Lc 60:\n  {}", low.join("\n  "));
+}
+
+/// `--faint` is retired into `--muted` (Section 3): no stylesheet declares or reads it.
+#[test]
+fn faint_is_retired() {
+    for (file, css) in
+        [("viewer.css", VIEWER), ("settings.css", SETTINGS), ("site/style.css", LANDING)]
+    {
+        assert!(!css.contains("--faint"), "{file} still names --faint");
+    }
+}
+
+/// A signal's color is a mark's; drawn as text it is its `-ink` token, and gold drawn as text is
+/// `--gold-bright` (Section 3). The color property never reads a signal or the accent itself.
+#[test]
+fn a_signal_drawn_as_text_takes_its_ink() {
+    let mut found = Vec::new();
+    for (file, css) in [
+        ("viewer.css", VIEWER),
+        ("settings.css", SETTINGS),
+        ("welcome.css", include_str!("../../../app/assets/welcome.css")),
+        ("site/style.css", LANDING),
+    ] {
+        let flat: String = css.split_whitespace().collect();
+        for token in ["--bad", "--ok", "--warn", "--accent"] {
+            let mut rest = flat.as_str();
+            let needle = format!("color:var({token})");
+            while let Some(i) = rest.find(&needle) {
+                let before = rest[..i].chars().last();
+                if !matches!(before, Some(c) if c == '-' || c.is_ascii_alphanumeric()) {
+                    found.push(format!("{file}: color:var({token})"));
+                }
+                rest = &rest[i + needle.len()..];
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "a signal drawn as text in the mark's color:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+/// The rules of a stylesheet's `@media (prefers-contrast: more)` block, whitespace dropped.
+fn more_contrast(css: &str) -> String {
+    let at = css
+        .find("@media (prefers-contrast: more) {")
+        .expect("an Increase Contrast block");
+    let body = &css[at..];
+    let mut depth = 0usize;
+    for (i, ch) in body.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return body[..i].split_whitespace().collect();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("the Increase Contrast block does not close")
+}
+
+/// U23: under Increase Contrast every text token takes the next stronger one, every control, chip and
+/// field draws an edge, and the focus ring is 3 pixels; under forced colors the map redraws in the
+/// system's colors and widens the human-confirmed ring.
+#[test]
+fn increase_contrast_and_forced_colors_are_heard() {
+    for (file, css) in
+        [("viewer.css", VIEWER), ("settings.css", SETTINGS), ("site/style.css", LANDING)]
+    {
+        let set = tokens(css);
+        let block = more_contrast(css);
+        let ink = value(&set, "--ink").expect("--ink");
+        let ink2 = value(&set, "--ink2").expect("--ink2");
+        assert!(block.contains(&format!("--ink2:{ink}")), "{file}: --ink2 does not take --ink");
+        assert!(
+            block.contains(&format!("--muted:{ink2}")),
+            "{file}: --muted does not take --ink2"
+        );
+        assert!(block.contains("outline-width:3px"), "{file}: the focus ring stays 2 pixels");
+        assert!(block.contains("box-shadow:inset0001px"), "{file}: controls draw no edge");
+    }
+    let script = include_str!("../assets/viewer.js");
+    assert!(
+        script.contains("matchMedia(\"(forced-colors: active)\")"),
+        "the map does not hear forced colors"
+    );
+    for system in ["CanvasText", "Canvas", "Highlight"] {
+        assert!(script.contains(&format!("\"{system}\"")), "the map does not draw in {system}");
+    }
+}
+
 /// Custom properties a stylesheet reads that its page's markup or script sets, each with its setter.
 /// None today: the three pages set no custom property of their own.
 const SET_ELSEWHERE: &[(&str, &str, &str)] = &[];
@@ -237,9 +436,20 @@ const VIEWER_LINES: &[(&str, &str)] = &[
     ),
     ("#loader .spin", "a control's own glyph: the loader's spinner"),
     ("#mapwin", "paints the frame around the map's window: a surface, not a line"),
+    (
+        ":where(button, input, select, textarea, summary)",
+        "under Increase Contrast, the edge of a control, a chip and a field (Section 10)",
+    ),
 ];
-const SETTINGS_LINES: &[(&str, &str)] = &[];
+const SETTINGS_LINES: &[(&str, &str)] = &[(
+    ":where(button, input, select, textarea, summary, .switch .track)",
+    "under Increase Contrast, the edge of a control, a chip and a field (Section 10)",
+)];
 const LANDING_LINES: &[(&str, &str)] = &[
+    (
+        ":where(button, input, select, textarea, summary)",
+        "under Increase Contrast, the edge of a control (Section 10)",
+    ),
     (
         ".cell.o",
         "an owed clause on the principles ledger, an empty cell outlined in --muted",

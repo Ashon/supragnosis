@@ -17,8 +17,8 @@ body { background: var(--panel); }
   width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; grid-row: span 3;
   background: var(--panel-3); color: var(--ink2); font: 600 12px/1 var(--mono);
 }
-.step .num.done { background: var(--ok-glass); color: var(--ok); }
-.step .num.attention, .step .num.failed { background: var(--warn-glass); color: var(--warn); }
+.step .num.done { background: var(--ok-glass); color: var(--ok-ink); }
+.step .num.attention, .step .num.failed { background: var(--warn-glass); color: var(--warn-ink); }
 .step .num .i { width: 14px; height: 14px; }
 .step .shead { display: flex; align-items: center; gap: 9px; min-height: 28px; flex-wrap: wrap; }
 .step .shead h3 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; }
@@ -57,7 +57,7 @@ body { background: var(--panel); }
    each run ended - text a person can select and copy. */
 .drawer-toggle {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; padding: 2px 4px 2px 0; min-height: 24px; border: 0;
-  background: none; color: var(--faint); font: 500 12px/1.4 var(--sans); cursor: pointer;
+  background: none; color: var(--muted); font: 500 12px/1.4 var(--sans); cursor: pointer;
 }
 .drawer-toggle:hover { color: var(--ink2); }
 .drawer-toggle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; border-radius: 4px; }
@@ -68,12 +68,12 @@ body { background: var(--panel); }
   font: 12px/1.6 var(--mono); color: var(--ink2); -webkit-user-select: text; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .drawer .l-cmd { color: var(--gold-bright); }
-.drawer .l-cmd::before { content: "$ "; color: var(--faint); }
+.drawer .l-cmd::before { content: "$ "; color: var(--muted); }
 .drawer .l-out { color: var(--ink2); }
-.drawer .l-err { color: var(--bad); }
+.drawer .l-err { color: var(--bad-ink); }
 .drawer .l-event { color: var(--muted); }
-.drawer .l-exit { color: var(--faint); }
-.drawer .l-none { color: var(--faint); font-family: var(--sans); }
+.drawer .l-exit { color: var(--muted); }
+.drawer .l-none { color: var(--muted); font-family: var(--sans); }
 
 /* The foot: the privacy line, and the page's own acts. */
 .wfoot {

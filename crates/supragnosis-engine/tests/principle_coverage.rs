@@ -599,10 +599,14 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["every_token_a_stylesheet_reads_is_declared"]),
     ), c(
         "every text token meets APCA Lc 60 on every surface token and the body token Lc 75, a signal drawn as text takes its -ink token and gold --gold-bright, and text on a pill's tint meets the same floor over it",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 3 and 14 step 18, not built. Revisit when the \
-             three stylesheets declare --ink2 #cad2de and no --faint, and U7's test measures APCA",
-        ),
+        // crates/supragnosis-viz/tests/design_tokens.rs: APCA 0.0.98G over the three :root blocks,
+        // every color property of the four stylesheets, and each pill's tint laid on the panels.
+        Evidence::Scenario(&[
+            "every_text_token_reads_on_every_surface_by_apca",
+            "a_signal_drawn_as_text_takes_its_ink",
+            "text_on_a_pill_reads_over_its_tint",
+            "faint_is_retired",
+        ]),
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
@@ -738,10 +742,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (23, &[c(
         "under Increase Contrast every text token takes the next stronger one, controls draw a 3:1 edge and the focus ring is 3 pixels; under forced colors the map redraws in system colors and keeps every mark",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 10 and 14 step 18, not built. Revisit when the \
-             three stylesheets answer prefers-contrast: more and the map redraws under forced colors",
-        ),
+        // crates/supragnosis-viz/tests/design_tokens.rs: each stylesheet's Increase Contrast block
+        // and the map's forced-colors palette.
+        Evidence::Scenario(&["increase_contrast_and_forced_colors_are_heard"]),
     )]),
     (24, &[c(
         "the map's window offers List, a table of the entities the map draws in its scope, filters and search, sorted by type and name, each row naming type, trust, relations and workspace and selecting its node, and the canvas's name says what it draws and that List holds it",

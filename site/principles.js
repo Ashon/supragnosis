@@ -24,8 +24,8 @@ const C = {
   panel3: "#1d222d",   // --panel-3, a chip
   select: "#2a2826",   // --select, a chip that is chosen
   ink: "#e9e4d6",      // --ink
-  ink2: "#aab1bd",     // --ink2
-  muted: "#8e96a5",    // --muted
+  ink2: "#cad2de",     // --ink2
+  muted: "#b0b8c7",    // --muted
   gold: "#d9a544",     // --accent, a proposal waiting for a verdict
   goldHi: "#f0c469",   // --gold-bright, a person's confirmation
   teal: "#56b3a2",     // --ok, an agent at work
