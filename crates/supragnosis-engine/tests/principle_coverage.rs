@@ -598,10 +598,10 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // crates/supragnosis-viz/tests/design_tokens.rs: every var() of the three stylesheets.
         Evidence::Scenario(&["every_token_a_stylesheet_reads_is_declared"]),
     ), c(
-        "every text token meets APCA Lc 60 on every surface token, and the body token Lc 75",
+        "every text token meets APCA Lc 60 on every surface token and the body token Lc 75, a signal drawn as text takes its -ink token and gold --gold-bright, and text on a pill's tint meets the same floor over it",
         Evidence::Deferred(
-            "designed in design-system.md Sections 3 and 14 step 18, not built. Revisit when step \
-             18 raises the text tokens and U7's test measures APCA",
+            "designed in design-system.md Sections 3 and 14 step 18, not built. Revisit when the \
+             three stylesheets declare --ink2 #cad2de and no --faint, and U7's test measures APCA",
         ),
     )]),
     (8, &[c(
@@ -611,7 +611,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up"]),
     )]),
     (9, &[c(
-        "the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact: keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, or a control's own glyph",
+        "the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact: keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, a control's own glyph, or under Increase Contrast a control's edge",
         // crates/supragnosis-viz/tests/design_tokens.rs: the three stylesheets' rules, and the borders
         // the viewer's script sets.
         Evidence::Scenario(&["no_border_draws_an_area"]),
@@ -706,7 +706,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // crates/supragnosis-viz/tests/controls.rs and app/src/main.rs: the helpers and their callers.
         Evidence::Scenario(&["the_viewers_controls_say_what_they_are", "the_app_pages_dialogs_hold_focus"]),
     ), c(
-        "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 28 pixels on the tools and 44 on a phone, 24 and 28 on the site; nothing but a focusable code block scrolls sideways at 320 pixels",
+        "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 28 pixels on the tools and 44 under a coarse pointer, 24 and 28 on the site; nothing but a focusable code block scrolls sideways at 320 pixels",
         Evidence::Deferred(
             "designed in design-system.md Sections 4, 10 and 14 steps 12-19, not built. Revisit when \
              step 19 sets the targets and browser scenarios press every control at 1440 and 390 pixels",
@@ -722,38 +722,39 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (21, &[c(
-        "every font size the viewer and the app's pages draw is one of six steps through a rem token, running text and control labels at 13 or more and nothing under 11, the map's labels scaling with the root, the app's window zooming with its scale kept, and no text cut short but where focus or a press shows it whole",
+        "every font size the viewer and the app's pages draw is one of six steps through a rem token, running text and control labels at 13 or more and nothing under 11, the map's labels scaling with the root, the app's menu setting the root's size and keeping it, and no text cut short but where focus or a press shows it whole",
         Evidence::Deferred(
             "designed in design-system.md Sections 4, 10 and 14 step 18, not built. Revisit when \
-             step 18 lands with its guard",
+             the viewer's and the app pages' stylesheets set no font size in pixels and View has \
+             Make Text Bigger",
         ),
     )]),
     (22, &[c(
         "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, and checkboxes, radios and switches take the accent",
         Evidence::Deferred(
             "designed in design-system.md Sections 3, 4 and 14 step 19, not built. Revisit when \
-             step 19 lands with its guard",
+             the stylesheets draw corners only from the radius tokens",
         ),
     )]),
     (23, &[c(
         "under Increase Contrast every text token takes the next stronger one, controls draw a 3:1 edge and the focus ring is 3 pixels; under forced colors the map redraws in system colors and keeps every mark",
         Evidence::Deferred(
-            "designed in design-system.md Sections 10 and 14 step 18, not built. Revisit when step \
-             18 lands with its guard",
+            "designed in design-system.md Sections 10 and 14 step 18, not built. Revisit when the \
+             three stylesheets answer prefers-contrast: more and the map redraws under forced colors",
         ),
     )]),
     (24, &[c(
-        "the map's window offers List, a table of the entities the map draws in its scope, filters and search, each row naming type, trust and relations and selecting its node, and the canvas's name says what it draws and that List holds it",
+        "the map's window offers List, a table of the entities the map draws in its scope, filters and search, sorted by type and name, each row naming type, trust, relations and workspace and selecting its node, and the canvas's name says what it draws and that List holds it",
         Evidence::Deferred(
-            "designed in design-system.md Sections 6 and 14 step 21, not built. Revisit when step \
-             21 lands with its guard",
+            "designed in design-system.md Sections 6 and 14 step 21, not built. Revisit when the \
+             camera toolbar's first button is List",
         ),
     )]),
     (25, &[c(
-        "a tooltip holds a name and its key and nothing a person needs to act, at most five words before its key, and what a control does is said on the screen",
+        "a tooltip holds a name and its key and nothing a person needs to act, written through one helper at most five words before its key, and what a control does is said on the screen",
         Evidence::Deferred(
-            "designed in design-system.md Sections 4 and 14 step 20, not built. Revisit when step \
-             20 lands with its guard",
+            "designed in design-system.md Sections 4 and 14 step 20, not built. Revisit when every \
+             tooltip of the viewer and the app's pages is written through one helper",
         ),
     )]),
 ];
