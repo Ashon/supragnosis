@@ -597,6 +597,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         "each of the three stylesheets declares every custom property it reads, in any of its rules",
         // crates/supragnosis-viz/tests/design_tokens.rs: every var() of the three stylesheets.
         Evidence::Scenario(&["every_token_a_stylesheet_reads_is_declared"]),
+    ), c(
+        "every text token meets APCA Lc 60 on every surface token, and the body token Lc 75",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 3 and 14 step 18, not built. Revisit when step \
+             18 raises the text tokens and U7's test measures APCA",
+        ),
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
@@ -700,10 +706,10 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // crates/supragnosis-viz/tests/controls.rs and app/src/main.rs: the helpers and their callers.
         Evidence::Scenario(&["the_viewers_controls_say_what_they_are", "the_app_pages_dialogs_hold_focus"]),
     ), c(
-        "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 24 pixels, 28 on a phone; nothing but a focusable code block scrolls sideways at 320 pixels",
+        "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 28 pixels on the tools and 44 on a phone, 24 and 28 on the site; nothing but a focusable code block scrolls sideways at 320 pixels",
         Evidence::Deferred(
-            "designed in design-system.md Sections 4, 10 and 14 steps 12-16, not built. Revisit when \
-             the control helpers and their guards are in the viewer and the app's shared script",
+            "designed in design-system.md Sections 4, 10 and 14 steps 12-19, not built. Revisit when \
+             step 19 sets the targets and browser scenarios press every control at 1440 and 390 pixels",
         ),
     )]),
     (20, &[c(
@@ -714,6 +720,41 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "follow_frames_what_is_in_scope_and_notes_the_rest",
             "the_first_view_opens_where_the_knowledge_is",
         ]),
+    )]),
+    (21, &[c(
+        "every font size the viewer and the app's pages draw is one of six steps through a rem token, running text and control labels at 13 or more and nothing under 11, the map's labels scaling with the root, the app's window zooming with its scale kept, and no text cut short but where focus or a press shows it whole",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 4, 10 and 14 step 18, not built. Revisit when \
+             step 18 lands with its guard",
+        ),
+    )]),
+    (22, &[c(
+        "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, and checkboxes, radios and switches take the accent",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 3, 4 and 14 step 19, not built. Revisit when \
+             step 19 lands with its guard",
+        ),
+    )]),
+    (23, &[c(
+        "under Increase Contrast every text token takes the next stronger one, controls draw a 3:1 edge and the focus ring is 3 pixels; under forced colors the map redraws in system colors and keeps every mark",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 10 and 14 step 18, not built. Revisit when step \
+             18 lands with its guard",
+        ),
+    )]),
+    (24, &[c(
+        "the map's window offers List, a table of the entities the map draws in its scope, filters and search, each row naming type, trust and relations and selecting its node, and the canvas's name says what it draws and that List holds it",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 6 and 14 step 21, not built. Revisit when step \
+             21 lands with its guard",
+        ),
+    )]),
+    (25, &[c(
+        "a tooltip holds a name and its key and nothing a person needs to act, at most five words before its key, and what a control does is said on the screen",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 4 and 14 step 20, not built. Revisit when step \
+             20 lands with its guard",
+        ),
     )]),
 ];
 

@@ -13,7 +13,8 @@
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
-> waits on browser scenarios.
+> waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U25),
+> is designed - steps 17-22 - and not built.
 
 ## 1. Why this exists
 
@@ -144,6 +145,49 @@ They found 53 problems, and these are the ones that ask for a rule:
 Seventeen of the 53 were defects that ask no design question; Section 14 step 13 fixes them as they
 are. The rest change what the sections below say.
 
+**Measured again for reading and pressing**, on 2026-10-19 after step 16: 31 states of the viewer,
+the Settings and Setup pages, the landing and the principles page, at 1440, 390 and 320 pixels (the
+app's pages at 1280 and 720), with a script in each page that recorded every visible text's size,
+face and contrast, every control's size, every corner, and the preferences the stylesheets answer.
+Contrast was measured by WCAG 2's ratio and by APCA 0.0.98G, the method Apple's guidelines name
+beside it, and the tools were held to Apple's Human Interface Guidelines for macOS 27 and to the
+control metrics AppKit reports on macOS 27.0.1.
+
+- **WCAG held; reading did not.** Five texts missed 4.5:1: the Trust legend's three entries when off
+  (2.26:1) and the Review page's J and K key caps (3.68:1). But 446 of the viewer's 496 texts were 11
+  or 12 pixels, drawn mostly in `--ink2` (APCA Lc 59 on `--panel`), `--muted` (45) and `--faint`
+  (41). APCA asks body text for Lc 75 and keeps Lc 45 for text no one has to read. Apple's dark
+  appearance asks for 7:1, especially for small text, and a Mac sets its body text at 13 points in its
+  primary label color, Lc 84 on its window. `--muted` and `--faint` measured 1.1:1 against each other:
+  two tokens, one tier on the screen.
+- **Text could not grow.** The viewer's stylesheet set 121 font sizes, the Settings page 24 and Setup
+  33, all in pixels, so a browser's text size changed nothing, and the app's window had no zoom; in
+  the app the only way to larger text was the system's magnifier (WCAG 1.4.4). With WCAG 1.4.12's
+  spacing applied, the Log's two-line clamp hid the end of eight observations, whose full text was only
+  in the inspector.
+- **Targets were small.** Eight of the viewer's controls missed even U19's 24 pixels: the gear (18 by
+  18), the review pill (19 tall), Definitions (16), the inspector's close (22), "Neither is right"
+  (18), Ledger (21), the Review page's Graph link (18) and an entity chip (22). At 390 pixels the
+  Review page's tabs were 26 tall and Accept, Reject and Skip 25, under U19's 28, and no control but
+  the Log's rows reached the 44 that iOS asks of a finger. A Mac's default target is 28 by 28.
+- **The system's settings were not heard.** The stylesheets answered reduced motion and nothing else:
+  not Increase Contrast, which WebKit reports as `prefers-contrast: more`, and not forced colors.
+- **No shape system.** Section 3 named four corner radii; the viewer drew ten - 2, 3, 4, 5, 6, 8, 9,
+  12 and 16 pixels and full round - the app's pages six and the site eleven, each a number written
+  where it was used. Setup drew its apps' checkboxes in the system's blue and its other checkboxes in
+  gold.
+- **Explained only to a mouse.** The viewer wrote 58 tooltips and the app's pages 21, and many held
+  the only explanation of what a control does - "every context region, faint, and the active node's
+  at full strength" - which a keyboard and a finger never see. The map is a canvas a screen reader
+  cannot walk, and on it a node's type is told by color alone, one of sixteen.
+- **The site set its labels in mono.** 61% of the site's texts were IBM Plex Mono, which Section 4
+  keeps for what is typed or copied, and the principles ledger's labels were 10 pixels.
+
+The two missed contrasts, the short targets and five more ask no design question - Setup's two
+kinds of checkbox, the search field named only by its placeholder, the status line cut short at 390
+pixels, a privacy line 103 characters long, and the app's starting splash in the old tokens and the
+mono face - and Section 14 step 17 fixes them. The rest change Sections 3, 4, 6, 10 and 11.
+
 ## 2. What this is NOT
 
 **It is not a change to what the server decides.** No fold, check, tier or verdict changes. One read
@@ -179,18 +223,17 @@ One vocabulary, the one the viewer and the settings page already share, with one
 | `--panel-3` | `#1d222d` | hover, and wells on a control |
 | `--select` | `#2a2826` | a selected item: the accent at 10% over `--panel-2`, opaque so its text is measured |
 | `--line` / `--line-soft` | `#222836` / `#1a1f2b` | the few lines Section 4 keeps; never text, never an area's edge |
-| `--ink` | `#e9e4d6` | primary text |
-| `--ink2` | `#aab1bd` | body text |
-| `--muted` | `#8e96a5` | secondary text |
-| `--faint` | `#868f9f` | meta text, placeholders |
-| `--accent` / `--gold-bright` | `#d9a544` / `#f0c469` | the accent, and human-confirmed |
-| `--ok` | `#56b3a2` | success, connected, healthy |
-| `--warn` | `#e0a24a` | needs attention |
-| `--bad` | `#e07a5f` | error, blocked, contested |
+| `--ink` | `#e9e4d6` | primary text: names, values, headings |
+| `--ink2` | `#cad2de` | body text: what a person reads to act, a row's text, a panel's heading |
+| `--muted` | `#b0b8c7` | secondary text: counts, times, hints, placeholders |
+| `--accent` / `--gold-bright` | `#d9a544` / `#f0c469` | the accent, and human-confirmed; gold drawn as text is `--gold-bright` |
+| `--ok` / `--ok-ink` | `#56b3a2` / `#73c6b5` | success, connected, healthy; the second when it is text |
+| `--warn` / `--warn-ink` | `#e0a24a` / `#e8ac59` | needs attention; the second when it is text |
+| `--bad` / `--bad-ink` | `#e07a5f` / `#fb9f87` | error, blocked, contested; the second when it is text |
 
 The landing renames to match (`--ink-0` to `--surface`, `--text` to `--ink`, `--gold` to `--accent`),
 the viewer's `--teal` becomes `--ok`, and its literal `#d96a5f` becomes `--bad`. A surface declares
-the tokens it uses; the core - `--surface`, `--panel`, `--line`, `--ink`, `--muted`, `--faint`,
+the tokens it uses; the core - `--surface`, `--panel`, `--line`, `--ink`, `--muted` and
 `--accent` - is declared by all three. Every text token measures at least 4.5:1 on every surface
 token. `--faint` moves once more for that, from step 0's `#7b8494` (4.46:1 on `--panel-3`) to
 `#7f8898`, whose lowest pair is 4.71:1. Step 7 raises `--panel-2` and `--panel-3` so that a step of
@@ -199,8 +242,23 @@ lowest pair, on `--select`, is 4.51:1. `--panel` stays: darker, its edge against
 vanish. Because U7's test holds the shared values equal, step 7 changes them in all three
 stylesheets at once, and step 8 changes how the other two draw.
 
-Space runs on a 4px step (4, 8, 12, 16, 24, 32, 48). Corners are 8px for chips, controls and rows,
-12 for a surface that floats, 16 for the map's window (Section 6) and fully round for pills. Layers
+The third pass retires `--faint` into `--muted` and raises `--ink2` and `--muted` (Section 1):
+`--faint` and `--muted` were one tier on the screen, and APCA put both below text anyone has to read.
+Every text token now also measures APCA Lc 60 or more on every surface token, and `--ink2`, which
+carries what a person reads to act, Lc 75: the lowest pair of `--muted` measures Lc 60.2 and 7.36:1,
+of `--ink2` Lc 75.3 and 9.64:1. A signal's color is a mark's; drawn as text it takes its `-ink`
+token, measured the same way, and gold drawn as text is `--gold-bright`. A tier is not made by
+dimming: what matters less is set smaller, lighter in weight or further down, in a color that still
+reads (Section 4).
+
+Space runs on a 4px step (4, 8, 12, 16, 24, 32, 48). Corners are six tokens (U22): `--r-window` 16
+for the map's window (Section 6) and the app pages' content pane, `--r-surface` 12 for a surface
+that floats or groups - a popover, a sheet, a card, a list's group - `--r-control` 8 for a control, a
+chip and a row, `--r-inset` 4 for a key cap or a tag inside a row, `--r-mark` 2 for a mark of data -
+a legend swatch, a ledger block - and `--r-capsule`, half the height, for a pill and a large control
+(Section 4). A part inside a rounded part takes the outer radius less the space between their edges,
+on the token nearest: a row inset 4 pixels in a 12-pixel card takes 8, and a row flush with its
+group's edge takes the group's 12 on its outer corners and none inside. A dot is a circle. Layers
 are named, lowest first: canvas, HUD, dock, sheet, popover, dialog, notice. Motion uses three durations (120, 200 and 320ms) and one ease-out curve.
 
 **Each surface keeps its own copy, and a test holds them together** (U7). The viewer's three files
@@ -229,12 +287,24 @@ surface token, `--select` among them.
   name there falls back to the system's Korean face. Nothing is fetched from another host, and a face
   that does not load falls back to the system stack the token names after it. The files are the ones
   their authors publish, unmodified, with their licenses beside them.
-- **Six sizes** in the viewer and on the Settings page: 24 (page title), 18 (sheet title), 15
-  (section), 13 (body), 12 (secondary) and 11 (labels). Nothing is drawn below 11px, and nothing
-  between the steps. The landing, a page read at length rather than a tool, has six sizes of its own
-  (Section 11). A heading on a panel is 12px sans, semibold, in `--muted` and in sentence case, and
-  nothing in the viewer or on the Settings page is set in uppercase. The landing keeps its uppercase
-  eyebrows in IBM Plex Mono: a page about the product, set in the product's type, not a tool.
+- **Six sizes** in the viewer and on the Settings and Setup pages, each a token in rem so that a
+  person's own text size scales them (U21): `--fs-page` 24 (a page's title), `--fs-sheet` 18 (a
+  sheet's title), `--fs-section` 15 (a section), `--fs-body` 13, `--fs-small` 12 and `--fs-caption`
+  11. They follow a Mac's text styles where a Mac has one - Body and Headline 13, Callout 12,
+  Subheadline 11, Title 3 15 - and each is given by role, not by the room left:
+  - 13 for what a person reads to act or to choose: running text, an observation's text, a row's
+    first line, the inspector's rows, a notice, and the label of every control - a button, a field, a
+    segment, a chip, a menu item, a legend entry - as a Mac sets its regular controls' labels at 13;
+  - 12 for a row's second line, a description under a heading or an option, a hint, and a panel's
+    heading, which is semibold, in `--ink2` and in sentence case;
+  - 11 only for a count, a time, a key cap and the caption beside a value.
+
+  Nothing is drawn below 11, nothing between the steps, and no size is written in pixels outside the
+  tokens. The map's labels are drawn on a canvas, which rem does not reach, so they scale with the
+  root's size as the page's text does. The landing, a page read at length rather than a tool, has six
+  sizes of its own (Section 11). Nothing in the viewer or on the Settings and Setup pages is set in
+  uppercase. The landing keeps its uppercase eyebrows in IBM Plex Mono: a page about the product, set
+  in the product's type, not a tool.
 - **Three weights.** 400 for reading, 500 for small labels and emphasis, 600 for headings. Nothing in
   the tools is set at 700 or heavier, or lighter than 400: light text on a dark ground spreads and
   reads heavier than it is, and a hairline at 11px breaks up.
@@ -266,9 +336,20 @@ surface token, `--select` among them.
   - the dashed box around a contested value, in `--bad`, the contested color;
   - on the principles page's ledger, an owed clause's `--muted` outline and the chosen column's
     `--gold-bright` one (Section 11a);
-  - a control's own glyph: a radio's circle, a switch's track, the loader's spinner.
+  - a control's own glyph: a radio's circle, a switch's track, the loader's spinner;
+  - under Increase Contrast, the edge of a control, a chip and a field (Section 10).
 
   On the canvas the rings, edges and boundaries are the data and stay.
+- **Controls are a Mac's sizes** (U22). A control draws 24 pixels tall, a Mac's regular size, and
+  the act a page or a decision is for draws 28, the large size, as a capsule; the controls of one row
+  share one size, so a row whose act is large draws its other buttons large too. A pill is a capsule
+  at any size, and every other control takes `--r-control`. A checkbox, a radio and a switch take the
+  accent (`accent-color`), so the system's blue never sits beside a gold one. Every target reaches
+  U19's size with its spacing (Section 10).
+- **A tooltip names; it does not explain** (U25). It shows only to a pointer that rests, so it holds
+  a control's name and its key - "Zoom in", "Filters panel ([)" - and nothing a person needs to act.
+  What a control does is said on the screen: each of View's options carries a line under its name,
+  the search mode says what it searched, and what a mark means is in the legend.
 - **Each control is the kind its act is** (U19). A switch applies at once and says on or off, as
   `role="switch"` with `aria-checked`: Start at Login, View's labels and edges. A checkbox is a choice
   that a button confirms: the Setup page's plan, with the whole row as its label. One choice among a
@@ -429,7 +510,15 @@ On the Graph page:
   with the graph. With nothing observed it says "Nothing observed in this scope yet"; when the server
   does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
   activity feed's passing rows sit inside the window at its upper left.
-- **The camera is one toolbar** at the window's lower right: view, zoom in, zoom out, fit. Under 760
+- **The map has a List** (U24). List, the first button of the camera toolbar, turns the map's
+  window into a table of the entities the map draws - the same scope, the same filters, the same
+  search - grouped by region, each row naming the entity, its type, its trust by the legend's name and
+  its count of relations. A row is a button that selects its node as a click on the map does, and
+  opens the sheet; List again, or Esc in the table, gives the map back with that node selected. The
+  canvas's name says what it draws and where else it is: "Map of 20 entities and 14 relations in 10
+  regions. List shows them as a table." The table is the map for a screen reader and for anyone who
+  cannot tell sixteen colors apart: it names each type in words.
+- **The camera is one toolbar** at the window's lower right: List, view, zoom in, zoom out, fit. Under 760
   pixels it stays at the top right, out of the sheets' way (Section 18). The minimap is on, above the
   toolbar, until View turns it off; between 760 and 1200 pixels it gives way to a panel floating over
   the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
@@ -438,7 +527,7 @@ On the Graph page:
 - **The status bar is the window's state, said once.** On the left, the scope and its counts in
   words: "All workspaces - 20 entities, 14 relations, 10 regions". Counts per type are the legend
   entries' to show, not the bar's. On the right: the way to Review, the sync pill, the search mode,
-  then the gear. A pill is tinted, not outlined. How fresh the map is goes unsaid while it is fresh;
+  then the gear, each a target of U19's size. A pill is tinted, not outlined. How fresh the map is goes unsaid while it is fresh;
   once a poll fails, the bar says "Not updated since 8:54 - the server is not answering", and the
   time does not tick at every poll.
 - **Review is always in the status bar** on the local console (U20). It reads "Review" when nothing
@@ -712,7 +801,20 @@ a state keeps one word on every page that shows it.
 - Text drawn at full strength on a token surface meets 4.5:1 (U7). One thing is outside the pairs on
   purpose: labels the map dims to put the focus forward. Until step 7 the panels were translucent
   glass whose ground was whatever the canvas showed through; they are opaque `--panel` from step 7,
-  so their text is inside the pairs.
+  so their text is inside the pairs. It also meets APCA's Lc 60, and body text Lc 75 (Section 3).
+- **Increase Contrast and forced colors** (U23). Under `prefers-contrast: more`, which a Mac's
+  Increase Contrast sets, each text token takes the next stronger one - `--muted` reads as `--ink2`,
+  `--ink2` as `--ink` - every control, chip and field draws a 1-pixel edge that measures 3:1 on its
+  surface, and the focus ring is 3 pixels. Under `forced-colors: active` the page takes the system's
+  colors and the map redraws in them - `CanvasText` for names, edges and rings, `Canvas` for the
+  ground, `Highlight` for the selection - and keeps every mark it draws. The human-confirmed ring,
+  told from the host-signed one by its gold alone, is drawn twice as wide there.
+- **Text can grow** (U21). Every size is a rem token (Section 4), so a browser's text size scales the
+  page, and the app's View menu has Actual Size, Zoom In and Zoom Out (Cmd 0, Cmd + and Cmd -), which
+  scale the whole page and are kept for the next launch. At 200% nothing is lost: panels wrap their
+  rows and the map's window narrows (WCAG 1.4.4). With WCAG 1.4.12's spacing applied nothing is
+  clipped: text that is cut short - the Log's two lines, a long name in a chip - shows whole on the
+  row's focus or on a press, never only in a tooltip.
 
 The second pass holds every surface - the viewer, the Settings and Setup pages, the landing and the
 principles page - to one floor (U19):
@@ -725,8 +827,10 @@ principles page - to one floor (U19):
   it, the page behind it is inert, and closing it gives focus back to what opened it. A form that is
   refused marks the refused field `aria-invalid`, says why beside the field, and moves focus to the
   first such field (WCAG 3.3.1).
-- **A press lands.** A control a pointer presses is at least 24 by 24 pixels with its spacing (WCAG
-  2.5.8), and 28 below 760 pixels wide, where a finger presses it.
+- **A press lands.** On the viewer and the Settings and Setup pages a target a pointer presses is at
+  least 28 by 28 pixels, a Mac's default, or its 28-pixel circle overlaps no other target's; below 760
+  pixels wide, where a finger presses it, 44, as iOS asks. The landing and the principles page, read
+  in any browser, keep WCAG 2.5.8's 24, and 28 below 760.
 - **A single key can be turned off.** The view's single keys - /, b, [ and ] - act from anywhere
   outside a text field, and View has a switch that turns them off (WCAG 2.1.4). The
   keys that decide act only within their list or item (Section 7).
@@ -852,8 +956,12 @@ cannot draw - no script, a script that did not load, or one that failed - and th
 while the steps scroll past it. Below 900 each step carries its own 4:5 frame above its words, which
 plays when the frame comes into view, and the stage's column is not drawn.
 
-**Type and surface.** Headings in Fraunces, reading in Pretendard (step 10; the system sans until
-then), commands, identifiers and labels in IBM Plex Mono: Newsreader goes. The landing's own six sizes, which Section 4's scale for the
+**Type and surface.** Headings in Fraunces, reading and labels in Pretendard (step 10; the system
+sans until then), commands, identifiers and the uppercase eyebrows in IBM Plex Mono: Newsreader goes.
+The navigation, captions, counts, chips and a row's who-line are labels, not identifiers; set in mono
+they made 61% of the site's text a face kept for what is typed or copied (Section 1, step 22).
+Nothing on the site is drawn below its label size, and running text runs at a line height of 1.5 or
+more. The landing's own six sizes, which Section 4's scale for the
 tools does not bind, are three for headings (up to 72, 38 and 24 pixels, smaller on a phone), 18 for
 reading, 15 for secondary text and 13 for labels; the subhead takes the third heading size. Sixteen
 sizes become those six. The grain, the two glows, the constellation, the hero's entrance, the scroll
@@ -903,6 +1011,8 @@ the status section's note. The footer's Principles link moves from the document 
 
 **The ledger** draws a column for each principle and a block for each of its clauses, stacked from
 the bottom: tested by name, holding by construction, owed with today's behavior pinned, and owed.
+A column's label is the principle's number at the label size, with tabular figures, and the chapters
+over the columns are labels too.
 Under it is the count of each state. It shows no ratio and no score: the registry deliberately
 asserts none (principles.md Appendix B.1), and a ratio on the page would be read instead of the clauses.
 Pressing a column shows that principle's clauses, each with its state, beside the ledger. The
@@ -1068,6 +1178,34 @@ social image.
   as one press away.
 - **Setup, not Welcome.** "Welcome" fits the first visit, and the page is reached three times more
   after it, from the tray and from About. "Setup" says what the page is for on every visit.
+- **Three text tiers, not four.** `--muted` and `--faint` measured 1.1:1 against each other, so the
+  screen had three tiers whatever the tokens said, and both sat below what APCA allows for text anyone
+  reads. Less important text is set smaller, lighter or later, in a color that still reads; dimming
+  it asked the person to work harder at text that was put there to be read.
+- **A Mac's body size.** A Mac sets body text and its regular controls' labels at 13 points. At 11
+  and 12 pixels in dimmed colors the viewer read as a dense dashboard rather than a Mac app; 13 costs
+  the left panel some width, and its rows wrap.
+- **Corners from tokens, concentric.** Radii written where they were used drifted from the four this
+  document named to ten. Six tokens and one rule - the inner radius is the outer less the space
+  between - is the shape a Mac's own parts take, and a test can hold a stylesheet to it.
+- **No glass.** Liquid Glass is the system's material for its own controls, and it changes with
+  Reduce Transparency, Increase Contrast and Reduce Motion. A glass drawn in CSS changes with none of
+  them, and WebKit does not report Reduce Transparency to a page. The frame stays opaque, as step 7
+  made it, which is also where macOS 27 took its sidebars.
+- **No SF Symbols and no SF Pro.** Apple licenses the symbols for apps on its platforms and the font
+  for mock-ups; neither may ship in a page a browser opens. Lucide and Pretendard stay.
+- **Gold stays gold.** A Mac lets the person's accent color replace an app's. Here gold says human
+  confirmed, selected and focused (Section 4), so following the person's accent would change what the
+  map says.
+- **The status bar keeps Review and the gear.** Apple's guidelines keep controls and important
+  information away from a window's bottom. The title bar holds no navigation (Section 6), Review's
+  count is where the person already looks, and the menu bar reaches both - Cmd+2 and Cmd+, - so they
+  stay, each a full target.
+- **A table beside the map, not a description of it.** A long description says what the map showed
+  when it was written; a table of the same entities stays true as the map changes, and names each type
+  in words, which sixteen colors cannot.
+- **A tooltip names.** It shows only to a pointer that rests, so what it alone says is said to no one
+  on a keyboard or a phone.
 - **Checkboxes in the plan, switches in Settings.** A switch applies at once, which is what Settings
   does. The plan is applied by its button, and a switch there promised an act that had not happened
   yet.
@@ -1082,9 +1220,9 @@ social image.
 | **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision. Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
 | **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
 | **U6** | The viewer's search answers with the engine's ranking, each group of Section 8 in that order, and its mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
-| **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 on every surface token. |
+| **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 and APCA Lc 60 on every surface token, and `--ink2` Lc 75. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
-| **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, an owed clause or the chosen column on the principles ledger, or a control's own glyph. |
+| **U9** | Areas are told apart by surface: the viewer, the Settings page and the landing draw no border, outline or ring-shaped shadow except where the line carries a fact - keyboard focus, a legend swatch of a line the map draws, a superseded relation, a contested value, an owed clause or the chosen column on the principles ledger, a control's own glyph, or under Increase Contrast a control's edge. |
 | **U10** | The landing's stage draws the viewer's marks with the viewer's meanings: an entity's fill is its type's color by the viewer's own functions, a ring is human confirmed at the viewer's width, the coral badge is contested, a relation is the viewer's neutral line, and every other color it draws is a landing token. The second machine draws every ring and badge the first draws, since it replays the same log. Each scene ends within five seconds and then draws nothing until it is asked again; under reduced motion each scene is its resting frame; the canvas is hidden from assistive technology and each step says its scene in its own words (P2, P6, P18). |
 | **U11** | Every face a surface names first in its reading or identifier stack ships with that surface and is served from its own origin, and no surface fetches a font from another host. The viewer, the Settings page and the landing name the same stacks. |
 | **U12** | The principles page states only what the code states: its ledger, counts and clause lists are written from the coverage registry and the build fails when they differ; every principle of principles.md has its block and every Appendix A row its entry; every case names held clauses and is replayed by a test of the code that owns it or held by those clauses' tests; and the page's script takes every value it draws as the product's behavior from the cases and names no trust tier itself (P1, P5, P16). |
@@ -1094,8 +1232,16 @@ social image.
 | **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
 | **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; and a place keeps one name wherever it is reached (P2). |
 | **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value - and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
-| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 24 pixels with its spacing, 28 below 760 pixels wide; and nothing but a focusable code block scrolls sideways at 320 pixels. |
+| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 below 760 pixels wide, and 24, 28 below 760, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
 | **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
+| **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's window zooms with Cmd 0, Cmd + and Cmd - and keeps its scale; and no text is cut short except where focus or a press shows it whole. |
+| **U22** | Every corner the three stylesheets draw is one of Section 3's radius tokens, none, or a dot's circle; a part inside a rounded part takes the outer radius less the space between them; a pill and a large control are capsules, and the controls of one row share one size; and a checkbox, a radio and a switch take the accent. |
+| **U23** | Under `prefers-contrast: more` every text token takes the next stronger one, every control, chip and field draws an edge of 3:1 on its surface, and the focus ring is 3 pixels; under `forced-colors: active` the map redraws in the system's colors, keeps every mark it draws, and widens the human-confirmed ring. |
+| **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and search, grouped by region, each row naming the entity, its type, its trust by the legend's name and its count of relations, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
+| **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write is at most five words before its key, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
+
+U21-U25 and U7's APCA half are designed and not yet guarded; steps 18-21 build each with its test
+(Section 14).
 
 U2 is guarded by `the_map_rings_read_the_effective_tier` and U3 by
 `a_contested_node_is_marked_and_counted_whatever_hides_it`, source tripwires in
@@ -1296,6 +1442,28 @@ and it fails when one of them appears in the viewer's source other than as an ar
    principles page's glossary, its ledger by chapter on phones and its scenes played by a press.
    Merging it publishes the site, so it merges on the author's word, right before the release that
    carries step 15.
+17. **The third pass's defects**: the Trust legend's off entries drawn at full strength and saying
+   they are off, the Review page's key caps in `--ink2`, the eight short targets and the phone's
+   Review tabs and acts brought to the floor before step 19 (24, 28 below 760), Setup's checkboxes in the
+   accent, the search field named with its scope, the status line's short form on a phone, the
+   privacy line held to 34em, and the app's starting splash on the tokens and Pretendard.
+18. **Reading** (Sections 3, 4, 10; U7, U21, U23): `--ink2` and `--muted` raised and `--faint`
+   retired into `--muted` in all three stylesheets and the scripts, the signals' text tokens, the six
+   sizes as rem tokens given by role, the map's labels scaled with the root, the Log's clamp opened
+   on focus, the app's zoom, Increase Contrast and forced colors, and U7's test measuring APCA.
+19. **Shapes and targets** (Sections 3, 4, 10; U19, U22): the radius tokens and the concentric rule
+   in the three stylesheets, capsules for pills and large controls, one size per row, the accent on
+   every checkbox, radio and switch, and every target on the viewer and the app's pages at 28, 44
+   below 760.
+20. **Said on the screen** (Section 4; U25): View's options and the search mode say what they do in a
+   line under their names, and every tooltip is cut to a name and its key.
+21. **The map's List** (Section 6; U24): the table, its selection kept with the map's, and the
+   canvas's name.
+22. **The site's type** (Sections 11, 11a): labels in Pretendard, nothing under the label size, the
+   ledger's labels as numbers, and running text at 1.5.
+
+Steps 18, 19 and 22 change the landing's stylesheet, so like step 16 they merge on the author's
+word, right before the release that carries them.
 
 Each step is judged at the shell's default size and at 1440, 760 and 390 pixels wide, on the busiest
 hub, an isolated node, a contested node (a seeded store, as inspector.md Section 8 notes), a blocked
