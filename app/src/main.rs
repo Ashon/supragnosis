@@ -1078,6 +1078,7 @@ const APP_COMMANDS: &[&str] = &[
     "setup_check",
     "setup_run",
     "setup_stop",
+    "setup_running",
     "welcome_state",
     "welcome_set",
     "app_helper",
@@ -1695,6 +1696,21 @@ async fn setup_run(
     outcome
 }
 
+/// The acts of the app's pages that are running now. A page opened again - the person left Setup,
+/// or Settings, while a step ran - shows them as running and waits for them, instead of losing them
+/// or offering to start them again (design-system.md Section 14 step 13).
+#[tauri::command]
+async fn setup_running(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    own_page_caller(&webview)?;
+    let mut keys: Vec<String> =
+        app.state::<RunningSteps>().0.lock().unwrap().keys().cloned().collect();
+    keys.sort();
+    Ok(keys)
+}
+
 /// Stops a running act of an app page: "Not now" on the download (Section 4.3). The whole process
 /// group goes, so the download setup started stops with it, and the next run fetches what is missing.
 #[tauri::command]
@@ -2053,6 +2069,7 @@ fn main() {
             setup_check,
             setup_run,
             setup_stop,
+            setup_running,
             welcome_state,
             welcome_set,
             app_helper,
@@ -2775,6 +2792,32 @@ mod settings_tests {
         );
     }
 
+    /// design-system.md Section 14 step 13: a step the person started and left is not lost. The shell
+    /// answers what is running, and Setup and Settings show it as running and wait for it; a second
+    /// start of a running step says it is already running instead of reporting a failure.
+    #[test]
+    fn a_running_step_survives_leaving_its_page() {
+        let welcome = include_str!("../assets/welcome.js");
+        let settings = include_str!("../assets/settings.js");
+        assert!(
+            super::APP_COMMANDS.contains(&"setup_running"),
+            "the shell cannot be asked what runs"
+        );
+        assert!(include_str!("../capabilities/settings.json").contains("\"allow-setup-running\""));
+        assert!(
+            welcome.contains("loadInfo().then(check).then(adoptRunning);"),
+            "Setup does not pick up a running step"
+        );
+        assert!(
+            welcome.contains("/already running/.test(String(e))"),
+            "a second start reads as a failure"
+        );
+        assert!(
+            settings.contains("load().then(adoptDownload);"),
+            "Settings does not pick up a running download"
+        );
+    }
+
     /// Settings > About names where the source lives, and its hint points there for the dependency
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing
@@ -2898,6 +2941,7 @@ mod welcome_tests {
             "setup_check",
             "setup_run",
             "setup_stop",
+            "setup_running",
             "welcome_state",
             "welcome_set",
             "app_helper",

@@ -295,6 +295,25 @@ async function downloadModel() {
   }
 }
 
+// A download started on an earlier visit, or from Setup, is still running: show it as running here
+// and wait for it, so a second one is not offered.
+async function adoptDownload() {
+  if (downloading) return;
+  let keys = [];
+  try { keys = await invoke("setup_running"); } catch (_) { return; }
+  if (!keys.includes("model")) return;
+  downloading = true; stopAsked = false;
+  render();
+  const wait = async () => {
+    let still = [];
+    try { still = await invoke("setup_running"); } catch (_) { still = []; }
+    if (still.includes("model")) { setTimeout(wait, 2000); return; }
+    downloading = false;
+    await load();
+  };
+  setTimeout(wait, 2000);
+}
+
 async function stopDownload() {
   stopAsked = true;
   try { toast("ok", await invoke("setup_stop", { step: "model" }), "The next download fetches what is missing."); }
@@ -694,4 +713,4 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("close").href = GRAPH;
 
 render();
-load();
+load().then(adoptDownload);

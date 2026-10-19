@@ -15,6 +15,7 @@ const APP_COMMANDS: &[&str] = &[
     "setup_check",
     "setup_run",
     "setup_stop",
+    "setup_running",
     "welcome_state",
     "welcome_set",
     "app_helper",

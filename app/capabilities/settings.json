@@ -16,6 +16,7 @@
     "allow-setup-check",
     "allow-setup-run",
     "allow-setup-stop",
+    "allow-setup-running",
     "allow-welcome-state",
     "allow-welcome-set",
     "allow-app-helper",

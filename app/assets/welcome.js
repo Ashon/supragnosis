@@ -137,8 +137,14 @@ async function run(key, opts) {
     announce(stepName(key) + (out.ok ? ": done" : ": failed"));
   } catch (e) {
     log.push({ kind: "err", text: String(e) });
-    toast("bad", (opts && opts.failTitle) || "That step did not run", String(e));
-    announce(stepName(key) + ": failed");
+    if (/already running/.test(String(e))) {
+      // Started on an earlier visit and still going: say so, and wait for it (adoptRunning).
+      toast("ok", stepName(key) + " is already running");
+      adoptRunning();
+    } else {
+      toast("bad", (opts && opts.failTitle) || "That step did not run", String(e));
+      announce(stepName(key) + ": failed");
+    }
   } finally {
     delete running[key];
     if (planTotal) planDone += 1;
@@ -476,5 +482,29 @@ document.addEventListener("keydown", (e) => {
 });
 document.getElementById("close").href = GRAPH;
 
+// Acts the shell still runs from an earlier visit - the person left Setup while a step ran - are shown
+// as running and waited for, instead of being lost or offered again.
+let adopting = false;
+async function adoptRunning() {
+  if (adopting) return;
+  let keys = [];
+  try { keys = await invoke("setup_running"); } catch (_) { return; }
+  keys = keys.filter((k) => !running[k]);
+  if (!keys.length) return;
+  adopting = true;
+  applied = true;
+  for (const k of keys) running[k] = true;
+  render();
+  const wait = async () => {
+    let still = [];
+    try { still = await invoke("setup_running"); } catch (_) { still = []; }
+    for (const k of keys) if (!still.includes(k)) delete running[k];
+    if (keys.some((k) => still.includes(k))) { setTimeout(wait, 2000); return; }
+    adopting = false;
+    await check();
+  };
+  setTimeout(wait, 2000);
+}
+
 render();
-loadInfo().then(check);
+loadInfo().then(check).then(adoptRunning);
