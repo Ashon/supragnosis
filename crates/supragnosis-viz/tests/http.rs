@@ -652,7 +652,7 @@ fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
         "the contested badge is drawn in its own full-strength pass, skipping only undrawn types"
     );
     assert!(
-        js.contains("for (const k of nodesIn(vx0, vy0, vx1, vy1)) {\n    const n = nodes[k];\n    if (typeOff.has(n.type)) continue;")
+        js.contains("for (const k of whole ? few : nodesIn(vx0, vy0, vx1, vy1)) {\n    const n = nodes[k];\n    if (typeOff.has(n.type) || (whole && (n.x < vx0 || n.x > vx1 || n.y < vy0 || n.y > vy1))) continue;")
             && js.contains("const reachOut = NODE_R_MAX + 16 + 9 / cam.s;"),
         "a node counts as drawn when its type is shown and it, its glow or its badge meets the window"
     );

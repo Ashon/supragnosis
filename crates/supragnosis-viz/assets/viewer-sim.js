@@ -86,12 +86,16 @@ function hullSizeNorm(size) { return Math.max(0, Math.min(1, (size - 2) / (HULL_
 // disc, and the full layout continues from a cooler start, so it reveals in fewer steps. The forces
 // are the full layout's own; only where they begin changes.
 const MULTI_MIN = 200;        // nodes from which a fresh layout starts from its communities
-const MULTI_ALPHA = 0.3;      // how hot the full layout starts once its communities are placed
+const MULTI_ALPHA = 0.25;     // how hot the full layout starts once its communities are placed
 const LPA_ROUNDS = 12;        // label propagation's rounds, at most
 const COARSE_STEPS = 160;     // the graph of communities' own settle, at most
 const COARSE_WORK = 2e7;      // pairs it meets in all: fewer steps for many communities
 const COMMUNITY_MIN = 6;      // a smaller community joins the neighbour it shares the most relations with
-const COARSE_SPACING = 22;    // world px per sqrt(member): a community's disc
+// World px per sqrt(member): a community's disc, its members a little farther apart than the layout
+// settles them. At 22 they started twice as dense, and at 50,000 entities the first steps, meeting
+// every crowded pair, cost 260 ms each; at 50 the map settled much smaller than it started and left
+// its loose pieces outside (design-system.md Section 27.6).
+const COARSE_SPACING = 40;
 
 // Communities by label propagation over the relations (Raghavan and others, 2007): every node starts
 // as its own, and in a fixed order takes the label most of its neighbours carry, the lower label on a
@@ -252,8 +256,9 @@ function createLayout() {
     let cx = 0, cy = 0;
     for (let i = 0; i < N; i++) { size[of[i]]++; cx += x[i]; cy += y[i]; }
     cx /= N; cy /= N;
-    // A node with no relation is a community of one with nothing to lay it out against: it waits on a
-    // ring outside the others, and the repulsion takes it from there as it always did.
+    // A node with no relation is a community of one with nothing to lay it out against: the nodes with
+    // none start on a spiral through the communities' extent, and the repulsion takes them from there.
+    // On a ring outside it, they were left there as the map settled smaller than it started.
     const alone = new Uint8Array(K);
     for (let i = 0; i < N; i++) if (size[of[i]] === 1 && deg[i] === 0) alone[of[i]] = 1;
     const between = new Map();
@@ -273,11 +278,12 @@ function createLayout() {
     const c = coarseLayout(back.length, lsize, llinks, cx, cy), placed = new Float64Array(K);
     let reach = 0;
     for (let j = 0; j < back.length; j++) reach = Math.max(reach, Math.hypot(c.x[j] - cx, c.y[j] - cy) + c.R[j]);
-    let outside = 0;
+    let outside = 0, lone = 0;
+    for (let k = 0; k < K; k++) lone += alone[k];
     for (let i = 0; i < N; i++) {
       const k = of[i];
       if (alone[k]) {
-        const a = outside * 2.39996, r = reach + COLLIDE_PAD + 30 * Math.sqrt(outside++);
+        const a = outside * 2.39996 + 1.1, r = reach * Math.sqrt((outside++ + 0.5) / lone);
         x[i] = cx + r * Math.cos(a); y[i] = cy + r * Math.sin(a);
       } else {
         const d = laid[k], j = placed[k]++, a = j * 2.39996, r = 0.9 * c.R[d] * Math.sqrt((j + 0.5) / size[k]);

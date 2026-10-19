@@ -18,9 +18,9 @@
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
-> The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38 - and
-> steps 31-35, the poll that asks first, region forces that scale, the layout on its own thread, the
-> multilevel start and clipping, are built.
+> The fifth pass, for the map at any size (Section 27, U33-U40), is built - steps 31-38: the poll that
+> asks first, region forces that scale, the layout on its own thread, the multilevel start, clipping,
+> semantic zoom, the GPU renderer, and the measure.
 
 ## 1. Why this exists
 
@@ -1706,8 +1706,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 36. **Semantic zoom** [built] (Section 27.8; U38): the far map folded into bodies around hubs, with
    the crossfade.
 37. **WebGL** [built] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
-38. **Measured** [planned] (Section 27.2; U40): the bench to 50,000 in both browsers and both
-   renderers, the dev store through its daemon, and the app.
+38. **Measured** [built] (Section 27.2; U40): the bench to 50,000 in both browsers and both
+   renderers, and the dev store through its daemon; with what it found - the multilevel start at the
+   layout's density, a folded frame over what it draws, and a quick miniature while a large map moves.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2487,6 +2488,75 @@ observation, as Section 27.1 found:
 - at 50,000, the first picture within 10 seconds and a frame within 16.7 ms on WebGL;
 - a poll that finds nothing new, under a millisecond of the page's time.
 
+**Measured** on 2026-10-20 at the end of the pass, by the bench on the reference Mac, on its graph
+shaped like a store (Section 26.1). Times are the 50th and 95th percentiles in milliseconds; the two
+moving columns are the frame rate and the 95th percentile of a frame while the layout steps, from the
+reveal to rest and from a node held for two seconds, let go 30 pixels from where it was pressed, to
+rest again or for 30 seconds; "GPU" is the renderer of Section 27.9 and
+"2D" the canvas alone (`?renderer=2d`). A dragged column marked * held its node at the reading zoom,
+since the fitted view of that map is folded into bodies and has none to hold. WebKit's clock reads
+whole milliseconds.
+
+In Chrome:
+
+| Entities | Renderer | First picture | At rest | Pan | Pan near | Zoom | Moving, cooling | Moving, dragged |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 10,000 | GPU | 2.2 s | 8 s | 1.5 / 1.9 | 2.2 / 2.7 | 1.8 / 3.7 | 60 fps, 5.1 | 60.1 fps, 5.1 |
+| 10,000 | 2D | 2 s | 7.7 s | 3.4 / 6 | 5.5 / 8.2 | 2.4 / 4.9 | 59.8 fps, 12.1 | 52.3 fps, 25.7 |
+| 20,000 | GPU | 3.6 s | 13.5 s | 4.5 / 6.9 | 7.4 / 11.7 | 3.2 / 4.8 | 59.9 fps, 6.9 | 60 fps *, 9.4 |
+| 20,000 | 2D | 3.5 s | 13.2 s | 3.9 / 5.2 | 7.1 / 12 | 3 / 4.3 | 58.8 fps, 17.4 | 59.9 fps *, 20.8 |
+| 50,000 | GPU | 8.5 s | 31 s | 5.9 / 7.7 | 7.2 / 13.3 | 3.6 / 4.4 | 59.8 fps, 15.4 | 60 fps *, 17.2 |
+| 50,000 | 2D | 8.5 s | 31 s | 5.2 / 6.9 | 6.6 / 13.9 | 3.2 / 17.1 | 55.8 fps, 29.1 | 59.3 fps *, 27.8 |
+
+In WebKit:
+
+| Entities | Renderer | First picture | At rest | Pan | Pan near | Zoom | Moving, cooling | Moving, dragged |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 10,000 | GPU | 1.8 s | 6.9 s | 5 / 7 | 8 / 13 | 3 / 8 | 59.6 fps, 7 | 59.8 fps *, 8 |
+| 10,000 | 2D | 1.9 s | 7 s | 5 / 6 | 7 / 8 | 3 / 7 | 57.3 fps, 12 | 52.6 fps *, 35 |
+| 20,000 | GPU | 3 s | 11.5 s | 6 / 8 | 9 / 12 | 5 / 8 | 60.1 fps, 9 | 59.9 fps *, 13 |
+| 20,000 | 2D | 3.1 s | 12 s | 4 / 7 | 7 / 9 | 4 / 8 | 58.6 fps, 18 | 36.9 fps *, 121 |
+| 50,000 | GPU | 7.2 s | 31.4 s | 5 / 14 | 11 / 12 | 4 / 11 | 58.7 fps, 22 | 55.1 fps *, 27 |
+| 50,000 | 2D | 7 s | 30.6 s | 5 / 12 | 7 / 10 | 4 / 22 | 54.7 fps, 35 | 41.1 fps *, 67 |
+
+And the dev store of Section 27.1 - 10,000 entities, 14,672 relations and 11,862 contexts - through
+its own daemon, on the GPU:
+
+| Browser | Data | First picture | At rest | Pan | Zoom |
+|---|---:|---:|---:|---:|---:|
+| Chrome | 0.3 s | 2.1 s | 12.2 s | 1.6 / 2.1 | 1.8 / 2.3 |
+| WebKit | 0.3 s | 2.0 s | 7.0 s | 2 / 2 | 2 / 3 |
+
+- **At rest the budget holds at every size, in both browsers and both renderers.** At 10,000 the
+  first picture comes in 2.2 seconds in Chrome and 1.8 in WebKit, and a frame at rest on the GPU is
+  within 3.7 ms at the 95th percentile in Chrome and 13 in WebKit, at the fitted view, at a reading
+  zoom and in a zoom; at 50,000 the first picture comes in 8.5 and 7.2 seconds and a frame at rest
+  within 13.3 and 14 ms on the GPU. The dev store, which at the start of this pass did not show in six
+  minutes, shows in about two seconds.
+- **While the layout moves, the GPU keeps it at 10,000 and 20,000.** A moving frame at 10,000 is 5.1
+  ms at the 95th percentile in Chrome and 7 to 8 in WebKit on the GPU; at 20,000, 6.9 to 9.4 and 9 to
+  13. The 2D canvas keeps a cooling layout at 10,000 - 12.1 and 12 ms - but not a dragged one, 25.7
+  and 35, and in WebKit at 20,000 a dragged layout falls to 37 frames a second.
+- **At 50,000 a moving frame is within it in Chrome, nearly, and not in WebKit.** In Chrome a cooling
+  frame is 15.4 ms at the 95th percentile and a dragged one 17.2, at 60 frames a second; in WebKit 22
+  and 27, at 55 to 59. The frames over the budget gather the bodies again, every half second, and
+  work out the regions' geometry after the positions move. At 50,000 the budget holds at rest, and
+  while the layout settles only in Chrome.
+- **The bench's runs fall into two modes.** On this Mac a run's frame times can sit in a fast or a slow
+  mode - the same build's pan at a reading zoom measured 2.4 and 5.2 ms at the median - so a table is
+  one run, and the steps were compared in turn, three runs each, by their medians.
+- **What the measure changed.** It found four costs that were not drawing. The multilevel start
+  packed members about twice as dense as the layout settles them, and at 50,000 the first picture
+  took 16 seconds; it now starts them a little sparser than that (Section 27.6). A map folded whole
+  still passed over every node and relation to find them folded, 16 ms a frame at 50,000; it now
+  passes over its bodies, the nodes it does not fold and their relations (Section 27.8). The
+  minimap's miniature of 50,000, 81 ms to paint, cost the moving map a frame four times a second;
+  while a map of more than 5,000 moves, its miniature is quick - each dot a square of its color, no
+  halos and no clouds - and the whole one is painted when the layout rests, and the moving frames' 95th
+  percentile at 50,000 went from 65 ms to 15 in Chrome with it. And a body's count was a label sprite:
+  a far map can hold more counts than the sprites' cache keeps, and every frame drew some 370 again,
+  30 ms of it. A count is now text over a stroked halo.
+
 ### 27.3 The poll asks first
 
 The graph and the hypergraph answer with an `ETag`, a hash of their body. The viewer sends it back as
@@ -2559,13 +2629,27 @@ Guarded by `the_layout_steps_on_its_own_thread`.
   relations between two summed - is laid out first; each member starts on a spiral within its
   community's disc, and the full layout continues from a cooler start, so it reveals in fewer steps
   (U36). This is the multilevel scheme of Walshaw's and of sfdp, with one level.
+- **About the density it settles to.** A community's disc is 40 world units for every square root of
+  its members, a little sparser than the layout leaves them, and the full layout continues from 0.25.
+  Measured at 50,000 entities, discs of 22 had started the members about twice as dense as the
+  layout settles them: the first steps met every crowded pair, at 260 ms each, and the first picture
+  took 16 seconds; at 40 a step takes about 160 ms and the first picture 8.9 seconds, and at 10,000
+  2.1 where it took 2.8. Sparser still is faster - 135 ms at 50 - but the map then settles much smaller
+  than it starts: its loose pieces were left outside, and the view fitted to it held the map at half
+  its size. At 34, the density it settles to, the first picture of 50,000 took 9.9 seconds.
+- **The nodes with no relation start among the others**, on a spiral through the communities'
+  extent; on a ring outside it they were left there as the map settled.
+- **Framed again at rest.** The map still settles a little smaller than it is at the reveal, where the
+  view is fitted to it, so the view is fitted again when the layout first rests, unless the person has
+  moved it.
 - **A saved layout skips it.**
 - **Small communities join their neighbours.** On the bench's graph, sparse as a store's is,
   propagation left 1,285 communities at 10,000 entities, half of them of three or fewer, and the
   communities' layout, every pair of them for 160 steps, took 1.6 seconds, and at 20,000 6.3. A
   community smaller than six now joins, in label order, the one its members share the most relations
-  with, the lower label on a tie; a node with no relation waits on a ring outside the others; and the
-  communities' layout meets at most 20 million pairs in all, taking fewer steps when they are many.
+  with, the lower label on a tie; a node with no relation starts on a spiral through the others'
+  extent; and the communities' layout meets at most 20 million pairs in all, taking fewer steps when
+  they are many.
 
 The first picture of 10,000 entities came in 2.8 seconds in Chrome and 2.4 in WebKit, where it took
 6.2 and 5.5, and of 20,000 in 5.5 and 5.0, where it took 11.3; the layout reveals in about 60 steps
@@ -2643,6 +2727,9 @@ most of its members are not. A body gathers what is near on the screen instead, 
   to the node; two members of one body draw nothing between them.
 - **Never folded.** A hovered, selected, active or pulsing node, and a contested one with its badge
   (U3), are drawn as nodes whatever the zoom; the body around them counts them all the same.
+- **A folded frame draws what it shows.** A map folded whole passes over its bodies, the nodes it does
+  not fold - alone in their body, or never folded - and their relations, not over every node and
+  relation; the picture is the same, pixel for pixel.
 - **Pointed at like a node.** A folded member is not under the pointer; its body is. Hovering a body
   says its count, the type most of its members share and its three best-connected members, and a
   click frames its members, which opens them; the selection stays as it was.

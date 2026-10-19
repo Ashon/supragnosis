@@ -306,8 +306,10 @@ try {
         const from = await page.evaluate(() => [__bench.draw.length, __bench.drawAt.length]);
         await page.mouse.move(grip.x, grip.y);
         await page.mouse.down();
+        // A circle, let go 30 pixels from where it began: let go where it was pressed, the page takes the
+        // drag for a click, which selects the node and frames its neighbours.
         for (let i = 1; i <= 60; i++) {
-          await page.mouse.move(grip.x + Math.sin(i / 9.5) * 120, grip.y + (1 - Math.cos(i / 9.5)) * 120);
+          await page.mouse.move(grip.x + Math.sin(i / 9.5) * 120 + i / 2, grip.y + (1 - Math.cos(i / 9.5)) * 120);
           await page.waitForTimeout(33);
         }
         await page.mouse.up();

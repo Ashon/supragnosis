@@ -133,9 +133,9 @@ fn what_the_map_draws_follows_the_screen() {
     // in one path made a frame at a reading zoom eighty times slower in Chrome.
     assert!(!draw.contains("h.closePath()"), "the arrowheads' path closes every head again");
     for part in [
-        "for (const k of nodesIn(vx0, vy0, vx1, vy1)) {",
-        "if (typeOff.has(n.type)) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;\n    n._lod = lodOf(n, act);",
-        "for (const i of relationsIn(vx0, vy0, vx1, vy1)) {",
+        "for (const k of whole ? few : nodesIn(vx0, vy0, vx1, vy1)) {",
+        "n.y > vy1))) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;\n    n._lod = lodOf(n, act);",
+        "for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {",
         "Math.max(e.a.x, e.b.x) + LANE_MAX < vx0",
         "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
     ] {
@@ -231,7 +231,7 @@ fn still_layers_move_with_the_camera() {
         "const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(\",\"),",
         "if (m.look !== look || m.nodes !== nodes || m.hyper !== hyperedges || m.gen !== positionsGen) {",
         "if (m.dirty && (!m.c || !simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {",
-        "paintMiniature(src, dpr, k, ox, oy, R, round);",
+        "paintMiniature(src, dpr, k, ox, oy, R, round, m.quick);",
         "mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);",
         "drawMiniWindow(m.k, m.ox, m.oy, R, round);",
     ] {
@@ -243,10 +243,20 @@ fn still_layers_move_with_the_camera() {
         SCRIPT.contains("const MINI_MOVING_MS = 250;"),
         "the minimap's pace while moving moved"
     );
+    // A large map's miniature is quick while its layout moves, and painted whole once it rests.
+    assert!(
+        SCRIPT.contains("const MINI_QUICK_N = 5000;")
+            && mini.contains("m.quick = simWarm() && src.length > MINI_QUICK_N;")
+            && mini.contains("if (m.quick && !simWarm()) m.dirty = true;")
+            && function("paintMiniature")
+                .contains("if (hyperMode && hyperedges.length && !quick) {"),
+        "a large map's miniature is painted whole while its layout moves"
+    );
     let paint = function("paintMiniature");
     assert!(
-        paint.contains("mctx.drawImage(paintMiniDots(src, dpr, mx, my), 0, 0, MINI_W, MINI_H);")
-            && !paint.contains("mctx.arc(mx(n)"),
+        paint.contains(
+            "mctx.drawImage(paintMiniDots(src, dpr, mx, my, quick), 0, 0, MINI_W, MINI_H);"
+        ) && !paint.contains("mctx.arc(mx(n)"),
         "the minimap draws each dot through the canvas again"
     );
     assert!(
@@ -416,7 +426,7 @@ fn the_log_draws_its_newest_rows() {
 /// U36: a fresh layout starts from its communities. Label propagation over the relations finds them
 /// in a fixed order, the lower label on a tie; a community smaller than COMMUNITY_MIN joins the
 /// neighbour it shares the most relations with; the graph of communities is laid out first, with
-/// isolated nodes on a ring outside it, and each member starts on a spiral in its community's disc;
+/// isolated nodes on a spiral through its extent, and each member starts on a spiral in its community's disc;
 /// the full layout continues from MULTI_ALPHA. A graph most of whose nodes the layout already holds,
 /// or one the page moved, does not start over.
 #[test]
@@ -448,9 +458,17 @@ fn a_fresh_layout_starts_from_its_communities() {
             "the communities' layout is not carried to their members: {part}"
         );
     }
+    // Started at the density it settles to, the map settles smaller than at the reveal, so the view
+    // fitted then is fitted again when the layout first rests, unless the person moved it.
+    assert!(
+        SCRIPT.contains("cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; refitAtRest = true; }")
+            && function("draw").contains("if (refitAtRest && !simWarm()) { refitAtRest = false; if (!userMoved) fitView(); }"),
+        "the view fitted at the reveal is not fitted again at rest"
+    );
     for c in [
         "const MULTI_MIN = 200;",
-        "const MULTI_ALPHA = 0.3;",
+        "const MULTI_ALPHA = 0.25;",
+        "const COARSE_SPACING = 40;",
         "const COMMUNITY_MIN = 6;",
         "const COARSE_WORK = 2e7;",
     ] {
@@ -505,7 +523,9 @@ fn a_frame_touches_what_the_window_holds() {
         "the frame marks every node again"
     );
     assert!(
-        draw.contains("for (const i of relationsIn(vx0, vy0, vx1, vy1)) {"),
+        draw.contains(
+            "for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {"
+        ),
         "a frame passes over every relation again"
     );
     assert!(
@@ -561,13 +581,16 @@ fn a_far_map_folds_into_bodies_around_hubs() {
         "const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);",
         "if (oa === 0 || ob === 0) continue;",
         "for (let j = 0; j < B.la.length; j++) {",
-        "drawLabel(String(B.size[k]),",
+        "ctx.strokeText(t, px, py); ctx.fillText(t, px, py);",
+        "const whole = fold === 1, few = whole ? unfolded(B, act) : null;",
+        "const named = whole ? few :",
     ] {
         assert!(draw.contains(part), "the far map is not folded as Section 27.8 says: {part}");
     }
     assert!(
-        function("nodeAt")
-            .contains("if (typeOff.has(n.type) || (onScreen(n) && n._o === 0)) continue;"),
+        function("nodeAt").contains(
+            "if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameWhole)) continue;"
+        ),
         "a folded member is still under the pointer"
     );
     assert!(

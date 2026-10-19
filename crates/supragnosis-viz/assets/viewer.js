@@ -249,6 +249,10 @@ let positionsGen = 0;
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let settling = true;
 let refitOnReveal = false;   // re-frame the graph after a sync-driven re-layout settles (follow mode)
+// A view fitted at the reveal is fitted again when the layout first rests, unless the person has moved
+// it (design-system.md Section 27.6): a fresh layout settles smaller than it starts, and the frame
+// taken at the reveal would leave it small in the window.
+let refitAtRest = false;
 function nodeRadius(n) { return radiusOfDegree(n.degree); }
 // Level of detail (design-system.md Section 26.5, U30): the radius on the screen, in pixels, from which
 // a node is drawn full - halo, fill, trust ring, lanes and arrowheads into it - and below which it is
@@ -2936,10 +2940,14 @@ addEventListener("resize", resize);
 const miniEl = document.getElementById("minimap"), mctx = miniEl.getContext("2d");
 const MINI_W = 168, MINI_H = 154, MINI_PAD = 10;   // height matches the HUD column (see viewer.css)
 let miniT = { k: 1, ox: 0, oy: 0 };   // world -> minimap: m = w * k + o (kept for the pan handler)
-const miniStill = { c: null, x: null, look: "", nodes: null, hyper: null, gen: -1, src: [], dirty: true, at: 0, k: 1, ox: 0, oy: 0 };
+const miniStill = { c: null, x: null, look: "", nodes: null, hyper: null, gen: -1, src: [], dirty: true, quick: false, at: 0, k: 1, ox: 0, oy: 0 };
 // While the layout moves, the miniature is painted at most this often - an overview needs no more -
 // and at once when it comes to rest (design-system.md Section 27.5).
 const MINI_MOVING_MS = 250;
+// A large map's miniature while its layout moves (design-system.md Section 27.2): its dots as squares
+// of their color, with no halos and no clouds - the whole miniature of 50,000 took 81 ms to paint, a
+// frame the moving map dropped four times a second. The whole one is painted when the layout rests.
+const MINI_QUICK_N = 5000;
 // A color as its RGB, read once from a pixel a canvas paints with it.
 const rgbOf = new Map();
 function cssRgb(color) {
@@ -2959,11 +2967,27 @@ function cssRgb(color) {
 // Each dot is what a fill and its halo stroke drew - its color inside, the surface's ring around -
 // laid over the dots before it in order, so a dense cluster still shows its dots apart.
 const miniDots = { c: null, x: null, img: null, buf: null, w: 0, h: 0 };
-function paintMiniDots(src, dpr, mx, my) {
+function paintMiniDots(src, dpr, mx, my, quick) {
   const L = miniDots, w = MINI_W * dpr, h = MINI_H * dpr;
   if (L.w !== w || L.h !== h) {
     L.c = document.createElement("canvas"); L.c.width = w; L.c.height = h; L.x = L.c.getContext("2d");
     L.img = L.x.createImageData(w, h); L.buf = new Float32Array(w * h * 4); L.w = w; L.h = h;
+  }
+  if (quick) {
+    // Each dot two pixels square in its color, the last one over a pixel winning.
+    const d = L.img.data;
+    d.fill(0);
+    for (const n of src) {
+      const x = Math.round(mx(n) * dpr), y = Math.round(my(n) * dpr);
+      if (x < 0 || y < 0 || x + 1 >= w || y + 1 >= h) continue;
+      const c = cssRgb(typeColor[n.type] || OTHER);
+      for (let q = 0; q < 4; q++) {
+        const i = ((y + (q >> 1)) * w + x + (q & 1)) * 4;
+        d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+      }
+    }
+    L.x.putImageData(L.img, 0, 0);
+    return L.c;
   }
   const buf = L.buf, halo = cssRgb(SURFACE);
   buf.fill(0);
@@ -3017,6 +3041,8 @@ function drawMinimap() {
   // and the viewport stroke land in the corner cut zones and get sliced by the CSS rounding.
   const R = 9.5;
   const round = mctx.roundRect !== undefined;
+  // A quick miniature is owed the whole one once the layout rests.
+  if (m.quick && !simWarm()) m.dirty = true;
   // The first miniature is painted at once: a small map can show within MINI_MOVING_MS of the page's
   // start, and the frame would have no miniature to draw.
   if (m.dirty && (!m.c || !simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {
@@ -3025,7 +3051,8 @@ function drawMinimap() {
     const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
     const k = Math.min((MINI_W - MINI_PAD*2) / gw, (MINI_H - MINI_PAD*2) / gh);
     const ox = (MINI_W - gw*k)/2 - a*k, oy = (MINI_H - gh*k)/2 - b*k;
-    paintMiniature(src, dpr, k, ox, oy, R, round);
+    m.quick = simWarm() && src.length > MINI_QUICK_N;
+    paintMiniature(src, dpr, k, ox, oy, R, round, m.quick);
     m.dirty = false; m.at = performance.now(); m.k = k; m.ox = ox; m.oy = oy;
   } else if (m.dirty) requestFrame();   // still owed: painted when the layout rests or the wait ends
   // The window's frame and a click on the miniature go by the transform it was painted with.
@@ -3044,7 +3071,7 @@ function drawMinimap() {
 }
 // The miniature into its own bitmap: hyperedge hulls (under), edge connections, then nodes sized by
 // degree, inside the panel's rounded outline.
-function paintMiniature(src, dpr, k, ox, oy, R, round) {
+function paintMiniature(src, dpr, k, ox, oy, R, round, quick) {
   const m = miniStill;
   if (!m.c) { m.c = document.createElement("canvas"); m.x = m.c.getContext("2d"); }
   if (m.c.width !== MINI_W * dpr) { m.c.width = MINI_W * dpr; m.c.height = MINI_H * dpr; }
@@ -3061,7 +3088,7 @@ function paintMiniature(src, dpr, k, ox, oy, R, round) {
   // Hulls (hyperedge overlay) - the graph's own clouds (hullGeom + paintCloud), scaled into the
   // minimap via a world->minimap transform, so a region looks the same in both. Only while the
   // overlay is on.
-  if (hyperMode && hyperedges.length) {
+  if (hyperMode && hyperedges.length && !quick) {
     const nodeMap = new Map(src.map(n => [n.id, n]));
     mctx.save();
     mctx.transform(k, 0, 0, k, ox, oy);   // compose world->minimap on top of the DPR transform
@@ -3092,7 +3119,7 @@ function paintMiniature(src, dpr, k, ox, oy, R, round) {
   // without it, dots that overlap in a dense cluster merge into one blob and the minimap stops
   // reporting density, which is most of what it is for. Same ratio, minimap-scale bounds - the floor
   // keeps a 1.2px dot separated at all, the cap keeps a hub from closing into a donut.
-  mctx.drawImage(paintMiniDots(src, dpr, mx, my), 0, 0, MINI_W, MINI_H);
+  mctx.drawImage(paintMiniDots(src, dpr, mx, my, quick), 0, 0, MINI_W, MINI_H);
   mctx.restore();
 }
 function drawMiniWindow(k, ox, oy, R, round) {
@@ -3751,7 +3778,7 @@ function relationsIn(x0, y0, x1, y1) {
 const BODY_FOLD_PX = 0.8, BODY_OPEN_PX = 1.6, BODY_REACH_PX = 32, BODY_REGATHER_MS = 500;
 const BODY_R_PX = 4, BODY_R_GROW = 1.5, BODY_R_MAX = 19, BODY_COUNT_PX = 8, BODY_LINE_MAX = 6;
 const bodies = { nodes: null, edges: null, filt: null, level: NaN, posGen: -1, at: 0, gen: -1, linkKey: null,
-  order: NONE, orderNodes: null, count: 0, of: NONE, size: NONE, start: NONE, mem: NONE, hub: NONE, type: [],
+  order: NONE, orderNodes: null, count: 0, of: NONE, size: NONE, start: NONE, mem: NONE, hub: NONE, type: [], alone: NONE, contested: NONE,
   cx: new Float64Array(0), cy: new Float64Array(0), la: NONE, lb: NONE, lw: NONE };
 // How open the map is at a zoom: 0 drawn as bodies, 1 as nodes.
 function bodiesOpenAt(s) { return Math.min(1, Math.max(0, (NODE_R_BASE * s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX))); }
@@ -3800,15 +3827,21 @@ function gatherBodies(b, filt, level, now) {
     b.orderNodes = nodes;
     b.order = Int32Array.from({ length: N }, (_, i) => i).sort((p, q) => (nodes[q].degree || 0) - (nodes[p].degree || 0) || p - q);
   }
-  const reach = BODY_REACH_PX / 2 ** level, r2 = reach * reach, of = new Int32Array(N).fill(-1), hub = [];
+  // The scene grid's cells are walked as they are: a body takes nodes in any order, so its query
+  // needs neither the answer nodesIn builds nor its sort.
+  const reach = BODY_REACH_PX / 2 ** level, r2 = reach * reach, of = new Int32Array(N).fill(-1), hub = [], g = sceneOf();
   for (const i of b.order) {
     const v = nodes[i];
     if (of[i] >= 0 || typeOff.has(v.type)) continue;
     const k = hub.length;
     hub.push(i); of[i] = k;
-    for (const j of nodesIn(v.x - reach, v.y - reach, v.x + reach, v.y + reach)) {
-      const w = nodes[j];
-      if (of[j] < 0 && !typeOff.has(w.type) && (w.x - v.x) ** 2 + (w.y - v.y) ** 2 <= r2) of[j] = k;
+    const c = sceneCells(g, v.x - reach, v.y - reach, v.x + reach, v.y + reach);
+    if (c) for (let y = c[2]; y <= c[3]; y++) for (let x = c[0]; x <= c[1]; x++) {
+      const cc = x + y * g.w;
+      for (let q = g.start[cc]; q < g.start[cc + 1]; q++) {
+        const j = g.order[q], w = nodes[j];
+        if (of[j] < 0 && !typeOff.has(w.type) && (w.x - v.x) ** 2 + (w.y - v.y) ** 2 <= r2) of[j] = k;
+      }
     }
   }
   const K = hub.length, size = new Int32Array(K), start = new Int32Array(K + 1), counts = new Array(K);
@@ -3827,7 +3860,13 @@ function gatherBodies(b, filt, level, now) {
     if (c) for (const [t, m] of c) if (m > most || (m === most && t < top)) { top = t; most = m; }
     return top;
   });
-  Object.assign(b, { count: K, of, size, start, mem, hub: Int32Array.from(hub), cx: new Float64Array(K), cy: new Float64Array(K) });
+  const alone = [], contested = [];
+  for (let i = 0; i < N; i++) {
+    if (of[i] >= 0 && size[of[i]] === 1) alone.push(i);
+    if (nodes[i].contested) contested.push(i);
+  }
+  Object.assign(b, { count: K, of, size, start, mem, hub: Int32Array.from(hub), cx: new Float64Array(K), cy: new Float64Array(K),
+    alone: Int32Array.from(alone), contested: Int32Array.from(contested) });
 }
 // A body's radius in world units: BODY_R_PX on the screen and BODY_R_GROW more for every square root
 // of its number, at most BODY_R_MAX.
@@ -3847,11 +3886,44 @@ function bodyAt(sx, sy) {
   }
   return best;
 }
+// The nodes a map folded whole still draws - those alone in their body and those never folded - by
+// index, in drawing order; and the relations they hold, each once (Section 27.8). A frame of a folded
+// map passes over these, not over every node and relation.
+const incidence = { edges: null, start: NONE, list: NONE, seen: NONE, stamp: 0 };
+function incidenceOf() {
+  const g = incidence;
+  if (g.edges === edges && g.start.length === nodes.length + 1) return g;
+  const N = nodes.length, start = new Int32Array(N + 1);
+  for (const e of edges) { start[e.a._k + 1]++; start[e.b._k + 1]++; }
+  for (let i = 0; i < N; i++) start[i + 1] += start[i];
+  const list = new Int32Array(start[N]), cur = start.slice(0, N);
+  for (let k = 0; k < edges.length; k++) { const e = edges[k]; list[cur[e.a._k]++] = k; list[cur[e.b._k]++] = k; }
+  Object.assign(g, { edges, start, list, seen: new Int32Array(edges.length), stamp: 0 });
+  return g;
+}
+function unfolded(b, act) {
+  const at = new Set(b.alone);
+  for (const n of [hover, focus]) if (n && n._k !== undefined) at.add(n._k);
+  if (act) for (const id of act.ns) { const n = nodeById(id); if (n) at.add(n._k); }
+  for (const id of pulses.keys()) { const n = nodeById(id); if (n) at.add(n._k); }
+  for (const i of b.contested) at.add(i);
+  return Int32Array.from(at).sort();
+}
+function relationsOfNodes(ks) {
+  const g = incidenceOf(), stamp = ++g.stamp, out = [];
+  for (const i of ks) for (let j = g.start[i]; j < g.start[i + 1]; j++) {
+    const r = g.list[j];
+    if (g.seen[r] !== stamp) { g.seen[r] = stamp; out.push(r); }
+  }
+  return Int32Array.from(out).sort();
+}
 function bodyMembers(k) { const b = bodies; return Array.from(b.mem.subarray(b.start[k], b.start[k + 1]), i => nodes[i]); }
 
 // Whether a node is drawn this frame: its type is shown and it meets the window (stamped in draw).
 let drawFrame = 0;
 function onScreen(n) { return n._vf === drawFrame; }
+// Whether the last frame was of a map folded whole (Section 27.8): a node it did not stamp is folded.
+let frameWhole = false;
 
 // The contexts' membership as index arrays into the nodes (design-system.md Section 27.4, U34), kept
 // while the page holds the same nodes and contexts: `start[h]` to `start[h + 1]` of `mem` are context
@@ -4073,7 +4145,7 @@ function draw() {
   // camera, before any user interaction) so the graph appears already fitted rather than mid-zoom.
   if (settling && alpha <= REVEAL_ALPHA) {
     settling = false;
-    if (needFit && !userMoved) { needFit = false; fitView(); cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; }
+    if (needFit && !userMoved) { needFit = false; fitView(); cam.s = camT.s; cam.x = camT.x; cam.y = camT.y; refitAtRest = true; }
     else if (refitOnReveal) { fitView(); }   // smooth re-frame after synced knowledge landed
     refitOnReveal = false;
   }
@@ -4088,6 +4160,7 @@ function draw() {
   loaderEl.classList.remove("on");
   // Initial auto-fit: once after the layout settles (only before user interaction).
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
+  if (refitAtRest && !simWarm()) { refitAtRest = false; if (!userMoved) fitView(); }
 
   const act = activeSet();
   // Legend-chip hover highlight: for an edge-kind chip, collect the endpoint nodes of matching visible
@@ -4216,12 +4289,14 @@ function draw() {
   // A node's weight: 1 drawn whole, 0 folded into its body, between in the crossfade.
   const weightOf = n => (foldable(n) ? eighths(open) : 1);
   // The nodes the window holds, from the scene grid (Section 27.7, U37), stamped for this frame with
-  // their weight; a node folded into its body is not drawn.
-  drawFrame++;
+  // their weight; a node folded into its body is not drawn. A map folded whole draws only the nodes
+  // it does not fold, so a frame takes those and their relations rather than the window's all.
+  const whole = fold === 1, few = whole ? unfolded(B, act) : null;
+  drawFrame++; frameWhole = whole;
   const vis = [];
-  for (const k of nodesIn(vx0, vy0, vx1, vy1)) {
+  for (const k of whole ? few : nodesIn(vx0, vy0, vx1, vy1)) {
     const n = nodes[k];
-    if (typeOff.has(n.type)) continue;
+    if (typeOff.has(n.type) || (whole && (n.x < vx0 || n.x > vx1 || n.y < vy0 || n.y > vy1))) continue;
     n._vf = drawFrame; n._o = weightOf(n);
     if (n._o === 0) continue;
     n._lod = lodOf(n, act);
@@ -4238,7 +4313,7 @@ function draw() {
     // keyed by the pair's two indices rather than a string per relation.
     const pairKey = nodes.length + 1;
     const lanes = new Map(), drawn = [];
-    for (const i of relationsIn(vx0, vy0, vx1, vy1)) {
+    for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {
       const e = edges[i];
       if (typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
       if (edgeTypeOff.has(e.type)) continue;                 // edge-kind toggle (legend)
@@ -4399,12 +4474,18 @@ function draw() {
     for (const [color, f] of fills) { bulk.fillStyle = color; bulk.fill(f); }
     if (counts.length) {
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      // A count holds its place among the names, so a name placed later does not cover it.
+      // A count is text over a halo stroked under it, not a kept sprite: a far map can hold hundreds of
+      // bodies, more counts than the sprites' cache keeps, and each frame then drew every one again.
+      // It holds its place among the names, so a name placed later does not cover it.
+      ctx.font = "600 " + 10 * TEXT_SCALE + "px " + NAME_FAMILY;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+      ctx.lineWidth = 3; ctx.strokeStyle = SURFACE; ctx.fillStyle = INK;
       for (const k of counts) {
-        const px = B.cx[k] * cam.s + cam.x, py = B.cy[k] * cam.s + cam.y, w = String(B.size[k]).length * 6.5 * TEXT_SCALE + 4;
-        drawLabel(String(B.size[k]), "600", 10 * TEXT_SCALE, INK, "0px", 1.5, px, py, "center");
+        const t = String(B.size[k]), px = B.cx[k] * cam.s + cam.x, py = B.cy[k] * cam.s + cam.y, w = t.length * 6.5 * TEXT_SCALE + 4;
+        ctx.strokeText(t, px, py); ctx.fillText(t, px, py);
         labelBoxes.add(px - w / 2, py - 8, w, 16);
       }
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
     }
     ctx.globalAlpha = 1; bulk.globalAlpha = 1;
@@ -4559,7 +4640,7 @@ function draw() {
     const cut = inView <= 40 ? 0 : Math.max(4, Math.round(inView / 25));
     const want = [];
     // A name reaches up to 600 pixels right of its node, so the box it is looked for in reaches as far left.
-    const named = nodesIn((-605 - cam.x) / cam.s - NODE_R_MAX, (-20 - cam.y) / cam.s, (innerWidth - cam.x) / cam.s, (innerHeight + 20 - cam.y) / cam.s);
+    const named = whole ? few : nodesIn((-605 - cam.x) / cam.s - NODE_R_MAX, (-20 - cam.y) / cam.s, (innerWidth - cam.x) / cam.s, (innerHeight + 20 - cam.y) / cam.s);
     for (const k of named) {
       const n = nodes[k];
       if (typeOff.has(n.type)) continue;
@@ -4645,7 +4726,7 @@ function nodeAt(sx, sy) {
   let best = null, bd = 1e9;
   for (const k of nodesIn(wx - reach, wy - reach, wx + reach, wy + reach)) {
     const n = nodes[k];
-    if (typeOff.has(n.type) || (onScreen(n) && n._o === 0)) continue;   // folded into its body (U38)
+    if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameWhole)) continue;   // folded into its body (U38)
     const d = Math.hypot(n.x - wx, n.y - wy);
     if (d < nodeRadius(n) + 6 && d < bd) { bd = d; best = n; }
   }

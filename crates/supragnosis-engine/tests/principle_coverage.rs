@@ -873,7 +873,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (40, &[c(
         "at 10,000 entities shaped like a store the first picture within 3 seconds and a frame within 16.7 ms at p95 at rest, at any zoom and while the layout moves, and at 50,000 within 10 seconds and 16.7 ms on WebGL, in Chrome and WebKit",
         Evidence::Deferred(
-            "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Revisit when step 38 has measured it, to record the numbers beside this clause",
+            "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Measured on 2026-10-20 (Section 27.2): at 10,000 the first picture in 2.2 s in Chrome and 1.8 in WebKit, a frame at rest within 3.7 and 13 ms at p95 on the GPU, a moving frame 5.1 and 8; at 50,000 the first picture in 8.5 and 7.2 s and a frame at rest within 13.3 and 14 ms on the GPU, a moving frame 15.4 to 17.2 ms in Chrome but 22 to 27 in WebKit - not yet within the clause while the layout settles there. Revisit when the map's layout or drawing changes, by running the bench again in both browsers and both renderers",
         ),
     )]),
 ];
