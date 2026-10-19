@@ -832,9 +832,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (34, &[c(
         "the layout's region forces grow with the members, not the pairs or the number of regions: kept index arrays, no allocation per region, a marking share test, separation among regions of three or more",
-        Evidence::Deferred(
-            "Section 14 step 32 is planned: each step builds every context's members and a set of them, and separates every context of two or more. Revisit when step 32 lands",
-        ),
+        // scale.rs reads regionSimOf and stepSim's region forces.
+        Evidence::Scenario(&["region_forces_grow_with_the_members"]),
     )]),
     (35, &[c(
         "the layout steps on a thread of its own when a worker can start, the page's frames never wait on a step, and the page's thread steps it when no worker starts",

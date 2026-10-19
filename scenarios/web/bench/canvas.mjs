@@ -38,8 +38,10 @@ function rng(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-/// Communities of 20 to 60 entities, about 1.3 relations per entity inside one and 0.2 across, and a
-/// region for every twelve entities, drawn from the community it sits in.
+/// Communities of 20 to 60 entities, about 1.3 relations per entity inside one and 0.2 across, and the
+/// contexts a store filled through observe holds (design-system.md Section 27.1): each community's
+/// groups of twelve, one observation each, and a context of two for every relation between groups,
+/// its own observation. It is the graph scenarios' dev seeding enters, in the same random order.
 function graph(n) {
   const r = rng(n);
   const nodes = [], edges = [], hyperedges = [], communities = [];
@@ -60,17 +62,25 @@ function graph(n) {
     nodes[a].degree++;
     nodes[b].degree++;
   };
+  const context = members => hyperedges.push({
+    id: "h" + hyperedges.length, members, member_names: members.map(id => "entity " + id.slice(1)),
+    size: members.length, sources: 1, trust_tier: "agent_extracted",
+  });
+  const groupOf = new Int32Array(n);
   for (const [lo, hi] of communities) {
     const m = hi - lo;
     for (let k = 0; k < Math.round(m * 1.3); k++) link(lo + Math.floor(r() * m), lo + Math.floor(r() * m));
-    for (let h = 0; h < Math.max(1, Math.round(m / 12)); h++) {
-      const size = 3 + Math.floor(r() * Math.min(17, m - 3));
-      const start = lo + Math.floor(r() * Math.max(1, m - size));
-      const members = Array.from({ length: size }, (_, j) => "n" + (start + j));
-      hyperedges.push({ id: "h" + hyperedges.length, members, member_names: members.map(id => "entity " + id.slice(1)), size, sources: 1, trust_tier: "agent_extracted" });
+    for (let a = lo; a < hi; a += 12) {
+      const b = Math.min(hi, a + 12);
+      for (let i = a; i < b; i++) groupOf[i] = a;
+      if (b - a >= 2) context(Array.from({ length: b - a }, (_, j) => "n" + (a + j)));
     }
   }
   for (let k = 0; k < Math.round(n * 0.2); k++) link(Math.floor(r() * n), Math.floor(r() * n));
+  for (const e of edges) {
+    const a = Number(e.from.slice(1)), b = Number(e.to.slice(1));
+    if (groupOf[a] !== groupOf[b]) context([e.from, e.to]);
+  }
   const type_counts = {};
   for (const v of nodes) type_counts[v.type] = (type_counts[v.type] || 0) + 1;
   const stats = { node_count: n, edge_count: edges.length, type_counts, trust_counts: { agent_extracted: n } };

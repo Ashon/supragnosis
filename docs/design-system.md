@@ -19,7 +19,7 @@
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
 > The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38 - and
-> step 31, the poll that asks first, is built.
+> steps 31 and 32, the poll that asks first and region forces that scale, are built.
 
 ## 1. Why this exists
 
@@ -1696,7 +1696,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    the moving layout and a store's many contexts - is the next pass's.
 31. **The poll asks first** [built] (Section 27.3; U33): an ETag on the graph and the hypergraph,
    and a 304 for an unchanged one, through the desktop app's proxy as well.
-32. **Region forces that scale** [planned] (Section 27.4; U34): kept membership, marking, and
+32. **Region forces that scale** [built] (Section 27.4; U34): kept membership, marking, and
    separation among drawn regions; the bench's graph gains a store's contexts.
 33. **The layout on its own thread** [planned] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
    in a worker, and on the page's thread when none starts.
@@ -2505,8 +2505,14 @@ Guarded by `a_poll_that_finds_nothing_new_costs_nothing` and `a_poll_asks_with_w
 - **Only drawn regions push apart.** Separation is between regions of three or more members, the ones
   the map draws as clouds. A context of two keeps its pull, which is a spring between two entities
   seen together; pushed apart, ten thousand of them added a second repulsion to the first.
-- **The bench's graph is a store's.** Beside its regions it gains a context of two for every relation
-  between groups, as `observe` gives one.
+- **The bench's graph is a store's.** Its regions are each community's groups of twelve, and it gains
+  a context of two for every relation between groups, as `observe` gives one: the dev store's graph,
+  drawn in the same random order - 12,140 contexts for 10,000 entities, 904 of them of three or more.
+
+On that graph the first picture of 10,000 entities came in 6.2 seconds in Chrome and 5.4 in WebKit,
+and through the dev daemon in 10, where it had not come in six minutes.
+
+Guarded by `region_forces_grow_with_the_members`.
 
 ### 27.5 The layout on its own thread
 

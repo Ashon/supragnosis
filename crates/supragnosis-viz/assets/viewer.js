@@ -3610,11 +3610,30 @@ function convexHull(pts) {
   lo.pop(); up.pop();
   return lo.concat(up);
 }
-// Do the two hyperedges share a node (iterate the smaller set). Shared = a connected context, so they are not separated (C1).
-function hullsShareMember(a, b) {
-  const [s, l] = a.size <= b.size ? [a, b] : [b, a];
-  for (const x of s) if (l.has(x)) return true;
-  return false;
+// The contexts' membership as index arrays into the nodes (design-system.md Section 27.4, U34), kept
+// while the page holds the same nodes and contexts: `start[h]` to `start[h + 1]` of `mem` are context
+// h's members, `drawn` the contexts of three or more - the regions the map draws - and `mark` the
+// array the shared-member test marks members in.
+const regionSim = { nodes: null, hyper: null, count: 0, start: new Int32Array(1), mem: new Int32Array(0), drawn: [], mark: new Int32Array(0) };
+let regCx = new Float64Array(0), regCy = new Float64Array(0), regR = new Float64Array(0);
+let regSx = new Float64Array(0), regSy = new Float64Array(0);
+function regionSimOf() {
+  const r = regionSim;
+  if (r.nodes === nodes && r.hyper === hyperedges) return r;
+  const at = new Map();
+  for (let i = 0; i < nodes.length; i++) at.set(nodes[i].id, i);
+  const start = [0], mem = [], drawn = [];
+  for (const h of hyperedges) {
+    const from = mem.length;
+    for (const id of h.members) { const k = at.get(id); if (k !== undefined) mem.push(k); }
+    if (mem.length - from < 2) { mem.length = from; continue; }
+    if (mem.length - from >= 3) drawn.push(start.length - 1);
+    start.push(mem.length);
+  }
+  r.nodes = nodes; r.hyper = hyperedges; r.count = start.length - 1;
+  r.start = Int32Array.from(start); r.mem = Int32Array.from(mem); r.drawn = drawn;
+  r.mark = new Int32Array(nodes.length).fill(-1);
+  return r;
 }
 
 // --- Haloed labels: text and its halo rasterized together, then blitted on the device pixel grid ---
@@ -3916,32 +3935,43 @@ function stepSim() {
   // the shared node, preserving the overlap relationship (C1: overlap = connective tissue).
   // Default organizer; group mode takes precedence (suppressed while clusterMode is on) so the two never fight.
   if (hullForce && !clusterMode && active && hyperedges.length) {
-    const nb = nodesById();
-    // Geometry: members + centroid + mean radius (clamped to a cap - so a huge grab-bag cannot push the whole layout)
-    // + member id set (for share detection).
-    const hgs = [];
-    for (const h of hyperedges) {
-      const ms = h.members.map(id => nb.get(id)).filter(Boolean);
-      if (ms.length < 2) continue;
-      let cx = 0, cy = 0; for (const m of ms) { cx += m.x; cy += m.y; }
-      cx /= ms.length; cy /= ms.length;
-      let r = 0; for (const m of ms) r += Math.hypot(m.x - cx, m.y - cy);
-      r = Math.min(r / ms.length, HULL_R_CAP);
-      hgs.push({ ms, ids: new Set(ms.map(m => m.id)), cx, cy, r });
+    // Membership comes kept, as index arrays (design-system.md Section 27.4, U34); the centres and
+    // spreads go into arrays kept between steps, so a step allocates nothing per region.
+    const rg = regionSimOf(), H = rg.count, start = rg.start, mem = rg.mem;
+    if (regCx.length < H) {
+      regCx = new Float64Array(H * 2); regCy = new Float64Array(H * 2); regR = new Float64Array(H * 2);
+      regSx = new Float64Array(H * 2); regSy = new Float64Array(H * 2);
+    }
+    // Geometry: each context's centre and its members' mean distance from it, clamped to a cap - so a
+    // huge grab-bag cannot push the whole layout.
+    for (let h = 0; h < H; h++) {
+      const a = start[h], b = start[h + 1];
+      let cx = 0, cy = 0;
+      for (let k = a; k < b; k++) { const v = nodes[mem[k]]; cx += v.x; cy += v.y; }
+      cx /= b - a; cy /= b - a;
+      let r = 0;
+      for (let k = a; k < b; k++) { const v = nodes[mem[k]]; r += Math.hypot(v.x - cx, v.y - cy); }
+      regCx[h] = cx; regCy[h] = cy; regR[h] = Math.min(r / (b - a), HULL_R_CAP);
     }
     // (1) Cohesion: member -> its own centroid. Scaled by hull size - larger hulls pull tighter,
-    // small ones stay loose.
-    for (const g of hgs) {
-      const cf = HYPER_PULL * (HULL_COH_MIN + hullSizeNorm(g.ms.length) * (HULL_COH_MAX - HULL_COH_MIN));
-      for (const m of g.ms) {
+    // small ones stay loose. Every context of two or more pulls; one of two is a spring between two
+    // entities seen together.
+    for (let h = 0; h < H; h++) {
+      const a = start[h], b = start[h + 1];
+      const cf = HYPER_PULL * (HULL_COH_MIN + hullSizeNorm(b - a) * (HULL_COH_MAX - HULL_COH_MIN)) * alpha;
+      for (let k = a; k < b; k++) {
+        const m = nodes[mem[k]];
         if (pinned(m)) continue;
-        m.vx += (g.cx - m.x) * cf * alpha; m.vy += (g.cy - m.y) * cf * alpha;
+        m.vx += (regCx[h] - m.x) * cf; m.vy += (regCy[h] - m.y) * cf;
       }
     }
     // (2) Separation: push apart only **disjoint** hull pairs (not sharing a node) - a shared hull is
     // a connected context and must stay attached (C1), and pushing every pair at high density blows up the whole layout.
     // Accumulate each hull's net displacement, clamp it to the cap (HULL_MAX_PUSH), then apply it to members to prevent divergence.
-    const sepx = new Array(hgs.length).fill(0), sepy = new Array(hgs.length).fill(0);
+    // Only the regions the map draws - three or more members - push apart: ten thousand contexts of
+    // two, pushed apart, were a second repulsion on top of the first.
+    const sepx = regSx, sepy = regSy, drawn = rg.drawn, mark = rg.mark;
+    sepx.fill(0, 0, H); sepy.fill(0, 0, H);
     // Only regions within reach of each other push, and their centres are then at most
     // 2 * HULL_R_CAP + HULL_PAD apart: the centres are binned into cells that wide and a region meets
     // only those of its own and the adjacent cells (design-system.md Section 26.4) - the pushes every
@@ -3949,30 +3979,34 @@ function stepSim() {
     // push. Every pair, with the test first, was 72 ms of a step at 838 regions.
     const RC = 2 * HULL_R_CAP + HULL_PAD, cellOf = new Map();
     const hk = (x, y) => (x + 32768) * 65536 + (y + 32768);
-    for (let i = 0; i < hgs.length; i++) {
-      const k = hk(Math.floor(hgs[i].cx / RC), Math.floor(hgs[i].cy / RC));
+    for (const i of drawn) {
+      const k = hk(Math.floor(regCx[i] / RC), Math.floor(regCy[i] / RC));
       const l = cellOf.get(k);
       if (l) l.push(i); else cellOf.set(k, [i]);
     }
-    for (let i = 0; i < hgs.length; i++) {
-      const a = hgs[i], gx = Math.floor(a.cx / RC), gy = Math.floor(a.cy / RC);
+    for (const i of drawn) {
+      // A region marks its members; a neighbour shares one when any of its members carries the mark.
+      for (let k = start[i]; k < start[i + 1]; k++) mark[mem[k]] = i;
+      const gx = Math.floor(regCx[i] / RC), gy = Math.floor(regCy[i] / RC);
       for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
         for (const j of cellOf.get(hk(gx + ox, gy + oy)) || []) {
           if (j <= i) continue;
-          const b = hgs[j];
-          const dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 0.01;
-          const want = a.r + b.r + HULL_PAD;
-          if (d >= want || hullsShareMember(a.ids, b.ids)) continue;   // a connected context stays (C1)
+          const dx = regCx[j] - regCx[i], dy = regCy[j] - regCy[i], d = Math.hypot(dx, dy) || 0.01;
+          const want = regR[i] + regR[j] + HULL_PAD;
+          if (d >= want) continue;
+          let shared = false;
+          for (let k = start[j]; k < start[j + 1] && !shared; k++) shared = mark[mem[k]] === i;
+          if (shared) continue;   // a connected context stays (C1)
           const mag = (want - d) * HULL_SEP * alpha, ux = dx / d * mag, uy = dy / d * mag;
           sepx[i] -= ux; sepy[i] -= uy; sepx[j] += ux; sepy[j] += uy;
         }
       }
     }
-    for (let i = 0; i < hgs.length; i++) {
+    for (const i of drawn) {
       let mx = sepx[i], my = sepy[i]; const mm = Math.hypot(mx, my);
       if (mm === 0) continue;
       if (mm > HULL_MAX_PUSH) { mx *= HULL_MAX_PUSH / mm; my *= HULL_MAX_PUSH / mm; }
-      for (const m of hgs[i].ms) if (!pinned(m)) { m.vx += mx; m.vy += my; }
+      for (let k = start[i]; k < start[i + 1]; k++) { const m = nodes[mem[k]]; if (!pinned(m)) { m.vx += mx; m.vy += my; } }
     }
   }
 

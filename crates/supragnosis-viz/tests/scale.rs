@@ -81,7 +81,7 @@ fn near_forces_come_from_a_grid() {
         "if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) continue;",
         "const count = same + (n - same) * WS_CROSS_REPULSE;",
         "const RC = 2 * HULL_R_CAP + HULL_PAD",
-        "if (d >= want || hullsShareMember(a.ids, b.ids)) continue;",
+        "if (d >= want) continue;",
     ] {
         assert!(step.contains(part), "the grids' pairing changed: {part}");
     }
@@ -259,5 +259,40 @@ fn a_poll_asks_with_what_it_holds() {
         function("beginWorkspaceTransition")
             .contains("heldGraph.url = heldGraph.tag = heldHyper.url = heldHyper.tag = \"\";"),
         "a workspace change keeps the old tags"
+    );
+}
+
+/// U34: the layout's region forces grow with the regions' members, not with their pairs or their
+/// number. Membership is kept as index arrays while the nodes and contexts are the same; a step
+/// allocates nothing per region; the shared-member test marks one region's members and reads the
+/// other's; and only regions of three or more members push apart, while every context of two or more
+/// keeps its pull.
+#[test]
+fn region_forces_grow_with_the_members() {
+    let kept = function("regionSimOf");
+    for part in [
+        "if (r.nodes === nodes && r.hyper === hyperedges) return r;",
+        "if (mem.length - from >= 3) drawn.push(start.length - 1);",
+        "r.mark = new Int32Array(nodes.length).fill(-1);",
+    ] {
+        assert!(kept.contains(part), "the contexts' membership is not kept: {part}");
+    }
+    let step = function("stepSim");
+    for part in [
+        "const rg = regionSimOf(), H = rg.count, start = rg.start, mem = rg.mem;",
+        "for (let k = start[i]; k < start[i + 1]; k++) mark[mem[k]] = i;",
+        "for (let k = start[j]; k < start[j + 1] && !shared; k++) shared = mark[mem[k]] === i;",
+        "for (const i of drawn) {",
+    ] {
+        assert!(step.contains(part), "the region forces grow with their pairs again: {part}");
+    }
+    let regions = &step[step.find("const rg = regionSimOf()").expect("region forces")..];
+    let regions = &regions[..regions.find("// Workspaces cohere").expect("their end")];
+    for alloc in ["new Set(", "hgs.push(", ".map(id =>", "new Array("] {
+        assert!(!regions.contains(alloc), "a step allocates per region: {alloc}");
+    }
+    assert!(
+        !SCRIPT.contains("function hullsShareMember"),
+        "the set-based share test is back"
     );
 }
