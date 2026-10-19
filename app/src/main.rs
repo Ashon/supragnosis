@@ -2979,6 +2979,39 @@ mod settings_tests {
         assert!(!pages.contains("<body data-tauri-drag-region style="));
     }
 
+    /// docs/design-system.md Section 6, U26: the bar keeps room for the traffic lights only while
+    /// they are shown. The shell announces each full-screen transition, and a page asks the window on
+    /// load, since one opened while the window is already full screen saw no transition and kept the
+    /// room; the first answer lands without the padding's animation. Every page links the one
+    /// stylesheet that holds the rule.
+    #[test]
+    fn the_title_bar_clears_the_lights_only_while_they_are_shown() {
+        let shell = include_str!("../assets/shell-init.js");
+        assert!(shell.contains("event.listen(\"shell-fullscreen\""), "transitions are not heard");
+        assert!(
+            shell.contains("getCurrentWindow().isFullscreen()"),
+            "a page loaded in full screen does not ask"
+        );
+        let css = include_str!("../assets/shell.css");
+        assert!(css.contains("html:not(.shell-fullscreen) header { padding-left: 84px; }"));
+        assert!(css.contains("html.shell-asking header { transition: none; }"));
+        // The shell's side, read from this file: the test's own copy of the line is escaped, so it
+        // cannot be what matches.
+        assert!(include_str!("main.rs").contains("window.emit(\"shell-fullscreen\", fs)"));
+        // isFullscreen is one of the window getters core:default grants.
+        let caps = include_str!("../capabilities/default.json");
+        assert!(caps.contains("\"core:default\""));
+        for (file, html) in [
+            ("settings.html", include_str!("../assets/settings.html")),
+            ("welcome.html", include_str!("../assets/welcome.html")),
+        ] {
+            assert!(
+                html.contains("<link rel=\"stylesheet\" href=\"shell.css\" data-shell>"),
+                "{file}"
+            );
+        }
+    }
+
     /// docs/design-system.md Section 10, U19: a button that shows only an icon is named by its act and
     /// its object, and a refused form says which field and why - to a screen reader too - with focus
     /// moved to the first such field. A refusal from the CLI says that the credential was cleared.

@@ -74,10 +74,22 @@
       link.setAttribute("data-shell", "");
       document.head.appendChild(link);
     }
-    if (window.__TAURI__)
-      window.__TAURI__.event.listen("shell-fullscreen", function (e) {
-        document.documentElement.classList.toggle("shell-fullscreen", !!e.payload);
-      });
+    // macOS hides the traffic lights in full screen, and the header drops the room it keeps for
+    // them (shell.css). The shell announces each transition; a page loaded while the window is
+    // already full screen - Settings or Setup opened from it, the graph come back to - saw none, so
+    // it asks the window too. The first answer lands without the padding's animation, so the bar
+    // does not slide on load (.shell-asking).
+    var root = document.documentElement;
+    var fullscreen = function (on) { root.classList.toggle("shell-fullscreen", !!on); };
+    if (window.__TAURI__) {
+      window.__TAURI__.event.listen("shell-fullscreen", function (e) { fullscreen(e.payload); });
+      root.classList.add("shell-asking");
+      var settled = function () {
+        requestAnimationFrame(function () { root.classList.remove("shell-asking"); });
+      };
+      window.__TAURI__.window.getCurrentWindow().isFullscreen()
+        .then(function (on) { fullscreen(on); settled(); }, settled);
+    }
 
     // Title bar unification: the header is the window drag handle (and double-click zooms, like
     // a real title bar - both need the window permissions in capabilities/default.json). "deep"

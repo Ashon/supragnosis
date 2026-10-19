@@ -12,8 +12,11 @@ input, textarea { -webkit-user-select: auto; user-select: auto; cursor: text; }
 #detail, #log, .selectable { -webkit-user-select: text; user-select: text; }
 
 /* The header is the window's title bar: its left edge clears the overlaid traffic lights, except in
-   fullscreen, where macOS hides them (shell-init.js toggles .shell-fullscreen on transitions). */
+   full screen, where macOS hides them (shell-init.js toggles .shell-fullscreen on each transition,
+   and on load from the window's own answer). While a page waits for that answer the padding does
+   not animate, so a page opened in full screen does not slide. */
 header { transition: padding-left 0.15s ease; }
+html.shell-asking header { transition: none; }
 html:not(.shell-fullscreen) header { padding-left: 84px; }
 
 /* Icons: Lucide files (icons/README.md) drawn as masks over currentColor, so each takes the color

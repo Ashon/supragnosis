@@ -775,7 +775,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (26, &[c(
-        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, no other navigation, one bar on every page with the star first, and in the app it drags the window from anywhere but its controls",
+        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, no other navigation, one bar on every page with the star first, and in the app it drags the window from anywhere but its controls and clears the traffic lights only while they are shown",
         // crates/supragnosis-viz/tests/titlebar.rs: the viewer's bar, the app pages' bars, and the
         // star and the leading group's rules the app's stylesheet shares with the viewer's;
         // app/src/main.rs: the drag region the shell gives every page's header.
@@ -784,6 +784,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "the_app_pages_go_back_to_the_graph",
             "every_page_has_one_title_bar",
             "the_title_bar_drags_the_window_but_not_its_controls",
+            "the_title_bar_clears_the_lights_only_while_they_are_shown",
         ]),
     )]),
     (27, &[c(
