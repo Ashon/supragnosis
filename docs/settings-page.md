@@ -128,7 +128,11 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
   and the last recovery (crash-recovery.md K5).
 - **Start at Login** is a switch, with the behaviour daemon-lifecycle.md Section 6 gave the tray's
   check item: on is `service install --take-over`, off is `service uninstall`.
-- **Restart Daemon** restarts it, and the CLI's answer shows at the foot of the page.
+- **Restart Daemon** restarts it, and the CLI's answer shows at the foot of the page. The page then
+  reads the daemon's state every two seconds until it answers, for up to a minute, as it does
+  whenever it opens on a daemon that is not answering: a restart still coming up, or one reported as
+  failed while launchd brought the daemon back, shows what is true without waiting for the window to
+  be focused again (daemon-lifecycle.md Section 6).
 - **Search by meaning** shows the daemon's own report (semantic-retrieval.md SR3): on, with its
   model, or "Keyword only - the model is not downloaded" with a Download button, which runs setup's
   model step and shows its progress (onboarding.md Section 4.3).

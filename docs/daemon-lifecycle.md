@@ -243,6 +243,13 @@ classify managers itself - one implementation, in the workspace where it is test
   carries version drift and conflicts from `status`.
 - **Restart Daemon** reports its outcome. The CLI's exit status and message reach the status line; a
   refused restart (a conflict) says why instead of re-attaching to the process it failed to replace.
+  For a daemon a login job runs, the shell waits up to 30 seconds for the viewer socket before it
+  decides: launchd may still be starting the new process, or retrying one that lost the store lock
+  while the old one exited, and the CLI then reports a failure that a few seconds settle. A refusal
+  that left the same process is a refusal; one after which a new process answers is a restart; a
+  daemon that does not answer is reported as failed, and the shell spawns none of its own beside a
+  login job. A failed state outlives none of this: whenever the shell reads the state, a failed
+  daemon whose socket answers is attached to again. Guarded by `a_restart_says_what_it_came_to`.
 - A CLI too old to know `service` leaves the item disabled with "update supragnosis-server" rather
   than failing on click.
 
