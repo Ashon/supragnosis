@@ -2718,6 +2718,28 @@ mod settings_tests {
         );
     }
 
+    /// settings-page.md Section 3.3: the model download runs outside the page's one-act lock, so the
+    /// rest of the page stays usable for its minutes; its row shows its progress and can stop it.
+    #[test]
+    fn the_download_does_not_lock_the_settings_page() {
+        let js = include_str!("../assets/settings.js");
+        let body = |name: &str| {
+            let at = js.find(&format!("function {name}(")).expect(name);
+            &js[at..at + js[at..].find("\n}\n").expect("it closes")]
+        };
+        let row = body("searchRow");
+        assert!(
+            !row.contains("act(\"model\"") && !row.contains("actionButton(\"model\""),
+            "the download takes the page's lock"
+        );
+        assert!(
+            row.contains("role: \"progressbar\"") && row.contains("\"Stop\""),
+            "the download's row has no progress or Stop"
+        );
+        assert!(body("downloadModel").contains("invoke(\"setup_run\", { step: \"model\" })"));
+        assert!(body("stopDownload").contains("invoke(\"setup_stop\", { step: \"model\" })"));
+    }
+
     /// Settings > About names where the source lives, and its hint points there for the dependency
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing

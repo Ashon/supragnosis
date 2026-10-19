@@ -323,3 +323,7 @@ a.btn { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+/* The model download's progress, on its own row (settings-page.md Section 3.3). */
+.bar { height: 6px; border-radius: 999px; background: var(--panel-3); overflow: hidden; margin-top: 8px; max-width: 320px; }
+.bar > span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.4s ease; }
+.bar.busy > span { width: 35%; }

@@ -274,8 +274,32 @@ function renderDaemon() {
 }
 
 // Search by meaning (docs/settings-page.md Section 3.3): the daemon's report, and the download when
-// the model is not here. The download is setup's model step, its progress the lines it streams.
-let modelProgress = null;
+// the model is not here. The download is setup's model step, its progress the lines it streams. It
+// runs outside the page's one-act-at-a-time lock - 224 MB takes minutes, and nothing else it would
+// race with - so the rest of the page stays usable, and it can be stopped from its row.
+let modelProgress = null, modelPct = null, downloading = false, stopAsked = false;
+
+async function downloadModel() {
+  if (downloading) return;
+  downloading = true; stopAsked = false; modelProgress = null; modelPct = null;
+  render();
+  try {
+    const out = await invoke("setup_run", { step: "model" });
+    if (out && out.ok) toast("ok", "Search by meaning is on");
+    else if (!stopAsked) toast("bad", "The model did not download", (out && out.why) || "See the details in Setup.");
+  } catch (e) {
+    toast("bad", "The model did not download", String(e));
+  } finally {
+    downloading = false;
+    await load();
+  }
+}
+
+async function stopDownload() {
+  stopAsked = true;
+  try { toast("ok", await invoke("setup_stop", { step: "model" }), "The next download fetches what is missing."); }
+  catch (e) { toast("bad", "The download did not stop", String(e)); }
+}
 
 function searchRow(d, remote) {
   const s = d.semantic;
@@ -284,14 +308,21 @@ function searchRow(d, remote) {
   else if (!s) { title = "Keyword only"; sub = d.answering === false ? "Known once the daemon answers." : "This daemon runs without a search model, so search matches words."; kind = ""; }
   else if (s.state === "on") { title = "Search by meaning"; sub = "Multilingual, on this Mac (" + s.model + ")"; kind = "ok"; }
   else { title = "Keyword only - the model is not downloaded"; sub = s.note || "Search matches words until the model (224 MB) is here."; kind = "warn"; }
-  const downloading = pending.has("model");
-  const end = !remote && s && s.state !== "on"
-    ? actionButton("model", downloading && modelProgress ? modelProgress : "Download", "download", "",
-      () => act("model", "setup_run", { step: "model" }, { title: "Search by meaning is on", failTitle: "The model did not download" }))
-    : null;
+  let end = null, bar = null;
+  if (!remote && s && s.state !== "on") {
+    if (downloading) {
+      bar = h("div", { class: "bar" + (modelPct === null ? " busy" : ""), role: "progressbar", "aria-label": "Model download",
+        "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": modelPct === null ? null : String(modelPct) }, h("span"));
+      if (modelPct !== null) bar.firstChild.style.width = modelPct + "%";
+      end = [h("span", { class: "sub", text: modelProgress || "Starting..." }),
+        h("button", { class: "btn quiet", on: { click: stopDownload } }, "Stop")];
+    } else {
+      end = h("button", { class: "btn", on: { click: downloadModel } }, icon("download"), "Download");
+    }
+  }
   return h("div", { class: "row" },
     h("span", { class: "lead " + kind }, icon("search")),
-    h("div", { class: "body" }, h("div", { class: "title", text: title }), h("div", { class: "sub", text: sub })),
+    h("div", { class: "body" }, h("div", { class: "title", text: title }), h("div", { class: "sub", text: sub }), bar),
     h("div", { class: "end" }, end));
 }
 
@@ -302,7 +333,11 @@ if (window.__TAURI__) window.__TAURI__.event.listen("setup-line", (e) => {
   let ev = null;
   try { ev = JSON.parse(p.line); } catch (_) { return; }
   const m = ev && /^(\d+) of (\d+) MB/.exec(ev.say || "");
-  if (m) { modelProgress = m[1] + " of " + m[2] + " MB"; render(); }
+  if (m) {
+    modelProgress = m[1] + " of " + m[2] + " MB";
+    modelPct = Math.min(100, Math.round((100 * +m[1]) / Math.max(1, +m[2])));
+    render();
+  }
 });
 
 // Sync (docs/settings-page.md Section 3.4): what the viewer's Peers tab showed, and its one act -
