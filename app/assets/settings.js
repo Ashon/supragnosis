@@ -206,13 +206,27 @@ function renderApps() {
       ? h("div", { class: "callout info" }, icon("info"), h("div", { class: "grow", text: appNotes[a.id] }))
       : null;
     const detail = appDetail(a);
-    return h("div", { class: "row" + (a.kind === "absent" ? " muted" : "") },
+    const row = h("div", { class: "row" + (a.kind === "absent" ? " muted" : "") },
       h("span", { class: "lead" }, icon(APP_KIND[a.id] || "desktop")),
       h("div", { class: "body" },
         h("div", { class: "title" }, a.name, pill),
         detail ? h("div", { class: "sub", text: detail }) : null,
         note),
       h("div", { class: "end" }, button));
+    // Claude Code's capture hook, a switch while it is connected through the bridge and the listing
+    // says (design-system.md Section 6a); any other row has none, so the switch never connects or
+    // replaces anything.
+    if (a.id !== "claude-code" || typeof a.capture !== "boolean") return row;
+    const input = h("input", {
+      type: "checkbox", role: "switch", checked: a.capture, disabled: pending.size > 0,
+      "aria-label": "Save the why behind each commit",
+      on: { change: (e) => act("capture", "capture_set", { on: e.target.checked }, { failTitle: "Capture did not change" }) },
+    });
+    return [row, h("div", { class: "row sub-row" },
+      h("div", { class: "body" },
+        h("div", { class: "title", text: "Save the why behind each commit" }),
+        h("div", { class: "sub", text: "After a commit, Claude Code is asked to record the decision behind it, if there was one." })),
+      h("label", { class: "switch" }, input, h("span", { class: "track" })))];
   });
   return [
     h("div", { class: "group-title", text: "Apps on this Mac" }),

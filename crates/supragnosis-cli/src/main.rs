@@ -1489,8 +1489,12 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
     match before {
         Entry::Bridge => {
             println!("{} is already connected through the bridge", client.name());
-            if client == Client::ClaudeCode && !a.no_capture {
-                capture_add(&env, &program)?;
+            match capture_act(client, a.no_capture) {
+                Some(true) => capture_add(&env, &program)?,
+                Some(false) if !capture_remove(&env)? => {
+                    println!("Claude Code has no capture hook - nothing to remove");
+                }
+                Some(false) | None => {}
             }
             return Ok(());
         }
@@ -1613,6 +1617,13 @@ fn capture_add(env: &connect::Env, program: &str) -> Result<()> {
 }
 
 /// Takes the capture hook out of Claude Code's settings. `Ok(true)` when something was removed.
+/// What `connect` does to Claude Code's capture hook on an app already connected through the bridge:
+/// adds it, or with `--no-capture` removes it and keeps the bridge (client-connect.md Section 12.4),
+/// so the Settings page's capture switch is one command spelled two ways. `None` for any other app.
+fn capture_act(client: connect::Client, no_capture: bool) -> Option<bool> {
+    (client == connect::Client::ClaudeCode).then_some(!no_capture)
+}
+
 fn capture_remove(env: &connect::Env) -> Result<bool> {
     let (path, text) = claude_code_settings_text(env)?;
     if connect::capture_state(&text) == connect::Capture::Unknown {
@@ -5492,5 +5503,21 @@ mod first_run {
         assert!(lines.iter().any(|l| l["out"] == "  wrote   /x/mcp.json" && l["id"] == "cursor"));
         assert!(lines.iter().any(|l| l["step"] == "model" && l["say"] == "1 of 2 MB."));
         assert!(lines.iter().all(|l| l.get("schema").is_none()), "the child's schema line");
+    }
+}
+
+#[cfg(test)]
+mod capture_switch_tests {
+    use super::{capture_act, connect::Client};
+
+    /// client-connect.md Section 12.4: on an app already connected through the bridge, `connect
+    /// claude-code` adds the capture hook and `--no-capture` removes it, which is the Settings page's
+    /// switch (design-system.md Section 6a); any other app has no hook to change.
+    #[test]
+    fn the_capture_switch_is_connect_spelled_two_ways() {
+        assert_eq!(capture_act(Client::ClaudeCode, false), Some(true));
+        assert_eq!(capture_act(Client::ClaudeCode, true), Some(false));
+        assert_eq!(capture_act(Client::Cursor, false), None);
+        assert_eq!(capture_act(Client::Cursor, true), None);
     }
 }

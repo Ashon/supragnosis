@@ -9,6 +9,7 @@ const APP_COMMANDS: &[&str] = &[
     "server_add",
     "server_remove",
     "app_toggle",
+    "capture_set",
     "login_set",
     "daemon_restart",
     "peer_narrow",

@@ -10,6 +10,7 @@
     "allow-server-add",
     "allow-server-remove",
     "allow-app-toggle",
+    "allow-capture-set",
     "allow-login-set",
     "allow-daemon-restart",
     "allow-peer-narrow",

@@ -1072,6 +1072,7 @@ const APP_COMMANDS: &[&str] = &[
     "server_add",
     "server_remove",
     "app_toggle",
+    "capture_set",
     "login_set",
     "daemon_restart",
     "peer_narrow",
@@ -1183,7 +1184,14 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
                 .as_ref()
                 .and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)).cloned());
             let (state, action, kind) = app_row(report.as_ref());
-            serde_json::json!({ "id": id, "name": name, "state": state, "action": action, "kind": kind })
+            // Claude Code's capture hook, while it is connected through the bridge and the listing
+            // says (client-connect.md 12.4); null otherwise, and the page then draws no switch.
+            let capture = report
+                .as_ref()
+                .filter(|r| r["entry"].as_str() == Some("bridge"))
+                .and_then(|r| r["capture"].as_str().filter(|c| *c == "on" || *c == "off"))
+                .map(|c| c == "on");
+            serde_json::json!({ "id": id, "name": name, "state": state, "action": action, "kind": kind, "capture": capture })
         })
         .collect();
 
@@ -1307,6 +1315,40 @@ async fn app_toggle(
         return Err(format!("{id:?} is not an app supragnosis connects"));
     }
     Ok(toggle_app(&app, &id).await)
+}
+
+/// The Settings page's capture switch (design-system.md Section 6a): on runs `connect claude-code`,
+/// which adds the hook beside the bridge; off runs it with `--no-capture`, which removes the hook and
+/// keeps the bridge (client-connect.md Section 12.4). Only for an app already connected through the
+/// bridge, which is the only row the page draws the switch on.
+#[tauri::command]
+async fn capture_set(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    on: bool,
+) -> Result<String, String> {
+    own_page_caller(&webview)?;
+    let mut args = vec!["connect".to_string(), "claude-code".to_string()];
+    if !on {
+        args.push("--no-capture".into());
+    }
+    let out = tokio::task::spawn_blocking(move || {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_cli(&args)
+    })
+    .await
+    .ok()
+    .flatten();
+    refresh_status(&app).await;
+    match out {
+        None => Err("supragnosis CLI not found".into()),
+        Some(o) if o.status.success() => Ok(if on {
+            "Claude Code asks for the why behind each commit".into()
+        } else {
+            "Claude Code no longer asks after a commit".into()
+        }),
+        Some(o) => Err(cli_outcome(&o).1),
+    }
 }
 
 #[tauri::command]
@@ -2063,6 +2105,7 @@ fn main() {
             server_add,
             server_remove,
             app_toggle,
+            capture_set,
             login_set,
             daemon_restart,
             peer_narrow,
@@ -2852,6 +2895,31 @@ mod settings_tests {
                 "new Set([...admitted.map((p) => p.node_id), ...known.map((p) => p.node_id)])"
             ),
             "a peer is listed twice"
+        );
+    }
+
+    /// design-system.md Section 6a: Claude Code's capture hook is a switch on its row while it is
+    /// connected through the bridge, and nowhere else; on and off are `connect claude-code` with and
+    /// without `--no-capture`.
+    #[test]
+    fn the_capture_switch_shows_only_on_a_bridged_row() {
+        let js = include_str!("../assets/settings.js");
+        assert!(
+            js.contains(
+                "if (a.id !== \"claude-code\" || typeof a.capture !== \"boolean\") return row;"
+            ),
+            "the switch shows on a row it cannot act on"
+        );
+        assert!(js.contains("act(\"capture\", \"capture_set\", { on: e.target.checked }"));
+        assert!(super::APP_COMMANDS.contains(&"capture_set"));
+        assert!(include_str!("../capabilities/settings.json").contains("\"allow-capture-set\""));
+        let main = include_str!("main.rs");
+        let at = main.find("async fn capture_set(").expect("capture_set");
+        let body = &main[at..at + main[at..].find("\n}\n").expect("it closes")];
+        assert!(body.contains("\"--no-capture\"") && body.contains("\"claude-code\""));
+        assert!(
+            main.contains(".filter(|r| r[\"entry\"].as_str() == Some(\"bridge\"))"),
+            "capture is read from a row not bridged"
         );
     }
 
