@@ -9,16 +9,25 @@ const PAGE: &str = include_str!("../../../site/index.html");
 const LANDING_CSS: &str = include_str!("../../../site/style.css");
 const VIEWER: &str = include_str!("../assets/viewer.js");
 
-/// The source of a top-level function or const in `src`, from its first line up to the closing
-/// brace at the start of a line, each line with its leading whitespace dropped - the stage keeps
-/// its copies one level deeper, inside its wrapper.
+/// The source of a top-level function or const in `src`, from its first line to the brace or
+/// semicolon that closes it, brackets counted, each line with its leading whitespace dropped - the
+/// stage keeps its copies one level deeper, inside its wrapper.
 fn block(src: &str, start: &str) -> String {
     let at = src.find(start).unwrap_or_else(|| panic!("no `{start}`"));
     let mut out = Vec::new();
+    let mut depth = 0i32;
     for line in src[at..].lines() {
         let l = line.trim_start();
         out.push(l.to_string());
-        if l == "}" || (start.starts_with("const ") && l.ends_with(';')) {
+        for c in l.chars() {
+            match c {
+                '{' | '[' | '(' => depth += 1,
+                '}' | ']' | ')' => depth -= 1,
+                _ => {}
+            }
+        }
+        // A function ends at the brace that closes it, a const at its semicolon outside any bracket.
+        if depth == 0 && (l.ends_with('}') || l.ends_with(';')) {
             break;
         }
     }
@@ -62,8 +71,8 @@ fn scene(id: &str) -> &'static str {
 fn the_stage_draws_the_viewers_marks() {
     // A type's color is the viewer's function of its name, copied character for character.
     for start in [
-        "function catColor(",
-        "const COLOR_SLOTS",
+        "const TYPE_BAND",
+        "const BAND_HUES",
         "function nameSlot(",
         "function stableColors(",
     ] {
@@ -77,10 +86,9 @@ fn the_stage_draws_the_viewers_marks() {
         STAGE.contains("const TYPE = stableColors(["),
         "the stage's type colors come from stableColors"
     );
-    assert_eq!(
-        STAGE.matches("hsl(").count(),
-        1,
-        "the stage names a color the viewer's function did not compute"
+    assert!(
+        !STAGE.contains("hsl(") && !STAGE.contains("oklch("),
+        "the stage computes a color the viewer's band does not hold"
     );
 
     // Every palette color is a landing token's value, named beside it.
@@ -101,8 +109,13 @@ fn the_stage_draws_the_viewers_marks() {
         seen += 1;
     }
     assert!(seen >= 8, "the palette was read ({seen} colors)");
-    let hexes = STAGE.matches("\"#").count();
-    assert_eq!(hexes, seen + 1, "stage.js writes a color outside its palette and the edge line");
+    let hexes =
+        STAGE.matches("\"#").count() - block(STAGE, "const TYPE_BAND").matches("\"#").count();
+    assert_eq!(
+        hexes,
+        seen + 1,
+        "stage.js writes a color outside its palette, the band and the edge line"
+    );
 
     // A relation is the viewer's neutral line at its alpha.
     assert!(STAGE.contains(&format!("EDGE_NEUTRAL = \"{}\"", viewer_color("EDGE_NEUTRAL"))));

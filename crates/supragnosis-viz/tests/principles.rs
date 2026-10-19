@@ -11,15 +11,25 @@ const LANDING: &str = include_str!("../../../site/index.html");
 const CSS: &str = include_str!("../../../site/style.css");
 const VIEWER: &str = include_str!("../assets/viewer.js");
 
-/// A top-level function or const of `src`, from its first line to its closing brace, each line with
-/// its leading whitespace dropped (landing.rs reads the stage the same way).
+/// A top-level function or const of `src`, from its first line to the brace or semicolon that closes
+/// it, brackets counted, each line with its leading whitespace dropped (landing.rs reads the stage
+/// the same way).
 fn block(src: &str, start: &str) -> String {
     let at = src.find(start).unwrap_or_else(|| panic!("no `{start}`"));
     let mut out = Vec::new();
+    let mut depth = 0i32;
     for line in src[at..].lines() {
         let l = line.trim_start();
         out.push(l.to_string());
-        if l == "}" || (start.starts_with("const ") && l.ends_with(';')) {
+        for c in l.chars() {
+            match c {
+                '{' | '[' | '(' => depth += 1,
+                '}' | ']' | ')' => depth -= 1,
+                _ => {}
+            }
+        }
+        // A function ends at the brace that closes it, a const at its semicolon outside any bracket.
+        if depth == 0 && (l.ends_with('}') || l.ends_with(';')) {
             break;
         }
     }
@@ -57,8 +67,8 @@ fn token(name: &str) -> String {
 fn the_principles_page_draws_the_viewers_marks() {
     // A type's color is the viewer's function of its name, copied character for character.
     for start in [
-        "function catColor(",
-        "const COLOR_SLOTS",
+        "const TYPE_BAND",
+        "const BAND_HUES",
         "function nameSlot(",
         "function stableColors(",
     ] {
@@ -68,10 +78,9 @@ fn the_principles_page_draws_the_viewers_marks() {
             "principles.js's `{start}` is not the viewer's"
         );
     }
-    assert_eq!(
-        SCRIPT.matches("hsl(").count(),
-        1,
-        "the page names a color the viewer's function did not compute"
+    assert!(
+        !SCRIPT.contains("hsl(") && !SCRIPT.contains("oklch("),
+        "the page computes a color the viewer's band does not hold"
     );
 
     // Every palette color is a landing token's value, named beside it, and no other color is written.
@@ -93,9 +102,9 @@ fn the_principles_page_draws_the_viewers_marks() {
     }
     assert!(seen >= 10, "the palette was read ({seen} colors)");
     assert_eq!(
-        hex_colors(SCRIPT),
+        hex_colors(SCRIPT) - hex_colors(&block(SCRIPT, "const TYPE_BAND")),
         seen + 1,
-        "principles.js writes a color outside its palette and the edge line"
+        "principles.js writes a color outside its palette, the band and the edge line"
     );
     assert!(
         !SCRIPT.contains("rgba(2") && !SCRIPT.contains("rgb(2"),

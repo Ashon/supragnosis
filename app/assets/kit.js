@@ -28,6 +28,31 @@ function h(tag, props, ...children) {
 
 const icon = (name, extra) => h("span", { class: "i i-" + name + (extra ? " " + extra : ""), "aria-hidden": "true" });
 
+// ---- Dialogs hold focus (docs/design-system.md Section 10, U19) ----------------------------
+// holdFocus(dialog): Tab and Shift+Tab stay inside the dialog, and every other child of the body is
+// inert while it is open, so neither the keyboard nor a screen reader wanders behind it. The function
+// it returns gives the page back. Giving focus back to what opened the dialog is the caller's, which
+// knows what that was.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function holdFocus(dialog) {
+  const host = dialog.closest("body > *") || dialog;
+  const others = [...document.body.children].filter(el => el !== host && !el.inert);
+  for (const el of others) el.inert = true;
+  const onKey = (e) => {
+    if (e.key !== "Tab") return;
+    const all = [...dialog.querySelectorAll(FOCUSABLE)].filter(el => el.getClientRects().length);
+    if (!all.length) { e.preventDefault(); return; }
+    const first = all[0], last = all[all.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  dialog.addEventListener("keydown", onKey);
+  return () => {
+    dialog.removeEventListener("keydown", onKey);
+    for (const el of others) el.inert = false;
+  };
+}
+
 // ---- Notices --------------------------------------------------------------------------------
 
 function toast(kind, title, detail) {

@@ -31,32 +31,31 @@ const C = {
 const EDGE_NEUTRAL = "#6b7383", EDGE_ALPHA = 0.42;
 const SANS = '"Pretendard Variable", Pretendard, -apple-system, "Segoe UI", sans-serif';
 const MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
-function catColor(i, edge) {
-  const h = (i * 137.508) % 360;
-  // Lower saturation (roughly 50-74%) so it does not clash on either light/dark, and keep lightness
-  // in the mid range (securing contrast on both backgrounds). Edges are lines, so only lightness is
-  // raised a little to distinguish them from nodes.
-  const l = edge ? [70, 62, 73][i % 3] : [58, 66, 50][i % 3];
-  const s = [62, 50, 74][(i / 3 | 0) % 3];
-  return `hsl(${h | 0}, ${s}%, ${l}%)`;
-}
-const COLOR_SLOTS = 48;
+const TYPE_BAND = [
+  "#889d37", "#82d48c", "#3cd1f5", "#67acf7", "#8986de", "#c38fe3", "#c670ab", "#ff9abd",
+  "#adc35e", "#53a45e", "#009cba", "#4c8fd8", "#aeadff", "#aa76c8", "#ffb7e6", "#e17da1",
+];
+const BAND_HUES = 8;
 function nameSlot(name) {
   let h = 2166136261;   // FNV-1a
   for (let i = 0; i < name.length; i++) { h ^= name.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-  return h % COLOR_SLOTS;
+  return h % BAND_HUES;
 }
-function stableColors(names, edge) {
+function stableColors(names) {
   const out = {}, used = new Set();
   for (const t of [...names].sort()) {
-    let slot = nameSlot(t);
-    if (used.size < COLOR_SLOTS) while (used.has(slot)) slot = (slot + 1) % COLOR_SLOTS;
+    const pref = nameSlot(t);
+    let slot = pref;
+    for (let k = 0; k < TYPE_BAND.length; k++) {
+      const s = (k < BAND_HUES ? 0 : BAND_HUES) + (pref + k) % BAND_HUES;
+      if (!used.has(s)) { slot = s; break; }
+    }
     used.add(slot);
-    out[t] = catColor(slot, edge);
+    out[t] = TYPE_BAND[slot];
   }
   return out;
 }
-const TYPE = stableColors(["App", "Database", "Feature", "Pattern", "Event", "Cache"], false);
+const TYPE = stableColors(["App", "Database", "Feature", "Pattern", "Event", "Cache"]);
 const CONCEPT = C.muted;
 // A rounded box; a box with no width or height draws nothing, and its corners never exceed its sides.
 function rrect(ctx, x, y, w, h, r) {
@@ -437,7 +436,7 @@ MOUNT[5] = function (fig) {
 };
 
 // ---- the scene engine: each principle's animation is a pure function of time, told in beats ----
-const PERSON = catColor(nameSlot("Person"), false);
+const PERSON = stableColors(["Person"]).Person;
 const lin = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
 const win = (t, a, b) => ease((t - a) / (b - a));
 const mix = (a, b, k) => a + (b - a) * k;

@@ -488,7 +488,7 @@ function render() {
 
 // ---- Dialogs --------------------------------------------------------------------------------
 
-let lastFocus = null;
+let lastFocus = null, releaseFocus = null;
 
 function openDialog(content, labelId) {
   closeDialog();
@@ -496,11 +496,14 @@ function openDialog(content, labelId) {
   const dialog = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": labelId }, content);
   const backdrop = h("div", { class: "backdrop", on: { mousedown: (e) => { if (e.target === backdrop) closeDialog(); } } }, dialog);
   document.getElementById("dialogHost").replaceChildren(backdrop);
+  releaseFocus = holdFocus(dialog);
   const first = dialog.querySelector("input, button.primary, button.solid");
   if (first) first.focus();
 }
 
 function closeDialog() {
+  if (releaseFocus) releaseFocus();
+  releaseFocus = null;
   document.getElementById("dialogHost").replaceChildren();
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
   lastFocus = null;

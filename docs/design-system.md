@@ -11,8 +11,9 @@
 > foundations, the map, the places, the Review page, search, the landing's picture, the three
 > surfaces drawn with surfaces instead of lines (Section 4), the landing that shows how knowledge
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
-> U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). **Steps
-> 12-16 are designed, not built**: the second pass over every screen (Section 1, U15-U20).
+> U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
+> pass over every screen (Section 1, U15-U20) has its foundation built (step 12); **steps 13-16 are
+> designed, not built**.
 
 ## 1. Why this exists
 
@@ -1165,11 +1166,28 @@ markup; and the page carries no style of its own. U9 and U11 hold
 it through `no_border_draws_an_area` and `every_face_ships_with_its_surface`, which reads the page's
 links. `the_landing_links_the_principles_page` holds the landing's four links to it.
 
-U15-U20 are designed, not built. Section 14 step 12 adds their guards before the screens change: source
-tripwires in the viewer's tests for the band, the words and the controls, the same band read from the
-landing's and the principles page's copies, and browser scenarios that press what
-the rules govern - search, settling a contested value, Review, follow and the dialogs - at 1440 and
-390 pixels. Each row's registry entry stays owed until its guard runs.
+U16 is guarded by `the_type_band_is_never_a_signal` and `every_category_color_comes_from_the_band` in
+`crates/supragnosis-viz/tests/type_band.rs`. The first reads the sixteen colors from the viewer's
+script and the signal and neutral tokens from its stylesheet, and measures every rule Section 5
+states: the hue gaps, the lightness, the contrast on `--surface`, and the distances within each tone
+and from the signals and neutrals. The second holds the band as the only source of a category color -
+types, boundaries and peers - with no generated color left, relation kinds drawn in the neutral line,
+and a region's hue checked over all 512 slots against the signals. The landing's and the principles
+page's copies are held to the viewer's by `the_stage_draws_the_viewers_marks` and
+`the_principles_page_draws_the_viewers_marks`.
+
+U17's first half is guarded by `a_tier_is_named_never_spelled` and `every_proposal_event_has_a_sentence`
+in `crates/supragnosis-viz/tests/words.rs`: no interpolation in the viewer's script draws a tier but
+through `tierName`, and the Log's two tables cover every kind in the engine's `PROPOSAL_KINDS`, every
+`ProposalEventKind` and every decision `review_proposal` accepts. Its second half - the who-line and
+one name for Setup - is owed until steps 14 and 15.
+
+U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
+`crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:
+View's toggles, the legend's chips, the workspace chips, the page's language and the map's name, and
+the dialog on the app's pages. The rest of U19, and U15, U18 and U20, are owed until steps 13-16; each
+is to be held by a source tripwire and by browser scenarios that press what the rule governs at 1440
+and 390 pixels, and each registry entry stays owed until its guard runs.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -1224,7 +1242,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    demos and nineteen scenes, the tensions, the landing's three links, and `site/principles.js` in the
    front-end lint. Merging it publishes the site, so it merges on the author's word.
 
-12. **The foundation** [designed] (U16, U17, U19, and the guards of U15-U20): the band in the viewer
+12. **The foundation** [built] (U16, U17, U19, and the guards of U15-U20): the band in the viewer
    and its two copies, relation kinds without color, and region hues on the band's arcs (Section 5);
    the tier names and the event sentences in one table each, and Setup's name (Section 9); the
    control helpers in the viewer and in the app's shared script: switch, pressed, radio group, tabs,
@@ -1597,3 +1615,21 @@ findings changed it:
     (Section 7, step 13).
 13. **Absolute and overstated words.** U20 now says what happens when a merge or a sync takes the
     selection away, and the privacy line says what supragnosis keeps rather than what never leaves.
+
+## 20. What building the second pass's foundation changed
+
+- **The copies were compared in part.** The stage's and the principles page's tripwires read a
+  function up to its first line holding a lone closing brace, which was the end of its first loop, so
+  most of `stableColors` was never compared. They count brackets now.
+- **The inspector still spelled tiers.** Its scope line read "same across this scope: agent_extracted",
+  where Section 9's table shows "All here: Agent", and the observation card, the provenance rows and
+  the tooltip printed tier ids too. They read `tierName` now, and the guard reads every interpolation,
+  nested ones included: its first version stopped at the outer template and missed a planted
+  `${n.trust_tier}`.
+- **The second tone was raised.** At the lightness first drawn, two second-tone colors measured
+  5.16:1 and 5.47:1; the four darkest moved from 0.62 to 0.64 or 0.65 of OKLCH lightness, and the
+  lowest is now 5.57:1.
+- **Boundaries and peers drew from the generator too.** A workspace's dashed outline and a peer's dot
+  took any hue, gold and teal among them; both draw from the band now.
+- **The workspace chips choose one scope**, so they are a radio group, not pressed buttons (Section 4).
+

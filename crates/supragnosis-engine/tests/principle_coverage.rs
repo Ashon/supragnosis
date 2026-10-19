@@ -663,16 +663,25 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (16, &[c(
         "no type color reads as a signal: the band stands 25 degrees of OKLCH hue from the signal tokens at lightness 0.62 or more and 5.5:1 on the ground, its tones measured apart, up to eight types take eight hues, relation kinds draw no color, and every copy of the band is the viewer's",
-        Evidence::Deferred(
-            "designed in design-system.md Sections 5 and 14 step 12, not built. Revisit when the \
-             band replaces the generated slots in the viewer and its two copies",
-        ),
+        // crates/supragnosis-viz/tests/type_band.rs measures the band from the viewer's values and
+        // the viewer's tokens; landing.rs and principles.rs hold the two copies to it.
+        Evidence::Scenario(&[
+            "the_type_band_is_never_a_signal",
+            "every_category_color_comes_from_the_band",
+            "the_stage_draws_the_viewers_marks",
+            "the_principles_page_draws_the_viewers_marks",
+        ]),
     )]),
     (17, &[c(
-        "no line a person reads first spells a system identifier: tiers by their legend names, every proposal kind and event with a sentence and no hash id, each observation row with a who-line and the map's ring for its tier, one name for one place",
+        "no line a person reads first spells a system identifier: tiers by their legend names, and every proposal kind and event with a sentence and no hash id",
+        // crates/supragnosis-viz/tests/words.rs: every interpolation of a tier goes through tierName,
+        // and the Log's tables cover the engine's kinds, events and decisions.
+        Evidence::Scenario(&["a_tier_is_named_never_spelled", "every_proposal_event_has_a_sentence"]),
+    ), c(
+        "each observation row with a who-line naming tier, who and when and the map's ring for its tier, and one name for one place",
         Evidence::Deferred(
-            "designed in design-system.md Sections 9 and 14 step 12, not built. Revisit when the \
-             tier names and the event sentences are the viewer's only spellings",
+            "designed in design-system.md Sections 6a, 9 and 14 steps 14-15, not built. Revisit \
+             when the Log's rows carry the who-line and the first-run page is Setup everywhere",
         ),
     )]),
     (18, &[c(
@@ -683,7 +692,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     )]),
     (19, &[c(
-        "every control names itself, is the kind its act is and exposes its state; dialogs hold focus; deciding keys act only in their region and the view's single keys can be turned off; targets are 24 pixels, 28 on a phone; nothing but a focusable code block scrolls sideways at 320 pixels",
+        "the viewer's View toggles are switches that say their state, its legend chips say whether they are pressed, its workspace chips are one radio group, its page declares its language and names the map, and the app's dialogs hold focus",
+        // crates/supragnosis-viz/tests/controls.rs and app/src/main.rs: the helpers and their callers.
+        Evidence::Scenario(&["the_viewers_controls_say_what_they_are", "the_app_pages_dialogs_hold_focus"]),
+    ), c(
+        "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 24 pixels, 28 on a phone; nothing but a focusable code block scrolls sideways at 320 pixels",
         Evidence::Deferred(
             "designed in design-system.md Sections 4, 10 and 14 steps 12-16, not built. Revisit when \
              the control helpers and their guards are in the viewer and the app's shared script",
@@ -3010,6 +3023,9 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/tests/landing.rs"),
     include_str!("../../supragnosis-viz/tests/principles.rs"),
+    include_str!("../../supragnosis-viz/tests/type_band.rs"),
+    include_str!("../../supragnosis-viz/tests/words.rs"),
+    include_str!("../../supragnosis-viz/tests/controls.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

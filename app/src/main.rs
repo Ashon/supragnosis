@@ -2615,6 +2615,44 @@ mod settings_tests {
         assert!(!html.contains("<script>"), "no inline script");
     }
 
+    /// docs/design-system.md U19: a dialog on the app's pages holds focus - Tab stays inside it and the
+    /// page behind it is inert until it closes - and every page says its language.
+    #[test]
+    fn the_app_pages_dialogs_hold_focus() {
+        let kit = include_str!("../assets/kit.js");
+        let hold = &kit[kit.find("function holdFocus(").expect("holdFocus")..];
+        let hold = &hold[..hold.find("\n}\n").expect("it closes")];
+        for part in [
+            "el.inert = true",
+            "el.inert = false",
+            "\"Tab\"",
+            "e.shiftKey",
+            "first.focus()",
+            "last.focus()",
+        ] {
+            assert!(hold.contains(part), "holdFocus does not {part}");
+        }
+        let settings = include_str!("../assets/settings.js");
+        let open = &settings[settings.find("function openDialog(").expect("openDialog")..];
+        let open = &open[..open.find("\n}\n").expect("it closes")];
+        assert!(
+            open.contains("releaseFocus = holdFocus(dialog);"),
+            "the Settings dialog does not hold focus"
+        );
+        let close = &settings[settings.find("function closeDialog(").expect("closeDialog")..];
+        let close = &close[..close.find("\n}\n").expect("it closes")];
+        assert!(
+            close.contains("releaseFocus()"),
+            "closing the dialog does not give the page back"
+        );
+        for (file, html) in [
+            ("settings.html", include_str!("../assets/settings.html")),
+            ("welcome.html", include_str!("../assets/welcome.html")),
+        ] {
+            assert!(html.contains("<html lang=\"en\">"), "{file} does not declare its language");
+        }
+    }
+
     /// Settings > About names where the source lives, and its hint points there for the dependency
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing

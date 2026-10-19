@@ -1,26 +1,19 @@
 "use strict";
-// --- Categorical color generator (shared by node/edge/hull) -------------------------
-// Spread hue as far apart as possible by the golden angle (137.508deg), and rotate
-// saturation/lightness in steps so that even with many kinds (beyond a fixed palette's limit) they
-// stay distinguishable. For dark-background readability, lightness 53-81% / saturation 62-92%.
-// Edges are lines, so lightness is raised a little to distinguish them from nodes. Deterministic
-// function (same index -> same color). Note: with very many categories, perceptual
-// distinguishability has limits no matter the method.
-function catColor(i, edge) {
-  const h = (i * 137.508) % 360;
-  // Lower saturation (roughly 50-74%) so it does not clash on either light/dark, and keep lightness
-  // in the mid range (securing contrast on both backgrounds). Edges are lines, so only lightness is
-  // raised a little to distinguish them from nodes.
-  const l = edge ? [70, 62, 73][i % 3] : [58, 66, 50][i % 3];
-  const s = [62, 50, 74][(i / 3 | 0) % 3];
-  return `hsl(${h | 0}, ${s}%, ${l}%)`;
-}
+// --- The type band (docs/design-system.md Section 5, U16) -----------------------------------------
+// A type's color is one of sixteen measured colors - eight hues in two tones - not a generated one.
+// Every hue stands at least 25 degrees of OKLCH hue from gold, coral and teal, which mean human
+// confirmed, contested and healthy, and every color has OKLCH lightness 0.62 or more. The first
+// tone's hues stand 0.09 apart in OKLab; design_tokens.rs measures all of it from these values.
+const TYPE_BAND = [
+  "#889d37", "#82d48c", "#3cd1f5", "#67acf7", "#8986de", "#c38fe3", "#c670ab", "#ff9abd",
+  "#adc35e", "#53a45e", "#009cba", "#4c8fd8", "#aeadff", "#aa76c8", "#ffb7e6", "#e17da1",
+];
 const OTHER = "#8e96a5", EDGE_OTHER = "#5c6472";   // defensive neutral color for types not in the map
 const EDGE = "#2b3345", EDGE_HI = "#f0c469", EDGE_OLD = "#4d4340";
-// A relation at rest is drawn in one neutral; its kind's color is for the active node's edges and a
-// relation kind the legend points at (docs/design-system.md Section 5). Thirty kinds in thirty hues
-// say nothing at a glance; one hue says "connected".
-const EDGE_NEUTRAL = "#6b7383";
+// A relation kind draws no color (Section 5): at rest a relation is one neutral line, and on the
+// active node's edges it is drawn brighter and labelled with its kind. Thirty kinds in a band of
+// sixteen would say nothing, and the band is the types'.
+const EDGE_NEUTRAL = "#6b7383", EDGE_ACTIVE = "#aab1bd";   // --ink2
 const EDGE_ALPHA = 0.42;         // edge base opacity (low - recedes in a dense graph; raised for the darker ink). On hover/focus, connected edges activate to 1.0
 // The node stroke is proportional to the marker radius (scales with the marker on zoom - a
 // consistent ratio) + a screen-px floor (so it does not vanish on zoom-out). It is a background-color
@@ -142,7 +135,7 @@ const WS_MAX_PUSH = 6;           // per-frame push cap per workspace, as HULL_MA
 const WS_CROSS_REPULSE = 0.25;   // node-to-node repulsion across two workspaces: the workspaces already push apart as wholes
 let footprintSession = null;     // the session (conversation) the current footprint belongs to
 const footprint = new Set();     // ids of nodes this session touched - the conversation's knowledge footprint
-let nodes = [], edges = [], typeColor = {}, edgeTypeColor = {};
+let nodes = [], edges = [], typeColor = {}, edgeKinds = [];
 const posById = new Map();       // id -> {x,y,vx,vy} - layout stability across polls
 const typeOff = new Set();       // node types hidden from the legend
 const edgeTypeOff = new Set();   // edge kinds (relation kind) hidden from the legend
@@ -297,31 +290,34 @@ function centerOn(n) {
   camT.y = (innerHeight + TOP_INSET - insetB()) / 2 - n.y * camT.s; userMoved = true;   // above the detail panel
 }
 
-// A type's color is keyed by its NAME, not by its place in the view. It used to be the index into
-// the view's sorted type list, so a workspace holding fewer types shifted every later hue: Concept
-// was purple in one workspace and red in the next. A name hash now picks a slot in a fixed band of
-// generated colors; a slot already taken in this view probes forward, in name order, so two types
-// never share a color on one screen, and a type keeps its slot in every view where no earlier name
-// collides with it. Relation kinds take the same rule in the edge band.
-const COLOR_SLOTS = 48;
+// A type's color is keyed by its NAME, not by its place in the view, so Concept keeps its color from
+// one workspace to the next. A name hash picks a preferred hue; in name order, each type of the view
+// takes the first free hue from its preferred one, in the first tone, then in the second. Up to eight
+// types on a screen differ in hue and up to sixteen in hue or tone; past sixteen a color is shared,
+// and pointing at a legend entry, which lights its type's nodes, is what tells them apart.
+const BAND_HUES = 8;
 function nameSlot(name) {
   let h = 2166136261;   // FNV-1a
   for (let i = 0; i < name.length; i++) { h ^= name.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-  return h % COLOR_SLOTS;
+  return h % BAND_HUES;
 }
-function stableColors(names, edge) {
+function stableColors(names) {
   const out = {}, used = new Set();
   for (const t of [...names].sort()) {
-    let slot = nameSlot(t);
-    if (used.size < COLOR_SLOTS) while (used.has(slot)) slot = (slot + 1) % COLOR_SLOTS;
+    const pref = nameSlot(t);
+    let slot = pref;
+    for (let k = 0; k < TYPE_BAND.length; k++) {
+      const s = (k < BAND_HUES ? 0 : BAND_HUES) + (pref + k) % BAND_HUES;
+      if (!used.has(s)) { slot = s; break; }
+    }
     used.add(slot);
-    out[t] = catColor(slot, edge);
+    out[t] = TYPE_BAND[slot];
   }
   return out;
 }
 function assignColors() {
-  typeColor = stableColors(new Set(nodes.map(n => n.type)), false);
-  edgeTypeColor = stableColors(new Set(edges.map(e => e.type)), true);
+  typeColor = stableColors(new Set(nodes.map(n => n.type)));
+  edgeKinds = [...new Set(edges.map(e => e.type))].sort();
 }
 
 // --- Remembered layout (docs/design-system.md Section 5) ------------------------------------------
@@ -513,6 +509,48 @@ function markTabs(list, tabs, selected) {
     t.tabIndex = on ? 0 : -1;
   }
 }
+// --- Controls say what they are (docs/design-system.md Sections 4 and 10, U19) -----------------
+// A switch applies at once and says on or off. A chip that filters says whether it is pressed. One
+// choice among a few is a radio group: one tab stop, and the arrows move the choice. The class the
+// stylesheet draws follows the state these set, never the other way round.
+function setSwitch(el, on) {
+  el.setAttribute("role", "switch");
+  el.setAttribute("aria-checked", on ? "true" : "false");
+  el.classList.toggle("on", !!on);
+}
+function setPressed(el, on) {
+  el.setAttribute("aria-pressed", on ? "true" : "false");
+}
+// radioGroup(host, label): the host's buttons become the radios of one group named `label`; the
+// checked one is the button whose `on` class is set, and none is checked when none is. Arrows and
+// Home/End pick and move focus, as clicking does; call it again whenever the buttons or the choice
+// change, so the state said is the state drawn.
+function radioGroup(host, label) {
+  host.setAttribute("role", "radiogroup");
+  if (label) host.setAttribute("aria-label", label);
+  const radios = [...host.querySelectorAll("button")];
+  const checked = radios.find(b => b.classList.contains("on"));
+  for (const b of radios) {
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", b === checked ? "true" : "false");
+    b.tabIndex = b === (checked || radios[0]) ? 0 : -1;
+  }
+  if (host.dataset.radios) return;
+  host.dataset.radios = "1";
+  host.addEventListener("keydown", ev => {
+    const all = [...host.querySelectorAll('[role="radio"]')];
+    const i = all.indexOf(document.activeElement);
+    if (i < 0) return;
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+    const j = ev.key === "Home" ? 0 : ev.key === "End" ? all.length - 1
+      : step ? (i + step + all.length) % all.length : -1;
+    if (j < 0) return;
+    ev.preventDefault();
+    all[j].click();
+    (host.querySelector('[aria-checked="true"]') || all[j]).focus();
+  });
+}
+
 function arrowTabs(list) {
   list.addEventListener("keydown", ev => {
     if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(ev.key)) return;
@@ -709,6 +747,7 @@ function renderLegend() {
       const el = document.createElement("button");
       el.type = "button";
       el.className = "lg" + (offSet.has(t) ? " off" : "");
+      setPressed(el, !offSet.has(t));
       const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(t);
       if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // line-like look
       el.appendChild(sw); el.appendChild(document.createTextNode(t || "(none)"));
@@ -725,9 +764,9 @@ function renderLegend() {
       host.appendChild(el);
     }
   };
-  const nodeKeys = Object.keys(typeColor).sort(), edgeKeys = Object.keys(edgeTypeColor).sort();
+  const nodeKeys = Object.keys(typeColor).sort(), edgeKeys = edgeKinds;
   fill(legendNodesEl, nodeKeys, t => typeColor[t], typeOff, false);
-  fill(legendEdgesEl, edgeKeys, t => edgeTypeColor[t], edgeTypeOff, true);
+  fill(legendEdgesEl, edgeKeys, () => EDGE_NEUTRAL, edgeTypeOff, true);
   nodeCtEl.textContent = nodeKeys.length || "";
   edgeCtEl.textContent = edgeKeys.length || "";
   renderBoundaryChips();
@@ -784,6 +823,9 @@ function activeSet() {
 // value. When the loaded scope has one tier the map draws no ring and the legend says which, as the
 // inspector's scope line does; otherwise every node shows its tier and Agent, the default, is no ring.
 const TIER_NAME = { unverified: "Unverified", agent_extracted: "Agent", host_signed: "Host signed", human_confirmed: "Human confirmed" };
+// A tier as a person reads it: the Trust legend's name, never the identifier (Section 9, U17). A tier
+// this page does not know keeps its identifier, so a new one still says something.
+function tierName(t) { return TIER_NAME[String(t)] || String(t); }
 let trustUniform = null;     // the one tier of the loaded scope, or null when tiers differ
 let contestedCount = 0;      // contested nodes in the loaded scope, whatever the legend hides (U3)
 function noteTrustAndContest() {
@@ -902,6 +944,7 @@ function beginWorkspaceTransition() {
 function renderChipsActive() {
   const cur = currentWs();
   chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.ws === cur));
+  radioGroup(chipBar, "Workspace");
 }
 async function loadWorkspaces() {
   try {
@@ -922,7 +965,8 @@ async function loadWorkspaces() {
     };
     // A panel heading like the ones below it (docs/design-system.md Section 4).
     const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = "Workspace";
-    chipBar.replaceChildren(lbl, mk("(all)", "*"), ...list.map(w => mk(w, w)));
+    chipBar.replaceChildren(lbl, mk("All", "*"), ...list.map(w => mk(w, w)));
+    radioGroup(chipBar, "Workspace");   // one scope at a time (Section 4)
   } catch (e) { /* server not up - retry next cycle */ }
 }
 
@@ -1629,7 +1673,7 @@ function obsWhen(ms) {
 function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
 // Trust tier as a colored dot (the edge columns' dot idiom) - a quiet ramp from dim (unverified) to
 // gold (human-confirmed). The full tier text lives in the expanded provenance.
-function tierDot(t) { return html`<span class="tdot t-${String(t)}" title="${String(t)}"></span>`; }
+function tierDot(t) { return html`<span class="tdot t-${String(t)}" title="${tierName(t)}"></span>`; }
 
 // Content-first row: a quiet meta line (tier dot + compact time) over the observation content (the
 // primary element, clamped to 2 lines). Host and the rest move to the expanded provenance.
@@ -1639,8 +1683,18 @@ function tierDot(t) { return html`<span class="tdot t-${String(t)}" title="${Str
 // the graph folds those away); this only phrases the result. Falls back to the raw content whenever
 // the server had nothing to add, so an untranslatable row still says something.
 // Returns text, not markup: callers interpolate it into an html template, which escapes it once.
+// What the Log says for a proposal event (Section 9, U17): the proposal's noun and what happened to
+// it, then its targets in names - "Merge proposed: PostgreSQL into Postgres". Every kind the engine
+// opens has its noun and every event its verb; a row the page cannot phrase says "Something changed"
+// and keeps the stored text in its card. A verdict carries its decision, so its verb is the
+// decision's.
+const PROPOSAL_NOUN = {
+  entity_merge: "Merge", entity_split: "Un-merge", claim_promotion: "Claim confirmation",
+  claim_demotion: "Claim demotion", tbox_change: "Type change", recall: "Recall",
+};
+const EVENT_VERB = { opened: "proposed", merge: "accepted", reject: "rejected", withdrawn: "withdrawn", comment: "discussed" };
+const HASH_ID = /^[0-9a-f]{16,}$/;   // a content address, as observation and entity ids are
 function proposalLine(p) {
-  const kind = p.kind || "proposal";
   const ts = p.targets || [];
   // Two entities can share a display name - that is what a duplicate IS, and a merge of them is
   // precisely the act most worth reading. "T2 -> T2" says nothing, so a name that is not unique
@@ -1648,26 +1702,30 @@ function proposalLine(p) {
   const all = p.into ? ts.concat(ts.some(t => t.id === p.into.id) ? [] : [p.into]) : ts;
   const seen = {};
   for (const t of all) { const n = t.name || t.id; seen[n] = (seen[n] || 0) + 1; }
+  // A target the server could not name is left out when its id is a hash - hashes live in the card
+  // (Section 9) - and said whole otherwise, so an id that is itself a name is never cut short.
   const named = t => {
-    const n = t.name && t.name !== t.id ? t.name : t.id.slice(0, 8);
-    return seen[t.name || t.id] > 1 ? `${n} (${t.id.slice(0, 6)})` : n;
+    const n = t.name && t.name !== t.id ? t.name : (HASH_ID.test(t.id) ? null : t.id);
+    return n && seen[t.name || t.id] > 1 ? `${n} (${t.id.slice(0, 6)})` : n;
   };
   let what = "";
   if (p.into) {
     // A merge reads as a direction: what disappears, and what it folds into.
-    const gone = ts.filter(t => t.id !== p.into.id).map(named);
-    what = gone.length ? `${gone.join(", ")} -> ${named(p.into)}` : named(p.into);
+    const gone = ts.filter(t => t.id !== p.into.id).map(named).filter(Boolean);
+    const into = named(p.into);
+    what = gone.length && into ? `${gone.join(", ")} into ${into}` : (into || gone.join(", "));
   } else if (ts.length) {
-    what = ts.map(named).join(", ");
+    what = ts.map(named).filter(Boolean).join(", ");
   }
-  const head = p.event === "opened" ? `opened ${kind}`
-    : p.event === "verdict" ? `${p.decision === "merge" ? "accepted" : p.decision || "verdict"} ${kind}`
-    : `${p.event} ${kind}`;
-  // State is worth showing on a verdict precisely when it disagrees with the decision - a merge that
-  // folded to blocked is the case a reader must not miss.
-  const state = p.event === "verdict" && p.state && !(p.decision === "merge" && p.state === "merged")
-    ? ` [${p.state}]` : "";
-  return `${head}${state}${what ? ": " + what : ""}`;
+  const noun = PROPOSAL_NOUN[p.kind];
+  const verb = EVENT_VERB[p.event === "verdict" ? p.decision : p.event];
+  if (!noun || !verb) return "Something changed" + (what ? ": " + what : "");
+  // State is worth saying on a verdict precisely when it disagrees with the decision - an accepted
+  // merge that a check blocks is the case a reader must not miss.
+  const state = p.event === "verdict" && p.decision === "merge" && p.state === "blocked" ? ". A check blocks it"
+    : p.event === "verdict" && p.state && !(p.decision === "merge" && p.state === "merged") && !(p.decision === "reject" && p.state === "rejected")
+      ? " (" + p.state + ")" : "";
+  return `${noun} ${verb}${what ? ": " + what : ""}${state}`;
 }
 
 function obsRowHtml(o) {
@@ -1693,7 +1751,7 @@ function obsCardHtml(o) {
     html`<button class="close" title="close" aria-label="close">`,
       html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
       html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`,
-    html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${String(o.effective_tier)}</span>`,
+    html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${tierName(o.effective_tier)}</span>`,
       html`<span class="ocwhen">${obsWhenFull(a0.observed_at)}</span></div>`,
     // A proposal event leads with the readable form, but keeps the stored text underneath: this
     // card is the dereference surface an id resolves to (P2/P14), so what is literally in the log
@@ -1704,7 +1762,7 @@ function obsCardHtml(o) {
   for (const a of o.attestations || []) {
     parts.push(html`<div class="prow"><span class="phost">${a.host}</span>`,
       a.on_behalf_of ? html`<span class="pobo">for ${a.on_behalf_of}</span>` : "",
-      html`<span class="ptier">${String(a.trust_tier)}${a.evaluated_tier !== a.trust_tier ? " -> " + String(a.evaluated_tier) : ""}</span>`,
+      html`<span class="ptier">${tierName(a.trust_tier)}${a.evaluated_tier !== a.trust_tier ? ", counted as " + tierName(a.evaluated_tier) : ""}</span>`,
       a.confidence != null ? html`<span class="pconf">conf ${String(a.confidence)}</span>` : "",
       a.origin_node ? html`<span class="poid">node ${String(a.origin_node).slice(0, 8)}</span>` : "",
       html`<span class="pwhen">${obsWhenFull(a.observed_at)}</span></div>`);
@@ -1943,7 +2001,7 @@ async function handleEvent(ev) {
 // the peer drifting onto the knowledge it just contributed. Deterministic per-peer color; hover for id.
 function peerColor(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 68% 63%)`;
+  return TYPE_BAND[h % TYPE_BAND.length];   // the band, so a peer's dot is never a signal's color
 }
 // Centroid of a node set (or the whole visible graph) in world coords; parks at the view center when empty.
 function viewCentroid(list) {
@@ -2094,8 +2152,8 @@ async function detectServerMode() {
     const f = await (await fetch("/api/federation", { cache: "no-store" })).json();
     if (!f || f.role !== "hub") return;
     serverMode = true;
-    peersOn = true; peersBtn.classList.add("on");
-    follow = false; followBtn.classList.toggle("on", false);
+    peersOn = true; setSwitch(peersBtn, true);
+    follow = false; setSwitch(followBtn, false);
     seedPeers(f);
   } catch (_) { /* federation status unavailable - stay in client mode */ }
 }
@@ -2139,7 +2197,7 @@ function contestedRows(current, tier, curObs, competitors, contested) {
     html`<div class="crow${cur ? " cur" : ""}"><span class="cv">${v}</span>`,
     cur
       ? html`<span class="curtag${committed ? " confirmed" : ""}">${committed ? "confirmed" : "current"}</span>`
-      : html`<span class="ctier">${String(t)}</span>`,
+      : html`<span class="ctier">${tierName(t)}</span>`,
     obs && !committed
       ? html`<button class="confirm" data-obs="${obs}" title="${cur ? "lock in the current value (mark it human-confirmed so recency cannot flip it)" : "make this the confirmed value instead (mark it human-confirmed)"}">${cur ? "keep" : "use this"}</button>`
       : "",
@@ -2197,7 +2255,7 @@ function candRowHtml(c) {
   return html`${[
     html`<div class="cand ${c.role}"><span class="cv">${c.value}</span>`,
     html`<span class="crole">${c.role}</span>`,
-    html`<span class="ctier">${String(c.trust_tier)}</span>`,
+    html`<span class="ctier">${tierName(c.trust_tier)}</span>`,
     html`<span class="cobs" title="asserting observation ${c.observation}">${String(c.observation).slice(0, 8)}</span></div>`]}`;
 }
 function fieldHtml(f) {
@@ -2281,8 +2339,8 @@ function renderDetail(node) {
   const base = scopeBaseline();
   const tier = String(node.trust_tier);
   const scopeSaid = [];
-  if (base.tier !== null) scopeSaid.push(base.tier);
-  if (base.origin) scopeSaid.push("from " + base.origin);
+  if (base.tier !== null) scopeSaid.push(tierName(base.tier));
+  if (base.origin) scopeSaid.push("from " + base.origin + (surfaceNode && base.origin === surfaceNode ? " (this node)" : ""));
   const origin = base.origin === null && node.origins && node.origins.length
     ? html`<div class="meta">from: ${node.origins.join(", ")}</div>` : "";
   // An empty workspace is an entity a merge carried across a workspace boundary - said, not left blank.
@@ -2304,8 +2362,8 @@ function renderDetail(node) {
       html`</svg></button>`,
     html`<h2>${node.name}</h2>`,
     html`<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`,
-      html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tier}</span>` : ""}`,
-      scopeSaid.length ? html`<span class="scopeline" title="these values are the same for every node in this view, so they are not repeated per node">same across this scope: ${scopeSaid.join(" / ")}</span>` : "",
+      html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tierName(tier)}</span>` : ""}`,
+      scopeSaid.length ? html`<span class="scopeline" title="these values are the same for every node in this view, so they are not repeated per node">All here: ${scopeSaid.join(", ")}</span>` : "",
     html`</div>`,
     node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
     origin, workspace,
@@ -2724,9 +2782,12 @@ const CLOUD_FADE_AT = 0.45;
 // However many clouds overlap, their coverage eases toward this ceiling instead of stacking toward
 // opaque: ten regions sharing a cluster's core had covered it at 0.65.
 const CLOUD_COVER_MAX = 0.42;
+// A region's hue lies on the band's arcs - 109 to 155 degrees and 205 around to 11 - so no cloud is
+// gold, coral or teal (Section 5): the golden angle over 512 slots, laid along those 212 degrees.
 function regionHue(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return ((h % 512) * 137.508) % 360;   // the golden angle over the same 512 slots hyperColor used
+  const t = ((h % 512) * 137.508) % 212;
+  return t < 46 ? 109 + t : (205 + t - 46) % 360;
 }
 function regionLabelColor(id) { return "oklch(" + LABEL_L + " " + LABEL_C + " " + regionHue(id).toFixed(1) + ")"; }
 // OKLab -> sRGB in 0..255 (Ottosson's matrices), clamped into the gamut. The gamma step is a table.
@@ -2860,9 +2921,10 @@ function roundedHullPath(c, g) {
   }
   c.closePath();
 }
+// A boundary's color: the band picked by the id's hash, so a dashed outline is never a signal's color.
 function hyperColor(id) {
   let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return catColor(h % 512, false);   // id hash -> generated palette index (removes the fixed 8-color limit)
+  return TYPE_BAND[h % TYPE_BAND.length];
 }
 // Convex hull (Andrew monotone chain). Deterministic (sorted input) - Principle 16. Returns as-is if fewer than 3 points.
 function convexHull(pts) {
@@ -3369,7 +3431,7 @@ function draw() {
     // shortest edges are labeled first when the count exceeds the cap.
     if (hot && edgeLabels) edgeLabels.push({
       mx: 0.25*sx0 + 0.5*cpx + 0.25*tipx, my: 0.25*sy0 + 0.5*cpy + 0.25*tipy,
-      text: e.type, len: d, col: e.valid_to ? EDGE_OLD : (edgeTypeColor[e.type] || EDGE_OTHER),
+      text: e.type, len: d, col: e.valid_to ? EDGE_OLD : EDGE_ACTIVE,
     });
     // Group mode: make cross-group (different-type) edges stand out, in-group edges dim.
     const cross = clusterMode && e.a.type !== e.b.type;
@@ -3382,9 +3444,10 @@ function draw() {
       : edgeTypeHl
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA);
-    // Color is by relation kind - it reveals what kind of connection this is. A superseded edge is EDGE_OLD (a past signal, dashed).
+    // A relation's kind is said by its label, not a color (Section 5); an active edge or one whose kind
+    // the legend points at is drawn brighter. A superseded edge is EDGE_OLD (a past signal, dashed).
     ctx.strokeStyle = e.valid_to ? EDGE_OLD
-      : (hot || edgeTypeHl === e.type) ? (edgeTypeColor[e.type] || EDGE_OTHER) : EDGE_NEUTRAL;
+      : (hot || edgeTypeHl === e.type) ? EDGE_ACTIVE : EDGE_NEUTRAL;
     ctx.lineWidth = (hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s;   // constant thickness on screen
     if (hot) {
       // Active edges show flow direction: marching dashes travel source -> target. Screen-constant
@@ -3629,7 +3692,7 @@ function showTip(n, cx, cy) {
   tip.innerHTML = html`${[
     html`<b>${n.name}</b><br>`,
     html`<span class="k">type</span> ${n.type} &nbsp; <span class="k">degree</span> ${n.degree || 0}<br>`,
-    html`<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${n.trust_tier}`]}`;
+    html`<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${tierName(n.trust_tier)}`]}`;
 }
 
 // --- Interaction ---------------------------------------------------------------------
@@ -3855,15 +3918,15 @@ document.getElementById("zin").onclick = () => zoomWindow(1.2);
 document.getElementById("zout").onclick = () => zoomWindow(1/1.2);
 document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
 const followBtn = document.getElementById("followBtn");
-followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", follow); };
+followBtn.onclick = () => { follow = !follow; setSwitch(followBtn, follow); };
 const peersBtn = document.getElementById("peersBtn");
-peersBtn.onclick = () => { peersOn = !peersOn; peersBtn.classList.toggle("on", peersOn); };
+peersBtn.onclick = () => { peersOn = !peersOn; setSwitch(peersBtn, peersOn); };
 const clusterBtn = document.getElementById("clusterBtn");
-clusterBtn.onclick = () => { clusterMode = !clusterMode; clusterBtn.classList.toggle("on", clusterMode); wake(0.6); poll(); };
+clusterBtn.onclick = () => { clusterMode = !clusterMode; setSwitch(clusterBtn, clusterMode); wake(0.6); poll(); };
 const hyperBtn = document.getElementById("hyperBtn");
 // Overlay is render-only (the draw loop shows it next frame) - do not reheat the sim. Fetch hyperedge
 // data only if we do not already have it (e.g. when leaving group mode, where it was cleared).
-hyperBtn.onclick = () => { hyperMode = !hyperMode; hyperBtn.classList.toggle("on", hyperMode); if (hyperMode && !hyperedges.length) poll(); };
+hyperBtn.onclick = () => { hyperMode = !hyperMode; setSwitch(hyperBtn, hyperMode); if (hyperMode && !hyperedges.length) poll(); };
 // The panels and their title-bar toggles (docs/design-system.md Section 6): each panel opens and
 // closes on its own, with its toggle or [ and ], and the choice persists across reloads. A panel is
 // part of the frame beside the map's window - body.dl / body.dr move the window's edges - and
@@ -3967,18 +4030,18 @@ document.querySelectorAll(".dock .tabs").forEach(tabs => {
 });
 arrowTabs(document.getElementById("settingsTabs"));
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
-document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; e.currentTarget.classList.toggle("on", showLabels); };
-document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; e.currentTarget.classList.toggle("on", showEdges); };
-document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; e.currentTarget.classList.toggle("on", showArrows); };
-document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; e.currentTarget.classList.toggle("on", showFootprint); };
-document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; e.currentTarget.classList.toggle("on", showPulses); };
-document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; e.currentTarget.classList.toggle("on", showSuperseded); };
+document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; setSwitch(e.currentTarget, showLabels); };
+document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; setSwitch(e.currentTarget, showEdges); };
+document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; setSwitch(e.currentTarget, showArrows); };
+document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; setSwitch(e.currentTarget, showFootprint); };
+document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; setSwitch(e.currentTarget, showPulses); };
+document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; setSwitch(e.currentTarget, showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
 // The sync pill opens the settings at Sync. In the app the shell takes this click to the app's own
 // Settings > Sync page, as it takes the gear's.
 document.getElementById("syncPill").onclick = () => { settingsTab = "sync"; openSettings(); };
-document.getElementById("miniBtn").onclick = e => { showMini = !showMini; e.currentTarget.classList.toggle("on", showMini); };
-document.getElementById("regionsBtn").onclick = e => { allRegions = !allRegions; e.currentTarget.classList.toggle("on", allRegions); };
+document.getElementById("miniBtn").onclick = e => { showMini = !showMini; setSwitch(e.currentTarget, showMini); };
+document.getElementById("regionsBtn").onclick = e => { allRegions = !allRegions; setSwitch(e.currentTarget, allRegions); };
 // The contested pill and the review pill open the Review page, where contested beliefs wait under
 // Needs you.
 document.getElementById("contestedPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
@@ -3987,6 +4050,7 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
 // step 1): a choice made once stays made. A preference, so it lives in this browser and nowhere else.
 // peers is left out on purpose: it switches itself on for a hub, so a stored "off" would fight that.
 {
+  for (const b of document.querySelectorAll("button.tog")) setSwitch(b, b.classList.contains("on"));
   const VIEW_PREFS = ["followBtn", "clusterBtn", "hyperBtn", "regionsBtn", "labelsBtn", "edgesBtn",
     "arrowsBtn", "footBtn", "pulseBtn", "histBtn", "miniBtn"];
   let saved = {};
