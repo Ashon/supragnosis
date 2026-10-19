@@ -67,6 +67,8 @@ let clusterMode = false;         // group by type: type-circle layout + cross-gr
 let hullForce = true;            // hyperedge cohesion+separation physics (Principle 11) - the DEFAULT organizer; suppressed while group mode is on
 let hyperMode = true;            // hyperedge hull OVERLAY (fills + labels) - on by default, visual only, independent of hullForce
 let hyperedges = [];             // [{id, members:[nodeId], size, sources, trust_tier}] - /api/hypergraph
+let lastStats = {};              // the stats of the last successful graph - reused by poll's hyperedge line
+let lastOkAt = null;             // when the graph last loaded (status bar says "Not updated since ..." only when stale)
 // Graphic-element visibility toggles (all default on). Pure render switches with no effect on layout.
 let showLabels = true, showEdges = true, showArrows = true;
 let flowPhase = 0;   // per-frame counter driving the marching-dash flow animation on active edges
@@ -356,6 +358,24 @@ function saveLayout() {
 }
 addEventListener("pagehide", saveLayout);
 
+// Status bar stats line: one plain sentence, scope first. `regions` is a count or null.
+function statsLine(cur, s, regions) {
+  const scope = cur === "*" || cur === "all" ? "All workspaces" : cur || "default";
+  const n = s.node_count ?? nodes.length, m = s.edge_count ?? edges.length;
+  const e = n === 1 ? "1 entity" : n + " entities";
+  const r = m === 1 ? "1 relation" : m + " relations";
+  let line = scope + " - " + e + ", " + r;
+  if (regions !== null) line += ", " + (regions === 1 ? "1 region" : regions + " regions");
+  return line;
+}
+// Status bar: only say when the graph is stale, and only then say since when.
+function sayLate(reason) {
+  // The reason is poll's: the HTTP status, the server's own error, or that it did not answer.
+  statusEl.textContent = lastOkAt
+    ? "Not updated since " + lastOkAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " - " + reason
+    : "Not loaded - " + reason;
+}
+
 function applyGraph(g) {
   const seen = new Set();
   let added = false, restored = 0;
@@ -415,15 +435,14 @@ function applyGraph(g) {
   renderLegend();
   noteTrustAndContest();
   const s = g.stats || {};
-  statusEl.textContent = "updated " + new Date().toLocaleTimeString();
+  lastStats = s;
+  lastOkAt = new Date();
+  statusEl.textContent = "";
   // Current workspace leads the stats line - the selection UI is the left rail's chips, and this
   // keeps the selection readable even with that dock collapsed.
-  const cur = currentWs();
-  const wsLabel = cur === "*" || cur === "all" ? "(all)" : cur || "(default)";
-  document.getElementById("stats").textContent =
-    `ws ${wsLabel} / nodes ${s.node_count ?? nodes.length} / edges ${s.edge_count ?? edges.length}`
-    + (clusterMode ? ` / groups ${Object.keys(typeColor).length}, bridges ${bridgeSet.size}` : "")
-    + (s.type_counts ? " / " + Object.entries(s.type_counts).map(([t,c]) => `${t} ${c}`).join(", ") : "");
+  // The regions the last hypergraph read counted stay in the line until the next one answers, so the
+  // count does not blink out at every poll.
+  document.getElementById("stats").textContent = statsLine(currentWs(), s, hyperedges.length ? hyperedges.length : null);
   emptyEl.style.display = nodes.length ? "none" : "flex";
   if (!nodes.length) refreshEmpty();
 
@@ -882,9 +901,9 @@ async function poll() {
   const url = "/api/graph" + (ws ? "?workspace=" + encodeURIComponent(ws) : "");
   try {
     const r = await fetch(url, { cache: "no-store" });
-    if (!r.ok) { statusEl.textContent = "HTTP " + r.status; return; }
+    if (!r.ok) { sayLate("the server answered HTTP " + r.status); return; }
     const g = await r.json();
-    if (g.error) { statusEl.textContent = g.error; return; }
+    if (g.error) { sayLate(g.error); return; }
     applyGraph(g);
     // Hyperedges (second-order structure) are fetched whenever the hull force or overlay needs them
     // (the force is on by default, suppressed only in group mode); otherwise cleared. As an auxiliary
@@ -897,9 +916,7 @@ async function poll() {
           const hg = await hr.json();
           if (!hg.error) {
             hyperedges = hg.hyperedges || [];
-            const drawn = hyperedges.filter(h => h.size >= 3).length;
-            document.getElementById("stats").textContent += ` / hyperedges ${hyperedges.length} (hull ${drawn})`;
-
+            document.getElementById("stats").textContent = statsLine(currentWs(), lastStats, hyperedges.length);
           }
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
@@ -911,7 +928,7 @@ async function poll() {
     refreshProposals();
     refreshLog();
     refreshStrip();
-  } catch (e) { statusEl.textContent = "connection failed - check the server is running"; }
+  } catch (e) { sayLate("the server is not answering"); }
 }
 
 function currentWs() { return wsInput.value.trim(); }

@@ -338,7 +338,7 @@
   #statusbar { position:fixed; left:0; right:0; bottom:0; height:28px; z-index:9; display:flex;
                align-items:center; gap:14px; padding:0 14px; background:var(--panel);
                font-size:11px; letter-spacing:.03em; color:var(--muted); }
-  #statusbar #stats { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #statusbar #stats { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #statusbar #status { margin-left:auto; white-space:nowrap; }
   #statusbar #session { white-space:nowrap; }
   .dock .panels { flex:1 1 auto; min-height:0; overflow-y:auto; }
@@ -685,6 +685,7 @@
     .rv-queue { max-height:40vh; }
     .rv-detail { border-radius:16px 16px 0 0; }
     #minimap { display:none !important; }
+    #statusbar #session, #statusbar #tierNote { display:none; }
     /* The camera buttons move to the top right, out of the sheets' way. */
     #hud { right:16px; top:61px; bottom:auto; }
   }
