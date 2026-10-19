@@ -436,6 +436,89 @@ async fn viz_serves_graph_index_and_404() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// One raw GET with an `If-None-Match` header, as the viewer's poll sends it.
+async fn uds_get_if_none_match(path: &PathBuf, target: &str, tag: &str) -> String {
+    let mut s = UnixStream::connect(path).await.expect("connect viewer socket");
+    let req = format!("GET {target} HTTP/1.1\r\nIf-None-Match: {tag}\r\nConnection: close\r\n\r\n");
+    s.write_all(req.as_bytes()).await.unwrap();
+    let mut resp = String::new();
+    s.read_to_string(&mut resp).await.unwrap();
+    resp
+}
+
+fn etag_of(resp: &str) -> String {
+    resp.lines()
+        .take_while(|l| !l.is_empty())
+        .find_map(|l| l.strip_prefix("ETag: "))
+        .unwrap_or_else(|| panic!("no ETag in: {}", resp.lines().next().unwrap_or("")))
+        .to_string()
+}
+
+/// design-system.md U33: a poll that finds nothing new costs the page nothing. The graph and the
+/// hypergraph carry an ETag of their body; asked with it, an unchanged one answers 304 with no body,
+/// and a changed one answers in full with a new tag.
+#[tokio::test]
+async fn a_poll_that_finds_nothing_new_costs_nothing() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine =
+        Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
+    observe_depends(&engine);
+    let sock = serve_uds("etag", Arc::clone(&engine), ev_channel()).await;
+
+    for target in ["/api/graph?workspace=ws", "/api/hypergraph?workspace=ws"] {
+        let first = uds_get(&sock, target).await;
+        body_of(&first, "200");
+        let tag = etag_of(&first);
+        assert!(tag.starts_with('"') && tag.ends_with('"'), "a strong ETag: {tag}");
+
+        let same = uds_get_if_none_match(&sock, target, &tag).await;
+        assert!(same.starts_with("HTTP/1.1 304 Not Modified"), "{target} unchanged: {same}");
+        assert_eq!(etag_of(&same), tag, "a 304 names the tag it confirms");
+        assert_eq!(same.split_once("\r\n\r\n").map(|(_, b)| b), Some(""), "a 304 has no body");
+        assert!(
+            uds_get_if_none_match(&sock, target, "*").await.starts_with("HTTP/1.1 304"),
+            "* matches any body"
+        );
+        let other = uds_get_if_none_match(&sock, target, "\"stale\"").await;
+        assert_eq!(etag_of(&other), tag, "another tag is answered in full");
+        assert!(!body_of(&other, "200").is_empty());
+    }
+
+    let before = etag_of(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    engine
+        .observe(ObserveInput {
+            content: "supragnosis uses tokio".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                description: None,
+                name: "tokio".into(),
+                kind: Some("Tool".into()),
+            }],
+            relations: vec![RelationInput {
+                description: None,
+                from: "supragnosis".into(),
+                kind: "uses".into(),
+                to: "tokio".into(),
+                valid_from: None,
+                valid_to: None,
+            }],
+        })
+        .expect("observe succeeds");
+    let after = uds_get_if_none_match(&sock, "/api/graph?workspace=ws", &before).await;
+    assert_eq!(
+        json_get(&after)["stats"]["node_count"],
+        3,
+        "a changed graph is answered in full"
+    );
+    assert_ne!(etag_of(&after), before, "and with a new tag");
+
+    let _ = std::fs::remove_file(&sock);
+}
+
 /// XSS regression (Principle 18): entity/type names come from untrusted observe calls and are
 /// interpolated into the console's innerHTML/attributes. Assert against the viewer SOURCE (not the
 /// served bytes, which are minified in release); ESLint no-unsanitized guards the same source in CI.

@@ -18,7 +18,8 @@
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
-> The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38.
+> The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38 - and
+> step 31, the poll that asks first, is built.
 
 ## 1. Why this exists
 
@@ -1693,8 +1694,8 @@ and it fails when one of them appears in the viewer's source other than as an ar
 30. **Measured** [built] (Section 26.2; U31): the bench from 500 to 20,000 in Chrome and WebKit, at
    rest, at a reading zoom and while the layout moves. The budget holds in both; what it leaves -
    the moving layout and a store's many contexts - is the next pass's.
-31. **The poll asks first** [planned] (Section 27.3; U33): an ETag on the graph and the hypergraph,
-   and a 304 for an unchanged one.
+31. **The poll asks first** [built] (Section 27.3; U33): an ETag on the graph and the hypergraph,
+   and a 304 for an unchanged one, through the desktop app's proxy as well.
 32. **Region forces that scale** [planned] (Section 27.4; U34): kept membership, marking, and
    separation among drawn regions; the bench's graph gains a store's contexts.
 33. **The layout on its own thread** [planned] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
@@ -2487,7 +2488,12 @@ The graph and the hypergraph answer with an `ETag`, a hash of their body. The vi
 you have" (U33). The daemon still builds the body to hash it: the engine's write counter counts
 appended observations, not a review, a definition or a validity that ends with time, so a revision
 taken from it could call a changed graph unchanged. Building is the daemon's cost, 0.1 seconds at
-10,000; parsing and applying was the page's, and that is what the poll stops paying.
+10,000; parsing and applying was the page's, and that is what the poll stops paying. The desktop
+app's proxy passes the tag to the daemon and the ETag back, and passes a tag on only when it is one
+line of printable characters, since it writes it into the request as it comes. The page keeps only
+the tag of the graph it holds, with its address, and forgets it when the workspace changes.
+
+Guarded by `a_poll_that_finds_nothing_new_costs_nothing` and `a_poll_asks_with_what_it_holds`.
 
 ### 27.4 Region forces that scale
 

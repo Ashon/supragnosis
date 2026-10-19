@@ -586,6 +586,12 @@ function sayLate(reason) {
     : "Not loaded - " + reason;
 }
 
+// The graph is current: a poll answered, with a graph or with "unchanged" (U33).
+function heardBack() {
+  lastOkAt = new Date();
+  statusEl.textContent = "";
+}
+
 function applyGraph(g) {
   const seen = new Set();
   let added = false, restored = 0;
@@ -646,8 +652,7 @@ function applyGraph(g) {
   noteTrustAndContest();
   const s = g.stats || {};
   lastStats = s;
-  lastOkAt = new Date();
-  statusEl.textContent = "";
+  heardBack();
   // Current workspace leads the stats line - the selection UI is the left rail's chips, and this
   // keeps the selection readable even with that dock collapsed.
   // The regions the last hypergraph read counted stay in the line until the next one answers, so the
@@ -1117,31 +1122,45 @@ function trustRing(n, r) {
   ctx.stroke();
 }
 
+// The graph and the hypergraph the page holds, by their address and ETag (design-system.md Section
+// 27.3, U33). A poll asks with the tag, and an unchanged answer, a 304, leaves the map as it is:
+// nothing is parsed or applied. Only the tag of what the page holds is kept, so another workspace's
+// address is never asked with it.
+const heldGraph = { url: "", tag: "" }, heldHyper = { url: "", tag: "" };
+function askedWith(held, url) {
+  return { cache: "no-store", headers: held.url === url && held.tag ? { "If-None-Match": held.tag } : {} };
+}
+function hold(held, url, r) { held.url = url; held.tag = r.headers.get("ETag") || ""; }
 async function poll() {
   const ws = wsInput.value.trim();
   const url = "/api/graph" + (ws ? "?workspace=" + encodeURIComponent(ws) : "");
   try {
-    const r = await fetch(url, { cache: "no-store" });
-    if (!r.ok) { sayLate("the server answered HTTP " + r.status); return; }
-    const g = await r.json();
-    if (g.error) { sayLate(g.error); return; }
-    applyGraph(g);
+    const r = await fetch(url, askedWith(heldGraph, url));
+    if (r.status === 304) heardBack();
+    else {
+      if (!r.ok) { sayLate("the server answered HTTP " + r.status); return; }
+      const g = await r.json();
+      if (g.error) { sayLate(g.error); return; }
+      applyGraph(g);
+      hold(heldGraph, url, r);
+    }
     // Hyperedges (second-order structure) are fetched whenever the hull force or overlay needs them
     // (the force is on by default, suppressed only in group mode); otherwise cleared. As an auxiliary
     // channel, a failure still keeps the graph rendering (Principle 21: observability is optional).
     if (hyperMode || (hullForce && !clusterMode)) {
       try {
         const hurl = "/api/hypergraph" + (ws ? "?workspace=" + encodeURIComponent(ws) : "");
-        const hr = await fetch(hurl, { cache: "no-store" });
-        if (hr.ok) {
+        const hr = await fetch(hurl, askedWith(heldHyper, hurl));
+        if (hr.status !== 304 && hr.ok) {
           const hg = await hr.json();
           if (!hg.error) {
             hyperedges = hg.hyperedges || [];
             showStats(currentWs(), lastStats, hyperedges.length);
+            hold(heldHyper, hurl, hr);
           }
         }
       } catch (e) { /* hull is auxiliary - the graph stays as-is */ }
-    } else { hyperedges = []; }
+    } else { hyperedges = []; heldHyper.url = heldHyper.tag = ""; }
     // Keep the type glossary + curation + proposals + log panels current (no-op while closed). The
     // log refreshes here too, so an observe event (which routes through poll) also refreshes it.
     refreshGlossary();
@@ -1169,6 +1188,7 @@ function syncUrlWorkspace() {
 function beginWorkspaceTransition() {
   saveLayout();          // the scope being left, under its own key
   layoutFresh = true;    // the next graph reads the new scope's
+  heldGraph.url = heldGraph.tag = heldHyper.url = heldHyper.tag = "";   // the next poll fetches in full
   syncUrlWorkspace();
   focus = null; hover = null; renderDetail(null);
   proposalSel = null;

@@ -826,9 +826,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (33, &[c(
         "a poll that finds nothing new costs the page nothing: an ETag on the graph and the hypergraph, and a 304 the viewer keeps what it has on",
-        Evidence::Deferred(
-            "Section 14 step 31 is planned: every poll fetches, parses and applies the graph and the hypergraph. Revisit when step 31 lands",
-        ),
+        // http.rs asks the daemon with and without the tag; scale.rs reads poll, askedWith and
+        // beginWorkspaceTransition; the app's proxy passes the tag both ways (conditional_tests).
+        Evidence::Scenario(&["a_poll_that_finds_nothing_new_costs_nothing", "a_poll_asks_with_what_it_holds"]),
     )]),
     (34, &[c(
         "the layout's region forces grow with the members, not the pairs or the number of regions: kept index arrays, no allocation per region, a marking share test, separation among regions of three or more",

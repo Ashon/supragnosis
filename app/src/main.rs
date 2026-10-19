@@ -314,6 +314,8 @@ struct Fetched {
     /// keep in step, which is the failure this proxy already avoids for content-type by reading it
     /// rather than assuming it. The daemon serves the page; the daemon's policy governs it.
     csp: Option<String>,
+    /// The ETag of the graph and the hypergraph (design-system.md U33), so the viewer can ask with it.
+    etag: Option<String>,
     body: Vec<u8>,
 }
 
@@ -321,16 +323,31 @@ struct Fetched {
 /// /api/events must never come through here (an endless stream) - the protocol handler
 /// short-circuits it.
 async fn uds_fetch(sock: &Path, target: &str) -> anyhow::Result<Fetched> {
-    uds_request(sock, "GET", target).await
+    uds_request(sock, "GET", target, None).await
+}
+
+/// The webview's `If-None-Match`, when it is one this proxy can pass on: printable ASCII and no line
+/// break, since it is written into the request head as it comes.
+fn forwarded_if_none_match(value: Option<&http::HeaderValue>) -> Option<String> {
+    let v = value?.to_str().ok()?;
+    (!v.is_empty() && v.bytes().all(|b| (0x20..0x7f).contains(&b))).then(|| v.to_string())
 }
 
 /// One request over the socket, with no body - the viewer takes its parameters in the query string,
 /// POST included (its one POST is the console's narrowing act, `/api/peer/share`).
-async fn uds_request(sock: &Path, method: &str, target: &str) -> anyhow::Result<Fetched> {
+async fn uds_request(
+    sock: &Path,
+    method: &str,
+    target: &str,
+    if_none_match: Option<&str>,
+) -> anyhow::Result<Fetched> {
     let mut s = UnixStream::connect(sock).await?;
+    let conditional = if_none_match.map(|t| format!("If-None-Match: {t}\r\n")).unwrap_or_default();
     s.write_all(
-        format!("{method} {target} HTTP/1.1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-            .as_bytes(),
+        format!(
+            "{method} {target} HTTP/1.1\r\n{conditional}Content-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .as_bytes(),
     )
     .await?;
     let mut raw = Vec::new();
@@ -354,7 +371,13 @@ async fn uds_request(sock: &Path, method: &str, target: &str) -> anyhow::Result<
         })
     };
     let ctype = header("content-type").unwrap_or_else(|| "application/octet-stream".to_string());
-    Ok(Fetched { status, ctype, csp: header("content-security-policy"), body })
+    Ok(Fetched {
+        status,
+        ctype,
+        csp: header("content-security-policy"),
+        etag: header("etag"),
+        body,
+    })
 }
 
 /// The policy for responses the SHELL authors rather than proxies: the starting splash and the
@@ -1484,10 +1507,11 @@ async fn peer_narrow(
         query_value(&keep.join(","))
     );
     let sock = app.state::<VizSock>().0.clone();
-    let answer = tokio::time::timeout(Duration::from_secs(15), uds_request(&sock, "POST", &target))
-        .await
-        .map_err(|_| "the daemon did not answer within 15 seconds".to_string())?
-        .map_err(|e| format!("the daemon could not be reached: {e}"))?;
+    let answer =
+        tokio::time::timeout(Duration::from_secs(15), uds_request(&sock, "POST", &target, None))
+            .await
+            .map_err(|_| "the daemon did not answer within 15 seconds".to_string())?
+            .map_err(|e| format!("the daemon could not be reached: {e}"))?;
     let body: serde_json::Value = serde_json::from_slice(&answer.body).unwrap_or_default();
     if answer.status != 200 {
         return Err(body["error"].as_str().unwrap_or("the daemon refused the change").to_string());
@@ -2277,6 +2301,7 @@ fn main() {
                 .path_and_query()
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "/".to_string());
+            let if_none_match = forwarded_if_none_match(request.headers().get("if-none-match"));
             tauri::async_runtime::spawn(async move {
                 let r = if target.starts_with("/api/events") {
                     // SSE cannot ride a request/response protocol - the viz-event bridge covers it.
@@ -2303,13 +2328,19 @@ fn main() {
                         )
                     }
                 } else {
-                    match tokio::time::timeout(Duration::from_secs(15), uds_fetch(&sock, &target)).await {
+                    let fetch = uds_request(&sock, "GET", &target, if_none_match.as_deref());
+                    match tokio::time::timeout(Duration::from_secs(15), fetch).await {
                         // The daemon's own policy governs the daemon's own page. An answer with no
                         // policy is forwarded with none, so a daemon that stopped sending one shows
                         // up as that rather than as a shell-authored guess (see SHELL_CSP).
                         Ok(Ok(f)) => {
                             let csp = with_ipc_sources(f.csp.as_deref().unwrap_or(""));
-                            resp(f.status, &f.ctype, &csp, f.body)
+                            let mut r = resp(f.status, &f.ctype, &csp, f.body);
+                            // The graph's ETag goes back with it, so the poll can ask (U33).
+                            if let Some(v) = f.etag.and_then(|t| http::HeaderValue::from_str(&t).ok()) {
+                                r.headers_mut().insert("etag", v);
+                            }
+                            r
                         }
                         // Socket not answering: the index gets a self-refreshing splash carrying
                         // the live daemon state (a Failed reason must be readable, not an eternal
@@ -2570,6 +2601,27 @@ fn main() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod conditional_tests {
+    use super::{forwarded_if_none_match, http};
+
+    /// The poll's tag reaches the daemon as it was sent (design-system.md U33), and only a tag that
+    /// cannot break the request head it is written into: a line break would start a header of its own.
+    #[test]
+    fn the_poll_tag_is_passed_on_only_when_it_is_one_line() {
+        let ok = http::HeaderValue::from_static("\"5f3a9c0d1e2b4a67-1a2b\"");
+        assert_eq!(
+            forwarded_if_none_match(Some(&ok)).as_deref(),
+            Some("\"5f3a9c0d1e2b4a67-1a2b\"")
+        );
+        assert_eq!(forwarded_if_none_match(None), None);
+        let empty = http::HeaderValue::from_static("");
+        assert_eq!(forwarded_if_none_match(Some(&empty)), None);
+        let tab = http::HeaderValue::from_bytes(b"\"a\"\t\"b\"").unwrap();
+        assert_eq!(forwarded_if_none_match(Some(&tab)), None, "only printable ASCII is passed on");
+    }
 }
 
 #[cfg(test)]

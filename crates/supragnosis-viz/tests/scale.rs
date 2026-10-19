@@ -234,3 +234,30 @@ fn still_layers_move_with_the_camera() {
         "the map's regions do not come from the kept geometry"
     );
 }
+
+/// U33: a poll that finds nothing new costs the page nothing. The poll asks with the ETag of the graph
+/// and the hypergraph it holds, only for the address it holds them for; a 304 applies nothing and
+/// still says the graph is current; a workspace change forgets the tags.
+#[test]
+fn a_poll_asks_with_what_it_holds() {
+    let poll = function("poll");
+    for part in [
+        "const r = await fetch(url, askedWith(heldGraph, url));",
+        "if (r.status === 304) heardBack();",
+        "applyGraph(g);\n      hold(heldGraph, url, r);",
+        "const hr = await fetch(hurl, askedWith(heldHyper, hurl));",
+        "if (hr.status !== 304 && hr.ok) {",
+    ] {
+        assert!(poll.contains(part), "the poll no longer asks first: {part}");
+    }
+    assert!(
+        function("askedWith")
+            .contains("held.url === url && held.tag ? { \"If-None-Match\": held.tag } : {}"),
+        "the poll asks with a tag held for another address"
+    );
+    assert!(
+        function("beginWorkspaceTransition")
+            .contains("heldGraph.url = heldGraph.tag = heldHyper.url = heldHyper.tag = \"\";"),
+        "a workspace change keeps the old tags"
+    );
+}

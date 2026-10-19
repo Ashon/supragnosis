@@ -193,6 +193,10 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let if_none_match = head.lines().skip(1).find_map(|l| {
+        let (k, v) = l.split_once(':')?;
+        k.trim().eq_ignore_ascii_case("if-none-match").then(|| v.trim().to_string())
+    });
 
     // A shipped file - no store read, no policy beyond the page's own - straight from the binary.
     if method == "GET" {
@@ -209,17 +213,53 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     // Every route below reads the store, folds the log or writes a file - synchronous work that can
     // take seconds on a large store (the merge band, a curation poll every 2.5s). Run on the async
     // worker it would hold that thread, which the MCP daemon shares, and stall its tool calls.
+    // The graph and the hypergraph carry an ETag, a hash of their body, so a poll that finds
+    // nothing new costs the page nothing (design-system.md Section 27.3, U33): the body is still
+    // built, since no revision of the store covers every change to what they show, but an unchanged
+    // one is answered 304 with no body, and the viewer keeps what it has.
+    let conditional = method == "GET" && matches!(path, "/api/graph" | "/api/hypergraph");
     let (method, path, query) = (method.to_string(), path.to_string(), query.to_string());
-    let resp = tokio::task::spawn_blocking(move || {
-        respond(&engine, &method, &path, &query, fed.as_ref(), narrow.as_ref(), clients.as_ref())
+    let (resp, etag) = tokio::task::spawn_blocking(move || {
+        let r = respond(
+            &engine,
+            &method,
+            &path,
+            &query,
+            fed.as_ref(),
+            narrow.as_ref(),
+            clients.as_ref(),
+        );
+        let etag = (conditional && r.status == "200 OK").then(|| body_etag(&r.body));
+        (r, etag)
     })
     .await
-    .unwrap_or_else(|e| Response {
-        status: "500 Internal Server Error",
-        content_type: "application/json",
-        body: err_body(&format!("the request's handler failed: {e}")),
+    .unwrap_or_else(|e| {
+        let r = Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: err_body(&format!("the request's handler failed: {e}")),
+        };
+        (r, None)
     });
-    write_response(&mut stream, &resp).await
+    match etag {
+        Some(tag) if if_none_match.as_deref().is_some_and(|h| etag_matches(h, &tag)) => {
+            write_not_modified(&mut stream, &tag).await
+        }
+        tag => write_response(&mut stream, &resp, tag.as_deref()).await,
+    }
+}
+
+/// A strong ETag for a response body: its length and a hash of its bytes.
+fn body_etag(body: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    body.hash(&mut h);
+    format!("\"{:016x}-{:x}\"", h.finish(), body.len())
+}
+
+/// Whether an `If-None-Match` header names this ETag: one of its comma-separated tags, or `*`.
+fn etag_matches(header: &str, tag: &str) -> bool {
+    header.split(',').map(str::trim).any(|t| t == "*" || t == tag)
 }
 
 /// The response to one non-streaming request: the two endpoints the wiring layer hooks in, then
@@ -1244,16 +1284,35 @@ pub const CSP: &str = "default-src 'none'; \
      frame-ancestors 'none'; \
      object-src 'none'";
 
-async fn write_response<S: AsyncWrite + Unpin>(stream: &mut S, r: &Response) -> anyhow::Result<()> {
+async fn write_response<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    r: &Response,
+    etag: Option<&str>,
+) -> anyhow::Result<()> {
+    let etag = etag.map(|t| format!("ETag: {t}\r\n")).unwrap_or_default();
     let header = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\
-         Content-Security-Policy: {CSP}\r\nX-Content-Type-Options: nosniff\r\n\r\n",
+         {etag}Content-Security-Policy: {CSP}\r\nX-Content-Type-Options: nosniff\r\n\r\n",
         r.status,
         r.content_type,
         r.body.len()
     );
     stream.write_all(header.as_bytes()).await?;
     stream.write_all(r.body.as_bytes()).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+/// An unchanged body: the status and its ETag, and no body (RFC 9110 Section 15.4.5).
+async fn write_not_modified<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    tag: &str,
+) -> anyhow::Result<()> {
+    let header = format!(
+        "HTTP/1.1 304 Not Modified\r\nETag: {tag}\r\nConnection: close\r\nCache-Control: no-store\r\n\
+         Content-Security-Policy: {CSP}\r\nX-Content-Type-Options: nosniff\r\n\r\n"
+    );
+    stream.write_all(header.as_bytes()).await?;
     stream.flush().await?;
     Ok(())
 }
