@@ -36,3 +36,30 @@ fn the_status_bar_says_the_scope_once() {
     assert!(stats_css.contains("min-width:0") && stats_css.contains("flex:1 1 auto"), "the counts do not give way");
     assert!(rule("#statusbar #settingsBtn").contains("flex:none"), "the gear can be pushed off");
 }
+
+/// Section 7: the Review page is used from the keyboard. Its segments are tabs that move with the
+/// arrows; A, R, J and K act only while focus is in the list or the item, and a control names its key
+/// in `aria-keyshortcuts` rather than in its name; Skip is a button; a redraw keeps focus on the item;
+/// and while the page is open the map and the panels behind it are inert.
+#[test]
+fn the_review_page_works_from_the_keyboard() {
+    let render = function("renderReview");
+    assert!(render.contains("arrowTabs(segEl)"), "the segments do not move with the arrows");
+    assert!(render.contains("segEl.dataset.arrows"), "the arrows are wired at every redraw");
+    assert!(render.contains(".rv-item.on") && render.contains(".focus()"), "a redraw drops focus");
+    assert!(render.contains("setReviewInert("), "the page behind Review stays reachable");
+    let inert = function("setReviewInert");
+    for id in ["\"c\"", "\"dockL\"", "\"dockR\"", "\"detail\"", "\"log\"", "\"strip\"", "\"minimap\"", "\"hud\""] {
+        assert!(inert.contains(id), "setReviewInert leaves {id} out");
+    }
+    let detail = function("itemDetail");
+    assert!(!detail.contains("<kbd>A</kbd></button>") && !detail.contains("<kbd>R</kbd></button>"), "a key is part of a button's name");
+    for key in ["A", "R", "J"] {
+        assert!(detail.contains(&format!("aria-keyshortcuts=\"{key}\"")), "no control names the key {key}");
+    }
+    assert!(detail.contains("data-skip"), "there is no Skip button");
+    assert!(function("wireDecisions").contains("[data-skip]"), "Skip does nothing");
+    let at = SCRIPT.find("window.addEventListener(\"keydown\", e => {\n  if (!reviewOpen()) return;").expect("the Review keys");
+    let keys = &SCRIPT[at..at + SCRIPT[at..].find("\n});").expect("it closes")];
+    assert!(keys.contains("closest(\"#rvList, #rvDetail\")"), "A and R act from anywhere on the page");
+}

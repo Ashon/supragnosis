@@ -1385,10 +1385,19 @@ function updateReviewPill() {
   pill.textContent = n + " to review";
 }
 let reviewSig = "";   // what the page last drew - a poll that changes nothing must not redraw it
+// The Review page is a full-screen route; everything else on the page is inert while it is open, so
+// Tab and the screen reader stay inside it. Runs on close too (reviewEl.hidden flips first).
+function setReviewInert(on) {
+  for (const id of ["c", "dockL", "dockR", "detail", "log", "strip", "minimap", "hud"]) {
+    const el = document.getElementById(id);
+    if (el) el.inert = !!on;
+  }
+}
 function renderReview() {
   updateReviewPill();
   if (!reviewEl) return;
   reviewEl.hidden = !reviewOpen();
+  setReviewInert(reviewOpen());
   if (!reviewOpen()) { reviewSig = ""; return; }
   const local = surfaceKind === "local";
   const needs = needsItems(), decided = decidedItems();
@@ -1413,6 +1422,8 @@ function renderReview() {
     if (reviewSeg === id) segSel = b;
   }
   markTabs(segEl, [...segEl.children], segSel);
+  // The strip keeps its element while its buttons are redrawn, so its arrow keys are wired once.
+  if (!segEl.dataset.arrows) { arrowTabs(segEl); segEl.dataset.arrows = "1"; }
   const cur = currentWs();
   document.getElementById("rvScope").textContent = cur === "*" || cur === "all" ? "all workspaces" : (cur || "default");
   const list = document.getElementById("rvList"), detail = document.getElementById("rvDetail");
@@ -1427,10 +1438,15 @@ function renderReview() {
   }
   const items = reviewSeg === "needs" ? needs : decided;
   if (!items.some(it => it.key === reviewSel)) reviewSel = items.length ? items[0].key : null;
+  // A redraw replaces the focused item's button, and a decision replaces the button that cast it: in
+  // either case focus goes on to the item now selected - the next one, after a decision.
+  const hadFocus = !!(document.activeElement && document.activeElement.closest
+    && document.activeElement.closest("#rvList, #rvDetail [data-decide], #rvDetail [data-skip]"));
   list.innerHTML = html`${items.length
     ? items.map(it => html`<button type="button" class="rv-item${it.key === reviewSel ? " on" : ""}" data-key="${it.key}">${itemTag(it)}<span class="rv-t">${itemTitle(it)}</span></button>`)
     : html`<div class="empty">${reviewSeg === "needs" ? "Nothing waits for you in this workspace." : "Nothing decided here yet."}</div>`}`;
   list.querySelectorAll(".rv-item").forEach(b => { b.onclick = () => { reviewSel = b.dataset.key; renderReview(); }; });
+  if (hadFocus) { const on = list.querySelector(".rv-item.on"); if (on) on.focus(); }
   const it = items.find(x => x.key === reviewSel);
   detail.innerHTML = html`${it ? itemDetail(it, local) : html`<div class="empty">Select an item.</div>`}`;
   if (it && it.kind === "proposal" && (!reviewView || reviewView.id !== it.p.id)) fetchReviewView(it.p.id);
@@ -1470,9 +1486,10 @@ function itemDetail(it, local) {
     const armed = recallArmed === p.id;
     const label = p.kind === "recall" && armed ? "Confirm the recall" : "Accept";
     const off = !ready || failing.length;
-    acts.push(html`<button type="button" class="btn p" data-decide="merge"${off ? html` disabled` : ""}>${label} <kbd>A</kbd></button>`);
+    acts.push(html`<button type="button" class="btn p" data-decide="merge" aria-keyshortcuts="A"${off ? html` disabled` : ""}>${label} <kbd aria-hidden="true">A</kbd></button>`);
   }
-  if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-decide="reject"${ready ? "" : html` disabled`}>Reject <kbd>R</kbd></button>`);
+  if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-decide="reject" aria-keyshortcuts="R"${ready ? "" : html` disabled`}>Reject <kbd aria-hidden="true">R</kbd></button>`);
+  if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-skip="1" aria-keyshortcuts="J">Skip <kbd aria-hidden="true">J</kbd></button>`);
   const reversed = proposals.some(q => q.kind === "entity_split" && q.state === "merged" && (q.targets || []).includes(p.id));
   if (p.kind === "entity_merge" && p.state === "merged" && !reversed) acts.push(html`<button type="button" class="btn" data-unmerge="1">Un-merge</button>`);
   acts.push(html`<button type="button" class="btn" data-map="1">Show on the map</button>`);
@@ -1530,6 +1547,7 @@ function wireDecisions(host, item) {
   host.querySelectorAll("[data-map]").forEach(b => {
     b.onclick = () => { location.hash = ""; proposalSel = null; selectProposal(item.p); };
   });
+  host.querySelectorAll("[data-skip]").forEach(b => { b.onclick = () => stepReview(1); });
 }
 function stepReview(by) {
   const items = reviewSeg === "decided" ? decidedItems() : needsItems();
@@ -1544,13 +1562,17 @@ window.addEventListener("keydown", e => {
   if (!reviewOpen()) return;
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "Escape") { location.hash = ""; return; }   // Escape closes from anywhere
+  // The letters decide, so they act only while focus is in the list or the item (WCAG 2.1.4);
+  // anywhere else on the page they are letters.
+  const inReview = !!(e.target && e.target.closest && e.target.closest("#rvList, #rvDetail"));
+  if (!inReview) return;
   const items = reviewSeg === "decided" ? decidedItems() : needsItems();
   const item = items.find(x => x.key === reviewSel);
   if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); stepReview(1); }
   else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); stepReview(-1); }
   else if (e.key === "a" && surfaceKind === "local") reviewDecide(item, "merge");
   else if (e.key === "r" && surfaceKind === "local") reviewDecide(item, "reject");
-  else if (e.key === "Escape") location.hash = "";
 });
 
 // The T-Box types a proposal touches, split by axis. Relation names match the graph's edge kinds
