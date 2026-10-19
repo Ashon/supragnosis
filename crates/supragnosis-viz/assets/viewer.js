@@ -3950,6 +3950,22 @@ async function runSearch() {
   searchSel = -1;   // the person has not moved yet - no row is chosen
   renderSearch();
   setSearchOpen(document.activeElement === searchEl);
+  // Nothing here contains the words: count what the wider scope holds, without holding up the list.
+  if (!ans.error && ws !== "*" && ws !== "all" && !ans.hits.some(h => h.reached === "words")) {
+    const r = await searchWider(q);
+    if (r && seq === searchSeq && searchAns === ans) { ans.wider = r.n; ans.widerCapped = r.capped; renderSearch(); }
+  }
+}
+// How many items contain the words across every workspace the reader may read - the count the
+// wider-scope row offers. The path's limit cuts the list, so an answer at the limit says "20+".
+async function searchWider(q) {
+  try {
+    const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&workspace=*", { cache: "no-store" });
+    if (!r.ok) return null;
+    const hits = (await r.json()).hits || [];
+    const n = hits.filter(h => h.reached === "words").length;
+    return { n, capped: n >= 20 };   // the keyword list is cut at the limit before it is fused
+  } catch (_) { return null; }
 }
 function searchNode(h) {
   const n = h.kind === "entity" ? nodeById(h.id) : null;
@@ -3962,27 +3978,45 @@ function renderSearch() {
     searchPop.innerHTML = html`<div class="sp-note bad">${searchAns.error}</div>`;
     return;
   }
-  const ents = searchAns.hits.filter(h => h.kind === "entity");
-  const obs = searchAns.hits.filter(h => h.kind === "observation");
-  searchRows = [...ents, ...obs];
+  // Two groups, each in the engine's order (design-system.md Section 8, U15): the hits that contain
+  // the words, then the related ones, each saying how it was reached.
+  const words = searchAns.hits.filter(h => h.reached === "words");
+  const related = searchAns.hits.filter(h => h.reached !== "words");
+  searchRows = [...words, ...related];
+  const why = h => h.reached === "meaning" ? "near in meaning" : h.reached === "neighbor" ? "linked to a match" : "";
   const [modeWord, modeWhy] = SEARCH_MODE[searchAns.mode] || [String(searchAns.mode || "?"), ""];
   const row = (h, i) => {
     const on = i === searchSel ? " on" : "";
+    const reason = why(h) ? html`<span class="sp-why">${why(h)}</span>` : "";
     if (h.kind === "observation")
-      return html`<button type="button" class="sp-row${on}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}"><span class="sp-snip">${h.snippet}</span></button>`;
+      return html`<button type="button" class="sp-row${on}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}"><span class="sp-snip">${h.snippet}</span>${reason}</button>`;
     const n = searchNode(h);
     // An entity the answer holds but this view does not draw (its type is switched off, or the loaded
     // graph predates it) stays listed - it is part of the answer - and says why it cannot be focused.
     return html`<button type="button" class="sp-row${on}${n ? "" : " off"}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}">${
       n ? html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>` : ""}<span class="sp-name">${n ? n.name : h.snippet}</span>${
-      n ? html`<span class="sp-k">${n.type}</span>` : html`<span class="sp-k">not on the map in this view</span>`}</button>`;
+      n ? html`<span class="sp-k">${n.type}</span>` : html`<span class="sp-k">not on the map in this view</span>`}${reason}</button>`;
   };
   const count = searchAns.hits.length;
+  const cur = currentWs();
+  const all = cur === "*" || cur === "all";
+  const scope = all ? "any workspace" : cur || "default";
+  // Nothing in the scope contains the words: say so, and offer the wider scope with what it found.
+  const widen = !all && searchAns.wider > 0
+    ? html`<button type="button" class="sp-row sp-widen" data-widen="1">${"Search all workspaces (" + (searchAns.widerCapped ? "20+" : searchAns.wider) + " found)"}</button>`
+    : "";
+  const first = words.length
+    ? [html`<div class="sp-sec">${"Contains \"" + searchAns.q + "\""}</div>`, words.map((h, i) => row(h, i))]
+    : [html`<div class="sp-note">${"No item in " + scope + " contains \"" + searchAns.q + "\"."}</div>`, widen];
   searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode" title="${modeWhy}">${modeWord}</span></div>${
-    ents.length ? [html`<div class="sp-sec">Entities</div>`, ents.map((h, i) => row(h, i))] : ""}${
-    obs.length ? [html`<div class="sp-sec">Observations</div>`, obs.map((h, i) => row(h, ents.length + i))] : ""}${
+    count || widen ? first : ""}${
+    related.length ? [html`<div class="sp-sec">Related</div>`, related.map((h, i) => row(h, words.length + i))] : ""}${
     count ? "" : html`<div class="sp-note">${searchAns.note || "no hits - absence is unknown, not a negation"}</div>`}`;
-  searchPop.querySelectorAll(".sp-row").forEach(b => {
+  searchPop.querySelectorAll("[data-widen]").forEach(b => {
+    b.onmousedown = ev => ev.preventDefault();
+    b.onclick = () => { wsInput.value = "*"; beginWorkspaceTransition(); renderChipsActive(); poll(); runSearch(); };
+  });
+  searchPop.querySelectorAll(".sp-row:not(.sp-widen)").forEach(b => {
     // mousedown keeps the field focused, so the click below is the choice and not a blur first.
     b.onmousedown = ev => ev.preventDefault();
     b.onclick = () => chooseSearch(Number(b.dataset.i));

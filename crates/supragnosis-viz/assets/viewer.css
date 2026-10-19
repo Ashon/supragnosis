@@ -129,6 +129,9 @@
   .sp-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sp-k { flex:none; color:var(--faint); font:11px/1.3 var(--mono); }
   .sp-row.off .sp-name { color:var(--muted); }
+  /* How a related hit was reached (Section 8), and the row that widens the scope. */
+  .sp-why { flex:none; margin-left:auto; color:var(--faint); font-size:11px; }
+  .sp-widen { color:var(--ink); }
   .sp-snip { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .sp-note { padding:6px 8px 8px; color:var(--muted); font-size:12px; line-height:1.45; }
   .sp-note.bad { color:var(--bad); }
