@@ -824,6 +824,54 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         // scale.rs reads drawCloudField, cloudKeySame, drawMinimap and miniStillSame.
         Evidence::Scenario(&["still_layers_move_with_the_camera"]),
     )]),
+    (33, &[c(
+        "a poll that finds nothing new costs the page nothing: an ETag on the graph and the hypergraph, and a 304 the viewer keeps what it has on",
+        Evidence::Deferred(
+            "Section 14 step 31 is planned: every poll fetches, parses and applies the graph and the hypergraph. Revisit when step 31 lands",
+        ),
+    )]),
+    (34, &[c(
+        "the layout's region forces grow with the members, not the pairs or the number of regions: kept index arrays, no allocation per region, a marking share test, separation among regions of three or more",
+        Evidence::Deferred(
+            "Section 14 step 32 is planned: each step builds every context's members and a set of them, and separates every context of two or more. Revisit when step 32 lands",
+        ),
+    )]),
+    (35, &[c(
+        "the layout steps on a thread of its own when a worker can start, the page's frames never wait on a step, and the page's thread steps it when no worker starts",
+        Evidence::Deferred(
+            "Section 14 step 33 is planned: the simulation steps on the page's thread inside draw. Revisit when step 33 lands",
+        ),
+    )]),
+    (36, &[c(
+        "a fresh layout starts from its communities' layout, found by label propagation, and a saved one skips it",
+        Evidence::Deferred(
+            "Section 14 step 34 is planned: a fresh layout starts from scattered positions. Revisit when step 34 lands",
+        ),
+    )]),
+    (37, &[c(
+        "a frame touches what the window holds: a grid of node positions and of relations' boxes answers what is drawn, named, badged, pulsing or under the pointer",
+        Evidence::Deferred(
+            "Section 14 step 35 is planned: a frame passes over every node and relation. Revisit when step 35 lands",
+        ),
+    )]),
+    (38, &[c(
+        "a community under 24 pixels on the screen is one body with its count, relations between bodies summed, a crossfade to 48 pixels, and a hovered, selected, active, pulsing or contested node never folded",
+        Evidence::Deferred(
+            "Section 14 step 36 is planned: every node is drawn as a node at every zoom. Revisit when step 36 lands",
+        ),
+    )]),
+    (39, &[c(
+        "where WebGL2 renders to half-float targets the GPU draws the field, outlines, relations, arrowheads, nodes and bodies under a 2D canvas of text and badges, and the 2D canvas draws all of it otherwise",
+        Evidence::Deferred(
+            "Section 14 step 37 is planned: the 2D canvas draws everything. Revisit when step 37 lands",
+        ),
+    )]),
+    (40, &[c(
+        "at 10,000 entities shaped like a store the first picture within 3 seconds and a frame within 16.7 ms at p95 at rest, at any zoom and while the layout moves, and at 50,000 within 10 seconds and 16.7 ms on WebGL, in Chrome and WebKit",
+        Evidence::Deferred(
+            "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Revisit when step 38 has measured it, to record the numbers beside this clause",
+        ),
+    )]),
 ];
 
 // docs/onboarding.md Section 11 - from install to the first entry, inside the app (O rows).

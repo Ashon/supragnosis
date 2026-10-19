@@ -18,6 +18,7 @@
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
+> The fifth pass, for the map at any size (Section 27, U33-U40), is specified - steps 31-38.
 
 ## 1. Why this exists
 
@@ -1392,6 +1393,14 @@ social image.
 | **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 3 pixels of radius on screen is drawn without its ring and the relations into it straight and without arrowheads, and one under 1.2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
 | **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
 | **U32** | Layers that do not change when only the camera moves are not worked out again for it: the region field is kept with the camera it was worked out for and drawn moved and scaled by the camera's change, and worked out again once the camera rests, when the moved field would leave the window uncovered or be scaled past half or double, and when a region, its strength or the appearance changes; the minimap's miniature is a bitmap of its own, painted when the nodes, their positions, the filters or the look change, under the window's frame drawn each frame; and the regions' members and hulls are kept while the nodes stand still. |
+| **U33** | A poll that finds nothing new costs the page nothing: the graph and the hypergraph answer with an ETag of their body, the viewer asks with it, an unchanged one answers 304 with no body, and the viewer keeps what it has without parsing or applying anything. |
+| **U34** | The layout's region forces grow with the regions' members, not with their pairs or their number: membership is kept as index arrays while the graph and its contexts are unchanged, a step allocates nothing per region, the shared-member test marks one region's members and reads the other's, and only regions of three or more members - the ones the map draws - push apart, while every context of two or more keeps its pull. |
+| **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once a drawn frame after, and hands back positions; when no worker can start, the same file steps on the page's thread as before. |
+| **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it, and semantic zoom (U38) folds the same communities. |
+| **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their boxes. |
+| **U38** | A community smaller than 24 pixels on the screen is drawn as one body - a disc for its members, its count and, where it fits, its best-connected member's name - the relations between two bodies as one line as wide as their number, and from 24 to 48 pixels the members fade in as the body fades out; a hovered, selected, active, pulsing or contested node is never folded. |
+| **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads, the nodes in their three sizes and the bodies, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
+| **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
@@ -1684,6 +1693,19 @@ and it fails when one of them appears in the viewer's source other than as an ar
 30. **Measured** [built] (Section 26.2; U31): the bench from 500 to 20,000 in Chrome and WebKit, at
    rest, at a reading zoom and while the layout moves. The budget holds in both; what it leaves -
    the moving layout and a store's many contexts - is the next pass's.
+31. **The poll asks first** [planned] (Section 27.3; U33): an ETag on the graph and the hypergraph,
+   and a 304 for an unchanged one.
+32. **Region forces that scale** [planned] (Section 27.4; U34): kept membership, marking, and
+   separation among drawn regions; the bench's graph gains a store's contexts.
+33. **The layout on its own thread** [planned] (Section 27.5; U35): `viewer-sim.js` on typed arrays,
+   in a worker, and on the page's thread when none starts.
+34. **The multilevel start** [planned] (Section 27.6; U36): communities, their layout first.
+35. **Clipping** [planned] (Section 27.7; U37): the grid index of positions and of relations' boxes.
+36. **Semantic zoom** [planned] (Section 27.8; U38): communities folded into bodies by their size on
+   the screen, with the crossfade.
+37. **WebGL** [planned] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
+38. **Measured** [planned] (Section 27.2; U40): the bench to 50,000 in both browsers and both
+   renderers, the dev store through its daemon, and the app.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2425,4 +2447,131 @@ Flag; Gaffer on Games, Fix your timestep.
   and on every frame while the layout moved, up to a second in WebKit after a node was let go. With
   the cell growing it is 7 to 16 ms in Chrome and 6 to 35 in WebKit at every zoom, but for one reading
   of 107 ms in WebKit, which compiles the same loop differently by the order it is called in.
+
+## 27. The map at any size
+
+The author asked, on 2026-10-20, for every change the map needs to perform at its best - WebGL, a
+level of detail that folds the map into its hubs by zoom or fades what it hides, and clipping - after
+a store of 10,000 entities, opened in the desktop app, took minutes to show. This section is the
+fifth pass. Section 26 stands: what follows builds on its grids, its sizes and its still layers.
+
+### 27.1 What the dev store found
+
+The bench's graph (Section 26.1) is drawn in the browser. A dev daemon was filled with the same
+10,000 entities through `observe`, as an AI app would fill it - a group of about twelve per
+observation and each relation between groups its own - and opened in the desktop app:
+
+- **A store holds a context for every observation.** 12,166 observations gave 11,862 contexts, 10,958
+  of them of two entities; the bench's graph had 838 regions, all of three or more.
+- **The map did not appear.** In WebKit, through the daemon, no first picture came in six minutes.
+  Profiled in Chrome for 45 seconds, the layout's step took 25 seconds and the regions' shared-member
+  test 11.8 more; drawing took 0.6. The region forces take every context of two or more, and each
+  step built every context's members and a set of them again.
+- **Every poll fetched everything.** Every 2.5 seconds the viewer fetched the graph (5.8 MB) and the
+  hypergraph (6.5 MB), parsed both and applied them, whether or not anything had changed.
+
+### 27.2 The budget
+
+On the reference Mac, in Chrome and in WebKit, on a graph shaped like a store - a context for every
+observation, as Section 27.1 found:
+
+- at 10,000 entities, the first picture within 3 seconds of the page asking, and a frame within
+  16.7 ms at the 95th percentile at rest, at any zoom, and while the layout moves;
+- at 50,000, the first picture within 10 seconds and a frame within 16.7 ms on WebGL;
+- a poll that finds nothing new, under a millisecond of the page's time.
+
+### 27.3 The poll asks first
+
+The graph and the hypergraph answer with an `ETag`, a hash of their body. The viewer sends it back as
+`If-None-Match`, and an unchanged answer is a `304` with no body, which the viewer takes as "keep what
+you have" (U33). The daemon still builds the body to hash it: the engine's write counter counts
+appended observations, not a review, a definition or a validity that ends with time, so a revision
+taken from it could call a changed graph unchanged. Building is the daemon's cost, 0.1 seconds at
+10,000; parsing and applying was the page's, and that is what the poll stops paying.
+
+### 27.4 Region forces that scale
+
+- **Membership is kept.** Each context's members are index arrays, kept while the nodes and the
+  contexts are the same; a step works out the centres and spreads in typed arrays and allocates
+  nothing per region (U34).
+- **The shared-member test marks.** A region marks its members in an array as long as the nodes, and
+  a neighbour shares one if any of its members carries the mark - no set is built or searched.
+- **Only drawn regions push apart.** Separation is between regions of three or more members, the ones
+  the map draws as clouds. A context of two keeps its pull, which is a spring between two entities
+  seen together; pushed apart, ten thousand of them added a second repulsion to the first.
+- **The bench's graph is a store's.** Beside its regions it gains a context of two for every relation
+  between groups, as `observe` gives one.
+
+### 27.5 The layout on its own thread
+
+- **`viewer-sim.js`.** The simulation leaves `viewer.js` for a file of its own, served beside it and
+  minified the same way. The policy's `script-src 'self'` admits a worker from a served file; a
+  worker from a `blob:` address it refuses, so the file is the worker.
+- **Typed arrays.** The worker holds positions, velocities, radii, degrees, workspaces, types,
+  relations and contexts as typed arrays. The page sends the graph when it changes and each change of
+  state - a wake, a held or dragged node, a focus, the mode, the window's centre - and the worker
+  sends positions back (U35).
+- **Its own pace.** Behind the loader the worker steps as fast as it can. Once the map shows, it takes
+  at most one step for each frame the page draws, so the cooling looks as it did, and the page draws
+  every frame with the positions it last received - a pan or a zoom never waits on a step.
+- **The page's thread when there is no worker.** The same file loads as a classic script, and when a
+  worker cannot start, the page steps it from `draw` as it does now.
+
+### 27.6 The multilevel start
+
+- **Communities.** Label propagation over the relations, in a fixed order with ties broken by id, so
+  a graph gives the same communities every time (Raghavan and others, 2007).
+- **Coarse first.** The graph of communities - one node for each, its radius by its size, the
+  relations between two summed - is laid out first; each member starts on a spiral within its
+  community's disc, and the full layout continues from a cooler start, so it reveals in fewer steps
+  (U36). This is the multilevel scheme of Walshaw's and of sfdp, with one level.
+- **A saved layout skips it**, and the communities are kept for semantic zoom.
+
+### 27.7 Clipping
+
+A uniform grid of the node positions, rebuilt when they move and kept while they rest, answers the
+window's questions: which nodes are drawn, which can be named, badged or pulse, and which is under the
+pointer. The relations are kept in a grid of the cells their boxes cover. A frame then costs what the
+window holds rather than what the map holds (U37).
+
+### 27.8 Semantic zoom
+
+- **Bodies.** A community whose disc is smaller than 24 pixels on the screen is drawn as one body: a
+  disc sized by its members, in the color most of them share, with its count and, where it fits, its
+  best-connected member's name. The relations between two bodies are one line, as wide as the
+  relations it stands for (U38).
+- **The crossfade.** From 24 to 48 pixels the members fade in as the body fades out, so a zoom unfolds
+  a community rather than swapping it.
+- **Never folded.** A hovered, selected, active or pulsing node, and a contested one with its badge
+  (U3), are drawn as nodes whatever the zoom; the body around them counts them all the same.
+- **The clouds and the minimap are unchanged.**
+
+### 27.9 WebGL
+
+- **The GPU draws the map's bulk.** Where WebGL2 can render to half-float targets, it draws the region
+  field - each cloud an instanced quad adding its weight, its hue's vector and its log-coverage into
+  the targets, then one pass mixing them in OKLCH as the 2D field does - the workspace outlines, the
+  relations and their arrowheads, the nodes in their three sizes as signed-distance discs with halo,
+  fill and trust ring, and the bodies (U39).
+- **A 2D canvas above it** draws what is text or few: names, badges, pulses, glows, peers' cursors and
+  the relations' labels. The hit test stays on the processor, through the grid.
+- **The same tokens.** Colors are the tokens the 2D canvas uses, resolved to RGBA when the appearance
+  changes.
+- **The 2D canvas stays.** Without WebGL2 or half-float rendering, under forced colors, or when the
+  context is lost, the 2D canvas draws all of it as it does now.
+
+### 27.10 What this is not
+
+It is not a layout in the daemon: the layout stays the page's, and keeping it in the store would be
+its own document. It is not a new layout: the forces are Section 26's, and the multilevel start only
+changes where they begin. It does not hide knowledge: a body counts every member, and a node that is
+hovered, selected, active, pulsing or contested is never folded.
+
+### 27.11 Sources
+
+Raghavan, Albert and Kumara, Physical Review E 2007, on label propagation; Walshaw, Journal of Graph
+Algorithms and Applications 2003, and Hu, Mathematica Journal 2005, on multilevel force-directed
+layout; Elmqvist and Fekete, IEEE TVCG 2010, on hierarchical aggregation; sigma.js's WebGL programs;
+MDN, WebGL best practices and the EXT_color_buffer_float and EXT_float_blend extensions; Inigo Quilez
+on signed distance functions; the HTTP conditional requests of RFC 9110.
 
