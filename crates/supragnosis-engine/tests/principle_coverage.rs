@@ -730,7 +730,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     )]),
     (22, &[c(
-        "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, and checkboxes, radios and switches take the accent",
+        "every corner is a radius token, none or a dot's circle, an inner radius is the outer less the space between, pills and large controls are capsules, one row's controls share a size, checkboxes, radios and switches take the accent, and no line is dashed or dotted",
         Evidence::Deferred(
             "designed in design-system.md Sections 3, 4 and 14 step 19, not built. Revisit when \
              the stylesheets draw corners only from the radius tokens",
@@ -755,6 +755,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Deferred(
             "designed in design-system.md Sections 4 and 14 step 20, not built. Revisit when every \
              tooltip of the viewer and the app's pages is written through one helper",
+        ),
+    )]),
+    (26, &[c(
+        "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, and no other navigation",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 6, 6a and 14 step 23, not built. Revisit when the \
+             title bar's leading end holds the filters toggle and the place's title",
         ),
     )]),
 ];
