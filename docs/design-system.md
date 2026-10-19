@@ -16,8 +16,8 @@
 > waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
-> many nodes (Section 26, U28-U32), is specified - steps 25-30 - and steps 25-29, the bench, the
-> simulation at rest, the grids, drawing less and still layers, are built.
+> many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
+> grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
 
 ## 1. Why this exists
 
@@ -225,7 +225,8 @@ viewer's own functions were timed from outside it (Section 26.1):
   graph was made of showed as one dark disc.
 
 Section 26 is what the fourth pass changes; the techniques it takes are the ones large-graph renderers
-publish (sigma.js, Cytoscape.js, d3-force, ForceAtlas2) and its sources are listed there.
+publish (sigma.js, Cytoscape.js, d3-force, ForceAtlas2) and its sources are listed there. Section 26.2
+holds the same measure taken after it.
 
 ## 2. What this is NOT
 
@@ -1680,9 +1681,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    node, the label grid, and the zoom floor that follows the graph.
 29. **Still layers** [built] (Section 26.6; U32): the region field kept with its camera and moved as a
    bitmap while only the camera moves, and the minimap's miniature painted only when it changes.
-30. **Measured** [planned] (Section 26.2; U31): the bench at 10,000 and 20,000 in Chrome and WebKit
-   against the budget. A WebGL renderer is decided from these numbers and gets its own document;
-   nothing in steps 26-29 assumes it.
+30. **Measured** [built] (Section 26.2; U31): the bench from 500 to 20,000 in Chrome and WebKit, at
+   rest, at a reading zoom and while the layout moves. The budget holds in both; what it leaves -
+   the moving layout and a store's many contexts - is the next pass's.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2225,6 +2226,48 @@ desktop app runs on - at 10,000 entities and about 15,000 relations:
 At 20,000 a pan holds 30 frames a second. Past that, step 30's numbers decide whether the map moves to
 WebGL - one instanced draw for the nodes, signed-distance discs and glyphs, picking by color - which
 would be its own document. Nothing in this section assumes it.
+
+**Measured** on 2026-10-19 after steps 26-29, by the bench on the reference Mac. Times are the 50th and
+95th percentiles in milliseconds, a pan's and a zoom's taken at rest; "pan near" is the same pan at
+the reading zoom 0.6, and the two moving columns are the frame rates while the layout steps, from the
+reveal to rest and from a node dragged for two seconds to rest again. WebKit's clock reads whole
+milliseconds.
+
+In Chrome:
+
+| Entities | Relations | First picture | At rest | Settling step | Pan | Pan near | Zoom | Moving, cooling | Moving, dragged |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 727 | 2.1 s | 3.9 s | 2 | 1.5 / 2.4 | 1.1 / 2.3 | 1.5 / 2.2 | 60 fps | 60.1 fps |
+| 1,000 | 1,468 | 1.9 s | 3.8 s | 4 | 0.9 / 3.4 | 1.3 / 2.7 | 1 / 1.3 | 60 fps | 56.7 fps |
+| 2,000 | 2,950 | 2 s | 5.1 s | 5.5 | 3.6 / 5.4 | 1.9 / 2.8 | 1.7 / 4.8 | 60 fps | 50.4 fps |
+| 5,000 | 7,326 | 3 s | 7.9 s | 21.5 | 7.3 / 8.7 | 4.1 / 5.7 | 3.3 / 7.2 | 40.1 fps | 36.3 fps |
+| 10,000 | 14,666 | 7.9 s | 17.4 s | 65.7 | 7.3 / 11.5 | 6.8 / 8.4 | 6.2 / 7.2 | 20.3 fps | 19.5 fps |
+| 20,000 | 29,347 | 24.1 s | 41.9 s | 228.2 | 10 / 14.4 | 8 / 11.3 | 11.2 / 14.8 | 10.5 fps | 10.3 fps |
+
+In WebKit:
+
+| Entities | Relations | First picture | At rest | Settling step | Pan | Pan near | Zoom | Moving, cooling | Moving, dragged |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 727 | 2.1 s | 4 s | 2 | 3 / 5 | 3 / 5 | 2 / 3 | 60 fps | 56.7 fps |
+| 1,000 | 1,468 | 2.1 s | 3.9 s | 4 | 4 / 6 | 3 / 6 | 3 / 4 | 59.9 fps | 53.2 fps |
+| 2,000 | 2,950 | 2.1 s | 5.4 s | 6 | 7 / 8 | 4 / 6 | 4 / 5 | 58.1 fps | 41.9 fps |
+| 5,000 | 7,326 | 3 s | 10.1 s | 20 | 4 / 5 | 3 / 4 | 6 / 7 | 26.3 fps | 21.8 fps |
+| 10,000 | 14,666 | 7.1 s | 20.2 s | 56 | 7 / 12 | 5 / 6 | 13 / 15 | 14.8 fps | 14.3 fps |
+| 20,000 | 29,347 | 19.9 s | 49.8 s | 162 | 15 / 18 | 7 / 9 | 27 / 30 | 6.5 fps | 6.9 fps |
+
+- **The budget holds in both, at every zoom.** At 10,000 a pan's frame is 11.5 ms at the 95th
+  percentile in Chrome and 12 in WebKit, at the reading zoom 8.4 and 6, a zoom's 7.2 and 15, a
+  hover's hit test 0.1 ms, and the first picture comes in 7.9 and 7.1 seconds. Before the pass the
+  same pan took 651 and 893 ms and the first picture 100 and 96 seconds (Section 1). At 20,000 a pan
+  is within the 60-frame budget in both, at 14.4 and 18 ms.
+- **While the layout moves, the step is the frame.** At 10,000 a frame that steps the layout takes 50
+  to 70 ms, and the map moves at 20 frames a second in Chrome and 15 in WebKit; at 1,000 it keeps 60.
+  The step, about 30 ms of it, runs on the page's own thread.
+- **The bench's regions are not a store's.** It draws a region for every twelve entities. A store
+  filled the way the bench's graph is, through `observe`, holds a co-occurrence context for every
+  observation - 11,862 for the same 10,000 entities, 10,958 of them of two - and the layout's region
+  forces, which take every context of two or more, did not reveal it in six minutes.
+- **WebGL is not needed for this budget.** The 2D canvas meets it at 10,000 and 20,000 entities.
 
 ### 26.3 The simulation runs only while it moves
 

@@ -816,7 +816,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (31, &[c(
         "at 10,000 entities the map pans and zooms within 16.7 ms at p95 and shows its first picture within 10 seconds on the reference Mac in Chrome and WebKit",
         Evidence::Deferred(
-            "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Revisit when step 30 has measured it, to record the numbers beside this clause",
+            "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Measured on 2026-10-19 (Section 26.2): at 10,000 a pan 11.5 ms at p95 in Chrome and 12 in WebKit, 8.4 and 6 at a reading zoom, a zoom 7.2 and 15, the first picture 7.9 and 7.1 s. Revisit when the map's layout or drawing changes, by running the bench again in both browsers",
         ),
     )]),
     (32, &[c(
