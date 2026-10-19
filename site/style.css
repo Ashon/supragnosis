@@ -108,6 +108,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   z-index: 10;
 }
 .skip:focus { left: 16px; top: 16px; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .wrap {
   max-width: 1160px;
@@ -140,11 +151,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px 20px;
+  gap: 8px 24px;
   margin-left: auto;
   font: var(--fs-label) var(--mono);
 }
-.site-head nav a { color: var(--muted); }
+.site-head nav a { color: var(--muted); display: inline-flex; align-items: center; min-height: 24px; }
 .site-head nav a:hover { color: var(--ink); text-decoration: none; }
 
 /* ---- hero ---- */
@@ -158,6 +169,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .hero h1 em { font-style: italic; font-weight: 340; color: var(--gold-bright); }
 .sub { font-size: var(--fs-3); line-height: 1.45; max-width: 40ch; margin: 24px 0 32px; }
+.next { margin: 12px 0 0; color: var(--ink2); font-size: var(--fs-small); }
 
 .install { max-width: 640px; background: var(--panel); border-radius: 12px; overflow: hidden; }
 .tabs { display: flex; gap: 2px; padding: 6px 6px 0; }
@@ -269,8 +281,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .snip.review { grid-template-columns: 1fr max-content; align-items: center; row-gap: 6px; }
 .snip.review .act {
   font-weight: 500;
-  background: var(--accent);
-  color: #171204;
+  background: var(--panel-3);
+  color: var(--ink2);
   border-radius: 6px;
   padding: 2px 10px;
 }
@@ -573,6 +585,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 560px) {
+  .cmd { flex-direction: column; }
+  .cmd code { white-space: normal; overflow-wrap: anywhere; }
+  .copy { padding: 10px 20px; }
   .sky .labs { display: none; }
   .sky .cols { height: 136px; }
   .sky .cell { height: 7px; }

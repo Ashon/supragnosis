@@ -32,6 +32,7 @@
   <header class="site-head wrap">
     <a class="wordmark" href="#top">supragnosis</a>
     <nav aria-label="Sections">
+      <a href="#get-started">Install</a>
       <a href="#how">How it works</a>
       <a href="principles/">Principles</a>
       <a href="#status">Status</a>
@@ -62,6 +63,7 @@
           <button type="button" class="copy" data-copy="#cmd-script">Copy</button>
         </div>
       </div>
+      <p class="next">Then connect an agent: <code>supragnosis connect claude-code</code>, or Connect in the app. <a href="#get-started">All steps -&gt;</a></p>
       <p class="links">
         <a href="https://github.com/Ashon/supragnosis/blob/main/scripts/install.sh">View the install script</a>
         <a href="https://github.com/Ashon/supragnosis">GitHub</a>
@@ -216,7 +218,7 @@
       <div class="split">
         <div>
           <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex and Gemini CLI connect with one command and no token to copy, or with Connect in the app's Settings.</p>
-          <pre class="code"><code>supragnosis connect claude-code
+          <pre class="code" tabindex="0"><code>supragnosis connect claude-code
 <span class="c"># or claude-desktop, cursor, vscode, codex, gemini</span></code></pre>
           <p class="note">Every search hit points back to the entry it came from, at <code>supragnosis://observation/{id}</code>.</p>
         </div>
@@ -298,18 +300,18 @@
               <button type="button" role="tab" id="tab-linux" aria-controls="pane-linux" aria-selected="false" tabindex="-1">Linux</button>
               <button type="button" role="tab" id="tab-source" aria-controls="pane-source" aria-selected="false" tabindex="-1">From source</button>
             </div>
-            <pre class="code" id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># the desktop app, signed and notarized, with the server</span>
+            <pre class="code" tabindex="0" id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># the desktop app, signed and notarized, with the server</span>
 brew install --cask ashon/tap/supragnosis
 
 <span class="c"># or the server alone, running at every login</span>
 brew install ashon/tap/supragnosis-server
 supragnosis service install</code></pre>
-            <pre class="code" id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># x86_64 or arm64, glibc 2.39+, checksum-verified</span>
+            <pre class="code" tabindex="0" id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># x86_64 or arm64, glibc 2.39+, checksum-verified</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh
 
 <span class="c"># keep it running: the systemd user unit</span>
 <span class="c"># in deploy/systemd of the repository</span></code></pre>
-            <pre class="code" id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
+            <pre class="code" tabindex="0" id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
 cd supragnosis
 <span class="c"># fastembed = the local embedding model, as the release is built</span>
 cargo build -p supragnosis-cli --features fastembed</code></pre>
@@ -341,6 +343,8 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
     </nav>
     <p class="fine">MIT or Apache-2.0. Plain HTML, CSS and one script, no build step. This page lives in <code>site/</code>.</p>
   </footer>
+
+  <p id="copied" class="sr-only" aria-live="polite"></p>
 
   <script>
   (function () {
@@ -377,6 +381,9 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
         var pick = function () { getSelection().selectAllChildren(el); };
         var done = function () {
           btn.textContent = 'Copied';
+          // Emptied first, so a second copy is announced again.
+          document.getElementById('copied').textContent = '';
+          setTimeout(function () { document.getElementById('copied').textContent = 'Copied the command'; }, 50);
           setTimeout(function () { btn.textContent = 'Copy'; }, 1600);
         };
         try { navigator.clipboard.writeText(el.textContent).then(done, pick); } catch (e) { pick(); }
