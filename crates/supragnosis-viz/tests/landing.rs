@@ -230,24 +230,49 @@ fn the_landing_has_one_version_badge() {
 /// apart, and "Copied" is announced.
 #[test]
 fn the_landing_says_the_next_step_and_reads_on_a_phone() {
-    assert!(PAGE.contains("Then connect an agent:"), "the hero does not say what follows the install");
-    assert!(PAGE.contains("<a href=\"#get-started\">Install</a>"), "the header has no Install link");
-    assert!(PAGE.contains("<pre class=\"code\" tabindex=\"0\""), "a scrolling code block cannot take focus");
+    assert!(
+        PAGE.contains("Then connect an agent:"),
+        "the hero does not say what follows the install"
+    );
+    assert!(
+        PAGE.contains("<a href=\"#get-started\">Install</a>"),
+        "the header has no Install link"
+    );
+    assert!(
+        PAGE.contains("<pre class=\"code\" tabindex=\"0\""),
+        "a scrolling code block cannot take focus"
+    );
     assert_eq!(
         PAGE.matches("<pre class=\"code\"").count(),
         PAGE.matches("<pre class=\"code\" tabindex=\"0\"").count(),
         "every code block takes focus"
     );
-    assert!(PAGE.contains("id=\"copied\"") && PAGE.contains("aria-live=\"polite\""), "Copied is not announced");
-    assert!(PAGE.contains("document.getElementById('copied').textContent"), "the copy script does not announce");
-    let phone = &LANDING_CSS[LANDING_CSS.find("@media (max-width: 560px)").expect("the phone rules")..];
+    assert!(
+        PAGE.contains("id=\"copied\"") && PAGE.contains("aria-live=\"polite\""),
+        "Copied is not announced"
+    );
+    assert!(
+        PAGE.contains("document.getElementById('copied').textContent"),
+        "the copy script does not announce"
+    );
+    let phone =
+        &LANDING_CSS[LANDING_CSS.find("@media (max-width: 560px)").expect("the phone rules")..];
     let phone = &phone[..phone.find("\n}\n").expect("they close")];
-    assert!(phone.contains(".cmd {") && phone.contains("flex-direction: column"), "the command does not wrap on a phone");
-    assert!(phone.contains(".cmd code {") && phone.contains("white-space: normal"), "the command still scrolls on a phone");
+    assert!(
+        phone.contains(".cmd {") && phone.contains("flex-direction: column"),
+        "the command does not wrap on a phone"
+    );
+    assert!(
+        phone.contains(".cmd code {") && phone.contains("white-space: normal"),
+        "the command still scrolls on a phone"
+    );
     let nav = &LANDING_CSS[LANDING_CSS.find(".site-head nav {").expect("the nav")..];
     let nav = &nav[..nav.find('}').expect("it closes")];
     assert!(nav.contains("gap: 8px 24px"), "the header's links are closer than a finger");
     let act = &LANDING_CSS[LANDING_CSS.find(".snip.review .act {").expect("the Review picture")..];
     let act = &act[..act.find('}').expect("it closes")];
-    assert!(!act.contains("background: var(--accent)"), "the picture's chip looks like a button to press");
+    assert!(
+        !act.contains("background: var(--accent)"),
+        "the picture's chip looks like a button to press"
+    );
 }

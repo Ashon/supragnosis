@@ -10,6 +10,9 @@ const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 function el(tag, attrs, text) { const e = document.createElement(tag); if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
 // Reduced motion is read when a scene starts, so a change of the setting is followed (Section 11a).
 const RM = matchMedia("(prefers-reduced-motion: reduce)");
+// On a phone a scene does not play only because it scrolled into view (design-system.md Section 11a):
+// scrolling past is not asking to watch, so its button says Play scene until it is pressed.
+const PHONE = matchMedia("(max-width: 559px)");
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const ease = x => { x = clamp(x, 0, 1); return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
 
@@ -564,7 +567,7 @@ function mountScene(p, fig) {
   const B = items.map(li => ({t: +li.dataset.t, k: $(".bk", li).textContent, cap: $(".bc", li)})), END = B[B.length - 1].t;
   const bar = el("div", {class: "beatbar", role: "group", "aria-label": "Steps"}), cap = el("p", {class: "cap", "aria-live": "off"});
   const btns = B.map((b, i) => { const btn = el("button", {type: "button", class: "beat"}); btn.append(el("b", null, String(i + 1)), b.k); bar.append(btn); return btn; });
-  const play = el("button", {type: "button", class: "beat play"}, "Replay");
+  const play = el("button", {type: "button", class: "beat play"}, PHONE.matches ? "Play scene" : "Replay");
   bar.append(play); $(".beats", fig).after(bar, cap);
   let t = END, shown = -1, stop = () => {}, playing = false;
   const S = surface(cv, sc.h || (w => clamp(w * .6, 210, 260)), s => sc.draw(s.ctx, s.W, s.H, t));
@@ -583,7 +586,7 @@ function mountScene(p, fig) {
   // while a scene plays its control reads Stop, which ends it at its resting frame (WCAG 2.2.2)
   play.addEventListener("click", () => { if (playing) { stop(); t = END; show(B.length - 1); S.redraw(); rest(); } else run(0, END); });
   show(B.length - 1); S.redraw();
-  onceVisible(fig, () => run(0, END));
+  if (!PHONE.matches) onceVisible(fig, () => run(0, END));
 }
 
 // ---- P1 ----

@@ -240,7 +240,10 @@ const VIEWER_LINES: &[(&str, &str)] = &[
 ];
 const SETTINGS_LINES: &[(&str, &str)] = &[];
 const LANDING_LINES: &[(&str, &str)] = &[
-    (".cell.o", "an owed clause on the principles ledger, an empty cell outlined in --muted"),
+    (
+        ".cell.o",
+        "an owed clause on the principles ledger, an empty cell outlined in --muted",
+    ),
     (
         ".sky .col[aria-current=\"true\"]",
         "the chosen column of the principles ledger, outlined in --gold-bright",

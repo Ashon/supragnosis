@@ -277,12 +277,24 @@ fn the_principles_ledger_marks_owed_and_chosen_clearly() {
         body[..body.find('}').expect("it closes")].to_string()
     };
     let owed = rule(".cell.o");
-    assert!(owed.contains("background: none") && owed.contains("border: 1px solid var(--muted)"), "an owed cell is a filled block: {owed}");
+    assert!(
+        owed.contains("background: none") && owed.contains("border: 1px solid var(--muted)"),
+        "an owed cell is a filled block: {owed}"
+    );
     let chosen = rule(".sky .col[aria-current=\"true\"]");
-    assert!(chosen.contains("border: 1px solid var(--gold-bright)"), "the chosen column is not outlined: {chosen}");
-    assert!(!SCRIPT.contains("el(\"h3\", null, $(\"h3\", art).textContent)"), "the detail panel inserts a heading");
+    assert!(
+        chosen.contains("border: 1px solid var(--gold-bright)"),
+        "the chosen column is not outlined: {chosen}"
+    );
+    assert!(
+        !SCRIPT.contains("el(\"h3\", null, $(\"h3\", art).textContent)"),
+        "the detail panel inserts a heading"
+    );
     assert!(!PAGE.contains("</span> / <span data-clause"), "a separator is read aloud");
-    assert!(PAGE.contains("<span class=\"sep\" aria-hidden=\"true\"> / </span>"), "the separators are not hidden from a screen reader");
+    assert!(
+        PAGE.contains("<span class=\"sep\" aria-hidden=\"true\"> / </span>"),
+        "the separators are not hidden from a screen reader"
+    );
 }
 
 /// Section 11a: owed is defined where it is first read, a glossary names each word the page uses
@@ -299,7 +311,29 @@ fn the_principles_page_says_what_its_words_mean_and_reads_on_a_phone() {
         assert!(gloss.contains(&format!("<dt>{term}</dt>")), "the glossary does not name {term}");
     }
     let phone = &CSS[CSS.rfind("@media (max-width: 899px)").expect("the narrow rules")..];
-    assert!(phone.contains(".sky .cols { flex-direction: column"), "the ledger is not a row per chapter on a phone");
-    assert!(SCRIPT.contains("matchMedia(\"(max-width: 899px)\").matches"), "a column on a phone does not go to its principle");
+    assert!(
+        phone.contains(".sky .cols { flex-direction: column"),
+        "the ledger is not a row per chapter on a phone"
+    );
+    assert!(
+        SCRIPT.contains("matchMedia(\"(max-width: 899px)\").matches"),
+        "a column on a phone does not go to its principle"
+    );
 }
 
+/// Section 11a: on a phone a scene does not play only because it scrolled into view; its button says
+/// Play scene until it is pressed.
+#[test]
+fn on_a_phone_a_scene_waits_to_be_played() {
+    assert!(SCRIPT.contains("const PHONE = matchMedia(\"(max-width: 559px)\");"));
+    let at = SCRIPT.find("function mountScene(").expect("mountScene");
+    let mount = &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")];
+    assert!(
+        mount.contains("PHONE.matches ? \"Play scene\" : \"Replay\""),
+        "the button does not say Play scene"
+    );
+    assert!(
+        mount.contains("if (!PHONE.matches) onceVisible(fig, () => run(0, END));"),
+        "a phone plays a scene on scroll"
+    );
+}
