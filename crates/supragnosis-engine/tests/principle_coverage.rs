@@ -776,6 +776,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
              title bar's leading end holds the filters toggle and the place's title",
         ),
     )]),
+    (27, &[c(
+        "the viewer, the Settings page and Setup follow the system's appearance with none of their own: light values meet U7's floors, the light band keeps every slot and meets U16's rules on the light ground, no color is drawn outside the tokens, and the map redraws when the appearance changes",
+        Evidence::Deferred(
+            "designed in design-system.md Sections 3, 5 and 14 step 24, not built. Revisit when the \
+             viewer's stylesheet answers prefers-color-scheme: light",
+        ),
+    )]),
 ];
 
 // docs/onboarding.md Section 11 - from install to the first entry, inside the app (O rows).

@@ -13,7 +13,7 @@
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
-> waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U26),
+> waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is designed - steps 17-23 - and steps 17 and 18, its defects and reading, are built.
 
 ## 1. Why this exists
@@ -181,6 +181,10 @@ control metrics AppKit reports on macOS 27.0.1.
   the only explanation of what a control does - "every context region, faint, and the active node's
   at full strength" - which a keyboard and a finger never see. The map is a canvas a screen reader
   cannot walk, and on it a node's type is told by color alone, one of sixteen.
+- **One appearance.** Every screen was dark, and nothing followed the system's Light or Auto setting.
+  Apple's guidelines keep a dark-only app for rare cases, immersive media among them, and ask that an
+  app offer no appearance setting of its own; small text, which the tools are made of, reads better
+  dark on light (Piepenbrock and others, Human Factors, 2014).
 - **The title bar named the product.** It set "supragnosis" in mono at its leading end, the search at
   its centre and both panel toggles at its trailing end, and the app's pages closed with an x in the
   corner where a Mac closes its window. Apple's guidelines put a toolbar's sidebar toggle and title at
@@ -263,6 +267,28 @@ what matters less is set smaller, lighter in weight or further down, in a color 
 map's unverified ring, which take `--muted` together; the map's active edges and relation labels,
 `--ink2` (U16); the ledger's owed outline; and the landing's stage and the principles page's scenes,
 whose palettes copy the tokens.
+
+**The tools follow the system's appearance** (U27). The viewer, the Settings page and Setup take
+their light values under `prefers-color-scheme: light` and their dark ones otherwise; the landing and
+the principles page stay dark, a page that presents the product in its own look. There is no
+appearance setting in the product: a Mac's own setting, Light, Dark or Auto, decides. Every light
+value is held to the floors the dark ones meet (U7) on the light surfaces:
+
+| Token | Light | For |
+|---|---|---|
+| `--surface` / `--panel` | `#fcfbf8` / `#f3f1ec` | the map's ground, lightest, and the frame around it |
+| `--panel-2` / `--panel-3` | `#ebe8e1` / `#e3dfd7` | controls and rows, and hover |
+| `--select` | `#e8e0cd` | the accent at 14% over `--panel`, opaque |
+| `--line` / `--line-soft` | `#dcd8cf` / `#e7e4dd` | the lines Section 4 keeps |
+| `--ink` / `--ink2` / `--muted` | `#16181e` / `#3b404b` / `#5c6370` | Lc 85.9, 75.5 and 61.6 at their lowest |
+| `--accent` / `--gold-bright` | `#a8740f` / `#825500` | the accent, and gold as text and as the human-confirmed ring |
+| `--ok` / `--ok-ink` | `#1d7a6a` / `#02665a` | success; the second as text |
+| `--warn` / `--warn-ink` | `#b7791f` / `#875400` | needs attention; the second as text |
+| `--bad` / `--bad-ink` | `#c4512f` / `#9f3816` | error and contested; the second as text |
+
+The tints are their signals at 12%, as in the dark, and a shadow and the scrim behind a dialog are
+tokens too, `--shadow` and `--scrim`, light enough on the light ground to read as depth rather than
+dirt. Under Increase Contrast each light text token takes the next stronger one, as the dark ones do.
 
 Space runs on a 4px step (4, 8, 12, 16, 24, 32, 48). Corners are six tokens (U22): `--r-window` 16
 for the map's window (Section 6) and the app pages' content pane, `--r-surface` 12 for a surface
@@ -441,6 +467,17 @@ colors: eight hues in two tones.
   the second. Up to eight types on a screen are told apart by hue, and up to sixteen by hue and tone.
   Past sixteen a color is shared, and what tells two such types apart is pointing at or focusing a
   legend entry, which lights that type's nodes and dims the rest.
+
+**The light band** (U27) keeps each hue and its slot and is measured by the same rules on the light
+ground, but a mark on a light ground is told by being darker: every color has OKLCH lightness from
+0.42 to 0.67 and measures 3:1 or more on `--panel`, the 3:1 a mark needs. Its sixteen colors are
+`#465400`, `#329746`, `#0097b5`, `#005caa`, `#726bd0`, `#682c87`, `#ae4d92`, `#d76590` in the first
+tone and `#5d6e00`, `#007322`, `#00586b`, `#2175c8`, `#493d9d`, `#9458b5`, `#97387d`, `#8f2153` in the
+second; they were found by a search over each color's lightness at the widest chroma the screen can
+show, and the light `--ok` is a deeper teal than the dark one's lightness would give, since the cyan
+hue could otherwise sit near neither it nor the neutrals. A type keeps its slot, and so its hue, in
+both appearances. The map redraws when the appearance changes: its palette, its band, the regions'
+clouds and names, and the labels' halos.
 
 A type keeps its color in every view where no earlier name takes its hue. That is fewer views than
 the 48 generated slots kept, and the legend is what names a color. The landing's stage and the
@@ -1252,6 +1289,10 @@ social image.
   in words, which sixteen colors cannot.
 - **A tooltip names.** It shows only to a pointer that rests, so what it alone says is said to no one
   on a keyboard or a phone.
+- **The system's appearance, not ours.** A dark-only tool is Apple's exception, not its rule, and an
+  appearance switch inside the app is one the guidelines ask an app not to offer. The tools follow the
+  Mac; the site stays dark because it presents the product rather than operating it, and its pictures
+  are of the dark tools.
 - **Thin solid lines, not dashes.** The author asked for it: a dash breaks a line into marks that read
   as noise at 13 pixels on a dark ground, and dashes marching along an edge said less than an
   arrowhead does. Trust's rings, which a dash told apart, are told by weight: the more support, the
@@ -1295,6 +1336,7 @@ social image.
 | **U23** | Under `prefers-contrast: more` every text token takes the next stronger one, every control, chip and field draws an edge of 3:1 on its surface, and the focus ring is 3 pixels; under `forced-colors: active` the map redraws in the system's colors, keeps every mark it draws, and widens the human-confirmed ring. |
 | **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and search, sorted by type and name, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
 | **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; and it holds no other navigation. |
+| **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
@@ -1545,6 +1587,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    scope's title at the leading end and the search and the right panel's toggle at the trailing end;
    "< Graph" on the Review, Settings and Setup pages with Esc and Cmd+[; the product's name, the
    crumbs and the x gone; and settings-page.md's and onboarding.md's title bars with it.
+24. **Light and dark** [designed] (Sections 3, 5, 10; U27): the light values in the viewer's and the
+   Settings page's stylesheets, shadows and scrims as tokens, Increase Contrast in both, the light
+   band and palette in the viewer's script with the map's redraw on a change, and the starting splash
+   in both; every step from here is judged in both appearances, with screenshots of each.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
