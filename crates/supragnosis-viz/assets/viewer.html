@@ -92,10 +92,10 @@
 <div id="statusbar"><span id="stats"></span>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
   <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span>
-  <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (design-system.md
-       U3); absent only when there are none (U8). Opens the Review tab, which lists them. -->
-  <!-- What waits for a decision in this scope (design-system.md Section 7); opens the Review page.
-       Absent at zero and on a read tier (U8). -->
+  <!-- The way to Review (design-system.md Section 6, U20): always here on the local console, with
+       what waits in this scope and how many of those are contested beliefs. Absent on a read tier. -->
+  <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (U3): on a read
+       tier, where there is no Review entry; absent only when there are none (U8). -->
   <button id="reviewPill" class="spill warn" type="button" hidden title="open the Review page"></button>
   <button id="contestedPill" class="spill bad" type="button" hidden title="contested beliefs in this scope - open the list"></button>
   <!-- What sync is doing (design-system.md Section 6, U8); opens Settings > Sync. Absent where sync is

@@ -855,7 +855,9 @@ function noteTrustAndContest() {
   renderTierNote();
   const pill = document.getElementById("contestedPill");
   if (pill) {
-    pill.hidden = contestedCount === 0;   // absent only for a known zero (U8)
+    // On the local console the count rides Review's entry (Section 6, U20); on a read tier, where
+    // nothing is decided, this pill keeps it alone - and is absent only for a known zero (U8).
+    pill.hidden = contestedCount === 0 || surfaceKind === "local";
     pill.textContent = contestedCount + " contested";
   }
 }
@@ -1245,6 +1247,13 @@ function curationParts(group) {
     const orph = curation.orphans || [];
     parts.push(html`<div class="csec">unlinked (${orph.length})</div>`);
     parts.push(orph.length ? html`<div class="chips">${orph.map(nchip)}</div>` : html`<div class="empty">none - all nodes linked</div>`);
+    // Conflicts trust settled (resolution.md Section 4.1): informational, so they wait for nobody,
+    // and still listed, since the contradiction exists either way (P6).
+    const settled = (curation.contradictions || []).filter(c => !c.contested);
+    if (settled.length) {
+      parts.push(html`<div class="csec">settled conflicts (${settled.length})</div>`);
+      parts.push(settled.map(c => html`<div class="grp"><div class="chips">${nchip(nodeById(c.id) || { id: c.id, name: c.name, type: c.current, degree: 0, sources: 0 })}</div><div class="hint">${c.current} is shown; ${(c.competitors || []).map(x => x.value).join(", ")} ${(c.competitors || []).length > 1 ? "were" : "was"} also asserted</div></div>`));
+    }
     // T-Box axis collisions (Principle 9): a name defined on both the entity and relation axes -
     // informative, usually a mistake. Mediation lives in the filters dock's definitions.
     const ax = curation.type_axis_collisions || [];
@@ -1260,7 +1269,8 @@ function curationCount(group) {
   const s = (curation && curation.stats) || {};
   return group === "suggestions"
     ? (s.merge_suggestions || 0) + (s.name_variants || 0) + (s.duplicate_groups || 0)
-    : (s.merge_cycles || 0) + (s.grab_bags || 0) + (s.orphans || 0) + (s.type_axis_collisions || 0);
+    : (s.merge_cycles || 0) + (s.grab_bags || 0) + (s.orphans || 0) + (s.type_axis_collisions || 0)
+      + ((curation && curation.contradictions) || []).filter(c => !c.contested).length;
 }
 // The handlers a rendered curation or review fragment needs, bound on its container.
 function wireCuration(host) {
@@ -1369,7 +1379,9 @@ function needsItems() {
   // Every open proposal is listed, whatever its diff (U4): one whose diff cannot be computed says so,
   // since nothing else would ever close it. A blocked one waits for a person too - to reject it.
   for (const p of proposals.filter(p => p.state === "open" || p.state === "blocked")) items.push({ key: "p:" + p.id, kind: "proposal", p });
-  for (const c of (curation && curation.contradictions) || []) items.push({ key: "c:" + c.id, kind: "contested", c });
+  // Only a belief that ties on trust waits for a person (resolution.md Section 4.1); one that trust
+  // settled is listed under Health, so a confirmation takes its item off the count (U20).
+  for (const c of ((curation && curation.contradictions) || []).filter(c => c.contested)) items.push({ key: "c:" + c.id, kind: "contested", c });
   return items;
 }
 function decidedItems() {
@@ -1397,9 +1409,12 @@ function updateReviewPill() {
   const pill = document.getElementById("reviewPill");
   if (!pill) return;
   const n = reviewCount();
-  // Absent at a known zero, and on a read tier, where nothing can be decided (U8).
-  pill.hidden = n === 0 || surfaceKind !== "local";
-  pill.textContent = n + " to review";
+  const contested = curation ? needsItems().filter(it => it.kind === "contested").length : contestedCount;
+  // Always the way to Review on the local console (Section 6, U20), with one count: what waits, and
+  // how many of those are contested beliefs. Absent on a read tier, where nothing is decided (U8).
+  pill.hidden = surfaceKind !== "local";
+  pill.className = "spill" + (n ? " warn" : "");
+  pill.textContent = n ? n + " to review" + (contested ? " (" + contested + " contested)" : "") : "Review";
 }
 let reviewSig = "";   // what the page last drew - a poll that changes nothing must not redraw it
 // The Review page is a full-screen route; everything else on the page is inert while it is open, so

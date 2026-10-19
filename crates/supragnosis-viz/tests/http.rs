@@ -574,14 +574,15 @@ fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
 
 /// design-system.md U8 (Principles 5 and 24): a status pill's absence means one thing - a known
 /// zero, or a feature this node does not have set up. The contested pill hides only at a count of
-/// zero; the sync pill hides only off the local console (a read tier has no peers view) or where sync
-/// is not configured, and draws "unavailable" rather than vanishing when the daemon does not answer.
+/// zero, or on the local console, where Review's entry carries the count (U20); the sync pill hides
+/// only off the local console (a read tier has no peers view) or where sync is not configured, and
+/// draws "unavailable" rather than vanishing when the daemon does not answer.
 #[test]
 fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
     let js = include_str!("../assets/viewer.js");
     assert!(
-        js.contains("pill.hidden = contestedCount === 0;"),
-        "the contested pill hides only at zero"
+        js.contains("pill.hidden = contestedCount === 0 || surfaceKind === \"local\";"),
+        "the contested pill hides only at zero, or where Review carries the count"
     );
     let start = js
         .find("\nasync function refreshSyncPill(")
