@@ -2818,6 +2818,43 @@ mod settings_tests {
         );
     }
 
+    /// design-system.md Section 6a: the Settings page says each fact once. Version drift is one card
+    /// with the one Restart; a section's dot appears only when it needs attention, in words a screen
+    /// reader reads; the server list has no radio that cannot be pressed; a peer is one row.
+    #[test]
+    fn the_settings_page_says_each_fact_once() {
+        let js = include_str!("../assets/settings.js");
+        let css = include_str!("../assets/settings.css");
+        assert!(
+            js.contains("\"Update ready - restart to load \" + d.installed"),
+            "drift is not one card"
+        );
+        assert!(
+            js.contains("remote || drift ? null :"),
+            "the startup row's Restart repeats the drift card's"
+        );
+        assert!(
+            !js.contains("Restart the daemon to load the new version"),
+            "the drift callout is still there"
+        );
+        assert!(
+            js.contains("return kind === \"warn\" || kind === \"bad\" ? kind : null;"),
+            "every section carries a dot"
+        );
+        assert!(js.contains("class: \"sr-only\""), "a dot says nothing to a screen reader");
+        assert!(
+            !js.contains("class: \"radio\"") && !css.contains(".radio"),
+            "the server list draws a radio"
+        );
+        assert!(js.contains("text: \"Active\""), "the active server is not said");
+        assert!(
+            js.contains(
+                "new Set([...admitted.map((p) => p.node_id), ...known.map((p) => p.node_id)])"
+            ),
+            "a peer is listed twice"
+        );
+    }
+
     /// Settings > About names where the source lives, and its hint points there for the dependency
     /// licences. The value is the package manifest's `repository`, which this crate has to inherit
     /// from its own workspace by name; when the shell left the server workspace it stopped doing

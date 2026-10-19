@@ -54,7 +54,13 @@ function daemonStatus(d) {
   return { kind: "ok", title: "Running", detail: [d.running, d.who].filter(Boolean).join(" - ") };
 }
 
+// A section's dot appears only when the section needs attention (design-system.md Section 6a): a dot
+// on every section said nothing. "ok" is no dot.
 function sectionDot(id) {
+  const kind = sectionKind(id);
+  return kind === "warn" || kind === "bad" ? kind : null;
+}
+function sectionKind(id) {
   if (!state) return null;
   if (id === "server") return serverStatus(state.server).kind;
   if (id === "apps") {
@@ -89,7 +95,7 @@ function sectionItems(now) {
         h("span", { class: "tile" }, icon(s.icon)),
         h("span", { class: "label", text: s.label }),
         meta,
-        dot ? h("span", { class: "dot " + dot, "aria-hidden": "true" }) : null);
+        dot ? h("span", { class: "dot " + dot }, h("span", { class: "sr-only", text: dot === "bad" ? "has a problem" : "needs attention" })) : null);
   });
 }
 
@@ -143,10 +149,11 @@ function renderServer() {
     if (p.active && status.text) end.push(h("span", { class: "pill " + status.kind }, h("span", { class: "dot" }), status.text));
     if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label })));
     if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p), "Remove " + p.label));
+    // A list, not a radio group: the active row says Active, every other row has Use, so arrowing down
+    // the list cannot switch every AI app's server (design-system.md Section 6a).
     return h("div", { class: "row" },
-      h("span", { class: "radio" + (p.active ? " on" : ""), "aria-hidden": "true" }),
       h("div", { class: "body" },
-        h("div", { class: "title" }, p.label, p.active ? h("span", { class: "pill gold", text: "In use" }) : null),
+        h("div", { class: "title" }, p.label, p.active ? h("span", { class: "pill gold", text: "Active" }) : null),
         h("div", { class: "sub mono selectable", text: host })),
       h("div", { class: "end" }, end));
   });
@@ -222,16 +229,17 @@ function renderDaemon() {
   const out = [];
   if (remote) out.push(h("div", { class: "callout info" }, icon("info"),
     h("div", { class: "grow", text: "AI apps on this Mac use the server \"" + d.remote + "\", so this Mac's daemon is not what they use. Its controls apply again once This Mac is the server." })));
-  if (!remote && st.kind === "warn" && d.running !== d.installed) out.push(h("div", { class: "callout warn" }, icon("warn"),
-    h("div", { class: "grow", text: d.running + " is running, but " + d.installed + " is installed. Restart the daemon to load the new version." }),
-    actionButton("restart", "Restart", "restart", "", () => act("restart", "daemon_restart", null, { title: "Daemon restarted" }))));
-
+  // Version drift is one card at the top, holding the section's only Restart while it shows
+  // (design-system.md Section 6a): it was said three times, with a Restart each.
+  const drift = !remote && d.running && d.installed && d.running !== d.installed;
   out.push(h("div", { class: "card" },
     h("div", { class: "row hero" },
       h("span", { class: "lead " + st.kind }, icon("power")),
       h("div", { class: "body" },
-        h("div", { class: "title", text: st.title || "Unknown" }),
-        h("div", { class: "sub mono", text: st.detail || "" })))));
+        h("div", { class: "title", text: drift ? "Update ready - restart to load " + d.installed : st.title || "Unknown" }),
+        h("div", { class: "sub mono", text: drift ? d.running + " is running" : st.detail || "" })),
+      drift ? h("div", { class: "end" },
+        actionButton("restart", "Restart", "restart", "primary", () => act("restart", "daemon_restart", null, { title: "Daemon restarted" }))) : null)));
 
   const store = d.store || {};
   const owed = store.owed_projections;
@@ -259,7 +267,7 @@ function renderDaemon() {
         h("div", { class: "body" },
           h("div", { class: "title", text: "Restart the daemon" }),
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
-        h("div", { class: "end" }, remote ? null :
+        h("div", { class: "end" }, remote || drift ? null :
           actionButton("restart", "Restart", "restart", "", () => act("restart", "daemon_restart", null, { title: "Daemon restarted" }))))),
     h("div", { class: "group-title", text: "Search" }),
     h("div", { class: "card" }, searchRow(d, remote)),
@@ -418,42 +426,42 @@ function renderSync() {
       })));
   }
 
+  // One row per peer (design-system.md Section 6a): who checked in and when, and on a hub what it
+  // may read - the two lists named the same peers twice.
   const known = f.known_peers || [];
-  if (known.length || f.role === "hub") {
-    out.push(h("div", { class: "group-title", text: "Peers that have checked in" }),
-      h("div", { class: "card" }, known.length ? known.map((p) => {
-        const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
-        return h("div", { class: "row" },
-          h("div", { class: "body" },
-            h("div", { class: "title mono selectable", text: String(p.node_id || "").slice(0, 16) }),
-            h("div", { class: "sub", text: p.last_action + (ago !== null ? " " + ago + "s ago" : "") + " (" + (p.hits | 0) + "), "
-              + (p.release ? "v" + p.release : "release not known") + ", sync " + (p.protocol | 0) })));
-      }) : [h("div", { class: "row" }, h("div", { class: "body" }, h("div", { class: "sub", text: "No peer has checked in yet." })))]));
-  }
-
-  if (f.role === "hub") {
-    const admitted = f.admitted || [];
-    out.push(h("div", { class: "group-title", text: "Peers, and what each may read" }));
-    if (!admitted.length) {
-      out.push(h("div", { class: "card" }, h("div", { class: "row" },
-        h("div", { class: "body" }, h("div", { class: "sub", text: "No peer is admitted. Admitting one stays in supragnosis.toml." })))));
-    } else {
-      out.push(h("div", { class: "card" }, admitted.map((peer) => {
+  const admitted = f.role === "hub" ? (f.admitted || []) : [];
+  const ids = [...new Set([...admitted.map((p) => p.node_id), ...known.map((p) => p.node_id)])];
+  if (ids.length || f.role === "hub") {
+    out.push(h("div", { class: "group-title", text: f.role === "hub" ? "Peers, and what each may read" : "Peers that have checked in" }));
+    out.push(h("div", { class: "card" }, ids.length ? ids.map((id) => {
+      const seen = known.find((p) => p.node_id === id);
+      const peer = admitted.find((p) => p.node_id === id);
+      const ago = seen && f.updated_ms && seen.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - seen.last_seen_ms) / 1000)) : null;
+      const checkedIn = seen
+        ? seen.last_action + (ago !== null ? " " + ago + "s ago" : "") + " (" + (seen.hits | 0) + "), "
+          + (seen.release ? "v" + seen.release : "release not known") + ", sync " + (seen.protocol | 0)
+        : "has not checked in yet";
+      let chips = null;
+      if (peer) {
         const shared = peer.shared_workspaces || [];
-        const chips = shared.length
+        chips = h("div", { class: "chips" }, shared.length
           ? shared.map((w) => h("span", { class: "chip" }, w,
               h("button", {
                 class: "chip-x", title: "Stop sharing " + w + " with this peer", "aria-label": "Stop sharing " + w,
                 disabled: pending.size > 0, on: { click: () => confirmNarrow(peer, w) },
               }, icon("x"))))
-          : [h("span", { class: "sub", text: "admitted, may read nothing" })];
-        return h("div", { class: "row" },
-          h("div", { class: "body" },
-            h("div", { class: "title mono selectable", text: peer.node_id }),
-            h("div", { class: "chips" }, chips)));
-      })));
-    }
-    out.push(h("p", { class: "hint", text: "Removing a grant takes effect at once and is written to supragnosis.toml. It stops future reads; it does not take back what has already synced. Granting a workspace, and admitting or removing a peer, stay in the file." }));
+          : [h("span", { class: "sub", text: "admitted, may read nothing" })]);
+      } else if (f.role === "hub") {
+        chips = h("div", { class: "sub", text: "not admitted" });
+      }
+      return h("div", { class: "row" },
+        h("div", { class: "body" },
+          h("div", { class: "title mono selectable", text: id }),
+          h("div", { class: "sub", text: checkedIn }),
+          chips));
+    }) : [h("div", { class: "row" }, h("div", { class: "body" }, h("div", { class: "sub", text: f.role === "hub"
+      ? "No peer is admitted or has checked in. Admitting one stays in supragnosis.toml." : "No peer has checked in yet." })))]));
+    if (f.role === "hub") out.push(h("p", { class: "hint", text: "Removing a grant takes effect at once and is written to supragnosis.toml. It stops future reads; it does not take back what has already synced. Granting a workspace, and admitting or removing a peer, stay in the file." }));
   }
   return out;
 }

@@ -238,10 +238,7 @@ const VIEWER_LINES: &[(&str, &str)] = &[
     ("#loader .spin", "a control's own glyph: the loader's spinner"),
     ("#mapwin", "paints the frame around the map's window: a surface, not a line"),
 ];
-const SETTINGS_LINES: &[(&str, &str)] = &[
-    (".radio", "a control's own glyph: the radio's circle"),
-    (".radio.on", "a control's own glyph: the chosen radio's circle"),
-];
+const SETTINGS_LINES: &[(&str, &str)] = &[];
 const LANDING_LINES: &[(&str, &str)] = &[];
 
 /// The declarations of a stylesheet that draw a line outside its list, and the listed selectors
