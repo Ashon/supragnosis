@@ -296,3 +296,35 @@ fn region_forces_grow_with_the_members() {
         "the set-based share test is back"
     );
 }
+
+/// U37, the Log's half: the Log lists the scope's newest observations, LOG_ROWS at a time, asking for
+/// one more than it shows and with the ETag of what it holds; its rows are wired by their place, not
+/// found again in the list; and an observation it does not hold is read once by id.
+#[test]
+fn the_log_draws_its_newest_rows() {
+    assert!(SCRIPT.contains("const LOG_ROWS = 200;"), "the Log's page moved");
+    let refresh = function("refreshLog");
+    for part in [
+        "const url = \"/api/observations?limit=\" + (logLimit + 1)",
+        "const r = await fetch(url, askedWith(heldLog, url));",
+    ] {
+        assert!(refresh.contains(part), "the Log fetches its whole scope again: {part}");
+    }
+    let render = function("renderLog");
+    for part in [
+        "const more = obsLog.length > logLimit, shown = more ? obsLog.slice(0, logLimit) : obsLog;",
+        "wireObsList(logBodyEl, shown);",
+        "b.onclick = () => { logLimit += LOG_ROWS; refreshLog(); };",
+    ] {
+        assert!(render.contains(part), "the Log draws every row again: {part}");
+    }
+    let wire = function("wireObsList");
+    assert!(
+        wire.contains("const o = list[i];") && !wire.contains("list.find("),
+        "a row is found again in the whole list to wire it"
+    );
+    assert!(
+        function("observationById").contains("const kept = obsLog.find(x => x.id === id);"),
+        "an observation the Log does not hold cannot be opened"
+    );
+}

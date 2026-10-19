@@ -1394,11 +1394,11 @@ social image.
 | **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 3 pixels of radius on screen is drawn without its ring and the relations into it straight and without arrowheads, and one under 1.2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
 | **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
 | **U32** | Layers that do not change when only the camera moves are not worked out again for it: the region field is kept with the camera it was worked out for and drawn moved and scaled by the camera's change, and worked out again once the camera rests, when the moved field would leave the window uncovered or be scaled past half or double, and when a region, its strength or the appearance changes; the minimap's miniature is a bitmap of its own, painted when the nodes, their positions, the filters or the look change, under the window's frame drawn each frame; and the regions' members and hulls are kept while the nodes stand still. |
-| **U33** | A poll that finds nothing new costs the page nothing: the graph and the hypergraph answer with an ETag of their body, the viewer asks with it, an unchanged one answers 304 with no body, and the viewer keeps what it has without parsing or applying anything. |
+| **U33** | A poll that finds nothing new costs the page nothing: the graph, the hypergraph and the Log's observations answer with an ETag of their body, the viewer asks with it, an unchanged one answers 304 with no body, and the viewer keeps what it has without parsing or applying anything. |
 | **U34** | The layout's region forces grow with the regions' members, not with their pairs or their number: membership is kept as index arrays while the graph and its contexts are unchanged, a step allocates nothing per region, the shared-member test marks one region's members and reads the other's, and only regions of three or more members - the ones the map draws - push apart, while every context of two or more keeps its pull. |
 | **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once a drawn frame after, and hands back positions; when no worker can start, the same file steps on the page's thread as before. |
 | **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it, and semantic zoom (U38) folds the same communities. |
-| **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their boxes. |
+| **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their boxes; and the Log lists the scope's newest 200 observations, asking for one more to know there are more, wires its rows by their place, and shows more on request. |
 | **U38** | A community smaller than 24 pixels on the screen is drawn as one body - a disc for its members, its count and, where it fits, its best-connected member's name - the relations between two bodies as one line as wide as their number, and from 24 to 48 pixels the members fade in as the body fades out; a hovered, selected, active, pulsing or contested node is never folded. |
 | **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads, the nodes in their three sizes and the bodies, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
@@ -2469,7 +2469,9 @@ observation and each relation between groups its own - and opened in the desktop
   test 11.8 more; drawing took 0.6. The region forces take every context of two or more, and each
   step built every context's members and a set of them again.
 - **Every poll fetched everything.** Every 2.5 seconds the viewer fetched the graph (5.8 MB) and the
-  hypergraph (6.5 MB), parsed both and applied them, whether or not anything had changed.
+  hypergraph (6.5 MB), parsed both and applied them, whether or not anything had changed; with the Log
+  open it fetched every observation too (8.8 MB) and drew all 12,166, finding each row again in the
+  whole list to wire it - 3.6 of the five seconds the data took to arrive.
 
 ### 27.2 The budget
 
@@ -2492,6 +2494,8 @@ taken from it could call a changed graph unchanged. Building is the daemon's cos
 app's proxy passes the tag to the daemon and the ETag back, and passes a tag on only when it is one
 line of printable characters, since it writes it into the request as it comes. The page keeps only
 the tag of the graph it holds, with its address, and forgets it when the workspace changes.
+
+The Log's observations carry the tag the same way, and the Log asks with it.
 
 Guarded by `a_poll_that_finds_nothing_new_costs_nothing` and `a_poll_asks_with_what_it_holds`.
 
@@ -2545,6 +2549,11 @@ A uniform grid of the node positions, rebuilt when they move and kept while they
 window's questions: which nodes are drawn, which can be named, badged or pulse, and which is under the
 pointer. The relations are kept in a grid of the cells their boxes cover. A frame then costs what the
 window holds rather than what the map holds (U37).
+
+The Log is clipped the same way: it lists the scope's newest 200 observations, asks for one more to
+know there are more, and shows 200 more on request; its count reads "200+" until they are all shown.
+Its rows are wired by their place in the list rather than found again in it, and an observation it
+does not hold - a curation finding's, a search hit's - is read from the scope's log once.
 
 ### 27.8 Semantic zoom
 

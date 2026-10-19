@@ -847,12 +847,19 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "Section 14 step 34 is planned: a fresh layout starts from scattered positions. Revisit when step 34 lands",
         ),
     )]),
-    (37, &[c(
-        "a frame touches what the window holds: a grid of node positions and of relations' boxes answers what is drawn, named, badged, pulsing or under the pointer",
-        Evidence::Deferred(
-            "Section 14 step 35 is planned: a frame passes over every node and relation. Revisit when step 35 lands",
+    (37, &[
+        c(
+            "a frame touches what the window holds: a grid of node positions and of relations' boxes answers what is drawn, named, badged, pulsing or under the pointer",
+            Evidence::Deferred(
+                "Section 14 step 35 is planned: a frame passes over every node and relation. Revisit when step 35 lands",
+            ),
         ),
-    )]),
+        c(
+            "the Log lists the scope's newest 200 observations, asks for one more to know there are more, wires its rows by their place and shows more on request",
+            // scale.rs reads refreshLog, renderLog, wireObsList and observationById.
+            Evidence::Scenario(&["the_log_draws_its_newest_rows"]),
+        ),
+    ]),
     (38, &[c(
         "a community under 24 pixels on the screen is one body with its count, relations between bodies summed, a crossfade to 48 pixels, and a hovered, selected, active, pulsing or contested node never folded",
         Evidence::Deferred(

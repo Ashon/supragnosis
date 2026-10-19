@@ -1189,6 +1189,7 @@ function beginWorkspaceTransition() {
   saveLayout();          // the scope being left, under its own key
   layoutFresh = true;    // the next graph reads the new scope's
   heldGraph.url = heldGraph.tag = heldHyper.url = heldHyper.tag = "";   // the next poll fetches in full
+  heldLog.url = heldLog.tag = ""; logLimit = LOG_ROWS;
   syncUrlWorkspace();
   focus = null; hover = null; renderDetail(null);
   proposalSel = null;
@@ -1557,9 +1558,8 @@ function wireCuration(host) {
   // of looking at it. The Log holds the loaded rows, so fall back to opening it when this scope has
   // not loaded the one being pointed at rather than silently doing nothing.
   host.querySelectorAll("[data-obs]:not(.confirm)").forEach(el => {
-    el.onclick = () => {
-      const id = el.getAttribute("data-obs");
-      const o = (obsLog || []).find(x => x.id === id);
+    el.onclick = async () => {
+      const o = await observationById(el.getAttribute("data-obs"));
       if (o) showObsCard(o); else if (!dockREl.classList.contains("on")) toggleDock(false);
     };
   });
@@ -2027,7 +2027,26 @@ async function refreshProposals() {
 // provenance (Principle 2) and effective tier. A row expands to show who attested it / lineage /
 // which entities it touched (click an entity to focus its node). Shared row rendering feeds both
 // this panel and the inspector "why" section's supporting-observations list.
-let obsLog = [];   // /api/observations for the current workspace (newest-first)
+let obsLog = [];   // /api/observations for the current workspace (newest-first): the Log's rows and one more
+// The Log lists the scope's newest observations, LOG_ROWS at a time (design-system.md Section 27.7,
+// U37). A store filled through observe holds one for every write, and drawing them all - each row
+// found again in the whole list to wire it - took the page seconds on 12,000. It asks for one more
+// than it shows, to know there are more, asks with the ETag of what it holds (U33), and shows more
+// on request.
+const LOG_ROWS = 200;
+let logLimit = LOG_ROWS;
+const heldLog = { url: "", tag: "" };
+// An observation by id: from the Log's rows when they hold it, else read from the scope's log once.
+async function observationById(id) {
+  const kept = obsLog.find(x => x.id === id);
+  if (kept) return kept;
+  const ws = currentWs();
+  try {
+    const r = await fetch("/api/observations" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+    if (r.ok) { const l = await r.json(); if (Array.isArray(l)) return l.find(x => x.id === id) || null; }
+  } catch (e) { /* the caller says it could not open it */ }
+  return null;
+}
 let obsLogSig = "";   // set signature of the rendered rows - re-render only when it changes (below)
 
 // Compact clock for the row (full timestamp on hover + in the expanded provenance). The log is a
@@ -2199,22 +2218,30 @@ function showObsCard(o) {
 // open the observation detail card. Used by the workspace Log tab and the node inspector's log column.
 function wireObsList(container, list) {
   container.innerHTML = html`${list.length ? list.map(obsRowHtml) : html`<div class="empty">no observations</div>`}`;
-  container.querySelectorAll(".obs").forEach(row => {
-    const o = list.find(x => x.id === row.dataset.id);
-    if (!o) return;
+  // The rows are the list's, in its order, so each is wired by its place rather than found again.
+  container.querySelectorAll(".obs").forEach((row, i) => {
+    const o = list[i];
+    if (!o || o.id !== row.dataset.id) return;
     row.querySelector(".ohead").onclick = () => showObsCard(o);
   });
 }
 
 function renderLog() {
-  logCtEl.textContent = obsLog.length || "";
+  const more = obsLog.length > logLimit, shown = more ? obsLog.slice(0, logLimit) : obsLog;
+  logCtEl.textContent = obsLog.length ? (more ? logLimit + "+" : obsLog.length) : "";
   if (!obsLog.length) { obsLogSig = ""; logBodyEl.innerHTML = '<div class="empty">no observations in this workspace yet - observe knowledge to see the log</div>'; return; }
   // Re-render only when the observation set actually changed, so a poll refresh does not collapse a
   // row the user expanded (the log is append-mostly; an unchanged set keeps its DOM + open rows).
-  const sig = obsLog.map(o => o.id + ":" + o.effective_tier + ":" + (o.attestations || []).length).join(",");
+  const sig = shown.map(o => o.id + ":" + o.effective_tier + ":" + (o.attestations || []).length).join(",") + (more ? "+" : "");
   if (sig === obsLogSig && logBodyEl.querySelector(".obs")) return;
   obsLogSig = sig;
-  wireObsList(logBodyEl, obsLog);
+  wireObsList(logBodyEl, shown);
+  if (more) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "obsmore"; b.textContent = "Show " + LOG_ROWS + " more";
+    b.onclick = () => { logLimit += LOG_ROWS; refreshLog(); };
+    logBodyEl.appendChild(b);
+  }
 }
 
 // --- The strip: the Log folded (docs/design-system.md Section 6) ----------------------------------
@@ -2264,9 +2291,10 @@ if (stripEl) stripEl.onclick = () => applyDock(false, true);
 async function refreshLog() {
   if (!panelOn("log")) return;
   const ws = wsInput.value.trim();
+  const url = "/api/observations?limit=" + (logLimit + 1) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
   try {
-    const r = await fetch("/api/observations" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
-    if (r.ok) { const l = await r.json(); if (Array.isArray(l)) obsLog = l; }
+    const r = await fetch(url, askedWith(heldLog, url));
+    if (r.status !== 304 && r.ok) { const l = await r.json(); if (Array.isArray(l)) { obsLog = l; hold(heldLog, url, r); } }
   } catch (e) { /* auxiliary - keep the last render */ }
   renderLog();
 }
@@ -4835,14 +4863,7 @@ async function chooseSearch(i) {
   }
   // An observation opens its card - from the Log's rows when they hold it, else read once - and the
   // canvas frames the entities it asserts.
-  let o = (obsLog || []).find(x => x.id === h.id);
-  if (!o) {
-    const ws = currentWs();
-    try {
-      const r = await fetch("/api/observations" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
-      if (r.ok) { const l = await r.json(); if (Array.isArray(l)) o = l.find(x => x.id === h.id); }
-    } catch (e) { /* reported below */ }
-  }
+  const o = await observationById(h.id);
   if (!o) { toast("bad", "Could not open the observation", "the log of this scope did not hold " + h.id.slice(0, 10)); return; }
   searchEl.value = ""; searchWrap?.classList.toggle("filled", false);
   closeSearch();

@@ -524,6 +524,11 @@
      over the content, 2-line); clicking it opens the observation detail card. A light divider list,
      not boxed cards and not ruled: rows are spaced, and hover lightens the one under the pointer. */
   .obs + .obs { margin-top:2px; }
+  /* The Log's newest rows end in a request for more (design-system.md Section 27.7). */
+  .obsmore { display:block; width:100%; margin-top:6px; padding:7px 8px; border:none; cursor:pointer;
+             border-radius:var(--r-control); background:var(--panel-2); color:var(--muted);
+             font:var(--text-small)/1.55 var(--sans); text-align:center; }
+  .obsmore:hover { color:var(--ink); }
   .obs .ohead { display:block; width:100%; padding:7px 8px; cursor:pointer; border-radius:var(--r-control); }
   .obs .ohead:hover { background:var(--panel-2); }
   .obs .ometa { display:flex; align-items:center; gap:6px; margin-bottom:2px; }

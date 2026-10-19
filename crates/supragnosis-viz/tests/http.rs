@@ -454,8 +454,8 @@ fn etag_of(resp: &str) -> String {
         .to_string()
 }
 
-/// design-system.md U33: a poll that finds nothing new costs the page nothing. The graph and the
-/// hypergraph carry an ETag of their body; asked with it, an unchanged one answers 304 with no body,
+/// design-system.md U33: a poll that finds nothing new costs the page nothing. The graph, the
+/// hypergraph and the Log carry an ETag of their body; asked with it, an unchanged one answers 304 with no body,
 /// and a changed one answers in full with a new tag.
 #[tokio::test]
 async fn a_poll_that_finds_nothing_new_costs_nothing() {
@@ -465,7 +465,11 @@ async fn a_poll_that_finds_nothing_new_costs_nothing() {
     observe_depends(&engine);
     let sock = serve_uds("etag", Arc::clone(&engine), ev_channel()).await;
 
-    for target in ["/api/graph?workspace=ws", "/api/hypergraph?workspace=ws"] {
+    for target in [
+        "/api/graph?workspace=ws",
+        "/api/hypergraph?workspace=ws",
+        "/api/observations?limit=201&workspace=ws",
+    ] {
         let first = uds_get(&sock, target).await;
         body_of(&first, "200");
         let tag = etag_of(&first);

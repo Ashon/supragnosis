@@ -213,11 +213,12 @@ async fn handle_conn<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     // Every route below reads the store, folds the log or writes a file - synchronous work that can
     // take seconds on a large store (the merge band, a curation poll every 2.5s). Run on the async
     // worker it would hold that thread, which the MCP daemon shares, and stall its tool calls.
-    // The graph and the hypergraph carry an ETag, a hash of their body, so a poll that finds
+    // The graph, the hypergraph and the Log carry an ETag, a hash of their body, so a poll that finds
     // nothing new costs the page nothing (design-system.md Section 27.3, U33): the body is still
     // built, since no revision of the store covers every change to what they show, but an unchanged
     // one is answered 304 with no body, and the viewer keeps what it has.
-    let conditional = method == "GET" && matches!(path, "/api/graph" | "/api/hypergraph");
+    let conditional =
+        method == "GET" && matches!(path, "/api/graph" | "/api/hypergraph" | "/api/observations");
     let (method, path, query) = (method.to_string(), path.to_string(), query.to_string());
     let (resp, etag) = tokio::task::spawn_blocking(move || {
         let r = respond(
