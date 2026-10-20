@@ -12,6 +12,7 @@ const APP_COMMANDS: &[&str] = &[
     "capture_set",
     "login_set",
     "daemon_restart",
+    "search_rebuild",
     "peer_narrow",
     "setup_check",
     "setup_run",

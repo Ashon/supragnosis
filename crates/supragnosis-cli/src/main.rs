@@ -175,6 +175,10 @@ enum EmbedCmd {
     /// Remove every stored vector and the model the store recorded, with the daemon stopped: the
     /// next start embeds the store with the model it runs (docs/semantic-retrieval.md Section 13)
     Reset,
+    /// Rebuild the search index from the log: stop the daemon this CLI manages, reset the store and
+    /// start the daemon again, which embeds every row with the model it runs (docs/semantic-retrieval.md
+    /// Section 13)
+    Rebuild,
 }
 
 #[derive(Subcommand)]
@@ -334,6 +338,7 @@ fn main() -> Result<()> {
         Cmd::Setup(a) => setup_cmd(a),
         Cmd::Embed { cmd: EmbedCmd::Fetch { events } } => embed_fetch(true, events),
         Cmd::Embed { cmd: EmbedCmd::Reset } => embed_reset(),
+        Cmd::Embed { cmd: EmbedCmd::Rebuild } => embed_rebuild(),
         Cmd::Hook(a) => hook_cmd(a),
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
@@ -520,10 +525,10 @@ fn embedder_refusal(recorded: &str, opened: &str) -> String {
     format!(
         "the store was embedded by '{recorded}' and this process opens it with '{opened}' - vectors \
          from two models share no space, so the store is refused (docs/semantic-retrieval.md Section \
-         13). Either stop the daemon (`supragnosis stop`) and run `supragnosis embed reset`, and the \
-         next start embeds the store with '{opened}'; or run without semantic search and leave the \
-         store as it is: SUPRAGNOSIS_EMBED=none, for the login job `supragnosis service install \
-         --env SUPRAGNOSIS_EMBED=none`"
+         13). Either run `supragnosis embed rebuild` - in the app, Settings > This Mac > Rebuild \
+         index - which stops the daemon, removes the old index and starts it again with '{opened}'; \
+         or run without semantic search and leave the store as it is: SUPRAGNOSIS_EMBED=none, for \
+         the login job `supragnosis service install --env SUPRAGNOSIS_EMBED=none`"
     )
 }
 
@@ -599,9 +604,9 @@ fn embedder_conflict(store: &std::path::Path, daemon: Option<String>) -> Option<
 fn embedder_conflict_line(recorded: &str, daemon: &str) -> String {
     format!(
         "  store   the daemon cannot open it: it was embedded by '{recorded}' and the daemon runs \
-         '{daemon}'. `supragnosis stop`, then `supragnosis embed reset` - the next start embeds it \
-         with '{daemon}'; or `supragnosis service install --env SUPRAGNOSIS_EMBED=none` runs \
-         without semantic search"
+         '{daemon}'. `supragnosis embed rebuild` - in the app, Settings > This Mac > Rebuild index - \
+         rebuilds it with '{daemon}'; or `supragnosis service install --env SUPRAGNOSIS_EMBED=none` \
+         runs without semantic search"
     )
 }
 
@@ -623,7 +628,8 @@ fn embed_reset() -> Result<()> {
     if supragnosis_store::redb_in_use(&path) {
         anyhow::bail!(
             "the store at {} is open in another process - the daemon, or an AI app's stdio server - \
-             so nothing was changed. Stop it (`supragnosis stop`) and run this again",
+             so nothing was changed. Stop it (`supragnosis stop`) and run this again, or run \
+             `supragnosis embed rebuild`, which stops and starts a daemon this CLI manages",
             path.display()
         );
     }
@@ -661,6 +667,116 @@ fn embed_reset() -> Result<()> {
         ),
     }
     Ok(())
+}
+
+/// What `supragnosis embed rebuild` does for the daemon it finds (semantic-retrieval.md Section 13,
+/// SR10). It stops only a daemon this CLI manages for this home - a `supragnosis start` daemon,
+/// whose pidfile is this home's, or the login job whose file is in this home - and refuses every
+/// other holder with nothing changed: a login job is per user, not per home, so a job loaded from
+/// another home's file is not this store's to stop.
+#[cfg(unix)]
+#[derive(Debug, PartialEq, Eq)]
+enum RebuildPlan {
+    /// Nothing runs: reset the store, and start the login job when this home installs one.
+    ResetOnly { start_job: bool },
+    /// Stop the daemon, reset the store, start the daemon again.
+    StopResetStart,
+    /// Refuse, changing nothing, with the reason and the way on.
+    Refuse(String),
+}
+
+#[cfg(unix)]
+fn rebuild_plan(s: &lifecycle::Situation, service_state: &str) -> RebuildPlan {
+    use lifecycle::{LabelKind, Manager, Situation};
+    let installed = service_state != "absent";
+    match s {
+        Situation::Stopped => RebuildPlan::ResetOnly { start_job: installed },
+        Situation::One(Manager::Pidfile { .. }) => RebuildPlan::StopResetStart,
+        Situation::One(Manager::Launchd(j) | Manager::Systemd(j))
+            if j.kind == LabelKind::Canonical && installed =>
+        {
+            RebuildPlan::StopResetStart
+        }
+        Situation::One(m) => RebuildPlan::Refuse(format!(
+            "the daemon runs under {}, which this command does not stop and start for this home - \
+             nothing was changed. Stop it there, run `supragnosis embed reset`, and start it again",
+            m.describe()
+        )),
+        Situation::Conflict(ms) => RebuildPlan::Refuse(format!(
+            "{} - nothing was changed",
+            lifecycle::conflict_message(ms)
+        )),
+        Situation::Unrecognized => RebuildPlan::Refuse(
+            "the store is held by a process no manager runs - an AI app's stdio server, or a \
+             `supragnosis serve` in a terminal - so nothing was changed. Stop it, then run \
+             `supragnosis embed reset`"
+                .to_string(),
+        ),
+    }
+}
+
+/// `supragnosis embed rebuild` (semantic-retrieval.md Section 13, SR10): the search index made again
+/// from the log by the model the daemon runs. It stops the daemon this CLI manages, resets the store
+/// (SR9) and starts the daemon again, whose backfill embeds every row; with no daemon running it
+/// resets the store and starts the login job when one is installed.
+#[cfg(unix)]
+fn embed_rebuild() -> Result<()> {
+    clear_stale_pidfile();
+    let plan = rebuild_plan(&lifecycle::classify(&observe()), canonical_service_state());
+    let start = match plan {
+        RebuildPlan::Refuse(why) => anyhow::bail!(why),
+        RebuildPlan::ResetOnly { start_job } => start_job,
+        RebuildPlan::StopResetStart => {
+            stop()?;
+            // The stopped process lets go of the store as it exits.
+            let job = job_env();
+            if let Some(path) = daemon_store_path(|k| daemon_var(&job, k)) {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+                while supragnosis_store::redb_in_use(&path) {
+                    if std::time::Instant::now() > deadline {
+                        anyhow::bail!(
+                            "the daemon stopped but the store at {} is still held after 15 seconds - \
+                             `supragnosis status` says what holds it",
+                            path.display()
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+            true
+        }
+    };
+    embed_reset()?;
+    if start {
+        restart(resolve(RunArgs::default(), true))?;
+    } else {
+        println!("No daemon runs here; the next `supragnosis start` embeds the store.");
+    }
+    Ok(())
+}
+#[cfg(not(unix))]
+fn embed_rebuild() -> Result<()> {
+    anyhow::bail!(
+        "`embed rebuild` stops and starts the daemon, which this platform's build does not manage - \
+         stop it, run `supragnosis embed reset`, and start it again"
+    )
+}
+
+/// The model the daemon's store recorded and the one it runs, when the daemon does not answer
+/// because they differ (SR8); what `status` and setup's server step say.
+fn daemon_embedder_conflict() -> Option<(String, String)> {
+    let job = job_env();
+    let get = |k: &str| daemon_var(&job, k);
+    daemon_store_path(get).and_then(|p| embedder_conflict(&p, embedder_id_for(&get).ok().flatten()))
+}
+
+/// Setup's server step for a daemon that cannot open its store (onboarding.md Section 4.1).
+fn embedder_conflict_attention(recorded: &str, daemon: &str) -> String {
+    format!(
+        "The daemon cannot start: its store was indexed by '{recorded}' and it runs '{daemon}'. \
+         Rebuild index in Settings > This Mac, or `supragnosis embed rebuild`, rebuilds the index \
+         with '{daemon}'."
+    )
 }
 
 /// `supragnosis embed fetch` (semantic-retrieval.md Section 6): the one download, by the person's
@@ -2441,6 +2557,14 @@ fn setup_observe(app_daemon: Option<u32>) -> Result<setup::Observed> {
         app_child,
         platform,
     );
+    // A daemon refused its store for the model it runs says why, with the way on (SR8): starting it
+    // again would fail the same way.
+    let runner = match (observed.answering, daemon_embedder_conflict()) {
+        (false, Some((recorded, daemon))) => {
+            setup::Runner::Attention(embedder_conflict_attention(&recorded, &daemon))
+        }
+        _ => runner,
+    };
 
     // First contact is this daemon's, so it says nothing about apps that use a remote one.
     let reported = if remote.is_none() && observed.answering { first_contacts() } else { None };
@@ -4215,14 +4339,7 @@ fn status(json: bool) -> Result<()> {
     let health = if observed.answering { store_health() } else { None };
     // A daemon that does not answer may be refused its store for the model (SR8): what the store
     // recorded, read without holding it, against the model the daemon's environment names.
-    let embedder_conflict = if observed.answering {
-        None
-    } else {
-        let job = job_env();
-        let get = |k: &str| daemon_var(&job, k);
-        daemon_store_path(get)
-            .and_then(|p| embedder_conflict(&p, embedder_id_for(&get).ok().flatten()))
-    };
+    let embedder_conflict = if observed.answering { None } else { daemon_embedder_conflict() };
     // The server this machine's AI apps use (remote-server.md): this daemon, or a remote one. An
     // unreadable profile file is reported, not read as "local" (P5).
     let server =
@@ -5857,6 +5974,71 @@ mod json_contract {
     }
 
     #[cfg(unix)]
+    /// SR10 (semantic-retrieval.md Section 13): the rebuild stops only a daemon this CLI manages for
+    /// this home - a `start` daemon, or the login job whose file is here - and refuses every other
+    /// holder with nothing changed; with nothing running it resets, and starts the login job if this
+    /// home installs one.
+    #[cfg(unix)]
+    #[test]
+    fn rebuild_stops_only_a_daemon_this_home_manages() {
+        use lifecycle::{Job, LabelKind, Manager, Situation};
+        let job =
+            |kind| Job { label: lifecycle::CANONICAL_LABEL, kind, pid: Some(7), last_exit: None };
+        assert_eq!(
+            rebuild_plan(&Situation::Stopped, "absent"),
+            RebuildPlan::ResetOnly { start_job: false }
+        );
+        assert_eq!(
+            rebuild_plan(&Situation::Stopped, "generated"),
+            RebuildPlan::ResetOnly { start_job: true }
+        );
+        assert_eq!(
+            rebuild_plan(&Situation::One(Manager::Pidfile { pid: 7 }), "absent"),
+            RebuildPlan::StopResetStart
+        );
+        for state in ["generated", "hand_written"] {
+            assert_eq!(
+                rebuild_plan(&Situation::One(Manager::Launchd(job(LabelKind::Canonical))), state),
+                RebuildPlan::StopResetStart,
+                "the login job this home installs"
+            );
+            assert_eq!(
+                rebuild_plan(&Situation::One(Manager::Systemd(job(LabelKind::Canonical))), state),
+                RebuildPlan::StopResetStart
+            );
+        }
+        let refused = |plan: RebuildPlan| match plan {
+            RebuildPlan::Refuse(why) => why,
+            other => panic!("expected a refusal, got {other:?}"),
+        };
+        // A login job is the user's, not the home's: one loaded from another home's file is refused.
+        let other_home = refused(rebuild_plan(
+            &Situation::One(Manager::Launchd(job(LabelKind::Canonical))),
+            "absent",
+        ));
+        let brew = refused(rebuild_plan(
+            &Situation::One(Manager::Launchd(job(LabelKind::Homebrew("supragnosis-server")))),
+            "generated",
+        ));
+        let holder = refused(rebuild_plan(&Situation::Unrecognized, "generated"));
+        let two = refused(rebuild_plan(
+            &Situation::Conflict(vec![
+                Manager::Pidfile { pid: 1 },
+                Manager::Launchd(job(LabelKind::Canonical)),
+            ]),
+            "generated",
+        ));
+        for why in [&other_home, &brew, &holder, &two] {
+            assert!(
+                why.contains("nothing was changed"),
+                "a refusal changes nothing and says so: {why}"
+            );
+        }
+        for why in [&other_home, &brew, &holder] {
+            assert!(why.contains("supragnosis embed reset"), "a refusal names the way on: {why}");
+        }
+    }
+
     /// SR8 (semantic-retrieval.md Section 13): a store the daemon cannot open for its model says so,
     /// with both models and both ways on - in the refusal at open, in `status`'s line, and in
     /// `status --json`'s field - and a store read for it is read without being held or written.
@@ -5903,15 +6085,22 @@ mod json_contract {
         for text in [
             embedder_refusal("hashing-256", other),
             embedder_conflict_line("hashing-256", other),
+            embedder_conflict_attention("hashing-256", other),
         ] {
             for part in [
                 "'hashing-256'",
                 "'paraphrase-multilingual-minilm-l12-v2-q-384'",
-                "supragnosis embed reset",
-                "SUPRAGNOSIS_EMBED=none",
+                "supragnosis embed rebuild",
+                "Rebuild index",
             ] {
                 assert!(text.contains(part), "the way on is named ({part}): {text}");
             }
+        }
+        for text in [
+            embedder_refusal("hashing-256", other),
+            embedder_conflict_line("hashing-256", other),
+        ] {
+            assert!(text.contains("SUPRAGNOSIS_EMBED=none"), "the way around is named: {text}");
         }
         let hashing = |k: &str| (k == "SUPRAGNOSIS_EMBED").then(|| "hashing".to_string());
         assert_eq!(embedder_id_for(&hashing).expect("id").as_deref(), Some("hashing-256"));

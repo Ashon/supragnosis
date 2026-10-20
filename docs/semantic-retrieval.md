@@ -427,6 +427,13 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
   `embedder_conflict`, for a store whose model differs from the daemon's, read without being held
   or written (SR8).
 
-The rebuild's guards are named with its implementation. They are to show that it refuses a store
-a process it does not manage holds, changing nothing, and that with no daemon running it resets
-the store, which the next start embeds again (SR10).
+- `rebuild_stops_only_a_daemon_this_home_manages` - the rebuild's plan for every holder: it stops
+  a `start` daemon and the login job whose file is in this home, resets a store nothing runs on and
+  then starts the login job this home installs, and refuses a job loaded from another home's file,
+  a Homebrew service, two managers and a holder no manager runs, each saying nothing changed
+  (SR10).
+- `embed_rebuild_refuses_a_holder_it_does_not_manage_and_changes_nothing` - against a `serve` it
+  did not start, the rebuild refuses and the store keeps every vector, whatever else the machine
+  runs (SR10).
+- `a_store_the_daemon_cannot_open_is_rebuilt_from_the_page` - the app's Rebuild index
+  (settings-page.md S7).

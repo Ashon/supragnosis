@@ -81,3 +81,39 @@ fn embed_reset_refuses_a_held_store_and_reembeds_on_the_next_start() {
     assert_eq!(backfill["found"], 3, "every row was found without a vector: {backfill}");
     assert_eq!(backfill["embedded"], 3, "and embedded again: {backfill}");
 }
+
+/// SR10: the rebuild stops only a daemon this CLI manages for this home. Against a `serve` it did not
+/// start - the scenario's own daemon - it refuses and changes nothing, whatever else this machine
+/// runs: a login job of the person's is not this home's to stop, and is refused the same way.
+#[test]
+fn embed_rebuild_refuses_a_holder_it_does_not_manage_and_changes_nothing() {
+    let home = Home::new("embed-rebuild");
+    let mut d = Daemon::start(&home);
+    let mut app = Mcp::connect(&d, "claude-code");
+    app.tool(
+        "observe",
+        json!({
+            "workspace": "atlas-web",
+            "content": "The checkout page renders on the server now.",
+            "entities": [{ "name": "Checkout page", "type": "Component" }]
+        }),
+    )
+    .expect("observe");
+    drop(app);
+
+    let refused = d.cli(&["embed", "rebuild"]);
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "a holder this CLI does not manage is refused");
+    assert!(said.contains("nothing was changed"), "the refusal says nothing changed: {said}");
+    assert!(d.cli(&["status", "--json"]).status.success(), "the daemon still answers");
+
+    d.stop();
+    let reset = d.cli(&["embed", "reset"]);
+    let out = String::from_utf8_lossy(&reset.stdout);
+    assert!(
+        out.contains(
+            "Removed 2 vectors (1 for observations, 1 for entities) made by 'hashing-256'"
+        ),
+        "the store kept every vector through the refusal: {out}"
+    );
+}

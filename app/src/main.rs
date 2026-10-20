@@ -1173,6 +1173,7 @@ const APP_COMMANDS: &[&str] = &[
     "capture_set",
     "login_set",
     "daemon_restart",
+    "search_rebuild",
     "peer_narrow",
     "setup_check",
     "setup_run",
@@ -1340,6 +1341,9 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             // The daemon's own report on search by meaning (docs/onboarding.md Section 6): null when
             // it runs without a model or does not answer.
             "semantic": status.as_ref().map(|v| v["semantic"].clone()),
+            // A store the daemon cannot open for its model (docs/settings-page.md Section 3.3): the
+            // two models, or null.
+            "embedder_conflict": status.as_ref().map(|v| v["embedder_conflict"].clone()),
             "login": login,
             "remote": remote.map(|r| r.name),
         },
@@ -1537,6 +1541,54 @@ async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Resul
     }
     let sock = app.state::<VizSock>().0.clone();
     restart_daemon(&app, sock).await
+}
+
+#[tauri::command]
+async fn search_rebuild(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
+    own_page_caller(&webview)?;
+    if active_remote(&app).is_some() {
+        return Err(
+            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
+        );
+    }
+    let sock = app.state::<VizSock>().0.clone();
+    rebuild_index(&app, sock).await
+}
+
+/// Rebuild index (docs/settings-page.md Section 3.3, semantic-retrieval.md Section 13): the daemon
+/// this app spawned is stopped here, since only the app can stop it; any other is the CLI's, which
+/// `supragnosis embed rebuild` stops and starts again. The store is reset either way, and the shell
+/// then attaches to the daemon that comes back, or spawns its own where none runs - and that start's
+/// backfill embeds every row with the model it runs.
+async fn rebuild_index(app: &tauri::AppHandle, sock: PathBuf) -> Result<String, String> {
+    let prev =
+        std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
+    refresh_status(app).await;
+    if let Daemon::Spawned(mut child) = prev {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let out = tokio::task::spawn_blocking(|| run_cli(&["embed", "rebuild"]))
+        .await
+        .ok()
+        .flatten();
+    let outcome = match out.as_ref().map(cli_outcome) {
+        Some((true, line)) => Ok(line),
+        Some((false, why)) => Err(why),
+        None => Err("the supragnosis CLI was not found".to_string()),
+    };
+    // A login job the CLI started again: wait for its socket, as a restart does, so the shell
+    // attaches to it rather than spawning a second daemon into its lock.
+    let job = tokio::task::spawn_blocking(cli_status)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|st| st["service"]["state"].as_str().is_some_and(|s| s != "absent"));
+    if outcome.is_ok() && job {
+        wait_for_socket(&sock, Duration::from_secs(30)).await;
+    }
+    bring_up(app.clone(), sock).await;
+    outcome
 }
 
 // --- The Welcome page (docs/onboarding.md Section 6) ----------------------------------------
@@ -2282,6 +2334,7 @@ fn main() {
             capture_set,
             login_set,
             daemon_restart,
+            search_rebuild,
             peer_narrow,
             setup_check,
             setup_run,
@@ -2944,6 +2997,64 @@ mod settings_tests {
         }
     }
 
+    /// docs/settings-page.md S7 and semantic-retrieval.md Section 13: a daemon that cannot start because
+    /// its store was indexed by another model is shown with that reason and Rebuild index, which takes
+    /// Restart's place; Rebuild index is on the Search row whenever the daemon runs with a model; the
+    /// command stops the daemon the app spawned itself, leaves every other to `embed rebuild`, waits
+    /// for a login job the CLI started again, and attaches; and the page follows the re-embedding.
+    #[test]
+    fn a_store_the_daemon_cannot_open_is_rebuilt_from_the_page() {
+        let src = include_str!("main.rs");
+        let body = |src: &'static str, sig: &str| -> &'static str {
+            let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
+            &src[at..at + src[at..].find("\n}\n").expect("it closes")]
+        };
+        let rebuild = body(src, "async fn rebuild_index(");
+        for part in [
+            "if let Daemon::Spawned(mut child) = prev {",
+            "run_cli(&[\"embed\", \"rebuild\"])",
+            "wait_for_socket(&sock, Duration::from_secs(30))",
+            "bring_up(app.clone(), sock).await;",
+        ] {
+            assert!(rebuild.contains(part), "the rebuild does not run as the page says: {part}");
+        }
+        let kill = rebuild.find("child.kill()").expect("the app's own daemon is stopped");
+        let cli = rebuild.find("run_cli(&[\"embed\", \"rebuild\"])").expect("the CLI rebuilds");
+        assert!(kill < cli, "the app's own daemon is stopped before the CLI resets its store");
+        assert!(
+            body(src, "async fn settings_state_of(").contains("\"embedder_conflict\": status"),
+            "the page is not told why the daemon cannot start"
+        );
+
+        let js = include_str!("../assets/settings.js");
+        let status = body(js, "function daemonStatus(");
+        assert!(
+            status.contains("d.embedder_conflict")
+                && status.contains("The search index needs rebuilding"),
+            "the reason is not shown"
+        );
+        let daemon = body(js, "function renderDaemon(");
+        assert!(
+            daemon.contains("conflict ? h(\"div\", { class: \"end\" },")
+                && daemon.contains("remote || drift || conflict ? null :"),
+            "Rebuild index does not take Restart's place on a store the daemon cannot open"
+        );
+        assert!(
+            body(js, "function searchRow(").contains("() => rebuildIndex())"),
+            "the Search row does not offer Rebuild index"
+        );
+        assert!(
+            body(js, "function rebuildIndex(").contains("act(\"rebuild\", \"search_rebuild\"")
+                && body(js, "function rebuildIndex(").contains(".then(watchDaemon)"),
+            "Rebuild index does not call its command, or does not follow the daemon"
+        );
+        assert!(
+            body(js, "function daemonUnsettled(").contains("|| indexing()")
+                && body(js, "function watchDaemon(").contains("if (indexing()) watch.until"),
+            "the page does not follow the re-embedding"
+        );
+    }
+
     /// daemon-lifecycle.md Section 6: a restart of a daemon a login job runs is decided after the
     /// shell waited for the socket. The CLI's success is a restart, and so is a refusal after which a
     /// new process answers - launchd retrying a start that lost the store lock for a moment; a
@@ -3290,8 +3401,9 @@ mod settings_tests {
             js.contains("\"Update ready - restart to load \" + d.installed"),
             "drift is not one card"
         );
+        // A store the daemon cannot open takes Restart away too: its card holds Rebuild index (S7).
         assert!(
-            js.contains("remote || drift ? null :"),
+            js.contains("remote || drift || conflict ? null :"),
             "the startup row's Restart repeats the drift card's"
         );
         assert!(

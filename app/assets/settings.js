@@ -46,6 +46,11 @@ function daemonStatus(d) {
   if (!d) return { kind: "", title: "", detail: "" };
   if (d.remote) return { kind: "", title: "Not in use", detail: "AI apps use the server \"" + d.remote + "\"" };
   if (d.situation === "conflict") return { kind: "bad", title: "Two managers claim the daemon", detail: d.line };
+  // A store indexed by another model keeps the daemon from starting, and a restart fails the same
+  // way (docs/settings-page.md Section 3.3): the card says why and holds Rebuild index instead.
+  const c = d.embedder_conflict;
+  if (c) return { kind: "bad", title: "The search index needs rebuilding",
+    detail: "Indexed by " + c.recorded + ", and the daemon runs " + c.daemon + " - it cannot start until the index is rebuilt" };
   if (d.running && d.installed && d.running !== d.installed)
     return { kind: "warn", title: "Restart to update", detail: d.running + " is running, " + d.installed + " is installed" };
   const owed = d.store && d.store.owed_projections;
@@ -123,6 +128,21 @@ function actionButton(key, label, iconName, cls, run, name) {
 function restartDaemon() {
   return act("restart", "daemon_restart", null, { title: "Daemon restarted", failTitle: "The restart did not finish" })
     .then(watchDaemon);
+}
+
+// Rebuild index (docs/settings-page.md Section 3.3): the app stops the daemon, the CLI resets the
+// index, and the daemon that comes back embeds the store again. The page then follows the daemon and
+// the re-embedding until both settle (watchDaemon).
+function rebuildIndex() {
+  return act("rebuild", "search_rebuild", null, { title: "Rebuilding the search index", failTitle: "The index was not rebuilt" })
+    .then(watchDaemon);
+}
+
+// Whether the daemon is embedding what has no vector yet - after a rebuild, or what was written
+// before the model.
+function indexing() {
+  const s = state && state.daemon && state.daemon.semantic;
+  return !!(s && s.backfill && s.backfill.state === "running");
 }
 
 async function act(key, cmd, args, opts) {
@@ -253,6 +273,7 @@ function renderDaemon() {
   // Version drift is one card at the top, holding the section's only Restart while it shows
   // (design-system.md Section 6a): it was said three times, with a Restart each.
   const drift = !remote && d.running && d.installed && d.running !== d.installed;
+  const conflict = !remote && !!d.embedder_conflict;
   out.push(h("div", { class: "card" },
     h("div", { class: "row hero" },
       h("span", { class: "lead " + st.kind }, icon("power")),
@@ -260,7 +281,9 @@ function renderDaemon() {
         h("div", { class: "title", text: drift ? "Update ready - restart to load " + d.installed : st.title || "Unknown" }),
         h("div", { class: "sub mono", text: drift ? d.running + " is running" : st.detail || "" })),
       drift ? h("div", { class: "end" },
-        actionButton("restart", "Restart", "restart", "primary", () => restartDaemon())) : null)));
+        actionButton("restart", "Restart", "restart", "primary", () => restartDaemon()))
+        : conflict ? h("div", { class: "end" },
+          actionButton("rebuild", "Rebuild index", "restart", "primary", () => rebuildIndex())) : null)));
 
   const store = d.store || {};
   const owed = store.owed_projections;
@@ -288,7 +311,7 @@ function renderDaemon() {
         h("div", { class: "body" },
           h("div", { class: "title", text: "Restart the daemon" }),
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
-        h("div", { class: "end" }, remote || drift ? null :
+        h("div", { class: "end" }, remote || drift || conflict ? null :
           actionButton("restart", "Restart", "restart", "", () => restartDaemon())))),
     h("div", { class: "group-title", text: "Search" }),
     h("div", { class: "card" }, searchRow(d, remote)),
@@ -354,9 +377,22 @@ function searchRow(d, remote) {
   let title, sub, kind;
   if (remote) { title = "Not in use"; sub = "The server in use searches with its own model."; kind = ""; }
   else if (!s) { title = "Keyword only"; sub = d.answering === false ? "Known once the daemon answers." : "This daemon runs without a search model, so search matches words."; kind = ""; }
+  else if (s.state === "on" && indexing()) {
+    const b = s.backfill;
+    title = "Indexing"; sub = "Embedding what is in the store: " + b.embedded + " of " + b.found; kind = "ok";
+  }
   else if (s.state === "on") { title = "Search by meaning"; sub = "Multilingual, on this Mac (" + s.model + ")"; kind = "ok"; }
   else { title = "Keyword only - the model is not downloaded"; sub = s.note || "Search matches words until the model (224 MB) is here."; kind = "warn"; }
   let end = null, bar = null;
+  if (!remote && s && s.state === "on" && indexing()) {
+    const b = s.backfill, pct = b.found ? Math.round(100 * b.embedded / b.found) : 0;
+    bar = h("div", { class: "bar", role: "progressbar", "aria-label": "Indexing",
+      "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("span"));
+    bar.firstChild.style.width = pct + "%";
+  } else if (!remote && s && s.state === "on" && d.answering) {
+    // Rebuild index, whenever the daemon runs with a model (docs/settings-page.md Section 3.3).
+    end = actionButton("rebuild", "Rebuild index", "restart", "", () => rebuildIndex());
+  }
   if (!remote && s && s.state !== "on") {
     if (downloading) {
       bar = h("div", { class: "bar" + (modelPct === null ? " busy" : ""), role: "progressbar", "aria-label": "Model download",
@@ -739,7 +775,7 @@ async function load() {
 function daemonUnsettled() {
   const d = state && state.daemon;
   if (!d || d.remote) return false;
-  return !d.answering || !d.running || /starting|FAILED/.test(d.line || "");
+  return !d.answering || !d.running || /starting|FAILED/.test(d.line || "") || indexing();
 }
 
 // While the daemon is unsettled the page reads its state again every two seconds, for up to a
@@ -752,6 +788,8 @@ function watchDaemon() {
   const tick = async () => {
     // A load while an act is running would read the act's middle; wait for its own load.
     if (!pending.size) await load();
+    // An index being embedded moves; the page follows it for as long as it does.
+    if (indexing()) watch.until = Math.max(watch.until, Date.now() + 60000);
     if (!daemonUnsettled() || Date.now() > watch.until) { watch = null; return; }
     setTimeout(tick, 2000);
   };

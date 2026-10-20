@@ -285,6 +285,10 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **Sync's one act**: `a_narrowing_is_encoded_into_its_own_parameters` - a workspace or node name
   cannot break out of its query parameter on the way to the daemon. The narrowing itself is the
   daemon's, tested there.
+- **S7**: `a_store_the_daemon_cannot_open_is_rebuilt_from_the_page` - the reason and Rebuild index in
+  place of Restart for a store the daemon cannot open, Rebuild index on the Search row, the command
+  stopping the app's own daemon before the CLI resets the store and attaching after, and the page
+  following the re-embedding.
 - **The page's rows**: `an_app_item_says_what_a_click_will_do`, which once tested the tray's AI Apps
   items, now tests the page's app rows: the state, and the button's label or its absence.
 

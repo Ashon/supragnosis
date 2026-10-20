@@ -13,6 +13,7 @@
     "allow-capture-set",
     "allow-login-set",
     "allow-daemon-restart",
+    "allow-search-rebuild",
     "allow-peer-narrow",
     "allow-setup-check",
     "allow-setup-run",
