@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.8.0](docs/releases/v0.8.0.md) | Upgrade the server and the app, then restart once; the map opens and moves at any size. |
 | [v0.7.2](docs/releases/v0.7.2.md) | Upgrade the app and the server, then restart once; in full screen the title bar meets the edge. |
 | [v0.7.1](docs/releases/v0.7.1.md) | Upgrade the app and the server, then restart once; the title bar moves the window again. |
 | [v0.7.0](docs/releases/v0.7.0.md) | Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux. |
