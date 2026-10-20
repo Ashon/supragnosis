@@ -807,5 +807,15 @@ document.addEventListener("keydown", (e) => {
 });
 document.getElementById("close").href = GRAPH;
 
+// Rebuild index from the starting page (docs/settings-page.md Section 3.3): its click opened this page
+// with act=rebuild, which starts the rebuild only while the daemon still cannot open its store. The
+// parameter is dropped either way, so a reload asks nothing again.
+function rebuildAsked() {
+  if (new URLSearchParams(location.search).get("act") !== "rebuild") return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  const d = state && state.daemon;
+  if (d && !d.remote && d.embedder_conflict) rebuildIndex();
+}
+
 render();
-load().then(adoptDownload);
+load().then(adoptDownload).then(rebuildAsked);

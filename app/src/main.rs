@@ -491,11 +491,80 @@ fn remote_html(r: &RemoteServer) -> String {
     )
 }
 
-fn starting_html(status: &str) -> String {
-    let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+fn starting_html(status: &str, conflict: Option<&Conflict>, settings: &tauri::Url) -> String {
+    let esc = |t: &str| {
+        t.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
+    // A link that reads as a button: the page has no script (SHELL_CSP), and its one act is opening
+    // the app's own page, where the command is (docs/settings-page.md Section 3.3, S1).
+    const BUTTON: &str = "display:inline-block;margin-top:18px;padding:7px 16px;border-radius:8px;font-weight:600;text-decoration:none";
+    let mut to = settings.clone();
+    to.set_fragment(Some("daemon"));
+    let (head, detail, action, foot) = match conflict {
+        // The daemon cannot open its store for its model (semantic-retrieval.md Section 13): the
+        // reason, and Rebuild index, which opens Settings to start it.
+        Some((recorded, daemon)) => {
+            to.set_query(Some("act=rebuild"));
+            (
+                "The search index needs rebuilding".to_string(),
+                format!(
+                    "Indexed by {}, and the daemon runs {} - it cannot start until the index is rebuilt.",
+                    esc(recorded),
+                    esc(daemon)
+                ),
+                format!(
+                    r#"<a href="{}" style="{BUTTON};background:#d9a544;color:#16181e">Rebuild index</a>"#,
+                    esc(to.as_str())
+                ),
+                "or in a terminal: supragnosis embed rebuild".to_string(),
+            )
+        }
+        None => (
+            "starting the supragnosis daemon...".to_string(),
+            esc(status),
+            // A daemon that failed to start: This Mac, where Restart is.
+            if status.contains("FAILED") {
+                format!(
+                    r#"<a class="b2" href="{}" style="{BUTTON};border:1px solid #3a3f4a;color:#e9e4d6">Open This Mac</a>"#,
+                    esc(to.as_str())
+                )
+            } else {
+                String::new()
+            },
+            "log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart".to_string(),
+        ),
+    };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>starting the supragnosis daemon...</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{esc}</div><div class="m" style="color:#b0b8c7;margin-top:6px;font-size:12px">log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2 {{ color:#16181e !important; border-color:#c9ccd3 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
     )
+}
+
+/// The store the daemon cannot open, for the starting page (docs/settings-page.md Section 3.3): the
+/// model it was indexed by and the one the daemon runs, from `status --json`. Read at most every five
+/// seconds, since the page asks again every second.
+async fn splash_conflict() -> Option<Conflict> {
+    static LAST: Mutex<Option<(std::time::Instant, Option<Conflict>)>> = Mutex::new(None);
+    if let Some((at, c)) = LAST.lock().unwrap().clone() {
+        if at.elapsed() < Duration::from_secs(5) {
+            return c;
+        }
+    }
+    let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+    let c = st.as_ref().and_then(conflict_of);
+    *LAST.lock().unwrap() = Some((std::time::Instant::now(), c.clone()));
+    c
+}
+
+/// The model a store was indexed by and the one the daemon runs.
+type Conflict = (String, String);
+
+/// `status --json`'s `embedder_conflict` as its two models, or `None`.
+fn conflict_of(st: &serde_json::Value) -> Option<Conflict> {
+    let e = &st["embedder_conflict"];
+    Some((e["recorded"].as_str()?.to_string(), e["daemon"].as_str()?.to_string()))
 }
 
 /// Runs attach-or-spawn and publishes the outcome (state + tray status line).
@@ -2400,7 +2469,9 @@ fn main() {
                         // "starting..."); API calls get an honest 502 (Principle 5).
                         _ if target == "/" => {
                             let status = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
-                            resp(200, "text/html; charset=utf-8", SHELL_CSP, starting_html(&status).into_bytes())
+                            let conflict = splash_conflict().await;
+                            let html = starting_html(&status, conflict.as_ref(), &settings_url());
+                            resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
                         }
                         Ok(Err(e)) => resp(
                             502,
@@ -3053,6 +3124,50 @@ mod settings_tests {
                 && body(js, "function watchDaemon(").contains("if (indexing()) watch.until"),
             "the page does not follow the re-embedding"
         );
+
+        // The starting page says why and opens Settings to rebuild, holding no command itself (S1);
+        // Settings starts the rebuild only while the store still cannot open, and drops the ask.
+        let conflict = ("hashing-256".to_string(), "<model>".to_string());
+        let page = starting_html("daemon: FAILED - x", Some(&conflict), &settings_url());
+        for part in [
+            "The search index needs rebuilding",
+            "Indexed by hashing-256, and the daemon runs &lt;model&gt;",
+            "settings.html?act=rebuild#daemon\"",
+            ">Rebuild index</a>",
+            "supragnosis embed rebuild",
+        ] {
+            assert!(page.contains(part), "the starting page does not offer the rebuild: {part}");
+        }
+        assert!(!page.contains("<script"), "the starting page holds a script");
+        let failed = starting_html("daemon: FAILED - port in use", None, &settings_url());
+        assert!(
+            failed.contains("settings.html#daemon\"") && failed.contains(">Open This Mac</a>"),
+            "a failed start does not open This Mac"
+        );
+        assert!(
+            !starting_html("daemon: starting...", None, &settings_url()).contains("</a>"),
+            "a start in progress offers a button"
+        );
+        assert_eq!(
+            super::conflict_of(
+                &serde_json::json!({"embedder_conflict": {"recorded": "a", "daemon": "b"}})
+            ),
+            Some(("a".to_string(), "b".to_string()))
+        );
+        assert_eq!(super::conflict_of(&serde_json::json!({"embedder_conflict": null})), None);
+        let asked = body(js, "function rebuildAsked(");
+        assert!(
+            asked.contains("get(\"act\") !== \"rebuild\"")
+                && asked.contains("history.replaceState(")
+                && asked.contains("d.embedder_conflict) rebuildIndex();"),
+            "Settings does not start the rebuild the starting page asked for, or not only on a conflict"
+        );
+        let welcome = include_str!("../assets/welcome.js");
+        assert!(
+            welcome.contains("state === \"attention\" && /embed rebuild/.test(say)")
+                && welcome.contains("await invoke(\"search_rebuild\")"),
+            "Setup's server card does not offer the rebuild"
+        );
     }
 
     /// daemon-lifecycle.md Section 6: a restart of a daemon a login job runs is decided after the
@@ -3135,7 +3250,8 @@ mod settings_tests {
             !shell.contains("h1.setAttribute(\"data-tauri-drag-region\""),
             "a bare attribute on the title stops a press on its scope from dragging"
         );
-        assert!(starting_html("x").contains("<body data-tauri-drag-region=\"deep\""));
+        assert!(starting_html("x", None, &settings_url())
+            .contains("<body data-tauri-drag-region=\"deep\""));
         let src = include_str!("main.rs");
         let pages = &src[..src.find("#[cfg(test)]").expect("the tests")];
         assert_eq!(pages.matches("<body data-tauri-drag-region=\"deep\"").count(), 2);
@@ -3385,7 +3501,7 @@ mod settings_tests {
             "a second start reads as a failure"
         );
         assert!(
-            settings.contains("load().then(adoptDownload);"),
+            settings.contains("load().then(adoptDownload).then(rebuildAsked);"),
             "Settings does not pick up a running download"
         );
     }
@@ -3593,6 +3709,8 @@ mod welcome_tests {
             "app_toggle",
             "clipboard_copy",
             "diagnostics",
+            // O4: the server step's Rebuild index, for a store indexed by another model.
+            "search_rebuild",
         ];
         assert!(welcome.len() >= 8, "the page's calls were read: {welcome:?}");
         for cmd in &welcome {

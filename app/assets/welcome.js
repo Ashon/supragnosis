@@ -152,6 +152,24 @@ async function run(key, opts) {
   }
 }
 
+// Rebuild index (docs/onboarding.md Section 4.1, O4): the command Settings > This Mac runs - it stops
+// the daemon, resets the index and starts the daemon again - and then setup is asked again.
+async function rebuild() {
+  if (running.rebuild) return;
+  running.rebuild = true;
+  render();
+  try {
+    toast("ok", "Rebuilding the search index", await invoke("search_rebuild"));
+    announce("Rebuild index: done");
+  } catch (e) {
+    toast("bad", "The index was not rebuilt", String(e));
+    announce("Rebuild index: failed");
+  } finally {
+    delete running.rebuild;
+    await check();
+  }
+}
+
 // What a step is called when its end is said: its card's title, or the app it connects.
 function stepName(key) {
   if (key.startsWith("app=")) return "Connect " + (APPS[key.slice(4)] || key.slice(4));
@@ -306,6 +324,9 @@ function serverBody(e, state, say) {
   const controls = [];
   if (state === "todo" && !applied) {
     controls.push(check_(plan.login, "Start at Login", (v) => { plan.login = v; }));
+  } else if (state === "attention" && /embed rebuild/.test(say)) {
+    // A store indexed by another model keeps the daemon from starting (onboarding.md Section 4.1, O4).
+    controls.push(button("Rebuild index", "restart", "primary", rebuild, "rebuild"));
   } else if (state === "attention" && /--take-over/.test(say) && !applied) {
     controls.push(check_(plan.takeover, "Take over the daemon that runs now, so it starts at login", (v) => { plan.takeover = v; }));
   } else if ((state === "todo" || state === "failed") && !running.server) {
