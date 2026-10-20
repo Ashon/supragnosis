@@ -1,7 +1,7 @@
 // The GPU renderer (docs/design-system.md Section 27.9, U39). Where WebGL2 can render to half-float
 // targets, the map's bulk is drawn here, on a canvas under the 2D one: the region field, the
-// workspace outlines, the relations and their arrowheads, the nodes and the bodies. The viewer draws
-// them with the calls it gives the 2D canvas - paths of moves, lines, curves, full circles and
+// workspace outlines, the relations and their arrowheads, and the nodes. The viewer draws them
+// with the calls it gives the 2D canvas - paths of moves, lines, curves, full circles and
 // rectangles, filled or stroked in a style - and this renderer takes the same calls, keeps each fill
 // and stroke as instances in the order they came, and draws them when the frame ends: discs, rings,
 // squares and glows by their signed distance, lines and curves by their distance to the segment,

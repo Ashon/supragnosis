@@ -1400,8 +1400,8 @@ social image.
 | **U35** | The layout steps on a thread of its own when a worker can start, and the page draws its frames without waiting on a step: the worker takes the graph and its changes, steps as fast as it can while the map is hidden behind the loader and at most once every 16.7 ms after, and hands back positions; when no worker can start, the same file steps on the page's thread as before; and while the layout moves, the minimap's miniature is painted at most four times a second, its dots drawn into a pixel buffer. |
 | **U36** | A fresh layout starts from its communities: label propagation over the relations finds them, the graph of communities is laid out first, its positions are carried to the members, and the full layout continues from there; a saved layout skips it. |
 | **U37** | A frame touches what the window holds, not every node: a grid of the node positions, rebuilt when they move, answers which nodes are drawn, which can be named or badged, which pulse and which is under the pointer, and the relations come from a grid of their midpoints; and the Log lists the scope's newest 200 observations, asking for one more to know there are more, wires its rows by their place, and shows more on request. |
-| **U38** | Zoomed out, the map keeps its shape: a node fades as its own radius on the screen falls from 1.6 to 0.8 pixels, so the least-connected fade first; the nodes are gathered around hubs - the best-connected node not yet taken and every node not yet taken within 32 pixels of it - and a hub stays, named with its count, while its faded members show as a soft haze in the color most of them share; the relations between two folded groups are one line between their hubs; a hovered, selected, active, pulsing or contested node is never folded. |
-| **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads, the nodes in their three sizes and the bodies, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
+| **U38** | Zoomed out, the map keeps its shape by keeping its best-connected nodes where they are: it keeps whole about one node for each 12 by 12 pixels of the screen it covers, ranked by their relations, and the next as many fade out, the least-connected first; a node faded out is not drawn, named or under the pointer, and a frame that keeps fewer nodes than its window holds visits only those and their relations; a node kept is drawn at least 1.6 pixels in radius; no node is drawn for others; a hovered, selected, active, pulsing or contested node never fades; and the minimap keeps nodes by the same rule at its own scale, one for each 5 by 5 of its pixels, with only its 48 widest regions of at least 12 pixels. |
+| **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads and the nodes in their three sizes, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
@@ -1703,12 +1703,12 @@ and it fails when one of them appears in the viewer's source other than as an ar
    in a worker, and on the page's thread when none starts.
 34. **The multilevel start** [built] (Section 27.6; U36): communities, their layout first.
 35. **Clipping** [built] (Section 27.7; U37): the grid index of positions and of relations' midpoints.
-36. **Semantic zoom** [built] (Section 27.8; U38): the far map keeps its shape, its nodes fading by
-   their size, its hubs staying over a soft haze of what they gather.
+36. **Semantic zoom** [built] (Section 27.8; U38): the far map keeps its best-connected nodes where
+   they are, the rest fading by rank and clipped, and the minimap keeps its nodes the same way.
 37. **WebGL** [built] (Section 27.9; U39): the GPU renderer beside the 2D canvas.
 38. **Measured** [built] (Section 27.2; U40): the bench to 50,000 in both browsers and both
    renderers, and the dev store through its daemon; with what it found - the multilevel start at the
-   layout's density, a folded frame over what it draws, and a quick miniature while a large map moves.
+   layout's density, a far frame over what it draws, and the minimap's paint out of the moving frames.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2500,7 +2500,8 @@ moving columns are the frame rate and the 95th percentile of a frame while the l
 reveal to rest and from a node held for two seconds, let go 30 pixels from where it was pressed, to
 rest again or for 30 seconds; "GPU" is the renderer of Section 27.9 and
 "2D" the canvas alone (`?renderer=2d`). A dragged column marked * held its node at the reading zoom,
-since the fitted view of that map is folded into bodies and has none to hold. WebKit's clock reads
+since the fitted view of that map, when it was measured, had folded its nodes into groups and had
+none to hold. WebKit's clock reads
 whole milliseconds.
 
 In Chrome:
@@ -2553,13 +2554,13 @@ its own daemon, on the GPU:
   one run, and the steps were compared in turn, three runs each, by their medians.
 - **What the measure changed.** It found three costs that were not drawing. The multilevel start
   packed members about twice as dense as the layout settles them, and at 50,000 the first picture
-  took 16 seconds; it now starts them a little sparser than that (Section 27.6). A map folded whole
-  still passed over every node and relation to find them folded, 16 ms a frame at 50,000; it now
-  passes over its hubs, the nodes still drawn and their relations (Section 27.8). The
-  minimap's miniature of 50,000, 81 ms to paint, cost the moving map a frame four times a second;
-  while a map of more than 5,000 moves, its miniature is quick - each dot a square of its color, no
-  halos and no clouds - and the whole one is painted when the layout rests, and the moving frames' 95th
-  percentile at 50,000 went from 65 ms to 15 in Chrome with it.
+  took 16 seconds; it now starts them a little sparser than that (Section 27.6). A far map
+  still passed over every node and relation to find the ones it had faded, 16 ms a frame at 50,000;
+  it now passes over the nodes it keeps and their relations (Section 27.8). The minimap's miniature
+  of 50,000, 81 ms to paint, cost the moving map a frame four times a second; a quick miniature while
+  a large map moved took the moving frames' 95th percentile at 50,000 from 65 ms to 15 in Chrome, and
+  the miniature that keeps nodes as the map does (Section 27.8) has since replaced it, painted whole
+  in under 3 ms.
 
 ### 27.3 The poll asks first
 
@@ -2709,47 +2710,47 @@ Specified first as the multilevel start's communities folded into bodies, it was
 was built: the communities do not stay together. On the bench's 10,000, the 405 communities of six or
 more had a median radius of 826 world units about their centre, their members a median 549 from it -
 three times a compact disc of their size - since past the start the layout's forces are the
-relations' and the regions', not the communities'. A body drawn for a community would stand where
-most of its members are not. A body gathers what is near on the screen instead, around a hub.
+relations' and the regions', not the communities'.
 
-Built first as discs at their members' mean, sized by their number, the bodies hid the map they
-stood for: a folded map was a field of circles, its shape gone, and the circles covered one another.
-The map now keeps its shape as it folds. Every node stays where the layout put it; the ones too small
-to read fade out, the best-connected last; and what has faded shows as a soft haze around the hub that
-gathered it (U38).
+Built then as groups gathered around hubs on the screen - first as discs at their members' mean, then
+as a hub over a soft haze of what it gathered, with one line for the relations between two groups -
+it drew what was not there. A hub stood for its neighbours, a haze lay where nodes had faded, and a
+line stood for relations no two nodes have, so a far map took the groups' shape rather than the
+graph's, which the author found broke the graph's form. A node fading by its own size alone would
+empty a large map instead: at the fitted view of 50,000 the largest node is half a pixel in radius,
+and at 10,000 one node is whole.
 
-- **Fading by size.** A node fades as its own radius on the screen falls from 1.6 to 0.8 pixels,
-  eased and in 32 steps as every fade of the map is (Section 26.5), and a node's radius grows with its
-  relations, so as the map zooms out the nodes with fewest relations fade first and the best-connected
-  stay longest. A map small enough to fit at a reading zoom never fades. The map folds when a node
-  with no relation is under 1.6 pixels, and is folded whole under 0.8.
-- **Around hubs.** The nodes are taken best-connected first; each one not yet taken starts a group and
-  takes every node not yet taken within 32 pixels of it on the screen, measured at the zoom's nearest
-  power of two, so a pan or a small zoom keeps the groups. They are gathered again when that power,
-  the graph or the type filter changes, when the layout comes to rest, and while it moves at most
-  every half second.
-- **The hub stays.** A group's hub is drawn as the node it is, where it is, at every zoom, at least 3
-  pixels in radius while its group is folded, so the folded map is its hubs, where they are, and the
-  relations between them. A group of one is its node, and stays.
-- **The haze.** Where a group's members fade, the group shows as a soft haze in the color most of them
-  share: whole at its members' mean, clear by the radius they would fill evenly, as strong as the map
-  is folded. It has no edge, and hazes that meet blend.
-- **The count with the name.** A hub whose group is folded is named with its count, as a region is:
-  "name (161)".
-- **Relations.** A relation is drawn while both its ends are, fading with the fainter. The relations
-  between two folded groups are one line between their hubs, as wide as their number and as strong as
-  the map is folded; a relation from a faded member to a node still drawn goes from the member's hub;
-  two members of one group draw nothing between them.
-- **Never folded.** A hovered, selected, active or pulsing node, and a contested one with its badge
-  (U3), are drawn whatever the zoom; the group around them counts them all the same.
-- **A folded frame draws what it shows.** A map folded whole passes over its hubs, the nodes still
-  drawn - never folded, or large enough on the screen - and their relations, not over every node and
-  relation.
-- **Pointed at.** A faded node is not under the pointer. Over a group's haze, away from its hub, the
-  group is: hovering it says its count, the type most of its members share and its three
-  best-connected members, and a click frames its members, which opens them; the selection stays as it
-  was. A hub is pointed at as the node it is.
-- **The clouds and the minimap are unchanged.**
+The map now keeps its shape by keeping its best-connected nodes where they are (U38):
+
+- **Kept by rank.** The nodes in the drawn types are ranked by their relations, most first. At a zoom
+  the map keeps whole about one node for each 12 by 12 pixels of the screen it covers: their number
+  times the square of their mean spacing on the screen over 12 pixels, the mean spacing being the
+  square root of the area they cover over their number, and that area the disc whose mean distance
+  from its centre is theirs, which a few far nodes barely move. The next as many by rank fade out,
+  eased and in 32 steps as every fade of the map is (Section 26.5). The count is not bounded by the
+  nodes' number, so the fade comes to nothing just as every node is whole, and a map whose nodes stand
+  12 pixels apart never fades. As the map zooms out the least-connected fade first, a few at a time,
+  and zooming in brings them back where they were.
+- **Clipped.** A node faded out is not drawn, not named and not under the pointer, and a relation is
+  drawn while both its ends are, fading with the fainter. When the map keeps fewer nodes than its
+  window holds - as many as its spacing fits in the window - a frame passes over the kept nodes, the
+  first by rank, and their relations, not over every node and relation the window holds.
+- **A node kept is seen.** A node smaller on the screen than 1.6 pixels in radius is drawn that large,
+  and is under the pointer as far as it is drawn, so a far map is its best-connected nodes, where
+  they are.
+- **Nothing stands for another.** No node is drawn for its neighbours, nothing is drawn where a node
+  has faded, and no relation is drawn that two nodes do not have.
+- **Never faded.** A hovered, selected, active or pulsing node, and a contested one with its badge
+  (U3), are drawn whatever the zoom.
+- **The minimap keeps the same way.** Its miniature drew every node as a dot sized by its relations,
+  every relation and every region: at 10,000 the dots covered one another into one disc, and at
+  50,000 it took 81 ms to paint, 36 of them the regions. It now keeps nodes by the same rule at its
+  own scale, one whole for each 5 by 5 of its pixels and the next as many fading, their dots at most
+  1.8 pixels in radius and their halos grown in by their size as the map's are; the relations between
+  the nodes it keeps; and the regions at least 12 of its pixels wide, the 48 widest. A miniature of
+  50,000 paints in under 3 ms, so it is painted whole while the layout moves too, at most four times
+  a second, and the quick miniature of Section 27.2 is gone.
+- **The clouds are unchanged.**
 
 ### 27.9 WebGL
 
@@ -2757,7 +2758,7 @@ gathered it (U38).
   field - each cloud an instanced quad adding its weight, its hue's vector and its log-coverage into
   the targets, then one pass mixing them in OKLCH as the 2D field does - the workspace outlines, the
   relations and their arrowheads, the nodes in their three sizes as signed-distance discs with halo,
-  fill and trust ring, and the bodies (U39).
+  fill and trust ring (U39).
 - **A 2D canvas above it** draws what is text or few: names, badges, pulses, glows, peers' cursors and
   the relations' labels. The hit test stays on the processor, through the grid.
 - **The same tokens.** Colors are the tokens the 2D canvas uses, resolved to RGBA when the appearance
@@ -2782,8 +2783,9 @@ gathered it (U38).
 
 It is not a layout in the daemon: the layout stays the page's, and keeping it in the store would be
 its own document. It is not a new layout: the forces are Section 26's, and the multilevel start only
-changes where they begin. It does not hide knowledge: a body counts every member, and a node that is
-hovered, selected, active, pulsing or contested is never folded.
+changes where they begin. It does not hide knowledge: a faded node comes back as the map zooms in,
+List shows every entity the map draws, and a node that is hovered, selected, active, pulsing or
+contested never fades.
 
 ### 27.11 Sources
 

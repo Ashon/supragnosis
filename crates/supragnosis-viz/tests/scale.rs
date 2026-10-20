@@ -134,10 +134,10 @@ fn what_the_map_draws_follows_the_screen() {
     // in one path made a frame at a reading zoom eighty times slower in Chrome.
     assert!(!draw.contains("h.closePath()"), "the arrowheads' path closes every head again");
     for part in [
-        "for (const k of whole ? few : nodesIn(vx0, vy0, vx1, vy1)) {",
+        "for (const k of few || nodesIn(vx0, vy0, vx1, vy1)) {",
         "n.y > vy1))) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;",
         "n._d = whole1 ? 1 : stepped(ease(HALO_FROM, HALO_TO, rs));",
-        "for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {",
+        "for (const i of few ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {",
         "Math.max(e.a.x, e.b.x) + LANE_MAX < vx0",
     ] {
         assert!(draw.contains(part), "the frame draws what is off the screen: {part}");
@@ -238,7 +238,7 @@ fn still_layers_move_with_the_camera() {
         "const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(\",\"),",
         "if (m.look !== look || m.nodes !== nodes || m.hyper !== hyperedges || m.gen !== positionsGen) {",
         "if (m.dirty && (!m.c || !simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {",
-        "paintMiniature(src, dpr, k, ox, oy, R, round, m.quick);",
+        "paintMiniature(dpr, k, ox, oy, R, round);",
         "mctx.drawImage(miniStill.c, 0, 0, MINI_W, MINI_H);",
         "drawMiniWindow(m.k, m.ox, m.oy, R, round);",
     ] {
@@ -250,19 +250,13 @@ fn still_layers_move_with_the_camera() {
         SCRIPT.contains("const MINI_MOVING_MS = 250;"),
         "the minimap's pace while moving moved"
     );
-    // A large map's miniature is quick while its layout moves, and painted whole once it rests.
-    assert!(
-        SCRIPT.contains("const MINI_QUICK_N = 5000;")
-            && mini.contains("m.quick = simWarm() && src.length > MINI_QUICK_N;")
-            && mini.contains("if (m.quick && !simWarm()) m.dirty = true;")
-            && function("paintMiniature")
-                .contains("if (hyperMode && hyperedges.length && !quick) {"),
-        "a large map's miniature is painted whole while its layout moves"
-    );
+    // The miniature keeps nodes as the far map does (Section 27.8), so it is painted whole while the
+    // layout moves too: there is no quick one.
+    assert!(!SCRIPT.contains("m.quick"), "a moving map's miniature is quick again");
     let paint = function("paintMiniature");
     assert!(
         paint.contains(
-            "mctx.drawImage(paintMiniDots(src, dpr, mx, my, quick), 0, 0, MINI_W, MINI_H);"
+            "mctx.drawImage(paintMiniDots(dots, dpr, mx, my, weight), 0, 0, MINI_W, MINI_H);"
         ) && !paint.contains("mctx.arc(mx(n)"),
         "the minimap draws each dot through the canvas again"
     );
@@ -531,7 +525,7 @@ fn a_frame_touches_what_the_window_holds() {
     );
     assert!(
         draw.contains(
-            "for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {"
+            "for (const i of few ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {"
         ),
         "a frame passes over every relation again"
     );
@@ -551,67 +545,85 @@ fn a_frame_touches_what_the_window_holds() {
     );
 }
 
-/// U38: zoomed out, the map keeps its shape. A node fades as its own radius on the screen falls from
-/// 1.6 to 0.8 pixels; the map is gathered around hubs - the best-connected node not yet taken and every
-/// node not yet taken within 32 pixels, at the zoom's nearest power of two, gathered again when that
-/// power, the graph or the filter changes and, while the layout moves, at most every half second; a hub
-/// stays, at least 3 pixels while its group is folded, its faded members a haze, the largest groups'
-/// hubs named with their count; a hovered, selected, active, pulsing or contested node never fades; a
-/// faded node is neither drawn nor under the pointer, and its relations go from its hub; a folded frame
-/// passes over its hubs and the nodes still drawn; and a haze's click frames its members.
+/// U38: zoomed out, the map keeps its shape by keeping its best-connected nodes where they are. It
+/// keeps whole about one node for each 12 by 12 pixels of the screen it covers - the nodes' mean
+/// spacing on the screen, from their mean distance from their centre, against 12 pixels, not bounded
+/// by their number - and the next as many fade out, the least-connected first, eased in 32 steps; a
+/// faded node is clipped: not drawn, named or under the pointer, and a frame that keeps fewer nodes
+/// than its window holds visits only those and their relations; a node kept is at least 1.6 pixels in
+/// radius; a hovered, selected, active, pulsing or contested node never fades; no node stands for
+/// another - no group, haze or count; and the minimap keeps one for each 5 by 5 of its pixels by the
+/// same rule, with only its 48 widest regions of at least 12 pixels.
 #[test]
 fn a_far_map_keeps_its_shape() {
     assert!(
-        SCRIPT.contains("const BODY_FOLD_PX = 0.8, BODY_OPEN_PX = 1.6, BODY_REACH_PX = 32, BODY_REGATHER_MS = 500;")
-            && SCRIPT.contains("const BODY_HUB_PX = 3, BODY_HAZE_ALPHA = 0.4, BODY_HAZE_REACH = 0.75, BODY_NAMES = 16,"),
-        "the fold's sizes moved from Section 27.8"
+        SCRIPT.contains("const KEEP_PX = 12, KEEP_MIN_PX = 1.6;")
+            && SCRIPT.contains("const MINI_KEEP_PX = 5, MINI_REGION_PX = 12, MINI_REGIONS = 48;"),
+        "the keep's sizes moved from Section 27.8"
     );
-    let gather = function("gatherBodies");
+    let ranks = function("ranksOf");
     for part in [
-        ".sort((p, q) => (nodes[q].degree || 0) - (nodes[p].degree || 0) || p - q);",
-        "const reach = BODY_REACH_PX / 2 ** level,",
-        "if (of[j] < 0 && !typeOff.has(w.type) && (w.x - v.x) ** 2 + (w.y - v.y) ** 2 <= r2) of[j] = k;",
+        "for (const i of degreeOrder()) {",
+        "r.spacing = r.count > 1 ? Math.max(1, 1.5 * md * Math.sqrt(Math.PI / r.count)) : 1;",
     ] {
-        assert!(gather.contains(part), "the groups are not gathered around hubs: {part}");
+        assert!(
+            ranks.contains(part),
+            "the nodes are not ranked and spaced as Section 27.8 says: {part}"
+        );
     }
     assert!(
-        function("bodiesOf").contains(
-            "b.posGen !== positionsGen && (!simWarm() || now - b.at >= BODY_REGATHER_MS)"
-        ),
-        "the groups are gathered every frame the layout moves"
+        function("degreeOrder")
+            .contains(".sort((p, q) => (nodes[q].degree || 0) - (nodes[p].degree || 0) || p - q);"),
+        "the rank is not by relations"
     );
     assert!(
-        function("unfolded").contains("const at = new Set(b.hub);")
-            && function("unfolded")
-                .contains("if (nodeRadius(nodes[i]) * cam.s <= BODY_FOLD_PX) break;"),
-        "a folded frame leaves out a hub or a node still drawn"
+        SCRIPT.contains("function keptAt(r, s, px) { return r.count * (r.spacing * s / px) ** 2; }")
+            && SCRIPT.contains(
+                "function keptWeight(rank, c) { return rank < 0 || rank >= 2 * c ? 0 : rank < c ? 1 : stepped(1 - ease(c, 2 * c, rank)); }"
+            ),
+        "the map keeps or fades nodes by another rule"
     );
     let draw = function("draw");
     for part in [
-        "const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);",
-        "const weightOf = n => (!B || kept(n) || hubOf(n) ? 1",
-        ": stepped(ease(BODY_FOLD_PX, BODY_OPEN_PX, nodeRadius(n) * cam.s)));",
-        "Math.max(nodeRadius(n), BODY_HUB_PX / cam.s)",
-        "const haze = bulk.createRadialGradient(x, y, R * 0.2, x, y, R);",
-        "if (oa === 0 || ob === 0) {",
-        "const p = nodes[B.hub[B.la[j]]], q = nodes[B.hub[B.lb[j]]];",
-        "want.push(...hubNames.slice(0, BODY_NAMES));",
-        "const whole = fold === 1, few = whole ? unfolded(B, act) : null;",
-        "const named = whole ? few :",
+        "const R = ranksOf(), keep = keptAt(R, cam.s, KEEP_PX), fading = keep < R.count;",
+        "const never = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);",
+        "const weightOf = n => (!fading || never(n) ? 1 : keptWeight(R.of[n._k], keep));",
+        "const few = fading && 2 * keep < (vx1 - vx0) * (vy1 - vy0) / R.spacing ** 2 ? keptNodes(R, 2 * keep, act) : null;",
+        "n._hr = nodeRadius(n) * cam.s < KEEP_MIN_PX ? KEEP_MIN_PX / cam.s : 0;",
+        "if (oa === 0 || ob === 0) continue;   // an end faded out, and the relation with it",
+        "const named = few || nodesIn(",
     ] {
         assert!(draw.contains(part), "the far map does not keep its shape as Section 27.8 says: {part}");
     }
+    let kept = function("keptNodes");
+    assert!(
+        kept.contains("add(hover); add(focus);")
+            && kept.contains("for (const id of pulses.keys()) add(nodeById(id));")
+            && kept.contains("for (const i of r.contested) add(nodes[i]);"),
+        "a far frame leaves out a node that never fades"
+    );
+    // No node stands for another: the map draws no group, haze or count of what it faded.
+    for gone in ["gatherBodies", "hubNames", "bodyAt", "gatherMini"] {
+        assert!(!SCRIPT.contains(gone), "a node stands for others again: {gone}");
+    }
     assert!(
         function("nodeAt").contains(
-            "if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameWhole)) continue;"
-        ),
-        "a faded node is still under the pointer"
+            "if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameKept)) continue;"
+        ) && function("nodeAt")
+            .contains("if (d < Math.max(nodeRadius(n), KEEP_MIN_PX / cam.s) + 6 && d < bd) { bd = d; best = n; }"),
+        "a faded node is still under the pointer, or a kept one is not where it is drawn"
     );
-    assert!(
-        SCRIPT
-            .contains("if (k >= 0) { fitView(bodyMembers(k)); userMoved = true; requestFrame(); }"),
-        "a haze's click does not open its group"
-    );
+    // The minimap keeps by the same rule at its own scale, and draws only its widest regions.
+    let paint = function("paintMiniature");
+    for part in [
+        "const r = ranksOf(), keep = keptAt(r, k, MINI_KEEP_PX), weight = n => keptWeight(r.of[n._k], keep);",
+        "for (let j = Math.min(r.count, Math.ceil(2 * keep)) - 1; j >= 0; j--) dots.push(nodes[r.order[j]]);",
+        "const a = Math.min(weight(e.a), weight(e.b));",
+        "if (n >= 3 && span >= MINI_REGION_PX) wide.push([span, h]);",
+        "for (const [, h] of wide.slice(0, MINI_REGIONS)) {",
+    ] {
+        assert!(paint.contains(part), "the minimap does not keep nodes as the map does: {part}");
+    }
 }
 
 /// U39: where WebGL2 renders to half-float targets, the GPU draws the map's bulk under a 2D canvas of
@@ -643,7 +655,6 @@ fn the_gpu_draws_the_bulk() {
         "drawWsHulls(bulk, hullLabels);",
         "bulk.stroke(l.line);",
         "bulk.fillStyle = SURFACE; bulk.fill(halo);",
-        "bulk.globalAlpha = a; bulk.fillStyle = haze;",
     ] {
         assert!(draw.contains(part), "the bulk is drawn on the 2D canvas alone: {part}");
     }

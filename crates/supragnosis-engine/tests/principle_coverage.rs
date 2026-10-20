@@ -860,12 +860,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     ]),
     (38, &[c(
-        "zoomed out the map keeps its shape: a node fades as its own radius on the screen falls from 1.6 to 0.8 pixels, hubs gathered within 32 pixels stay, named with their count, over a soft haze of their faded members, relations between folded groups one line between hubs, and a hovered, selected, active, pulsing or contested node never fades",
-        // scale.rs reads gatherBodies, bodiesOf, unfolded, draw, nodeAt and a haze's click.
+        "zoomed out the map keeps its best-connected nodes where they are: about one whole for each 12 by 12 pixels of the screen, the next as many fading out, the least-connected first, faded nodes clipped - not drawn, named, pointed at or visited - kept nodes at least 1.6 pixels, none drawn for others, a hovered, selected, active, pulsing or contested node never fading, and the minimap keeping nodes the same way",
+        // scale.rs reads ranksOf, keptAt, keptWeight, keptNodes, draw, nodeAt and paintMiniature.
         Evidence::Scenario(&["a_far_map_keeps_its_shape"]),
     )]),
     (39, &[c(
-        "where WebGL2 renders to half-float targets the GPU draws the field, outlines, relations, arrowheads, nodes and bodies under a 2D canvas of text and badges, and the 2D canvas draws all of it otherwise",
+        "where WebGL2 renders to half-float targets the GPU draws the field, outlines, relations, arrowheads and nodes under a 2D canvas of text and badges, and the 2D canvas draws all of it otherwise",
         // scale.rs reads viewer-gl.js, the page's choice of renderer, drawCloudField, draw, trustRing and
         // viewer.html.
         Evidence::Scenario(&["the_gpu_draws_the_bulk"]),
