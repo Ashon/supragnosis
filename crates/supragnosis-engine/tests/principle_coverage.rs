@@ -1109,6 +1109,20 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
             "an_attached_vector_lands_only_where_none_is_stored",
         ]),
     )]),
+    (8, &[c(
+        "a store refused for the model it is opened with says how to go on: the refusal names both models, \
+         supragnosis embed reset and SUPRAGNOSIS_EMBED=none, and status says the same while the daemon cannot start for it",
+        Evidence::Deferred(
+            "Section 13 is specified for v0.8.1: the refusal asks for a re-embed no command does, and status does not name the cause. Revisit when Section 13 lands",
+        ),
+    )]),
+    (9, &[c(
+        "supragnosis embed reset runs only on a store no process holds, removes every stored vector and the recorded model in one \
+         transaction and writes nothing else, and the next serving start records its model and embeds every row",
+        Evidence::Deferred(
+            "Section 13 is specified for v0.8.1: no command removes a store's vectors or its recorded model. Revisit when Section 13 lands",
+        ),
+    )]),
 ];
 
 // docs/client-connect.md Section 8 - `connect` and the bridge (C rows).

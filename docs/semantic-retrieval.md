@@ -168,6 +168,8 @@ first fetch is 224 MB, and the daemon holds up to about 1 GB once the model is l
 | **SR5** | The release binary links no library the operating system does not ship: no OpenSSL, no ONNX Runtime shared object. |
 | **SR6** | A serving process that has the model embeds what was written without one, once: every observation and entity that carries no vector gets one, and nothing else is written - no log row, no attestation, no ledger entry. |
 | **SR7** | The backfill never replaces a stored vector, never stores one for text that changed while it was embedding, and never holds the write guard while it embeds. |
+| **SR8** | A store refused for the model it is opened with says how to go on: the refusal names the model that wrote it and the one that opened it, `supragnosis embed reset` and `SUPRAGNOSIS_EMBED=none`; and `status` says the same while the daemon cannot start for it. |
+| **SR9** | `supragnosis embed reset` runs only on a store no process holds. It removes every stored vector and the model the store recorded, in one transaction, and writes nothing else; the next serving start records its own model and its backfill embeds every row (SR6), so a store never holds vectors from two models (SR4). |
 
 ## 9. Ordering
 
@@ -314,7 +316,8 @@ re-materialization of a projection, and it still embeds the entities it projects
 - **Not replicated.** A vector is node-local and never on the wire (Principle 16 is untouched: two
   nodes holding the same log hold the same graph, with or without vectors).
 - **Not a re-embed.** A row that has a vector keeps it. A model change is still refused at open
-  (SR4), so there is never a vector from another model to replace.
+  (SR4), so there is never a vector from another model to replace; `supragnosis embed reset`
+  (Section 13) is how a store moves to another model.
 - **Not continuous.** The backfill runs once per process. Rows written later get their vector at
   write time, as before; one whose embed fails at write time is found by the next start's
   backfill, which is the same promise the log browser makes about a degrade - visible, and
@@ -338,3 +341,71 @@ re-materialization of a projection, and it still embeds the entities it projects
   vector only where none is stored, only for an id with a row, the row and the ledger untouched.
 - `status_names_the_semantic_state` - the progress line, the stopped line, and a finished
   backfill that says nothing more; `status_json_matches_its_example` carries the field (SR3).
+
+
+## 13. A store under another model
+
+> Status: **specified** (v0.8.1).
+
+### 13.1 Why
+
+A store records the model of the first process that opens it with one, and refuses every other
+(SR4). On 2026-10-20 a person reported a daemon that would not start:
+
+> store was written with embedder 'hashing-256' but was opened with
+> 'paraphrase-multilingual-minilm-l12-v2-q-384' - vectors from two models share no space, so
+> mixing them silently degrades retrieval. Re-embed the store, or open it with the original model
+
+The store had been opened once with `SUPRAGNOSIS_EMBED=hashing`, the development stand-in - once is
+enough, as a throwaway store showed - and from then on the default model was refused at every
+start, launchd started the daemon again and again, and nothing told the person why but the log.
+The refusal asked for a re-embed that no command did: Section 12.4 said so. Changing
+`SUPRAGNOSIS_EMBED_MODEL` from one model to the other ends the same way.
+
+### 13.2 What it is
+
+- **`supragnosis embed reset`.** With no process holding the store, it removes every stored
+  vector - the observations' and the entities' - and the model the store recorded, in one
+  transaction, and says how many it removed and which model made them. Nothing else is written:
+  the log, the projection, the owed-projection ledger and the store's format are as they were
+  (SR9). The next serving start records the model it runs with, and its backfill (Section 12)
+  embeds every observation and entity, so the store is embedded again by that model. A store that
+  holds no vector and records no model is left alone, and the command says so.
+- **Refused while the store is held.** A running daemon, or an AI app's stdio server, holds the
+  store; the command changes nothing and names `supragnosis stop`.
+- **It names the model the daemon will run.** The daemon's model comes from its environment: the
+  login job's, when a generated or hand-written job runs it, and this process's otherwise. When
+  that environment runs no model - `SUPRAGNOSIS_EMBED=none`, the way around the refusal below - the
+  command says so and names `supragnosis service install --env SUPRAGNOSIS_EMBED=fastembed`, since
+  the store would otherwise stay without vectors.
+- **The refusal says how to go on.** Opening a store under another model is still refused (SR4).
+  The refusal names the model that wrote the store and the one that opened it, and both ways on:
+  `supragnosis embed reset` with the daemon stopped, which has the store embedded again by the
+  model that opened it, or `SUPRAGNOSIS_EMBED=none`, which runs without semantic search and leaves
+  the store as it is (SR8).
+- **`status` says it.** When the daemon does not answer and nothing holds the store, `status`
+  reads the model the store recorded, without writing, and compares it with the model the
+  daemon's environment names. When they differ it prints `store   the daemon cannot open it: ...`
+  with both models and both ways on, and `status --json` carries `store.embedder_conflict`, the
+  two models, or null (SR8).
+
+### 13.3 What this is NOT
+
+- **Not automatic.** A store opened under another model is still refused; nothing re-embeds a
+  store unasked. A re-embed loads the model and embeds every row, and which model a store should
+  have is the person's to say.
+- **Not lossy.** A vector is derived from the log and is node-local (Section 12.4); removing them
+  loses nothing the next start does not make again, and nothing on the wire changes.
+- **Not a fix for the cause.** Where `SUPRAGNOSIS_EMBED=hashing` came from - a shell profile, a
+  `.env`, a hand-written plist - is the person's to remove; the command does not look for it.
+
+### 13.4 Guarded by
+
+The implementation names its tests here. They are to show:
+
+- the store method: both vector tables empty, the recorded model gone, the rows, the ledger and
+  the format untouched, and a reopen under another model accepted (SR9);
+- the command: against a daemon that holds the store it changes nothing; stopped, it removes the
+  vectors; and the next start's backfill embeds every row again (SR9, SR6);
+- the refusal's text, and `status`'s line and field for a store whose model differs from the
+  daemon's (SR8).
