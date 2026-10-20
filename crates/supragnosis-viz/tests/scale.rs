@@ -390,6 +390,23 @@ fn the_layout_steps_on_its_own_thread() {
         sim < html.find("<script src=\"/viewer.js\"></script>").expect("and the viewer"),
         "the layout loads after the viewer that uses it"
     );
+    // A held node is where the pointer is: a report does not write back where the layout last heard
+    // it was, and where it is let go reaches the layout before it is let go. Writing reports over it
+    // lost the node in WebKit - 129 px behind the pointer after 15 moves.
+    assert!(
+        SCRIPT.contains(
+            "const v = nodes[i]; if (v === drag) continue; v.x = st.x[i]; v.y = st.y[i];"
+        ),
+        "a layout report pulls the held node back"
+    );
+    let release =
+        &SCRIPT[SCRIPT.find("addEventListener(\"mouseup\", ev => {").expect("the release")..];
+    let sync = release
+        .find("layoutSync();")
+        .expect("the release tells the layout where the node is");
+    // The release's own let-go, not the one that drops a gesture spanning a reload.
+    let let_go = release.find("\n  drag = null;\n").expect("the release lets go");
+    assert!(sync < let_go, "the node is let go before the layout hears where");
 }
 
 /// U37, the Log's half: the Log lists the scope's newest observations, LOG_ROWS at a time, asking for
@@ -537,7 +554,7 @@ fn a_frame_touches_what_the_window_holds() {
     for (name, part) in [("applyGraph", "positionsGen++;"), ("layoutGraph", "nodes[i]._k = i;")] {
         assert!(function(name).contains(part), "{name} does not say the positions moved: {part}");
     }
-    assert!(SCRIPT.contains("for (let i = 0; i < n; i++) { const v = nodes[i]; v.x = st.x[i]; v.y = st.y[i]; }\n    positionsGen++;"), "a layout report does not say the positions moved");
+    assert!(SCRIPT.contains("for (let i = 0; i < n; i++) { const v = nodes[i]; if (v === drag) continue; v.x = st.x[i]; v.y = st.y[i]; }\n    positionsGen++;"), "a layout report does not say the positions moved");
     assert!(
         SCRIPT.contains("if (!st.x) return;")
             && SIM.contains("if (st.gen === sentGen && st.steps === sentSteps) { self.postMessage({ kind: \"state\", ...st }); return; }"),

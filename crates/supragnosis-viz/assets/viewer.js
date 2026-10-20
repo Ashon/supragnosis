@@ -3904,7 +3904,10 @@ const layout = (() => {
     // A report without positions moved nothing, and what is kept from them stands (Section 27.7).
     if (!st.x) return;
     const n = Math.min(nodes.length, st.x.length);
-    for (let i = 0; i < n; i++) { const v = nodes[i]; v.x = st.x[i]; v.y = st.y[i]; }
+    // The held node is where the pointer is: a report carries where the layout last heard it was, and
+    // writing that back pulled the node behind the pointer - and sent the older place back as where it
+    // is held, so a fast drag lost the node.
+    for (let i = 0; i < n; i++) { const v = nodes[i]; if (v === drag) continue; v.x = st.x[i]; v.y = st.y[i]; }
     positionsGen++;
   };
   // No worker, or one that failed to start: the engine runs here, from the positions the page holds.
@@ -4682,7 +4685,12 @@ addEventListener("mouseup", ev => {
     renderDetail(focus);                           // show/clear the detail inspector
     if (focus) focusView(focus);   // frame the node with the neighbours the focus reveals - no reheat, the layout stays put
   }
-  if (drag && moved) wake(0.3);   // settle neighbors only after a real drag, not a plain click
+  if (drag && moved) {
+    wake(0.3);   // settle neighbors only after a real drag, not a plain click
+    // Where it was let go reaches the layout before the node is let go, so the next report does not
+    // put it back where the last frame left it.
+    layoutSync();
+  }
   drag = null;
   if (panning) { panning = null; canvas.classList.remove("grabbing"); }
   downPos = null;
