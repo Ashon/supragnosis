@@ -3441,6 +3441,16 @@ mod settings_tests {
             "the switch shows on a row it cannot act on"
         );
         assert!(js.contains("act(\"capture\", \"capture_set\", { on: e.target.checked }"));
+        // The switch is a second row after Claude Code's; the rows are flattened into the card, and
+        // the element helper flattens any depth, so neither row becomes "[object HTMLDivElement]".
+        assert!(
+            js.contains("const rows = state.apps.flatMap((a) => {"),
+            "Claude Code's two rows are nested in the card's children"
+        );
+        assert!(
+            include_str!("../assets/kit.js").contains("for (const c of children.flat(Infinity)) {"),
+            "a nested list of children is turned into text"
+        );
         assert!(super::APP_COMMANDS.contains(&"capture_set"));
         assert!(include_str!("../capabilities/settings.json").contains("\"allow-capture-set\""));
         let main = include_str!("main.rs");

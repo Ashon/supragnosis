@@ -28,7 +28,9 @@ function h(tag, props, ...children) {
     else if (k in el && typeof el[k] !== "function" && k !== "list") el[k] = v;
     else el.setAttribute(k, v === true ? "" : String(v));
   }
-  for (const c of children.flat()) {
+  // Flattened to any depth: a child that is a list of rows, inside a list of children, was once
+  // turned into text - "[object HTMLDivElement],[object HTMLDivElement]" in place of a row.
+  for (const c of children.flat(Infinity)) {
     if (c === null || c === undefined || c === false) continue;
     el.append(c instanceof Node ? c : document.createTextNode(String(c)));
   }

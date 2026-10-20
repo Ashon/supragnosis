@@ -213,7 +213,8 @@ function appDetail(a) {
 }
 
 function renderApps() {
-  const rows = state.apps.map((a) => {
+  // flatMap: Claude Code's row is two rows, its own and the capture switch's.
+  const rows = state.apps.flatMap((a) => {
     const pill = {
       connected: h("span", { class: "pill ok" }, h("span", { class: "dot" }), "Connected"),
       attention: h("span", { class: "pill warn" }, h("span", { class: "dot" }), "Needs switching"),
