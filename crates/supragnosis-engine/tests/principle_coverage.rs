@@ -916,7 +916,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         4,
         &[c(
-            "every state the Welcome page draws comes from setup's events, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, and asking setup again",
+            "every state the Welcome page draws comes from setup's events, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking setup again",
             Evidence::Scenario(&[
                 "the_welcome_page_calls_only_its_own_acts",
                 "setup_events_read_as_the_clis_example_has_them",
@@ -1496,7 +1496,8 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (7, &[c(
         "a daemon that cannot start because its store was indexed by another model is shown with that reason and one click that \
-         rebuilds the index, and the index can be rebuilt from the page whenever the daemon runs with a model",
+         rebuilds the index - on the starting page, on This Mac and in Setup - and the index can be rebuilt from the page whenever \
+         the daemon runs with a model",
         // The app's test reads settings.js and rebuild_index: the reason, the button in Restart's place,
         // the Search row's button, the order of stop and reset, and the page following the re-embedding.
         Evidence::Scenario(&["a_store_the_daemon_cannot_open_is_rebuilt_from_the_page"]),

@@ -118,7 +118,8 @@ what it only reports (O8):
   nothing has loaded or that a take-over would move aside, two managers at once, anything
   answering that the lifecycle cannot name, and a daemon that cannot open its store because the
   store was indexed by another model - whose sentence names both models, Settings > This Mac >
-  Rebuild index and `supragnosis embed rebuild` (semantic-retrieval.md Section 13). The sentence names the command that would act, most
+  Rebuild index and `supragnosis embed rebuild` (semantic-retrieval.md Section 13); in the app the
+  card offers Rebuild index, which runs the same command This Mac's button does. The sentence names the command that would act, most
   often `supragnosis service install --take-over`; in the app the card offers "Take over", and the
   click is the consent the Start at Login switch asks for today (L1, L6). A Homebrew service or a
   hand-written login job that keeps the daemon answering is a manager that outlives the app, so the
@@ -336,7 +337,7 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
 | **O1** | Setup appends nothing to the knowledge log: its checks read, its first-entry step waits for an entry the person's own work makes, and every path it changes is named in its events. |
 | **O2** | Every step reports its outcome where it ran - what it did, each file it changed and the copy where client-connect.md C3 or daemon-lifecycle.md L5 makes one, or why it failed and what to do - and a failed step exits non-zero (P24). |
 | **O3** | The checklist is computed from the live state each time it is shown; `setup --check` only reads, and running setup again changes only what is not done. |
-| **O4** | Every state the Welcome page draws comes from `setup`'s events. Its own acts are only stopping the daemon it spawned before the server step, restarting or opening an AI app, and asking `setup` again when an entry arrives. |
+| **O4** | Every state the Welcome page draws comes from `setup`'s events. Its own acts are only stopping the daemon it spawned before the server step, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking `setup` again when an entry arrives. |
 | **O5** | The model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only until the model is complete, a download in progress never reads as complete, and stopping it leaves nothing broken. |
 | **O6** | Nothing leaves the machine during setup: it never configures sync or a remote server, and the page says so. |
 | **O7** | First contact is the client's own name, kept in the local daemon's memory: never written to the store, never served on the read tier, never recorded by a hub's remote listener, never sent to a peer. |

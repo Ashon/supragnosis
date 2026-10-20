@@ -388,8 +388,10 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
   a `supragnosis serve` in a terminal - is refused with nothing changed, and the refusal names
   `supragnosis embed reset` for after that process stops (SR10).
 - **In the app.** Settings > This Mac offers the rebuild as Rebuild index, and says there why a
-  daemon cannot open its store (settings-page.md Section 3.3); Setup's server step says the same
-  (onboarding.md Section 4.1).
+  daemon cannot open its store (settings-page.md Section 3.3). The page the window shows while the
+  daemon cannot start, and Setup's server step, say the same and offer it in one click
+  (settings-page.md Section 3.3, onboarding.md Section 4.1), so a person who never opens a
+  terminal can recover.
 - **The refusal says how to go on.** Opening a store under another model is still refused (SR4).
   The refusal names the model that wrote the store and the one that opened it, and both ways on:
   `supragnosis embed rebuild` - in the app, Settings > This Mac > Rebuild index - which has the
