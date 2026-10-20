@@ -111,8 +111,9 @@ nothing above touches it. Remove it only if the knowledge should go too.
   the model's files are there it embeds every observation and entity that has none, once, and
   `supragnosis status` shows the progress (`semantic on (...) - embedding what was written before
   the model: 40 of 120`). No `reproject` is needed for it. A store indexed with a different model
-  is refused at open, since two models share no vector space - point that one at a new
-  `SUPRAGNOSIS_DATA_DIR`.
+  is refused at open, since two models share no vector space: with the daemon stopped,
+  `supragnosis embed reset` removes its vectors and the next start embeds it with the model the
+  daemon runs ([docs/semantic-retrieval.md](../docs/semantic-retrieval.md) Section 13).
 - Only one daemon should run (single ownership of the db + ports), and only one manager should
   run it - `supragnosis status` reports a conflict, and `service install --take-over` resolves it.
   Register each AI app through `supragnosis connect`, which writes the bridge. An app that runs

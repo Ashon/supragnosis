@@ -27,7 +27,7 @@ use supragnosis_core::{
     AssertionStore, Entity, Hlc, KnowledgeStore, Observation, Provenance, Relation, SearchHit,
     SearchHitKind, SyncMeta, TrustTier, VersionVector,
 };
-use supragnosis_store::{InMemoryStore, RedbStore};
+use supragnosis_store::{EmbeddingReset, InMemoryStore, RedbStore};
 
 // ---------------------------------------------------------------------------
 // harness
@@ -920,6 +920,79 @@ fn an_attached_vector_lands_only_where_none_is_stored() {
         );
         assert_eq!(store.attach_observation_embeddings(&[]).expect("empty"), 0);
     });
+}
+
+/// SR9 (semantic-retrieval.md Section 13): a reset removes every stored vector and the model the
+/// store recorded, in one transaction, and writes nothing else - the rows, the owed ledger and the
+/// format are as they were - and the store then takes another model. redb's alone: it is the store
+/// that records a model.
+#[test]
+fn a_reset_removes_every_vector_and_the_model_and_nothing_else() {
+    let dir = tmp_dir("reset");
+    let path = dir.join("knowledge.redb");
+    {
+        let store = RedbStore::open(&path).expect("open");
+        store.set_embedder("hashing-256").expect("the first model");
+        let mut embedded = obs("embedded by the first model");
+        embedded.embedding = Some(vec![1.0, 0.0, 0.0]);
+        let embedded_id = embedded.id.clone();
+        store.add_observation(embedded).expect("observe");
+        store.add_observation(obs("written before any model")).expect("observe");
+        let mut e = ent("an entity with a vector");
+        e.embedding = Some(vec![0.0, 1.0, 0.0]);
+        let ent_id = e.id.clone();
+        store.put_entity(e).expect("put");
+        // One row stays owed a projection, so the ledger is seen to be left as it was.
+        store.clear_owed(std::slice::from_ref(&embedded_id)).expect("clear");
+        let owed = store.owed_projections().expect("ledger");
+        assert_eq!(owed.len(), 1, "one row is owed");
+        let format = store.format().expect("format");
+        let rows = |s: &RedbStore| {
+            (
+                serde_json::to_value(s.all_observations(None).expect("observations"))
+                    .expect("json"),
+                serde_json::to_value(s.all_entities(None).expect("entities")).expect("json"),
+            )
+        };
+        let before = rows(&store);
+
+        let reset = store.reset_embeddings().expect("reset");
+        assert_eq!(
+            reset,
+            EmbeddingReset { model: Some("hashing-256".into()), observations: 1, entities: 1 },
+            "it says which model made what it removed, and how many"
+        );
+        let o = store.get_observation(&embedded_id).expect("get").expect("row");
+        assert!(o.embedding.is_none(), "the observation's vector is gone");
+        let e = store.get_entity(&ent_id).expect("get").expect("row");
+        assert!(e.embedding.is_none(), "the entity's vector is gone");
+        assert_eq!(store.embedder().expect("meta"), None, "the recorded model is gone");
+        assert_eq!(
+            rows(&store),
+            before,
+            "the rows are as they were (a vector is not part of a row)"
+        );
+        assert_eq!(store.owed_projections().expect("ledger"), owed, "the ledger is as it was");
+        assert_eq!(store.format().expect("format"), format, "the format is as it was");
+        assert_eq!(
+            store.reset_embeddings().expect("reset again"),
+            EmbeddingReset { model: None, observations: 0, entities: 0 },
+            "a second reset finds nothing"
+        );
+    }
+    let store = RedbStore::open(&path).expect("reopen");
+    store
+        .set_embedder("paraphrase-multilingual-minilm-l12-v2-q-384")
+        .expect("after a reset the store takes another model");
+    drop(store);
+    assert_eq!(
+        supragnosis_store::recorded_embedder(&path)
+            .expect("read without holding")
+            .as_deref(),
+        Some("paraphrase-multilingual-minilm-l12-v2-q-384"),
+        "the model is read back without opening the store for writing"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

@@ -15,7 +15,9 @@ use supragnosis_core::{
 };
 
 mod redb_store;
-pub use redb_store::{redb_in_use, RedbStore, StoreFormat, FORMAT, MIN_READER};
+pub use redb_store::{
+    recorded_embedder, redb_in_use, EmbeddingReset, RedbStore, StoreFormat, FORMAT, MIN_READER,
+};
 
 /// In-memory knowledge store. For test/development/non-persistent runs.
 #[derive(Default)]

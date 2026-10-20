@@ -1112,16 +1112,20 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (8, &[c(
         "a store refused for the model it is opened with says how to go on: the refusal names both models, \
          supragnosis embed reset and SUPRAGNOSIS_EMBED=none, and status says the same while the daemon cannot start for it",
-        Evidence::Deferred(
-            "Section 13 is specified for v0.8.1: the refusal asks for a re-embed no command does, and status does not name the cause. Revisit when Section 13 lands",
-        ),
+        // main.rs's test reads the refusal, status's line and its JSON field over a store embedded by
+        // another model; the scenario reads the command's own words.
+        Evidence::Scenario(&[
+            "a_refused_store_names_both_ways_on",
+            "embed_reset_refuses_a_held_store_and_reembeds_on_the_next_start",
+        ]),
     )]),
     (9, &[c(
         "supragnosis embed reset runs only on a store no process holds, removes every stored vector and the recorded model in one \
          transaction and writes nothing else, and the next serving start records its model and embeds every row",
-        Evidence::Deferred(
-            "Section 13 is specified for v0.8.1: no command removes a store's vectors or its recorded model. Revisit when Section 13 lands",
-        ),
+        Evidence::Scenario(&[
+            "a_reset_removes_every_vector_and_the_model_and_nothing_else",
+            "embed_reset_refuses_a_held_store_and_reembeds_on_the_next_start",
+        ]),
     )]),
 ];
 
@@ -3329,6 +3333,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/principal.rs"),
     include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
     include_str!("../../supragnosis-cli/tests/daemon_exit.rs"),
+    include_str!("../../supragnosis-cli/tests/embed_reset.rs"),
     include_str!("../../supragnosis-mcp/src/remote.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
     // daemon-lifecycle.md like any other guard, so its source is scanned too.

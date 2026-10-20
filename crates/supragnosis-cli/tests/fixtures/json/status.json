@@ -36,6 +36,7 @@
       "embedded": 196
     }
   },
+  "embedder_conflict": null,
   "server": {
     "name": "lab",
     "url": "https://lab.example:7420/mcp",

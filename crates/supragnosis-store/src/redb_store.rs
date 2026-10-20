@@ -27,7 +27,10 @@
 use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
-use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{
+    Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, ReadableTableMetadata,
+    TableDefinition,
+};
 use supragnosis_core::{
     cosine_similarity, AssertionStore, Entity, KeywordQuery, KnowledgeStore, Observation, Relation,
     SearchHit, SearchHitKind, StoreError, TraverseHit,
@@ -231,6 +234,32 @@ pub struct RedbStore {
     db: Database,
 }
 
+/// What [`RedbStore::reset_embeddings`] removed: the model the store had recorded, if any, and how
+/// many vectors it held for observations and for entities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddingReset {
+    pub model: Option<String>,
+    pub observations: u64,
+    pub entities: u64,
+}
+
+/// The model the store at `path` recorded, read without writing anything and without holding it
+/// (semantic-retrieval.md Section 13, SR8): `None` when there is no store there or it records no
+/// model. A store another process holds cannot be read, and says so as an error.
+pub fn recorded_embedder(path: impl AsRef<Path>) -> Result<Option<String>, StoreError> {
+    if !path.as_ref().exists() {
+        return Ok(None);
+    }
+    let db = redb::ReadOnlyDatabase::open(path).map_err(backend)?;
+    let txn = db.begin_read().map_err(backend)?;
+    let t = match txn.open_table(META) {
+        Ok(t) => t,
+        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+        Err(e) => return Err(backend(e)),
+    };
+    Ok(t.get("embedder").map_err(backend)?.map(|v| v.value().to_string()))
+}
+
 /// Whether some process holds the redb store at `path` open for writing (daemon-lifecycle.md
 /// Section 11). A stdio server binds no port, so the lock is the only trace it leaves, and a
 /// lifecycle command that looked only at the port would start a second writer beside it.
@@ -359,6 +388,29 @@ impl RedbStore {
         let txn = self.db.begin_read().map_err(backend)?;
         let t = txn.open_table(META).map_err(backend)?;
         Ok(t.get("embedder").map_err(backend)?.map(|v| v.value().to_string()))
+    }
+
+    /// Removes every stored vector - the observations' and the entities' - and the model the store
+    /// recorded, in one transaction, and writes nothing else (semantic-retrieval.md Section 13,
+    /// SR9). The next open with an embedder records that one, and its backfill embeds every row
+    /// again, so the store never holds vectors from two models (SR4).
+    pub fn reset_embeddings(&self) -> Result<EmbeddingReset, StoreError> {
+        let txn = self.db.begin_write().map_err(backend)?;
+        let reset = {
+            let mut meta = txn.open_table(META).map_err(backend)?;
+            let model = meta.remove("embedder").map_err(backend)?.map(|v| v.value().to_string());
+            let observations = txn.open_table(OBS_VEC).map_err(backend)?.len().map_err(backend)?;
+            let entities = txn.open_table(ENT_VEC).map_err(backend)?.len().map_err(backend)?;
+            EmbeddingReset { model, observations, entities }
+        };
+        // Dropped and made again empty, as the open makes them: a row-by-row delete of a large
+        // store's vectors would only be slower.
+        for table in [OBS_VEC, ENT_VEC] {
+            txn.delete_table(table).map_err(backend)?;
+            txn.open_table(table).map_err(backend)?;
+        }
+        txn.commit().map_err(backend)?;
+        Ok(reset)
     }
 
     /// Every id in a workspace, ascending, or every id in the table when the scope is `None`. The two

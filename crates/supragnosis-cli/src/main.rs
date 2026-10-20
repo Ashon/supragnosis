@@ -172,6 +172,9 @@ enum EmbedCmd {
         #[arg(long)]
         events: bool,
     },
+    /// Remove every stored vector and the model the store recorded, with the daemon stopped: the
+    /// next start embeds the store with the model it runs (docs/semantic-retrieval.md Section 13)
+    Reset,
 }
 
 #[derive(Subcommand)]
@@ -330,6 +333,7 @@ fn main() -> Result<()> {
         Cmd::Connect(a) => connect_cmd(a),
         Cmd::Setup(a) => setup_cmd(a),
         Cmd::Embed { cmd: EmbedCmd::Fetch { events } } => embed_fetch(true, events),
+        Cmd::Embed { cmd: EmbedCmd::Reset } => embed_reset(),
         Cmd::Hook(a) => hook_cmd(a),
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
@@ -508,6 +512,155 @@ fn build_fastembed() -> Result<Option<Arc<dyn EmbeddingProvider>>> {
 fn build_fastembed() -> Result<Option<Arc<dyn EmbeddingProvider>>> {
     tracing::warn!("this build has no embedding model (built without the fastembed feature) - proceeding with keyword search");
     Ok(None)
+}
+
+/// Why a store is refused for the model it is opened with, and the two ways on
+/// (semantic-retrieval.md Section 13, SR8).
+fn embedder_refusal(recorded: &str, opened: &str) -> String {
+    format!(
+        "the store was embedded by '{recorded}' and this process opens it with '{opened}' - vectors \
+         from two models share no space, so the store is refused (docs/semantic-retrieval.md Section \
+         13). Either stop the daemon (`supragnosis stop`) and run `supragnosis embed reset`, and the \
+         next start embeds the store with '{opened}'; or run without semantic search and leave the \
+         store as it is: SUPRAGNOSIS_EMBED=none, for the login job `supragnosis service install \
+         --env SUPRAGNOSIS_EMBED=none`"
+    )
+}
+
+/// The environment the login job runs the daemon with, when one is installed: launchd and systemd
+/// start it with that and none of this shell's (semantic-retrieval.md Section 13). `None` when no
+/// job is installed, or its environment cannot be read.
+#[cfg(unix)]
+fn job_env() -> Option<std::collections::BTreeMap<String, String>> {
+    if canonical_service_state() == "absent" {
+        return None;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        plist_env(&canonical_service_path()).ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let text = std::fs::read_to_string(canonical_service_path()).ok()?;
+        let home = std::env::var("HOME").unwrap_or_default();
+        lifecycle::parse_unit_env(&text, &home, &current_user().unwrap_or_default()).ok()
+    }
+}
+#[cfg(not(unix))]
+fn job_env() -> Option<std::collections::BTreeMap<String, String>> {
+    None
+}
+
+/// A variable of the daemon's environment: the login job's when one is installed, this process's
+/// otherwise; an empty value is no value, as `serve` reads it.
+fn daemon_var(
+    job: &Option<std::collections::BTreeMap<String, String>>,
+    key: &str,
+) -> Option<String> {
+    match job {
+        Some(vars) => vars.get(key).cloned(),
+        None => std::env::var(key).ok(),
+    }
+    .filter(|v| !v.trim().is_empty())
+}
+
+/// The identity of the model a daemon with this environment opens its store with - what the store
+/// records - without loading it; `None` when it runs without one.
+fn embedder_id_for(get: &dyn Fn(&str) -> Option<String>) -> Result<Option<String>> {
+    let kind = get("SUPRAGNOSIS_EMBED").unwrap_or_else(|| default_embed_kind().to_string());
+    Ok(match kind.as_str() {
+        "hashing" => Some(HashingEmbedder::default().id()),
+        "fastembed" => fastembed_id(&get("SUPRAGNOSIS_EMBED_MODEL").unwrap_or_default())?,
+        _ => None,
+    })
+}
+#[cfg(feature = "fastembed")]
+fn fastembed_id(model: &str) -> Result<Option<String>> {
+    let model = supragnosis_embed::Model::parse(model).map_err(|e| anyhow::anyhow!(e))?;
+    Ok(Some(model.id().to_string()))
+}
+#[cfg(not(feature = "fastembed"))]
+fn fastembed_id(_model: &str) -> Result<Option<String>> {
+    Ok(None)
+}
+
+/// The model the store at `store` recorded and the one the daemon would open it with, when they
+/// differ and nothing holds the store: why a daemon cannot start, which `status` names (SR8).
+fn embedder_conflict(store: &std::path::Path, daemon: Option<String>) -> Option<(String, String)> {
+    if supragnosis_store::redb_in_use(store) {
+        return None;
+    }
+    let recorded = supragnosis_store::recorded_embedder(store).ok().flatten()?;
+    let daemon = daemon?;
+    (recorded != daemon).then_some((recorded, daemon))
+}
+
+/// `status`'s line for a store the daemon cannot open (SR8).
+fn embedder_conflict_line(recorded: &str, daemon: &str) -> String {
+    format!(
+        "  store   the daemon cannot open it: it was embedded by '{recorded}' and the daemon runs \
+         '{daemon}'. `supragnosis stop`, then `supragnosis embed reset` - the next start embeds it \
+         with '{daemon}'; or `supragnosis service install --env SUPRAGNOSIS_EMBED=none` runs \
+         without semantic search"
+    )
+}
+
+/// `supragnosis embed reset` (semantic-retrieval.md Section 13, SR9): on a store no process holds,
+/// removes every stored vector and the model the store recorded, so the next start records the
+/// model the daemon runs and its backfill embeds every row with it. The store is the daemon's: the
+/// one its login job's environment names, when one is installed.
+fn embed_reset() -> Result<()> {
+    let job = job_env();
+    let get = |k: &str| daemon_var(&job, k);
+    let Some(path) = daemon_store_path(get) else {
+        println!("The daemon's store is in memory, so there is nothing to reset.");
+        return Ok(());
+    };
+    if !path.exists() {
+        println!("There is no store at {} - nothing to reset.", path.display());
+        return Ok(());
+    }
+    if supragnosis_store::redb_in_use(&path) {
+        anyhow::bail!(
+            "the store at {} is open in another process - the daemon, or an AI app's stdio server - \
+             so nothing was changed. Stop it (`supragnosis stop`) and run this again",
+            path.display()
+        );
+    }
+    let store = RedbStore::open(&path)
+        .with_context(|| format!("failed to open redb store at {}", path.display()))?;
+    let r = store.reset_embeddings()?;
+    drop(store);
+    match &r.model {
+        None if r.observations + r.entities == 0 => {
+            println!("The store holds no vectors and records no model - nothing to reset.")
+        }
+        Some(model) if r.observations + r.entities == 0 => println!(
+            "The store held no vectors; removed its record of '{model}'. The log and the graph are \
+             as they were."
+        ),
+        model => println!(
+            "Removed {} vectors ({} for observations, {} for entities) made by {}, and the store's \
+             record of that model. The log and the graph are as they were.",
+            r.observations + r.entities,
+            r.observations,
+            r.entities,
+            model.as_deref().map_or("no recorded model".to_string(), |m| format!("'{m}'"))
+        ),
+    }
+    match embedder_id_for(&get)? {
+        Some(id) => println!(
+            "The next start records '{id}' and embeds every observation and entity with it; \
+             `supragnosis status` shows it while it runs."
+        ),
+        None => println!(
+            "The daemon runs without a model (SUPRAGNOSIS_EMBED={}), so the store stays without \
+             vectors and search matches words. `supragnosis service install --env \
+             SUPRAGNOSIS_EMBED=fastembed` gives the login job the model.",
+            get("SUPRAGNOSIS_EMBED").unwrap_or_else(|| default_embed_kind().to_string())
+        ),
+    }
+    Ok(())
 }
 
 /// `supragnosis embed fetch` (semantic-retrieval.md Section 6): the one download, by the person's
@@ -785,6 +938,10 @@ fn build_engine(
             // Two models share no vector space, so a swapped embedder is refused at open rather than
             // discovered later as quietly worse recall.
             if let Some(e) = &embedder {
+                // Refused with the way on named (SR8): the store's own refusal cannot name commands.
+                if let Some(recorded) = store.embedder()?.filter(|r| *r != e.id()) {
+                    anyhow::bail!(embedder_refusal(&recorded, &e.id()));
+                }
                 store.set_embedder(&e.id())?;
             }
             tracing::info!(path = %path.display(), ?embed_dim, "store=redb (persistent)");
@@ -3929,6 +4086,9 @@ struct StatusFacts<'a> {
     /// First contact (docs/onboarding.md Section 5): the AI apps that reached the daemon since it
     /// started; null when it does not answer, or does not record them.
     clients: Option<serde_json::Value>,
+    /// The model the store recorded and the one the daemon would open it with, when the daemon does
+    /// not answer because they differ (semantic-retrieval.md Section 13, SR8).
+    embedder_conflict: Option<(String, String)>,
     /// The canonical LaunchAgent's plist, or the canonical user unit on Linux, and its state.
     plist: std::path::PathBuf,
     plist_state: &'static str,
@@ -4025,6 +4185,10 @@ fn status_document(f: &StatusFacts) -> serde_json::Value {
         }),
         // The daemon's own report on semantic retrieval (SR3); null when it is not answering.
         "semantic": f.health.as_ref().and_then(|h| h.get("semantic")).cloned(),
+        // A store the daemon cannot open for its model (SR8); null otherwise.
+        "embedder_conflict": f.embedder_conflict.as_ref().map(|(recorded, daemon)| {
+            serde_json::json!({ "recorded": recorded, "daemon": daemon })
+        }),
         "server": f.server,
         "clients": f.clients,
         // `plist` keeps its name in schema 1 and holds the unit's path on Linux; `path` says the same
@@ -4049,6 +4213,16 @@ fn status(json: bool) -> Result<()> {
     let running = if observed.answering { running_version() } else { None };
     let drift = lifecycle::drift(running.as_deref(), here);
     let health = if observed.answering { store_health() } else { None };
+    // A daemon that does not answer may be refused its store for the model (SR8): what the store
+    // recorded, read without holding it, against the model the daemon's environment names.
+    let embedder_conflict = if observed.answering {
+        None
+    } else {
+        let job = job_env();
+        let get = |k: &str| daemon_var(&job, k);
+        daemon_store_path(get)
+            .and_then(|p| embedder_conflict(&p, embedder_id_for(&get).ok().flatten()))
+    };
     // The server this machine's AI apps use (remote-server.md): this daemon, or a remote one. An
     // unreadable profile file is reported, not read as "local" (P5).
     let server =
@@ -4071,6 +4245,7 @@ fn status(json: bool) -> Result<()> {
             health,
             server,
             clients: if observed.answering { first_contacts() } else { None },
+            embedder_conflict: embedder_conflict.clone(),
             plist: canonical_service_path(),
             plist_state: canonical_service_state(),
             linger: if cfg!(target_os = "linux") { linger_state() } else { None },
@@ -4084,6 +4259,9 @@ fn status(json: bool) -> Result<()> {
             match read_pid() {
                 Some(pid) => println!("stopped (stale pidfile, pid {pid})"),
                 None => println!("stopped"),
+            }
+            if let Some((recorded, daemon)) = &embedder_conflict {
+                println!("{}", embedder_conflict_line(recorded, daemon));
             }
             // Where a person lands on a first run, or after a restart that did not bring it back
             // (docs/onboarding.md Section 7): how to run it now, how to keep it, and setup.
@@ -4126,6 +4304,9 @@ fn status(json: bool) -> Result<()> {
             println!("  version unknown (the viewer socket did not answer)")
         }
         Drift::Unknown => {}
+    }
+    if let Some((recorded, daemon)) = &embedder_conflict {
+        println!("{}", embedder_conflict_line(recorded, daemon));
     }
     if server["remote"].as_bool() == Some(true) {
         println!(
@@ -5676,6 +5857,92 @@ mod json_contract {
     }
 
     #[cfg(unix)]
+    /// SR8 (semantic-retrieval.md Section 13): a store the daemon cannot open for its model says so,
+    /// with both models and both ways on - in the refusal at open, in `status`'s line, and in
+    /// `status --json`'s field - and a store read for it is read without being held or written.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_store_names_both_ways_on() {
+        let dir = std::env::temp_dir().join(format!(
+            "supragnosis-refused-{}-{}",
+            std::process::id(),
+            unix_secs()
+        ));
+        let path = dir.join("knowledge.redb");
+        {
+            let store = RedbStore::open(&path).expect("open");
+            store.set_embedder("hashing-256").expect("the first model");
+        }
+        let other = "paraphrase-multilingual-minilm-l12-v2-q-384";
+        assert_eq!(
+            embedder_conflict(&path, Some(other.to_string())),
+            Some(("hashing-256".to_string(), other.to_string())),
+            "a store embedded by another model is named, with the daemon's"
+        );
+        assert_eq!(
+            embedder_conflict(&path, Some("hashing-256".into())),
+            None,
+            "the same model is no conflict"
+        );
+        assert_eq!(
+            embedder_conflict(&path, None),
+            None,
+            "a daemon without a model opens any store"
+        );
+        assert_eq!(
+            embedder_conflict(&dir.join("absent.redb"), Some(other.into())),
+            None,
+            "no store, no conflict"
+        );
+        assert_eq!(
+            supragnosis_store::recorded_embedder(&path).expect("read").as_deref(),
+            Some("hashing-256"),
+            "reading the conflict wrote nothing"
+        );
+
+        for text in [
+            embedder_refusal("hashing-256", other),
+            embedder_conflict_line("hashing-256", other),
+        ] {
+            for part in [
+                "'hashing-256'",
+                "'paraphrase-multilingual-minilm-l12-v2-q-384'",
+                "supragnosis embed reset",
+                "SUPRAGNOSIS_EMBED=none",
+            ] {
+                assert!(text.contains(part), "the way on is named ({part}): {text}");
+            }
+        }
+        let hashing = |k: &str| (k == "SUPRAGNOSIS_EMBED").then(|| "hashing".to_string());
+        assert_eq!(embedder_id_for(&hashing).expect("id").as_deref(), Some("hashing-256"));
+        let none = |k: &str| (k == "SUPRAGNOSIS_EMBED").then(|| "none".to_string());
+        assert_eq!(
+            embedder_id_for(&none).expect("id"),
+            None,
+            "a daemon without a model records none"
+        );
+
+        let situation = lifecycle::Situation::Stopped;
+        let doc = status_document(&StatusFacts {
+            situation: &situation,
+            answering: false,
+            store_held: false,
+            http: "127.0.0.1:7373".into(),
+            here: "1.0.0",
+            running: None,
+            health: None,
+            server: serde_json::json!({"name": "local", "remote": false}),
+            clients: None,
+            embedder_conflict: Some(("hashing-256".into(), other.into())),
+            plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),
+            plist_state: "generated",
+            linger: None,
+        });
+        assert_eq!(doc["embedder_conflict"]["recorded"], "hashing-256");
+        assert_eq!(doc["embedder_conflict"]["daemon"], other);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn status_json_matches_its_example() {
         use lifecycle::{Job, LabelKind, Manager, Situation};
@@ -5704,6 +5971,7 @@ mod json_contract {
             clients: Some(serde_json::json!([
                 {"name": "claude-code", "version": "2.1.0", "first": 1, "last": 2}
             ])),
+            embedder_conflict: None,
             plist: std::path::PathBuf::from("/x/com.supragnosis.daemon.plist"),
             plist_state: "generated",
             linger: None,
@@ -5731,6 +5999,7 @@ mod json_contract {
             health: None,
             server: serde_json::json!({"name": "local", "remote": false}),
             clients: None,
+            embedder_conflict: None,
             plist: std::path::PathBuf::from("/home/you/.config/systemd/user/supragnosis.service"),
             plist_state: "generated",
             linger: Some(false),

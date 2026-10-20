@@ -345,7 +345,7 @@ re-materialization of a projection, and it still embeds the entities it projects
 
 ## 13. A store under another model
 
-> Status: **specified** (v0.8.1).
+> Status: **built** (v0.8.1).
 
 ### 13.1 Why
 
@@ -386,8 +386,8 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
 - **`status` says it.** When the daemon does not answer and nothing holds the store, `status`
   reads the model the store recorded, without writing, and compares it with the model the
   daemon's environment names. When they differ it prints `store   the daemon cannot open it: ...`
-  with both models and both ways on, and `status --json` carries `store.embedder_conflict`, the
-  two models, or null (SR8).
+  with both models and both ways on, and `status --json` carries `embedder_conflict`, the two
+  models, or null (SR8).
 
 ### 13.3 What this is NOT
 
@@ -401,11 +401,13 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
 
 ### 13.4 Guarded by
 
-The implementation names its tests here. They are to show:
-
-- the store method: both vector tables empty, the recorded model gone, the rows, the ledger and
-  the format untouched, and a reopen under another model accepted (SR9);
-- the command: against a daemon that holds the store it changes nothing; stopped, it removes the
-  vectors; and the next start's backfill embeds every row again (SR9, SR6);
-- the refusal's text, and `status`'s line and field for a store whose model differs from the
-  daemon's (SR8).
+- `a_reset_removes_every_vector_and_the_model_and_nothing_else` - the store method: both vector
+  tables empty, the recorded model gone, the rows, the ledger and the format untouched, a second
+  reset finding nothing, and a reopen under another model accepted (SR9).
+- `embed_reset_refuses_a_held_store_and_reembeds_on_the_next_start` - the command against a
+  daemon that holds the store changes nothing; stopped, it removes the vectors and names the
+  model that made them and the one the daemon will run; the next start's backfill embeds every
+  row again (SR9, SR6).
+- `a_refused_store_names_both_ways_on` - the refusal's text, `status`'s line and
+  `embedder_conflict`, for a store whose model differs from the daemon's, read without being held
+  or written (SR8).
