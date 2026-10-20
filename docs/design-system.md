@@ -2499,56 +2499,59 @@ shaped like a store (Section 26.1). Times are the 50th and 95th percentiles in m
 moving columns are the frame rate and the 95th percentile of a frame while the layout steps, from the
 reveal to rest and from a node held for two seconds, let go 30 pixels from where it was pressed, to
 rest again or for 30 seconds; "GPU" is the renderer of Section 27.9 and
-"2D" the canvas alone (`?renderer=2d`). A dragged column marked * held its node at the reading zoom,
-since the fitted view of that map, when it was measured, had folded its nodes into groups and had
-none to hold. WebKit's clock reads
-whole milliseconds.
+"2D" the canvas alone (`?renderer=2d`). The node is held at the fitted view, and at 50,000 the
+dragged layout was followed for the 30 seconds. WebKit's clock reads whole milliseconds.
 
 In Chrome:
 
 | Entities | Renderer | First picture | At rest | Pan | Pan near | Zoom | Moving, cooling | Moving, dragged |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 10,000 | GPU | 2.2 s | 8 s | 1.5 / 1.9 | 2.2 / 2.7 | 1.8 / 3.7 | 60 fps, 5.1 | 60.1 fps, 5.1 |
-| 10,000 | 2D | 2 s | 7.7 s | 3.4 / 6 | 5.5 / 8.2 | 2.4 / 4.9 | 59.8 fps, 12.1 | 52.3 fps, 25.7 |
-| 20,000 | GPU | 3.6 s | 13.5 s | 4.5 / 6.9 | 7.4 / 11.7 | 3.2 / 4.8 | 59.9 fps, 6.9 | 60 fps *, 9.4 |
-| 20,000 | 2D | 3.5 s | 13.2 s | 3.9 / 5.2 | 7.1 / 12 | 3 / 4.3 | 58.8 fps, 17.4 | 59.9 fps *, 20.8 |
-| 50,000 | GPU | 8.5 s | 31 s | 5.9 / 7.7 | 7.2 / 13.3 | 3.6 / 4.4 | 59.8 fps, 15.4 | 60 fps *, 17.2 |
-| 50,000 | 2D | 8.5 s | 31 s | 5.2 / 6.9 | 6.6 / 13.9 | 3.2 / 17.1 | 55.8 fps, 29.1 | 59.3 fps *, 27.8 |
+| 10,000 | GPU | 2.2 s | 8.1 s | 2.9 / 4.7 | 2.5 / 3.1 | 5.5 / 9.7 | 60 fps, 6.1 | 60 fps, 8.7 |
+| 10,000 | 2D | 2.1 s | 7.8 s | 3.4 / 5.7 | 2.4 / 3 | 6.5 / 10.1 | 60 fps, 13.4 | 44.9 fps, 31.2 |
+| 20,000 | GPU | 3.8 s | 13.5 s | 2.9 / 5.4 | 4.1 / 5.1 | 6.2 / 10.5 | 60 fps, 8.5 | 60 fps, 11.9 |
+| 20,000 | 2D | 3.8 s | 13.6 s | 3.7 / 4.8 | 4.1 / 5.2 | 7.2 / 13.9 | 59.1 fps, 20 | 57.6 fps, 28.4 |
+| 50,000 | GPU | 8.8 s | 32.3 s | 2.7 / 3.3 | 5.2 / 8.1 | 4.3 / 5.6 | 60 fps, 17.8 | 60 fps, 19.4 |
+| 50,000 | 2D | 8.9 s | 31.7 s | 4.5 / 11.3 | 7 / 12.8 | 4.9 / 15.1 | 56.2 fps, 30.1 | 56.6 fps, 32.7 |
 
 In WebKit:
 
 | Entities | Renderer | First picture | At rest | Pan | Pan near | Zoom | Moving, cooling | Moving, dragged |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 10,000 | GPU | 1.8 s | 6.9 s | 5 / 7 | 8 / 13 | 3 / 8 | 59.6 fps, 7 | 59.8 fps *, 8 |
-| 10,000 | 2D | 1.9 s | 7 s | 5 / 6 | 7 / 8 | 3 / 7 | 57.3 fps, 12 | 52.6 fps *, 35 |
-| 20,000 | GPU | 3 s | 11.5 s | 6 / 8 | 9 / 12 | 5 / 8 | 60.1 fps, 9 | 59.9 fps *, 13 |
-| 20,000 | 2D | 3.1 s | 12 s | 4 / 7 | 7 / 9 | 4 / 8 | 58.6 fps, 18 | 36.9 fps *, 121 |
-| 50,000 | GPU | 7.2 s | 31.4 s | 5 / 14 | 11 / 12 | 4 / 11 | 58.7 fps, 22 | 55.1 fps *, 27 |
-| 50,000 | 2D | 7 s | 30.6 s | 5 / 12 | 7 / 10 | 4 / 22 | 54.7 fps, 35 | 41.1 fps *, 67 |
+| 10,000 | GPU | 2.1 s | 6.9 s | 5 / 7 | 6 / 8 | 8 / 10 | 60 fps, 7 | 60 fps, 10 |
+| 10,000 | 2D | 2 s | 6.9 s | 5 / 8 | 6 / 7 | 7 / 11 | 59.5 fps, 13 | 52.1 fps, 24 |
+| 20,000 | GPU | 4 s | 14.2 s | 5 / 7 | 8 / 9 | 9 / 13 | 60 fps, 11 | 59.8 fps, 17 |
+| 20,000 | 2D | 3.4 s | 12.3 s | 5 / 6 | 8 / 9 | 10 / 14 | 59.7 fps, 20 | 39 fps, 34 |
+| 50,000 | GPU | 7.2 s | 31.1 s | 6 / 7 | 10 / 11 | 6 / 7 | 59.9 fps, 23 | 57 fps, 28 |
+| 50,000 | 2D | 7.4 s | 36.7 s | 6 / 7 | 10 / 11 | 6 / 13 | 54.7 fps, 34 | 51.6 fps, 44 |
 
 And the dev store of Section 27.1 - 10,000 entities, 14,672 relations and 11,862 contexts - through
 its own daemon, on the GPU:
 
 | Browser | Data | First picture | At rest | Pan | Zoom |
 |---|---:|---:|---:|---:|---:|
-| Chrome | 0.3 s | 2.1 s | 12.2 s | 1.6 / 2.1 | 1.8 / 2.3 |
-| WebKit | 0.3 s | 2.0 s | 7.0 s | 2 / 2 | 2 / 3 |
+| Chrome | 0.3 s | 2.2 s | 12.2 s | 3.6 / 5 | 6.1 / 12.3 |
+| WebKit | 0.3 s | 2.0 s | 7.0 s | 4 / 6 | 8 / 11 |
 
 - **At rest the budget holds at every size, in both browsers and both renderers.** At 10,000 the
-  first picture comes in 2.2 seconds in Chrome and 1.8 in WebKit, and a frame at rest on the GPU is
-  within 3.7 ms at the 95th percentile in Chrome and 13 in WebKit, at the fitted view, at a reading
-  zoom and in a zoom; at 50,000 the first picture comes in 8.5 and 7.2 seconds and a frame at rest
-  within 13.3 and 14 ms on the GPU. The dev store, which at the start of this pass did not show in six
+  first picture comes in 2.2 seconds in Chrome and 2.1 in WebKit, and a frame at rest on the GPU is
+  within 9.7 ms at the 95th percentile in Chrome and 10 in WebKit, at the fitted view, at a reading
+  zoom and in a zoom; at 50,000 the first picture comes in 8.8 and 7.2 seconds and a frame at rest
+  within 8.1 and 11 ms on the GPU. The dev store, which at the start of this pass did not show in six
   minutes, shows in about two seconds.
-- **While the layout moves, the GPU keeps it at 10,000 and 20,000.** A moving frame at 10,000 is 5.1
-  ms at the 95th percentile in Chrome and 7 to 8 in WebKit on the GPU; at 20,000, 6.9 to 9.4 and 9 to
-  13. The 2D canvas keeps a cooling layout at 10,000 - 12.1 and 12 ms - but not a dragged one, 25.7
-  and 35, and in WebKit at 20,000 a dragged layout falls to 37 frames a second.
-- **At 50,000 a moving frame is within it in Chrome, nearly, and not in WebKit.** In Chrome a cooling
-  frame is 15.4 ms at the 95th percentile and a dragged one 17.2, at 60 frames a second; in WebKit 22
-  and 27, at 55 to 59. The frames over the budget gather the groups again, every half second, and
-  work out the regions' geometry after the positions move. At 50,000 the budget holds at rest, and
-  while the layout settles only in Chrome.
+- **While the layout moves, the GPU keeps it at 10,000, and at 20,000 but for WebKit's drag.** A
+  moving frame at 10,000 is 6.1 to 8.7 ms at the 95th percentile in Chrome and 7 to 10 in WebKit on
+  the GPU; at 20,000, 8.5 to 11.9 and 11 to 17. The 2D canvas keeps a cooling layout at 10,000 - 13.4
+  and 13 ms - but not a dragged one, 31.2 and 24, and in WebKit at 20,000 a dragged layout falls to 39
+  frames a second.
+- **At 50,000 a moving frame is not within it yet.** In Chrome a cooling frame is 17.8 ms at the 95th
+  percentile and a dragged one 19.4, at 60 frames a second; in WebKit 23 and 28, at 57 to 60. At
+  50,000 the budget holds at rest, and not yet while the layout settles.
+- **Keeping by rank costs the fitted view more than folding did.** A far map now draws the nodes it
+  keeps and their relations where it drew a few hubs (Section 27.8). At 10,000 a zoom at the fitted
+  view went from 3.7 ms at the 95th percentile to 9.7 in Chrome and from 8 to 10 in WebKit, and the
+  dev store's from 2.3 to 12.3 and from 3 to 11, within the budget; at 50,000, where the fitted view
+  keeps 318 nodes whole, a pan's went from 7.7 to 3.3 in Chrome and from 14 to 7 in WebKit. One run
+  each, against the measure taken before the map kept by rank.
 - **The bench's runs fall into two modes.** On this Mac a run's frame times can sit in a fast or a slow
   mode - the same build's pan at a reading zoom measured 2.4 and 5.2 ms at the median - so a table is
   one run, and the steps were compared in turn, three runs each, by their medians.
