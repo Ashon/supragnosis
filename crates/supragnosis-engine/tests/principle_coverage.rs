@@ -860,9 +860,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     ]),
     (38, &[c(
-        "a map zoomed out until a node with no relation is under 0.8 pixels is drawn as bodies around hubs - the best-connected node not yet taken and every node within 32 pixels - with counts and the hub's name, relations between bodies as one line, a crossfade to 1.6 pixels, and a hovered, selected, active, pulsing or contested node never folded",
-        // scale.rs reads bodiesOpenAt, gatherBodies, bodiesOf, draw, nodeAt and a body's click.
-        Evidence::Scenario(&["a_far_map_folds_into_bodies_around_hubs"]),
+        "zoomed out the map keeps its shape: a node fades as its own radius on the screen falls from 1.6 to 0.8 pixels, hubs gathered within 32 pixels stay, named with their count, over a soft haze of their faded members, relations between folded groups one line between hubs, and a hovered, selected, active, pulsing or contested node never fades",
+        // scale.rs reads gatherBodies, bodiesOf, unfolded, draw, nodeAt and a haze's click.
+        Evidence::Scenario(&["a_far_map_keeps_its_shape"]),
     )]),
     (39, &[c(
         "where WebGL2 renders to half-float targets the GPU draws the field, outlines, relations, arrowheads, nodes and bodies under a 2D canvas of text and badges, and the 2D canvas draws all of it otherwise",

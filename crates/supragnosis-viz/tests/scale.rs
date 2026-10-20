@@ -134,7 +134,8 @@ fn what_the_map_draws_follows_the_screen() {
     assert!(!draw.contains("h.closePath()"), "the arrowheads' path closes every head again");
     for part in [
         "for (const k of whole ? few : nodesIn(vx0, vy0, vx1, vy1)) {",
-        "n.y > vy1))) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;\n    n._lod = lodOf(n, act);",
+        "n.y > vy1))) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;",
+        "n._lod = n._hr ? LOD_FULL_TIER : lodOf(n, act);",
         "for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {",
         "Math.max(e.a.x, e.b.x) + LANE_MAX < vx0",
         "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
@@ -544,23 +545,20 @@ fn a_frame_touches_what_the_window_holds() {
     );
 }
 
-/// U38: a far map folds into bodies around hubs. The map folds by how large a node with no relation is
-/// on the screen, under 0.8 pixels, and opens by 1.6; a body is the best-connected node not yet taken
-/// and every node not yet taken within 32 pixels, at the zoom's nearest power of two, gathered again
-/// when that power, the graph or the filter changes and, while the layout moves, at most every half
-/// second; a hovered, selected, active, pulsing or contested node is never folded; a folded member is
-/// neither drawn nor under the pointer, and its relations go to its body; and a body's click frames
-/// its members.
+/// U38: zoomed out, the map keeps its shape. A node fades as its own radius on the screen falls from
+/// 1.6 to 0.8 pixels; the map is gathered around hubs - the best-connected node not yet taken and every
+/// node not yet taken within 32 pixels, at the zoom's nearest power of two, gathered again when that
+/// power, the graph or the filter changes and, while the layout moves, at most every half second; a hub
+/// stays, at least 3 pixels while its group is folded, its faded members a haze, the largest groups'
+/// hubs named with their count; a hovered, selected, active, pulsing or contested node never fades; a
+/// faded node is neither drawn nor under the pointer, and its relations go from its hub; a folded frame
+/// passes over its hubs and the nodes still drawn; and a haze's click frames its members.
 #[test]
-fn a_far_map_folds_into_bodies_around_hubs() {
+fn a_far_map_keeps_its_shape() {
     assert!(
-        SCRIPT.contains("const BODY_FOLD_PX = 0.8, BODY_OPEN_PX = 1.6, BODY_REACH_PX = 32, BODY_REGATHER_MS = 500;"),
+        SCRIPT.contains("const BODY_FOLD_PX = 0.8, BODY_OPEN_PX = 1.6, BODY_REACH_PX = 32, BODY_REGATHER_MS = 500;")
+            && SCRIPT.contains("const BODY_HUB_PX = 3, BODY_HAZE_ALPHA = 0.4, BODY_HAZE_REACH = 0.75, BODY_NAMES = 16,"),
         "the fold's sizes moved from Section 27.8"
-    );
-    assert!(
-        function("bodiesOpenAt")
-            .contains("(NODE_R_BASE * s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX)"),
-        "the map folds by another measure than a node's size on the screen"
     );
     let gather = function("gatherBodies");
     for part in [
@@ -568,35 +566,45 @@ fn a_far_map_folds_into_bodies_around_hubs() {
         "const reach = BODY_REACH_PX / 2 ** level,",
         "if (of[j] < 0 && !typeOff.has(w.type) && (w.x - v.x) ** 2 + (w.y - v.y) ** 2 <= r2) of[j] = k;",
     ] {
-        assert!(gather.contains(part), "the bodies are not gathered around hubs: {part}");
+        assert!(gather.contains(part), "the groups are not gathered around hubs: {part}");
     }
     assert!(
         function("bodiesOf").contains(
             "b.posGen !== positionsGen && (!simWarm() || now - b.at >= BODY_REGATHER_MS)"
         ),
-        "the bodies are gathered every frame the layout moves"
+        "the groups are gathered every frame the layout moves"
+    );
+    assert!(
+        function("unfolded").contains("const at = new Set(b.hub);")
+            && function("unfolded")
+                .contains("if (nodeRadius(nodes[i]) * cam.s <= BODY_FOLD_PX) break;"),
+        "a folded frame leaves out a hub or a node still drawn"
     );
     let draw = function("draw");
     for part in [
         "const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);",
-        "if (oa === 0 || ob === 0) continue;",
-        "for (let j = 0; j < B.la.length; j++) {",
-        "ctx.strokeText(t, px, py); ctx.fillText(t, px, py);",
+        "const weightOf = n => (!B || kept(n) || hubOf(n) ? 1",
+        "(nodeRadius(n) * cam.s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX)",
+        "Math.max(nodeRadius(n), BODY_HUB_PX / cam.s)",
+        "const haze = bulk.createRadialGradient(x, y, R * 0.2, x, y, R);",
+        "if (oa === 0 || ob === 0) {",
+        "const p = nodes[B.hub[B.la[j]]], q = nodes[B.hub[B.lb[j]]];",
+        "want.push(...hubNames.slice(0, BODY_NAMES));",
         "const whole = fold === 1, few = whole ? unfolded(B, act) : null;",
         "const named = whole ? few :",
     ] {
-        assert!(draw.contains(part), "the far map is not folded as Section 27.8 says: {part}");
+        assert!(draw.contains(part), "the far map does not keep its shape as Section 27.8 says: {part}");
     }
     assert!(
         function("nodeAt").contains(
             "if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameWhole)) continue;"
         ),
-        "a folded member is still under the pointer"
+        "a faded node is still under the pointer"
     );
     assert!(
         SCRIPT
             .contains("if (k >= 0) { fitView(bodyMembers(k)); userMoved = true; requestFrame(); }"),
-        "a body's click does not open it"
+        "a haze's click does not open its group"
     );
 }
 
@@ -629,7 +637,7 @@ fn the_gpu_draws_the_bulk() {
         "drawWsHulls(bulk, hullLabels);",
         "bulk.stroke(l.line);",
         "bulk.fillStyle = SURFACE; bulk.fill(halo);",
-        "bulk.globalAlpha = a; bulk.fillStyle = SURFACE; bulk.fill(halo);",
+        "bulk.globalAlpha = a; bulk.fillStyle = haze;",
     ] {
         assert!(draw.contains(part), "the bulk is drawn on the 2D canvas alone: {part}");
     }

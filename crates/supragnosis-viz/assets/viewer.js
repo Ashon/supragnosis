@@ -3768,39 +3768,44 @@ function relationsIn(x0, y0, x1, y1) {
   return out;
 }
 // --- Semantic zoom (design-system.md Section 27.8, U38) -------------------------------------------
-// Zoomed out until a node with no relation is under BODY_FOLD_PX in radius, the map is drawn as
-// bodies; from BODY_OPEN_PX it is drawn as nodes, and between the two the nodes fade in as the bodies
-// fade out. A body is the best-connected node not yet taken and every node not yet taken within
-// BODY_REACH_PX of it on the screen, at the zoom's nearest power of two, so a pan or a small zoom keeps
-// the bodies. They are gathered again when that power, the graph or the type filter changes, when the
-// layout rests, and while it moves at most every BODY_REGATHER_MS; where each stands follows its
-// members (positionsGen).
+// Zoomed out, the map keeps its shape. A node fades as its own radius on the screen falls from
+// BODY_OPEN_PX to BODY_FOLD_PX, so the least-connected fade first; the map is gathered around hubs -
+// the best-connected node not yet taken and every node not yet taken within BODY_REACH_PX of it on the
+// screen, at the zoom's nearest power of two, so a pan or a small zoom keeps the groups - and a hub
+// stays, at least BODY_HUB_PX in radius while its group is folded, its faded members a soft haze in the
+// color most of them share. The groups are gathered again when that power, the graph or the type
+// filter changes, when the layout rests, and while it moves at most every BODY_REGATHER_MS; their haze
+// follows their members (positionsGen).
 const BODY_FOLD_PX = 0.8, BODY_OPEN_PX = 1.6, BODY_REACH_PX = 32, BODY_REGATHER_MS = 500;
-const BODY_R_PX = 4, BODY_R_GROW = 1.5, BODY_R_MAX = 19, BODY_COUNT_PX = 8, BODY_LINE_MAX = 6;
+const BODY_HUB_PX = 3, BODY_HAZE_ALPHA = 0.4, BODY_HAZE_REACH = 0.75, BODY_NAMES = 16, BODY_LINE_MAX = 6;
 const bodies = { nodes: null, edges: null, filt: null, level: NaN, posGen: -1, at: 0, gen: -1, linkKey: null,
   order: NONE, orderNodes: null, count: 0, of: NONE, size: NONE, start: NONE, mem: NONE, hub: NONE, type: [], alone: NONE, contested: NONE,
-  cx: new Float64Array(0), cy: new Float64Array(0), la: NONE, lb: NONE, lw: NONE };
-// How open the map is at a zoom: 0 drawn as bodies, 1 as nodes.
+  cx: new Float64Array(0), cy: new Float64Array(0), R: new Float64Array(0), la: NONE, lb: NONE, lw: NONE };
+// How open the map is at a zoom - how far a node with no relation has faded: 0 folded whole, 1 open.
 function bodiesOpenAt(s) { return Math.min(1, Math.max(0, (NODE_R_BASE * s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX))); }
-// The bodies at this zoom, or null where the map is drawn as nodes.
+// The groups at this zoom, or null where the map is open.
 function bodiesOf() {
   if (bodiesOpenAt(cam.s) >= 1 || !nodes.length) return null;
   const b = bodies, filt = [...typeOff].join(","), level = Math.round(Math.log2(cam.s)), now = performance.now();
   const moved = b.posGen !== positionsGen && (!simWarm() || now - b.at >= BODY_REGATHER_MS);
   if (b.nodes !== nodes || b.edges !== edges || b.filt !== filt || b.level !== level || moved) gatherBodies(b, filt, level, now);
   if (b.gen !== positionsGen) {
-    // Each body where its members are.
+    // Each group's haze where its members are: at their mean, with the radius of a disc they would
+    // fill evenly - the square root of twice their mean squared distance from it - and a node's more.
     b.gen = positionsGen;
     for (let k = 0; k < b.count; k++) {
-      let sx = 0, sy = 0;
-      for (let j = b.start[k]; j < b.start[k + 1]; j++) { const v = nodes[b.mem[j]]; sx += v.x; sy += v.y; }
-      const m = b.start[k + 1] - b.start[k];
-      b.cx[k] = sx / m; b.cy[k] = sy / m;
+      let sx = 0, sy = 0, sq = 0;
+      const m0 = b.start[k], m1 = b.start[k + 1], m = m1 - m0;
+      for (let j = m0; j < m1; j++) { const v = nodes[b.mem[j]]; sx += v.x; sy += v.y; }
+      sx /= m; sy /= m;
+      for (let j = m0; j < m1; j++) { const v = nodes[b.mem[j]]; sq += (v.x - sx) ** 2 + (v.y - sy) ** 2; }
+      b.cx[k] = sx; b.cy[k] = sy; b.R[k] = Math.sqrt(2 * sq / m) + NODE_R_MAX;
     }
   }
   const linkKey = [...edgeTypeOff].join(",") + "|" + showSuperseded + "|" + b.at;
   if (b.linkKey !== linkKey) {
-    // The relations between two bodies: one line for each pair, with their number.
+    // The relations between the faded members of two groups: one line for each pair, with their number.
+    // A relation with a hub at either end is drawn as itself, or from the other end's hub.
     b.linkKey = linkKey;
     const K = b.count, pairs = new Map();
     for (const e of edges) {
@@ -3808,6 +3813,7 @@ function bodiesOf() {
       if (e.valid_to && !showSuperseded) continue;
       const p = b.of[e.a._k], q = b.of[e.b._k];
       if (p === q || p < 0 || q < 0 || b.size[p] < 2 || b.size[q] < 2) continue;
+      if (b.hub[p] === e.a._k || b.hub[q] === e.b._k) continue;
       const key = p < q ? p * K + q : q * K + p;
       pairs.set(key, (pairs.get(key) || 0) + 1);
     }
@@ -3818,8 +3824,8 @@ function bodiesOf() {
   }
   return b;
 }
-// The nodes taken best-connected first; each one not yet taken starts a body that takes every node not
-// yet taken within the reach. With each body, its members and the type most of them share.
+// The nodes taken best-connected first; each one not yet taken starts a group that takes every node not
+// yet taken within the reach. With each group, its members and the type most of them share.
 function gatherBodies(b, filt, level, now) {
   Object.assign(b, { nodes, edges, filt, level, posGen: positionsGen, at: now, gen: -1 });
   const N = nodes.length;
@@ -3827,7 +3833,7 @@ function gatherBodies(b, filt, level, now) {
     b.orderNodes = nodes;
     b.order = Int32Array.from({ length: N }, (_, i) => i).sort((p, q) => (nodes[q].degree || 0) - (nodes[p].degree || 0) || p - q);
   }
-  // The scene grid's cells are walked as they are: a body takes nodes in any order, so its query
+  // The scene grid's cells are walked as they are: a group takes nodes in any order, so its query
   // needs neither the answer nodesIn builds nor its sort.
   const reach = BODY_REACH_PX / 2 ** level, r2 = reach * reach, of = new Int32Array(N).fill(-1), hub = [], g = sceneOf();
   for (const i of b.order) {
@@ -3865,15 +3871,13 @@ function gatherBodies(b, filt, level, now) {
     if (of[i] >= 0 && size[of[i]] === 1) alone.push(i);
     if (nodes[i].contested) contested.push(i);
   }
-  Object.assign(b, { count: K, of, size, start, mem, hub: Int32Array.from(hub), cx: new Float64Array(K), cy: new Float64Array(K),
+  Object.assign(b, { count: K, of, size, start, mem, hub: Int32Array.from(hub), cx: new Float64Array(K), cy: new Float64Array(K), R: new Float64Array(K),
     alone: Int32Array.from(alone), contested: Int32Array.from(contested) });
 }
-// A body's radius in world units: BODY_R_PX on the screen and BODY_R_GROW more for every square root
-// of its number, at most BODY_R_MAX.
-function bodyRadius(b, k) { return Math.min(BODY_R_MAX, BODY_R_PX + BODY_R_GROW * Math.sqrt(b.size[k])) / cam.s; }
 // A weight in eighths, so a crossfade draws in at most eight looks.
 function eighths(v) { return Math.ceil(v * 8) / 8; }
-// The body under a point on the screen, or -1: while the map is at least half folded, nearest first.
+// The group whose haze is under a point on the screen, or -1: while the map is at least half folded,
+// within the inner part of a haze, the nearest centre first.
 function bodyAt(sx, sy) {
   const b = bodies;
   if (bodiesOpenAt(cam.s) > 0.5 || b.nodes !== nodes || b.gen < 0) return -1;
@@ -3882,13 +3886,14 @@ function bodyAt(sx, sy) {
   for (let k = 0; k < b.count; k++) {
     if (b.size[k] < 2) continue;
     const d = Math.hypot(b.cx[k] - wx, b.cy[k] - wy);
-    if (d <= bodyRadius(b, k) + 4 / cam.s && d < bd) { bd = d; best = k; }
+    if (d <= b.R[k] * 0.6 && d < bd) { bd = d; best = k; }
   }
   return best;
 }
-// The nodes a map folded whole still draws - those alone in their body and those never folded - by
-// index, in drawing order; and the relations they hold, each once (Section 27.8). A frame of a folded
-// map passes over these, not over every node and relation.
+// The nodes a map folded whole still draws - its hubs, the nodes never folded and those still large
+// enough on the screen, best-connected first down the degree order until one is too small - by index,
+// in drawing order; and the relations they hold, each once (Section 27.8). A frame of a folded map
+// passes over these, not over every node and relation.
 const incidence = { edges: null, start: NONE, list: NONE, seen: NONE, stamp: 0 };
 function incidenceOf() {
   const g = incidence;
@@ -3902,7 +3907,8 @@ function incidenceOf() {
   return g;
 }
 function unfolded(b, act) {
-  const at = new Set(b.alone);
+  const at = new Set(b.hub);
+  for (const i of b.order) { if (nodeRadius(nodes[i]) * cam.s <= BODY_FOLD_PX) break; at.add(i); }
   for (const n of [hover, focus]) if (n && n._k !== undefined) at.add(n._k);
   if (act) for (const id of act.ns) { const n = nodeById(id); if (n) at.add(n._k); }
   for (const id of pulses.keys()) { const n = nodeById(id); if (n) at.add(n._k); }
@@ -4281,13 +4287,15 @@ function draw() {
   const reachOut = NODE_R_MAX + 16 + 9 / cam.s;
   const vx0 = (insetL() - cam.x) / cam.s - reachOut, vx1 = (innerWidth - insetR() - cam.x) / cam.s + reachOut;
   const vy0 = -cam.y / cam.s - reachOut, vy1 = (innerHeight - insetB() - cam.y) / cam.s + reachOut;
-  // Semantic zoom (Section 27.8, U38): how open the map is at this zoom, and its bodies where it folds.
-  // A hovered, selected, active, pulsing or contested node is drawn as a node whatever the zoom.
+  // Semantic zoom (Section 27.8, U38): how far the map is folded at this zoom, and its groups. A node
+  // fades by its own size on the screen; a hub stays, and so does a hovered, selected, active, pulsing
+  // or contested node.
   const open = bodiesOpenAt(cam.s), B = bodiesOf(), fold = B ? eighths(1 - open) : 0;
   const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);
-  const foldable = n => B !== null && B.of[n._k] >= 0 && B.size[B.of[n._k]] > 1 && !kept(n);
-  // A node's weight: 1 drawn whole, 0 folded into its body, between in the crossfade.
-  const weightOf = n => (foldable(n) ? eighths(open) : 1);
+  const hubOf = n => B !== null && B.of[n._k] >= 0 && B.hub[B.of[n._k]] === n._k;
+  // A node's weight: 1 drawn whole, 0 faded out, between as it fades.
+  const weightOf = n => (!B || kept(n) || hubOf(n) ? 1
+    : eighths(Math.min(1, Math.max(0, (nodeRadius(n) * cam.s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX)))));
   // The nodes the window holds, from the scene grid (Section 27.7, U37), stamped for this frame with
   // their weight; a node folded into its body is not drawn. A map folded whole draws only the nodes
   // it does not fold, so a frame takes those and their relations rather than the window's all.
@@ -4299,12 +4307,33 @@ function draw() {
     if (typeOff.has(n.type) || (whole && (n.x < vx0 || n.x > vx1 || n.y < vy0 || n.y > vy1))) continue;
     n._vf = drawFrame; n._o = weightOf(n);
     if (n._o === 0) continue;
-    n._lod = lodOf(n, act);
+    // A hub whose group is folded is drawn at least BODY_HUB_PX in radius, in full.
+    n._hr = fold > 0 && hubOf(n) && B.size[B.of[n._k]] > 1 ? Math.max(nodeRadius(n), BODY_HUB_PX / cam.s) : 0;
+    n._lod = n._hr ? LOD_FULL_TIER : lodOf(n, act);
     vis.push(n);
   }
+  // A node's radius as drawn this frame.
+  const rOf = n => (onScreen(n) && n._hr) || nodeRadius(n);
   // A relation's end outside the window is still sized by its radius on the screen, and weighed.
   const lodNow = n => (onScreen(n) && n._o > 0 ? n._lod : lodOf(n, act));
   const weightNow = n => (onScreen(n) ? n._o : weightOf(n));
+  // The haze (Section 27.8, U38): where a group's members fade, a soft haze in the color most of them
+  // share, under the relations and the nodes - whole near its members' mean, clear by the radius they
+  // would fill evenly, as strong as the map is folded. Hazes that meet blend.
+  if (fold > 0) {
+    const a = BODY_HAZE_ALPHA * fold * (act || typeHl || edgeTypeHl ? 0.4 : 1);
+    for (let k = 0; k < B.count; k++) {
+      if (B.size[k] < 2) continue;
+      const x = B.cx[k], y = B.cy[k], R = B.R[k] * BODY_HAZE_REACH;
+      if (x + R < vx0 || x - R > vx1 || y + R < vy0 || y - R > vy1) continue;
+      const c = cssRgb(typeColor[B.type[k]] || OTHER), rgb = c[0] + "," + c[1] + "," + c[2];
+      const haze = bulk.createRadialGradient(x, y, R * 0.2, x, y, R);
+      haze.addColorStop(0, "rgba(" + rgb + ",1)"); haze.addColorStop(1, "rgba(" + rgb + ",0)");
+      bulk.globalAlpha = a; bulk.fillStyle = haze;
+      bulk.beginPath(); bulk.arc(x, y, R, 0, 7); bulk.fill();
+    }
+    bulk.globalAlpha = 1;
+  }
   if (showEdges) {
     // Parallel-edge lanes: relations between the same two nodes - a reciprocal pair (a<->b) or several
     // verbs in one direction (a->b) - fan out into distinct arcs instead of stacking on one line. A
@@ -4334,21 +4363,22 @@ function draw() {
       if (!l) { l = { alpha, color, width, line: bulkPath(), heads: null }; looks.set(key, l); }
       return l;
     };
-    // A relation with one folded end goes to that end's body as well (Section 27.8): one line for each
-    // body and node, with their number, as the bodies show.
+    // A relation from a faded node to one still drawn goes from the faded one's hub (Section 27.8): one
+    // line for each hub and node, with their number.
     const toBody = new Map();
     for (const i of drawn) {
     const e = edges[i];
-    if (fold > 0) {
-      const fa = foldable(e.a), fb = foldable(e.b);
-      if (fa !== fb) {
-        const [far, near] = fa ? [e.a, e.b] : [e.b, e.a], k = B.of[far._k], key = k * pairKey + near._k;
-        const t = toBody.get(key);
-        if (t) t.w++; else toBody.set(key, { k, n: near, w: 1 });
-      }
-    }
     const oa = weightNow(e.a), ob = weightNow(e.b);
-    if (oa === 0 || ob === 0) continue;   // folded: its body's lines stand for it
+    if (oa === 0 || ob === 0) {
+      if (fold > 0 && (oa === 0) !== (ob === 0)) {
+        const [far, near] = oa === 0 ? [e.a, e.b] : [e.b, e.a], k = B.of[far._k];
+        if (k >= 0 && k !== B.of[near._k] && B.hub[k] !== near._k) {
+          const key = k * pairKey + near._k, t = toBody.get(key);
+          if (t) t.w++; else toBody.set(key, { k, n: near, w: 1 });
+        }
+      }
+      continue;   // faded: its hub's lines stand for it
+    }
     const dx = e.b.x-e.a.x, dy = e.b.y-e.a.y, d = Math.hypot(dx,dy) || 1, ux = dx/d, uy = dy/d;
     // Hovering an edge-kind chip treats its edges as hot (weight + arrowhead) - same language as
     // node hover, so "what does this relation connect" reads instantly.
@@ -4358,7 +4388,7 @@ function draw() {
     // Grow each radius by half of that node's stroke so the edge meets outside the node stroke (the
     // stroke is radius-proportional, so it differs per endpoint) - the arrowhead tip touches the outer
     // stroke boundary, connecting with no gap/penetration, and it holds on zoom.
-    const ar = nodeRadius(e.a) + nodeStrokeW(e.a)/2, br = nodeRadius(e.b) + nodeStrokeW(e.b)/2, room = d - ar - br;
+    const ar = rOf(e.a) + nodeStrokeW(e.a)/2, br = rOf(e.b) + nodeStrokeW(e.b)/2, room = d - ar - br;
     if (room <= 0.5) continue;   // (temporary) overlap - skip this frame's edge
     // A relation into a node drawn full keeps its lane and its arrowhead; into a smaller one it is a
     // straight line (Section 26.5), since a lane's bend and a head shorter than a pixel read as noise.
@@ -4423,8 +4453,8 @@ function draw() {
     }
     }
     if (fold > 0) {
-      // The bodies' lines: between two bodies, as wide as the relations they stand for; and from a body
-      // to each node drawn that its members reach.
+      // The groups' lines: between two hubs, as wide as the relations of their faded members; and from a
+      // hub to each node drawn that its faded members reach.
       const quiet = (act || typeHl || edgeTypeHl ? 0.06 : EDGE_ALPHA) * fold;
       const widthOf = w => Math.min(BODY_LINE_MAX, 1.1 + Math.log2(w)) / cam.s;
       const line = (x0, y0, r0, x1, y1, r1, w) => {
@@ -4434,13 +4464,14 @@ function draw() {
         const l = lookOf(quiet, EDGE_NEUTRAL, widthOf(w)).line;
         l.moveTo(x0 + dx / d * r0, y0 + dy / d * r0); l.lineTo(x1 - dx / d * r1, y1 - dy / d * r1);
       };
+      const hubR = h => rOf(h) + nodeStrokeW(h) / 2;
       for (let j = 0; j < B.la.length; j++) {
-        const p = B.la[j], q = B.lb[j];
-        line(B.cx[p], B.cy[p], bodyRadius(B, p), B.cx[q], B.cy[q], bodyRadius(B, q), B.lw[j]);
+        const p = nodes[B.hub[B.la[j]]], q = nodes[B.hub[B.lb[j]]];
+        line(p.x, p.y, hubR(p), q.x, q.y, hubR(q), B.lw[j]);
       }
       for (const t of toBody.values()) {
-        const k = t.k, n = t.n;
-        line(B.cx[k], B.cy[k], bodyRadius(B, k), n.x, n.y, nodeRadius(n) + nodeStrokeW(n) / 2, t.w);
+        const h = nodes[B.hub[t.k]], n = t.n;
+        line(h.x, h.y, hubR(h), n.x, n.y, hubR(n), t.w);
       }
     }
     for (const l of [...looks.values()].sort((p, q) => p.alpha - q.alpha)) {
@@ -4454,49 +4485,13 @@ function draw() {
   // then, for each opacity, every halo as a disc of the surface's color and every fill of one type's
   // color as one path, then the rings and the group mode's bridge marks over them. A node's halo was
   // a stroke of its own; a disc under a smaller fill draws the same ring, and draws it in one fill.
-  // The bodies first (Section 27.8, U38): a disc of the color most members share in a halo of the
-  // surface's, as a node is drawn, with its count inside where it fits.
-  if (fold > 0) {
-    const halo = bulkPath(), fills = new Map(), counts = [];
-    for (let k = 0; k < B.count; k++) {
-      if (B.size[k] < 2) continue;
-      const r = bodyRadius(B, k), x = B.cx[k], y = B.cy[k];
-      if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
-      const h = r + NODE_STROKE_MIN / cam.s, color = typeColor[B.type[k]] || OTHER;
-      halo.moveTo(x + h, y); halo.arc(x, y, h, 0, 7);
-      let f = fills.get(color);
-      if (!f) { f = bulkPath(); fills.set(color, f); }
-      f.moveTo(x + r, y); f.arc(x, y, r, 0, 7);
-      if (r * cam.s >= BODY_COUNT_PX && fold >= 0.5) counts.push(k);
-    }
-    const a = fold * (act || typeHl || edgeTypeHl ? 0.12 : 1);
-    bulk.globalAlpha = a; bulk.fillStyle = SURFACE; bulk.fill(halo);
-    for (const [color, f] of fills) { bulk.fillStyle = color; bulk.fill(f); }
-    if (counts.length) {
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      // A count is text over a halo stroked under it, not a kept sprite: a far map can hold hundreds of
-      // bodies, more counts than the sprites' cache keeps, and each frame then drew every one again.
-      // It holds its place among the names, so a name placed later does not cover it.
-      ctx.font = "600 " + 10 * TEXT_SCALE + "px " + NAME_FAMILY;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
-      ctx.lineWidth = 3; ctx.strokeStyle = SURFACE; ctx.fillStyle = INK;
-      for (const k of counts) {
-        const t = String(B.size[k]), px = B.cx[k] * cam.s + cam.x, py = B.cy[k] * cam.s + cam.y, w = t.length * 6.5 * TEXT_SCALE + 4;
-        ctx.strokeText(t, px, py); ctx.fillText(t, px, py);
-        labelBoxes.add(px - w / 2, py - 8, w, 16);
-      }
-      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.setTransform(cam.s*DPR, 0, 0, cam.s*DPR, cam.x*DPR, cam.y*DPR);
-    }
-    ctx.globalAlpha = 1; bulk.globalAlpha = 1;
-  }
   // Each node in the layer of its opacity: lit or dimmed, by its weight in a crossfade.
   const layersOf = new Map();
   for (const n of vis) {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : true;
-    const base = (on ? 1 : 0.12) * n._o, r = nodeRadius(n);
+    const base = (on ? 1 : 0.12) * n._o, r = rOf(n);
     const layer = layersOf.get(base);
     if (layer) layer.push(n); else layersOf.set(base, [n]);
     if (n === anchor) {
@@ -4517,11 +4512,12 @@ function draw() {
   }
   for (const [base, group] of [...layersOf].sort((p, q) => p[0] - q[0])) {
     bulk.globalAlpha = base;
-    // Halos: the surface's color, one fill. A square node has none.
+    // Halos: the surface's color, one fill. A square node has none, nor does a node fading out (Section
+    // 27.8): at that size the halo is most of the node, and a fading map turned to dark specks.
     const halo = bulkPath();
     for (const n of group) {
-      if (n._lod === LOD_DOT_TIER) continue;
-      const r = nodeRadius(n) + nodeStrokeW(n) / 2;
+      if (n._lod === LOD_DOT_TIER || n._o < 1) continue;
+      const r = rOf(n) + nodeStrokeW(n) / 2;
       halo.moveTo(n.x + r, n.y); halo.arc(n.x, n.y, r, 0, 7);
     }
     bulk.fillStyle = SURFACE; bulk.fill(halo);
@@ -4531,19 +4527,19 @@ function draw() {
       const color = typeColor[n.type] || OTHER;
       let f = fills.get(color);
       if (!f) { f = bulkPath(); fills.set(color, f); }
-      const r = nodeRadius(n);
+      const r = rOf(n);
       if (n._lod === LOD_DOT_TIER) { f.rect(n.x - r, n.y - r, 2 * r, 2 * r); continue; }
-      const inner = Math.max(0.5, r - nodeStrokeW(n) / 2);
+      const inner = n._o < 1 ? r : Math.max(0.5, r - nodeStrokeW(n) / 2);
       f.moveTo(n.x + inner, n.y); f.arc(n.x, n.y, inner, 0, 7);
     }
     for (const [color, f] of fills) { bulk.fillStyle = color; bulk.fill(f); }
     for (const n of group) {
       if (n._lod !== LOD_FULL_TIER) continue;
-      trustRing(n, nodeRadius(n));
+      trustRing(n, rOf(n));
       // Group mode: a bridge node (linked to another group) carries a small square at its upper left -
       // a cross-group transit point, marked without a ring.
       if (clusterMode && bridgeSet.has(n.id)) {
-        const r = nodeRadius(n), q = 5 / cam.s;
+        const r = rOf(n), q = 5 / cam.s;
         bulk.fillStyle = INK; bulk.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
       }
     }
@@ -4554,7 +4550,7 @@ function draw() {
   ctx.globalAlpha = 1; bulk.globalAlpha = 1;
   for (const n of vis) {
     if (!n.contested) continue;
-    const r = nodeRadius(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
+    const r = rOf(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
     ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
     ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
     ctx.fillStyle = SURFACE; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -4638,7 +4634,7 @@ function draw() {
     const wl = insetL(), wr = innerWidth - insetR(), wb = innerHeight - insetB();
     const inView = nodesIn((wl - cam.x) / cam.s, -cam.y / cam.s, (wr - cam.x) / cam.s, (wb - cam.y) / cam.s).length;
     const cut = inView <= 40 ? 0 : Math.max(4, Math.round(inView / 25));
-    const want = [];
+    const want = [], hubNames = [];
     // A name reaches up to 600 pixels right of its node, so the box it is looked for in reaches as far left.
     const named = whole ? few : nodesIn((-605 - cam.x) / cam.s - NODE_R_MAX, (-20 - cam.y) / cam.s, (innerWidth - cam.x) / cam.s, (innerHeight + 20 - cam.y) / cam.s);
     for (const k of named) {
@@ -4649,20 +4645,20 @@ function draw() {
       if (lg === false) continue;
       const on = lg === true ? true : (act ? act.ns.has(n.id) : true);
       const show = on && (lg === true || n === hover || n === focus || (act && act.ns.has(n.id)) || (n.degree || 0) >= cut);
-      if (!show) continue;
+      if (!show && !(on && fold >= 0.5 && hubOf(n))) continue;
       const o = weightNow(n);
-      if (o === 0) continue;   // folded into its body
-      const px = n.x*cam.s + cam.x, py = n.y*cam.s + cam.y, r = nodeRadius(n)*cam.s;
+      if (o === 0) continue;   // faded out
+      const px = n.x*cam.s + cam.x, py = n.y*cam.s + cam.y, r = rOf(n)*cam.s;
       if (px + r + 5 > innerWidth || px + r + 5 + 600 < 0 || py < -20 || py > innerHeight + 20) continue;   // off screen
-      want.push({ n, text: n.name, on, o, deg: n.degree || 0, px: px + r + 5, py });
+      // A hub whose group is folded is named with its count, before the other names (below).
+      const g = fold >= 0.5 && hubOf(n) ? B.size[B.of[n._k]] : 0;
+      const named1 = { n, text: g > 1 ? n.name + " (" + g + ")" : n.name, on, o, deg: g > 1 ? Infinity : n.degree || 0, size: g, px: px + r + 5, py };
+      if (g > 1 && !(n === hover || n === focus || (act && act.ns.has(n.id)))) hubNames.push(named1);
+      else if (show || g > 1) want.push(named1);
     }
-    // A body is named by its hub, before the nodes and the largest first (Section 27.8).
-    if (fold >= 0.5) for (let k = 0; k < B.count; k++) {
-      if (B.size[k] < 2) continue;
-      const r = bodyRadius(B, k) * cam.s, px = B.cx[k] * cam.s + cam.x + r + 5, py = B.cy[k] * cam.s + cam.y;
-      if (px > innerWidth || px + 600 < 0 || py < -20 || py > innerHeight + 20) continue;
-      want.push({ n: null, text: nodes[B.hub[k]].name, on: !(act || typeHl || edgeTypeHl), o: fold, deg: Infinity, size: B.size[k], px, py });
-    }
+    // Only the BODY_NAMES largest groups in view are named, so a folded map reads by its main hubs.
+    hubNames.sort((p, q) => q.size - p.size);
+    want.push(...hubNames.slice(0, BODY_NAMES));
     // Labels avoid each other and the region names (design-system.md Section 5): the focused and
     // hovered node first, then by degree, and a label that would overlap one already placed is left
     // out - its node is still there, and hovering it names it.
