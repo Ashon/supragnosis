@@ -1392,7 +1392,7 @@ social image.
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U28** | Drawing never moves the layout: a pan, a zoom, a hover, a highlight or a selection redraws the map without a simulation step, and a layout that has come to rest visits no pair of nodes until something warms it. |
 | **U29** | The layout's forces come from grids, never from every pair: collision, crowding and repulsion pair by pair within a node's own and the adjacent cells, the repulsion of the cells beyond, out to its range, from each cell as one body, and the push between regions only between regions in reach of each other; so a step costs in proportion to the nodes, the cells around them and the regions near each other. |
-| **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node under 3 pixels of radius on screen is drawn without its ring and the relations into it straight and without arrowheads, and one under 1.2 pixels as a square, unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
+| **U30** | What the map draws follows what is on the screen: a node or relation outside the window is not drawn; a node's detail follows its radius on the screen continuously - its halo growing in from 1.2 pixels to 3, its trust ring, the arrowheads into it and the bend of its lanes from 2 to 4, a relation by its length from 1 to 3, every fade eased in 32 steps - unless it is hovered, selected or active; relations and nodes of one look are drawn as one path; and names are placed by a per-cell budget. |
 | **U31** | At 10,000 entities and 15,000 relations the map pans and zooms within a 16.7 ms frame at the 95th percentile, and shows its first picture within 10 seconds, on the reference Mac in Chrome and in WebKit, as the scale bench measures it. |
 | **U32** | Layers that do not change when only the camera moves are not worked out again for it: the region field is kept with the camera it was worked out for and drawn moved and scaled by the camera's change, and worked out again once the camera rests, when the moved field would leave the window uncovered or be scaled past half or double, and when a region, its strength or the appearance changes; the minimap's miniature is a bitmap of its own, painted when the nodes, their positions, the filters or the look change, under the window's frame drawn each frame; and the regions' members and hulls are kept while the nodes stand still. |
 | **U33** | A poll that finds nothing new costs the page nothing: the graph, the hypergraph and the Log's observations answer with an ETag of their body, the viewer asks with it, an unchanged one answers 304 with no body, and the viewer keeps what it has without parsing or applying anything. |
@@ -2349,15 +2349,21 @@ Guarded by `near_forces_come_from_a_grid`.
   stroke for each node. An arrowhead is a triangle left open, since the fill closes it: closed one by
   one in a path of thousands, the heads took Chrome 80 ms a frame at a reading zoom on 10,000
   entities.
-- **Three sizes of a node** (U30), by its radius on the screen:
-  - from 3 pixels, as now: halo, fill, trust ring, and the relations into it in their lanes with
-    arrowheads when they are on;
-  - from 1.2 pixels: halo and fill, with the relations into it straight and without arrowheads;
-  - under 1.2 pixels: a square of its type's color, without a halo.
+- **A node's detail follows its size, without a step** (U30). By its radius on the screen:
+  - its halo grows from nothing at 1.2 pixels to its full width at 3, and under it the fill takes the
+    node's whole disc, so a small node is its color - a halo at full width on a node of 2 pixels was
+    most of it, and a map zoomed out read as dark specks;
+  - its trust ring fades in from 2 pixels to 4, and over the same sizes the arrowheads into it grow to
+    their length and the lanes of parallel relations into it bend open from straight;
+  - on the 2D canvas, under 1 pixel, it is a square of its type's color, which is cheaper to fill; the
+    GPU draws it as a disc at any size.
 
-  A hovered, selected or active node and its relations are drawn at the first size whatever their
-  size, so a highlight reads; a relation shorter than 2 pixels on the screen is not drawn. A visible
-  contested node keeps its badge at any size, in its own pass (U3).
+  A relation fades in by its length on the screen, from 1 pixel to 3. Every fade is eased and taken
+  in 32 steps, so a zoom shows detail arrive and leave continuously while a frame still draws at most
+  32 opacities of a look. A hovered, selected or active node and its relations are drawn in full
+  whatever their size, so a highlight reads. A visible contested node keeps its badge at any size, in
+  its own pass (U3). Drawn in three sizes, a zoom had shown each switch: halos appearing at once,
+  rings and arrowheads popping in, lanes snapping from straight to bent.
 - **Names by a budget.** The hubs among the nodes in view are named, as now, the cut set by how many
   are in view. A name is checked against the names in the 100-pixel cells it covers only, and each
   cell anchors two names at most; the hovered and selected nodes are always named.
@@ -2712,11 +2718,11 @@ The map now keeps its shape as it folds. Every node stays where the layout put i
 to read fade out, the best-connected last; and what has faded shows as a soft haze around the hub that
 gathered it (U38).
 
-- **Fading by size.** A node fades as its own radius on the screen falls from 1.6 to 0.8 pixels, and
-  a node's radius grows with its relations, so as the map zooms out the nodes with fewest relations
-  fade first and the best-connected stay longest. A map small enough to fit at a reading zoom never
-  fades. The map folds when a node with no relation is under 1.6 pixels, and is folded whole under
-  0.8.
+- **Fading by size.** A node fades as its own radius on the screen falls from 1.6 to 0.8 pixels,
+  eased and in 32 steps as every fade of the map is (Section 26.5), and a node's radius grows with its
+  relations, so as the map zooms out the nodes with fewest relations fade first and the best-connected
+  stay longest. A map small enough to fit at a reading zoom never fades. The map folds when a node
+  with no relation is under 1.6 pixels, and is folded whole under 0.8.
 - **Around hubs.** The nodes are taken best-connected first; each one not yet taken starts a group and
   takes every node not yet taken within 32 pixels of it on the screen, measured at the zoom's nearest
   power of two, so a pan or a small zoom keeps the groups. They are gathered again when that power,

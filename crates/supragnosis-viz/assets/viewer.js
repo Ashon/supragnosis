@@ -254,19 +254,19 @@ let refitOnReveal = false;   // re-frame the graph after a sync-driven re-layout
 // taken at the reveal would leave it small in the window.
 let refitAtRest = false;
 function nodeRadius(n) { return radiusOfDegree(n.degree); }
-// Level of detail (design-system.md Section 26.5, U30): the radius on the screen, in pixels, from which
-// a node is drawn full - halo, fill, trust ring, lanes and arrowheads into it - and below which it is
-// a square of its color. At the sizes a map is read at nothing changes; a map zoomed out far enough
-// to hold thousands of nodes stops drawing what no one could see.
-const LOD_FULL = 3, LOD_DOT = 1.2;
-const LOD_FULL_TIER = 2, LOD_SMALL_TIER = 1, LOD_DOT_TIER = 0;
+// Level of detail (design-system.md Section 26.5, U30), without a step. By a node's radius on the
+// screen, in pixels: its halo grows in from HALO_FROM to HALO_TO, under it the fill taking the whole
+// disc; its trust ring, the arrowheads into it and the bend of its lanes from FULL_FROM to FULL_TO; and
+// on the 2D canvas, under SQUARE_PX, it is a square of its color. A relation fades in by its length on
+// the screen from EDGE_FROM to EDGE_TO. Every fade is eased and taken in FADE_STEPS steps, so a zoom
+// shows detail arrive continuously while a look draws in at most that many opacities.
+const HALO_FROM = 1.2, HALO_TO = 3, FULL_FROM = 2, FULL_TO = 4, SQUARE_PX = 1, EDGE_FROM = 1, EDGE_TO = 3;
+const FADE_STEPS = 32;
 const LANE_MAX = 46;      // the furthest a lane of parallel relations bends, in world units
-const EDGE_MIN_PX = 2;    // a relation shorter than this on the screen is not drawn
-function lodOf(n, act) {
-  if (n === hover || n === focus || (act && act.ns.has(n.id))) return LOD_FULL_TIER;
-  const rs = nodeRadius(n) * cam.s;
-  return rs >= LOD_FULL ? LOD_FULL_TIER : rs >= LOD_DOT ? LOD_SMALL_TIER : LOD_DOT_TIER;
-}
+// An eased fade: 0 at a, 1 at b, smooth at both ends.
+function ease(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+// A fade in FADE_STEPS steps, never 0 while it is under way.
+function stepped(v) { return Math.ceil(v * FADE_STEPS) / FADE_STEPS; }
 // Placed names on a grid of LABEL_CELL-pixel cells (Section 26.5): a name is checked only against
 // the names in the cells it covers, and a cell is the anchor of at most LABEL_PER_CELL of the names
 // the budget places. It replaces a list every name was checked against, which grew with the square
@@ -3782,7 +3782,7 @@ const bodies = { nodes: null, edges: null, filt: null, level: NaN, posGen: -1, a
   order: NONE, orderNodes: null, count: 0, of: NONE, size: NONE, start: NONE, mem: NONE, hub: NONE, type: [], alone: NONE, contested: NONE,
   cx: new Float64Array(0), cy: new Float64Array(0), R: new Float64Array(0), la: NONE, lb: NONE, lw: NONE };
 // How open the map is at a zoom - how far a node with no relation has faded: 0 folded whole, 1 open.
-function bodiesOpenAt(s) { return Math.min(1, Math.max(0, (NODE_R_BASE * s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX))); }
+function bodiesOpenAt(s) { return ease(BODY_FOLD_PX, BODY_OPEN_PX, NODE_R_BASE * s); }
 // The groups at this zoom, or null where the map is open.
 function bodiesOf() {
   if (bodiesOpenAt(cam.s) >= 1 || !nodes.length) return null;
@@ -3874,8 +3874,6 @@ function gatherBodies(b, filt, level, now) {
   Object.assign(b, { count: K, of, size, start, mem, hub: Int32Array.from(hub), cx: new Float64Array(K), cy: new Float64Array(K), R: new Float64Array(K),
     alone: Int32Array.from(alone), contested: Int32Array.from(contested) });
 }
-// A weight in eighths, so a crossfade draws in at most eight looks.
-function eighths(v) { return Math.ceil(v * 8) / 8; }
 // The group whose haze is under a point on the screen, or -1: while the map is at least half folded,
 // within the inner part of a haze, the nearest centre first.
 function bodyAt(sx, sy) {
@@ -4279,8 +4277,8 @@ function draw() {
   const edgeLabels = (act && showLabels) ? [] : null;
   // What the frame draws (design-system.md Section 26.5, U30). The map's window in world units, grown
   // by the most a node's decoration reaches past its disc, so nothing that could touch the window is
-  // left out; and each node's size on the screen, which decides how much of it is drawn: full from
-  // LOD_FULL pixels of radius, its halo and fill from LOD_DOT, and a square of its color below that.
+  // left out; and each node's size on the screen, which decides how much of it is drawn, continuously
+  // (HALO_FROM to HALO_TO for its halo, FULL_FROM to FULL_TO for its ring, arrowheads and lanes).
   // A hovered, selected or active node is drawn full whatever its size, so a highlight reads. The
   // window is grown by the largest node and its glow, and by the contested badge, which keeps its
   // size on the screen whatever the zoom.
@@ -4290,12 +4288,14 @@ function draw() {
   // Semantic zoom (Section 27.8, U38): how far the map is folded at this zoom, and its groups. A node
   // fades by its own size on the screen; a hub stays, and so does a hovered, selected, active, pulsing
   // or contested node.
-  const open = bodiesOpenAt(cam.s), B = bodiesOf(), fold = B ? eighths(1 - open) : 0;
+  const open = bodiesOpenAt(cam.s), B = bodiesOf(), fold = B ? stepped(1 - open) : 0;
   const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);
   const hubOf = n => B !== null && B.of[n._k] >= 0 && B.hub[B.of[n._k]] === n._k;
   // A node's weight: 1 drawn whole, 0 faded out, between as it fades.
   const weightOf = n => (!B || kept(n) || hubOf(n) ? 1
-    : eighths(Math.min(1, Math.max(0, (nodeRadius(n) * cam.s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX)))));
+    : stepped(ease(BODY_FOLD_PX, BODY_OPEN_PX, nodeRadius(n) * cam.s)));
+  // A hovered, selected or active node is drawn in full whatever its size (Section 26.5).
+  const lit1 = n => n === hover || n === focus || (act !== null && act.ns.has(n.id));
   // The nodes the window holds, from the scene grid (Section 27.7, U37), stamped for this frame with
   // their weight; a node folded into its body is not drawn. A map folded whole draws only the nodes
   // it does not fold, so a frame takes those and their relations rather than the window's all.
@@ -4309,13 +4309,21 @@ function draw() {
     if (n._o === 0) continue;
     // A hub whose group is folded is drawn at least BODY_HUB_PX in radius, in full.
     n._hr = fold > 0 && hubOf(n) && B.size[B.of[n._k]] > 1 ? Math.max(nodeRadius(n), BODY_HUB_PX / cam.s) : 0;
-    n._lod = n._hr ? LOD_FULL_TIER : lodOf(n, act);
+    // Its detail (Section 26.5): how much of its halo and of its ring, arrowheads and lanes is drawn.
+    const rs = (n._hr || nodeRadius(n)) * cam.s, whole1 = lit1(n);
+    n._d = whole1 ? 1 : stepped(ease(HALO_FROM, HALO_TO, rs));
+    n._f = whole1 ? 1 : stepped(ease(FULL_FROM, FULL_TO, rs));
+    n._sq = !whole1 && bulk === ctx && rs < SQUARE_PX;
     vis.push(n);
   }
   // A node's radius as drawn this frame.
   const rOf = n => (onScreen(n) && n._hr) || nodeRadius(n);
+  // Where a relation meets a node: outside its halo, as wide as it is drawn.
+  const edgeR = n => rOf(n) + nodeStrokeW(n) * haloNow(n) / 2;
   // A relation's end outside the window is still sized by its radius on the screen, and weighed.
-  const lodNow = n => (onScreen(n) && n._o > 0 ? n._lod : lodOf(n, act));
+  const drawn1 = n => onScreen(n) && n._o > 0;
+  const haloNow = n => (drawn1(n) ? n._d : lit1(n) ? 1 : stepped(ease(HALO_FROM, HALO_TO, nodeRadius(n) * cam.s)));
+  const fullNow = n => (drawn1(n) ? n._f : lit1(n) ? 1 : stepped(ease(FULL_FROM, FULL_TO, nodeRadius(n) * cam.s)));
   const weightNow = n => (onScreen(n) ? n._o : weightOf(n));
   // The haze (Section 27.8, U38): where a group's members fade, a soft haze in the color most of them
   // share, under the relations and the nodes - whole near its members' mean, clear by the radius they
@@ -4383,21 +4391,22 @@ function draw() {
     // Hovering an edge-kind chip treats its edges as hot (weight + arrowhead) - same language as
     // node hover, so "what does this relation connect" reads instantly.
     const hot = act ? act.es.has(i) : (edgeTypeHl ? e.type === edgeTypeHl : false);
-    // A relation under 2 pixels on the screen is not drawn; nor is one whose ends overlap.
-    if (!hot && d * cam.s < EDGE_MIN_PX) continue;
+    // A relation fades in by its length on the screen (Section 26.5); one whose ends overlap is not drawn.
+    const lengthA = hot ? 1 : stepped(ease(EDGE_FROM, EDGE_TO, d * cam.s));
+    if (lengthA === 0) continue;
     // Grow each radius by half of that node's stroke so the edge meets outside the node stroke (the
     // stroke is radius-proportional, so it differs per endpoint) - the arrowhead tip touches the outer
     // stroke boundary, connecting with no gap/penetration, and it holds on zoom.
-    const ar = rOf(e.a) + nodeStrokeW(e.a)/2, br = rOf(e.b) + nodeStrokeW(e.b)/2, room = d - ar - br;
+    const ar = edgeR(e.a), br = edgeR(e.b), room = d - ar - br;
     if (room <= 0.5) continue;   // (temporary) overlap - skip this frame's edge
     // A relation into a node drawn full keeps its lane and its arrowhead; into a smaller one it is a
     // straight line (Section 26.5), since a lane's bend and a head shorter than a pixel read as noise.
-    const full = hot || lodNow(e.b) === LOD_FULL_TIER;
+    const full = hot ? 1 : fullNow(e.b);
     // The line starts at the source node's edge and ends at the arrowhead base (or the tip if arrows are off).
     // Arrowhead length in WORLD units (proportional to the target node, bounded 7..16) so it scales
     // with zoom like the node markers. A fixed screen size looked tiny on large/zoomed-in nodes and
     // clunky when zoomed out. Still clamped to half the free gap so short edges never overrun it.
-    const alen = Math.min(Math.max(7, Math.min(16, nodeRadius(e.b) * 0.7)), room * 0.5);
+    const alen = full * Math.min(Math.max(7, Math.min(16, nodeRadius(e.b) * 0.7)), room * 0.5);
     const sx0 = e.a.x + ux*ar, sy0 = e.a.y + uy*ar;
     const tipx = e.b.x - ux*br, tipy = e.b.y - uy*br;
     // Fan this edge onto its lane within the pair: lane index centered on 0, so a lone edge -> 0 ->
@@ -4406,7 +4415,7 @@ function draw() {
     // direction - a reciprocal pair opens into a lens, several one-way verbs into a fan.
     const ia = e.a._k, ib = e.b._k;
     const lst = lanes.get(ia < ib ? ia * pairKey + ib : ib * pairKey + ia) || [i];
-    const lane = full ? lst.indexOf(i) - (lst.length - 1) / 2 : 0;
+    const lane = full > 0 ? (lst.indexOf(i) - (lst.length - 1) / 2) * full : 0;
     const off = lane * Math.min(d * 0.30, LANE_MAX) * (e.a.id < e.b.id ? 1 : -1);
     const cpx = (sx0 + tipx)/2 + (-uy)*off, cpy = (sy0 + tipy)/2 + ux*off;   // quadratic control point
     // Tip tangent = control -> tip; the line end and arrowhead align to it (reduces to ux,uy when straight).
@@ -4434,10 +4443,10 @@ function draw() {
     const color = e.valid_to ? EDGE_OLD
       : (hot || edgeTypeHl === e.type) ? EDGE_ACTIVE : EDGE_NEUTRAL;
     // Constant thickness on screen; a past relation is the thinnest line.
-    const look = lookOf(alpha, color, (e.valid_to ? 0.8 : hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s);
+    const look = lookOf(stepped(alpha * lengthA), color, (e.valid_to ? 0.8 : hot ? 2 : (cross ? 1.7 : 1.1)) / cam.s);
     // An active edge says its direction with an arrowhead even when the view's arrows are off: lines
     // are solid (Section 4), so nothing marches along it.
-    const arrow = full && (showArrows || hot);
+    const arrow = full > 0 && (showArrows || hot);
     // Without an arrowhead, draw the curve to the node edge (tip); with one, to the arrowhead base.
     const endx = arrow ? basex : tipx, endy = arrow ? basey : tipy;
     look.line.moveTo(sx0, sy0);
@@ -4459,12 +4468,13 @@ function draw() {
       const widthOf = w => Math.min(BODY_LINE_MAX, 1.1 + Math.log2(w)) / cam.s;
       const line = (x0, y0, r0, x1, y1, r1, w) => {
         const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy);
-        if (d - r0 - r1 < EDGE_MIN_PX / cam.s) return;
+        const lengthA = stepped(ease(EDGE_FROM, EDGE_TO, (d - r0 - r1) * cam.s));
+        if (lengthA === 0) return;
         if (Math.max(x0, x1) < vx0 || Math.min(x0, x1) > vx1 || Math.max(y0, y1) < vy0 || Math.min(y0, y1) > vy1) return;
-        const l = lookOf(quiet, EDGE_NEUTRAL, widthOf(w)).line;
+        const l = lookOf(stepped(quiet * lengthA), EDGE_NEUTRAL, widthOf(w)).line;
         l.moveTo(x0 + dx / d * r0, y0 + dy / d * r0); l.lineTo(x1 - dx / d * r1, y1 - dy / d * r1);
       };
-      const hubR = h => rOf(h) + nodeStrokeW(h) / 2;
+      const hubR = edgeR;
       for (let j = 0; j < B.la.length; j++) {
         const p = nodes[B.hub[B.la[j]]], q = nodes[B.hub[B.lb[j]]];
         line(p.x, p.y, hubR(p), q.x, q.y, hubR(q), B.lw[j]);
@@ -4491,7 +4501,7 @@ function draw() {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : true;
-    const base = (on ? 1 : 0.12) * n._o, r = rOf(n);
+    const base = stepped((on ? 1 : 0.12) * n._o), r = rOf(n);
     const layer = layersOf.get(base);
     if (layer) layer.push(n); else layersOf.set(base, [n]);
     if (n === anchor) {
@@ -4501,7 +4511,7 @@ function draw() {
     // The footprint is a light centred on the node that fades out. It was a disc dropped below the
     // node, which read as a circle out of place; a crisp disc on the centre would read as a ring, and
     // rings belong to trust.
-    if (showFootprint && footprint.has(n.id) && n._lod !== LOD_DOT_TIER) {
+    if (showFootprint && footprint.has(n.id) && !n._sq) {
       const glow = bulk.createRadialGradient(n.x, n.y, r * 0.8, n.x, n.y, r + 13);
       const teal = LIGHT.matches ? "29,122,106" : "86,179,162";   // --ok in each appearance
       glow.addColorStop(0, "rgba(" + teal + "," + (LIGHT.matches ? 0.35 : 0.55) + ")");
@@ -4512,12 +4522,12 @@ function draw() {
   }
   for (const [base, group] of [...layersOf].sort((p, q) => p[0] - q[0])) {
     bulk.globalAlpha = base;
-    // Halos: the surface's color, one fill. A square node has none, nor does a node fading out (Section
-    // 27.8): at that size the halo is most of the node, and a fading map turned to dark specks.
+    // Halos: the surface's color, one fill, as wide as the node's size allows (Section 26.5): from none
+    // on a small node, which is its color, to its full width. A square node has none.
     const halo = bulkPath();
     for (const n of group) {
-      if (n._lod === LOD_DOT_TIER || n._o < 1) continue;
-      const r = rOf(n) + nodeStrokeW(n) / 2;
+      if (n._sq || n._d === 0) continue;
+      const r = rOf(n) + nodeStrokeW(n) * n._d / 2;
       halo.moveTo(n.x + r, n.y); halo.arc(n.x, n.y, r, 0, 7);
     }
     bulk.fillStyle = SURFACE; bulk.fill(halo);
@@ -4528,13 +4538,15 @@ function draw() {
       let f = fills.get(color);
       if (!f) { f = bulkPath(); fills.set(color, f); }
       const r = rOf(n);
-      if (n._lod === LOD_DOT_TIER) { f.rect(n.x - r, n.y - r, 2 * r, 2 * r); continue; }
-      const inner = n._o < 1 ? r : Math.max(0.5, r - nodeStrokeW(n) / 2);
+      if (n._sq) { f.rect(n.x - r, n.y - r, 2 * r, 2 * r); continue; }
+      const inner = Math.max(0.5, r - nodeStrokeW(n) * n._d / 2);
       f.moveTo(n.x + inner, n.y); f.arc(n.x, n.y, inner, 0, 7);
     }
     for (const [color, f] of fills) { bulk.fillStyle = color; bulk.fill(f); }
+    // A trust ring and a bridge mark fade in with the node's size.
     for (const n of group) {
-      if (n._lod !== LOD_FULL_TIER) continue;
+      if (n._f === 0) continue;
+      bulk.globalAlpha = stepped(base * n._f);
       trustRing(n, rOf(n));
       // Group mode: a bridge node (linked to another group) carries a small square at its upper left -
       // a cross-group transit point, marked without a ring.
@@ -4543,6 +4555,7 @@ function draw() {
         bulk.fillStyle = INK; bulk.fillRect(n.x - r * 0.8 - q, n.y - r * 0.8 - q, q, q);
       }
     }
+    bulk.globalAlpha = base;
   }
   // Contested beliefs (resolution.md R6): a badge at the node's upper right, drawn in its own pass at
   // full strength, so neither focus dimming nor label thinning can mute it (U3). The inspector shows

@@ -809,8 +809,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["near_forces_come_from_a_grid"]),
     )]),
     (30, &[c(
-        "what the map draws follows the screen: culled outside the window, three sizes of a node by its radius on screen, one path per look, and names by a per-cell budget",
-        // scale.rs reads draw, lodOf, labelGrid and zoomAt.
+        "what the map draws follows the screen: culled outside the window, a node's detail following its radius on screen continuously, eased in 32 steps, one path per look, and names by a per-cell budget",
+        // scale.rs reads draw, ease, stepped, labelGrid and zoomAt.
         Evidence::Scenario(&["what_the_map_draws_follows_the_screen"]),
     )]),
     (31, &[c(

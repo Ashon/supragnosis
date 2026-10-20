@@ -121,11 +121,12 @@ fn near_forces_come_from_a_grid() {
 }
 
 /// U30: what the map draws follows the screen. A node or relation that cannot reach the window is not
-/// drawn; a node's size on the screen decides its detail - full from 3 pixels of radius, halo and fill
-/// from 1.2, a square below - unless it is hovered, selected or active; a relation into a node smaller
-/// than full is straight and headless; relations, arrowheads, halos and fills of one look are one path
-/// each; names are placed on a grid of cells with a budget per cell; and zooming out stops where the
-/// whole map fits, however large.
+/// drawn; a node's size on the screen decides its detail continuously - its halo growing in from 1.2
+/// pixels of radius to 3, its ring, the arrowheads into it and the bend of its lanes from 2 to 4, a
+/// square under 1 pixel on the 2D canvas - unless it is hovered, selected or active; a relation fades
+/// in by its length; every fade is eased in 32 steps; relations, arrowheads, halos and fills of one
+/// look are one path each; names are placed on a grid of cells with a budget per cell; and zooming
+/// out stops where the whole map fits, however large.
 #[test]
 fn what_the_map_draws_follows_the_screen() {
     let draw = function("draw");
@@ -135,31 +136,36 @@ fn what_the_map_draws_follows_the_screen() {
     for part in [
         "for (const k of whole ? few : nodesIn(vx0, vy0, vx1, vy1)) {",
         "n.y > vy1))) continue;\n    n._vf = drawFrame; n._o = weightOf(n);\n    if (n._o === 0) continue;",
-        "n._lod = n._hr ? LOD_FULL_TIER : lodOf(n, act);",
+        "n._d = whole1 ? 1 : stepped(ease(HALO_FROM, HALO_TO, rs));",
         "for (const i of whole ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {",
         "Math.max(e.a.x, e.b.x) + LANE_MAX < vx0",
-        "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
     ] {
         assert!(draw.contains(part), "the frame draws what is off the screen: {part}");
     }
     assert!(
-        SCRIPT.contains("const LOD_FULL = 3, LOD_DOT = 1.2;"),
-        "the sizes of a node moved"
+        SCRIPT.contains("const HALO_FROM = 1.2, HALO_TO = 3, FULL_FROM = 2, FULL_TO = 4, SQUARE_PX = 1, EDGE_FROM = 1, EDGE_TO = 3;")
+            && SCRIPT.contains("const FADE_STEPS = 32;"),
+        "the sizes of a node's detail moved"
     );
-    let lod = function("lodOf");
+    assert!(
+        function("ease").contains("return t * t * (3 - 2 * t);")
+            && function("stepped").contains("Math.ceil(v * FADE_STEPS) / FADE_STEPS"),
+        "a fade is not eased in steps"
+    );
     for part in [
-        "n === hover || n === focus || (act && act.ns.has(n.id))",
-        "rs >= LOD_FULL ? LOD_FULL_TIER : rs >= LOD_DOT ? LOD_SMALL_TIER : LOD_DOT_TIER",
+        "const lit1 = n => n === hover || n === focus || (act !== null && act.ns.has(n.id));",
+        "n._f = whole1 ? 1 : stepped(ease(FULL_FROM, FULL_TO, rs));",
+        "n._sq = !whole1 && bulk === ctx && rs < SQUARE_PX;",
+        "const lengthA = hot ? 1 : stepped(ease(EDGE_FROM, EDGE_TO, d * cam.s));",
+        "const full = hot ? 1 : fullNow(e.b);",
+        "const lane = full > 0 ? (lst.indexOf(i) - (lst.length - 1) / 2) * full : 0;",
+        "const alen = full * Math.min(",
+        "const r = rOf(n) + nodeStrokeW(n) * n._d / 2;",
+        "const inner = Math.max(0.5, r - nodeStrokeW(n) * n._d / 2);",
+        "bulk.globalAlpha = stepped(base * n._f);",
+        "if (n._sq) { f.rect(",
     ] {
-        assert!(lod.contains(part), "the level of detail is not the screen's: {part}");
-    }
-    for part in [
-        "const full = hot || lodNow(e.b) === LOD_FULL_TIER;",
-        "const arrow = full && (showArrows || hot);",
-        "if (n._lod !== LOD_FULL_TIER) continue;",
-        "if (n._lod === LOD_DOT_TIER) { f.rect(",
-    ] {
-        assert!(draw.contains(part), "a small node is drawn in full: {part}");
+        assert!(draw.contains(part), "a node's detail steps with its size: {part}");
     }
     for part in [
         "bulk.stroke(l.line);",
@@ -584,7 +590,7 @@ fn a_far_map_keeps_its_shape() {
     for part in [
         "const kept = n => n === hover || n === focus || (act !== null && act.ns.has(n.id)) || n.contested || pulses.has(n.id);",
         "const weightOf = n => (!B || kept(n) || hubOf(n) ? 1",
-        "(nodeRadius(n) * cam.s - BODY_FOLD_PX) / (BODY_OPEN_PX - BODY_FOLD_PX)",
+        ": stepped(ease(BODY_FOLD_PX, BODY_OPEN_PX, nodeRadius(n) * cam.s)));",
         "Math.max(nodeRadius(n), BODY_HUB_PX / cam.s)",
         "const haze = bulk.createRadialGradient(x, y, R * 0.2, x, y, R);",
         "if (oa === 0 || ob === 0) {",
