@@ -115,8 +115,10 @@ what it only reports (O8):
 - **Taken over:** a daemon the app spawned (the app stops it first, Section 3), a pidfile daemon from
   `supragnosis start`, and a retired label - the cases where nobody chose a manager.
 - **Reported as `attention`:** a Homebrew service that does not answer, a hand-written plist that
-  nothing has loaded or that a take-over would move aside, two managers at once, and anything
-  answering that the lifecycle cannot name. The sentence names the command that would act, most
+  nothing has loaded or that a take-over would move aside, two managers at once, anything
+  answering that the lifecycle cannot name, and a daemon that cannot open its store because the
+  store was indexed by another model - whose sentence names both models, Settings > This Mac >
+  Rebuild index and `supragnosis embed rebuild` (semantic-retrieval.md Section 13). The sentence names the command that would act, most
   often `supragnosis service install --take-over`; in the app the card offers "Take over", and the
   click is the consent the Start at Login switch asks for today (L1, L6). A Homebrew service or a
   hand-written login job that keeps the daemon answering is a manager that outlives the app, so the

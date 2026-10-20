@@ -136,6 +136,16 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
 - **Search by meaning** shows the daemon's own report (semantic-retrieval.md SR3): on, with its
   model, or "Keyword only - the model is not downloaded" with a Download button, which runs setup's
   model step and shows its progress (onboarding.md Section 4.3).
+- **Rebuild index** rebuilds the search index from the log (semantic-retrieval.md Section 13). It
+  stops the daemon - the app's own child by itself, any other through `supragnosis embed rebuild` -
+  removes the index, and starts the daemon again; the Search row then shows the re-embedding,
+  "Indexing - 40 of 120" with a bar, read again every two seconds until it is done. It is on the
+  Search row whenever the daemon runs with a model, for a person who wants the index made again,
+  and the click is the consent: the index is derived from the log, and nothing else changes.
+- **A store the daemon cannot open.** When `status --json` reports `embedder_conflict` - the store
+  was indexed by another model, so the daemon cannot start (semantic-retrieval.md SR8) - the
+  section's top card says so with both models and holds Rebuild index as its one action. Restart,
+  which would fail the same way, is not offered while it shows.
 - **While a remote profile is active** these controls are disabled, with the reason: this Mac's
   daemon is not what the AI apps use (remote-server.md Section 5).
 
@@ -232,6 +242,7 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 | **S4** | Every setting the tray offered is on the page. Moving it lost nothing. |
 | **S5** | The page renders the text it is given as text, never as markup. |
 | **S6** | While a remote profile is active, the daemon controls are disabled with the reason, as the tray's were. |
+| **S7** | A daemon that cannot start because its store was indexed by another model is shown with that reason and one click that rebuilds the index, never only as not running; and the index can be rebuilt from the page whenever the daemon runs with a model. |
 
 ## 8. What this revises
 

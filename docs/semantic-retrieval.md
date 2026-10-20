@@ -168,8 +168,9 @@ first fetch is 224 MB, and the daemon holds up to about 1 GB once the model is l
 | **SR5** | The release binary links no library the operating system does not ship: no OpenSSL, no ONNX Runtime shared object. |
 | **SR6** | A serving process that has the model embeds what was written without one, once: every observation and entity that carries no vector gets one, and nothing else is written - no log row, no attestation, no ledger entry. |
 | **SR7** | The backfill never replaces a stored vector, never stores one for text that changed while it was embedding, and never holds the write guard while it embeds. |
-| **SR8** | A store refused for the model it is opened with says how to go on: the refusal names the model that wrote it and the one that opened it, `supragnosis embed reset` and `SUPRAGNOSIS_EMBED=none`; and `status` says the same while the daemon cannot start for it. |
+| **SR8** | A store refused for the model it is opened with says how to go on: the refusal names the model that wrote it and the one that opened it, `supragnosis embed rebuild` and `SUPRAGNOSIS_EMBED=none`; and `status` says the same while the daemon cannot start for it. |
 | **SR9** | `supragnosis embed reset` runs only on a store no process holds. It removes every stored vector and the model the store recorded, in one transaction, and writes nothing else; the next serving start records its own model and its backfill embeds every row (SR6), so a store never holds vectors from two models (SR4). |
+| **SR10** | `supragnosis embed rebuild` stops the daemon this CLI manages, resets the store (SR9) and starts the daemon again, whose backfill embeds every row; with no daemon running it resets the store and starts the login job when one is installed; a store held by a process it does not manage is refused with nothing changed. |
 
 ## 9. Ordering
 
@@ -378,11 +379,22 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
   that environment runs no model - `SUPRAGNOSIS_EMBED=none`, the way around the refusal below - the
   command says so and names `supragnosis service install --env SUPRAGNOSIS_EMBED=fastembed`, since
   the store would otherwise stay without vectors.
+- **`supragnosis embed rebuild`, the one command.** It is what a person means by rebuilding the
+  search index, to move to another model or on purpose: it stops the daemon this CLI manages - a
+  login job, a user unit, a `supragnosis start` daemon - runs the reset, and starts the daemon
+  again, and that start's backfill embeds every row with the model the daemon runs; `status`
+  shows the progress. With no daemon running it resets the store and starts the login job, when
+  one is installed. A store held by a process this CLI does not manage - an AI app's stdio server,
+  a `supragnosis serve` in a terminal - is refused with nothing changed, and the refusal names
+  `supragnosis embed reset` for after that process stops (SR10).
+- **In the app.** Settings > This Mac offers the rebuild as Rebuild index, and says there why a
+  daemon cannot open its store (settings-page.md Section 3.3); Setup's server step says the same
+  (onboarding.md Section 4.1).
 - **The refusal says how to go on.** Opening a store under another model is still refused (SR4).
   The refusal names the model that wrote the store and the one that opened it, and both ways on:
-  `supragnosis embed reset` with the daemon stopped, which has the store embedded again by the
-  model that opened it, or `SUPRAGNOSIS_EMBED=none`, which runs without semantic search and leaves
-  the store as it is (SR8).
+  `supragnosis embed rebuild` - in the app, Settings > This Mac > Rebuild index - which has the
+  store embedded again by the model that opened it, or `SUPRAGNOSIS_EMBED=none`, which runs
+  without semantic search and leaves the store as it is (SR8).
 - **`status` says it.** When the daemon does not answer and nothing holds the store, `status`
   reads the model the store recorded, without writing, and compares it with the model the
   daemon's environment names. When they differ it prints `store   the daemon cannot open it: ...`
@@ -394,6 +406,9 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
 - **Not automatic.** A store opened under another model is still refused; nothing re-embeds a
   store unasked. A re-embed loads the model and embeds every row, and which model a store should
   have is the person's to say.
+- **Not on a schedule.** Rebuilt with the model it was built with, an index comes out as it was, so
+  a rebuild is for a change of model or a person's doubt, at their click, and not for a timer that
+  would load the model and spend the battery to make the same index again.
 - **Not lossy.** A vector is derived from the log and is node-local (Section 12.4); removing them
   loses nothing the next start does not make again, and nothing on the wire changes.
 - **Not a fix for the cause.** Where `SUPRAGNOSIS_EMBED=hashing` came from - a shell profile, a
@@ -411,3 +426,7 @@ The refusal asked for a re-embed that no command did: Section 12.4 said so. Chan
 - `a_refused_store_names_both_ways_on` - the refusal's text, `status`'s line and
   `embedder_conflict`, for a store whose model differs from the daemon's, read without being held
   or written (SR8).
+
+The rebuild's guards are named with its implementation. They are to show that it refuses a store
+a process it does not manage holds, changing nothing, and that with no daemon running it resets
+the store, which the next start embeds again (SR10).

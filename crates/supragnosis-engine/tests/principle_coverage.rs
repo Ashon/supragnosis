@@ -1111,7 +1111,7 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (8, &[c(
         "a store refused for the model it is opened with says how to go on: the refusal names both models, \
-         supragnosis embed reset and SUPRAGNOSIS_EMBED=none, and status says the same while the daemon cannot start for it",
+         supragnosis embed rebuild and SUPRAGNOSIS_EMBED=none, and status says the same while the daemon cannot start for it",
         // main.rs's test reads the refusal, status's line and its JSON field over a store embedded by
         // another model; the scenario reads the command's own words.
         Evidence::Scenario(&[
@@ -1126,6 +1126,13 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
             "a_reset_removes_every_vector_and_the_model_and_nothing_else",
             "embed_reset_refuses_a_held_store_and_reembeds_on_the_next_start",
         ]),
+    )]),
+    (10, &[c(
+        "supragnosis embed rebuild stops the daemon this CLI manages, resets the store and starts it again; with no daemon running it \
+         resets the store and starts the login job when one is installed; a store a process it does not manage holds is refused",
+        Evidence::Deferred(
+            "Section 13 specifies the rebuild for v0.8.1: only embed reset exists, which needs the daemon stopped first. Revisit when the rebuild lands",
+        ),
     )]),
 ];
 
@@ -1482,6 +1489,14 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
             "login_set, daemon_restart and peer_narrow refuse with the reason when active_remote is set and \
              settings.js disables the switch and hides Restart on d.remote; neither half is under test. Revisit when \
              active_remote is injectable and the three refusals are asserted",
+        ),
+    )]),
+    (7, &[c(
+        "a daemon that cannot start because its store was indexed by another model is shown with that reason and one click that \
+         rebuilds the index, and the index can be rebuilt from the page whenever the daemon runs with a model",
+        Evidence::Deferred(
+            "Section 3.3 specifies Rebuild index for v0.8.1: the page shows such a daemon only as not running, with a Restart that fails \
+             the same way. Revisit when the page and its command land",
         ),
     )]),
 ];
