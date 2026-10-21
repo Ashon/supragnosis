@@ -199,7 +199,7 @@ ${daemon_hint}
 
   2) Connect an AI app (it talks to the daemon; no token to copy)
        "${BIN_DIR}/supragnosis" connect claude-code
-       # or claude-desktop, cursor, vscode, codex, gemini - \`supragnosis connect\` lists them
+       # or claude-desktop, cursor, vscode, codex, gemini, opencode - \`supragnosis connect\` lists them
 
   - Search: semantic search needs the local model (224 MB), fetched once by \`supragnosis embed fetch\`
     (service install does it too); until then search is keyword only, and \`supragnosis status\` says so.
