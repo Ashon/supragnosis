@@ -10,6 +10,6 @@
 {"step":"app","id":"cursor","state":"attention","say":"Cursor already has an entry setup did not write (http). Setup leaves it: `supragnosis connect cursor --replace` switches it to the bridge."}
 {"step":"model","state":"working","say":"40 of 224 MB. Search matches words until it is here."}
 {"step":"model","state":"failed","say":"`supragnosis embed fetch --events` failed: the download failed (connection reset). Search matches words until the model is here; run setup again when online."}
-{"step":"first","state":"working","say":"Ask a connected app: \"Remember one decision we made in this project today, and why.\""}
-{"step":"first","id":"billing","state":"done","say":"The store holds an entry: workspace \"billing\", just now."}
+{"step":"first","state":"working","say":"Claude Code has reached the server. Ask it, in the project you are working on: \"Remember one decision we made in this project today, and why.\"","checks":["Does the app list supragnosis's tools? Its tools or MCP list shows them.","Some agents answer without recording. Ask it to use supragnosis to remember the decision."]}
+{"step":"first","id":"billing","state":"done","say":"An entry is in \"billing\", from Claude Code, just now.","quote":"The ledger is a Postgres table, not a schema, because invoices need row locks.","app":"Claude Code","entity":"5f1c0a9e2b7d4c38"}
 {"step":"summary","state":"failed","say":"Set up. Still going: Search by meaning, Try it."}

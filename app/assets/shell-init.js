@@ -16,6 +16,8 @@
 //    shell's starting splash); the shell's only observable for "the proxy + webview path works".
 // 5. The machine's name (docs/design-system.md Section 9, D2) - the viewer calls the machine it runs
 //    on "this machine"; in the app on a Mac the shell says "this Mac", the word the app's pages use.
+//    Beside it, Setup's address (Section 29.10), which the viewer offers on an empty store; a viewer
+//    without it shows no button.
 //
 // Everything is built with DOM calls - no markup strings - like the settings page (S5).
 (function () {
@@ -28,6 +30,7 @@
   var SETTINGS = custom ? "tauri://localhost/settings.html" : "http://tauri.localhost/settings.html";
   var onSettings = /settings\.html$/.test(location.pathname) &&
     (location.protocol === "tauri:" || location.hostname === "tauri.localhost");
+  window.supragnosisSetup = custom ? "tauri://localhost/welcome.html" : "http://tauri.localhost/welcome.html";
 
   // The graph's gear - the viewer's settings button, in its status bar - is where settings have
   // always been opened. In the app it opens the app's Settings page, which holds what the viewer's

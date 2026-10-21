@@ -55,6 +55,9 @@ body { background: var(--panel); }
 /* What to ask a connected app. */
 .ask { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 10px 10px 14px; border-radius: var(--r-surface); background: var(--panel-2); }
 .ask q { flex: 1; color: var(--ink); font: var(--text-body)/1.5 var(--mono); quotes: none; }
+/* The first entry is the person's prose, quoted in the question's block (design-system.md Section 29.10). */
+.ask.entry q { font-family: var(--sans); }
+.checks { margin: 10px 0 0; padding-left: 18px; color: var(--ink2); font: var(--text-small)/1.5 var(--sans); }
 
 /* A step's log drawer (D8): the commands it ran, their output, the files they changed, and how
    each run ended - text a person can select and copy. */

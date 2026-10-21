@@ -55,7 +55,7 @@
           <button type="button" role="tab" id="hero-tab-script" aria-controls="hero-pane-script" aria-selected="false" tabindex="-1">Script</button>
         </div>
         <div class="cmd" id="hero-pane-app" role="tabpanel" aria-labelledby="hero-tab-app">
-          <code id="cmd-app">brew install --cask ashon/tap/supragnosis</code>
+          <code id="cmd-app">brew install --cask ashon/tap/supragnosis &amp;&amp; open -a Supragnosis</code>
           <button type="button" class="copy" data-copy="#cmd-app">Copy</button>
         </div>
         <div class="cmd" id="hero-pane-script" role="tabpanel" aria-labelledby="hero-tab-script" hidden>
@@ -63,7 +63,7 @@
           <button type="button" class="copy" data-copy="#cmd-script">Copy</button>
         </div>
       </div>
-      <p class="next">Then connect an agent: <code>supragnosis connect claude-code</code>, or Connect in the app. <a href="#get-started">All steps -&gt;</a></p>
+      <p class="next">The app's Setup opens: it keeps supragnosis running, offers to connect each AI app it finds and downloads the search model. With the script, run <code>supragnosis setup</code>. <a href="#get-started">All steps -&gt;</a></p>
       <p class="links">
         <a href="https://github.com/Ashon/supragnosis/blob/main/scripts/install.sh">View the install script</a>
         <a href="https://github.com/Ashon/supragnosis">GitHub</a>
@@ -290,7 +290,7 @@
     </section>
 
     <section class="section wrap" id="get-started" aria-labelledby="start-title">
-      <h2 id="start-title">Up and running in a minute.</h2>
+      <h2 id="start-title">Up and running in a few minutes.</h2>
       <ol class="start">
         <li>
           <h3>Install</h3>
@@ -301,7 +301,7 @@
               <button type="button" role="tab" id="tab-source" aria-controls="pane-source" aria-selected="false" tabindex="-1">From source</button>
             </div>
             <pre class="code" tabindex="0" id="pane-macos" role="tabpanel" aria-labelledby="tab-macos"><code><span class="c"># the desktop app, signed and notarized, with the server</span>
-brew install --cask ashon/tap/supragnosis
+brew install --cask ashon/tap/supragnosis &amp;&amp; open -a Supragnosis
 
 <span class="c"># or the server alone, running at every login</span>
 brew install ashon/tap/supragnosis-server
@@ -309,8 +309,8 @@ supragnosis service install</code></pre>
             <pre class="code" tabindex="0" id="pane-linux" role="tabpanel" aria-labelledby="tab-linux" hidden><code><span class="c"># x86_64 or arm64, glibc 2.39+, checksum-verified</span>
 curl -fsSL https://supragnosis.dev/install.sh | sh
 
-<span class="c"># keep it running: the systemd user unit</span>
-<span class="c"># in deploy/systemd of the repository</span></code></pre>
+<span class="c"># keep it running, connect your AI apps, fetch the model</span>
+supragnosis setup</code></pre>
             <pre class="code" tabindex="0" id="pane-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/Ashon/supragnosis
 cd supragnosis
 <span class="c"># fastembed = the local embedding model, as the release is built</span>
@@ -318,15 +318,15 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
           </div>
         </li>
         <li>
-          <h3>Connect</h3>
-          <p><code>supragnosis connect claude-code</code>, or Connect in the app's Settings.</p>
+          <h3>Set up</h3>
+          <p>The app's Setup keeps the server running at login, offers to connect each AI app it finds and downloads the search model in the background. On Linux or a server, <code>supragnosis setup</code> does the same.</p>
         </li>
         <li>
-          <h3>Keep working</h3>
-          <p>Open the app. The graph fills in as your agents write, and Review lists what waits for you.</p>
+          <h3>Try it</h3>
+          <p>Ask your agent to remember one decision and why. Setup says when it is in, and the Graph shows it.</p>
         </li>
       </ol>
-      <p class="note">The daemon serves MCP on <code>127.0.0.1:7373</code> and the viewer on a unix socket. The embedding model (224 MB) is fetched once by <code>service install</code> or <code>supragnosis embed fetch</code>; until then search is keyword only, and <code>supragnosis status</code> says so.</p>
+      <p class="note">The daemon serves MCP on <code>127.0.0.1:7373</code> and the viewer on a unix socket. The embedding model (224 MB) is fetched once by Setup, <code>service install</code> or <code>supragnosis embed fetch</code>; until then search is keyword only, and <code>supragnosis status</code> says so.</p>
     </section>
 
   </main>

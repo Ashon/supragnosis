@@ -137,7 +137,7 @@ fn search_chooses_nothing_until_the_person_moves() {
         "the chosen name does not replace the query"
     );
     let scope = function("syncSearchScope");
-    for word in ["Search all workspaces", "Search default", "\"Search \" + "] {
+    for word in ["Search all workspaces", "\"Search \" + defaultName()", "\"Search \" + "] {
         assert!(scope.contains(word), "the field does not name its scope: {word}");
     }
     assert!(

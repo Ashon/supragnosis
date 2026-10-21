@@ -129,7 +129,22 @@ function setList(on) {
     if (row) row.focus();
   } else listBtn.focus();
 }
-listBtn.onclick = () => setList(!listOn);
+listBtn.onclick = e => { if (idle(e)) return; setList(!listOn); };
+// With the scope empty, the camera's zoom, Fit and List act on nothing: they stay focusable,
+// aria-disabled and described by the empty map's sentence (design-system.md Section 29.10, Section 4).
+const IDLE_WHEN_EMPTY = ["zin", "zout", "fit", "listBtn"];
+function idle(e) { return e.currentTarget.getAttribute("aria-disabled") === "true"; }
+function idleWhileEmpty() {
+  const empty = !nodes.length;
+  document.body.classList.toggle("scope-empty", empty);
+  for (const id of IDLE_WHEN_EMPTY) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    if (empty) { b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "emptyTitle"); }
+    else { b.removeAttribute("aria-disabled"); b.removeAttribute("aria-describedby"); }
+  }
+  if (empty && listOn) setList(false);
+}
 listWin.addEventListener("keydown", e => {
   if (e.key === "Escape") { e.stopPropagation(); setList(false); }
 });
@@ -211,6 +226,9 @@ let boundaryMode = "workspace";   // "workspace" | "origin" | "off"
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
 let contestedCount = 0;          // contested nodes in the loaded scope, whatever the legend hides (U3)
+// Whether the scope on screen holds entries though it draws no entity, and whether the store holds
+// any entry at all - read with the counts, while the empty map shows (design-system.md Section 29.10).
+let scopeEntries = false, storeEntries = true, entriesOf = null;
 let pulsedAny = false;          // a pulse has been drawn on this page: the key names its ring (Section 29.9)
 // The layout's forces and their constants are viewer-sim.js's (Section 27.5), loaded before this.
 // Hull rendering: a region is a cloud (docs/design-system.md Section 5) - one ellipse fitted to its
@@ -505,6 +523,7 @@ async function loadSurface() {
     const s = await (await fetch("/api/surface", { cache: "no-store" })).json();
     if (s && s.surface) surfaceKind = String(s.surface);
     if (s && s.surface === "local" && s.node) surfaceNode = String(s.node);
+    if (s && s.default_workspace) defaultWs = String(s.default_workspace);
   } catch (_) { /* no surface answer - nothing is remembered */ }
 }
 function loadLayout() {
@@ -526,8 +545,13 @@ addEventListener("pagehide", saveLayout);
 
 // Status bar stats line: one plain sentence, scope first. `regions` is a count or null.
 function statsScope(cur) {
-  return cur === "*" || cur === "all" ? "All workspaces" : cur || "default";
+  return cur === "*" || cur === "all" ? "All workspaces" : cur || defaultName();
 }
+// The scope addressed as "" by its name: the workspace an omitted one resolves to, as /api/surface
+// says (the node's default locally, the first grant on the read tier), and "default" until it has
+// said (design-system.md Section 29.10).
+let defaultWs = null;
+function defaultName() { return defaultWs || "default"; }
 // What the map draws, counted from the filters alone - never from the zoom, the Relations switch or
 // Regions' mode (design-system.md Section 29.9): entities whose type is shown, relations whose ends
 // and type are shown, regions with three or more shown members.
@@ -599,7 +623,9 @@ function showStats(cur) {
   fitStats();
   renderPlace();
   // The canvas says what it draws and where else it is (Section 6, U24).
-  canvas.setAttribute("aria-label", "Map of " + line.slice(scope.length + 3) + ". List shows them as a table.");
+  // With nothing drawn it says the scope holds nothing, and no List (Section 29.10).
+  canvas.setAttribute("aria-label", c.all ? "Map of " + line.slice(scope.length + 3) + ". List shows them as a table."
+    : "Map of " + scope + (scopeEntries ? ": nothing on the map yet; the Log holds its entries." : ": nothing here yet."));
   // While anything is hidden or dimmed the status bar says so and offers Show all, which clears both.
   const all = document.getElementById("showAll");
   if (all) all.hidden = !(c.hiddenTypes || c.hiddenKinds || c.dimmed.length);
@@ -703,6 +729,7 @@ function applyGraph(g) {
   // count does not blink out at every poll.
   showStats(currentWs());
   emptyEl.style.display = nodes.length ? "none" : "flex";
+  idleWhileEmpty();
   if (!nodes.length) refreshEmpty();
 
   // If focused, refresh the detail inspector (reflect connection changes). A focus the graph no longer
@@ -1373,7 +1400,7 @@ function beginWorkspaceTransition() {
 function chipIsCurrent(ws) {
   const cur = currentWs();
   if (ws === cur) return true;
-  return cur === "" && nodes.length > 0 && nodes[0].workspace === ws;
+  return cur === "" && ((!!defaultWs && ws === defaultWs) || (nodes.length > 0 && nodes[0].workspace === ws));
 }
 function renderChipsActive() {
   chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", chipIsCurrent(c.dataset.ws)));
@@ -1385,7 +1412,7 @@ function syncSearchScope() {
   const cur = currentWs();
   let ph;
   if (cur === "*" || cur === "all") ph = "Search all workspaces";
-  else if (cur === "") ph = "Search default";
+  else if (cur === "") ph = "Search " + defaultName();
   else ph = "Search " + cur;
   searchEl.placeholder = ph;
   // The placeholder goes when the person types, so the field's name says the scope too.
@@ -1416,10 +1443,10 @@ async function loadWorkspaces() {
     // A workspace the address names and the list does not still shows its chip, selected and muted
     // (Section 29.9): the page is in that scope, and nothing is filed under it.
     const unlisted = wsUnlisted(cur) ? [mk(cur, cur, "unlisted")] : [];
-    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk("default", "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
+    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk(defaultName(), "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
     const note = [];
     if (openedAll && (cur === "*" || cur === "all")) {
-      const n = document.createElement("div"); n.className = "wsnote"; n.textContent = "Showing all workspaces - default is empty";
+      const n = document.createElement("div"); n.className = "wsnote"; n.textContent = "Showing all workspaces - " + defaultName() + " is empty";
       note.push(n);
     }
     chipBar.replaceChildren(lbl, ...chips, ...note);
@@ -1435,7 +1462,15 @@ let wsListed = null;     // the workspaces the node lists, as /api/workspaces la
 function wsUnlisted(cur) { return !!(wsListed && cur && cur !== "*" && cur !== "all" && !wsListed.includes(cur)); }
 let firstView = new URLSearchParams(location.search).get("workspace") === null;   // the address named no scope
 let openedAll = false;   // the page opened on All because the default was empty - said beside the chips
+async function anyEntry(ws) {
+  const r = await fetch("/api/observations?limit=1" + (ws ? "&workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
+  if (!r.ok) throw new Error("status " + r.status);
+  const l = await r.json();
+  return Array.isArray(l) && l.length > 0;
+}
 async function refreshEmpty() {
+  const scopeNow = currentWs();
+  if (entriesOf !== scopeNow) wsCountsAt = 0;   // a new scope asks again at once
   if (Date.now() - wsCountsAt > 30000) {
     wsCountsAt = Date.now();
     try {
@@ -1446,6 +1481,12 @@ async function refreshEmpty() {
         wsCounts = counts;
       }
     } catch (_) { /* the daemon is not answering - the sentence stands without the list */ }
+    try {
+      entriesOf = scopeNow;
+      scopeEntries = await anyEntry(scopeNow);
+      storeEntries = scopeEntries || await anyEntry("*");
+    } catch (_) { scopeEntries = false; storeEntries = true; }   // unknown is not empty (P5): no Open Setup
+    renderStats();
   }
   const cur = currentWs();
   const others = Object.entries(wsCounts || {}).filter(([w]) => w !== cur).sort((a, b) => b[1] - a[1]);
@@ -1461,9 +1502,14 @@ async function refreshEmpty() {
   // A name the node does not list is said as such on the owner's console (Section 29.9); the read
   // tier refuses an unknown workspace before this shows.
   const unknown = surfaceKind === "local" && wsUnlisted(cur);
-  const kids = [...(unknown ? [line("No workspace is called " + cur + ".", "e-title")] : []),
-    line("Nothing here yet.", unknown ? "e-sub" : "e-title"),
-    line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
+  const kids = scopeEntries
+    // Entries that name no entity are not an empty scope (P5): the Log holds them.
+    ? [line("Nothing on the map yet.", "e-title"), line("The entries here name no entity - the Log holds them.", "e-sub")]
+    : [...(unknown ? [line("No workspace is called " + cur + ".", "e-title")] : []),
+      line("Nothing here yet.", unknown ? "e-sub" : "e-title"),
+      line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
+  // The camera's idle buttons are described by the map's first sentence.
+  kids[0].id = "emptyTitle";
   if (others.length) {
     const row = document.createElement("div");
     row.className = "e-ws";
@@ -1473,6 +1519,15 @@ async function refreshEmpty() {
       b.onclick = () => { wsInput.value = w; beginWorkspaceTransition(); renderChipsActive(); poll(); };
       row.append(b);
     }
+    kids.push(row);
+  }
+  // In the app, on the owner's console, a store with no entry leads back to Setup, which says what
+  // to ask (Section 29.10). The shell gives its address; a browser has none and shows no button.
+  if (window.supragnosisSetup && surfaceKind === "local" && !storeEntries) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = "Open Setup";
+    b.onclick = () => { location.href = window.supragnosisSetup + "?from=" + encodeURIComponent(String(location.href).split("#")[0]); };
+    const row = document.createElement("div"); row.className = "e-ws"; row.append(b);
     kids.push(row);
   }
   emptyEl.replaceChildren(...kids);
@@ -1644,6 +1699,8 @@ function renderGlossary() {
   glossaryBodyEl.innerHTML =
     html`${section("entity types", group("entity"))}${section("relation types", group("relation"))}`;
   glossCtEl.textContent = glossaryTypes.length || "";
+  // An empty scope shows Definitions only while it has one (Section 29.10).
+  document.getElementById("defsBox").classList.toggle("none", !glossaryTypes.length);
   // A contested definition opens the list, so its mediation act is in view (P6); otherwise the list
   // stays as the person left it.
   if (glossaryTypes.some(x => x.contested)) document.getElementById("defsBox").open = true;
@@ -2789,7 +2846,13 @@ function wireObsList(container, list) {
 function renderLog() {
   const more = obsLog.length > logLimit, shown = more ? obsLog.slice(0, logLimit) : obsLog;
   logCtEl.textContent = obsLog.length ? (more ? logLimit + "+" : obsLog.length) : "";
-  if (!obsLog.length) { obsLogSig = ""; logBodyEl.innerHTML = '<div class="empty">no observations in this workspace yet - observe knowledge to see the log</div>'; return; }
+  if (!obsLog.length) {
+    // The canvas's words, and where what an AI app remembers shows (design-system.md Section 29.10).
+    const ws = currentWs(), all = ws === "*" || ws === "all";
+    obsLogSig = "";
+    logBodyEl.innerHTML = html`<div class="empty">${"Nothing here yet. What an AI app remembers" + (all ? "" : " in " + statsScope(ws)) + " shows up here."}</div>`;
+    return;
+  }
   // Re-render only when the observation set actually changed, so a poll refresh does not collapse a
   // row the user expanded (the log is append-mostly; an unchanged set keeps its DOM + open rows).
   const sig = shown.map(o => o.id + ":" + o.effective_tier + ":" + (o.attestations || []).length).join(",") + (more ? "+" : "");
@@ -2857,7 +2920,7 @@ function renderStrip() {
     const first = String(o.content || "").split("\n")[0];
     stripEl.innerHTML = html`${tierDot(o.effective_tier)}<span class="w">${writerFor(a)} ${obsWhen(a.observed_at)}</span><span class="t">${o.proposal ? proposalLine(o.proposal) : first}</span>`;
   } else if (stripState.empty) {
-    stripEl.innerHTML = html`<span class="t">Nothing observed in this scope yet</span>`;
+    stripEl.innerHTML = html`<span class="t">Nothing here yet.</span>`;
   } else {
     stripEl.innerHTML = html`<span class="t bad">The Log is unavailable - the server did not answer</span>`;
   }
@@ -5854,7 +5917,7 @@ function renderSearch() {
   const count = searchAns.hits.length;
   const cur = currentWs();
   const all = cur === "*" || cur === "all";
-  const scope = all ? "any workspace" : cur || "default";
+  const scope = all ? "any workspace" : cur || defaultName();
   // Nothing in the scope contains the words: say so, and offer the wider scope with what it found.
   const widen = !all && searchAns.wider > 0
     ? html`<button type="button" class="sp-row sp-widen" data-widen="1">${"Search all workspaces (" + (searchAns.widerCapped ? "20+" : searchAns.wider) + " found)"}</button>`
@@ -5951,9 +6014,9 @@ searchEl.addEventListener("keydown", ev => {
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
 // The zoom buttons zoom about the map window's centre, which is not the canvas's when a panel is open.
 function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); personMoved(); }
-document.getElementById("zin").onclick = () => zoomWindow(1.2);
-document.getElementById("zout").onclick = () => zoomWindow(1/1.2);
-document.getElementById("fit").onclick = () => { userMoved = true; fitView(); personMoved(); };
+document.getElementById("zin").onclick = e => { if (idle(e)) return; zoomWindow(1.2); };
+document.getElementById("zout").onclick = e => { if (idle(e)) return; zoomWindow(1/1.2); };
+document.getElementById("fit").onclick = e => { if (idle(e)) return; userMoved = true; fitView(); personMoved(); };
 // Follow on the camera toolbar (Section 29.4): a press turns it on or off, waiting or not.
 const followBtn = document.getElementById("followBtn");
 followBtn.onclick = () => { follow = !follow; renderFollow(); };
@@ -6176,4 +6239,4 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
 }
 resize(); syncSearchScope(); loadWorkspaces(); loadSurface().finally(poll); connectEvents(); detectServerMode();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); setInterval(refreshPeerRoster, 5000); draw();
-loadSurface().then(() => { refreshSyncPill(); renderReview(); }); setInterval(refreshSyncPill, 5000);
+loadSurface().then(() => { refreshSyncPill(); renderReview(); syncSearchScope(); loadWorkspaces(); renderStats(); }); setInterval(refreshSyncPill, 5000);
