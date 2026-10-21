@@ -101,7 +101,10 @@ says why and what to do, in its events and in its text (O2).
 
 ## 4. The steps
 
-### 4.1 Keep it running
+### 4.1 Keep Supragnosis running
+
+*(Titled "Keep it running" until design-system.md step 45, which names the product: "Keep supragnosis
+running" in the CLI's checklist.)*
 
 **State:** who manages the daemon, whether it answers, and whether it starts at login (`status
 --json`). **Done** when a daemon answers and a manager that outlives the app keeps it: the canonical
