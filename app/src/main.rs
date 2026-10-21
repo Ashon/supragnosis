@@ -2462,7 +2462,9 @@ fn restart_claude_desktop() -> Result<String, String> {
         }
     }
     open_app(&["-b", CLAUDE_DESKTOP]).map_err(|e| format!("{by_hand} ({e})"))?;
-    Ok("Claude Desktop restarted and loaded supragnosis.".into())
+    // It is open; whether it loaded supragnosis is its row's to say, once it reaches the server
+    // (design-system.md Section 29.10).
+    Ok("Claude Desktop is open. Its row says when it reaches the server.".into())
 }
 
 fn open_app(args: &[&str]) -> Result<(), String> {
@@ -2536,7 +2538,7 @@ async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<S
             env!("CARGO_PKG_VERSION"),
             shell,
             args.join(" "),
-            text(run_cli(&args)),
+            without_entry(&text(run_cli(&args))),
             text(run_cli(&["status", "--json"])),
             tilde(&log),
             tail,
@@ -2544,6 +2546,25 @@ async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<S
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// The checklist's lines as a report copies them: each event without the first entry's words, the
+/// app that wrote it and its entity, so a report carries no knowledge (onboarding.md O6, design-system.md
+/// Section 29.10). A line that is not an event is copied as it is.
+fn without_entry(text: &str) -> String {
+    text.lines()
+        .map(|line| match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(serde_json::Value::Object(mut e)) => {
+                for k in ["quote", "app", "entity"] {
+                    e.remove(k);
+                }
+                serde_json::Value::Object(e).to_string()
+            }
+            _ => line.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if text.ends_with('\n') { "\n" } else { "" }
 }
 
 /// "Show in Finder" (design-system.md Section 29.5): one of a fixed pair - the daemon's log and the
@@ -3424,7 +3445,8 @@ mod status_text_tests {
 mod settings_tests {
     use super::{
         cause_of, managed, manager_pid, own_page_ok, restart_outcome, server_add_args,
-        settings_url, start_page, starting_html, welcome_url, Daemon, StartPage, APP_COMMANDS,
+        settings_url, start_page, starting_html, welcome_url, without_entry, Daemon, StartPage,
+        APP_COMMANDS,
     };
     use std::path::Path;
     use std::time::Duration;
@@ -3874,6 +3896,79 @@ mod settings_tests {
         let diag = &diag[..diag.find("\n}\n").expect("it closes")];
         assert!(diag.contains("status_line()") && diag.contains("tail -n 40"));
         assert!(js.contains("id: \"copyDiagnostics\"") && js.contains("\"data-k\": \"log\""));
+    }
+
+    /// design-system.md Section 29.10: Try it quotes the entry in the question's block and opens the
+    /// graph on its entity when it names one; the waiting sentence is setup's, with the question set
+    /// apart; the page counts only how long it has waited (O4), to show the minutes, the checks the
+    /// event carries and the foot's Copy Diagnostics; the entry's arrival is announced; and the
+    /// shell gives the viewer Setup's address for an empty store.
+    #[test]
+    fn try_it_quotes_the_entry_and_counts_its_wait() {
+        let js = include_str!("../assets/welcome.js");
+        let body = |name: &str| -> &str {
+            let at = js.find(&format!("\nfunction {name}(")).unwrap_or_else(|| panic!("no {name}"));
+            &js[at + 1..at + 1 + js[at + 1..].find("\n}\n").expect("it closes")]
+        };
+        let first = body("firstBody");
+        for part in [
+            "h(\"div\", { class: \"ask entry\" }, h(\"q\", { class: \"selectable\", text: e.quote }))",
+            "if (e.entity) {",
+            "openGraph(e.id, e.entity)",
+            "\"Show in the Graph\"",
+            "const lead = m ? say.slice(0, m.index).trim() : \"\";",
+            "mins >= 2 && Array.isArray(e.checks)",
+            "/^No connected app has reached the server/",
+        ] {
+            assert!(first.contains(part), "firstBody lacks {part}");
+        }
+        assert!(!js.contains("The entry appears here"), "the page no longer promises it");
+        assert!(body("openGraph").contains("\"entity=\" + encodeURIComponent(entity)"));
+        let check = &js[js.find("async function check()").unwrap()..];
+        let check = &check[..check.find("\n}\n").unwrap()];
+        assert!(check.contains("announce(\"First entry recorded in \""));
+        assert!(
+            check.contains("firstWaitSince = Date.now()"),
+            "the wait counts from the first wait seen"
+        );
+        assert!(
+            body("renderActions").contains("|| waitedMinutes() >= 2"),
+            "Copy Diagnostics after two minutes"
+        );
+        // The clock is the one thing the page counts; it never decides a state.
+        assert_eq!(
+            js.matches("Date.now()").count(),
+            2,
+            "the wait's start and its minutes, nothing else"
+        );
+        let shell = include_str!("../assets/shell-init.js");
+        assert!(
+            shell.contains("window.supragnosisSetup = custom ? \"tauri://localhost/welcome.html\"")
+        );
+    }
+
+    /// design-system.md Section 29.10 and onboarding.md O6: the page and Copy Diagnostics read the
+    /// same `setup --check --events` line, so the report drops the first entry's words, its app and
+    /// its entity, and keeps everything else as setup wrote it.
+    #[test]
+    fn copy_diagnostics_carries_no_entry() {
+        let line = r#"{"step":"first","id":"billing","state":"done","say":"An entry is in \"billing\", just now.","quote":"the launch is friday","app":"Claude Code","entity":"e1"}"#;
+        let out = without_entry(&format!("{{\"schema\":1}}\n{line}\nnot json\n"));
+        assert!(
+            !out.contains("friday") && !out.contains("Claude Code") && !out.contains("\"e1\""),
+            "{out}"
+        );
+        assert!(
+            out.contains("An entry is in")
+                && out.contains("\"id\":\"billing\"")
+                && out.contains("not json")
+        );
+        assert!(out.ends_with('\n'));
+        let src = include_str!("main.rs");
+        let diag = &src[src.find("async fn diagnostics(").expect("diagnostics")..];
+        assert!(
+            diag[..diag.find("\n}\n").unwrap()].contains("without_entry(&text(run_cli(&args)))")
+        );
     }
 
     /// docs/design-system.md U19: a page that draws itself again keeps the control that had focus.

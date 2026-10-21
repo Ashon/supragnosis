@@ -119,6 +119,9 @@ async fn the_local_surface_names_its_node() {
     let s = json_get(&uds_get(&sock, "/api/surface").await);
     assert_eq!(s["surface"], "local", "surface: {s}");
     assert_eq!(s["node"], "h", "the node's host id: {s}");
+    // The workspace an omitted one resolves to, so the page calls the default by its name
+    // (design-system.md Section 29.10).
+    assert_eq!(s["default_workspace"], "ws", "the node's default: {s}");
     let _ = std::fs::remove_file(&sock);
 }
 
@@ -283,7 +286,7 @@ fn the_camera_works_in_the_map_window() {
         "the zoom buttons zoom about the window"
     );
     assert!(
-        js.contains(r#"getElementById("zin").onclick = () => zoomWindow("#),
+        js.contains(r#"getElementById("zin").onclick = e => { if (idle(e)) return; zoomWindow("#),
         "the zoom-in button uses the window's centre"
     );
 }

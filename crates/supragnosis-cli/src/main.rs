@@ -2514,19 +2514,37 @@ fn setup_wait(a: &SetupArgs, out: &SetupOut, o: &setup::Observed) -> Result<bool
         ));
         return Ok(true);
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(a.timeout);
+    let started = std::time::Instant::now();
+    let deadline = started + std::time::Duration::from_secs(a.timeout);
     let mut said = false;
+    let mut checked = false;
     loop {
         match newest_entry() {
-            FirstEntry::Some { workspace, said: text, .. } => {
-                let say = match &workspace {
-                    Some(ws) => format!("An entry is in workspace \"{ws}\": {text}"),
-                    None => format!("An entry is in the store: {text}"),
-                };
-                let mut e = Event::new("first", None, State::Done, say);
-                e.id = workspace;
+            entry @ FirstEntry::Some { .. } => {
+                // The checklist's sentence, and the entry's own words under it (Section 29.10).
+                let e = setup::entry_event(&entry).expect("an entry");
                 out.emit(&e);
+                if !out.events {
+                    out.line(format!("      \"{}\"", e.quote.as_deref().unwrap_or_default()));
+                }
                 return Ok(true);
+            }
+            _ if said && !checked && started.elapsed().as_secs() >= 120 => {
+                // Two minutes and nothing: what to check, as the page shows it then.
+                checked = true;
+                let mut e = Event::new(
+                    "first",
+                    None,
+                    State::Working,
+                    "Nothing yet after 2 minutes. Check:",
+                );
+                e.checks = setup::TRY_IT_CHECKS.iter().map(|c| c.to_string()).collect();
+                out.emit(&e);
+                if !out.events {
+                    for c in &e.checks {
+                        out.line(format!("      - {c}"));
+                    }
+                }
             }
             _ if !said => {
                 said = true;
@@ -2711,10 +2729,23 @@ fn newest_entry() -> setup::FirstEntry {
     if said.len() < o["content"].as_str().unwrap_or_default().len() {
         said.push_str("...");
     }
+    // The local read names the app that wrote an attestation (design-system.md Section 29.8); the
+    // first one that does is the entry's.
+    let app = o["attestations"]
+        .as_array()
+        .and_then(|a| a.iter().find_map(|t| t["app"].as_str()))
+        .map(str::to_string);
+    let entity = o["entities"]
+        .as_array()
+        .and_then(|e| e.first())
+        .and_then(|e| e["id"].as_str())
+        .map(str::to_string);
     setup::FirstEntry::Some {
         workspace: o["workspace"].as_str().map(str::to_string),
         ago: setup::ago(o["hlc"]["wall"].as_u64().unwrap_or(0), supragnosis_core::now_millis()),
         said,
+        app,
+        entity,
     }
 }
 
@@ -6277,7 +6308,8 @@ mod json_contract {
             .map(|l| serde_json::from_str(l).expect("each line is JSON"))
             .collect();
         assert_eq!(lines[0], serde_json::json!({ "schema": setup::EVENTS_SCHEMA }));
-        let fields: BTreeSet<&str> = ["step", "id", "state", "say", "cmd", "out"].into();
+        let fields: BTreeSet<&str> =
+            ["step", "id", "state", "say", "cmd", "out", "quote", "app", "entity", "checks"].into();
         let states: BTreeSet<&str> =
             ["todo", "working", "done", "attention", "failed", "skipped"].into();
         let steps: BTreeSet<&str> = ["server", "apps", "app", "model", "first", "summary"].into();
@@ -6292,6 +6324,10 @@ mod json_contract {
         let mut e = setup::Event::new("app", Some("cursor"), setup::State::Working, "Running.");
         e.cmd = Some("supragnosis connect cursor".into());
         e.out = Some("  wrote   /x".into());
+        e.quote = Some("Auth is JWT.".into());
+        e.app = Some("Claude Code".into());
+        e.entity = Some("e1".into());
+        e.checks = vec!["Check.".into()];
         let made = serde_json::to_value(&e).unwrap();
         let keys: BTreeSet<&str> = made.as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(keys, fields);

@@ -27,8 +27,8 @@
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
-> is built, as is step 46b, the app that wrote it, and step 47, a map that explains itself. Step 48,
-> the first entry on screen, is specified.
+> is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
+> the first entry on screen.
 
 ## 1. Why this exists
 
@@ -1031,6 +1031,10 @@ shell's lines or Setup's sentences, comments and test code left out:
 | daemon: starting | Starting... |
 | externally managed | started outside this app |
 | login item | starts at login |
+| observe knowledge | What an AI app remembers shows up here |
+| Nothing observed | Nothing here yet. |
+| The store holds an entry | An entry is in "billing", from Claude Code, just now. |
+| restarted and loaded supragnosis | Claude Desktop is open. Its row says when it reaches the server. |
 
 ## 10. Keyboard, motion and contrast
 
@@ -1891,7 +1895,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 47. **The map explains itself** [built] (Section 29.9; U16 and Section 5 revised by D4, U25, D3, D5): the map's
    key, counted chips with Only and Show all, counts of what is drawn, one color per type for the
    store, trust toggles that dim, the hover card, and one word for the region.
-48. **The first entry on screen** (Section 29.10; D18; onboarding.md Sections 4.4, 7 and 8): Try it
+48. **The first entry on screen** [built] (Section 29.10; D18; onboarding.md Sections 4.4, 7 and 8): Try it
    quotes the entry, names the app that wrote it and opens the graph on it; the wait follows first
    contact, with the minutes and what to check; the landing's one line opens the app; an empty scope
    says so in one voice and keeps no camera controls that act on nothing; and the default is called
@@ -4321,3 +4325,15 @@ No row needs a principle changed.
   takes with the menus.
 - It does not add keys for zoom or Fit (D7), which step 50 takes.
 - It does not carry the server inside the app (onboarding.md Section 10).
+
+**Guarded by** `try_it_quotes_the_entry_and_follows_first_contact` in setup's tests (the done
+sentence, quote, app and entity, the waiting sentence for each case of first contact with the
+question quoted in each, an unnamed client counted and never named, and a checklist text without
+the entry's words); `setup_events_match_their_example` (the four new fields); in the app's tests
+`try_it_quotes_the_entry_and_counts_its_wait` (the card, Show in the Graph, the announcement, the
+page's one clock and Setup's address in the shell) and `copy_diagnostics_carries_no_entry`;
+`an_empty_scope_keeps_no_idle_controls`, `the_empty_map_speaks_in_one_voice`,
+`an_empty_store_leads_back_to_setup_in_the_app` and `the_default_is_called_by_its_name` in
+`crates/supragnosis-viz/tests/empty.rs`; `the_local_surface_names_its_node` (the default's name);
+`the_landing_says_the_next_step_and_reads_on_a_phone` (the command that opens the app, the line
+under it and the promise); and `no_retired_word_reaches_a_page` (the four retired phrases).

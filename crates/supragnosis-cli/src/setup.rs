@@ -17,6 +17,13 @@ pub const EVENTS_SCHEMA: u64 = 1;
 /// sentence, since a made-up fact would stay in the log for good (P3).
 pub const TRY_IT: &str = "Remember one decision we made in this project today, and why.";
 
+/// What to check when Try it has waited two minutes and nothing came (design-system.md Section
+/// 29.10): the page shows them then, and `setup --step wait` prints them then.
+pub const TRY_IT_CHECKS: [&str; 2] = [
+    "Does the app list supragnosis's tools? Its tools or MCP list shows them.",
+    "Some agents answer without recording. Ask it to use supragnosis to remember the decision.",
+];
+
 /// A step's state, as the checklist and the app's cards show it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -46,11 +53,33 @@ pub struct Event {
     pub cmd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub out: Option<String>,
+    /// Try it, done: the entry's first 140 characters, the app that wrote it when the local read
+    /// names one, and its first entity when it names one (design-system.md Section 29.10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity: Option<String>,
+    /// Try it, waiting: what to check once it has waited two minutes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<String>,
 }
 
 impl Event {
     pub fn new(step: &'static str, id: Option<&str>, state: State, say: impl Into<String>) -> Self {
-        Event { step, id: id.map(str::to_string), state, say: say.into(), cmd: None, out: None }
+        Event {
+            step,
+            id: id.map(str::to_string),
+            state,
+            say: say.into(),
+            cmd: None,
+            out: None,
+            quote: None,
+            app: None,
+            entity: None,
+            checks: Vec::new(),
+        }
     }
 }
 
@@ -256,12 +285,57 @@ pub enum FirstEntry {
     Unknown,
     None,
     /// The newest entry: its workspace (a daemon older than this binary does not say), how long
-    /// ago, and what it said.
+    /// ago, what it said, the app that wrote it when the local read names one, and its first
+    /// entity when it names one.
     Some {
         workspace: Option<String>,
         ago: String,
         said: String,
+        app: Option<String>,
+        entity: Option<String>,
     },
+}
+
+/// The done sentence of Try it (design-system.md Section 29.10): where the entry is, who wrote it
+/// when that is known, and when. `setup --check` and `setup --step wait` say the same.
+pub fn entry_said(workspace: Option<&str>, app: Option<&str>, ago: &str) -> String {
+    let at = match workspace {
+        Some(ws) => format!("An entry is in \"{ws}\""),
+        None => "An entry is in the store".to_string(),
+    };
+    match app {
+        Some(a) => format!("{at}, from {a}, {ago}."),
+        None => format!("{at}, {ago}."),
+    }
+}
+
+/// The done event of Try it, carrying the entry's words, app and entity beside its sentence.
+pub fn entry_event(entry: &FirstEntry) -> Option<Event> {
+    let FirstEntry::Some { workspace, ago, said, app, entity } = entry else {
+        return None;
+    };
+    let mut e = Event::new(
+        "first",
+        workspace.as_deref(),
+        State::Done,
+        entry_said(workspace.as_deref(), app.as_deref(), ago),
+    );
+    e.quote = Some(said.clone());
+    e.app = app.clone();
+    e.entity = entity.clone();
+    Some(e)
+}
+
+/// The name the daemon lists a session under when it names no client (onboarding.md Section 5).
+pub const UNNAMED_CLIENT: &str = supragnosis_mcp::ClientLog::UNNAMED;
+
+/// "A", "A and B", "A, B and C".
+fn names_and(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// What setup reads before it decides anything (O3).
@@ -395,23 +469,47 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
             Event::new("first", None, State::Skipped, "Entries go to the remote server.")
         }
         // The workspace rides as the event's id, so the app can open the graph there.
-        (None, FirstEntry::Some { workspace: Some(ws), ago, .. }) => Event::new(
-            "first",
-            Some(ws),
-            State::Done,
-            format!("The store holds an entry: workspace \"{ws}\", {ago}."),
-        ),
-        (None, FirstEntry::Some { workspace: None, ago, .. }) => Event::new(
-            "first",
-            None,
-            State::Done,
-            format!("The store holds an entry, the newest {ago}."),
-        ),
+        (None, entry @ FirstEntry::Some { .. }) => entry_event(entry).expect("an entry"),
         (None, FirstEntry::Unknown) => {
             Event::new("first", None, State::Todo, "Known once the server answers.")
         }
+        // While it waits, the sentence says which client has reached the server, and quotes the
+        // question in every case; contact chooses the words only, never whether the step is done
+        // (Section 5), and a restart forgets it (Section 4.2).
         (None, FirstEntry::None) if connected > 0 => {
-            Event::new("first", None, State::Working, format!("Ask a connected app: \"{TRY_IT}\""))
+            // An unnamed client is counted, never named: "it" would not say which app to ask.
+            let unnamed = o.other_contacts.iter().any(|c| c == UNNAMED_CLIENT);
+            let reached: Vec<String> = o
+                .apps
+                .iter()
+                .filter(|a| a.installed && a.entry == "bridge" && a.reached.is_some())
+                .map(|a| a.name.clone())
+                .chain(o.other_contacts.iter().filter(|c| *c != UNNAMED_CLIENT).cloned())
+                .collect();
+            let say = if !o.contacts_known {
+                format!("Ask a connected app, in the project you are working on: \"{TRY_IT}\"")
+            } else if reached.is_empty() && unnamed {
+                format!(
+                    "A client has reached the server. Ask your app, in the project you are working on: \"{TRY_IT}\""
+                )
+            } else if reached.is_empty() {
+                format!(
+                    "No connected app has reached the server since it started - each app's row says how. Then ask, in the project you are working on: \"{TRY_IT}\""
+                )
+            } else if reached.len() == 1 {
+                format!(
+                    "{} has reached the server. Ask it, in the project you are working on: \"{TRY_IT}\"",
+                    reached[0]
+                )
+            } else {
+                format!(
+                    "{} have reached the server. Ask one, in the project you are working on: \"{TRY_IT}\"",
+                    names_and(&reached)
+                )
+            };
+            let mut e = Event::new("first", None, State::Working, say);
+            e.checks = TRY_IT_CHECKS.iter().map(|c| c.to_string()).collect();
+            e
         }
         (None, FirstEntry::None) => {
             Event::new("first", None, State::Todo, "Waits for a connected app.")
@@ -595,11 +693,78 @@ mod tests {
             workspace: Some("web".into()),
             ago: "just now".into(),
             said: "x".into(),
+            app: None,
+            entity: None,
         };
         o.model = Model::On;
         let l = checklist(&o);
         assert_eq!(state(&l, "first", Some("web")), State::Done, "the workspace is the event's id");
         assert_eq!(summary(&l), Event::new("summary", None, State::Done, "Every step is done."));
+    }
+
+    /// design-system.md Section 29.10: the done step quotes the entry and names the app that wrote
+    /// it and its first entity; while it waits, the sentence says which client has reached the
+    /// server and quotes the question in every case, and the checks ride along. Contact chooses
+    /// the words only: the step is Working with or without it (onboarding.md Section 5).
+    #[test]
+    fn try_it_quotes_the_entry_and_follows_first_contact() {
+        let mut o = fresh();
+        o.runner = Runner::Kept("Running.".into());
+        o.apps[0].entry = "bridge".into();
+        let first = |o: &Observed| checklist(o).into_iter().find(|e| e.step == "first").unwrap();
+        let e = first(&o);
+        assert_eq!(e.state, State::Working);
+        assert!(
+            e.say.starts_with("No connected app has reached the server since it started"),
+            "{}",
+            e.say
+        );
+        assert!(e.say.ends_with(&format!("\"{TRY_IT}\"")), "the question is quoted: {}", e.say);
+        assert_eq!(e.checks, TRY_IT_CHECKS.map(String::from).to_vec());
+        o.apps[0].reached = Some("just now".into());
+        let e = first(&o);
+        assert!(e.say.starts_with("claude-code has reached the server. Ask it,"), "{}", e.say);
+        o.other_contacts = vec!["zed".into(), UNNAMED_CLIENT.into()];
+        let e = first(&o);
+        assert!(
+            e.say.starts_with("claude-code and zed have reached the server. Ask one,"),
+            "an unnamed client is counted, never named: {}",
+            e.say
+        );
+        o.apps[0].reached = None;
+        o.other_contacts = vec![UNNAMED_CLIENT.into()];
+        let e = first(&o);
+        assert!(e.say.starts_with("A client has reached the server. Ask your app,"), "{}", e.say);
+        o.other_contacts.clear();
+        o.contacts_known = false;
+        let e = first(&o);
+        assert!(e.say.starts_with("Ask a connected app, in the project"), "{}", e.say);
+        assert!(e.say.ends_with(&format!("\"{TRY_IT}\"")));
+
+        o.first = FirstEntry::Some {
+            workspace: Some("billing".into()),
+            ago: "just now".into(),
+            said: "The ledger is a Postgres table.".into(),
+            app: Some("Claude Code".into()),
+            entity: Some("e1".into()),
+        };
+        let e = first(&o);
+        assert_eq!((e.state, e.id.as_deref()), (State::Done, Some("billing")));
+        assert_eq!(e.say, "An entry is in \"billing\", from Claude Code, just now.");
+        assert_eq!(e.quote.as_deref(), Some("The ledger is a Postgres table."));
+        assert_eq!((e.app.as_deref(), e.entity.as_deref()), (Some("Claude Code"), Some("e1")));
+        assert!(e.checks.is_empty());
+        // The checklist's text says the sentence without the entry's words, which Copy
+        // Diagnostics copies (O6).
+        assert!(!text_row(&e).contains("Postgres table"));
+        assert_eq!(
+            entry_said(Some("billing"), None, "just now"),
+            "An entry is in \"billing\", just now."
+        );
+        assert_eq!(
+            entry_said(None, None, "2 minutes ago"),
+            "An entry is in the store, 2 minutes ago."
+        );
     }
 
     /// O8 on macOS: setup takes over only what nobody chose a manager for - a `start` daemon, a

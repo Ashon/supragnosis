@@ -39,6 +39,11 @@ const live = {};              // step key -> the last event a running step strea
 const logs = { server: [], apps: [], model: [], first: [] };
 const drawers = {};           // step -> whether its log drawer is open
 const connectedHere = new Set();
+// How long Try it has waited in this visit: the one thing this page counts itself (O4), used only to
+// show the minutes, the checks setup's event carries and the foot's Copy Diagnostics
+// (design-system.md Section 29.10).
+let firstWaitSince = null;
+function waitedMinutes() { return firstWaitSince === null ? 0 : Math.floor((Date.now() - firstWaitSince) / 60000); }
 
 // ---- Reading the checklist ---------------------------------------------------------------------
 
@@ -61,12 +66,20 @@ function needsPlan() {
 }
 
 async function check() {
+  const before = stepEvent("first");
   try {
     const r = await invoke("setup_check");
     events = r.events || [];
     loadError = null;
   } catch (e) {
     loadError = String(e);
+  }
+  const first = stepEvent("first");
+  if (first && first.state === "working") { if (firstWaitSince === null) firstWaitSince = Date.now(); }
+  else firstWaitSince = null;
+  // The first entry, arrived while the page shows, is said in the live region (Section 10).
+  if (before && before.state !== "done" && first && first.state === "done") {
+    announce("First entry recorded in " + (first.id || "the store"));
   }
   if (!applied && events.length && !needsPlan()) applied = true;
   for (const id of todoApps()) if (!(id in plan.apps)) plan.apps[id] = true;
@@ -271,8 +284,9 @@ async function finishLater() {
   location.href = graphBack();
 }
 
-function openGraph(ws) {
-  location.href = ws ? GRAPH + "?workspace=" + encodeURIComponent(ws) : GRAPH;
+function openGraph(ws, entity) {
+  const q = [ws ? "workspace=" + encodeURIComponent(ws) : null, entity ? "entity=" + encodeURIComponent(entity) : null].filter(Boolean);
+  location.href = GRAPH + (q.length ? "?" + q.join("&") : "");
 }
 
 // ---- Rendering ---------------------------------------------------------------------------------------
@@ -417,13 +431,33 @@ async function stopModel() {
 function firstBody(e, state, say) {
   const out = [];
   if (state === "working") {
-    // What to ask is setup's sentence, quoted inside its own; the page only gives it a Copy button.
-    const m = /"([^"]+)"/.exec(say);
+    // Setup's sentence says which app has reached the server and ends with the question, quoted;
+    // the page sets the question apart with a Copy button (design-system.md Section 29.10).
+    const m = /"([^"]+)"\s*$/.exec(say);
     const ask = m ? m[1] : say;
-    out.push(h("p", { class: "say", text: "In a connected app, in the project you are working on, ask:" }),
-      h("div", { class: "ask" }, h("q", { class: "selectable", text: ask }),
-        h("button", { class: "btn quiet", on: { click: () => copy(ask, "The question") } }, icon("copy"), "Copy")),
-      h("p", { class: "say quiet", text: "The entry appears here as soon as the app records it." }));
+    const lead = m ? say.slice(0, m.index).trim() : "";
+    if (lead) out.push(h("p", { class: "say" }, sayNodes(lead)));
+    out.push(h("div", { class: "ask" }, h("q", { class: "selectable", text: ask }),
+      h("button", { class: "btn quiet", on: { click: () => copy(ask, "The question") } }, icon("copy"), "Copy")));
+    // No app has reached the server: an app's restart, where its row offers one, is repeated here.
+    if (/^No connected app has reached the server/.test(say)) {
+      const helpers = appEvents().filter((a) => a.state === "done" && HELPER[a.id] && connectedHere.has(a.id))
+        .map((a) => button(HELPER[a.id], a.id === "cursor" ? "open" : "restart", "", () => helper(a.id), "helper:" + a.id));
+      if (helpers.length) out.push(h("div", { class: "controls" }, helpers));
+    }
+    const mins = waitedMinutes();
+    if (mins >= 1) out.push(h("p", { class: "say quiet", text: "Waiting " + mins + (mins === 1 ? " minute" : " minutes") }));
+    if (mins >= 2 && Array.isArray(e.checks) && e.checks.length) {
+      out.push(h("ul", { class: "checks" }, e.checks.map((c) => h("li", { text: c }))));
+    }
+  } else if (state === "done" && e && e.quote) {
+    // The entry itself, in the block the question used, and the way to it on the graph.
+    out.push(h("p", { class: "say" }, sayNodes(say)),
+      h("div", { class: "ask entry" }, h("q", { class: "selectable", text: e.quote })));
+    if (e.entity) {
+      out.push(h("div", { class: "controls" },
+        h("button", { class: "btn quiet", on: { click: () => openGraph(e.id, e.entity) } }, "Show in the Graph", icon("arrow"))));
+    }
   } else {
     out.push(h("p", { class: "say" }, sayNodes(say)));
   }
@@ -464,7 +498,7 @@ function renderActions() {
   // One Copy Diagnostics, once a step has run or failed in this visit or the check could not be read,
   // since before that the log is empty and the reads say what the cards already do (Section 29.5).
   const ran = Object.values(logs).some((l) => l.length > 0) || !!loadError
-    || STEPS.some((st) => stateOf(st.step) === "failed");
+    || STEPS.some((st) => stateOf(st.step) === "failed") || waitedMinutes() >= 2;
   const diag = h("button", { class: "btn quiet copydiag", on: { click: async () => {
     try { copy(await invoke("diagnostics") + "\n\n" + logText(), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
   } } }, "Copy Diagnostics");
@@ -506,6 +540,12 @@ listen("viz-event", () => {
   recheck = setTimeout(() => { if (!busy()) check(); }, 1500);
 });
 setInterval(() => { if (!busy() && document.visibilityState === "visible") check(); }, 15000);
+// The minutes Try it has waited are drawn as they turn, between checks (O4).
+let minutesDrawn = 0;
+setInterval(() => {
+  const m = waitedMinutes();
+  if (m !== minutesDrawn) { minutesDrawn = m; render(); }
+}, 5000);
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") location.href = graphBack();

@@ -452,7 +452,15 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/surface" => Response {
             status: "200 OK",
             content_type: "application/json",
-            body: serde_json::json!({ "surface": "local", "node": engine.host() }).to_string(),
+            // The workspace an omitted one resolves to, the read tier's key with its meaning: the
+            // node's default here, so the page calls the default by its name (design-system.md
+            // Section 29.10).
+            body: serde_json::json!({
+                "surface": "local",
+                "node": engine.host(),
+                "default_workspace": engine.default_workspace(),
+            })
+            .to_string(),
         },
         // What this node's store owes and last repaid (crash-recovery.md K5) - runtime state, kept
         // apart from /api/about, which describes the build.

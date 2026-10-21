@@ -71,11 +71,12 @@ fn the_first_view_opens_where_the_knowledge_is() {
     );
     assert!(empty.contains("wsInput.value = \"*\""), "the page does not open on All");
     let load = function("loadWorkspaces");
+    // The default by its name (design-system.md Section 29.10).
     assert!(
-        load.contains("Showing all workspaces - default is empty"),
+        load.contains("\"Showing all workspaces - \" + defaultName() + \" is empty\""),
         "the page does not say why it opened on All"
     );
-    assert!(load.contains("mk(\"default\", \"\")"), "an empty default has no chip");
+    assert!(load.contains("mk(defaultName(), \"\")"), "an empty default has no chip");
     assert!(
         function("renderChipsActive").contains("chipIsCurrent("),
         "the selected chip is not the scope in use"

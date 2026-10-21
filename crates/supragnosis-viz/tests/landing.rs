@@ -240,10 +240,18 @@ fn the_landing_has_one_version_badge() {
 /// apart, and "Copied" is announced.
 #[test]
 fn the_landing_says_the_next_step_and_reads_on_a_phone() {
+    // The one line opens the app, and the line under it names Setup (design-system.md Section
+    // 29.10); the script's line names `supragnosis setup`.
     assert!(
-        PAGE.contains("Then connect an agent:"),
+        PAGE.contains("brew install --cask ashon/tap/supragnosis &amp;&amp; open -a Supragnosis"),
+        "the hero's command does not open the app"
+    );
+    assert!(
+        PAGE.contains("<p class=\"next\">The app's Setup opens:")
+            && PAGE.contains("With the script, run <code>supragnosis setup</code>."),
         "the hero does not say what follows the install"
     );
+    assert!(PAGE.contains("Up and running in a few minutes."), "the promise is D18's");
     assert!(
         PAGE.contains("<a href=\"#get-started\">Install</a>"),
         "the header has no Install link"
