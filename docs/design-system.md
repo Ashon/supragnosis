@@ -24,7 +24,8 @@
 > (Section 28, U41-U42), is built - steps 39-40: Lucide's files on every surface, and a notice with
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
-> step 41, a confirmation that says what it confirms, is built.
+> step 41, a confirmation that says what it confirms, is built, and step 42, a review that closes
+> its loop, is specified.
 
 ## 1. Why this exists
 
@@ -650,14 +651,15 @@ On the Graph page:
   once a poll fails, the bar says "Not updated since 8:54 - the server is not answering", and the
   time does not tick at every poll.
 - **Review is always in the status bar** on the local console (U20). It reads "Review" when nothing
-  waits and "2 to review (1 contested)" when something does: one count, the items under Needs you,
-  and in the parenthesis how many of them are contested beliefs. Needs you lists only beliefs that
-  tie on trust (resolution.md Section 4.1), so those are the loaded scope's contested nodes, which U3
-  asks the bar to count whatever the legend hides; before the curation read answers, the graph's
-  count stands in. A conflict that trust settled is listed under Health, so a confirmation takes its
-  item off the count. It is a button, the Graph page's way
-  to Review wherever Cmd+2 does not reach, and it is not in the title bar, which holds no navigation
-  but the way back.
+  waits, and "1 needs you" or "2 need you (1 contested)" when something does: one count, the items
+  under Needs you, and in the parenthesis how many of them are contested beliefs. Needs you lists
+  only beliefs that tie on trust (resolution.md Section 4.1), so those are the loaded scope's
+  contested nodes, which U3 asks the bar to count whatever the legend hides, and its contested type
+  definitions; before the curation read answers, the graph's count stands in. A conflict that trust
+  settled is listed under Health, so a confirmation takes its item off the count. It is a button, the
+  Graph page's way to Review wherever Cmd+2 does not reach, and it is not in the title bar, which
+  holds no navigation but the way back. *(Revised by step 42: it read "2 to review (1 contested)"
+  while the segment read "Needs you 2", and type definitions were not counted; Section 29.3.)*
   On the read tier, where nothing is decided, there is no Review entry, and the bar keeps the
   contested count alone as a pill ("1 contested").
 
@@ -741,12 +743,20 @@ Everything that waits for a person's decision, in one place, split in three:
 
 - **Needs you**: suspected secrets first, as an alert; then open proposals; then this node's dream
   drafts, listed apart from published proposals and marked as drafts (dreaming.md Section 8); then
-  contested beliefs - those that tie on trust (resolution.md Section 4.1).
+  contested beliefs - those that tie on trust (resolution.md Section 4.1), an entity's type or a
+  type's definition (IR5). Each row says what it asks: "Ledger's type: Table or Concept?".
 - **Suggestions**: merge suggestions, name variants and cross-workspace collisions. Each offers
   "Propose", which opens a proposal and decides nothing.
 - **Health**: overloaded contexts, unlinked entities, merge cycles, type axis collisions and the
   conflicts trust settled, folded
   by default. P22 wants curation where the reader already is, not a second job.
+- **Decided**: every proposal decided, by its outcome in words - Accepted, Rejected, Withdrawn -
+  with each act's reverse on its item. A blocked one is still under Needs you.
+
+Every segment is a queue: a list of items on the left, the selected item's detail and acts on the
+right, and J and K between them, so a suggestion or a signal is an item as a proposal is. *(Revised
+by step 42: Suggestions and Health were one sentence beside one long list, and contested type
+definitions waited only in the rail.)*
 
 An item shows, in this order: what it would do in one sentence; for a draft, its confidence; the
 belief diff, before and after (proposal-workflow.md Section 14.2); each check, and for a failing one
@@ -761,17 +771,26 @@ on an item not yet shown. A recall asks for a second, explicit act: its effect i
 console casts, and one keystroke should not carry it.
 
 **Keys act where the person is** (U19). A, R, J and K act only while focus is in the list or the
-item; anywhere else they are letters (WCAG 2.1.4). Each control names its key in
+item; anywhere else they are letters (WCAG 2.1.4). Opening the page puts focus on the selected row,
+so they act from the first press. A contested item has Skip, also as J, and its values' Confirm
+buttons are 1, 2 and on, each opening its ask as a click does. Each control names its key in
 `aria-keyshortcuts`, not in its name, so it is read as "Accept" and not "Accept A". Skip is a button
 as well as J. The segments - Needs you, Suggestions, Health, Decided - are tabs that move with the
 arrow keys. After a decision redraws the list, focus lands on the next item, or on the list when none
 is left. While the page is open, the map and the panels behind it are inert.
 
-**What follows a decision is said plainly.** An accepted merge offers "Un-merge", which opens the
-split proposal (unmerge.md) and states its two consequences: the separated pair is never suggested
-again (unmerge.md S5), and merging them later needs a proposal distinguishable from this one
-(unmerge.md S10). A rejected proposal stays listed among the decided, since a reject is provisional
-and a later accept still merges it (proposal-workflow.md Section 8).
+**What follows a decision is said plainly.** A decided item leaves Needs you at once, and the next
+one is selected. Its reverse is on its Decided item (Section 29.3):
+- An accepted merge offers "Un-merge", which opens the split proposal (unmerge.md) and states its
+  two consequences: the separated pair is never suggested again (unmerge.md S5), and merging them
+  later needs a proposal distinguishable from this one (unmerge.md S10).
+- A rejected proposal stays listed among the decided and offers "Accept after all", also as A,
+  since a reject is provisional and a later accept still merges it (proposal-workflow.md Section 8).
+- A merged claim promotion or demotion offers its Undo, with the reverse acts' diff.
+
+The notice right after a decision names the item and offers the same act where the act decides
+nothing or its note says the diff. On this page it leaves after 4.5 seconds like a success without an
+action, since the act stays on the Decided item (U42).
 
 **What is listed.** Every open proposal is listed, whatever its diff: one whose diff cannot be computed
 says so, since nothing else would ever close it. A generated candidate - a suggestion, a draft - is
@@ -805,7 +824,9 @@ U4 governs the Review page's controls.
   the shown value's source to the tier it has without any person's verdict, which `/api/explain`
   answers for each source, and the promotion of the chosen one; the ask reads both acts' diff as one
   (Section 29.2).
-- **The notice that follows offers Undo**, and stays until it is dismissed, as an error does. Undo
+- **The notice that follows offers Undo**, and stays until it is dismissed, as an error does; on the
+  Review page it leaves after 4.5 seconds, since the same Undo is on the confirmation's Decided item
+  (Section 29.3), except after "Confirm instead", whose Undo reverses two acts. Undo
   casts the reverse: a demotion of the source just confirmed to the tier that source had before the
   Confirm, read from the diff's `tier_changes`, and after "Confirm instead" a confirmation of the
   source it demoted. The log keeps every event (P3). A demotion is a ceiling (resolution.md Section
@@ -823,10 +844,13 @@ U4 governs the Review page's controls.
   it (resolution.md Section 4.2), and the console observes nothing.
 
 The way to these items is Review in the status bar (Section 6), whose count is the items under Needs
-you. The tray menu's "Review (N)..."
-item counts the proposals that wait on this Mac's daemon, across its workspaces, and is in the menu
-only while some do; contested beliefs and suspected secrets need the curation read, which the tray
-does not make every minute. On a remote profile the tray stays as remote-viewer.md Section 6 has it.
+you. The tray menu's "Review - 3 need you..." item counts the same items on this Mac's daemon,
+across its workspaces, from the proposal list and the curation report, read once a minute, and is
+in the menu only while some wait. It opens Review at All workspaces, the scope its count is of. When
+the curation read fails and the proposal list answers, it says what it counted: "Review - 2
+proposals wait...". On a remote profile the tray stays as remote-viewer.md Section 6 has it.
+*(Revised by step 42: the tray counted only the proposals, since it did not make the curation read
+every minute; the author chose that it does, D12.)*
 
 On the read tier the page lists and explains, shows no dream draft (dreaming.md Section 5.3 serves
 none there) and offers no control the tier refuses, as remote-viewer.md Section 6 requires of the
@@ -893,7 +917,10 @@ names, which are Unverified, Agent, Host signed and Human confirmed. The identif
 and in cards' footers.
 
 **The Log speaks in sentences** (U17). A proposal event says what happened to which proposal in
-words - "Merge proposed: PostgreSQL into Postgres", "Claim confirmation accepted" - and a who-line
+words - "Merge proposed: PostgreSQL into Postgres", and for a gate act the source it moves: Claim
+confirmation accepted: "The ledger is a Postgres table..." (Ledger, Nightly export). Decision rows
+are drawn in the Log's full ink. *(Revised by step 42: a confirmation read "Claim confirmation
+accepted" with no object, and decision rows were faint and italic.)* A who-line
 under each row says the tier, who and when: "Agent - laptop-3 - 8:55 AM". Who is named as the strip
 names a host (Section 6). Every kind of proposal the engine opens and every event it can carry has
 its sentence, and one the page cannot phrase reads "Something changed", with the stored text in its
@@ -916,7 +943,7 @@ a state keeps one word on every page that shows it.
 | Healthy - nothing owed | Up to date |
 | Peers, client, local +N | Sync, Spoke, this node +N |
 | settling layout... | Arranging 168 items |
-| accepted claim_promotion: 9f778c20 | Claim confirmation accepted |
+| accepted claim_promotion: 9f778c20 | Claim confirmation accepted: "The ledger is a Postgres table..." (Ledger) - since step 42 |
 | opened entity_merge: PostgreS -> Postgres | Merge proposed: PostgreSQL into Postgres |
 | ws (all) / nodes 20 / edges 14 / Component 3, ... / hyperedges 10 (hull 4) | All workspaces - 20 entities, 14 relations, 10 regions |
 | (all), * | All |
@@ -1417,7 +1444,7 @@ social image.
 | **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads and the nodes in their three sizes, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
 | **U41** | Every icon the viewer, the app's pages and the landing draw is a Lucide 1.52.0 file, vendored unmodified and drawn as a mask over the text's color, the contested badge's mark included; no page draws an icon from a character, a path written by hand or a pasted copy of one, and a file both surfaces ship is the same bytes on both (Section 28). |
-| **U42** | A notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, and a 28-pixel dismiss showing x; a success without an action leaves 4.5 seconds after it shows, counted only while the pointer is off it and focus outside it, and every other notice stays until dismissed or used; four at most; it enters over 200 ms and leaves over 120 ms, and under reduced motion does neither (Section 28, WCAG 2.2.1). |
+| **U42** | A notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, and a 28-pixel dismiss showing x; a success without an action leaves 4.5 seconds after it shows, counted only while the pointer is off it and focus outside it, and so does a success on the Review page whose act is also on its Decided item, and every other notice stays until dismissed or used; four at most; it enters over 200 ms and leaves over 120 ms, and under reduced motion does neither (Section 28, WCAG 2.2.1). |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
@@ -1733,6 +1760,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
    `/api/resolve/preview` with the diff's `reach` and the checks, the ask with the source and its reach,
    the choice of source, both halves of Confirm instead, Undo's reach, no act without its diff, and the
    tiers defined under the legend.
+42. **Review closes the loop** (Section 29.3; U4, U20, U42): a decision leaves Needs you at once, every
+   reverse on its Decided item and in the notice after it, Decided in names and outcomes, the queue
+   that says what it asks, one count with the tray's read of curation, contested type definitions in
+   Needs you, keys from the first press, Suggestions and Health as queues, the map preview's way back,
+   and the Log's decision rows.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -1744,7 +1776,7 @@ proposal and the read tier.
 ## 15. What this revises
 
 - **settings-page.md Section 5**: the tray menu gains "Review (N)..." while something waits on this
-  Mac's daemon. The status line is unchanged, and on a remote profile the tray is as remote-viewer.md
+  Mac's daemon (since step 42, "Review - N need you...", Section 29.3). The status line is unchanged, and on a remote profile the tray is as remote-viewer.md
   Section 6 leaves it.
 - **inspector.md**: the panel moves from the bottom to a sheet on the right, and the scope line's
   words change. Its rules and D1-D7 do not.
@@ -2937,13 +2969,17 @@ is the most that keeps `--muted` at 4.5:1 on the light ground (U7): 4.60 there, 
 clock stops while the pointer is over the notice or focus is inside it, and the 4.5 seconds start
 again when both have left, so a notice is not taken away while it is being read (WCAG 2.2.1). A `bad`
 notice, an `info` notice and a notice with an action stay until they are dismissed or their action is
-used. Four at most are shown, the newest first; a fifth takes the place of the oldest.
+used - except on the Review page, where a success whose act is also on its Decided item leaves as one
+without an action does (Section 29.3). Four at most are shown, the newest first; a fifth takes the
+place of the oldest.
 
 **How it moves.** It enters over 200 ms on the ease-out curve - from 8 pixels above in the viewer,
 where the stack hangs under the header at the top centre, and from 8 pixels to the right on the app's
 pages, where it sits at the top right under the title bar - and it leaves by fading over 120 ms. Both
 are durations of Section 3. Under reduced motion it appears and goes at once. Where the notices sit is
-unchanged (Section 18, step 2), and the stack is still one polite live region (Section 9).
+unchanged (Section 18, step 2), but on the Review page at 760 pixels and wider, where the stack sits
+over the list column so it does not cover the item's heading (Section 29.3); the stack is still one
+polite live region (Section 9).
 
 **Written twice, held as one.** The viewer is a page the daemon serves and the app's pages are the
 shell's, under two policies with no shared script, so `toast` stays in `viewer.js` and in `kit.js`,
@@ -3099,3 +3135,186 @@ observation, instead of an observation. That touches P23's list of proposal kind
 I6 ("merge is additive") and Section 3, resolution.md Section 3's gate tier per observation, and how
 gate events replicate (federation.md). It is a later step with its own check. Until then, the ask
 says the bundle's reach honestly.
+
+### 29.3 Step 42: review closes the loop
+
+**What was found.** Measured on the review's demo store, and read in the code:
+- **A decided item stays, still asking.** After Confirm on a contested item in Review, the notice
+  says it is done and the pill drops to 2, but the list still shows 3 and the item is still selected
+  with its Confirm live. A second Confirm casts a second promotion. A conflict that trust settled
+  stays in the curation report (resolution.md R7), so the report's length and stats do not change,
+  and the page's redraw signature holds only those.
+- **A blocked merge never leaves.** A reject cast on it is recorded, but the fold keeps the state
+  "blocked" whenever a merge verdict exists. proposal-workflow.md Section 7.1 concludes Rejected when
+  no valid merge exists and a valid reject does, and a blocked merge is not valid.
+- **Three acts reverse three ways.** A value confirmation has Undo, in a notice that never leaves. A
+  merge has Un-merge, on its Decided item. A claim confirmation has nothing once its notice is
+  dismissed.
+- **Decided forgets what was decided.** Once a merge lands, its row reads "(an entity not on the
+  map)", since the page names targets only from the graph. Its tag is a state id, "merged", which a
+  confirmation shows too. Its diff is worked out against today's beliefs and reads "overturns no
+  current belief". The Accept hint shows on items with no Accept.
+- **The queue does not say what it asks.** A row reads "Merge / Merge PostgreSQL into Postgres", and
+  a contested one "Ledger: which value?".
+- **One queue, three names and two counts.** The tray counts open and blocked proposals across the
+  workspaces. The pill and the segment count Needs you in the scope on screen, as "3 to review" and
+  "Needs you 3". A contested type definition waits only in the rail's Definitions and enters no count.
+- **The keys on the buttons do nothing at first.** Opening Review from the pill leaves focus outside
+  the list, and on a contested item A and R return early and there is no Skip.
+- **Suggestions and Health are not queues.** The list column holds one sentence and the detail holds
+  everything; J and K do nothing there.
+- **"Show on the map" does not come back to its item.** The map holds no way back. The pill reopens
+  Review on Needs you, so an item left from Decided is lost, and Cmd+2 keeps the segment and the item
+  but is a key to know. It frames only the entity merged into, and a click on the empty map ends
+  it.
+- **The Log's decision rows say the least.** They are drawn at 72% opacity in italic, and a claim
+  confirmation reads "Claim confirmation proposed", then "Claim confirmation accepted", with no
+  object.
+
+**Decisions taken.** The author took the recommendation on both, on 2026-10-21:
+- **D11:** every act's reverse is on its Decided item, and the notice right after a decision offers
+  the same act. On the Review page that notice leaves after 4.5 seconds, as an exception to U42.
+- **D12:** the tray counts all of Needs you, reading the curation report once a minute, and a
+  contested type definition joins Needs you.
+
+The review also suggested folding one console act's two Log rows into one (R3-15). That changes
+U17's "every event it carries has a sentence in the Log", the storyboard the author approved did not
+carry it, and this step leaves the rows apart.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| U4 | A decision control appears only with its item's diff and checks on screen, and decides that item alone | agrees - "Undo confirmation" on a Decided item shows the reverse acts' diff and checks; "Accept after all" is Accept on a rejected item, with its diff and checks as before; Un-merge opens a proposal and decides nothing. A notice offers an act only where the act decides nothing or its note says the act's diff (an Undo), so a reject's notice offers none |
+| U42 and Section 28.4 | "every other notice stays until dismissed or used"; the stack "hangs under the header at the top centre" | contradicts, on the Review page; decided by the author (D11). U42 and Section 28.4 gain: on the Review page, a success whose act is also on its Decided item leaves as a success without an action does. The stack, still one live region, sits over the list column there at 760 pixels and wider, so it does not cover the item's heading |
+| Section 7, Undo's notice "stays until it is dismissed, as an error does" | | contradicts, on the Review page; the same decision. After "Confirm instead" the notice's Undo reverses two acts, which no one Decided item holds, so that notice stays |
+| WCAG 2.2.1, timing adjustable | Content that times out can be kept | agrees - a notice that leaves takes no act away, since the same act is on the Decided item; its clock still waits while the pointer or focus is on it |
+| Section 7, the tray's count | "contested beliefs and suspected secrets need the curation read, which the tray does not make every minute" | contradicts; decided by the author (D12): the tray makes that read once a minute. Measured: `/api/curation?workspace=*` answers in 112 ms on the author's store of 437 entities |
+| Section 6, the pill | "those are the loaded scope's contested nodes, which U3 asks the bar to count" | revised: Needs you's contested beliefs are the scope's contested nodes and contested type definitions, and the parenthesis counts both |
+| U20 | The pill's count is the items under Needs you, which lists only beliefs that tie on trust | agrees - a type definition ties as a kind does (resolution-identity.md IR5), so a contested one joins Needs you and its count, and a settled one moves to Health |
+| resolution.md Section 4.1, and resolution-identity.md IR5 | Only a tie waits for a person; a definition ties as a kind does | repays - Needs you listed entity kinds only |
+| proposal-workflow.md Section 7.1 | No valid merge and a valid reject conclude Rejected | repays - the fold concludes Rejected for a blocked merge a person rejects, so it leaves Needs you; once its check passes, the merge verdict is valid and it is Merged, as a late merge is (I16). The reject is provisional, and the item says so |
+| unmerge.md Section 9 | A split's target carries a merge verdict, "`merged` or `blocked`, not `open` or `rejected`" | revised: the check reads whether a merge verdict was cast, so a blocked merge that a reject made Rejected still counts, and the fold, the shown checks and the split's diff agree (I13). proposal-workflow.md's monotonicity notes gain the same case |
+| proposal-workflow.md Section 7.1(d) | A verdict is valid only on an Open proposal | owed, as before - "Accept after all" casts a merge on a Rejected proposal, which Section 8 allows ("a later accept still merges it") and (d) does not; Section 4's [impl] note says (d) is not enforced |
+| proposal-workflow.md I18 | Curation commits nothing | agrees - the report gains type-definition conflicts and still writes nothing |
+| compatibility.md Section 7 | MCP pins its `tools/list` | agrees - no tool's input changes; `list_proposals` and `get_proposal` rows gain `labels`, and the `curate` prompt's digest gains type-definition rows |
+| compatibility.md Section 8 | The couplings between the app and the daemon are listed | owed, and repaid here - the tray already read `/api/proposals` over the socket, which Section 8 did not list; it now reads `/api/curation` too, and Section 8 names both and what the tray reads of them |
+| U17 | No identifier in a line read first; a place keeps one name | repays - Decided says Accepted, Rejected and Withdrawn; titles name merged-away entities and a gate act's source from the server; the queue is "Needs you" wherever it is counted; Section 9's words stay ("Overloaded context", "Name this group") |
+| U18, as step 41 sharpened it | A confirmation confirms a source, with everything else that source says | agrees - a confirmation's title names the source and the entities it names. The notice right after names the value too, as step 41's does, and the console records that sentence as the proposal's rationale, so the Decided item says both. The review's "Confirmed: Ledger's type is Concept" (R3-15) would name the value alone, which the log does not hold |
+| U19 | A key that decides acts only while focus is in its list or item | agrees - opening Review puts focus on the selected row, so the keys act from the first press and still only there; a contested item gains Skip (J), and its first nine Confirm buttons as 1 to 9 |
+| U26 | Esc and Cmd+[ take the way back | agrees - the map preview from Review has a way back: its banner's "Back to Review", Esc and Cmd+[ |
+| Section 9, the Log's sentences | "Claim confirmation accepted" | revised: a gate act's rows name its source, and decision rows are in the Log's full ink |
+| P18 and P23 | Promotion only explicitly; the diff before the act | agrees - Undo from Decided casts demotions through `/api/resolve`, as step 41's Undo does, only after their diff is read |
+| proposal-workflow.md I16 | Merge is absorbing | agrees - Undo casts new demotions, and the confirmation stays merged |
+| resolution.md Section 5 | A demotion is a ceiling | agrees - the Undo's note says so, as step 41's does |
+| remote-viewer.md Sections 3.2 and 3.4 | Every path on the read tier has a declared policy; a read names nothing outside the reader's grants | agrees - `/api/resolve/undo` is refused there with its own reason, as the preview is. A label names only what is in the proposal's own workspace, so a reader granted that workspace is told nothing from another; a cross-workspace merge's far side has no label |
+| P21 | No new tool without a repeated intent | agrees - no tool is added (compatibility.md Section 7's row above) |
+
+No row needs a principle changed. Two rows contradict a rule of this document, and the author's
+D11 and D12 decided both.
+
+**What the server adds.**
+- **Labels.** A proposal row's `labels` name each target: an entity by its name, merged-away ones
+  included, as the Log's event rows already do; a gate act's observation by its first 80 characters
+  and the entities it names: "The ledger is a Postgres table..." (Ledger, Nightly export); an
+  un-merge's merge by what it merged. A label names only what is in the proposal's own workspace.
+  The Log's event rows name a target that is not an entity the same way.
+- **The undo read.** `GET /api/resolve/undo?proposal=<id>` answers, for a merged claim promotion or
+  demotion, the acts that reverse it: for each target, a demotion (or promotion) to the tier it has
+  with this proposal's merge verdicts - an agent's and the console's alike - left out of the gate
+  fold. It answers those acts' diff and checks as the preview does, and no acts when the proposal no
+  longer moves any target: another proposal holds the same tier.
+- **The fold.** A blocked merge with a valid reject concludes Rejected (proposal-workflow.md Section
+  7.1).
+- **The report.** Contested and settled type definitions join `contradictions`, with `field`
+  "definition", the type's `target` and `workspace`, and the defining observation as `kind_source`.
+- **The rationale.** Every act the console casts records the sentence its notice says as its
+  rationale: "Confirmed Concept as Ledger's type"; "Table's source goes back to Agent (Confirm
+  instead)"; "Undid Confirm a claim: "The ledger is..." (Ledger)".
+
+**Behaviour.**
+- **A decision leaves Needs you at once.** After Accept, Reject or a Confirm on the Review page, the
+  item leaves Needs you with no other input, and the selection and focus go on to the next item. The
+  redraw signature holds every item's key and state: a contradiction's id, whether it is contested
+  and its current value; a proposal's id, state and verdicts.
+- **Every reverse is on its Decided item.**
+  - An accepted merge offers Un-merge, as now.
+  - A rejected proposal offers "Accept after all", also as A, with its diff and checks; it merges
+    it, since a reject is provisional (proposal-workflow.md Section 8).
+  - A merged claim promotion offers "Undo confirmation" when it raised its source to Human
+    confirmed, and "Undo promotion" otherwise. It is read from `/api/resolve/undo` when the item is
+    selected and shown with the reverse acts' diff and checks, in the words step 41's Undo note
+    uses. One act is cast per target, each to its own tier, one after the other; if one fails, the
+    notice says which targets were returned and which were not (U1). When the read answers no acts,
+    the item says "Nothing to undo: another decision holds this source where it is."
+  - A merged claim demotion offers "Undo demotion", the same way in the other direction. Its note
+    names who cast the demotion, since undoing it can raise a source someone lowered on purpose.
+  - The two acts of a "Confirm instead" are two Decided items, each with its own reverse; undoing
+    one alone ties the belief again, and its note says so from the diff.
+  - A split, a type change and a recall offer none, and say what undoing them takes: "Merging them
+    again takes a new proposal."
+- **The notice right after names the item.**
+  - "Accepted: Merge PostgreSQL into Postgres" offers Un-merge.
+  - A confirmation's notice offers Undo, with step 41's note. After "Confirm instead" it stays, since
+    its Undo reverses both acts.
+  - "Rejected: Merge PostgreSQL into Postgres" offers nothing, and says "Accept after all is under
+    Decided".
+  - On the Review page the others leave after 4.5 seconds, counted as U42 counts.
+- **Decided says what was decided.**
+  - An item keeps the title it had under Needs you, from the server's labels: "Merge PostgreSQL
+    into Postgres"; Confirm a claim: "The ledger is a Postgres table..." (Ledger, Nightly export).
+  - Tags say the outcome: Accepted, Rejected, Withdrawn. A blocked item is still under Needs you.
+  - A blocked merge a person rejected says that the reject is provisional: "If its check passes
+    later, the accept it carries still merges it." Its accept's Log row reads "Merge accepted:
+    PostgreSQL into Postgres. A check blocked it, and it was rejected".
+  - A decided item's diff is headed "What it would change now", since it is worked out against
+    today's beliefs.
+  - The Accept hint shows only where there is an Accept.
+- **The queue says what it asks.**
+  - A contested row reads "Ledger's type: Table or Concept?", with at most two values and then "or
+    N more".
+  - A contested type definition reads "Service's definition: which meaning?". Its key is its
+    workspace, axis and name, so two workspaces' Service are two items.
+  - A proposal's tag says only what its title does not, Blocked, so "Merge" is said once.
+- **One count, the items under Needs you.**
+  - The pill reads "Review" when nothing waits, and "1 needs you" or "3 need you (2 contested)"
+    when something does. The parenthesis counts contested beliefs, types and definitions both.
+  - The segment reads "Needs you 3".
+  - The tray reads "Review - 3 need you..." across this Mac's workspaces, from the proposal list and
+    the curation report, read once a minute. Its item opens Review at All workspaces, the scope its
+    count is of. When the curation read fails and the proposal list answers, it says what it
+    counted: "Review - 2 proposals wait..." (P5).
+  - Suggestions and Health keep their counts, drawn muted, so only Needs you's count asks.
+  - A contested type definition is a Needs you item, settled with the block the rail draws. The
+    rail keeps its own act, as the inspector does (inspector.md D1).
+- **The keys act from the first press.**
+  - Opening Review from the pill, Cmd+2 or the tray puts focus on the selected row.
+  - A contested item has Skip, also as J, and K steps back. Its Confirm buttons, in the order shown,
+    are 1 to 9; a value with no Confirm has no number, and a tenth has none. A number opens the ask
+    as a click does, and the ask's Confirm, which takes focus, is pressed with Enter or Space as any
+    button is.
+  - A suspected secret has Skip too.
+- **Suggestions and Health are queues.** Each suggestion or signal is an item in the list, its detail
+  on the right with its act:
+  - "Possible duplicate: PostgreSQL ~ Postgres" with Propose;
+  - "Overloaded context: 14 entities" with Name this group;
+  - "Unlinked: Session cookie" with Show on the map.
+  J and K step through them. At All, an empty Needs you reads "Nothing waits for you in any
+  workspace."
+- **The map preview has a way back.**
+  - "Show on the map" frames every entity the item names.
+  - A banner over the map says "Preview: Merge PostgreSQL into Postgres", with "Back to Review" and
+    "Done".
+  - "Back to Review", Esc and Cmd+[ return to the item, closing the sheet the preview opened. "Done"
+    ends the preview, and a click on the empty map keeps it.
+- **The Log's decision rows say what was decided**, in the Log's full ink: "Merge accepted:
+  PostgreSQL into Postgres", as now, and Claim confirmation accepted: "The ledger is a Postgres
+  table..." (Ledger, Nightly export).
+
+**What this step does not do.**
+- It does not keep a decided item's diff as it was at the decision: that needs the fold at the
+  decision's base, and the heading says the diff is today's instead.
+- It does not fold a console act's two Log rows into one (above).
+- It does not let a person keep the other name of a merge (D19) or open a merge the detectors missed
+  (step 51).
+- It does not change the who-line's grammar, which step 46 does.

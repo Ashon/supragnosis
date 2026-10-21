@@ -187,8 +187,11 @@ suite. A split's suite:
 
 - the named proposal exists in the local log,
 - its kind is `entity_merge`,
-- it carries a merge verdict - `merged` or `blocked`, not `open` or `rejected`. Reversing something
-  that was never decided is a verdict about an act nobody committed to.
+- it carries a merge verdict - `merged` or `blocked`, or `rejected` after a merge verdict the checks
+  held back, but not `open` or plainly `rejected`. Reversing something that was never decided is a
+  verdict about an act nobody committed to. *(Revised by design-system.md Section 29.3: a person's
+  reject now concludes a blocked merge Rejected, as proposal-workflow.md Section 7.1 has it, and the
+  check reads whether a merge verdict was cast, not the state.)*
 
   Deliberately **not** "its state is `merged`", which is what this document said before the check
   was written. The check runs inside the fold that decides merged-versus-blocked, so depending on

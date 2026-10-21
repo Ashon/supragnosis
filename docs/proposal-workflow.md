@@ -278,7 +278,8 @@ Section 13.)
 
 [impl] The shipped checks deliver this monotonicity without the base machinery (which does
 not exist yet - the Section 4 [impl] note): each implemented predicate is monotone in the
-growing log itself. Referential integrity can only flip blocked -> merged, because
+growing log itself. Referential integrity can only flip blocked (or rejected, after a merge verdict
+the check held back) -> merged, because
 observations and asserted entities never leave the log, and the axis-collision check is a
 function of the proposal alone (Section 13, M3.5b [impl]). A future check that is NOT
 monotone in the growing log - impact radius is the standing example - cannot ship this way
@@ -559,7 +560,9 @@ between M3 and M4 (pre-value in solo/hub environments).
   blocked - the merged -> blocked direction I16 forbids - so the cross-glossary collision stays an
   informative curation signal (type_axis_collisions) instead. Every implemented blocking predicate is
   monotone in the growing log for the same reason: blocked -> merged only, never the reverse (the
-  settled open decision below).
+  settled open decision below). A blocked merge a valid reject also reaches concludes Rejected, as
+  Section 7.1 has it, and flips to Merged the same way once its check passes (design-system.md
+  Section 29.3).
 - M3a (belief resolution, [resolution.md](resolution.md)): claim-promotion and claim-demotion gain
   their **commit effects** - a merged verdict sets the target observations' gate tier, which the
   resolution policy consumes - and the **human-direct surface ceiling** caps what an agent-cast
