@@ -25,7 +25,8 @@
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
 > steps 41 and 42 are built: a confirmation that says what it confirms, and a review that closes its
-> loop, and step 43, a map that keeps the person's place, is built.
+> loop, and step 43, a map that keeps the person's place, is built. Step 44, app pages that hold
+> focus and a failure that says so, is specified.
 
 ## 1. Why this exists
 
@@ -719,7 +720,8 @@ pass a fifth:
 - **The plan is checkboxes, and Set up is the default.** Every item of Setup's plan is a checkbox
   whose label is its whole row, since the plan is a choice the Set up button confirms (Section 4).
   Set up is the default button, which Return presses, and the first control after the plan in tab
-  order. Copy log and Copy diagnostics sit at the left, beside the privacy line. An item that replaces
+  order, drawn at the trailing edge. One Copy Diagnostics sits at the left, beside the privacy line,
+  once a step has run or failed in this visit, or the check could not be read (Section 29.5). An item that replaces
   what the person set up - an app's "Switch to the bridge", the daemon's "Take over" - starts
   unchecked (onboarding.md O8). While the plan runs
   the foot says "Setting up... 2 of 3"; when it ends the heading says "Supragnosis is set up"; the
@@ -1427,7 +1429,7 @@ social image.
 | **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
 | **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; and a place keeps one name wherever it is reached (P2). |
 | **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
-| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
+| **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a page that draws itself again keeps the control that had focus; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
 | **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen while the person is not using the map, names it in a notice with Show while they are, and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
 | **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's View menu sets the root's size from 100% to 200% and keeps it, while the title bar keeps its height and its traffic lights' place; and no text is cut short except where focus or a press shows it whole. |
 | **U22** | Every corner the viewer's, the app pages' (`settings.css`, `welcome.css`, `shell.css`) and the landing's stylesheets draw is one of Section 3's radius tokens, none, or a dot's circle; a part inside a rounded part takes the outer radius less the space between them; a pill and a large control are capsules, and the controls of one row share one size; a checkbox, a radio and a switch take the accent; and no line is dashed or dotted, on a page or on a canvas. |
@@ -1774,6 +1776,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    use and its toggle on the camera toolbar, the selection in the address, the way back to the
    address left, a selection history, Esc giving the camera back, a layout reset, and a selection
    followed when it is merged or named when it leaves.
+44. **The app's pages hold focus, and a failure says so** (Section 29.5; U19): focus kept across a
+   draw and no draw for an unchanged read, the starting page's three states with Restart, Diagnostics
+   and the log, a restart that leaves a login job its daemon, Settings acting on what that page asks,
+   selectable commands and paths with Copy, and Setup's foot.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -3443,3 +3449,106 @@ decided both.
 - It does not register `supragnosis://` with the system, offer "Copy link" (an app address opens
   nowhere yet), or give the Review item, the observation card or the List an address (R1-07).
 - It does not reopen Settings on its last pane, or say "< Settings" on Setup opened from Settings.
+
+### 29.5 Step 44: the app's pages hold focus, and a failure says so
+
+**What was found.** Measured in the app's pages and on the shell's starting page:
+- **Setup and Settings throw focus away.** Setup draws itself again on its 15-second check, 1.5
+  seconds after any event and on every streamed line; Settings on every window focus, every 2 seconds
+  while the daemon is unsettled, and on every download line. Each draw replaces the page, and
+  keyboard focus lands on the page's body. A probe focused "Details" and then Restart; after the next
+  draw, focus was on the body both times. VoiceOver starts again from the top.
+- **The page shown when the daemon cannot start keeps saying "starting".** Its heading is "starting
+  the supragnosis daemon..." when it starts and when it failed; the line under it is the shell's raw
+  status ("daemon: FAILED - the spawned daemon exited immediately (...): ... - full log: ..."); and
+  the page reloads every second, so a Tab to "Open This Mac" is lost a second later. The whole page
+  is a drag region, so the error cannot be selected either. There is no Restart, no copy, and the
+  log path must be retyped - and it names the app's own log even when a login job runs the daemon
+  and writes another.
+- **Commands and paths cannot be selected.** The shell's stylesheet makes the app's pages
+  unselectable but for inputs and `.selectable`, so the command Setup gives for an AI app and Sync's
+  `~/.supragnosis/supragnosis.toml` must be retyped.
+- **Setup's foot puts two copy buttons beside the page's acts** before anything has run, when the
+  log is "(nothing ran)" four times.
+- **Restarting a failed daemon can spawn one beside a login job.** This Mac's Restart, from the
+  shell's Failed state, starts the daemon the way the app's launch does, and spawns a child whenever
+  the socket is silent - also when a login job owns the daemon and is still bringing it back.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| WCAG 2.4.3, 3.2.1 and 3.2.5 | Focus moves where the person moves it; nothing changes context unasked | repays - a draw keeps focus on the control that had it, a read that changed nothing draws nothing, and the starting page no longer reloads under the person. The shell turns that page into the graph when the daemon answers: the page stands in for the graph at the graph's own address, and the graph arriving is the content the person opened, not a change of context |
+| WCAG 2.2.1, timing adjustable | Content that changes on a timer can be stopped | repays - the starting page has no timer of its own |
+| U19 | Every control exposes its state; a dialog holds focus | revised: it gains "a page that draws itself again keeps the control that had focus", the rule R4-01 asked for, guarded by a test of the app's, named when it is built |
+| design-system.md Section 6a | A control both pages offer is built once in the app's shared script; Set up is "the first control after the plan in tab order"; "Copy log and Copy diagnostics sit at the left" | agrees with the first two - the focus keeping is `kit.js`'s, and Set up stays first in tab order while it is drawn at the trailing edge; revised in the third: one Copy Diagnostics, once a step has run or failed in this visit, or the check could not be read |
+| onboarding.md Section 6 | "Copy log" copies every drawer; "Copy diagnostics" copies the two reads | revised: one Copy Diagnostics copies the drawers, the two reads, the shell's status and the daemon log's last lines |
+| onboarding.md O4 | Setup's own acts are few and listed | agrees - copying changes nothing, and nothing is added to them |
+| settings-page.md Section 3.3, the starting page | "says why and offers one button": Rebuild index, or Open This Mac, "where Restart is"; it holds no command of its own (S1) | revised: for a failure other than a store the daemon cannot open, it offers Restart, Diagnostics and Open This Mac, each a link to Settings as Rebuild index is, and still no command of its own |
+| settings-page.md Section 4 (S1) | A command acts only for the app's own pages | agrees - Settings starts a restart from `act=restart` only while the daemon does not answer and the shell is not starting it, which a page a daemon serves cannot cause (a viewer page exists only while its daemon answers); with a remote profile active the command refuses (S6). The new command that shows a file in Finder checks its caller and shows only one of a fixed pair, the daemon's log and `supragnosis.toml` |
+| daemon-lifecycle.md Section 6 | "the shell spawns none of its own beside a login job" | repays - a Restart of a failed or silent daemon goes through `supragnosis restart` when `status --json` names any manager, as a Restart of an attached daemon already does, and spawns only when none does |
+| P24 | Degrade, and be loud in the place that is read | repays - the page the window shows says "could not start" and why, not "starting" |
+| P17 and onboarding.md O6 | Nothing leaves the machine; no secret is copied into a report | agrees - Copy Diagnostics puts the CLI's two reads, the shell's status and the log's last 40 lines on this Mac's clipboard, where they stay until the person pastes them. The log's lines can name workspaces, principals and peers; none carries the token, which the daemon logs only by its path |
+| U7 | Text meets its contrast floor | agrees - the starting page keeps its colors, which are the tokens' |
+
+No row needs a principle changed, and no decision of the author's is needed: the review asked none for
+these findings.
+
+**Behaviour.**
+- **A draw keeps focus.**
+  - Before Setup or Settings draws itself again, `kit.js` notes the focused control's key - the
+    nearest `data-k` or `id` at or above it, its kind and its name - and an input's selection. After
+    the draw it focuses the control with that key; one whose name changed with the draw ("Restart" to
+    "Restarting...") is found by the rest of its key when only one control matches.
+  - The keys: a row of an AI app is `app:<id>`, a server `server:<name>`, a peer `peer:<id>`, a
+    granted workspace `grant:<name>`, a step's card on Setup `step:<step>`, This Mac's daemon card
+    `daemon` and its model card `model`.
+  - A line streamed into a step's log is added to its open drawer and its progress words in place,
+    with no draw, so a screen reader is not sent back to the control.
+  - Three reads draw only when what they read changed: Setup's 15-second check, and Settings' read
+    on window focus and its 2-second watch. Every other draw - after an act, on a hash change - happens
+    as now.
+- **The starting page says which of three things is true,** from the shell's state, and has no timer:
+  - **Starting**, for the first 10 seconds of a start the shell made: "Starting supragnosis..." with a
+    small spinner, still under reduced motion, and nothing to press.
+  - **Still starting**, after that, and while a child the app spawned is alive and not yet
+    answering (the app stops waiting on it at 10 seconds, and a cold start can take longer): the same
+    heading, "Still starting.", the daemon's log path in a read-only field, and Open This Mac.
+  - **Could not start**, when the shell's state is Failed, when the child the app spawned has
+    exited, or when a daemon the app attached to has gone silent: the heading "Supragnosis could not
+    start"; the cause in one sentence - the shell's reason up to " - full log:", "The daemon exited."
+    or "The daemon stopped answering."; Restart, the
+    default (it has focus when the page opens), Diagnostics and Open This Mac, each a link to Settings
+    > This Mac (`?act=restart`, `?act=diagnostics`); the log's path in a read-only field, selectable
+    and copyable; and Show in Finder (`?act=reveal-log`).
+  - **The log** is the one written last of `app-daemon.err.log` (the app's child) and
+    `supragnosis.err.log` (a login job, and `supragnosis start`).
+  - A store the daemon cannot open keeps its page, with Rebuild index.
+  - **The shell changes the page**, not the page itself. It sets a flag when it serves the starting
+    page and clears it when it serves the graph's own page, both at the viewer's address. While the
+    flag is set it checks the socket and its state every second, and reloads the window when the
+    daemon answers - the graph then - or when what the page should say changed. A graph whose daemon
+    goes silent for a moment is not swapped for this page.
+- **Settings acts on what the starting page asks,** and drops the parameter once read, as it drops
+  `act=rebuild`:
+  - `act=restart` restarts the daemon once, only while it does not answer and the shell is not
+    starting it; otherwise This Mac says the daemon's state as usual, with a notice that names it:
+    "Not restarted: the daemon answers" or "Not restarted: the daemon is still starting".
+  - `act=diagnostics` puts focus on This Mac's Copy Diagnostics, so the copy is the person's press.
+  - `act=reveal-log` shows the daemon's log in Finder.
+- **This Mac gains Copy Diagnostics and the daemon log's path,** selectable, with Show in Finder.
+- **Commands and paths are selectable,** in `code` and `.mono` on both pages. A command in Setup's
+  sentences - a `code` span that begins with `supragnosis ` - has a Copy beside it, and Sync's
+  sentence naming `supragnosis.toml` gets Show in Finder.
+- **Setup's foot** draws its acts at the trailing edge, the default rightmost and first in tab order,
+  and one Copy Diagnostics at the leading edge, once a step has run or failed in this visit or the
+  check could not be read.
+
+**What this step does not do.**
+- It does not give the page shown while a remote server is active (`remote_html`) the same anatomy.
+- It does not read a systemd unit's journal or a legacy `brew services` job's log for the log field
+  and Diagnostics; under those, they name the two files above.
+- It does not change the tray's lines or icon, or the Quit item's words (D14, D15: step 50).
+- It does not give the daemon's states one word on every surface (R4-11, step 45), build the AI app's
+  row once for both pages (R4-08), or rename Settings' sidebar, reopen its last pane and keep the
+  window's size (R4-14, R4-16).

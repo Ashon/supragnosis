@@ -148,13 +148,16 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
   section's top card says so with both models and holds Rebuild index as its one action. Restart,
   which would fail the same way, is not offered while it shows.
 - **When the daemon cannot start.** The page the window shows while the daemon does not answer -
-  the shell's own, at the viewer's address, without a script - says why and offers one button.
+  the shell's own, at the viewer's address, without a script - says why and offers what fixes it.
   For a store the daemon cannot open it reads "The search index needs rebuilding", with both
   models, and **Rebuild index** opens this page as `settings.html?act=rebuild#daemon`, which starts
   the rebuild at once while the daemon still cannot open its store: the click on the starting page
-  is the consent. For any other failure the button is **Open This Mac**, where Restart is. The
-  starting page holds no command of its own (S1): it is at the viewer's address, and a command it
-  could call, a page a daemon serves there could call as well. A page that opens Settings with
+  is the consent. For any other failure the page says "Supragnosis could not start" with the cause,
+  and offers **Restart**, **Diagnostics** and **Open This Mac**, each opening this page
+  (`act=restart`, `act=diagnostics`), with the log's path to select and Show in Finder
+  (`act=reveal-log`); `act=restart` restarts the daemon only while it does not answer and the shell
+  is not starting it (design-system.md Section 29.5). The starting page holds no command of its own (S1): it is at the
+  viewer's address, and a command it could call, a page a daemon serves there could call as well. A page that opens Settings with
   `act=rebuild` while the store opens changes nothing, and with a remote server active the command
   refuses (S6).
 - **While a remote profile is active** these controls are disabled, with the reason: this Mac's
