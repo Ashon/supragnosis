@@ -28,7 +28,7 @@
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
-> the first entry on screen.
+> the first entry on screen. Step 49, search that finds and holds, is specified.
 
 ## 1. Why this exists
 
@@ -635,7 +635,9 @@ On the Graph page:
   does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
   activity feed's passing rows sit inside the window at its upper left. *(Revised by step 48: with
   nothing observed the strip says "Nothing here yet.", the canvas's words, Section 29.10.)*
-- **The map has a List** (U24). List, the camera toolbar's first button after Follow (Section 29.4),
+- **The map has a List** (U24). *(Revised by step 49: Map and List are one tab list after Follow,
+  List follows the working set, its rows are marked when contested and sort by any column, Section
+  29.11.)* List, the camera toolbar's first button after Follow (Section 29.4),
   turns the map's window
   into a table of the entities the map draws - the same scope, the same filters, the same search -
   sorted by type and then by name, each row naming the entity, its type, its trust by the legend's
@@ -647,7 +649,8 @@ On the Graph page:
   the map for a screen reader and for anyone who cannot tell sixteen colors apart: it names each
   type in words.
 - **The camera is one toolbar** at the window's lower right: Follow, List, view, zoom in, zoom out,
-  fit (Follow since step 43, Section 29.4). Under 760
+  fit (Follow since step 43, Section 29.4; since step 49 Map and List are one tab list in List's
+  place, and zoom and Fit are idle while List shows, Section 29.11). Under 760
   pixels it stays at the top right, out of the sheets' way (Section 18). The minimap is on, above the
   toolbar, until View turns it off; between 760 and 1200 pixels it gives way to a panel floating over
   the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
@@ -899,7 +902,9 @@ map give one answer.
   "20+", since the limit cuts the keyword list before it is counted.
 - **Nothing is chosen until the person moves.** The field is a combobox with a list and no automatic
   selection (WAI-ARIA's combobox pattern): ArrowDown moves to the first row, and Enter acts only on
-  the row the person moved to. Once a row is chosen, the field shows its name.
+  the row the person moved to. Once a row is chosen, the field shows its name. *(Revised by step 49:
+  a choice clears the field, the set row "Show these 13 on the map" comes first, and an empty field
+  offers recent searches, Section 29.11.)*
 
 The path's read-tier policy is `Read`, never `Served`: the workspace is resolved over the reader's
 grants as `/api/graph` resolves it (remote-viewer.md V3). A union - `*` on the read tier - is searched
@@ -1041,7 +1046,8 @@ shell's lines or Setup's sentences, comments and test code left out:
 - Every control is a `button` or an `input`. Chips, legend entries, proposal rows and log rows stop
   being clickable spans. Tab lists carry their roles and move with the arrow keys.
 - The map is reached through search, and from a focused node its relations are a Tab away in the
-  sheet. Esc closes the topmost card, menu or sheet (step 0).
+  sheet. Esc closes the topmost card, menu or sheet (step 0), and since step 49 ends a working set
+  last, when nothing else is open (Section 29.11).
 - Under reduced motion nothing moves: no pulse, no sliding docks, no spinner, and
   the layout settles in one frame.
 - Text drawn at full strength on a token surface meets 4.5:1 (U7). One thing is outside the pairs on
@@ -1513,7 +1519,7 @@ social image.
 | **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's View menu sets the root's size from 100% to 200% and keeps it, while the title bar keeps its height and its traffic lights' place; and no text is cut short except where focus or a press shows it whole. |
 | **U22** | Every corner the viewer's, the app pages' (`settings.css`, `welcome.css`, `shell.css`) and the landing's stylesheets draw is one of Section 3's radius tokens, none, or a dot's circle; a part inside a rounded part takes the outer radius less the space between them; a pill and a large control are capsules, and the controls of one row share one size; a checkbox, a radio and a switch take the accent; and no line is dashed or dotted, on a page or on a canvas. |
 | **U23** | Under `prefers-contrast: more` every text token takes the next stronger one, every control, chip and field draws an edge of 3:1 on its surface, and the focus ring is 3 pixels; under `forced-colors: active` the map redraws in the system's colors, keeps every mark it draws, and widens the human-confirmed ring. |
-| **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and search, sorted by type and name, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
+| **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and working set, starting by type and name and sorted by any column, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, marked when contested, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
 | **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; it holds no other navigation; every page's bar is one bar, the star first and the way back and the title where the Review page has them; and in the app it drags the window from anywhere but its controls, and clears the traffic lights only while they are shown. |
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U28** | Drawing never moves the layout: a pan, a zoom, a hover, a highlight or a selection redraws the map without a simulation step, and a layout that has come to rest visits no pair of nodes until something warms it. |
@@ -1900,6 +1906,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
    contact, with the minutes and what to check; the landing's one line opens the app; an empty scope
    says so in one voice and keeps no camera controls that act on nothing; and the default is called
    by its name.
+49. **Search finds, and holds** (Section 29.11; D8; Sections 6, 8, 10 and 29.4 and U24 revised): a
+   choice clears the field, an empty field offers this page's recent searches, hits name their
+   workspace, "Show these 13 on the map" pins the answer as a working set that dims the rest and
+   grows by Show related, List follows the set, and Map | List takes List's place, with List's rows
+   marked when contested and sorted by any column.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -3083,7 +3094,7 @@ the weight of whichever face was loaded, and moved with it.
 | the contested badge's "!" | circle-alert's mark |
 | the hand-drawn closing x, three places | x |
 | the inspector's hand-drawn chevrons | chevron-up and chevron-down |
-| the HUD's list, eye, plus, minus and fit | list, eye, plus, minus and scan |
+| the HUD's list, eye, plus, minus and fit | list, eye, plus, minus and scan, and since step 49 the Map tab's waypoints (Section 29.11) |
 | the title bar's and status bar's pasted paths | panel-left, panel-right, chevron-left and settings, as files |
 | the principles page's "+" and "-" on a clause list | chevron-right, turned down while open |
 
@@ -3515,7 +3526,8 @@ decided both.
   search make are not the person's move.
 - **Follow waits while the map is in use**: while a node is selected; while the List, the View
   popover, the search's results or an observation card is open; while the Review page is open; and
-  for 20 seconds after the person's move.
+  for 20 seconds after the person's move. *(Revised by step 49: and while a working set is pinned,
+  Section 29.11.)*
   - Activity in the scope on screen meanwhile - a write, a search, a read of an entity, a traversal -
     is one notice, `info`, saying the latest in words, always as what an agent did, so it is never
     taken for the notice of a write elsewhere ("New in infra", whose Show changes the scope): the
@@ -4337,3 +4349,107 @@ page's one clock and Setup's address in the shell) and `copy_diagnostics_carries
 `crates/supragnosis-viz/tests/empty.rs`; `the_local_surface_names_its_node` (the default's name);
 `the_landing_says_the_next_step_and_reads_on_a_phone` (the command that opens the app, the line
 under it and the promise); and `no_retired_word_reaches_a_page` (the four retired phrases).
+
+### 29.11 Step 49: search finds, and holds
+
+**What was found.** Measured on the Graph page:
+- **The field keeps the term like a filter.** Choosing a hit writes its name into the field, and the
+  name stays on the Graph, in List and on Review. A filled field reads as a filter that is on, yet
+  List shows every row under it: its rows apply the type filters only, though U24 says List follows
+  the search.
+- **A search's answer cannot be kept.** Typing "Postgres" lights 13 hits while the list is open; a
+  click on the map or a choice closes the list and the lit set is gone. Comparing three hits takes
+  three searches, and from a selected entity only its direct neighbours light, with no way to go a
+  step further without losing the first.
+- **Hits do not say where they are.** Under All, two "Payment service - Service" rows differ in
+  nothing the row shows.
+- **List keeps the map's camera.** In List, zoom in, zoom out and Fit stay lit and move a map no one
+  can see; List is one camera button among six. A contested entity is a plain row, and the table is
+  fixed to type then name.
+
+**Decisions.** The author approved D8: search is a way to go somewhere, and its answer can be kept
+on the map. A choice clears the field, and "Show these 13 on the map" pins the answer as the
+**working set** - the entities the person asked to keep in view - while the rest of the map dims as
+a selection dims it. A set laid out on its own, as Neo4j Bloom does, was ruled out because it loses
+the remembered layout; a term kept in the field that every view filters by was ruled out because a
+filled field would then mean two things. For the same reason List follows the working set and not
+the field.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 8 | Enter on a row focuses an entity or opens an observation's card; once a row is chosen, the field shows its name; the empty scope's first row is "Search all workspaces" | revised - after a choice the field clears and the chosen name is the sheet's title, so a filled field always means a query in progress; the set row comes first in the list, before the groups |
+| U15 | Each hit says how it was reached and over what scope; nothing is chosen before the person moves | agrees - an entity hit names its workspace when the scope holds more than one; the set row is a row like the others, not chosen until the person moves to it, and ArrowDown then Enter pins the set where it took the top hit before |
+| P5 | A bounded answer says what it left out | agrees - the set row says "these 12", and "- the search stopped at 20" when the answer holds the path's limit, as Section 8's "20+" reads it; hits the view does not draw are counted apart, "2 are not drawn in this view"; the status line says the same |
+| P19 | The search answers what the engine answers | agrees - the set is the engine's answer, kept; what Show related adds is the graph's own relations, said apart in the status bar |
+| U24 | List shows the entities the map draws, in its scope, filters and search, sorted by type and name | revised - List follows the working set, not the field, starts by type and name and sorts by any column; a line under its head says what the set holds, with Clear |
+| U3 | A contested entity is marked wherever it is drawn | repays - List's row carries the badge, with "Two sources disagree" as its words |
+| Section 29.9 | The status bar says what is hidden or dimmed and offers Show all, which clears both; the canvas's name says what it draws | agrees - the status line says ", 13 kept for "Postgres"" while a set is pinned, Show all ends the set with the filters, and the canvas's name says it too |
+| Section 29.4 and U20 | Follow waits while the map is in use; it never takes the camera while the person is using the map | revised - Section 29.4's list gains "while a working set is pinned", an extension of D6 that U20's own words already cover; pinning changes no scope or selection, and moves the camera only when the person presses Fit |
+| U38 and U40 | At a far zoom a node fades by rank unless hovered, selected, active, pulsing or contested; a frame keeps its budget | agrees - the set dims the rest without making its members active, so at a far zoom they fade by rank like any entity and Fit brings them back; a frame looks each drawn node up once |
+| U28 | Drawing never moves the layout | agrees - a set dims and lights and moves nothing |
+| Section 4 | A row of segments that changes what a page shows is a tab list; a control that cannot act now is dimmed and says why | agrees - Map and List are two tabs; while List shows, zoom and Fit stay in place, `aria-disabled` and described, as Section 29.10's idle buttons are |
+| Section 6 and Section 29.4 | Follow leads the camera toolbar, and List is the first button after it | revised - Map and List, as one tab list, take List's place after Follow |
+| Section 10 | Esc closes the topmost card, menu or sheet | revised - while List shows, Esc goes back to Map first, from the table or the tab; it ends a working set last, when nothing else is open to close |
+| U19 | Every control is reachable from the keyboard, exposes its state and is big enough to press | agrees - Map and List are tabs with `aria-selected` and the arrow keys; the column heads are buttons with `aria-sort`; the set row carries `aria-keyshortcuts`; the kept pill and Clear are buttons; each is 28 pixels or the camera's 32, and 44 under a finger |
+| U25 | A tooltip names a control and its key, five words at most | agrees - "Map", "List", and Fit's "Fit to kept entities" while a set is pinned |
+| Section 29.10 | With the scope empty, zoom, Fit and List are idle | agrees - the List tab is idle with them and stays reachable by the arrow keys |
+| inspector.md Section 6 | The sheet's Relations heading counts the entity's relations | agrees - it gains Show related beside the count, an act on the map and not a change to the sheet |
+| U41 and Section 28.3 | Icons are Lucide's files, one per role | agrees - Map is Lucide's `waypoints`, copied unmodified; the toolbar's row of Section 28.3 gains it |
+| Section 5 and remote-viewer.md V7 | The page keeps nothing in the browser that a grant would outlive; one principal's reads are not shown to another | agrees - recent searches and the set live in the page's memory only and are gone when it reloads, as it does on a change of server |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **A choice clears the field.** Choosing an entity selects it and clears the field; choosing an
+  observation opens its card and clears the field, as it does now. From Review a choice opens the
+  Graph, as now.
+- **Recent searches.** An empty field that takes focus lists the last five queries this page ran,
+  newest first, under "Recent"; choosing one asks it again.
+- **Hits name their workspace.** When the scope holds more than one workspace, an entity hit's row
+  reads "Service in infra", the words the hover card uses.
+- **Show these on the map.** When the answer holds two or more entities the map draws, the list's
+  first row is "Show these 13 on the map", with "- the search stopped at 20" when the answer holds the
+  path's limit and "2 are not drawn in this view" when some entity hits are not drawn, and the key cap
+  Cmd+Enter, as the viewer's other keys are written (Ctrl+Enter works too), which the field takes on a
+  fresh answer. It adds the drawn entity hits to the working set, clears the field and, from Review,
+  opens the Graph. A second one adds to the set, as Show related does.
+- **What a working set does.**
+  - While no selection, open search list or Review preview takes the map, its members and the
+    relations between them stay at full strength, and the rest of the map dims to `DIM_NODE` and
+    `DIM_EDGE`; a dimmed trust tier stays dimmed inside it, and regions are drawn as at rest. At a far
+    zoom its members fade by rank like any entity (Section 26).
+  - The status line says it after its counts: ", 13 kept for "Postgres"", ", 12 kept for "Postgres"
+    (the search stopped at 20)", or ", 25 kept - 13 for "Postgres", 12 related to Ledger" once more
+    has been added. Since a narrow status bar gives up its counts first, a pill beside them says "13
+    kept" with an x named "Clear", which ends the set; it stays on a phone. The status bar's Show all
+    ends the set with the filters.
+  - The canvas's name says the same, and "List shows the kept ones as a table."
+  - Fit frames the set, named "Fit to kept entities"; the camera moves only when the person presses
+    it.
+  - Follow waits (Section 29.4).
+  - A member merged away is followed to what it became, as a selection is (Section 29.4); one the
+    filters hide or the scope no longer holds is not counted; a change of scope ends the set.
+  - Esc ends it when nothing else is open to close.
+- **Show related.** The sheet's Relations heading offers "Show related" while the entity has drawn
+  relations. It adds the entity and the entities its drawn relations reach to the working set,
+  pinning one when none is, and pressing it on a related entity's sheet goes a step further.
+- **List follows the working set.** While a set is pinned List lists its members, and a line under
+  List's head says "13 of 20 entities kept - 13 for "Postgres"", with Clear. Otherwise it lists
+  everything drawn, as now.
+- **Map | List.** The camera toolbar keeps Follow first; after it, Map (Lucide `waypoints`) and List
+  (Lucide `list`) are one tab list, the arrow keys moving between them. While List shows, zoom in,
+  zoom out and Fit stay in place, `aria-disabled` and described by "List shows the map as a table.",
+  and Esc goes back to Map, from the table or the tab. Under 760 pixels the toolbar wraps onto a
+  second row when its controls do not fit, so nothing scrolls sideways at 320 under a finger.
+- **List's rows.** A contested entity's row carries the badge before its name, with "Two sources
+  disagree" as its words. Each column head is a button that sorts by that column, again to reverse,
+  and says which way with `aria-sort`; ties sort by name, and the order holds across polls. The table
+  starts by type, then name. Sorting by Trust takes a part of R2-06; filtering by trust stays owed.
+
+**What this step does not do.**
+- It does not lay a set out on its own or keep it across visits (D8).
+- It does not filter List by trust (R2-06).
+- It does not move the minimap or make Fit leave room for it (R2-14), which step 50 takes.
+
