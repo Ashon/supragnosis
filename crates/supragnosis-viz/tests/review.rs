@@ -170,7 +170,7 @@ fn suggestions_and_health_are_queues() {
     let items = function("signalItems");
     for title in [
         "\"Possible duplicate: \"",
-        "\"Overloaded context: \"",
+        "\"Overloaded region: \"",
         "\"Unlinked: \"",
         "\"Conflicting merges: \"",
     ] {

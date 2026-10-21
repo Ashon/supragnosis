@@ -70,6 +70,9 @@
       <div id="glossaryBody"></div></details>
     <div class="rsec">Trust</div>
     <div id="legendTrust"></div>
+    <!-- The map's key: each mark the view draws, and only those (design-system.md Section 29.9). -->
+    <div class="rsec" id="marksHead">On the map</div>
+    <div id="legendMarks"></div>
   </div>
 </aside>
 <aside id="dockR" class="dock on">
@@ -97,7 +100,7 @@
 <div id="previewBar" hidden><span class="pv-t"></span>
   <button type="button" class="btn" data-pv="back" aria-keyshortcuts="Escape">Back to Review</button>
   <button type="button" class="btn" data-pv="done">Done</button></div>
-<div id="statusbar"><span id="stats"></span>
+<div id="statusbar"><span id="stats"></span><button type="button" id="showAll" class="spill" hidden>Show all</button>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
   <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span>
   <!-- The way to Review (design-system.md Section 6, U20): always here on the local console, with
@@ -164,8 +167,8 @@
     <p class="vdesc" id="dReset">Forgets where this scope's entities were and lays it out again.</p>
     <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
     <p class="vdesc" id="dPeers">Other machines, as dots that move to the entities they touch. On by default on a hub.</p>
-    <button id="clusterBtn" class="tog" aria-describedby="dCluster">Group by type</button>
-    <p class="vdesc" id="dCluster">A circle of entities for each type, with the relations between groups kept.</p>
+    <button id="clusterBtn" class="tog" aria-describedby="dCluster">Arrange by type</button>
+    <p class="vdesc" id="dCluster">A circle of entities for each type, with the relations between types kept.</p>
   </div></div>
   <div class="grp"><span class="ghdr">Show</span><div class="btns">
     <button id="labelsBtn" class="tog on" aria-describedby="dLabels">Labels</button>

@@ -395,6 +395,20 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/graph" => graph_response(engine, query),
         "/api/hypergraph" => hypergraph_response(engine, query),
         "/api/types" => types_response(engine, query),
+        // The store's most used types, which a page gives the type band's colors once
+        // (design-system.md Section 29.9, D4): every workspace on the local console.
+        "/api/common_types" => match engine.common_types(None) {
+            Ok(types) => Response {
+                status: "200 OK",
+                content_type: "application/json",
+                body: serde_json::json!({ "types": types }).to_string(),
+            },
+            Err(e) => Response {
+                status: "500 Internal Server Error",
+                content_type: "application/json",
+                body: err_body(&format!("store error: {e}")),
+            },
+        },
         "/api/curation" => curation_response(engine, query),
         "/api/proposals" => proposals_response(engine, query),
         // Review verdict: a GET carrying the action in the query. GET-with-side-effect is intentional here -

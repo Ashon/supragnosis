@@ -27,7 +27,7 @@
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
-> is built, as is step 46b, the app that wrote it. Step 47, a map that explains itself, is specified.
+> is built, as is step 46b, the app that wrote it, and step 47, a map that explains itself.
 
 ## 1. Why this exists
 
@@ -1877,7 +1877,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 46b. **The app that wrote it** [built] (Section 29.8; D13, onboarding.md O7): the MCP client's name recorded in
    a local table beside each attestation its session writes, store format 3, one name table in the
    core crate, said in the who-line and the map's activity, and kept off the wire and the read tier.
-47. **The map explains itself** (Section 29.9; U16 and Section 5 revised by D4, U25, D3, D5): the map's
+47. **The map explains itself** [built] (Section 29.9; U16 and Section 5 revised by D4, U25, D3, D5): the map's
    key, counted chips with Only and Show all, counts of what is drawn, one color per type for the
    store, trust toggles that dim, the hover card, and one word for the region.
 
@@ -3539,7 +3539,7 @@ decided both.
   leaves the camera, since the person is moving it. Esc on a map preview opened from Review goes back
   to Review (Section 29.3) and leaves the camera, which that page hides.
 - **"Reset layout"** in View forgets this scope's remembered positions and lays it out afresh, in the
-  arrangement on screen (by type, if Group by type is on).
+  arrangement on screen (by type, if Arrange by type is on).
 - **A selection that leaves is followed or named.** When the selected entity is merged away, the
   selection moves to what it became and a notice says "PostgreSQL is now Postgres". When it leaves the
   scope otherwise, the sheet closes and a notice says "PostgreSQL is no longer in billing".
@@ -3744,7 +3744,8 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
   - the rail's headings "Entity types" and "Relation types", each with its count beside it;
   - View's switch "Relations", described "Lines between entities."; Group by type "A circle of
     entities for each type, with the relations between groups kept."; Peers "Other machines, as dots
-    that move to the entities they touch.";
+    that move to the entities they touch."; *(Revised by step 47: the switch is "Arrange by type",
+    "with the relations between types kept" - region is the cloud's one name, Section 29.9.)*
   - search's reason "related to a match", and "No entity in billing contains "ledger".";
   - the trust note "so no entity is ringed";
   - Review's diff rows "Type" and "Relation" for the fields `kind` and `edge`;
@@ -4096,7 +4097,7 @@ hide.
 | U25 | A tooltip names; it explains nothing | revised: the hover card is a card, not a tooltip - Section 29.6 called it the map's tooltip - and says only the entity's facts |
 | U28 and U38 | Drawing never moves the layout; what is drawn does not depend on the zoom's cut | agrees - dimming, a hover and a filter redraw without a simulation step, and the counts are taken from the filters, never from the zoom |
 | U40 | The first picture comes within its budget | agrees - the store's most used types are a read of their own, made once per page beside the first graph read; it reads the entity rows only, never the log, so it does not outlast the graph read it runs beside |
-| P17, remote-viewer.md Sections 3.2 and 3.3, V3, V4 | The read tier answers only within the grants; `*` is refused whole while a grant is unservable | agrees - the most used types are their own read, `/api/common-types`, which the viewer's HTTP layer answers and MCP never carries; on the read tier it counts one granted workspace at a time, over those the hub may serve, and skips an unservable grant, since naming its types would answer what V4 refuses to; remote-viewer.md Section 3.2 gains its row |
+| P17, remote-viewer.md Sections 3.2 and 3.3, V3, V4 | The read tier answers only within the grants; `*` is refused whole while a grant is unservable | agrees - the most used types are their own read, `/api/common_types`, which the viewer's HTTP layer answers and MCP never carries; on the read tier it counts one granted workspace at a time, over those the hub may serve, and skips an unservable grant, since naming its types would answer what V4 refuses to; remote-viewer.md Section 3.2 gains its row |
 | P16 | A read answers alike | agrees - counted over the entity rows, the materialized projection, merged-away rows left out, ordered by count then name, names only; a row's kind is the projected one, which the map's converges with at the next replay; a page keeps the list it first received, so a later count does not move a color |
 | onboarding.md Section 7 | The empty workspace says "Nothing here yet. Ask a connected AI app to remember something, or pick a workspace that holds knowledge, each named with its count." | agrees - kept; only an unlisted name is said differently, on the local console |
 | design-system.md Section 29.6 | The map's activity and its hover words | agrees - unchanged; the card gains the workspace and the contested line |
@@ -4122,7 +4123,7 @@ No row needs a principle changed.
   ends are shown and whose type is shown, whatever the Relations switch says; regions with three or
   more shown members, whatever Regions draws. A dimmed tier is said too ("Agent dimmed"). While
   anything is hidden or dimmed the status bar offers Show all, which clears both.
-- **One color per type.** A read of its own, `/api/common-types`, names the store's sixteen most used
+- **One color per type.** A read of its own, `/api/common_types`, names the store's sixteen most used
   entity types in rank order, names only - every workspace on the local console; on the read tier the
   granted, servable ones, counted one at a time. The page asks once, beside its first graph read,
   assigns those types the band's slots by the existing rule and every other type its preferred hue,
@@ -4130,8 +4131,8 @@ No row needs a principle changed.
 - **Trust filters.** The four Trust entries become toggles with counts ("Human confirmed 2"); one with
   nothing in the scope is disabled and says "none here". Switching one off dims its entities to the
   strength a selection leaves the rest at - named `DIM_NODE`, `DIM_EDGE` and `DIM_REGION` - and keeps
-  them in the layout and in the counts. Where the scope has one tier there is nothing to filter: no
-  toggles, and the note "All here: Agent, so no entity is ringed" stays. Otherwise the note reads "A
+  them in the layout and in the counts. Where the scope has one tier, or none, there is nothing to
+  filter: no toggles, and the note "All here: Agent, so no entity is ringed" stays. Otherwise the note reads "A
   ring is the strongest source behind an entity. Agent claims, the usual case, draw no ring.", and
   the Agent swatch is a plain disc.
 - **The hover card**: the name; "Service in atlas-web" where the scope spans more than one workspace;
@@ -4158,3 +4159,13 @@ No row needs a principle changed.
 - It does not hide the type and trust sections or disable zoom, Fit and List on an empty scope, or
   reword the Log's empty line and the "default" scope's chip (R2-17, R1-09), which step 48 takes with
   the first entry.
+
+**Guarded by** `the_maps_key_names_only_what_is_drawn`, `the_type_chips_count_and_offer_only`,
+`the_counts_are_of_what_is_drawn`, `a_type_keeps_its_color_in_every_scope`,
+`a_trust_filter_dims_and_keeps_the_count`, `the_hover_card_says_what_an_entity_is`,
+`an_unlisted_workspace_is_named_as_such` and `the_cloud_is_a_region_everywhere` in
+`crates/supragnosis-viz/tests/key.rs`; `the_store_names_its_most_used_types_whatever_the_scope` in
+the viewer's HTTP tests (names only, counted in every workspace, at most sixteen, ties by name); and
+`the_read_tier_answers_only_within_the_grants` and `a_union_with_an_unconsented_workspace_is_refused_whole`
+in the read tier's tests (a type only outside the grants is not named, and an unservable grant is
+skipped rather than refusing the page its colors).
