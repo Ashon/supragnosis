@@ -777,7 +777,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["increase_contrast_and_forced_colors_are_heard"]),
     )]),
     (24, &[c(
-        "the map's window offers List, a table of the entities the map draws in its scope, filters and search, sorted by type and name, each row naming type, trust, relations and workspace and selecting its node, and the canvas's name says what it draws and that List holds it",
+        "the map's window offers List, a table of the entities the map draws in its scope, filters and working set, starting by type and name and sorted by any column, each row naming type, trust, relations and workspace, marked when contested, and selecting its node, and the canvas's name says what it draws and that List holds it",
         // crates/supragnosis-viz/tests/list.rs: the button, the rows, the columns, the selection,
         // Esc, the filters and the canvas's name.
         Evidence::Scenario(&["the_map_has_a_list"]),
