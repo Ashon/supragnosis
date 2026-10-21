@@ -1177,6 +1177,7 @@ function beginWorkspaceTransition() {
   syncUrlWorkspace();
   focus = null; hover = null; renderDetail(null);
   proposalSel = null;
+  if (reviewPreview) endPreview();
   pulses.clear();
   settling = true;
   needFit = true;
@@ -1356,7 +1357,9 @@ const toastsEl = document.getElementById("toasts");
 const NOTICE_ICON = { ok: "circle-check", bad: "circle-alert", info: "info" };
 // A notice may carry one action - { label, note, run } - such as Undo: the note says what the
 // action does, in words beside it, and the notice stays until it is used or dismissed, as an error
-// does, so the action is not taken away while it is being read.
+// does, so the action is not taken away while it is being read. On the Review page an action marked
+// `decided` is also on its Decided item, so there the notice leaves as one without an action does
+// (Section 29.3, U42).
 function toast(kind, title, detail, action) {
   if (!toastsEl) return;
   const el = document.createElement("div");
@@ -1379,7 +1382,7 @@ function toast(kind, title, detail, action) {
   close.onclick = () => dismiss(el);
   el.appendChild(close);
   toastsEl.prepend(el);
-  if (kind === "ok" && !action) leaveAfter(el, 4500);
+  if (kind === "ok" && (!action || (action.decided && reviewOpen()))) leaveAfter(el, 4500);
   while (toastsEl.children.length > 4) toastsEl.lastChild.remove();
   return el;
 }
@@ -1405,7 +1408,7 @@ function dismiss(el) {
 // One console write: GET path+query (the viewer's writes are GETs on the 0600 socket - see the review
 // handler below), then a notice saying what happened. Returns the parsed answer, or null when the
 // write did not land.
-async function consoleWrite(path, query, said, action) {
+async function consoleWrite(path, query, said, action, detail) {
   let r;
   try { r = await fetch(path + query, { cache: "no-store" }); }
   catch (e) { toast("bad", "Could not reach the server", "Nothing was changed. Is the daemon running?"); return null; }
@@ -1417,7 +1420,7 @@ async function consoleWrite(path, query, said, action) {
   }
   // An action may be built once the write has landed - Undo reads its own preview (Section 29.2).
   if (typeof action === "function") action = await action();
-  toast("ok", said, null, action);
+  toast("ok", said, detail || null, action);
   return body || {};
 }
 
@@ -1483,105 +1486,87 @@ function bandEmptyReason(band) {
 
 // Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.
 // Clicking a node chip only focuses it - the panel commits nothing (no gate).
-// The curation signals (Principle 7: generated, never committed), rendered by group for the Review
-// page's Suggestions and Health (docs/design-system.md Section 7). Suspected secrets and contested
-// beliefs are items of Needs you instead, decided one at a time.
-function nchipHtml(n) {
-  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.name}<span class="ty">${n.type}</span></button>`;
-}
-function curationParts(group) {
-  if (!curation) return [html`<div class="empty">no signals yet</div>`];
-  const nchip = nchipHtml;
-  const parts = [];
-  if (group === "suggestions") {
-    // Merge band (resolution-identity.md Section 3, Principle 15): embedding-near distinct-name pairs
-    // the substrate proposes as merge candidates. A suggestion commits nothing (IR2); "Propose"
-    // opens an entity_merge through the gate, which then waits under Needs you.
-    const ms = curation.merge_suggestions || [];
-    parts.push(html`<div class="csec">possible duplicates, by meaning (${ms.length})</div>`);
-    // What Propose does is said here, once, rather than in each button's tooltip (Section 4, U25).
-    if (ms.length) parts.push(html`<p class="hint">Propose opens a merge of the pair, folding the first into the second; it then waits under Needs you.</p>`);
-    parts.push(ms.length
-      ? ms.map(m => [
-          html`<div class="ms" data-a="${m.a}" data-b="${m.b}">`,
-          html`<button type="button" class="nchip" data-id="${m.a}" title="${tipText("Focus " + m.a_name)}">${m.a_name}</button>`,
-          html`<span class="msx">~</span>`,
-          html`<button type="button" class="nchip" data-id="${m.b}" title="${tipText("Focus " + m.b_name)}">${m.b_name}</button>`,
-          html`<span class="mssim">similar ${m.similarity.toFixed(2)}${m.shared_neighbors ? ", " + m.shared_neighbors + " shared neighbors" : ""}</span>`,
-          html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>`,
-          html`</div>`])
-      : html`<div class="empty">${bandEmptyReason(curation.merge_band)}</div>`);
-    // Name variants: the deterministic sibling of the merge band (Principle 15/16). Entity ids already
-    // fold case/whitespace, so these are the orthographic collisions nothing else catches - and unlike
-    // the band above they need no embedder. A pair reuses the .ms row so the propose wiring applies;
-    // 3+ members show as chips only (propose_merge takes a pair).
-    const nv = curation.name_variants || [];
-    parts.push(html`<div class="csec">possible duplicates, by spelling (${nv.length})</div>`);
-    parts.push(nv.length
-      ? nv.map(v => {
-          const meta = html`<span class="mssim">grouped by ${v.rung}${v.shared_neighbors ? ", " + v.shared_neighbors + " shared neighbors" : ""}</span>`;
-          const m = v.members || [];
-          if (m.length === 2) {
-            // data-src tells the server which surface produced this, so the proposal records the real
-            // evidence instead of inheriting the merge band's "embedding-near" rationale.
-            return [html`<div class="ms" data-a="${m[0].id}" data-b="${m[1].id}" data-src="variant:${v.rung}">`,
-              html`<button type="button" class="nchip" data-id="${m[0].id}" title="${tipText("Focus " + m[0].name)}">${m[0].name}</button>`,
-              html`<span class="msx">~</span>`,
-              html`<button type="button" class="nchip" data-id="${m[1].id}" title="${tipText("Focus " + m[1].name)}">${m[1].name}</button>`,
-              meta,
-              html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>`,
-              html`</div>`];
-          }
-          return html`<div class="grp"><span class="gk">${v.key}</span>${meta}<div class="chips">${m.map(nchip)}</div></div>`;
-        })
-      : html`<div class="empty">none - no spelling variants</div>`);
-    const dup = curation.duplicates || [];
-    parts.push(html`<div class="csec">same name in two workspaces (${dup.length})</div>`);
-    parts.push(dup.length
-      ? dup.map(g => html`<div class="grp"><span class="gk">${g.key}</span><div class="chips">${g.members.map(nchip)}</div></div>`)
-      : html`<div class="empty">none - this signal only fires across workspaces (same-workspace variants are above)</div>`);
+// Suggestions and Health as queues (Section 7, Section 29.3): each signal one item in the list, its
+// detail and act on the right, J and K between them. A signal is generated and commits nothing
+// (Principle 7): its act opens a proposal or names a group, and the item leaves once that lands.
+function signalItems(seg) {
+  if (!curation) return [];
+  const items = [];
+  const add = (key, title, body) => items.push({ key, kind: "signal", title, body });
+  const names = ms => (ms || []).map(m => m.name);
+  if (seg === "suggestions") {
+    // Merge band (resolution-identity.md Section 3, Principle 15): embedding-near distinct-name pairs.
+    for (const m of curation.merge_suggestions || []) {
+      add("m:" + m.a + "|" + m.b, "Possible duplicate: " + m.a_name + " ~ " + m.b_name,
+        { pair: m, meta: "similar " + m.similarity.toFixed(2) + (m.shared_neighbors ? ", " + m.shared_neighbors + " shared neighbors" : "") });
+    }
+    // Name variants: the deterministic sibling of the band. A pair can be proposed; three or more show
+    // as chips, since propose_merge takes a pair. data-src tells the server which surface found it.
+    for (const v of curation.name_variants || []) {
+      const m = v.members || [];
+      const meta = "grouped by " + v.rung + (v.shared_neighbors ? ", " + v.shared_neighbors + " shared neighbors" : "");
+      if (m.length === 2) add("v:" + m[0].id + "|" + m[1].id, "Possible duplicate: " + m[0].name + " ~ " + m[1].name,
+        { pair: { a: m[0].id, b: m[1].id, a_name: m[0].name, b_name: m[1].name }, src: "variant:" + v.rung, meta });
+      else add("v:" + v.key, "Possible duplicates: " + nameList(names(m)), { group: m, meta });
+    }
+    for (const g of curation.duplicates || []) add("d:" + g.key, "Same name in two workspaces: " + g.key, { group: g.members || [] });
   } else {
-    // Contradictory accepted merges (Principle 6): the projection resolves the cycle by parity, but
-    // the cycle itself is surfaced - the remedy is a settling merge proposal, never an edit.
-    const mc = curation.merge_cycles || [];
-    parts.push(html`<div class="csec">conflicting merges (${mc.length})</div>`);
-    parts.push(mc.length
-      ? mc.map(c => [
-          html`<div class="grp"><div class="chips">${(c.members || []).map(nchip)}</div>`,
-          html`<div class="hint">these accepted merges fold into each other - settle them with a new merge</div></div>`])
-      : html`<div class="empty">none - no contradictory merges</div>`);
-    const gb = curation.grab_bags || [];
-    parts.push(html`<div class="csec">overloaded contexts (${gb.length})</div>`);
-    parts.push(gb.length
-      ? gb.map(b => { const nm = b.member_names.slice(0, 10).join(", ") + (b.member_names.length > 10 ? ", ..." : ""); return html`<div class="gb" data-hid="${b.id}"><span class="sz">${b.size}</span>${nm}<button class="reify" title="${tipText("Make it a group")}">Name this group</button></div>`; })
-      : html`<div class="empty">none - no oversized clusters</div>`);
-    const orph = curation.orphans || [];
-    parts.push(html`<div class="csec">unlinked (${orph.length})</div>`);
-    parts.push(orph.length ? html`<div class="chips">${orph.map(nchip)}</div>` : html`<div class="empty">none - all nodes linked</div>`);
-    // Conflicts trust settled (resolution.md Section 4.1): informational, so they wait for nobody,
-    // and still listed, since the contradiction exists either way (P6).
-    const settled = (curation.contradictions || []).filter(c => !c.contested);
-    if (settled.length) {
-      parts.push(html`<div class="csec">settled conflicts (${settled.length})</div>`);
-      parts.push(settled.map(c => html`<div class="grp"><div class="chips">${nchip(nodeById(c.id) || { id: c.id, name: c.name, type: c.current, degree: 0, sources: 0 })}</div><div class="hint">${c.current} is shown; ${(c.competitors || []).map(x => x.value).join(", ")} ${(c.competitors || []).length > 1 ? "were" : "was"} also asserted</div></div>`));
+    // Contradictory accepted merges (Principle 6): the remedy is a settling merge, never an edit.
+    for (const c of curation.merge_cycles || []) add("y:" + names(c.members).join("|"), "Conflicting merges: " + nameList(names(c.members)),
+      { group: c.members || [], hint: "These accepted merges fold into each other - settle them with a new merge." });
+    for (const b of curation.grab_bags || []) add("g:" + b.id, "Overloaded context: " + b.size + " entities", { bag: b });
+    for (const o of curation.orphans || []) add("o:" + o.id, "Unlinked: " + o.name, { node: o });
+    // Conflicts trust settled (resolution.md Section 4.1): informational, and still listed (P6).
+    for (const c of (curation.contradictions || []).filter(c => !c.contested)) {
+      add("k:" + c.id, "Settled conflict: " + c.name + (c.field === "definition" ? "'s definition" : "'s type"), { settled: c });
     }
-    // T-Box axis collisions (Principle 9): a name defined on both the entity and relation axes -
-    // informative, usually a mistake. Mediation lives in the filters dock's definitions.
-    const ax = curation.type_axis_collisions || [];
-    if (ax.length) {
-      parts.push(html`<div class="csec">a type on both axes (${ax.length})</div>`);
-      // The ", " separators go in as array items: joining the chips into one string would escape them.
-      parts.push(html`<div class="gb">${ax.map((n, i) => [i ? ", " : "", html`<span class="gk">${n}</span>`])}<div class="hint">defined as both an entity type and a relation type - see Definitions in the filters</div></div>`);
-    }
+    // T-Box axis collisions (Principle 9): a name defined on both axes - informative, usually a mistake.
+    for (const n of curation.type_axis_collisions || []) add("x:" + n, "A type on both axes: " + n, { axis: n });
   }
-  return parts;
+  return items;
 }
-function curationCount(group) {
-  const s = (curation && curation.stats) || {};
-  return group === "suggestions"
-    ? (s.merge_suggestions || 0) + (s.name_variants || 0) + (s.duplicate_groups || 0)
-    : (s.merge_cycles || 0) + (s.grab_bags || 0) + (s.orphans || 0) + (s.type_axis_collisions || 0)
-      + ((curation && curation.contradictions) || []).filter(c => !c.contested).length;
+// The line over a signal queue: what it is, and for the merge band, why it may be empty (P5).
+function signalHint(seg) {
+  if (seg === "suggestions") {
+    const band = curation && !(curation.merge_suggestions || []).length ? " By meaning: " + bandEmptyReason(curation.merge_band) + "." : "";
+    return html`<div class="hint">Possible duplicates the store found. Proposing one opens a merge that waits under Needs you.${band}</div>`;
+  }
+  if (seg === "health") return html`<div class="hint">Signals about the shape of the knowledge. Nothing here needs deciding today.</div>`;
+  return "";
+}
+function nchipHtml(n) {
+  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.name}${n.type ? html`<span class="ty">${n.type}</span>` : ""}</button>`;
+}
+function signalDetail(it) {
+  const b = it.body, local = surfaceKind === "local";
+  const parts = [html`<h3>${it.title}</h3>`];
+  if (b.pair) {
+    const m = b.pair;
+    parts.push(html`<div class="ms" data-a="${m.a}" data-b="${m.b}"${b.src ? html` data-src="${b.src}"` : ""}>`,
+      nchipHtml({ id: m.a, name: m.a_name }), html`<span class="msx">~</span>`, nchipHtml({ id: m.b, name: m.b_name }),
+      html`<span class="mssim">${b.meta}</span>`,
+      local ? html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>` : "", html`</div>`);
+    // What Propose does is said here, once, rather than in the button's tooltip (Section 4, U25).
+    if (local) parts.push(html`<p class="hint">Propose opens a merge of the pair, folding the first into the second; it then waits under Needs you.</p>`);
+  } else if (b.group) {
+    parts.push(html`<div class="chips">${b.group.map(nchipHtml)}</div>`);
+    if (b.meta) parts.push(html`<p class="hint">${b.meta}</p>`);
+    if (b.hint) parts.push(html`<p class="hint">${b.hint}</p>`);
+  } else if (b.bag) {
+    const nm = b.bag.member_names.slice(0, 10).join(", ") + (b.bag.member_names.length > 10 ? ", ..." : "");
+    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}${local ? html`<button class="reify" title="${tipText("Make it a group")}">Name this group</button>` : ""}</div>`);
+  } else if (b.node) {
+    parts.push(html`<div class="chips">${nchipHtml(b.node)}</div>`, html`<p class="hint">Observed with no relation to anything else.</p>`);
+  } else if (b.settled) {
+    const c = b.settled, others = (c.competitors || []).map(x => x.value);
+    parts.push(html`<p class="why">${c.current} is shown; ${others.join(", ")} ${others.length > 1 ? "were" : "was"} also asserted.</p>`);
+  } else if (b.axis) {
+    parts.push(html`<p class="why">Defined as both an entity type and a relation type - see Definitions in the filters.</p>`);
+  }
+  if (itemNodes(it).length) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-map="1">Show on the map</button>${skipButton()}</div>`);
+  else parts.push(html`<div class="rv-acts">${skipButton()}</div>`);
+  parts.push(html`<p class="hint"><kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
+  return parts;
 }
 // The handlers a rendered curation or review fragment needs, bound on its container.
 function wireCuration(host) {
@@ -1599,7 +1584,8 @@ function wireCuration(host) {
       ev.stopPropagation();
       const n = nodeById(c.dataset.id);
       if (!n) return;
-      if (reviewOpen()) location.hash = "";
+      // From Review, the map is a preview with its way back (Section 29.3).
+      if (reviewOpen()) { previewOnMap(segItems().find(x => x.key === reviewSel), n); return; }
       focus = n; renderDetail(n); focusView(n);
     };
   });
@@ -1705,19 +1691,58 @@ const KIND_WORDS = {
   entity_merge: "Merge", entity_split: "Un-merge", claim_promotion: "Confirm a claim",
   claim_demotion: "Demote a claim", tbox_change: "Change a type", recall: "Recall",
 };
+// A proposal's state said as its outcome (Section 29.3, U17); the ids stay the fold's.
+const OUTCOME = { merged: "Accepted", rejected: "Rejected", withdrawn: "Withdrawn", blocked: "Blocked" };
+// How a proposal's target is said: the server's label (it names a merged-away entity, and a gate
+// act's source in its own words), then the graph's name; a hash id nothing can name is left out.
+function targetSaid(p, i) {
+  const l = p.labels && p.labels[i];
+  if (l) return l;
+  const id = (p.targets || [])[i], n = id && nodeById(id);
+  return n ? n.name : (id && !HASH_ID.test(id) ? id : null);
+}
+function intoSaid(p) {
+  if (p.into_label) return p.into_label;
+  const n = p.into && nodeById(p.into);
+  return n ? n.name : (p.into && !HASH_ID.test(p.into) ? p.into : null);
+}
+// One title per proposal, the same under Needs you and Decided: "Merge PostgreSQL into Postgres",
+// Confirm a claim: "The ledger is..." (Ledger).
+function proposalTitle(p) {
+  const said = (p.targets || []).map((_, i) => targetSaid(p, i));
+  if (p.kind === "entity_merge" && p.into) {
+    const gone = said.filter((s, i) => s && p.targets[i] !== p.into), into = intoSaid(p);
+    if (gone.length && into) return "Merge " + gone.join(", ") + " into " + into;
+  }
+  if (p.kind === "entity_split" && said[0]) return "Un-merge " + said[0];
+  const named = said.filter(Boolean);
+  return (KIND_WORDS[p.kind] || p.kind) + (named.length ? ": " + named.join(", ") : "");
+}
+// A contested row says what it asks: "Ledger's type: Table or Concept?", two values at most.
+function contestedTitle(c) {
+  if (c.field === "definition") return c.name + "'s definition: which meaning?";
+  const values = [c.current, ...(c.competitors || []).map(x => x.value)];
+  const shown = values.length > 2 ? values.slice(0, 2).join(", ") + " or " + (values.length - 2) + " more" : values.join(" or ");
+  return c.name + "'s type: " + shown + "?";
+}
 function needsItems() {
   const items = [];
   for (const f of (curation && curation.secrets) || []) items.push({ key: "s:" + f.observation, kind: "secret", f });
   // Every open proposal is listed, whatever its diff (U4): one whose diff cannot be computed says so,
   // since nothing else would ever close it. A blocked one waits for a person too - to reject it.
   for (const p of proposals.filter(p => p.state === "open" || p.state === "blocked")) items.push({ key: "p:" + p.id, kind: "proposal", p });
-  // Only a belief that ties on trust waits for a person (resolution.md Section 4.1); one that trust
-  // settled is listed under Health, so a confirmation takes its item off the count (U20).
+  // Only a belief that ties on trust waits for a person (resolution.md Section 4.1), an entity's type
+  // or a type's definition (IR5); one that trust settled is listed under Health, so a confirmation
+  // takes its item off the count (U20).
   for (const c of ((curation && curation.contradictions) || []).filter(c => c.contested)) items.push({ key: "c:" + c.id, kind: "contested", c });
   return items;
 }
 function decidedItems() {
   return proposals.filter(p => p.state !== "open" && p.state !== "blocked").map(p => ({ key: "p:" + p.id, kind: "proposal", p }));
+}
+// Every segment is a queue (Section 7): its items, in the order the list draws them.
+function segItems(seg = reviewSeg) {
+  return seg === "needs" ? needsItems() : seg === "decided" ? decidedItems() : signalItems(seg);
 }
 function reviewCount() {
   // Before the first curation read, the graph's own contested count stands in for the contested rows.
@@ -1725,30 +1750,42 @@ function reviewCount() {
 }
 function itemTitle(it) {
   if (it.kind === "secret") return "A credential may be in the log";
-  if (it.kind === "contested") return it.c.name + ": which value?";
-  const p = it.p;
-  const names = (p.targets || []).map(nameOf);
-  if (p.kind === "entity_merge" && p.into) return "Merge " + names.filter((_, i) => p.targets[i] !== p.into).join(", ") + " into " + nameOf(p.into);
-  return (KIND_WORDS[p.kind] || p.kind) + (names.length ? ": " + names.join(", ") : "");
+  if (it.kind === "contested") return contestedTitle(it.c);
+  if (it.kind === "signal") return it.title;
+  return proposalTitle(it.p);
 }
 function itemTag(it) {
   if (it.kind === "secret") return html`<span class="rv-k bad">Secret</span>`;
   if (it.kind === "contested") return html`<span class="rv-k bad">Contested</span>`;
+  if (it.kind === "signal") return "";
+  // Only what the title does not say: under Needs you that it is blocked, under Decided its outcome.
   const st = it.p.state;
-  return html`<span class="rv-k">${KIND_WORDS[it.p.kind] || it.p.kind}</span>${st !== "open" ? html`<span class="rv-st ${st}">${st}</span>` : ""}`;
+  return st === "open" ? "" : html`<span class="rv-st ${st}">${OUTCOME[st] || st}</span>`;
 }
 function updateReviewPill() {
   const pill = document.getElementById("reviewPill");
   if (!pill) return;
   const n = reviewCount();
   const contested = curation ? needsItems().filter(it => it.kind === "contested").length : contestedCount;
-  // Always the way to Review on the local console (Section 6, U20), with one count: what waits, and
-  // how many of those are contested beliefs. Absent on a read tier, where nothing is decided (U8).
+  // Always the way to Review on the local console (Section 6, U20), with one count: what waits under
+  // Needs you, and how many of those are contested beliefs. Absent on a read tier (U8).
   pill.hidden = surfaceKind !== "local";
   pill.className = "spill" + (n ? " warn" : "");
-  pill.textContent = n ? n + " to review" + (contested ? " (" + contested + " contested)" : "") : "Review";
+  pill.textContent = n ? (n === 1 ? "1 needs you" : n + " need you") + (contested ? " (" + contested + " contested)" : "") : "Review";
 }
 let reviewSig = "";   // what the page last drew - a poll that changes nothing must not redraw it
+let reviewIndex = 0;  // where the selected item stood: when it leaves, the next one takes its place
+// Put focus on the selected row at the next draw that has one: on opening - a page loaded on #review
+// included, which fires no hashchange - and after a decision. Focus the person moves cancels it.
+let reviewFocus = location.hash === "#review";
+if (reviewEl) reviewEl.addEventListener("focusin", () => { reviewFocus = false; });
+let undoView = null;  // {id, state: reading|ok|failed, acts, diff, checks} - the selected Decided gate act's reverse
+// What the redraw signature holds of an item: its key and the state that changes what it shows.
+function itemSig(it) {
+  if (it.kind === "contested") return [it.key, it.c.contested, it.c.current];
+  if (it.kind === "proposal") return [it.key, it.p.state, it.p.verdicts, it.p.labels || null];
+  return [it.key];
+}
 // The Review page is a full-screen route; everything else on the page is inert while it is open, so
 // Tab and the screen reader stay inside it. Runs on close too (reviewEl.hidden flips first).
 function setReviewInert(on) {
@@ -1762,26 +1799,30 @@ function renderReview() {
   if (!reviewEl) return;
   reviewEl.hidden = !reviewOpen();
   setReviewInert(reviewOpen());
+  document.body.classList.toggle("reviewing", reviewOpen());
   if (!reviewOpen()) { reviewSig = ""; return; }
   const local = surfaceKind === "local";
-  const needs = needsItems(), decided = decidedItems();
+  const items = segItems();
   // Redraw only when what is shown changed: a redraw replaces the buttons under the pointer and the
-  // keyboard focus, which every 2.5-second poll would otherwise take away.
-  const sig = JSON.stringify([reviewSeg, reviewSel, local, recallArmed, currentWs(),
-    proposals.map(p => [p.id, p.state, p.verdicts]), curation && curation.stats, (curation && curation.contradictions || []).length,
-    reviewView && [reviewView.id, (reviewView.checks || []).length]]);
+  // keyboard focus, which every 2.5-second poll would otherwise take away. Each item's state is in
+  // it, so a decided item leaves at the next read (Section 29.3).
+  const sig = JSON.stringify([reviewSeg, reviewSel, local, recallArmed, currentWs(), items.map(itemSig),
+    ["needs", "decided", "suggestions", "health"].map(s => s === reviewSeg ? items.length : segItems(s).length),
+    reviewView && [reviewView.id, (reviewView.checks || []).length], undoView && [undoView.id, undoView.state]]);
   if (sig === reviewSig) return;
   reviewSig = sig;
-  const segs = [["needs", "Needs you", needs.length], ["decided", "Decided", decided.length],
-    ["suggestions", "Suggestions", curationCount("suggestions")], ["health", "Health", curationCount("health")]];
+  // The segments' counts: only Needs you's asks; the others are drawn muted (Section 29.3).
+  const segs = [["needs", "Needs you"], ["decided", "Decided"], ["suggestions", "Suggestions"], ["health", "Health"]];
   const segEl = document.getElementById("rvSeg");
   segEl.textContent = "";
   let segSel = null;
-  for (const [id, label, n] of segs) {
+  for (const [id, label] of segs) {
+    const n = id === reviewSeg ? items.length : segItems(id).length;
     const b = document.createElement("button");
     b.type = "button"; b.className = "rv-segb" + (reviewSeg === id ? " on" : "");
-    b.textContent = label + (n ? " " + n : "");
-    b.onclick = () => { reviewSeg = id; renderReview(); };
+    b.append(label);
+    if (n) { const c = document.createElement("span"); c.className = "rv-ct" + (id === "needs" ? "" : " muted"); c.textContent = String(n); b.append(" ", c); }
+    b.onclick = () => { reviewSeg = id; reviewIndex = 0; renderReview(); };
     segEl.appendChild(b);
     if (reviewSeg === id) segSel = b;
   }
@@ -1790,31 +1831,34 @@ function renderReview() {
   if (!segEl.dataset.arrows) { arrowTabs(segEl); segEl.dataset.arrows = "1"; }
   renderPlace();
   const list = document.getElementById("rvList"), detail = document.getElementById("rvDetail");
-  if (reviewSeg === "suggestions" || reviewSeg === "health") {
-    list.innerHTML = html`<div class="hint">${reviewSeg === "suggestions"
-      ? "Possible duplicates the store found. Proposing one opens a merge that waits under Needs you."
-      : "Signals about the shape of the knowledge. Nothing here needs deciding today."}</div>`;
-    detail.innerHTML = html`${curationParts(reviewSeg)}`;
-    if (!local) detail.querySelectorAll(".propmerge, .reify").forEach(b => b.remove());   // the read tier changes nothing
-    wireCuration(detail);
-    return;
-  }
-  const items = reviewSeg === "needs" ? needs : decided;
-  if (!items.some(it => it.key === reviewSel)) reviewSel = items.length ? items[0].key : null;
+  if (!items.some(it => it.key === reviewSel)) reviewSel = items.length ? items[Math.min(reviewIndex, items.length - 1)].key : null;
+  reviewIndex = Math.max(0, items.findIndex(it => it.key === reviewSel));
   // A redraw replaces the focused item's button, and a decision replaces the button that cast it: in
   // either case focus goes on to the item now selected - the next one, after a decision.
-  const hadFocus = !!(document.activeElement && document.activeElement.closest
-    && document.activeElement.closest("#rvList, #rvDetail [data-decide], #rvDetail [data-skip]"));
-  list.innerHTML = html`${items.length
+  const hadFocus = reviewFocus || !!(document.activeElement && document.activeElement.closest
+    && document.activeElement.closest("#rvList, #rvDetail [data-decide], #rvDetail [data-skip], #rvDetail [data-settle], #rvDetail [data-undo]"));
+  const all = currentWs() === "*" || currentWs() === "all";
+  const empty = { needs: all ? "Nothing waits for you in any workspace." : "Nothing waits for you in this workspace.",
+    decided: "Nothing decided here yet.", suggestions: "No suggestions here.", health: "Nothing to report here." }[reviewSeg];
+  list.innerHTML = html`${signalHint(reviewSeg)}${items.length
     ? items.map(it => html`<button type="button" class="rv-item${it.key === reviewSel ? " on" : ""}" data-key="${it.key}">${itemTag(it)}<span class="rv-t">${itemTitle(it)}</span></button>`)
-    : html`<div class="empty">${reviewSeg === "needs" ? "Nothing waits for you in this workspace." : "Nothing decided here yet."}</div>`}`;
+    : html`<div class="empty">${empty}</div>`}`;
   list.querySelectorAll(".rv-item").forEach(b => { b.onclick = () => { reviewSel = b.dataset.key; renderReview(); }; });
-  if (hadFocus) { const on = list.querySelector(".rv-item.on"); if (on) on.focus(); }
+  // Kept until a row takes it: the first draw can come before the proposals have been read.
+  if (hadFocus) { const on = list.querySelector(".rv-item.on"); if (on) { on.focus(); reviewFocus = false; } }
   const it = items.find(x => x.key === reviewSel);
-  detail.innerHTML = html`${it ? itemDetail(it, local) : html`<div class="empty">Select an item.</div>`}`;
+  detail.innerHTML = html`${it ? itemDetail(it, local) : html`<div class="empty">${items.length ? "Select an item." : empty}</div>`}`;
+  if (!local) detail.querySelectorAll(".propmerge, .reify").forEach(b => b.remove());   // the read tier changes nothing
   if (it && it.kind === "proposal" && (!reviewView || reviewView.id !== it.p.id)) fetchReviewView(it.p.id);
+  if (it && it.kind === "proposal" && undoable(it.p) && local && (!undoView || undoView.id !== it.p.id)) fetchUndoView(it.p.id);
+  // A contested item's values confirm as 1 to 9, in the order shown (U19: only while focus is here).
+  if (it && it.kind === "contested") detail.querySelectorAll('[data-settle="ask"]').forEach((b, i) => { if (i < 9) b.setAttribute("aria-keyshortcuts", String(i + 1)); });
   wireCuration(detail);
   wireDecisions(detail, it);
+}
+// Skip, as a button and as J, wherever an item is decided one at a time (Section 7).
+function skipButton() {
+  return html`<button type="button" class="btn" data-skip="1" aria-keyshortcuts="J">Skip <kbd aria-hidden="true">J</kbd></button>`;
 }
 function itemDetail(it, local) {
   if (it.kind === "secret") {
@@ -1822,21 +1866,25 @@ function itemDetail(it, local) {
     return [html`<h3>A credential may be in the log</h3>`,
       html`<p class="why">A ${f.pattern} pattern matched in an observation's ${f.field}, at byte ${f.at | 0}. It is not shown here on purpose.</p>`,
       html`<p class="why">The log is append-only, so it cannot be removed yet. Stop it spreading by narrowing what this workspace shares, and rotate the credential.</p>`,
-      html`<div class="rv-acts"><button type="button" class="btn" data-obs="${f.observation}">Open the observation</button></div>`];
+      html`<div class="rv-acts"><button type="button" class="btn" data-obs="${f.observation}">Open the observation</button>${skipButton()}</div>`];
   }
   if (it.kind === "contested") {
-    const c = it.c;
-    return [html`<h3>${c.name}: which value?</h3>`,
-      html`<p class="why">Two values tie on trust, so supragnosis does not pick one for you. The other value stays in the log and can be chosen again.</p>`,
-      html`<div class="contested hot">${contestedRows({ name: c.name, field: c.field === "kind" ? "type" : c.field, entity: c.id,
+    const c = it.c, def = c.field === "definition";
+    return [html`<h3>${contestedTitle(c)}</h3>`,
+      html`<p class="why">Two ${def ? "definitions" : "values"} tie on trust, so supragnosis does not pick one for you. The other stays in the log and can be chosen again.</p>`,
+      html`<div class="contested hot">${contestedRows({ name: c.name, field: def ? "definition" : (c.field === "kind" ? "type" : c.field), entity: def ? "" : c.id,
         current: c.current, curObs: c.kind_source, tier: "", competitors: c.competitors || [], contested: c.contested })}</div>`,
-      local ? "" : html`<p class="why">This view is read-only.</p>`];
+      html`<div class="rv-acts">${skipButton()}</div>`,
+      local ? html`<p class="hint"><kbd>1</kbd> <kbd>2</kbd> confirm a value. <kbd>J</kbd> <kbd>K</kbd> move between items.</p>` : html`<p class="why">This view is read-only.</p>`];
   }
+  if (it.kind === "signal") return signalDetail(it);
   const p = it.p, v = reviewView && reviewView.id === p.id ? reviewView : null;
   const failing = v && v.checks ? v.checks.filter(c => c.blocking && !c.passed) : [];
+  const decided = p.state === "merged" || p.state === "rejected" || p.state === "withdrawn";
   const parts = [html`<h3>${itemTitle(it)}</h3>`];
   if (p.rationale) parts.push(html`<p class="why">${p.rationale}</p>`);
-  parts.push(html`<div class="sec">What changes</div>`, diffHtml(v ? v.diff : null));
+  // A decided item's diff is worked out against today's beliefs, so it says so (Section 29.3).
+  parts.push(html`<div class="sec">${decided ? "What it would change now" : "What changes"}</div>`, diffHtml(v ? v.diff : null));
   parts.push(html`<div class="sec">Checks</div>`);
   if (!v) parts.push(html`<div class="dnote">reading the checks...</div>`);
   else if (failing.length) parts.push(html`<div class="rv-block"><b>Blocked.</b> ${failing.map(c => html`<div>${c.name}: ${c.detail}</div>`)}<div>The merge cannot reach canon while this holds. Reject it here, or fix the proposal and open it again.</div></div>`);
@@ -1846,21 +1894,29 @@ function itemDetail(it, local) {
   if (!local) { parts.push(html`<p class="why">This view is read-only.</p>`); return parts; }
   const acts = [];
   const ready = !!v;   // the diff and checks are on screen
-  if (p.state === "open" || p.state === "rejected") {
+  const accept = p.state === "open" || p.state === "rejected";
+  if (accept) {
     const armed = recallArmed === p.id;
-    const label = p.kind === "recall" && armed ? "Confirm the recall" : "Accept";
+    const label = p.kind === "recall" && armed ? "Confirm the recall" : p.state === "rejected" ? "Accept after all" : "Accept";
     const off = !ready || failing.length;
     acts.push(html`<button type="button" class="btn p" data-decide="merge" aria-keyshortcuts="A"${off ? html` disabled` : ""}>${label} <kbd aria-hidden="true">A</kbd></button>`);
   }
   if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-decide="reject" aria-keyshortcuts="R"${ready ? "" : html` disabled`}>Reject <kbd aria-hidden="true">R</kbd></button>`);
-  if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-skip="1" aria-keyshortcuts="J">Skip <kbd aria-hidden="true">J</kbd></button>`);
+  if (p.state === "open" || p.state === "blocked") acts.push(skipButton());
   const reversed = proposals.some(q => q.kind === "entity_split" && q.state === "merged" && (q.targets || []).includes(p.id));
   if (p.kind === "entity_merge" && p.state === "merged" && !reversed) acts.push(html`<button type="button" class="btn" data-unmerge="1">Un-merge</button>`);
+  const u = undoable(p) ? undoParts(p) : null;
+  if (u) acts.push(u.button);
   acts.push(html`<button type="button" class="btn" data-map="1">Show on the map</button>`);
   parts.push(html`<div class="rv-acts">${acts}</div>`);
-  if (p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: accepting it later still merges it.</p>`);
+  if (u) parts.push(u.note);
+  if (p.state === "rejected" && p.merge_verdict) parts.push(html`<p class="hint">If its check passes later, the accept it carries still merges it.</p>`);
+  else if (p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: accepting it later still merges it.</p>`);
   if (p.kind === "entity_merge" && p.state === "merged" && !reversed) parts.push(html`<p class="hint">Un-merge opens a proposal to separate them again. The pair is then never suggested again, and merging them later takes a proposal distinguishable from this one.</p>`);
-  parts.push(html`<p class="hint">Accept casts your verdict; nothing is deleted. <kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
+  if (p.state === "merged" && !undoable(p) && !(p.kind === "entity_merge" && !reversed)) {
+    parts.push(html`<p class="hint">${p.kind === "entity_split" ? "Merging them again takes a new proposal." : "Undoing this takes a new proposal."}</p>`);
+  }
+  parts.push(html`<p class="hint">${accept ? "Accept casts your verdict; nothing is deleted. " : ""}<kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
   return parts;
 }
 async function fetchReviewView(id) {
@@ -1877,6 +1933,70 @@ async function fetchReviewView(id) {
     renderReview();
   } catch (e) { /* the page still lists the item - it just cannot be decided yet */ }
 }
+// A merged gate act has a reverse on its Decided item (Section 29.3).
+function undoable(p) { return p.state === "merged" && (p.kind === "claim_promotion" || p.kind === "claim_demotion"); }
+function undoLabel(p) {
+  return p.kind === "claim_demotion" ? "Undo demotion" : String(p.tier) === "human_confirmed" ? "Undo confirmation" : "Undo promotion";
+}
+// The acts that reverse it, with their diff and checks, read when the item is selected (U4).
+async function fetchUndoView(id) {
+  undoView = { id, state: "reading" };
+  try {
+    const r = await fetch("/api/resolve/undo?proposal=" + encodeURIComponent(id), { cache: "no-store" });
+    const u = r.ok ? await r.json() : null;
+    if (!undoView || undoView.id !== id) return;
+    undoView = u ? { id, state: "ok", acts: u.acts || [], diff: u.belief_diff || null, checks: u.checks || [] } : { id, state: "failed" };
+  } catch (_) { if (undoView && undoView.id === id) undoView = { id, state: "failed" }; }
+  renderReview();
+}
+// The Undo button and the note beside it: what it moves back, in step 41's words, or why it is not
+// offered. It acts only once the read is on screen and no check fails.
+function undoParts(p) {
+  const u = undoView && undoView.id === p.id ? undoView : null;
+  const label = undoLabel(p);
+  const off = html` disabled`;
+  if (!u || u.state === "reading") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">Reading what undoing this moves back...</p>` };
+  if (u.state === "failed") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${label} is not offered: what it would move back could not be read.</p>` };
+  if (!u.acts.length) return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">Nothing to undo: another decision holds this source where it is.</p>` };
+  const failing = (u.checks || []).filter(c => c.blocking && !c.passed);
+  const lines = u.acts.map(a => a.kind === "claim_demotion"
+    ? "Undo returns this source to " + tierName(a.tier) + " and keeps it there until someone confirms it again."
+    : "Undo returns this source to " + tierName(a.tier) + ".");
+  const moves = ringMoves(u.diff, null);
+  const by = p.kind === "claim_demotion" && p.proposer ? " This demotion was cast by " + p.proposer + "." : "";
+  const note = [...new Set(lines)].join(" ") + (moves.length ? " " + moves.join(". ") + "." : "") + by
+    + (failing.length ? " It cannot be cast while this check fails: " + failing.map(c => c.name + ": " + c.detail).join("; ") + "." : "");
+  return { button: html`<button type="button" class="btn" data-undo="1"${failing.length ? off : ""}>${label}</button>`, note: html`<p class="hint">${note}</p>` };
+}
+// Casts the reverse, one act per target, one after the other; the notice says which targets went
+// back when one does not (U1).
+async function undoDecided(p) {
+  const u = undoView && undoView.id === p.id ? undoView : null;
+  if (!u || u.state !== "ok" || !u.acts.length || (u.checks || []).some(c => c.blocking && !c.passed)) return;
+  const rationale = "Undid " + proposalTitle(p);
+  const said = a => targetSaid(p, (p.targets || []).indexOf(a.observation)) || "a source";
+  const back = [];
+  for (const a of u.acts) {
+    const ok = await consoleWrite("/api/resolve", settleQuery(a.observation, a.tier, a.kind, rationale),
+      "Undone - " + said(a) + " is " + tierName(a.tier) + " again", { decided: true });
+    if (!ok) {
+      if (back.length) toast("bad", "Undo stopped partway", "Returned: " + back.join(", ") + ". Not returned: "
+        + u.acts.filter(x => !back.includes(said(x))).map(said).join(", ") + ".");
+      break;
+    }
+    back.push(said(a));
+  }
+  undoView = null;
+  await poll();
+  refreshProposals();
+}
+// Un-merge opens the split proposal (unmerge.md) and decides nothing; it then waits under Needs you.
+async function proposeSplit(p) {
+  const ws = wsInput.value.trim();
+  const sq = "?merge=" + encodeURIComponent(p.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+  await consoleWrite("/api/propose_split", sq, "Un-merge proposed - it waits under Needs you for a verdict");
+  refreshProposals();
+}
 // One decision on one item (U4). It runs only when the item's view - its diff and checks - is the
 // one on screen, never for a blocked merge, and a recall asks twice; there is no decide-all.
 async function reviewDecide(item, decision) {
@@ -1890,54 +2010,131 @@ async function reviewDecide(item, decision) {
   recallArmed = null;
   const ws = wsInput.value.trim();
   const q = "?proposal=" + encodeURIComponent(p.id) + "&decision=" + decision + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+  // The notice names the item and offers the act that is on its Decided item, where that act decides
+  // nothing; on this page it then leaves as a success without an action does (Section 29.3, U42).
   // No CSRF header needed: the socket (0600) admits no third-party origin - this page, proxied into
   // the desktop shell, is the only one on the surface - so there is no attacker origin for a forged
   // request to come from. The transport itself is the write gate.
-  const done = await consoleWrite("/api/review", q, decision === "merge"
-    ? "Accepted - your verdict is recorded" : "Rejected - your verdict is recorded");
-  if (done) stepReview(1);
+  const title = proposalTitle(p);
+  const action = decision === "merge" && p.kind === "entity_merge" ? { label: "Un-merge", decided: true, run: () => proposeSplit(p) } : null;
+  const done = decision === "merge"
+    ? await consoleWrite("/api/review", q, "Accepted: " + title, action)
+    : await consoleWrite("/api/review", q, "Rejected: " + title, null, "Accept after all is under Decided.");
+  if (done) { reviewFocus = true; stepReview(1); }
   refreshProposals();
 }
 function wireDecisions(host, item) {
   host.querySelectorAll("[data-decide]").forEach(b => { b.onclick = () => reviewDecide(item, b.dataset.decide); });
-  host.querySelectorAll("[data-unmerge]").forEach(b => {
-    b.onclick = async () => {
-      const ws = wsInput.value.trim();
-      const sq = "?merge=" + encodeURIComponent(item.p.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-      await consoleWrite("/api/propose_split", sq, "Un-merge proposed - it waits under Needs you for a verdict");
-      refreshProposals();
-    };
-  });
-  host.querySelectorAll("[data-map]").forEach(b => {
-    b.onclick = () => { location.hash = ""; proposalSel = null; selectProposal(item.p); };
-  });
+  host.querySelectorAll("[data-unmerge]").forEach(b => { b.onclick = () => proposeSplit(item.p); });
+  host.querySelectorAll("[data-undo]").forEach(b => { b.onclick = () => undoDecided(item.p); });
+  host.querySelectorAll("[data-map]").forEach(b => { b.onclick = () => previewOnMap(item); });
   host.querySelectorAll("[data-skip]").forEach(b => { b.onclick = () => stepReview(1); });
 }
 function stepReview(by) {
-  const items = reviewSeg === "decided" ? decidedItems() : needsItems();
+  const items = segItems();
   if (!items.length) return;
   const i = Math.max(0, items.findIndex(x => x.key === reviewSel));
   reviewSel = items[Math.min(items.length - 1, Math.max(0, i + by))].key;
+  reviewIndex = items.findIndex(x => x.key === reviewSel);
   recallArmed = null;
   renderReview();
 }
-window.addEventListener("hashchange", () => { recallArmed = null; renderPlace(); renderReview(); if (reviewOpen()) refreshCuration(); refreshStrip(); requestFrame(); });
+// The tray opens Review at All workspaces, the scope its count is of (Section 7); the app calls this.
+function openReviewAt(ws) {
+  if (currentWs() !== ws) { wsInput.value = ws; beginWorkspaceTransition(); renderChipsActive(); poll(); }
+  reviewSeg = "needs";
+  if (reviewOpen()) { reviewFocus = true; renderReview(); refreshCuration(); }
+  else location.hash = "#review";
+}
+// Opening the page puts focus on the selected row, so the keys act from the first press (U19).
+window.addEventListener("hashchange", () => { recallArmed = null; if (reviewOpen()) reviewFocus = true; renderPlace(); renderReview(); if (reviewOpen()) refreshCuration(); refreshStrip(); requestFrame(); });
 window.addEventListener("keydown", e => {
   if (!reviewOpen()) return;
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Escape") { location.hash = ""; return; }   // Escape closes from anywhere
-  // The letters decide, so they act only while focus is in the list or the item (WCAG 2.1.4);
-  // anywhere else on the page they are letters.
+  // The letters and numbers decide, so they act only while focus is in the list or the item (WCAG
+  // 2.1.4); anywhere else on the page they are letters.
   const inReview = !!(e.target && e.target.closest && e.target.closest("#rvList, #rvDetail"));
   if (!inReview) return;
-  const items = reviewSeg === "decided" ? decidedItems() : needsItems();
-  const item = items.find(x => x.key === reviewSel);
+  const item = segItems().find(x => x.key === reviewSel);
   if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); stepReview(1); }
   else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); stepReview(-1); }
   else if (e.key === "a" && surfaceKind === "local") reviewDecide(item, "merge");
   else if (e.key === "r" && surfaceKind === "local") reviewDecide(item, "reject");
+  else if (/^[1-9]$/.test(e.key) && item && item.kind === "contested" && surfaceKind === "local") {
+    const ask = [...document.querySelectorAll('#rvDetail [data-settle="ask"]')][Number(e.key) - 1];
+    if (ask) { e.preventDefault(); ask.click(); }
+  }
 });
+
+// --- "Show on the map" from Review, and the way back (Section 29.3, U26) ---------------------------
+// The preview frames every entity the item names, and a bar over the map says what it previews with
+// "Back to Review" and "Done". Back to Review, Esc and Cmd+[ return to the item; Done ends the
+// preview; a click on the empty map keeps it.
+let reviewPreview = null;   // {seg, key, title} - the item the map preview left Review from
+function itemNodes(it) {
+  const ids = [];
+  if (it.kind === "proposal") ids.push(...(it.p.targets || []), ...(it.p.into ? [it.p.into] : []));
+  else if (it.kind === "contested" && it.c.field !== "definition") ids.push(it.c.id);
+  else if (it.kind === "signal") {
+    const b = it.body;
+    if (b.pair) ids.push(b.pair.a, b.pair.b);
+    if (b.group) ids.push(...b.group.map(m => m.id));
+    if (b.node) ids.push(b.node.id);
+    if (b.settled && b.settled.field !== "definition") ids.push(b.settled.id);
+    if (b.bag) return nodes.filter(n => b.bag.member_names.includes(n.name));
+  }
+  const out = [...new Set(ids)].map(nodeById).filter(Boolean);
+  return out.length || it.kind !== "proposal" ? out : affectedNodes(it.p);
+}
+function previewOnMap(it, only) {
+  if (!it) return;
+  const ns = only ? [only] : itemNodes(it);
+  reviewPreview = { seg: reviewSeg, key: it.key, title: itemTitle(it) };
+  location.hash = "";
+  if (it.kind === "proposal") { proposalSel = null; selectProposal(it.p); }
+  if (ns.length > 1) { fitView(ns); userMoved = true; }
+  else if (ns.length === 1) { focus = ns[0]; renderDetail(ns[0]); focusView(ns[0]); }
+  showPreviewBar();
+}
+function showPreviewBar() {
+  const bar = document.getElementById("previewBar");
+  if (!bar) return;
+  bar.hidden = !reviewPreview;
+  document.body.classList.toggle("previewing", !!reviewPreview);
+  if (!reviewPreview) return;
+  bar.querySelector(".pv-t").textContent = "Preview: " + reviewPreview.title;
+  bar.querySelector("[data-pv=back]").focus();
+}
+function endPreview() {
+  reviewPreview = null;
+  if (proposalSel) { proposalSel = null; requestFrame(); }
+  showPreviewBar();
+}
+function backToReview() {
+  const r = reviewPreview;
+  if (!r) return;
+  endPreview();
+  focus = null; renderDetail(null);   // the sheet the preview opened closes with it
+  reviewSeg = r.seg; reviewSel = r.key;
+  location.hash = "#review";
+}
+{
+  const bar = document.getElementById("previewBar");
+  if (bar) {
+    bar.querySelector("[data-pv=back]").onclick = backToReview;
+    bar.querySelector("[data-pv=done]").onclick = endPreview;
+  }
+  // Ahead of the page's own Esc, so the preview's way back wins while it is shown.
+  window.addEventListener("keydown", e => {
+    if (!reviewPreview || reviewOpen()) return;
+    const back = e.key === "Escape" || (e.key === "[" && (e.metaKey || e.ctrlKey));
+    if (!back) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    backToReview();
+  }, true);
+}
 
 // The T-Box types a proposal touches, split by axis. Relation names match the graph's edge kinds
 // (normalized at propose time); entity names match node types. Empty sets when the proposal declares none.
@@ -2147,6 +2344,8 @@ function proposalLine(p) {
   // State is worth saying on a verdict precisely when it disagrees with the decision - an accepted
   // merge that a check blocks is the case a reader must not miss.
   const state = p.event === "verdict" && p.decision === "merge" && p.state === "blocked" ? ". A check blocks it"
+    // A blocked merge a person then rejected (proposal-workflow.md Section 7.1, design-system.md 29.3).
+    : p.event === "verdict" && p.decision === "merge" && p.state === "rejected" ? ". A check blocked it, and it was rejected"
     : p.event === "verdict" && p.state && !(p.decision === "merge" && p.state === "merged") && !(p.decision === "reject" && p.state === "rejected")
       ? " (" + p.state + ")" : "";
   return `${noun} ${verb}${what ? ": " + what : ""}${state}`;
@@ -2657,10 +2856,13 @@ let graphGen = 0;           // bumped when a graph arrives: an open question rea
 const TIER_ORDER = ["unverified", "agent_extracted", "host_signed", "human_confirmed"];
 // The checks a settle runs (proposal-workflow.md Section 6), in words (U17).
 const CHECK_WORDS = { "referential integrity": "the source is in this log", "tier stated": "the tier is stated" };
-function settleQuery(obs, tier, kind) {
+// `said` is the sentence the act's notice says, kept as the proposal's rationale, so the act's
+// Decided item says it too (Section 29.3).
+function settleQuery(obs, tier, kind, said) {
   const ws = wsInput.value.trim();
   return "?observation=" + encodeURIComponent(obs) + "&tier=" + encodeURIComponent(tier)
-    + (kind ? "&kind=" + kind : "") + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
+    + (kind ? "&kind=" + kind : "") + (said ? "&rationale=" + encodeURIComponent(said) : "")
+    + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
 }
 // One or two acts, as /api/resolve/preview takes them: the second with the suffix 2.
 function previewQuery(acts) {
@@ -2797,8 +2999,8 @@ async function settleValue(a) {
   const fromWas = before(a.from) || "agent_extracted";
   const curWas = a.instead ? before(a.curObs) : null;
   if (a.instead) {
-    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, v.curBase, "claim_demotion"),
-      a.curValue + "'s source goes back to " + tierName(v.curBase))) return;
+    const back = a.curValue + "'s source goes back to " + tierName(v.curBase);
+    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, v.curBase, "claim_demotion", back + " (Confirm instead)"), back)) return;
   }
   const reverse = a.instead && curWas
     ? [{ obs: a.from, tier: fromWas, kind: "claim_demotion" }, { obs: a.curObs, tier: curWas, kind: "claim_promotion" }]
@@ -2809,20 +3011,25 @@ async function settleValue(a) {
     const moves = ringMoves(got.preview.belief_diff, a.entity);
     return {
       label: "Undo",
+      // After "Confirm instead" the Undo reverses both acts, which no one Decided item holds, so that
+      // notice stays; otherwise the same Undo is on the confirmation's Decided item (Section 29.3).
+      decided: !a.instead,
       note: "Undo returns this source to " + tierName(fromWas) + " and keeps it there until someone confirms it again."
         + (moves.length ? " " + moves.join(". ") + "." : ""),
       run: async () => {
-        if (!await consoleWrite("/api/resolve", settleQuery(a.from, fromWas, "claim_demotion"),
+        if (!await consoleWrite("/api/resolve", settleQuery(a.from, fromWas, "claim_demotion", "Undid " + confirmed),
           "Undone - the source is " + tierName(fromWas) + " again")) return;
-        if (a.instead && curWas) await consoleWrite("/api/resolve", settleQuery(a.curObs, curWas),
+        if (a.instead && curWas) await consoleWrite("/api/resolve", settleQuery(a.curObs, curWas, null, "Undid " + confirmed),
           a.curValue + " is " + tierName(curWas) + " again");
         await poll();
       },
     };
   };
-  await consoleWrite("/api/resolve", settleQuery(a.from, "human_confirmed"),
-    "Confirmed " + a.value + " as " + a.name + "'s " + a.field, undo);
+  const confirmed = "Confirmed " + a.value + " as " + a.name + "'s " + a.field;
+  await consoleWrite("/api/resolve", settleQuery(a.from, "human_confirmed", null, confirmed), confirmed, undo);
   await poll();   // re-fold: the ring drops, the panel updates, the proposal shows as merged
+  // On the Review page the item leaves Needs you at once and the next one takes focus (Section 29.3).
+  if (reviewOpen()) { reviewFocus = true; await refreshCuration(); refreshProposals(); }
 }
 // Who said each value and when, from the explain read: its asserting observation's first attestation.
 const settleWho = new Map();   // entity id -> { at, by: Map(observation -> "who - when") }
@@ -4871,8 +5078,9 @@ canvas.addEventListener("mousedown", ev => {
   const n = nodeAt(ev.clientX, ev.clientY);
   if (n) { drag = n; }   // press alone does not reheat - wake only once the pointer actually drags (mousemove)
   else {
-    // Clicking empty canvas clears any proposal preview.
-    if (proposalSel) { proposalSel = null; requestFrame(); }
+    // Clicking empty canvas clears any proposal preview, but not one Review opened, which keeps its
+    // bar until Back to Review or Done (Section 29.3).
+    if (proposalSel && !reviewPreview) { proposalSel = null; requestFrame(); }
     panning = { sx: ev.clientX, sy: ev.clientY, px: cam.x, py: cam.y }; canvas.classList.add("grabbing");
   }
 });

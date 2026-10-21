@@ -93,6 +93,10 @@
 <!-- What a write did (accept, reject, un-merge, propose, name a group, confirm a value): every one
      answers here, success or refusal. Polite, so a screen reader hears it without losing its place. -->
 <div id="toasts" role="status" aria-live="polite"></div>
+<!-- A map preview opened from Review, and its way back (design-system.md Section 29.3). -->
+<div id="previewBar" hidden><span class="pv-t"></span>
+  <button type="button" class="btn" data-pv="back" aria-keyshortcuts="Escape">Back to Review</button>
+  <button type="button" class="btn" data-pv="done">Done</button></div>
 <div id="statusbar"><span id="stats"></span>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
   <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span>

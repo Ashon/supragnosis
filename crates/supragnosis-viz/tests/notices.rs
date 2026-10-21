@@ -129,12 +129,18 @@ fn a_notice_has_one_anatomy() {
     }
 }
 
-/// The clock: only a success without an action leaves by itself, 4.5 seconds after it shows; the
-/// pointer over it or focus inside it stops the clock, which starts whole again once both have left.
+/// The clock: only a success without an action leaves by itself, 4.5 seconds after it shows - and on
+/// the Review page a success whose act is also on its Decided item (design-system.md Section 29.3);
+/// the pointer over it or focus inside it stops the clock, which starts whole again once both have
+/// left.
 #[test]
 fn a_success_waits_while_it_is_read() {
     for (name, src, gate) in [
-        ("viewer.js", VIEWER_JS, "if (kind === \"ok\" && !action) leaveAfter(el, 4500);"),
+        (
+            "viewer.js",
+            VIEWER_JS,
+            "if (kind === \"ok\" && (!action || (action.decided && reviewOpen()))) leaveAfter(el, 4500);",
+        ),
         ("kit.js", KIT, "if (kind === \"ok\") leaveAfter(el, 4500);"),
     ] {
         let t = function(src, "toast");

@@ -1380,6 +1380,83 @@ async fn a_settle_preview_names_the_source_and_its_reach() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// design-system.md Section 29.3: a confirmation the console cast is said on its Decided item by the
+/// source it confirmed, keeps the sentence its notice said as its rationale, and the undo read
+/// answers the act that reverses it with that act's diff - one demotion, back to the tier the source
+/// has without it. The Log names the same source. An id that is no merged gate proposal has nothing
+/// to undo.
+#[tokio::test]
+async fn a_decided_confirmation_names_its_source_and_says_its_undo() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "default"));
+    let bundle = engine
+        .observe(ObserveInput {
+            content: "The nightly export sends the ledger to the finance team's warehouse.".into(),
+            workspace: Some("billing".into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: ["Nightly export", "Ledger"]
+                .into_iter()
+                .map(|n| EntityInput { name: n.into(), kind: None, description: None })
+                .collect(),
+            relations: vec![],
+        })
+        .unwrap()
+        .observation_id;
+    let sock = serve_uds("decided-undo", engine, ev_channel()).await;
+
+    let said = "Confirmed Concept as Ledger's type";
+    let r = json_get(
+        &uds_get(
+            &sock,
+            &format!(
+                "/api/resolve?observation={bundle}&tier=human_confirmed&rationale={}",
+                said.replace(' ', "%20").replace('\'', "%27")
+            ),
+        )
+        .await,
+    );
+    let id = r["proposal_id"].as_str().expect("confirmed").to_string();
+    let props = json_get(&uds_get(&sock, "/api/proposals?workspace=billing").await);
+    let row = props
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == id.as_str())
+        .expect("listed");
+    assert_eq!(row["state"], "merged");
+    assert_eq!(row["rationale"], said, "the notice's sentence is the rationale: {row}");
+    assert_eq!(
+        row["labels"][0],
+        "\"The nightly export sends the ledger to the finance team's warehouse.\" (Nightly export, Ledger)",
+        "the source in its own words and its entities: {row}"
+    );
+
+    let undo = json_get(&uds_get(&sock, &format!("/api/resolve/undo?proposal={id}")).await);
+    let acts = undo["acts"].as_array().expect("acts");
+    assert_eq!(acts.len(), 1, "{undo}");
+    assert_eq!(acts[0]["observation"], bundle.as_str());
+    assert_eq!(acts[0]["kind"], "claim_demotion");
+    assert_eq!(acts[0]["tier"], "agent_extracted", "back to its tier without the act: {undo}");
+    assert_eq!(undo["belief_diff"]["computable"], true, "{undo}");
+
+    // The Log's event rows name the same source.
+    let log = json_get(&uds_get(&sock, "/api/observations?workspace=billing").await);
+    let verdict = log
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["proposal"]["event"] == "verdict")
+        .expect("the verdict's row");
+    assert_eq!(verdict["proposal"]["targets"][0]["name"], row["labels"][0], "{verdict}");
+
+    let none = uds_get(&sock, "/api/resolve/undo?proposal=nothing").await;
+    assert!(none.contains("404"), "nothing to undo: {none}");
+    let _ = std::fs::remove_file(&sock);
+}
+
 /// The reify promotion path over the socket (Principle 11): a recurring co-occurrence context is
 /// asserted as a group entity + member_of relations through /api/reify - an ordinary observation
 /// carrying derived_from lineage - and the graph gains the first-class structure while the

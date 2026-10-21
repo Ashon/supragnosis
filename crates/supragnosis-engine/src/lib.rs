@@ -564,6 +564,13 @@ pub struct CurationConflict {
     /// The observation asserting `current` - the handle for confirming the current value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind_source: Option<String>,
+    /// For a type definition (`field` "definition"): the axis it is defined on. A definition ties
+    /// as a kind does (IR5), so it waits under Needs you too (design-system.md Section 29.3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<TypeTarget>,
+    /// For a type definition: the workspace it belongs to, part of the type's identity (P11).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -621,15 +628,17 @@ fn uncomputable_diff(note: &str) -> BeliefDiff {
 }
 
 /// A merge verdict was cast on this proposal, whether or not the blocking checks let it commit.
-/// `merged` and `blocked` are the two states that carry one; `open`/`rejected`/`withdrawn` do not.
+/// `merged` and `blocked` carry one, and so does a blocked merge a person rejected, which reads
+/// `rejected` (proposal-workflow.md Section 7.1); an `open`, `withdrawn` or plainly rejected one does
+/// not.
 ///
 /// This is the condition an `entity_split`'s target must satisfy, and deliberately NOT "is merged".
 /// The check runs inside the fold that decides merged-versus-blocked, so depending on that
 /// distinction would make one proposal's state depend on another's within a single pass. Reversing
 /// a merge that the checks are holding back is harmless anyway - it subtracts an edge that is not
 /// being contributed (unmerge.md Section 9).
-fn carries_merge_verdict(state: &str) -> bool {
-    matches!(state, "merged" | "blocked")
+fn carries_merge_verdict(view: &ProposalView) -> bool {
+    view.merge_cast
 }
 
 /// The two gate kinds with a tier commit effect (resolution.md Section 5). Their targets are
@@ -823,6 +832,38 @@ pub struct StatedRelation {
 /// How much of a moved source a reach row quotes.
 pub const REACH_SAID_CHARS: usize = 280;
 
+/// How much of a source a label quotes (design-system.md Section 29.3).
+pub const LABEL_SAID_CHARS: usize = 80;
+
+/// A source said in one line: its first [`LABEL_SAID_CHARS`] characters in quotes, cut with "...",
+/// and the entities it names, four at most: "The ledger is a Postgres table..." (Ledger, Nightly
+/// export). The proposal rows' labels and the Log's event rows say a gate act's observation so.
+fn source_label(o: &Observation) -> String {
+    let flat: String = o.content.split_whitespace().collect::<Vec<_>>().join(" ");
+    let said: String = flat.chars().take(LABEL_SAID_CHARS).collect();
+    let cut = flat.chars().count() > LABEL_SAID_CHARS;
+    let mut names: Vec<&str> = Vec::new();
+    let named = o
+        .assertions
+        .entities
+        .iter()
+        .map(|e| e.name.as_str())
+        .chain(o.assertions.relations.iter().flat_map(|r| [r.from.as_str(), r.to.as_str()]));
+    for n in named {
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    let shown = names.iter().take(4).copied().collect::<Vec<_>>().join(", ");
+    let more = names.len().saturating_sub(4);
+    let entities = match (names.is_empty(), more) {
+        (true, _) => String::new(),
+        (false, 0) => format!(" ({shown})"),
+        (false, n) => format!(" ({shown} and {n} more)"),
+    };
+    format!("\"{}{}\"{entities}", said.trim_end(), if cut { "..." } else { "" })
+}
+
 /// One act the console would cast through `/api/resolve`: a gate kind, its targets and the tier it
 /// asks for (design-system.md Section 29.2).
 #[derive(Debug, Clone)]
@@ -838,6 +879,25 @@ pub struct GateAct {
 pub struct GatePreview {
     pub belief_diff: BeliefDiff,
     pub checks: Vec<CheckResult>,
+}
+
+/// What reverses one merged gate proposal ([`Engine::undo_gate`]): one act per target it still
+/// moves, and their diff and checks. No acts, and no diff, when it moves nothing any more.
+#[derive(Serialize)]
+pub struct GateUndo {
+    pub proposal: String,
+    pub acts: Vec<UndoAct>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub belief_diff: Option<BeliefDiff>,
+    pub checks: Vec<CheckResult>,
+}
+
+/// One reversing act: the observation, the gate kind `/api/resolve` casts and the tier it returns to.
+#[derive(Serialize)]
+pub struct UndoAct {
+    pub observation: String,
+    pub kind: String,
+    pub tier: TrustTier,
 }
 
 /// One relation whose endpoint moves when a merge commits. `becomes_self_loop` is the consequence a
@@ -890,6 +950,20 @@ pub struct ProposalView {
     pub proposer: String,
     /// Solo single-user marker (Principle 23 self-approval exception): proposer == reviewer.
     pub self_attested: bool,
+    /// How each target is said to a reader, in `targets`' order (design-system.md Section 29.3): an
+    /// entity by its name, merged-away ones included; a gate act's observation by its first words
+    /// and the entities it names; an un-merge's merge by what it merged. `None` where nothing on this
+    /// node can say it. Attached by `list_proposals` and `get_proposal`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<Option<String>>,
+    /// The canonical target of an entity merge, said as `labels` says a target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub into_label: Option<String>,
+    /// A merge verdict was cast on it, whether or not it committed: what an un-merge's target must
+    /// carry ([`carries_merge_verdict`]). Not the state, since a blocked merge a person rejected
+    /// reads Rejected and still carries its merge verdict, which the Review page says.
+    #[serde(rename = "merge_verdict", skip_serializing_if = "std::ops::Not::not")]
+    pub merge_cast: bool,
     /// The computed diff, attached by `get_proposal` only. `list_proposals` leaves it None: a diff is
     /// two full belief folds, which is the right cost for the one proposal being reviewed and the
     /// wrong cost per row of a list.
@@ -2178,8 +2252,34 @@ impl Engine {
                 contested: n.contested,
                 competitors: n.competitors,
                 kind_source: n.kind_source,
+                target: None,
+                workspace: None,
             })
             .collect();
+        // A type's definition ties as a kind does (resolution-identity.md IR5): the same row, keyed
+        // by the type's workspace, axis and name, since a type has no entity id.
+        contradictions.extend(
+            self.types_in(workspace, cx)?
+                .into_iter()
+                .filter(|t| !t.competitors.is_empty())
+                .map(|t| {
+                    let axis = match t.target {
+                        TypeTarget::Entity => "entity",
+                        TypeTarget::Relation => "relation",
+                    };
+                    CurationConflict {
+                        id: format!("type:{}:{axis}:{}", t.workspace, t.name),
+                        name: t.name,
+                        field: "definition".into(),
+                        current: t.description,
+                        contested: t.contested,
+                        competitors: t.competitors,
+                        kind_source: t.def_source,
+                        target: Some(t.target),
+                        workspace: Some(t.workspace),
+                    }
+                }),
+        );
         contradictions.sort_by(|a, b| {
             b.contested
                 .cmp(&a.contested)
@@ -2689,6 +2789,9 @@ impl Engine {
                     opened_at: observed_at,
                     proposer: proposer.clone(),
                     self_attested: true,
+                    labels: Vec::new(),
+                    into_label: None,
+                    merge_cast: false,
                     belief_diff: None,
                     checks: Vec::new(),
                 });
@@ -2764,8 +2867,14 @@ impl Engine {
         for (id, view) in views.iter_mut() {
             if let Some(t) = tally.get(id) {
                 view.verdicts = t.verdicts;
+                view.merge_cast = t.merge;
                 view.state = if t.merge && !blocked.contains(id) {
                     "merged"
+                } else if t.merge && t.reject {
+                    // A blocked merge is not a valid merge, so a valid reject concludes Rejected
+                    // (proposal-workflow.md Section 7.1). Once the check passes the merge is valid,
+                    // and it is Merged, as a late merge is (I16).
+                    "rejected"
                 } else if t.merge {
                     // The verdict is recorded and stays in the log; what it does not do is commit.
                     "blocked"
@@ -2785,9 +2894,101 @@ impl Engine {
     /// All proposals in the workspace, newest first (opened_at desc, id asc for ties - deterministic).
     pub fn list_proposals(&self, workspace: Option<&str>) -> Result<Vec<ProposalView>, StoreError> {
         let cx = &ReadCtx::default();
-        let mut v: Vec<ProposalView> = self.fold_proposals(workspace, cx)?.into_values().collect();
+        let mut all = self.fold_proposals(workspace, cx)?;
+        self.label_proposals(&mut all)?;
+        let mut v: Vec<ProposalView> = all.into_values().collect();
         v.sort_by(|a, b| b.opened_at.cmp(&a.opened_at).then_with(|| a.id.cmp(&b.id)));
         Ok(v)
+    }
+
+    /// Fills each view's `labels` and `into_label` (design-system.md Section 29.3). Point reads
+    /// only, so the proposal list, which the viewer reads on every poll, does not scan the entity
+    /// table.
+    fn label_proposals(
+        &self,
+        views: &mut BTreeMap<String, ProposalView>,
+    ) -> Result<(), StoreError> {
+        let mut labels = Vec::new();
+        for (id, v) in views.iter() {
+            labels.push((id.clone(), self.labels_for(id, v, views)?));
+        }
+        for (id, (ls, into)) in labels {
+            if let Some(v) = views.get_mut(&id) {
+                v.labels = ls;
+                v.into_label = into;
+            }
+        }
+        Ok(())
+    }
+
+    /// One proposal's labels: each target's, and its merge target's. A label names only what is in
+    /// the proposal's own workspace - the workspace its opening observation was written to - so a
+    /// reader granted that workspace on the read tier is told nothing from another (remote-viewer.md
+    /// Section 3.4); a target elsewhere keeps `None`.
+    fn labels_for(
+        &self,
+        id: &str,
+        view: &ProposalView,
+        views: &BTreeMap<String, ProposalView>,
+    ) -> Result<(Vec<Option<String>>, Option<String>), StoreError> {
+        let Some(ws) = self.store.get_observation(id)?.map(|o| o.workspace().to_string()) else {
+            return Ok((vec![None; view.targets.len()], None));
+        };
+        let mut ls = Vec::with_capacity(view.targets.len());
+        for t in &view.targets {
+            ls.push(self.target_label(t, &ws, views)?);
+        }
+        let into = match &view.into {
+            Some(i) => self.target_label(i, &ws, views)?,
+            None => None,
+        };
+        Ok((ls, into))
+    }
+
+    /// How a proposal's target in workspace `ws` is said to a reader: an entity by its name (the
+    /// entity table keeps a merged-away one); a proposal, which an un-merge targets, by what it
+    /// merged; an observation by its first 80 characters and the entities it names: "The ledger is
+    /// a Postgres table..." (Ledger, Nightly export). `None` for what is not in `ws`, and for what
+    /// nothing on this node can say.
+    fn target_label(
+        &self,
+        id: &str,
+        ws: &str,
+        views: &BTreeMap<String, ProposalView>,
+    ) -> Result<Option<String>, StoreError> {
+        let entity_name = |id: &str| -> Result<Option<String>, StoreError> {
+            Ok(self
+                .store
+                .get_entity(id)?
+                .filter(|e| e.provenance.iter().any(|p| p.workspace == ws))
+                .map(|e| e.canonical_name))
+        };
+        if self.store.get_entity(id)?.is_some() {
+            return entity_name(id);
+        }
+        if let Some(p) = views.get(id) {
+            if self.store.get_observation(id)?.is_none_or(|o| o.workspace() != ws) {
+                return Ok(None);
+            }
+            let mut names = Vec::new();
+            for t in p.targets.iter().filter(|t| p.into.as_deref() != Some(t.as_str())) {
+                names.extend(entity_name(t)?);
+            }
+            let into = match &p.into {
+                Some(i) => entity_name(i)?,
+                None => None,
+            };
+            return Ok(match (names.is_empty(), into) {
+                (false, Some(into)) => Some(format!("{} into {into}", names.join(", "))),
+                (false, None) => Some(names.join(", ")),
+                (true, into) => into,
+            });
+        }
+        Ok(self
+            .store
+            .get_observation(id)?
+            .filter(|o| o.workspace() == ws)
+            .map(|o| source_label(&o)))
     }
 
     /// One proposal's folded state by id (None if there is no such proposal).
@@ -2797,9 +2998,11 @@ impl Engine {
         id: &str,
     ) -> Result<Option<ProposalView>, StoreError> {
         let cx = &ReadCtx::default();
-        let Some(mut view) = self.fold_proposals(workspace, cx)?.remove(id) else {
+        let mut all = self.fold_proposals(workspace, cx)?;
+        let Some(mut view) = all.remove(id) else {
             return Ok(None);
         };
+        (view.labels, view.into_label) = self.labels_for(id, &view, &all)?;
         view.belief_diff = Some(self.belief_diff(workspace, &view, cx)?);
         view.checks = self.blocking_checks(
             workspace,
@@ -2849,6 +3052,9 @@ impl Engine {
                 opened_at: 0,
                 proposer: String::new(),
                 self_attested: false,
+                labels: Vec::new(),
+                into_label: None,
+                merge_cast: false,
                 belief_diff: None,
                 checks: Vec::new(),
             };
@@ -2862,6 +3068,59 @@ impl Engine {
             }
         }
         Ok(GatePreview { belief_diff, checks })
+    }
+
+    /// What reverses a merged claim promotion or demotion (design-system.md Section 29.3): for each
+    /// target the proposal still moves, the act that returns it to the tier it has with this
+    /// proposal's verdict left out of the gate fold, and those acts' diff and checks at the console's
+    /// grant, as [`Engine::preview_gate`] answers them. No acts when the proposal moves no target any
+    /// more - another verdict holds the same tier. `None` when no merged gate proposal has that id.
+    /// Writes nothing.
+    pub fn undo_gate(
+        &self,
+        workspace: Option<&str>,
+        proposal: &str,
+    ) -> Result<Option<GateUndo>, StoreError> {
+        let cx = &ReadCtx::default();
+        let views = self.fold_proposals(workspace, cx)?;
+        let Some(view) = views.get(proposal) else {
+            return Ok(None);
+        };
+        if view.state != "merged" || !GATE_KINDS.contains(&view.kind.as_str()) {
+            return Ok(None);
+        }
+        let now = self.gate_tiers(workspace, cx, &[], None)?;
+        let before = self.gate_tiers(workspace, cx, &[], Some(proposal))?;
+        let mut acts: Vec<GateAct> = Vec::new();
+        for obs in self.log(workspace, cx)?.iter().filter(|o| view.targets.contains(&o.id)) {
+            let (is, was) = (effective_tier(obs, &now), effective_tier(obs, &before));
+            if is != was {
+                acts.push(GateAct {
+                    kind: if was < is { "claim_demotion" } else { "claim_promotion" }.into(),
+                    targets: vec![obs.id.clone()],
+                    tier: was,
+                });
+            }
+        }
+        let (belief_diff, checks) = if acts.is_empty() {
+            (None, Vec::new())
+        } else {
+            let p = self.preview_gate(workspace, &acts)?;
+            (Some(p.belief_diff), p.checks)
+        };
+        Ok(Some(GateUndo {
+            proposal: proposal.to_string(),
+            acts: acts
+                .into_iter()
+                .map(|a| UndoAct {
+                    observation: a.targets.into_iter().next().unwrap_or_default(),
+                    kind: a.kind,
+                    tier: a.tier,
+                })
+                .collect(),
+            belief_diff,
+            checks,
+        }))
     }
 
     /// Materialize the canon with and without this proposal's effects and report the difference
@@ -3087,7 +3346,7 @@ impl Engine {
                  incomplete sync this is arrival order rather than a malformed split",
             ));
         };
-        if merge.kind != "entity_merge" || !carries_merge_verdict(&merge.state) {
+        if merge.kind != "entity_merge" || !carries_merge_verdict(merge) {
             return Ok(uncomputable_diff(
                 "the named proposal is not an entity_merge that has been decided, so it forwards \
                  nothing for this to take back",
@@ -3308,7 +3567,7 @@ impl Engine {
     ) -> Result<BeliefDiff, StoreError> {
         let fwd = self.merge_forwarding(workspace, cx)?;
         let before_gates = self.gate_grants(workspace, cx)?;
-        let after_gates = self.gate_tiers(workspace, cx, events)?;
+        let after_gates = self.gate_tiers(workspace, cx, events, None)?;
 
         let mut targets: Vec<&String> = events.iter().flat_map(|(t, _, _)| t.iter()).collect();
         targets.sort();
@@ -3433,7 +3692,7 @@ impl Engine {
         Ok(self
             .fold_proposals(workspace, cx)?
             .values()
-            .filter(|p| p.kind == "entity_merge" && carries_merge_verdict(&p.state))
+            .filter(|p| p.kind == "entity_merge" && carries_merge_verdict(p))
             .map(|p| p.id.clone())
             .collect())
     }
@@ -3597,7 +3856,7 @@ impl Engine {
         workspace: Option<&str>,
         cx: &ReadCtx,
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
-        self.gate_tiers(workspace, cx, &[])
+        self.gate_tiers(workspace, cx, &[], None)
     }
 
     /// [`Engine::gate_grants`], with hypothetical events applied in order after every merged one:
@@ -3606,11 +3865,15 @@ impl Engine {
     /// "Confirm instead" and its Undo, which cast a demotion and a promotion as one act
     /// (design-system.md Section 29.2). The diff and the fold share this, so what a reviewer is shown
     /// is what the fold will do (P23: no merge without a diff that says so).
+    ///
+    /// `without` leaves one merged proposal out, as if its verdict had never been cast: the tiers an
+    /// undo returns its targets to (design-system.md Section 29.3).
     fn gate_tiers(
         &self,
         workspace: Option<&str>,
         cx: &ReadCtx,
         extra: &[(&[String], TrustTier, bool)],
+        without: Option<&str>,
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
         // proposal id -> (targets, requested tier, is a promotion); from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier, bool)> = HashMap::new();
@@ -3682,6 +3945,9 @@ impl Engine {
         // Per target, every committed gate event with its order key - resolution.md R5.
         let mut events: HashMap<String, Vec<(Hlc, String, TrustTier, bool)>> = HashMap::new();
         for (proposal_id, (targets, requested, promotion)) in &opened {
+            if without == Some(proposal_id.as_str()) {
+                continue;
+            }
             let Some((verdict_hlc, _, ceiling)) = rep_merge.get(proposal_id) else {
                 continue; // not merged - grants nothing (the gate, Principle 23)
             };
@@ -4529,10 +4795,28 @@ impl Engine {
         } else {
             BTreeMap::new()
         };
+        // A target that is not an entity - a gate act's observation, an un-merge's merge - is said as
+        // the proposal rows say it (design-system.md Section 29.3).
+        let mut labels: BTreeMap<String, String> = BTreeMap::new();
+        for (pid, v) in &proposals {
+            if v.targets.iter().chain(v.into.iter()).all(|t| names.contains_key(t)) {
+                continue;
+            }
+            let (ls, into) = self.labels_for(pid, v, &proposals)?;
+            for (t, l) in v.targets.iter().zip(ls).chain(v.into.iter().zip([into])) {
+                if let (false, Some(l)) = (names.contains_key(t), l) {
+                    labels.entry(t.clone()).or_insert(l);
+                }
+            }
+        }
         // A target keeps its id when nothing can name it - a merged-away row still resolves here
         // because the entity table keeps it; only a target this node has never projected stays bare.
         let eref = |id: &str| EntityRef {
-            name: names.get(id).cloned().unwrap_or_else(|| id.to_string()),
+            name: names
+                .get(id)
+                .or_else(|| labels.get(id))
+                .cloned()
+                .unwrap_or_else(|| id.to_string()),
             id: id.to_string(),
         };
         let mut out: Vec<ObsSummary> = Vec::new();

@@ -417,6 +417,8 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/resolve" => resolve_response(engine, query),
         // What a settle would do, without casting it (design-system.md Section 29.2).
         "/api/resolve/preview" => resolve_preview_response(engine, query),
+        // What reverses a merged confirmation or demotion, and its diff (Section 29.3).
+        "/api/resolve/undo" => resolve_undo_response(engine, query),
         // Hyperedge promotion path (Principle 11): reify a co-occurrence context into a group
         // entity + member_of relations, as an ordinary lineage-bearing observation (free ingest,
         // P22 - trust promotion of the reified claim goes through the gate afterwards).
@@ -863,6 +865,51 @@ fn review_response(engine: &Engine, query: &str) -> Response {
 /// "Confirm instead" and its Undo need. Answers the acts' belief diff and checks, applied in order at
 /// the console's grant, and writes nothing. Observations from two workspaces are refused, as
 /// `/api/resolve` refuses them, since the fold that would read the act reads one workspace.
+/// The undo read (design-system.md Section 29.3): `?proposal=<id>` names a merged claim promotion or
+/// demotion, and the answer is the acts that reverse it - each target back to the tier it has with
+/// that proposal's merge verdicts left out - with their diff and checks. Read in the proposal's own
+/// workspace, the one its opening observation was written to. Writes nothing.
+fn resolve_undo_response(engine: &Engine, query: &str) -> Response {
+    let Some(id) = query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("proposal="))
+        .map(percent_decode)
+        .filter(|s| !s.is_empty())
+    else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body(
+                "undo needs ?proposal=<id> - a merged claim_promotion or claim_demotion",
+            ),
+        };
+    };
+    let fail = |e: &dyn std::fmt::Display| Response {
+        status: "500 Internal Server Error",
+        content_type: "application/json",
+        body: err_body(&e.to_string()),
+    };
+    let workspace = match engine.get_observation(&id) {
+        Ok(o) => o.and_then(|o| o.provenance.first().map(|p| p.workspace.clone())),
+        Err(e) => return fail(&e),
+    };
+    match engine.undo_gate(workspace.as_deref(), &id) {
+        Ok(Some(u)) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::to_string(&u).unwrap_or_else(|e| err_body(&e.to_string())),
+        },
+        Ok(None) => Response {
+            status: "404 Not Found",
+            content_type: "application/json",
+            body: err_body(&format!(
+                "{id} is not a merged claim_promotion or claim_demotion - there is nothing to undo"
+            )),
+        },
+        Err(e) => fail(&e),
+    }
+}
+
 fn resolve_preview_response(engine: &Engine, query: &str) -> Response {
     let bad = |m: String| Response {
         status: "400 Bad Request",

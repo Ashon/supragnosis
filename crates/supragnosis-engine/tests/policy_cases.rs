@@ -17,12 +17,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use supragnosis_core::TypeTarget;
 use supragnosis_core::{
     observation_content_id, AssertionStore, Assertions, Entity, KnowledgeStore, Observation,
     ProposalEventAssertion, ProposalEventKind, Provenance, TrustTier, VERDICT_SURFACE_CONSOLE,
 };
 use supragnosis_engine::{
-    Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, VerdictSurface,
+    DefineTypeInput, Engine, EntityInput, ObserveInput, ProposeInput, RelationInput, TypeDefInput,
+    VerdictSurface,
 };
 use supragnosis_store::InMemoryStore;
 
@@ -1185,4 +1187,289 @@ fn i17_a_console_act_on_an_agent_marked_recall_merge_counts() {
         view.state, "merged",
         "the console's attestation on the shared row is the human's direct act"
     );
+}
+
+/// A merge verdict as sync delivers it: an observation carrying the event, which never passes
+/// through `review_proposal` and its refusal.
+fn plant_merge_verdict(store: &InMemoryStore, proposal: &str) {
+    store
+        .add_observation(Observation::with_assertions(
+            format!("proposal(merge) {proposal}"),
+            Provenance {
+                host: "elsewhere".into(),
+                on_behalf_of: Some("elsewhere".into()),
+                workspace: WS.into(),
+                source_ref: None,
+                observed_at: 9_000,
+                confidence: None,
+                trust_tier: TrustTier::default(),
+                sync: None,
+            },
+            Assertions {
+                proposal_events: vec![ProposalEventAssertion {
+                    proposal: proposal.into(),
+                    event: ProposalEventKind::Verdict,
+                    payload: r#"{"decision":"merge"}"#.into(),
+                }],
+                ..Default::default()
+            },
+        ))
+        .expect("plant replicated verdict");
+}
+
+fn propose(
+    engine: &Engine,
+    kind: &str,
+    targets: Vec<String>,
+    into: Option<String>,
+    tier: Option<&str>,
+) -> String {
+    engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: kind.into(),
+            targets,
+            into,
+            tier: tier.map(String::from),
+            rationale: Some("test".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose")
+}
+
+fn decide(engine: &Engine, proposal: &str, decision: &str) {
+    engine
+        .review_proposal(
+            None,
+            proposal.into(),
+            decision.into(),
+            None,
+            Some("ashon".into()),
+            VerdictSurface::Console,
+        )
+        .expect("verdict");
+}
+
+/// GIVEN a merge whose check holds its accept back, WHEN a person rejects it, THEN it concludes
+/// Rejected - no valid merge and a valid reject (proposal-workflow.md Section 7.1) - and still
+/// carries its merge verdict, so an un-merge of it is not refused for want of one (unmerge.md
+/// Section 9). The fold kept it blocked before, and it never left the Review page's Needs you
+/// (design-system.md Section 29.3).
+#[test]
+fn p23_a_rejected_blocked_merge_concludes_rejected_and_keeps_its_merge_verdict() {
+    let (store, engine) = engine();
+    observe(&engine, "a real one", &["Real"]);
+    let ghost = Entity::make_id(WS, "never observed");
+    let real = Entity::make_id(WS, "Real");
+    let merge = propose(&engine, "entity_merge", vec![real, ghost.clone()], Some(ghost), None);
+    plant_merge_verdict(&store, &merge);
+    let state = |id: &str| engine.get_proposal(None, id).expect("get").expect("proposal").state;
+    assert_eq!(state(&merge), "blocked");
+
+    decide(&engine, &merge, "reject");
+    assert_eq!(state(&merge), "rejected", "a reject concludes a blocked merge (Section 7.1)");
+    let listed = engine.list_proposals(None).expect("list");
+    assert!(listed.iter().any(|p| p.id == merge && p.state == "rejected"), "the list agrees");
+
+    let split = propose(&engine, "entity_split", vec![merge.clone()], None, None);
+    let checks = engine.get_proposal(None, &split).expect("get").expect("split").checks;
+    assert!(
+        checks.iter().any(|c| c.name == "reversible target" && c.passed),
+        "the merge verdict still makes it reversible: {checks:?}"
+    );
+}
+
+/// GIVEN a source the console confirmed, WHEN the undo read asks what reverses that confirmation,
+/// THEN it is one demotion to the tier the source has without it, with the diff of that demotion;
+/// and once a second confirmation holds the same tier, there is nothing to undo
+/// (design-system.md Section 29.3).
+#[test]
+fn p23_a_confirmation_is_undone_to_the_tier_it_had_without_it() {
+    let (_store, engine) = engine();
+    let obs = engine
+        .observe(ObserveInput {
+            content: "the ledger is a table".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Ledger".into(),
+                kind: Some("Table".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let first =
+        propose(&engine, "claim_promotion", vec![obs.clone()], None, Some("human_confirmed"));
+    decide(&engine, &first, "merge");
+
+    let undo = engine.undo_gate(None, &first).expect("read").expect("a merged gate proposal");
+    assert_eq!(undo.acts.len(), 1, "one act per target it moves");
+    assert_eq!(undo.acts[0].observation, obs);
+    assert_eq!(undo.acts[0].kind, "claim_demotion");
+    assert_eq!(undo.acts[0].tier, TrustTier::AgentExtracted, "back to its tier without the act");
+    assert!(undo.belief_diff.is_some(), "the act comes with its diff (U4)");
+
+    // A second, distinguishable confirmation of the same source (the same text would be the same
+    // proposal, P3).
+    let second = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "claim_promotion".into(),
+            targets: vec![obs],
+            into: None,
+            tier: Some("human_confirmed".into()),
+            rationale: Some("confirmed again".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("propose");
+    assert_ne!(second, first);
+    decide(&engine, &second, "merge");
+    let undo = engine.undo_gate(None, &first).expect("read").expect("still merged");
+    assert!(
+        undo.acts.is_empty(),
+        "another confirmation holds the tier: {:?}",
+        undo.acts.len()
+    );
+    assert!(engine.undo_gate(None, "no such proposal").expect("read").is_none());
+}
+
+/// GIVEN a merge and a confirmation, WHEN the proposals are listed, THEN each target is said in
+/// words - an entity by its name, a source by its first words and the entities it names - and only
+/// what is in the proposal's own workspace is named (design-system.md Section 29.3).
+#[test]
+fn proposal_rows_name_their_targets_in_their_own_workspace() {
+    let (store, engine) = engine();
+    observe(&engine, "postgres", &["Postgres"]);
+    observe(&engine, "postgresql", &["PostgreSQL"]);
+    let a = Entity::make_id(WS, "PostgreSQL");
+    let b = Entity::make_id(WS, "Postgres");
+    let merge = propose(&engine, "entity_merge", vec![a, b.clone()], Some(b), None);
+    let obs = engine
+        .observe(ObserveInput {
+            content: "The nightly export sends the ledger to the finance team's warehouse every night at two.".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![
+                EntityInput { name: "Nightly export".into(), kind: None, description: None },
+                EntityInput { name: "Warehouse".into(), kind: None, description: None },
+            ],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let confirm = propose(&engine, "claim_promotion", vec![obs], None, Some("human_confirmed"));
+    let list = engine.list_proposals(None).expect("list");
+    let row = |id: &str| list.iter().find(|p| p.id == id).expect("listed");
+    assert_eq!(
+        row(&merge).labels,
+        vec![Some("PostgreSQL".to_string()), Some("Postgres".to_string())]
+    );
+    assert_eq!(row(&merge).into_label.as_deref(), Some("Postgres"));
+    let said = row(&confirm).labels[0].clone().expect("the source is named");
+    assert!(said.starts_with("\"The nightly export sends the ledger"), "{said}");
+    assert!(
+        said.contains("...\" (Nightly export, Warehouse)"),
+        "cut, then its entities: {said}"
+    );
+
+    // The same row read alone carries the same labels.
+    let one = engine.get_proposal(None, &confirm).expect("get").expect("proposal");
+    assert_eq!(one.labels, row(&confirm).labels);
+
+    // A target in another workspace is not named in this one's rows. `propose` refuses such a
+    // target, so the proposal arrives as sync would deliver it.
+    let other = engine
+        .observe(ObserveInput {
+            content: "elsewhere".into(),
+            workspace: Some("other".into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput { name: "Far".into(), kind: None, description: None }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let payload = serde_json::json!({
+        "kind": "claim_promotion", "targets": [other], "into": null, "tier": "human_confirmed",
+        "rationale": "across", "affected_types": [],
+    })
+    .to_string();
+    let opened = Observation::with_assertions(
+        "proposal(open) claim_promotion".into(),
+        Provenance {
+            host: "host-b".into(),
+            on_behalf_of: None,
+            workspace: WS.into(),
+            source_ref: None,
+            observed_at: 1_000,
+            confidence: None,
+            trust_tier: TrustTier::default(),
+            sync: None,
+        },
+        Assertions {
+            proposal_events: vec![ProposalEventAssertion {
+                proposal: String::new(),
+                event: ProposalEventKind::Opened,
+                payload,
+            }],
+            ..Default::default()
+        },
+    );
+    let far = opened.id.clone();
+    store.add_observation(opened).expect("plant");
+    let list = engine.list_proposals(None).expect("list");
+    let row = list.iter().find(|p| p.id == far).expect("listed");
+    assert_eq!(row.labels, vec![None], "another workspace's source is not named here");
+}
+
+/// GIVEN two definitions of one type at one tier, WHEN the curation report is read, THEN the tie is
+/// one of its contradictions, contested, keyed by the type's workspace, axis and name - so it waits
+/// under Needs you as an entity's type does (resolution-identity.md IR5, design-system.md Section
+/// 29.3) - and reading it commits nothing (I18).
+#[test]
+fn a_contested_type_definition_is_a_curation_contradiction() {
+    let (store, engine) = engine();
+    for description in ["a deployable unit", "a long-running process"] {
+        engine
+            .define_type(DefineTypeInput {
+                workspace: None,
+                source_ref: None,
+                on_behalf_of: None,
+                defs: vec![TypeDefInput {
+                    target: TypeTarget::Entity,
+                    name: "Service".into(),
+                    description: description.into(),
+                }],
+            })
+            .expect("define");
+    }
+    let before = snapshot(store.as_ref());
+    let report = engine.curation(Some(WS)).expect("curation");
+    let after = snapshot(store.as_ref());
+    let def = report
+        .contradictions
+        .iter()
+        .find(|c| c.field == "definition")
+        .expect("the tied definition is listed");
+    assert_eq!(def.id, format!("type:{WS}:entity:Service"));
+    assert_eq!(def.name, "Service");
+    assert!(def.contested, "two definitions at one tier tie");
+    assert_eq!(def.target, Some(TypeTarget::Entity));
+    assert_eq!(def.workspace.as_deref(), Some(WS));
+    assert!(def.kind_source.is_some() && def.competitors.len() == 1);
+    Case::new("Principle 7", "the curation read commits nothing").changed_nothing(&before, &after);
 }
