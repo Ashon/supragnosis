@@ -226,7 +226,9 @@ client showing a number nobody expected.
 
 > **Revised ([settings-page.md](settings-page.md)).** Start at Login and Restart Daemon moved from the
 > tray to the app's settings page, with the behaviour below unchanged. The tray keeps the status
-> line, which now points to Settings when there is drift to repair.
+> line, which now points to Settings when there is drift to repair. *(Revised by design-system.md
+> step 50b: drift is said on the tray's state line, and its next line, "Open This Mac...", opens the
+> place to restart, design-system.md Section 29.13.)*
 
 The shell gains one control and loses one silence. Both go through the CLI, found where it is found
 today (`find_server_bin`); the shell shares no code with the server, so it does not write plists or

@@ -306,6 +306,12 @@ cross that gap:
   Settings or Setup - its script from the gear and the sync pill, the app from the window when its
   menu or tray does - and the app's pages go back to that address. The address is the viewer's own
   `?workspace=` and `?entity=`, which a page that keeps neither still answers with its first view.
+  Since design-system.md step 50b the menu bar presses the page's own controls by id - `#panelL`
+  and `#panelR` by `aria-pressed`, `#mapTab` and `#listBtn` by `aria-selected`, `#fit` and
+  `#keysOpen` - only while no `dialog[open]` and no `#obscard.on` is on the page, and sends its
+  focused element Cmd+K, and Cmd+[ and Cmd+] only on a viewer that has `#keysDlg`. The page's load
+  report, from `shell-init.js`, says which of these it has; an item whose control is missing is
+  disabled.
   Since design-system.md step 48 it also sets `window.supragnosisSetup`, Setup's address, which the
   viewer reads beside `window.supragnosisHere` to offer Open Setup on an empty store; a viewer that
   does not read it shows no button, and a shell that does not set it leaves none.

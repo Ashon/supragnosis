@@ -273,7 +273,10 @@ On a remote profile, the window shows the server instead of saying it cannot:
   - the server is too old;
   - the principal may read nothing.
 - **The tray is unchanged** from remote-server.md Section 5. The status line names the server and
-  whether it answers, and the daemon controls stay disabled.
+  whether it answers, and the daemon controls stay disabled. *(Revised by design-system.md step 50b:
+  the line reads "Server home - not answering", an act line "Check the Server..." follows it, and the
+  icon's trouble shape shows while the server does not answer or refuses the credential,
+  design-system.md Section 29.13.)*
 
 ## 7. Decisions
 
