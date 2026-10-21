@@ -1547,6 +1547,9 @@ reads every radius of the viewer's, the app pages' and the landing's stylesheets
 `large_acts_are_capsules_and_their_rows_share_a_size` the Review page's and Setup's acts and the pills;
 `targets_reach_28_and_44_under_a_finger` holds the stacked rows and segments at 28 and the coarse
 pointer's 44, the part of U19's targets a stylesheet can hold, and browser scenarios measure the rest.
+`the_minimap_window_is_concentric_with_its_frame` holds the one rounded part a canvas draws inside
+another: the minimap reads its frame's radius from the stylesheet, clips to that outline, and runs
+its window's line on the radius less the half pixel it sits in, wherever the line meets the curve.
 
 U25 is guarded by `crates/supragnosis-viz/tests/tooltips.rs`: `a_tooltip_names_and_explains_nothing`
 reads every tooltip of the viewer's and the app pages' markup and every one the viewer's script writes,

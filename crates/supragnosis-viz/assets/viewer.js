@@ -4037,10 +4037,9 @@ function drawMinimap() {
   miniEl.classList.toggle("on", on);
   if (!on) return;
   if (miniEl.width !== MINI_W * dpr) { miniEl.width = MINI_W * dpr; miniEl.height = MINI_H * dpr; }
-  // Everything renders inside the panel's rounded outline (radius matches the 10px
-  // border-radius in viewer.css, minus the half-pixel stroke inset) - without the clip, dots
-  // and the viewport stroke land in the corner cut zones and get sliced by the CSS rounding.
-  const R = 9.5;
+  // Everything renders inside the panel's rounded outline, read from viewer.css, so the clip and
+  // the window's corners stay concentric with it whatever radius the token gives.
+  const R = miniRadius();
   const round = mctx.roundRect !== undefined;
   // The first miniature is painted at once: a small map can show within MINI_MOVING_MS of the page's
   // start, and the frame would have no miniature to draw.
@@ -4061,11 +4060,17 @@ function drawMinimap() {
   mctx.save();
   if (round) {
     mctx.beginPath();
-    mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
+    mctx.roundRect(0, 0, MINI_W, MINI_H, R);
     mctx.clip();
   }
   drawMiniWindow(m.k, m.ox, m.oy, R, round);
   mctx.restore();
+}
+// The panel's corner radius, as viewer.css draws it (the --r-surface token), read once.
+let miniR = null;
+function miniRadius() {
+  if (miniR === null) miniR = parseFloat(window.getComputedStyle(miniEl).borderTopLeftRadius) || 0;
+  return miniR;
 }
 // The miniature's groups (Section 27.8, U41): the nodes in its drawn types taken best-connected first,
 // each one not yet taken starting a group that takes every node not yet taken within MINI_REACH of the
@@ -4085,7 +4090,7 @@ function paintMiniature(dpr, k, ox, oy, R, round) {
   mctx.save();
   if (round) {
     mctx.beginPath();
-    mctx.roundRect(0.5, 0.5, MINI_W - 1, MINI_H - 1, R);
+    mctx.roundRect(0, 0, MINI_W, MINI_H, R);
     mctx.clip();
   }
   const mx = n => n.x * k + ox, my = n => n.y * k + oy;
@@ -4144,31 +4149,58 @@ function paintMiniature(dpr, k, ox, oy, R, round) {
 }
 function drawMiniWindow(k, ox, oy, R, round) {
   // Viewport rectangle: the map window's corners in world coords, mapped in and clamped to the frame.
-  // A corner that is clamped onto the frame corner takes the PANEL's radius (the rect then traces
-  // the rounded outline instead of slicing through it); free corners keep a small radius.
+  // Its outline is the window's rectangle cut by the panel's rounded outline, half a stroke inside
+  // it: a corner that falls past the panel's curve follows that curve, concentric with the panel's,
+  // so the line keeps its width round the corner; a free corner keeps a small radius.
   const vw = mapWindow();
   const x1 = Math.max(0.5, Math.min(MINI_W - 0.5, ((vw.l - cam.x) / cam.s) * k + ox));
   const y1 = Math.max(0.5, Math.min(MINI_H - 0.5, ((vw.t - cam.y) / cam.s) * k + oy));
   const x2 = Math.max(0.5, Math.min(MINI_W - 0.5, ((vw.r - cam.x) / cam.s) * k + ox));
   const y2 = Math.max(0.5, Math.min(MINI_H - 0.5, ((vw.b - cam.y) / cam.s) * k + oy));
-  const w = Math.max(2, x2 - x1), h = Math.max(2, y2 - y1);
   // Ink, not gold: with the whole graph in view the rect lies on the minimap's edge, and a gold frame
   // is the decoration gold is not for (docs/design-system.md Section 4).
   mctx.strokeStyle = INK; mctx.globalAlpha = 0.55; mctx.lineWidth = 1;
-  if (round) {
-    const lc = x1 <= 1, tc = y1 <= 1, rc = x2 >= MINI_W - 1, bc = y2 >= MINI_H - 1;
-    const radii = [
-      lc && tc ? R : 3,   // top-left
-      rc && tc ? R : 3,   // top-right
-      rc && bc ? R : 3,   // bottom-right
-      lc && bc ? R : 3,   // bottom-left
-    ];
-    mctx.beginPath();
-    mctx.roundRect(x1, y1, w, h, radii);
-    mctx.stroke();
-  } else {
-    mctx.strokeRect(x1, y1, w, h);
-  }
+  if (!round) { mctx.strokeRect(x1, y1, Math.max(2, x2 - x1), Math.max(2, y2 - y1)); return; }
+  mctx.beginPath();
+  miniWindowPath(mctx, x1, y1, Math.max(x1 + 2, x2), Math.max(y1 + 2, y2), R - 0.5);
+  mctx.stroke();
+}
+// The outline of a rectangle cut by the rounded rectangle inset half a pixel in the panel, whose
+// corner radius is `r`. Each corner of the rectangle that lies past the rounded rectangle's curve is
+// replaced by the arc of that curve between the two edges' crossings; any other corner is rounded by
+// at most 3 pixels. Traced clockwise from the top-left corner's end on the top edge.
+function miniWindowPath(c, x1, y1, x2, y2, r) {
+  const lo = 0.5, hiX = MINI_W - 0.5, hiY = MINI_H - 0.5;
+  const small = Math.min(3, (x2 - x1) / 2, (y2 - y1) / 2);
+  // For each corner: the point it would be, the curve's centre, and the side of the centre it lies on.
+  const corners = [
+    { x: x1, y: y1, cx: lo + r, cy: lo + r, sx: -1, sy: -1 },     // top-left
+    { x: x2, y: y1, cx: hiX - r, cy: lo + r, sx: 1, sy: -1 },     // top-right
+    { x: x2, y: y2, cx: hiX - r, cy: hiY - r, sx: 1, sy: 1 },     // bottom-right
+    { x: x1, y: y2, cx: lo + r, cy: hiY - r, sx: -1, sy: 1 },     // bottom-left
+  ];
+  const pts = corners.map(q => {
+    // A corner is cut when it lies past the curve's centre on both axes and outside its circle.
+    const dx = (q.x - q.cx) * q.sx, dy = (q.y - q.cy) * q.sy;
+    if (r <= 0 || dx <= 0 || dy <= 0 || Math.hypot(dx, dy) <= r || dx > r || dy > r) return null;
+    // Where the corner's horizontal edge and its vertical edge cross the circle.
+    const hx = q.cx + q.sx * Math.sqrt(r * r - dy * dy);   // on the horizontal edge
+    const vy = q.cy + q.sy * Math.sqrt(r * r - dx * dx);   // on the vertical edge
+    // The crossings must lie on the rectangle's own edges, or the curve is not this corner's.
+    if (hx < x1 || hx > x2 || vy < y1 || vy > y2) return null;
+    return { hx, vy, a: Math.atan2(q.y - q.cy, hx - q.cx), b: Math.atan2(vy - q.cy, q.x - q.cx) };
+  });
+  // Top-left: from its vertical crossing round to its horizontal one, or a small round corner.
+  const [tl, tr, brc, bl] = pts;
+  if (tl) { c.moveTo(x1, tl.vy); c.arc(corners[0].cx, corners[0].cy, r, tl.b, tl.a); }
+  else { c.moveTo(x1, y1 + small); c.arcTo(x1, y1, x1 + small, y1, small); }
+  if (tr) { c.lineTo(tr.hx, y1); c.arc(corners[1].cx, corners[1].cy, r, tr.a, tr.b); }
+  else c.arcTo(x2, y1, x2, y1 + small, small);
+  if (brc) { c.lineTo(x2, brc.vy); c.arc(corners[2].cx, corners[2].cy, r, brc.b, brc.a); }
+  else c.arcTo(x2, y2, x2 - small, y2, small);
+  if (bl) { c.lineTo(bl.hx, y2); c.arc(corners[3].cx, corners[3].cy, r, bl.a, bl.b); }
+  else c.arcTo(x1, y2, x1, y2 - small, small);
+  c.closePath();
 }
 // Click/drag pans: center the camera on the pointed world position, at the current zoom.
 function miniPan(ev) {

@@ -8,6 +8,7 @@ const SETTINGS: &str = include_str!("../../../app/assets/settings.css");
 const WELCOME: &str = include_str!("../../../app/assets/welcome.css");
 const SHELL: &str = include_str!("../../../app/assets/shell.css");
 const LANDING: &str = include_str!("../../../site/style.css");
+const SCRIPT: &str = include_str!("../assets/viewer.js");
 
 const RADII: &[(&str, &str)] = &[
     ("--r-window", "16px"),
@@ -80,6 +81,48 @@ fn every_corner_is_a_radius_token() {
         }
     }
     assert!(stray.is_empty(), "a corner off the radius tokens:\n  {}", stray.join("\n  "));
+}
+
+/// U22 on a canvas: the minimap's window is a part inside its rounded frame. The frame's radius is
+/// read from the stylesheet, never written in the script - a written 9.5 outlived the 10-pixel radius
+/// it was taken from, and once the frame took `--r-surface` 12 the clip and the window's corner were
+/// no longer concentric with it, so the line thinned to a tenth of a pixel round the corner. The
+/// clip is the frame's own outline, and the window's line, half a pixel in, runs on the radius less
+/// that half pixel wherever it meets the curve.
+#[test]
+fn the_minimap_window_is_concentric_with_its_frame() {
+    let body = |name: &str| -> &str {
+        let at = SCRIPT
+            .find(&format!("\nfunction {name}("))
+            .unwrap_or_else(|| panic!("viewer.js no longer defines {name}"));
+        &SCRIPT[at + 1..at + 1 + SCRIPT[at + 1..].find("\n}\n").expect("it closes")]
+    };
+    assert!(
+        body("miniRadius").contains("window.getComputedStyle(miniEl).borderTopLeftRadius"),
+        "the frame's radius comes from viewer.css"
+    );
+    let minimap = body("drawMinimap");
+    assert!(
+        minimap.contains("const R = miniRadius();"),
+        "no radius is written in the script"
+    );
+    for clip in [minimap, body("paintMiniature")] {
+        assert!(
+            clip.contains("roundRect(0, 0, MINI_W, MINI_H, R)"),
+            "the clip is the frame's own outline, not one inset from it"
+        );
+    }
+    assert!(
+        body("drawMiniWindow").contains("miniWindowPath(mctx, x1, y1,")
+            && body("drawMiniWindow").contains("R - 0.5)"),
+        "the window's line, half a pixel in, runs on the radius less that half pixel"
+    );
+    let path = body("miniWindowPath");
+    assert!(
+        path.contains("{ x: x1, y: y1, cx: lo + r, cy: lo + r, sx: -1, sy: -1 }"),
+        "a corner past the curve follows the curve's own centre"
+    );
+    assert!(path.contains("Math.min(3,"), "a free corner keeps a small radius");
 }
 
 /// Section 4: the act a page or a decision is for draws large, 28 pixels, as a capsule, and the
