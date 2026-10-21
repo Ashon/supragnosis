@@ -819,6 +819,18 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "a timing on one Mac, measured by scenarios/web/bench/canvas.mjs (Section 26.1), which CI does not run - shared runners make frame times noise. Measured on 2026-10-19 (Section 26.2): at 10,000 a pan 11.5 ms at p95 in Chrome and 12 in WebKit, 8.4 and 6 at a reading zoom, a zoom 7.2 and 15, the first picture 7.9 and 7.1 s. Revisit when the map's layout or drawing changes, by running the bench again in both browsers",
         ),
     )]),
+    (41, &[c(
+        "every icon the viewer, the app's pages and the landing draw is a Lucide 1.52.0 file, vendored unmodified and drawn as a mask over the text's color, the contested badge's mark included; no page draws an icon from a character, a hand-written path or a pasted copy, and a file both surfaces ship is the same bytes on both",
+        Evidence::Deferred(
+            "specified in design-system.md Section 28, not built. Revisit when Section 14 step 39 lands and the test reading both surfaces' icons runs",
+        ),
+    )]),
+    (42, &[c(
+        "a notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, a 28-pixel dismiss showing x; a success without an action leaves 4.5 s after it shows, counted only while the pointer is off it and focus outside it, every other notice stays until dismissed or used; four at most; 200 ms in, 120 ms out, neither under reduced motion",
+        Evidence::Deferred(
+            "specified in design-system.md Section 28.4, not built. Revisit when Section 14 step 40 lands and the test reading viewer.js and kit.js runs",
+        ),
+    )]),
     (32, &[c(
         "the region field is kept with its camera and moved as a bitmap while only the camera moves, and the minimap's miniature is painted only when it changes",
         // scale.rs reads drawCloudField, cloudKeySame, drawMinimap and miniStillSame.

@@ -20,7 +20,8 @@
 > grids, drawing less, still layers, and the measure that finds the budget met in Chrome and WebKit.
 > The fifth pass, for the map at any size (Section 27, U33-U40), is built - steps 31-38: the poll that
 > asks first, region forces that scale, the layout on its own thread, the multilevel start, clipping,
-> semantic zoom, the GPU renderer, and the measure.
+> semantic zoom, the GPU renderer, and the measure. The sixth pass, one icon set and one notice
+> (Section 28, U41-U42), is specified - steps 39-40.
 
 ## 1. Why this exists
 
@@ -1403,6 +1404,8 @@ social image.
 | **U38** | Zoomed out, the map keeps its shape by keeping its best-connected nodes where they are: it keeps whole about one node for each 12 by 12 pixels of the screen it covers, ranked by their relations, and the next as many fade out, the least-connected first; a node faded out is not drawn, named or under the pointer, and a frame that keeps fewer nodes than its window holds visits only those and their relations; a node kept is drawn at least 1.6 pixels in radius; no node is drawn for others; a hovered, selected, active, pulsing or contested node never fades; and the minimap keeps nodes by the same rule at its own scale, one for each 5 by 5 of its pixels, with only its 48 widest regions of at least 12 pixels. |
 | **U39** | Where WebGL2 renders to half-float targets, the GPU draws the region field, the workspace outlines, the relations and their arrowheads and the nodes in their three sizes, and a 2D canvas above draws the names, badges, pulses, glows and peers; otherwise, under forced colors, or when the context is lost, the 2D canvas draws all of it as it does now. |
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
+| **U41** | Every icon the viewer, the app's pages and the landing draw is a Lucide 1.52.0 file, vendored unmodified and drawn as a mask over the text's color, the contested badge's mark included; no page draws an icon from a character, a path written by hand or a pasted copy of one, and a file both surfaces ship is the same bytes on both (Section 28). |
+| **U42** | A notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, and a 28-pixel dismiss showing x; a success without an action leaves 4.5 seconds after it shows, counted only while the pointer is off it and focus outside it, and every other notice stays until dismissed or used; four at most; it enters over 200 ms and leaves over 120 ms, and under reduced motion does neither (Section 28, WCAG 2.2.1). |
 | **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
@@ -1709,6 +1712,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
 38. **Measured** [built] (Section 27.2; U40): the bench to 50,000 in both browsers and both
    renderers, and the dev store through its daemon; with what it found - the multilevel start at the
    layout's density, a far frame over what it draws, and the minimap's paint out of the moving frames.
+39. **Icons** (Section 28.1-28.3; U41): the viewer's files under `assets/icons/` and their path, the
+   `.i` classes, every mark of Section 28.3's table, the contested badge on the map and the landing,
+   and the test that reads both surfaces.
+40. **Notices** (Section 28.4; U42): the three kinds, the surface, the clock that stops while it is
+   read, the motion, in `viewer.js` and `kit.js` both.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2799,3 +2807,126 @@ gathering points by zoom; sigma.js's WebGL programs;
 MDN, WebGL best practices and the EXT_color_buffer_float and EXT_float_blend extensions; Inigo Quilez
 on signed distance functions; the HTTP conditional requests of RFC 9110.
 
+
+## 28. Icons and notices
+
+The author asked, on 2026-10-21, for the notices to be made finer and for every place that still
+draws an icon as text to move to one icon set. This section is the sixth pass. It changes how marks
+are drawn and how a notice looks and leaves; it changes no place, no word a person reads first and
+nothing the map says.
+
+### 28.1 What is there
+
+The app's own pages draw every icon from Lucide's files (Section 12, "Lucide and Pretendard stay";
+`app/assets/icons/README.md`), and the 35 files there are byte for byte those of `lucide-static`
+1.52.0. The viewer and the landing draw theirs four other ways:
+
+- **A character for a mark.** A notice's dismiss is the letter x and its kind a 7-pixel dot; a
+  workspace a peer is sent shows x to stop sending it; naming a group confirms with "ok"; the
+  Definitions disclosure opens with "+ " and closes with "- "; the inspector heads a relation group
+  with "->" or "<-"; the Log writes "->" between a search and its hits and between a traverse and
+  what it reached; the contested badge is a typed "!" on the map, on the landing's stage and on the
+  principles page's pictures.
+- **A path written by hand.** The x that closes the inspector, the observation card and the
+  settings dialog, the chevron that makes the inspector taller or shorter, and the HUD's list, eye,
+  plus, minus and fit are paths drawn on 12- and 18-unit grids, close to Lucide's and not the same.
+- **A Lucide path copied into the page.** The title bar's panel toggles, the way back and the
+  status bar's gear are Lucide's paths pasted into `viewer.html`, so they are right today and nothing
+  holds them to the files the app ships.
+- **A notice the settings page's in shape but not in parts** (Section 9). The two are written twice -
+  `toast` in `viewer.js` and in the app's `kit.js` - and they differ: the viewer's marks its kind with
+  a dot and dismisses with the letter, the app's draws the set's icons; the app's enters over 180 ms
+  on a plain ease, outside the three durations of Section 3, and the viewer's does not move; neither
+  leaves except by vanishing, and a success leaves 4.5 seconds after it shows even while it is being
+  read.
+
+### 28.2 One set
+
+Lucide stays the one set, at 1.52.0, the release the app ships. A second set beside it - Phosphor,
+Tabler or Heroicons, each well made - would give one product two hands. Lucide is ISC, so it ships in a
+page a browser opens, which Apple's symbols may not (Section 12). It is drawn with a 2-unit stroke on
+a 24-unit grid, round at the ends and joins, which sits with the thin solid lines the map draws
+(Section 12), and it holds every mark this product uses.
+
+An icon is a mark that stands for a thing or an act in place of a word. A word stays a word: Copy,
+Replay, Confirm and Show are not replaced by marks. A count stays a count, "+3" included. A key cap
+names a key ("/"). The legend's dots and the map's rings are data, drawn from the data, and the gold
+star is the brand mark. None of those is an icon here.
+
+### 28.3 How a page draws one
+
+**The files are Lucide's, unmodified.** Each starts with Lucide's own license line,
+`<!-- @license lucide-static v1.52.0 - ISC -->`, and is never edited: a test reads the release from
+that line, and a name the two surfaces share must be the same bytes on both. The app keeps its files in `app/assets/icons/`, beside its
+pages. The viewer keeps its own in `crates/supragnosis-viz/assets/icons/`, compiled into the binary as
+the faces are (U11) and served at `/icons/lucide-1.52.0/<name>.svg` by the same lookup, on the local
+console and on a hub's read tier alike, with the same year-long cache: a new release of the set is a
+new path. The viewer's policy needs nothing new, since `img-src 'self'` admits a mask image. Two
+copies, as with the tokens (U7): a file in both is the same bytes, and a test reads both.
+
+**A page draws an icon as a mask over the text's color.** One class, `.i`, sets the size and paints
+`currentColor` through the file's shape, and `.i-<name>` names the file. An icon takes the color of
+the text around it, so a state's color reaches its icon with no second rule, and Increase Contrast and
+forced colors reach it the way they reach text (Section 10). An icon that stands alone in a button is
+`aria-hidden` and the button is named by its act and object (U19). Sizes are two: 16 pixels in the
+title bar, the HUD, the inspector and a notice, and 14 in the status bar and inline in a row - a
+relation group's head, a Log row. The stroke stays Lucide's, which at 16 pixels is 1.33.
+
+**The map draws the contested badge's mark from the set.** The badge stays a filled `--bad` disc of
+7 pixels' radius at the node's upper right (U3); its mark is circle-alert's two strokes - the bar
+`M12 8v4` and the dot `M12 16h.01` - drawn as a `Path2D` on the badge's disc taken as the icon's
+circle, in the surface color, at Lucide's 2-unit stroke and never under 1.5 pixels. The landing's
+stage and the principles page draw the same badge, with the same mark. A typed "!" took the shape and
+the weight of whichever face was loaded, and moved with it.
+
+| Today | Shown |
+|---|---|
+| a notice's dot, its "x" | circle-check, circle-alert or info; x |
+| a sent workspace's "x" | x |
+| naming a group's "ok" | check, named "Name this group" |
+| Definitions' "+ " and "- " | chevron-right, turned down while open |
+| a relation group's "->" and "<-" | arrow-right and arrow-left, named Outgoing and Incoming |
+| the Log's "->" | arrow-right |
+| the contested badge's "!" | circle-alert's mark |
+| the hand-drawn closing x, three places | x |
+| the inspector's hand-drawn chevrons | chevron-up and chevron-down |
+| the HUD's list, eye, plus, minus and fit | list, eye, plus, minus and scan |
+| the title bar's and status bar's pasted paths | panel-left, panel-right, chevron-left and settings, as files |
+
+### 28.4 Notices
+
+**One anatomy, on every surface.** A notice is a row: its kind's icon, then its title, at most one
+detail under the title and the note of its action, then its action, if any, then its dismiss. The
+kinds are three. `ok`, an act done, shows circle-check in `--ok-ink`; `bad`, an act refused or not
+done, circle-alert in `--bad-ink`; `info`, news that is not the outcome of the person's act - the
+viewer's "New in <workspace>" with Show (Section 6, U20) - info in `--ink2`. The title is
+`--text-body` at weight 500, the detail `--text-small` in `--muted` and selectable. The action is a
+quiet button with its word. The dismiss is a button showing x and named Dismiss, whose target is 28
+pixels square (U19).
+
+**Its surface.** `--panel-2`, a 1-pixel edge in `--line` all the way round, `--r-surface` and the
+notice layer's shadow. A `bad` notice's edge is `--bad` mixed 45% into `--line`: a change of the whole
+edge, as a selection takes one (Section 4), never a rule on one side of a rounded box.
+
+**How long it stays.** A notice of kind `ok` without an action leaves 4.5 seconds after it shows. The
+clock stops while the pointer is over the notice or focus is inside it, and the 4.5 seconds start
+again when both have left, so a notice is not taken away while it is being read (WCAG 2.2.1). A `bad`
+notice, an `info` notice and a notice with an action stay until they are dismissed or their action is
+used. Four at most are shown, the newest first; a fifth takes the place of the oldest.
+
+**How it moves.** It enters over 200 ms on the ease-out curve - from 8 pixels above in the viewer,
+where the stack hangs under the header at the top centre, and from 8 pixels to the right on the app's
+pages, where it sits at the top right under the title bar - and it leaves by fading over 120 ms. Both
+are durations of Section 3. Under reduced motion it appears and goes at once. Where the notices sit is
+unchanged (Section 18, step 2), and the stack is still one polite live region (Section 9).
+
+**Written twice, held as one.** The viewer is a page the daemon serves and the app's pages are the
+shell's, under two policies with no shared script, so `toast` stays in `viewer.js` and in `kit.js`,
+and a test reads both for the anatomy, the kinds' icons, the target, the clock and the motion.
+
+### 28.5 What this is not
+
+It adds no icon where a word is shown: buttons that say what they do keep their words. It is not an
+icon font, which would put marks back into text, nor a sprite, which is a build step for what a
+class and a file already do. It does not touch the tray's menu, which is the system's, or the app's
+own icon.
