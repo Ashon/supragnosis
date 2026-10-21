@@ -162,3 +162,49 @@ fn the_container_builds_with_the_declared_floor() {
          before a tag. Fix: FROM rust:{want}-trixie."
     );
 }
+
+/// The registry entry's name is the namespace GitHub authenticated, and the image carries it too.
+///
+/// The MCP Registry grants `io.github.<login>/*` to whoever logs in as `<login>`, with the login
+/// spelled as GitHub spells it, and it accepts an OCI package only when the image's
+/// `io.modelcontextprotocol.server.name` label equals the entry's name - both compared as exact
+/// strings. Neither is a build failure: the first publish of this repository was refused with a 403
+/// because server.json and the label both read `io.github.ashon` for an account named `Ashon`, with
+/// every check green. The owner is read from `repository.url` rather than written here, so the one
+/// place GitHub's spelling is copied from is the one a reader would check it against.
+#[test]
+fn the_registry_name_is_the_github_namespace_and_the_image_carries_it() {
+    let server: serde_json::Value = serde_json::from_str(SERVER_JSON).expect("server.json parses");
+    let name = server["name"].as_str().expect("server.json name is a string");
+    let repo = server["repository"]["url"]
+        .as_str()
+        .expect("server.json repository.url is a string");
+    let owner = repo
+        .strip_prefix("https://github.com/")
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or_else(|| panic!("repository.url {repo:?} is not a github.com repository"));
+    let namespace = name
+        .split_once('/')
+        .map(|(ns, _)| ns)
+        .unwrap_or_else(|| panic!("server.json name {name:?} has no namespace/"));
+    let want = format!("io.github.{owner}");
+    assert_eq!(
+        namespace, want,
+        "\nserver.json is named {name:?} but the repository belongs to {owner:?}.\nThe registry \
+         grants {want}/* to that login, case for case, and refuses anything else with a 403."
+    );
+
+    let label = DOCKERFILE
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("LABEL io.modelcontextprotocol.server.name="))
+        .expect(
+            "deploy/docker/Dockerfile labels the image with io.modelcontextprotocol.server.name",
+        );
+    let label = label.trim().trim_matches('"');
+    assert_eq!(
+        label, name,
+        "\nThe image is labelled {label:?} but server.json is named {name:?}.\nThe label is the \
+         whole ownership proof for an OCI package, compared as an exact string, so the entry \
+         would not verify. Fix: LABEL io.modelcontextprotocol.server.name=\"{name}\"."
+    );
+}

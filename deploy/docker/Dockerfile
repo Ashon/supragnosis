@@ -64,7 +64,10 @@ ENV SUPRAGNOSIS_MODEL_DIR=/usr/share/supragnosis/models
 # How the MCP Registry verifies that this image is ours: the annotation has to match the `name` in
 # server.json exactly. It is the whole of the ownership proof for an OCI package, so it moves only
 # when that name does - which is never, since the name is the namespace GitHub authenticated.
-LABEL io.modelcontextprotocol.server.name="io.github.ashon/supragnosis"
+# That namespace is the account's login as GitHub spells it, `Ashon`, compared case for case. The
+# image path is lowercase because ghcr demands it; the name is not, and the first publish was
+# refused (403, "You have permission to publish: io.github.Ashon/*") while both read `ashon`.
+LABEL io.modelcontextprotocol.server.name="io.github.Ashon/supragnosis"
 LABEL org.opencontainers.image.source="https://github.com/Ashon/supragnosis"
 LABEL org.opencontainers.image.description="Memory for AI agents that remembers who said it."
 LABEL org.opencontainers.image.licenses="MIT OR Apache-2.0"
