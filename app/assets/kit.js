@@ -4,6 +4,20 @@
 // and the notice an action leaves. Loaded before each page's own script.
 "use strict";
 
+// ---- The AI apps -----------------------------------------------------------------------------
+
+// The apps `supragnosis connect` knows (docs/client-connect.md Section 4), for both pages: the name
+// a button carries, and what kind of app each is, for its icon - a desktop app, an editor, or a
+// command-line tool. Their state is the CLI's.
+const APPS = {
+  "claude-desktop": "Claude Desktop", "claude-code": "Claude Code", cursor: "Cursor",
+  vscode: "VS Code", codex: "Codex", gemini: "Gemini CLI", opencode: "OpenCode",
+};
+const APP_KIND = {
+  "claude-desktop": "desktop", "claude-code": "terminal", cursor: "editor",
+  vscode: "editor", codex: "terminal", gemini: "terminal", opencode: "terminal",
+};
+
 // ---- DOM helpers ---------------------------------------------------------------------------
 
 // h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.

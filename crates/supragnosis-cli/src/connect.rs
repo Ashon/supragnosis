@@ -1,10 +1,11 @@
 //! `supragnosis connect` - registers the bridge with an AI app (docs/client-connect.md Section 4).
 //!
-//! Through the app's own CLI where it has one (Claude Code, Codex, Gemini, VS Code's
-//! `--add-mcp`), and by editing its config file only where it has none (Claude Desktop, Cursor).
-//! A file edit changes one member and leaves every other byte as written - an app's config is its
-//! user's file (P24) - and is checked after the fact: the result must parse, carry the intended
-//! entry, and agree with the original everywhere else, or nothing is written.
+//! Through the app's own CLI where it has one (Claude Code, Codex, Gemini, OpenCode, VS Code's
+//! `--add-mcp`), and by editing its config file only where it has none (Claude Desktop, Cursor, and
+//! removal from VS Code and OpenCode). A file edit changes one member and leaves every other byte as
+//! written - an app's config is its user's file (P24) - and is checked after the fact: the result
+//! must parse, carry the intended entry, and agree with the original everywhere else, or nothing is
+//! written. OpenCode's files are JSONC (Section 13.3); every other JSON file stays strict.
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +29,20 @@ pub enum Entry {
 }
 
 impl Entry {
+    /// How much an entry asks of the person, for an app that reads two files (OpenCode, Section
+    /// 13.3): where both hold one, the listing reports the higher, since either may be the one the
+    /// app loads.
+    fn attention(self) -> u8 {
+        match self {
+            Entry::None => 0,
+            Entry::Bridge => 1,
+            Entry::Other => 2,
+            Entry::Stdio => 3,
+            Entry::Http => 4,
+            Entry::Unknown => 5,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Entry::None => "none",
@@ -40,16 +55,33 @@ impl Entry {
     }
 }
 
-/// Classifies one server entry, in any client's shape (`command`/`args`, or `url`/`type`). TOML
-/// entries (Codex) are converted to JSON values before they get here.
+/// Classifies one server entry, in any client's shape (`command`/`args`, one `command` array, or
+/// `url`/`type`). TOML entries (Codex) are converted to JSON values before they get here.
 pub fn classify(entry: &Value) -> Entry {
+    // An entry turned off does not load, whatever it runs (OpenCode's `"enabled": false`).
+    if entry.get("enabled") == Some(&Value::Bool(false)) {
+        return Entry::Other;
+    }
     let is_us = |c: &str| c.rsplit('/').next() == Some("supragnosis");
-    if let Some(cmd) = entry.get("command").and_then(Value::as_str) {
-        let args: Vec<&str> = entry
-            .get("args")
-            .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_str).collect())
-            .unwrap_or_default();
+    fn strings(a: &[Value]) -> Vec<&str> {
+        a.iter().filter_map(Value::as_str).collect()
+    }
+    let command = match entry.get("command") {
+        Some(Value::String(cmd)) => Some((
+            cmd.as_str(),
+            entry
+                .get("args")
+                .and_then(Value::as_array)
+                .map(|a| strings(a))
+                .unwrap_or_default(),
+        )),
+        // OpenCode's shape: the program and its arguments in one array.
+        Some(Value::Array(a)) => {
+            a.first().and_then(Value::as_str).map(|cmd| (cmd, strings(&a[1..])))
+        }
+        _ => None,
+    };
+    if let Some((cmd, args)) = command {
         return match (is_us(cmd), args.first()) {
             (true, Some(&"bridge")) => Entry::Bridge,
             (true, None) | (true, Some(&"serve")) => Entry::Stdio,
@@ -169,7 +201,14 @@ fn object_at(text: &str, i: usize) -> Result<Object, String> {
         members.push(Member { key, start: j, value: (v0, v1) });
         j = skip_ws(b, v1);
         match b.get(j) {
-            Some(b',') => j = skip_ws(b, j + 1),
+            Some(b',') => {
+                j = skip_ws(b, j + 1);
+                // A trailing comma: JSONC's. Strict JSON never reaches here with one - its parse
+                // refused it first.
+                if b.get(j) == Some(&b'}') {
+                    return Ok(Object { open: i, close: j, members });
+                }
+            }
             Some(b'}') => return Ok(Object { open: i, close: j, members }),
             _ => return Err("expected ',' or '}'".into()),
         }
@@ -331,6 +370,152 @@ fn verify(
     Ok(())
 }
 
+// --- JSONC, for OpenCode: `//` and `/* */` comments and trailing commas, nothing more -----------
+
+/// `text` with every comment blanked to spaces (line ends kept), so an offset in the result is the
+/// same offset in `text` and the scanner above can walk it.
+fn blank_comments(text: &str) -> Result<String, String> {
+    let b = text.as_bytes();
+    let mut out = b.to_vec();
+    let mut i = 0;
+    while i < b.len() {
+        match (b[i], b.get(i + 1)) {
+            (b'"', _) => i = string_end(b, i)?,
+            (b'/', Some(b'/')) => {
+                while i < b.len() && b[i] != b'\n' {
+                    out[i] = b' ';
+                    i += 1;
+                }
+            }
+            (b'/', Some(b'*')) => {
+                let end = text[i + 2..]
+                    .find("*/")
+                    .map(|n| i + 2 + n + 2)
+                    .ok_or_else(|| "unterminated comment".to_string())?;
+                for (j, c) in out.iter_mut().enumerate().take(end).skip(i) {
+                    if b[j] != b'\n' {
+                        *c = b' ';
+                    }
+                }
+                i = end;
+            }
+            _ => i += 1,
+        }
+    }
+    // Only whole comments became spaces, so what is left is still UTF-8.
+    String::from_utf8(out).map_err(|e| e.to_string())
+}
+
+/// Blanks the commas JSONC allows before a closing bracket, for a strict parser.
+fn blank_trailing_commas(text: &str) -> String {
+    let b = text.as_bytes();
+    let mut out = b.to_vec();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                i = string_end(b, i).unwrap_or(b.len());
+                continue;
+            }
+            b',' if matches!(b.get(skip_ws(b, i + 1)), Some(b'}') | Some(b']')) => out[i] = b' ',
+            _ => {}
+        }
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_default()
+}
+
+/// A JSONC document as a value: comments and trailing commas, nothing more (not JSON5).
+pub fn parse_jsonc(text: &str) -> Result<Value, String> {
+    let bare = blank_trailing_commas(&blank_comments(text)?);
+    serde_json::from_str(&bare).map_err(|e| format!("not valid JSONC ({e})"))
+}
+
+/// Removes `path.name` from a JSONC document, cutting one span and leaving every other byte - every
+/// comment outside the span - as it was (client-connect.md Section 13.3). `Ok(None)` when it is not
+/// there.
+pub fn remove_jsonc(text: &str, path: &[&str], name: &str) -> Result<Option<String>, String> {
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let original = parse_jsonc(text)?;
+    let bare = blank_comments(text)?;
+    let b = bare.as_bytes();
+    let mut obj = object_at(&bare, skip_ws(b, 0))?;
+    for (n, key) in path.iter().enumerate() {
+        let Some(m) = obj.members.iter().find(|m| m.key == *key) else {
+            return Ok(None);
+        };
+        obj = object_at(&bare, m.value.0)
+            .map_err(|_| format!("\"{}\" is not an object", path[..=n].join(".")))?;
+    }
+    let Some(pos) = obj.members.iter().position(|m| m.key == name) else {
+        return Ok(None);
+    };
+    let m = &obj.members[pos];
+    // The member and its separating comma: the one after it, or for a last member with none after
+    // it, the one before it - with whatever lies directly between them. A comment between that
+    // earlier comma and the member is most often the previous member's, so there the comma stays,
+    // as a trailing comma - legal, and the file holds comments already, so it is JSONC already.
+    let after = skip_ws(b, m.value.1);
+    let before = (pos > 0).then(|| skip_ws(b, obj.members[pos - 1].value.1));
+    let commented = |from: usize| !text[from..m.start].trim().is_empty();
+    let (mut c0, mut c1) = match before {
+        _ if b.get(after) == Some(&b',') => (m.start, after + 1),
+        Some(comma) if !commented(comma + 1) => (comma, m.value.1),
+        _ => (m.start, m.value.1),
+    };
+    // A member on a line of its own takes the line's indentation and end with it. Read in `text`,
+    // so a comment sharing the line keeps the line.
+    let flat = |s: &str| s.bytes().all(|c| matches!(c, b' ' | b'\t' | b'\r'));
+    let line0 = text[..c0].rfind('\n').map_or(0, |n| n + 1);
+    if let Some(end) = text[c1..].find('\n').map(|n| c1 + n) {
+        if flat(&text[line0..c0]) && flat(&text[c1..end]) {
+            (c0, c1) = (line0, end + 1);
+        }
+    }
+    // The span holds the member, at most one comma and whitespace once comments are blanked.
+    let around = format!("{}{}", &bare[c0..m.start], &bare[m.value.1..c1]);
+    if around.bytes().filter(|&c| c == b',').count() > 1
+        || !around.bytes().all(|c| c == b',' || c.is_ascii_whitespace())
+    {
+        return Err("the cut would take more than the entry - not written".into());
+    }
+    let out = format!("{}{}", &text[..c0], &text[c1..]);
+    let mut want = original;
+    let section = path.iter().try_fold(&mut want, |v, k| v.get_mut(*k));
+    section.and_then(Value::as_object_mut).map(|s| s.remove(name));
+    let edited = parse_jsonc(&out)
+        .map_err(|e| format!("edit produced invalid JSONC ({e}) - not written"))?;
+    if edited != want {
+        return Err("edit would change more than the entry - not written".into());
+    }
+    Ok(Some(out))
+}
+
+/// The entry at `path.name` in a parsed document, `None` where any step is missing.
+fn entry_at(doc: &Value, path: &[&str], name: &str) -> Entry {
+    path.iter()
+        .try_fold(doc, |v, k| v.get(*k))
+        .and_then(|s| s.get(name))
+        .map(classify)
+        .unwrap_or(Entry::None)
+}
+
+/// Reads one entry from a JSONC file, as `read_json_entry` does from a JSON one.
+pub fn read_jsonc_entry(path: &Path, section: &[&str], name: &str) -> Entry {
+    let Ok(text) = read_config(path) else {
+        return Entry::Unknown;
+    };
+    if text.trim().is_empty() {
+        return Entry::None;
+    }
+    match parse_jsonc(&text) {
+        Ok(v) => entry_at(&v, section, name),
+        Err(_) => Entry::Unknown,
+    }
+}
+
 /// A client's config file as text. A missing file is the empty one `connect` may create; any other
 /// failure to read it - text that is not UTF-8, a file this user may not read - is an error, since
 /// a file read as empty would be rewritten with one entry and lose everything else in it (C3).
@@ -351,7 +536,7 @@ pub fn read_json_entry(path: &Path, section: &str, name: &str) -> Entry {
         return Entry::None;
     }
     match serde_json::from_str::<Value>(&text) {
-        Ok(v) => v.get(section).and_then(|s| s.get(name)).map(classify).unwrap_or(Entry::None),
+        Ok(v) => entry_at(&v, &[section], name),
         Err(_) => Entry::Unknown,
     }
 }
@@ -393,6 +578,7 @@ pub enum Client {
     VsCode,
     Codex,
     Gemini,
+    OpenCode,
 }
 
 pub const CLIENTS: &[Client] = &[
@@ -402,16 +588,21 @@ pub const CLIENTS: &[Client] = &[
     Client::VsCode,
     Client::Codex,
     Client::Gemini,
+    Client::OpenCode,
 ];
 
 /// The entry's name in every client - one name, so `connect` can always find what it wrote.
 pub const NAME: &str = "supragnosis";
 
-/// Where `connect` looks: the home directory, and the search path for client CLIs. The desktop app
-/// launches the CLI with a GUI's minimal PATH, so the usual install locations are searched too.
+/// Where `connect` looks: the home directory, the search path for client CLIs, and the XDG config
+/// directory (OpenCode's). The desktop app launches the CLI with a GUI's minimal PATH, so the usual
+/// install locations are searched too, and it passes the login shell's `XDG_CONFIG_HOME`.
 pub struct Env {
     pub home: PathBuf,
     pub path: Vec<PathBuf>,
+    /// `$XDG_CONFIG_HOME`, or `~/.config` where it is unset (an empty or relative value is unset,
+    /// as the XDG spec says).
+    pub config_home: PathBuf,
 }
 
 impl Env {
@@ -423,10 +614,14 @@ impl Env {
         for extra in ["/opt/homebrew/bin", "/usr/local/bin"] {
             path.push(PathBuf::from(extra));
         }
-        for extra in [".local/bin", ".claude/local", ".npm-global/bin", "bin"] {
+        for extra in [".local/bin", ".claude/local", ".npm-global/bin", "bin", ".opencode/bin"] {
             path.push(home.join(extra));
         }
-        Env { home, path }
+        let config_home = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| home.join(".config"));
+        Env { home, path, config_home }
     }
 
     pub fn find(&self, program: &str) -> Option<PathBuf> {
@@ -456,6 +651,7 @@ impl Client {
             Client::VsCode => "vscode",
             Client::Codex => "codex",
             Client::Gemini => "gemini",
+            Client::OpenCode => "opencode",
         }
     }
 
@@ -467,6 +663,7 @@ impl Client {
             Client::VsCode => "VS Code",
             Client::Codex => "Codex",
             Client::Gemini => "Gemini CLI",
+            Client::OpenCode => "OpenCode",
         }
     }
 
@@ -490,6 +687,12 @@ impl Client {
             Client::VsCode => (h.join(".config/Code/User/mcp.json"), "servers"),
             Client::Codex => (h.join(".codex/config.toml"), "mcp_servers"),
             Client::Gemini => (h.join(".gemini/settings.json"), "mcpServers"),
+            // The file OpenCode's own CLI writes (Section 13.1): `opencode.json` where one exists,
+            // `opencode.jsonc` where only that does, a new `opencode.json` otherwise.
+            Client::OpenCode => {
+                let [json, jsonc] = opencode_files(env);
+                (if !json.exists() && jsonc.exists() { jsonc } else { json }, "mcp.servers")
+            }
         }
     }
 
@@ -499,6 +702,7 @@ impl Client {
             Client::ClaudeCode => env.find("claude"),
             Client::Codex => env.find("codex"),
             Client::Gemini => env.find("gemini"),
+            Client::OpenCode => env.find("opencode"),
             // The app bundle's CLI only on macOS: a Linux machine can see a Mac's /Applications
             // (OrbStack mounts it), and running that binary from Linux reaches the Mac's VS Code.
             Client::VsCode => {
@@ -535,8 +739,25 @@ impl Client {
         }
     }
 
+    /// The files the entry is read from: OpenCode's two, every other client's one.
+    pub fn files(self, env: &Env) -> Vec<PathBuf> {
+        match self {
+            Client::OpenCode => opencode_files(env).to_vec(),
+            _ => vec![self.config(env).0],
+        }
+    }
+
     /// The entry the client holds now, read from its configuration and nothing else (C5).
     pub fn entry(self, env: &Env) -> Entry {
+        if self == Client::OpenCode {
+            // OpenCode reads both files; where both name supragnosis, the one that asks more of
+            // the person (Section 13.3).
+            return opencode_files(env)
+                .iter()
+                .map(|f| read_jsonc_entry(f, &OPENCODE_SECTION, NAME))
+                .max_by_key(|e| e.attention())
+                .unwrap_or(Entry::None);
+        }
         let (path, section) = self.config(env);
         if self == Client::Codex {
             let Ok(text) = read_config(&path) else {
@@ -568,8 +789,20 @@ impl Client {
             }
             Client::Codex => "start a new Codex session",
             Client::Gemini => "start a new Gemini CLI session",
+            Client::OpenCode => {
+                "start a new OpenCode session; if it does not list supragnosis, restart OpenCode's background service (`opencode service restart`)"
+            }
         }
     }
+}
+
+/// Where OpenCode keeps its servers, below the document's root.
+pub const OPENCODE_SECTION: [&str; 2] = ["mcp", "servers"];
+
+/// OpenCode's two user configuration files, in the order it reads them (Section 13.1).
+pub fn opencode_files(env: &Env) -> [PathBuf; 2] {
+    let dir = env.config_home.join("opencode");
+    [dir.join("opencode.json"), dir.join("opencode.jsonc")]
 }
 
 /// The client CLI invocation that registers the bridge (`None` for the file-edit clients).
@@ -579,6 +812,7 @@ pub fn add_argv(client: Client, program: &str) -> Option<Vec<String>> {
         Client::ClaudeCode => v(&["mcp", "add", "--scope", "user", NAME, "--", program, "bridge"]),
         Client::Codex => v(&["mcp", "add", NAME, "--", program, "bridge"]),
         Client::Gemini => v(&["mcp", "add", "--scope", "user", NAME, program, "bridge"]),
+        Client::OpenCode => v(&["mcp", "add", "--global", NAME, "--", program, "bridge"]),
         Client::VsCode => {
             let def = serde_json::json!({"name": NAME, "command": program, "args": ["bridge"]});
             v(&["--add-mcp", &def.to_string()])
@@ -588,14 +822,14 @@ pub fn add_argv(client: Client, program: &str) -> Option<Vec<String>> {
 }
 
 /// The client CLI invocation that removes the entry (`None` where removal is a file edit - the
-/// file-edit clients, and VS Code, whose CLI adds but does not remove).
+/// file-edit clients, and VS Code and OpenCode, whose CLIs add but do not remove).
 pub fn remove_argv(client: Client) -> Option<Vec<String>> {
     let v = |a: &[&str]| Some(a.iter().map(|s| s.to_string()).collect());
     match client {
         Client::ClaudeCode => v(&["mcp", "remove", "--scope", "user", NAME]),
         Client::Codex => v(&["mcp", "remove", NAME]),
         Client::Gemini => v(&["mcp", "remove", "--scope", "user", NAME]),
-        Client::VsCode | Client::ClaudeDesktop | Client::Cursor => None,
+        Client::VsCode | Client::OpenCode | Client::ClaudeDesktop | Client::Cursor => None,
     }
 }
 
@@ -1113,6 +1347,132 @@ mod tests {
         assert_eq!(
             hook_command("/Users/a b/supragnosis"),
             "\"/Users/a b/supragnosis\" hook claude-code"
+        );
+    }
+
+    /// Section 13: OpenCode's entry goes in through its CLI, into the file that CLI writes, and comes
+    /// out by a JSONC edit that cuts one span and keeps every comment outside it.
+    #[test]
+    fn opencode_is_registered_through_its_cli_and_removed_by_a_jsonc_edit() {
+        let p = "/opt/homebrew/opt/supragnosis-server/bin/supragnosis";
+        assert_eq!(
+            add_argv(Client::OpenCode, p).expect("a CLI"),
+            ["mcp", "add", "--global", "supragnosis", "--", p, "bridge"]
+        );
+        assert_eq!(remove_argv(Client::OpenCode), None, "OpenCode's CLI does not remove");
+
+        // The files: under XDG_CONFIG_HOME, `.json` where it exists, `.jsonc` where only that does.
+        let root = std::env::temp_dir()
+            .join(format!("supragnosis-connect-opencode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let env = Env { home: root.join("home"), path: Vec::new(), config_home: root.join("xdg") };
+        let [json, jsonc] = opencode_files(&env);
+        assert_eq!(json, root.join("xdg/opencode/opencode.json"));
+        assert_eq!(Client::OpenCode.config(&env), (json.clone(), "mcp.servers"));
+        std::fs::create_dir_all(json.parent().unwrap()).unwrap();
+        std::fs::write(&jsonc, "{\n  // mine\n  \"theme\": \"x\",\n}\n").unwrap();
+        assert_eq!(Client::OpenCode.config(&env).0, jsonc, "only the .jsonc exists");
+        assert_eq!(Client::OpenCode.entry(&env), Entry::None);
+
+        // What OpenCode's CLI wrote into a commented file with a trailing comma, read back.
+        let written = "{\n  // mine\n  \"theme\": \"x\",\n  \"mcp\": {\n    \"servers\": {\n      \"supragnosis\": {\n        \"type\": \"local\",\n        \"command\": [\n          \"/opt/homebrew/opt/supragnosis-server/bin/supragnosis\",\n          \"bridge\"\n        ]\n      }\n    }\n  },\n}\n";
+        std::fs::write(&jsonc, written).unwrap();
+        assert_eq!(Client::OpenCode.entry(&env), Entry::Bridge);
+        // Both files: the one that asks more of the person is what the listing says.
+        std::fs::write(&json, r#"{"mcp": {"servers": {"supragnosis": {"type": "remote", "url": "http://127.0.0.1:7373/mcp"}}}}"#).unwrap();
+        assert_eq!(Client::OpenCode.config(&env).0, json, "the .json, once it exists");
+        assert_eq!(Client::OpenCode.entry(&env), Entry::Http);
+        std::fs::write(&json, "{\"mcp\": ").unwrap();
+        assert_eq!(Client::OpenCode.entry(&env), Entry::Unknown, "a file that does not parse");
+        assert_eq!(Client::OpenCode.files(&env), vec![json.clone(), jsonc.clone()]);
+        let _ = std::fs::remove_dir_all(&root);
+
+        let cut = |text: &str| {
+            remove_jsonc(text, &OPENCODE_SECTION, NAME).expect("removed").expect("present")
+        };
+        // The lone member: its line goes, the comment inside the object and the trailing comma
+        // after `mcp` stay.
+        assert_eq!(
+            cut(written),
+            "{\n  // mine\n  \"theme\": \"x\",\n  \"mcp\": {\n    \"servers\": {\n    }\n  },\n}\n"
+        );
+        // A member with one after it: it and its comma go, as one line.
+        let first = "{\"mcp\": {\"servers\": {\n  \"supragnosis\": {\"type\": \"local\", \"command\": [\"supragnosis\", \"bridge\"]}, // ours\n  /* theirs */ \"other\": {\"command\": [\"x\"]}\n}}}";
+        let out = cut(first);
+        assert_eq!(out, "{\"mcp\": {\"servers\": {\n   // ours\n  /* theirs */ \"other\": {\"command\": [\"x\"]}\n}}}");
+        // The last member: the comma before it goes with it...
+        let last = "{\"mcp\": {\"servers\": {\n  \"other\": {\"command\": [\"x\"]},\n  \"supragnosis\": {\"command\": [\"supragnosis\", \"bridge\"]}\n}}}";
+        assert_eq!(
+            cut(last),
+            "{\"mcp\": {\"servers\": {\n  \"other\": {\"command\": [\"x\"]}\n}}}"
+        );
+        // ...unless a comment sits between, which is most often the previous member's: the comma
+        // stays, as a trailing comma.
+        let noted = "{\"mcp\": {\"servers\": {\n  \"other\": {\"command\": [\"x\"]}, // the x server\n  \"supragnosis\": {\"command\": [\"supragnosis\", \"bridge\"]}\n}}}";
+        assert_eq!(
+            cut(noted),
+            "{\"mcp\": {\"servers\": {\n  \"other\": {\"command\": [\"x\"]}, // the x server\n}}}"
+        );
+        // A comment holding brackets, quotes and a comma does not move the cut.
+        let tricky = "{\n  /* a } \", [ */\n  \"mcp\": {\"servers\": {\"supragnosis\": {\"command\": [\"a//b\", \"/*\"]}}}\n}";
+        assert_eq!(cut(tricky), "{\n  /* a } \", [ */\n  \"mcp\": {\"servers\": {}}\n}");
+        // Every byte outside the span is the original's: what was cut is one run of bytes.
+        for (before, after) in [(written, cut(written)), (first, cut(first)), (noted, cut(noted))] {
+            let lead = before.bytes().zip(after.bytes()).take_while(|(a, b)| a == b).count();
+            let tail = before
+                .bytes()
+                .rev()
+                .zip(after.bytes().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+            assert!(lead + tail >= after.len(), "one span: {after:?}");
+        }
+
+        // Nothing there, a file that does not parse, and a second key of the same name: no edit.
+        assert_eq!(remove_jsonc("{\"theme\": 1}", &OPENCODE_SECTION, NAME), Ok(None));
+        assert_eq!(remove_jsonc("", &OPENCODE_SECTION, NAME), Ok(None));
+        assert!(remove_jsonc("{\"mcp\": {/* open", &OPENCODE_SECTION, NAME).is_err());
+        assert!(remove_jsonc("{'mcp': {}}", &OPENCODE_SECTION, NAME).is_err(), "not JSON5");
+        let twice = "{\"mcp\": {\"servers\": {\"supragnosis\": {}, \"supragnosis\": {}}}}";
+        assert!(remove_jsonc(twice, &OPENCODE_SECTION, NAME).is_err());
+
+        // Strict JSON stays strict for every other app: a comment or a trailing comma is refused.
+        assert!(remove("{\"mcpServers\": {\"supragnosis\": {},}}", "mcpServers", NAME).is_err());
+        assert!(
+            upsert("{\n  // x\n  \"mcpServers\": {}\n}", "mcpServers", NAME, &bridge()).is_err()
+        );
+    }
+
+    /// Section 13.3: OpenCode's shape is one `command` array; a remote entry is the HTTP one; an
+    /// entry turned off does not load, in OpenCode or in any app with the same key.
+    #[test]
+    fn classify_reads_a_command_array_a_remote_url_and_a_disabled_entry() {
+        let j = |v: Value| classify(&v);
+        let p = "/opt/homebrew/opt/supragnosis-server/bin/supragnosis";
+        assert_eq!(
+            j(serde_json::json!({"type": "local", "command": [p, "bridge"]})),
+            Entry::Bridge
+        );
+        assert_eq!(j(serde_json::json!({"type": "local", "command": [p]})), Entry::Stdio);
+        assert_eq!(j(serde_json::json!({"type": "local", "command": [p, "serve"]})), Entry::Stdio);
+        assert_eq!(j(serde_json::json!({"type": "local", "command": ["npx", "x"]})), Entry::Other);
+        assert_eq!(j(serde_json::json!({"type": "local", "command": []})), Entry::Other);
+        assert_eq!(
+            j(serde_json::json!({"type": "remote", "url": "http://127.0.0.1:7373/mcp"})),
+            Entry::Http
+        );
+        assert_eq!(
+            j(serde_json::json!({"type": "local", "command": [p, "bridge"], "enabled": false})),
+            Entry::Other,
+            "off, so it does not load"
+        );
+        assert_eq!(
+            j(serde_json::json!({"type": "local", "command": [p, "bridge"], "enabled": true})),
+            Entry::Bridge
+        );
+        assert_eq!(
+            j(serde_json::json!({"command": p, "args": ["bridge"], "enabled": false})),
+            Entry::Other
         );
     }
 

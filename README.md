@@ -52,7 +52,7 @@ to resolve conflicts means recomputing, not rewriting.
 brew tap ashon/tap
 brew install supragnosis-server
 supragnosis service install         # MCP on :7373 + local viewer, now and at every login
-supragnosis connect claude-code     # or claude-desktop, cursor, vscode, codex, gemini
+supragnosis connect claude-code     # or claude-desktop, cursor, vscode, codex, gemini, opencode
 ```
 
 `supragnosis connect` with no app lists them and says how each one is connected. It registers

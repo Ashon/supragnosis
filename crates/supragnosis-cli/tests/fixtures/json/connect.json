@@ -55,6 +55,15 @@
       "config": "/Users/you/.gemini/settings.json",
       "via": "cli",
       "capture": null
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "installed": true,
+      "entry": "none",
+      "config": "/Users/you/.config/opencode/opencode.json",
+      "via": "cli",
+      "capture": null
     }
   ]
 }

@@ -63,8 +63,8 @@ enum Cmd {
     /// Stdio MCP server that relays to the running daemon - what an AI app launches. Opens no store
     /// and holds no token in the app's config (docs/client-connect.md)
     Bridge,
-    /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini) to this
-    /// node through the bridge; with no app, list them and how each is connected
+    /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini, OpenCode) to
+    /// this node through the bridge; with no app, list them and how each is connected
     Connect(ConnectArgs),
     /// From install to the first entry: keep the daemon running, connect your AI apps, download the
     /// search model, and try it. Shows the plan and asks first (docs/onboarding.md)
@@ -236,7 +236,8 @@ struct SetupArgs {
 
 #[derive(Args, Clone, Default)]
 struct ConnectArgs {
-    /// The AI app: claude-desktop, claude-code, cursor, vscode, codex or gemini. Omit to list them.
+    /// The AI app: claude-desktop, claude-code, cursor, vscode, codex, gemini or opencode. Omit to
+    /// list them.
     client: Option<String>,
     /// Remove the supragnosis entry from the app instead of adding it.
     #[arg(long)]
@@ -1745,7 +1746,6 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
     if !client.installed(&env) {
         anyhow::bail!("{} is not installed on this machine", client.name());
     }
-    let (config, _) = client.config(&env);
     let before = client.entry(&env);
     if a.remove {
         let hook_gone = client == Client::ClaudeCode && capture_remove(&env)?;
@@ -1773,7 +1773,7 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
         }
         Entry::Unknown => anyhow::bail!(
             "{} could not be read - not touching a file this cannot parse (client-connect.md C3)",
-            config.display()
+            files_named(client, &env)
         ),
         Entry::None => {}
         other if !a.replace => anyhow::bail!(
@@ -1820,7 +1820,7 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
             "{} did not take the entry - it reads as {} in {}",
             client.name(),
             after.as_str(),
-            config.display()
+            files_named(client, &env)
         );
     }
     println!("connected {} -> {program} bridge", client.name());
@@ -1963,9 +1963,41 @@ fn hook_cmd(a: HookArgs) -> Result<()> {
     Ok(())
 }
 
+/// The files a client's entry is read from, for a message: one, or OpenCode's two.
+fn files_named(client: connect::Client, env: &connect::Env) -> String {
+    let files: Vec<String> = client.files(env).iter().map(|f| f.display().to_string()).collect();
+    files.join(" or ")
+}
+
 fn connect_remove(client: connect::Client, env: &connect::Env) -> Result<()> {
     match connect::remove_argv(client) {
         Some(argv) => run_client_cli(client, env, &argv),
+        // OpenCode reads two files, so the entry goes from each that holds it. Both are read and
+        // edited before either is written: a file that does not parse stops the removal with
+        // neither touched (client-connect.md Section 13.3).
+        None if client == connect::Client::OpenCode => {
+            let mut edits = Vec::new();
+            for path in connect::opencode_files(env) {
+                let text = connect::read_config(&path).with_context(|| {
+                    format!("{} could not be read - not touching it", path.display())
+                })?;
+                if let Some(edited) =
+                    connect::remove_jsonc(&text, &connect::OPENCODE_SECTION, connect::NAME)
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?
+                {
+                    edits.push((path, edited));
+                }
+            }
+            for (path, edited) in edits {
+                if let Some(b) = connect::back_up(&path, client.id(), &env.home, unix_now())? {
+                    println!("  backup  {}", b.display());
+                }
+                connect::write_replacing(&path, &edited)
+                    .with_context(|| format!("writing {}", path.display()))?;
+                println!("  wrote   {}", path.display());
+            }
+            Ok(())
+        }
         None => {
             let (path, section) = client.config(env);
             let text = connect::read_config(&path).with_context(|| {
@@ -2077,7 +2109,7 @@ fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
                 c.id()
             ),
             (true, Entry::Other) => "has another entry named supragnosis".to_string(),
-            (true, Entry::Unknown) => format!("its config could not be read ({})", c.config(env).0.display()),
+            (true, Entry::Unknown) => format!("its config could not be read ({})", files_named(c, env)),
         };
         println!("  {:<15} {:<15} {state}", c.id(), c.name());
     }
@@ -6267,11 +6299,68 @@ mod json_contract {
 
     #[test]
     fn connect_json_matches_its_example() {
-        let env =
-            connect::Env { home: std::env::temp_dir().join("no-such-home"), path: Vec::new() };
+        let env = connect::Env {
+            home: std::env::temp_dir().join("no-such-home"),
+            path: Vec::new(),
+            config_home: std::env::temp_dir().join("no-such-home/.config"),
+        };
         let doc = connect_document(&env, "/x/supragnosis");
         assert_eq!(doc["schema"], JSON_SCHEMA);
         same_shape(&example("connect"), &doc, "connect").unwrap_or_else(|e| panic!("{e}"));
+        // The example lists every app this build knows, so the app's pages, held to the example,
+        // name every one (client-connect.md Section 13.4).
+        let ids = |v: &serde_json::Value| -> Vec<String> {
+            v["clients"].as_array().unwrap().iter().map(|c| c["id"].to_string()).collect()
+        };
+        assert_eq!(ids(&example("connect")), ids(&doc));
+    }
+
+    /// client-connect.md Section 13.3: OpenCode reads two files, so `--remove` takes the entry out
+    /// of each that holds it, a backup first; and a file that does not parse stops the removal with
+    /// neither file touched.
+    #[test]
+    fn opencode_removal_clears_both_files_or_neither() {
+        let root = std::env::temp_dir().join(format!("sg-opencode-remove-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let env = connect::Env {
+            home: root.join("home"),
+            path: Vec::new(),
+            config_home: root.join("xdg"),
+        };
+        let [json, jsonc] = connect::opencode_files(&env);
+        std::fs::create_dir_all(json.parent().unwrap()).unwrap();
+        let entry = r#"{"type": "local", "command": ["/x/supragnosis", "bridge"]}"#;
+        let a = format!("{{\"theme\": 1, \"mcp\": {{\"servers\": {{\"supragnosis\": {entry}}}}}}}");
+        let b = format!(
+            "{{\n  // keep me\n  \"mcp\": {{\"servers\": {{\"supragnosis\": {entry},}}}},\n}}"
+        );
+        std::fs::write(&json, &a).unwrap();
+        std::fs::write(&jsonc, &b).unwrap();
+        assert_eq!(connect::Client::OpenCode.entry(&env), connect::Entry::Bridge);
+
+        // One of the two does not parse: nothing is written, the other keeps its entry.
+        std::fs::write(&jsonc, "{\"mcp\": ").unwrap();
+        assert!(connect_remove(connect::Client::OpenCode, &env).is_err());
+        assert_eq!(std::fs::read_to_string(&json).unwrap(), a, "untouched");
+
+        std::fs::write(&jsonc, &b).unwrap();
+        connect_remove(connect::Client::OpenCode, &env).expect("removed");
+        assert_eq!(connect::Client::OpenCode.entry(&env), connect::Entry::None);
+        assert_eq!(
+            std::fs::read_to_string(&json).unwrap(),
+            "{\"theme\": 1, \"mcp\": {\"servers\": {}}}"
+        );
+        assert!(std::fs::read_to_string(&jsonc).unwrap().contains("// keep me"));
+        let backups: Vec<String> = std::fs::read_dir(env.home.join(".supragnosis/connect"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(backups.len(), 2, "{backups:?}");
+        assert!(
+            backups.iter().any(|f| f.ends_with(".jsonc"))
+                && backups.iter().any(|f| f.ends_with(".json"))
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
