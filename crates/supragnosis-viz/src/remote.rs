@@ -66,6 +66,7 @@ pub const POLICY: &[(&str, Policy)] = &[
     ("/api/graph", Policy::Read),
     ("/api/hypergraph", Policy::Read),
     ("/api/types", Policy::Read),
+    ("/api/common_types", Policy::Read),
     ("/api/curation", Policy::Read),
     ("/api/proposals", Policy::Read),
     ("/api/observations", Policy::Read),
@@ -374,6 +375,17 @@ fn read_value(
             servable(&ws).map_err(|why| Answer::error(403, &why))?;
             let one = engine.observation(&id, Some(&ws)).map_err(|e| failure(&e))?;
             to_value(one.into_iter().collect::<Vec<_>>())
+        }
+        // The most used types, counted one granted workspace at a time over those the hub may serve:
+        // an unservable grant is skipped, since naming its types would answer what V4 refuses
+        // (design-system.md Section 29.9).
+        "/api/common_types" => {
+            let mut wss: Vec<String> =
+                reader.readable.iter().filter(|w| servable(w).is_ok()).cloned().collect();
+            wss.sort();
+            to_value(serde_json::json!({
+                "types": engine.common_types(Some(&wss)).map_err(|e| failure(&e))?
+            }))
         }
         // One entity's evidence: its own workspace decides, whatever the request named.
         "/api/observations" if param(query, "entity").is_some_and(|s| !s.is_empty()) => {

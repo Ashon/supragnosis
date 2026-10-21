@@ -633,8 +633,8 @@ fn the_map_rings_read_the_effective_tier() {
     );
     let legend = body("renderTrustLegend");
     assert!(
-        legend.contains("highest trust among the sources"),
-        "the legend states what a ring reads"
+        legend.contains("A ring is the strongest source behind an entity."),
+        "the legend states what a ring reads: the strongest source, the effective tier"
     );
 }
 
@@ -910,6 +910,50 @@ async fn viz_lists_workspaces_sorted_distinct() {
     let list = json_get(&uds_get(&sock, "/api/workspaces").await);
     // Deduplicated + sorted (Principle 16).
     assert_eq!(list, serde_json::json!(["alpha", "gamma"]));
+    let _ = std::fs::remove_file(&sock);
+}
+
+/// The store's most used types, names only, by count then name and at most sixteen, counted in every
+/// workspace whatever the page's scope (design-system.md Section 29.9, D4): what a page gives the
+/// type band's slots, once, so a type keeps one color in every view.
+#[tokio::test]
+async fn the_store_names_its_most_used_types_whatever_the_scope() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(
+        Engine::new(store, "h", "alpha").with_embedder(Arc::new(HashingEmbedder::default())),
+    );
+    let observe = |ws: &str, entities: Vec<(String, String)>| {
+        engine
+            .observe(ObserveInput {
+                content: format!("{} in {ws}", entities.len()),
+                workspace: Some(ws.into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: entities
+                    .into_iter()
+                    .map(|(name, kind)| EntityInput { description: None, name, kind: Some(kind) })
+                    .collect(),
+                relations: vec![],
+            })
+            .unwrap();
+    };
+    // Service is used three times across two workspaces, Tool twice, and eighteen types once.
+    observe("a", vec![("s1".into(), "Service".into()), ("t1".into(), "Tool".into())]);
+    observe("b", vec![("s2".into(), "Service".into()), ("s3".into(), "Service".into())]);
+    observe("b", vec![("t2".into(), "Tool".into())]);
+    observe("a", (0..18).map(|i| (format!("o{i}"), format!("Kind{i:02}"))).collect());
+    let sock = serve_uds("common", engine, ev_channel()).await;
+
+    let body = json_get(&uds_get(&sock, "/api/common_types?workspace=a").await);
+    let types = body["types"].as_array().expect("a list of names");
+    assert_eq!(body.as_object().unwrap().len(), 1, "names only, no counts: {body}");
+    assert_eq!(types.len(), supragnosis_engine::COMMON_TYPES);
+    assert_eq!(types[0], "Service", "the scope asked for does not narrow the count");
+    assert_eq!(types[1], "Tool");
+    assert_eq!(types[2], "Kind00", "a tie is broken by name");
+    assert_eq!(types[15], "Kind13");
     let _ = std::fs::remove_file(&sock);
 }
 

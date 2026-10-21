@@ -96,12 +96,14 @@ function renderList() {
   const many = new Set(rows.map(n => n.workspace)).size > 1;
   // Redrawing keeps the person's place (Section 10): the focused row keeps focus.
   const had = listWin.contains(document.activeElement) ? document.activeElement.dataset.id : null;
-  listWin.innerHTML = html`<table class="ltable"><thead><tr><th scope="col">Name</th><th scope="col">Type</th>${
+  listWin.innerHTML = html`<p class="lhead"></p><table class="ltable"><thead><tr><th scope="col">Name</th><th scope="col">Type</th>${
     html`<th scope="col">Trust</th><th scope="col" class="n">Relations</th>`}${many ? html`<th scope="col">Workspace</th>` : ""}</tr></thead><tbody>${
     rows.map(n => html`<tr${n === focus ? html` class="on"` : ""}><td><button type="button" class="lrow" data-id="${n.id}">${
       html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>${n.name}</button></td>`}${
       html`<td>${n.type}</td><td>${tierName(n.trust_tier)}</td><td class="n">${n.degree}</td>`}${
       many ? html`<td>${n.workspace}</td>` : ""}</tr>`)}</tbody></table>`;
+  // List's head says what the status bar says (Section 29.9, U24).
+  listWin.querySelector(".lhead").textContent = statsLine(currentWs(), drawnCounts());
   listWin.querySelectorAll(".lrow").forEach(b => {
     b.onclick = () => {
       const n = nodeById(b.dataset.id);
@@ -208,13 +210,15 @@ let allRegions = true;    // draw every context region as a cloud, not only the 
 let boundaryMode = "workspace";   // "workspace" | "origin" | "off"
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
+let contestedCount = 0;          // contested nodes in the loaded scope, whatever the legend hides (U3)
+let pulsedAny = false;          // a pulse has been drawn on this page: the key names its ring (Section 29.9)
 // The layout's forces and their constants are viewer-sim.js's (Section 27.5), loaded before this.
 // Hull rendering: a region is a cloud (docs/design-system.md Section 5) - one ellipse fitted to its
 // members, densest at their centre and fading to nothing past the outermost, so it has no edge to
 // read as a line. A flat fill of the hull drew a slab whose rim looked like a border. The clouds of a
 // frame are mixed in OKLCH in one low-resolution field (drawCloudField) and drawn as one image.
 const HULL_LAYER_ALPHA = 0.10;   // a region's density at its core (no node active) - every region is drawn then, so they stay faint
-const HULL_LAYER_DIM = 0.04;     // non-active regions fade to this while a node is active (inspection view)
+const DIM_REGION = 0.04;         // non-active regions fade to this while a node is active (inspection view)
 const HULL_ACTIVE_ALPHA = 0.26;  // the active node's own regions, painted on top
 const CLOUD_REACH = 1.8;         // how far the cloud reaches past its outermost member, x the hull's node gap
 const HULL_LABEL_BASE = 0.7;     // hull label opacity with no active node
@@ -226,6 +230,7 @@ const footprint = new Set();     // ids of nodes this session touched - the conv
 let nodes = [], edges = [], typeColor = {}, edgeKinds = [];
 const posById = new Map();       // id -> {x,y,vx,vy} - layout stability across polls
 const typeOff = new Set();       // node types hidden from the legend
+const trustOff = new Set();      // trust tiers dimmed from the Trust legend (D5: dimmed, never hidden)
 const edgeTypeOff = new Set();   // edge kinds (relation kind) hidden from the legend
 let spiralN = 0;
 let drag = null, hover = null, focus = null;
@@ -458,8 +463,22 @@ function stableColors(names) {
   }
   return out;
 }
+// The store's most used types (design-system.md Section 29.9, D4), asked once per page beside its
+// first graph read: they take the band's slots, every other type its preferred hue, and the page
+// keeps what it assigned while it lives, so no click on a workspace recolors a node.
+let commonTypes = null;
+const commonTypesRead = fetch("/api/common_types", { cache: "no-store" })
+  .then(r => (r.ok ? r.json() : null))
+  .then(j => { commonTypes = (j && Array.isArray(j.types)) ? j.types : []; })
+  .catch(() => { commonTypes = []; });
+const typeColorKept = {};
 function assignColors() {
-  typeColor = stableColors(new Set(nodes.map(n => n.type)));
+  const common = stableColors(new Set(commonTypes || []));
+  typeColor = {};
+  for (const t of new Set(nodes.map(n => n.type))) {
+    if (!typeColorKept[t]) typeColorKept[t] = common[t] || TYPE_BAND[nameSlot(t)];
+    typeColor[t] = typeColorKept[t];
+  }
   if (FORCED_COLORS.matches) for (const t of Object.keys(typeColor)) typeColor[t] = INK;
   edgeKinds = [...new Set(edges.map(e => e.type))].sort();
 }
@@ -509,18 +528,69 @@ addEventListener("pagehide", saveLayout);
 function statsScope(cur) {
   return cur === "*" || cur === "all" ? "All workspaces" : cur || "default";
 }
-function statsLine(cur, s, regions) {
+// What the map draws, counted from the filters alone - never from the zoom, the Relations switch or
+// Regions' mode (design-system.md Section 29.9): entities whose type is shown, relations whose ends
+// and type are shown, regions with three or more shown members.
+function drawnCounts() {
+  const shown = new Set();
+  for (const n of nodes) if (!typeOff.has(n.type)) shown.add(n.id);
+  let rel = 0;
+  for (const e of edges) if (shown.has(e.a.id) && shown.has(e.b.id) && !edgeTypeOff.has(e.type)) rel++;
+  let reg = null;
+  if (hyperedges.length) {
+    reg = 0;
+    for (const h of hyperedges) {
+      let k = 0;
+      for (const m of h.members) if (shown.has(m) && ++k >= 3) break;
+      if (k >= 3) reg++;
+    }
+  }
+  const present = new Set(nodes.map(n => n.type));
+  const hiddenTypes = [...typeOff].filter(t => present.has(t)).length;
+  const tiers = new Set(nodes.map(n => n.trust_tier));
+  const dimmed = [...trustOff].filter(t => tiers.has(t));
+  const hiddenKinds = [...edgeTypeOff].filter(t => edges.some(e => e.type === t)).length;
+  return { shown: shown.size, all: nodes.length, rel, reg, hiddenTypes, hiddenKinds, dimmed };
+}
+function statsLine(cur, c) {
   const scope = statsScope(cur);
-  const n = s.node_count ?? nodes.length, m = s.edge_count ?? edges.length;
-  const e = n === 1 ? "1 entity" : n + " entities";
-  const r = m === 1 ? "1 relation" : m + " relations";
+  let e = c.shown === c.all ? (c.all === 1 ? "1 entity" : c.all + " entities") : c.shown + " of " + c.all + " entities";
+  if (c.hiddenTypes) e += " (" + (c.hiddenTypes === 1 ? "1 type" : c.hiddenTypes + " types") + " hidden)";
+  const r = c.rel === 1 ? "1 relation" : c.rel + " relations";
   let line = scope + " - " + e + ", " + r;
-  if (regions !== null) line += ", " + (regions === 1 ? "1 region" : regions + " regions");
+  if (c.reg !== null) line += ", " + (c.reg === 1 ? "1 region" : c.reg + " regions");
+  if (c.dimmed.length) line += ", " + c.dimmed.map(tierName).join(" and ") + " dimmed";
   return line;
 }
 // The line drawn: the counts in their own span, which a phone gives up before the scope's name.
-function showStats(cur, s, regions) {
-  const scope = statsScope(cur), line = statsLine(cur, s, regions);
+// The counts drawn, said again wherever they show (Section 29.9).
+function renderStats() { showStats(currentWs()); }
+// The map's key (Section 29.9): each mark the current view draws, its mark beside it, and only those.
+function renderMarks() {
+  const host = document.getElementById("legendMarks"), head = document.getElementById("marksHead");
+  if (!host) return;
+  const rows = [];
+  const row = (cls, text) => {
+    const r = document.createElement("div"); r.className = "mrow";
+    const m = document.createElement("span"); m.className = "mk " + cls; m.setAttribute("aria-hidden", "true");
+    r.append(m, document.createTextNode(text));
+    rows.push(r);
+  };
+  if (nodes.length) {
+    if (contestedCount) row("mk-badge", "Two sources disagree" + (surfaceKind === "local" ? " - select to decide" : ""));
+    row("mk-size", "Larger: more relations");
+    if (hyperMode && allRegions && drawnCounts().reg) row("mk-cloud", "Soft cloud: a region - entities said together");
+    if (boundaryMode === "workspace") row("mk-outline", "Outline: a workspace");
+    else if (boundaryMode === "origin") row("mk-outline", "Outline: the machine that signed");
+    if (showFootprint && footprint.size) row("mk-glow", "Glow: what agents used");
+    if (pulsedAny && showPulses && !REDUCED_MOTION) row("mk-pulse", "Ring that grows and fades: just touched");
+  }
+  host.replaceChildren(...rows);
+  if (head) head.hidden = !rows.length;
+}
+function showStats(cur) {
+  const c = drawnCounts();
+  const scope = statsScope(cur), line = statsLine(cur, c);
   const head = document.createElement("span"), counts = document.createElement("span");
   head.textContent = scope;
   counts.className = "counts";
@@ -530,6 +600,16 @@ function showStats(cur, s, regions) {
   renderPlace();
   // The canvas says what it draws and where else it is (Section 6, U24).
   canvas.setAttribute("aria-label", "Map of " + line.slice(scope.length + 3) + ". List shows them as a table.");
+  // While anything is hidden or dimmed the status bar says so and offers Show all, which clears both.
+  const all = document.getElementById("showAll");
+  if (all) all.hidden = !(c.hiddenTypes || c.hiddenKinds || c.dimmed.length);
+  const lh = listWin && listWin.querySelector(".lhead");
+  if (lh) lh.textContent = line;
+  renderMarks();
+}
+function showAll() {
+  typeOff.clear(); edgeTypeOff.clear(); trustOff.clear();
+  renderLegend(); renderTrustLegend(); renderStats(); requestFrame();
 }
 // A line that does not fit gives up its counts before it cuts the scope's name (Section 6).
 function fitStats() {
@@ -621,7 +701,7 @@ function applyGraph(g) {
   // keeps the selection readable even with that dock collapsed.
   // The regions the last hypergraph read counted stay in the line until the next one answers, so the
   // count does not blink out at every poll.
-  showStats(currentWs(), s, hyperedges.length ? hyperedges.length : null);
+  showStats(currentWs());
   emptyEl.style.display = nodes.length ? "none" : "flex";
   if (!nodes.length) refreshEmpty();
 
@@ -935,24 +1015,67 @@ function openSettings() {
   d.onclose = () => { fedCfgArmed = null; };
 }
 
+// The legend's order, sorted by count then name once per scope, so a later read never reorders a
+// chip under the pointer; a type that arrives later is added at the end (Section 29.9).
+let legendOrder = { scope: null, nodes: [], edges: [] };
+function legendCounts() {
+  const nodeCount = {}, edgeCount = {};
+  for (const n of nodes) nodeCount[n.type] = (nodeCount[n.type] || 0) + 1;
+  for (const e of edges) edgeCount[e.type] = (edgeCount[e.type] || 0) + 1;
+  const byCount = c => Object.keys(c).sort((a, b) => c[b] - c[a] || (a < b ? -1 : a > b ? 1 : 0));
+  const scope = currentWs();
+  if (legendOrder.scope !== scope) legendOrder = { scope, nodes: byCount(nodeCount), edges: byCount(edgeCount) };
+  else {
+    for (const [k, c] of [["nodes", nodeCount], ["edges", edgeCount]]) {
+      const kept = legendOrder[k].filter(t => c[t]);
+      for (const t of byCount(c)) if (!kept.includes(t)) kept.push(t);
+      legendOrder[k] = kept;
+    }
+  }
+  return { nodeCount, edgeCount };
+}
+// A section's head says how many of its types are hidden, with Show all (Section 29.9).
+function sectionHidden(ctEl, keys, offSet) {
+  const head = ctEl && ctEl.parentElement;
+  if (!head) return;
+  let note = head.querySelector(".rhid");
+  const hidden = keys.filter(t => offSet.has(t)).length;
+  if (!hidden) { if (note) note.remove(); return; }
+  if (!note) { note = document.createElement("span"); note.className = "rhid"; head.appendChild(note); }
+  const all = document.createElement("button");
+  all.type = "button"; all.className = "linkish"; all.textContent = "Show all";
+  all.onclick = () => { for (const t of keys) offSet.delete(t); renderLegend(); renderStats(); };
+  note.replaceChildren(document.createTextNode(" - " + hidden + " hidden "), all);
+}
 function renderLegend() {
   // Node-type and edge-kind legends, each in its own dock section. Clicking a chip toggles that kind's
-  // visibility (the off set). The section summary shows the count.
+  // visibility (the off set); Only, or Option-click, shows that kind alone.
   // Chips are recreated on every render - clear any hover highlight (and the chip tooltip) so
   // neither can stick to a dead chip that will never fire mouseleave.
   typeHl = null; edgeTypeHl = null; tip.style.display = "none";
+  const { nodeCount, edgeCount } = legendCounts();
   const fill = (host, keys, colorOf, offSet, isEdge) => {
     host.innerHTML = "";
     if (!keys.length) { host.innerHTML = '<span class="lbl">none</span>'; return; }
+    const counts = isEdge ? edgeCount : nodeCount;
+    const only = t => { offSet.clear(); for (const k of keys) if (k !== t) offSet.add(k); renderLegend(); renderStats(); };
     for (const t of keys) {
+      const wrap = document.createElement("span");
+      wrap.className = "lgw";
       const el = document.createElement("button");
       el.type = "button";
       el.className = "lg" + (offSet.has(t) ? " off" : "");
       setPressed(el, !offSet.has(t));
       const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(t);
       if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // line-like look
-      el.appendChild(sw); el.appendChild(document.createTextNode(t || "(none)"));
-      el.onclick = () => { if (offSet.has(t)) offSet.delete(t); else offSet.add(t); renderLegend(); };
+      const n = document.createElement("span"); n.className = "n"; n.textContent = String(counts[t] || 0);
+      el.append(sw, document.createTextNode(t || "(none)"), n);
+      if (offSet.has(t)) el.appendChild(icon("eye-off"));
+      el.onclick = (e) => {
+        if (e.altKey) { only(t); return; }
+        if (offSet.has(t)) offSet.delete(t); else offSet.add(t);
+        renderLegend(); renderStats();
+      };
       // Hovering a chip highlights its nodes/edges on the graph (render-only - no sim wake) and
       // shows the type's T-Box definition in the styled tooltip (Principle 8: a type has a stated
       // meaning - surfaced right where the type is read, not only in the definitions below).
@@ -962,14 +1085,21 @@ function renderLegend() {
         else if (typeHl === t) typeHl = null;
         tip.style.display = "none";
       };
-      host.appendChild(el);
+      const o = document.createElement("button");
+      o.type = "button"; o.className = "lgonly"; o.textContent = "Only";
+      o.setAttribute("aria-label", "Only " + (t || "(none)"));
+      o.onclick = () => only(t);
+      wrap.append(el, o);
+      host.appendChild(wrap);
     }
   };
-  const nodeKeys = Object.keys(typeColor).sort(), edgeKeys = edgeKinds;
+  const nodeKeys = legendOrder.nodes, edgeKeys = legendOrder.edges;
   fill(legendNodesEl, nodeKeys, t => typeColor[t], typeOff, false);
   fill(legendEdgesEl, edgeKeys, () => EDGE_NEUTRAL, edgeTypeOff, true);
   nodeCtEl.textContent = nodeKeys.length || "";
   edgeCtEl.textContent = edgeKeys.length || "";
+  sectionHidden(nodeCtEl, nodeKeys, typeOff);
+  sectionHidden(edgeCtEl, edgeKeys, edgeTypeOff);
   renderBoundaryChips();
   renderList();
 }
@@ -980,7 +1110,8 @@ function renderLegend() {
 function showTypeTip(el, t, isEdge) {
   const target = isEdge ? "relation" : "entity";
   const def = glossaryTypes.find(x => x.target === target && x.name === t);
-  const r = el.getBoundingClientRect();
+  // Beside the chip and its Only, which the card must not cover (Section 29.9).
+  const r = (el.closest(".lgw") || el).getBoundingClientRect();
   tip.style.display = "block";
   tip.style.left = Math.min(r.right + 10, innerWidth - 330) + "px";
   tip.style.top = Math.max(6, r.top - 4) + "px";
@@ -989,9 +1120,23 @@ function showTypeTip(el, t, isEdge) {
     : html`<div class="tdef none">no definition recorded - give this type a meaning with define_type</div>`}`;
 }
 
+// What a hover lights without dimming the rest (Section 29.9): the entity, its relations and its
+// neighbours, whose names show. Null while a selection holds the map, which lights its own.
+function hoverSet() {
+  if (!hover || focus) return null;
+  const ns = new Set([hover.id]), es = new Set();
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    if (e.a.id === hover.id || e.b.id === hover.id) { es.add(i); ns.add(e.a.id); ns.add(e.b.id); }
+  }
+  return { ns, es };
+}
+// The faint strength a selection leaves the rest at, which a dimmed trust tier takes too (D5).
+const DIM_NODE = 0.12, DIM_EDGE = 0.06;
 // The set of nodes/edges to highlight from hover/focus/search. If none, null (everything highlighted equally).
 function activeSet() {
-  const anchor = focus || hover;
+  // A selection dims the rest; a hover does not (hoverSet, design-system.md Section 29.9).
+  const anchor = focus;
   if (anchor) {
     const ns = new Set([anchor.id]), es = new Set();
     for (let i = 0; i < edges.length; i++) {
@@ -1036,7 +1181,7 @@ const TIER_MEANS = {
 // this page does not know keeps its identifier, so a new one still says something.
 function tierName(t) { return TIER_NAME[String(t)] || String(t); }
 let trustUniform = null;     // the one tier of the loaded scope, or null when tiers differ
-let contestedCount = 0;      // contested nodes in the loaded scope, whatever the legend hides (U3)
+
 function noteTrustAndContest() {
   const tiers = new Set(nodes.map(n => n.trust_tier));
   trustUniform = nodes.length && tiers.size === 1 ? [...tiers][0] : null;
@@ -1056,15 +1201,38 @@ function renderTrustLegend() {
   const host = document.getElementById("legendTrust");
   if (!host) return;
   host.textContent = "";
+  // Where the scope has one tier there is nothing to filter: the entries stay a key. Otherwise each
+  // is a toggle with its count, and switching one off dims its entities (D5, Section 29.9).
+  // An empty scope has nothing to filter either.
+  const count = {};
+  for (const n of nodes) count[n.trust_tier] = (count[n.trust_tier] || 0) + 1;
+  const filters = !trustUniform && nodes.length > 0;
   for (const t of ["unverified", "agent_extracted", "host_signed", "human_confirmed"]) {
-    const el = document.createElement("span");
     const off = !!trustUniform && trustUniform !== t;
-    el.className = "tlg" + (off ? " off" : "");
+    const el = document.createElement(filters ? "button" : "span");
     const sw = document.createElement("span"); sw.className = "tsw t-" + t;
     el.append(sw, document.createTextNode(TIER_NAME[t]));
-    if (off) {
-      const none = document.createElement("span"); none.className = "sr-only"; none.textContent = ", none here";
-      el.append(none);
+    if (!filters) {
+      el.className = "tlg" + (off ? " off" : "");
+      if (off) {
+        const none = document.createElement("span"); none.className = "sr-only"; none.textContent = ", none here";
+        el.append(none);
+      }
+    } else {
+      el.type = "button";
+      el.className = "tlg toggle" + (trustOff.has(t) ? " dim" : "");
+      // A tier the scope does not hold is disabled and says so where its count would be.
+      const n = document.createElement("span"); n.className = "n"; n.textContent = count[t] ? String(count[t]) : "none here";
+      el.append(n);
+      if (!count[t]) el.disabled = true;
+      else {
+        setPressed(el, !trustOff.has(t));
+        if (trustOff.has(t)) el.appendChild(icon("eye-off"));
+        el.onclick = () => {
+          if (trustOff.has(t)) trustOff.delete(t); else trustOff.add(t);
+          renderTrustLegend(); renderStats(); requestFrame();
+        };
+      }
     }
     host.appendChild(el);
   }
@@ -1072,7 +1240,7 @@ function renderTrustLegend() {
   note.className = "tnote";
   note.textContent = trustUniform
     ? "All here: " + TIER_NAME[trustUniform] + ", so no entity is ringed."
-    : "A ring is the highest trust among the sources that support an entity. Agent has none.";
+    : "A ring is the strongest source behind an entity. Agent claims, the usual case, draw no ring.";
   host.appendChild(note);
   // What each tier means, where trust is decided (Section 29.2) - a tooltip cannot carry it (U25).
   const means = document.createElement("details");
@@ -1132,6 +1300,7 @@ async function poll() {
       if (!r.ok) { sayLate("the server answered HTTP " + r.status); return; }
       const g = await r.json();
       if (g.error) { sayLate(g.error); return; }
+      await commonTypesRead;   // answered once, beside the first graph read (Section 29.9)
       applyGraph(g);
       hold(heldGraph, url, r);
     }
@@ -1146,7 +1315,7 @@ async function poll() {
           const hg = await hr.json();
           if (!hg.error) {
             hyperedges = hg.hyperedges || [];
-            showStats(currentWs(), lastStats, hyperedges.length);
+            showStats(currentWs());
             hold(heldHyper, hurl, hr);
             layoutGraph();
           }
@@ -1227,11 +1396,12 @@ async function loadWorkspaces() {
     const r = await fetch("/api/workspaces", { cache: "no-store" });
     if (!r.ok) return;
     const list = await r.json();
+    wsListed = list;
     const cur = currentWs();
-    const mk = (label, val) => {
+    const mk = (label, val, cls) => {
       const c = document.createElement("button");
       c.type = "button";
-      c.className = "chip" + (chipIsCurrent(val) ? " on" : "");
+      c.className = "chip" + (chipIsCurrent(val) ? " on" : "") + (cls ? " " + cls : "");
       c.dataset.ws = val; c.textContent = label;
       c.onclick = () => {
         openedAll = false;
@@ -1243,7 +1413,10 @@ async function loadWorkspaces() {
     // A panel heading like the ones below it (docs/design-system.md Section 4).
     const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = "Workspace";
     const named = list.some(w => chipIsCurrent(w));
-    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk("default", "")] : []), ...list.map(w => mk(w, w))];
+    // A workspace the address names and the list does not still shows its chip, selected and muted
+    // (Section 29.9): the page is in that scope, and nothing is filed under it.
+    const unlisted = wsUnlisted(cur) ? [mk(cur, cur, "unlisted")] : [];
+    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk("default", "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
     const note = [];
     if (openedAll && (cur === "*" || cur === "all")) {
       const n = document.createElement("div"); n.className = "wsnote"; n.textContent = "Showing all workspaces - default is empty";
@@ -1258,6 +1431,8 @@ async function loadWorkspaces() {
 // what fills it, and the workspaces that hold knowledge, each with its count, one click away. The
 // counts are read across every workspace at most every 30 seconds, and only while this shows.
 let wsCounts = null, wsCountsAt = 0;
+let wsListed = null;     // the workspaces the node lists, as /api/workspaces last said
+function wsUnlisted(cur) { return !!(wsListed && cur && cur !== "*" && cur !== "all" && !wsListed.includes(cur)); }
 let firstView = new URLSearchParams(location.search).get("workspace") === null;   // the address named no scope
 let openedAll = false;   // the page opened on All because the default was empty - said beside the chips
 async function refreshEmpty() {
@@ -1283,7 +1458,11 @@ async function refreshEmpty() {
     return;
   }
   const line = (text, cls) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; };
-  const kids = [line("Nothing here yet.", "e-title"),
+  // A name the node does not list is said as such on the owner's console (Section 29.9); the read
+  // tier refuses an unknown workspace before this shows.
+  const unknown = surfaceKind === "local" && wsUnlisted(cur);
+  const kids = [...(unknown ? [line("No workspace is called " + cur + ".", "e-title")] : []),
+    line("Nothing here yet.", unknown ? "e-sub" : "e-title"),
     line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
   if (others.length) {
     const row = document.createElement("div");
@@ -1527,7 +1706,7 @@ function signalItems(seg) {
     // Contradictory accepted merges (Principle 6): the remedy is a settling merge, never an edit.
     for (const c of curation.merge_cycles || []) add("y:" + names(c.members).join("|"), "Conflicting merges: " + nameList(names(c.members)),
       { group: c.members || [], hint: "These accepted merges fold into each other - settle them with a new merge." });
-    for (const b of curation.grab_bags || []) add("g:" + b.id, "Overloaded context: " + b.size + " entities", { bag: b });
+    for (const b of curation.grab_bags || []) add("g:" + b.id, "Overloaded region: " + b.size + " entities", { bag: b });
     for (const o of curation.orphans || []) add("o:" + o.id, "Unlinked: " + o.name, { node: o });
     // Conflicts trust settled (resolution.md Section 4.1): informational, and still listed (P6).
     for (const c of (curation.contradictions || []).filter(c => !c.contested)) {
@@ -1567,7 +1746,7 @@ function signalDetail(it) {
     if (b.hint) parts.push(html`<p class="hint">${b.hint}</p>`);
   } else if (b.bag) {
     const nm = b.bag.member_names.slice(0, 10).join(", ") + (b.bag.member_names.length > 10 ? ", ..." : "");
-    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}${local ? html`<button class="reify" title="${tipText("Make it a group")}">Name this group</button>` : ""}</div>`);
+    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}${local ? html`<button class="reify" title="${tipText("Name this region")}">Name this region</button>` : ""}</div>`);
   } else if (b.node) {
     parts.push(html`<div class="chips">${nchipHtml(b.node)}</div>`, html`<p class="hint">Observed with no relation to anything else.</p>`);
   } else if (b.settled) {
@@ -1603,7 +1782,7 @@ function wireCuration(host) {
     };
   });
   wireSettle(host, () => { reviewSig = ""; renderReview(); });
-  // Name this group (Principle 11 promotion path): name the context, assert it as a group entity
+  // Name this region (Principle 11 promotion path): name the region, assert it as an entity
   // through /api/reify (an ordinary lineage-bearing observation - free ingest, no gate on the
   // assertion). DOM-built inline form (no innerHTML sink for the user-typed name).
   host.querySelectorAll(".gb .reify").forEach(b => {
@@ -1614,11 +1793,11 @@ function wireCuration(host) {
       const form = document.createElement("span");
       form.className = "reifyform";
       const inp = document.createElement("input");
-      inp.placeholder = "group name (optional)";
+      inp.placeholder = "region name (optional)";
       inp.onclick = (e2) => e2.stopPropagation();
       const ok = document.createElement("button");
-      ok.type = "button"; ok.title = tipText("Name this group");
-      ok.setAttribute("aria-label", "Name this group");
+      ok.type = "button"; ok.title = tipText("Name this region");
+      ok.setAttribute("aria-label", "Name this region");
       ok.appendChild(icon("check"));
       ok.onclick = async (e2) => {
         e2.stopPropagation();
@@ -1626,7 +1805,7 @@ function wireCuration(host) {
         let q = "?hyperedge=" + encodeURIComponent(row.dataset.hid);
         if (inp.value.trim()) q += "&name=" + encodeURIComponent(inp.value.trim());
         if (ws) q += "&workspace=" + encodeURIComponent(ws);
-        await consoleWrite("/api/reify", q, "Group named - it is an entity now, related to its members");
+        await consoleWrite("/api/reify", q, "Region named - it is an entity now, related to its members");
         await poll();   // the group node + member_of edges appear; the page re-renders
       };
       form.append(inp, ok);
@@ -2726,7 +2905,12 @@ async function fillNodeLog(node, colEl, secEl) {
   } catch (e) { /* keep the last render */ }
 }
 
-function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); requestFrame(); }
+// A pulse lasts a second; the key names its ring from the first one on, so the row does not blink.
+function pulseNodes(ids) {
+  for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60);
+  if (pulses.size && !pulsedAny) { pulsedAny = true; renderMarks(); }
+  requestFrame();
+}
 function logRow(body, tip) {
   const row = document.createElement("div");
   row.className = "row";
@@ -2852,7 +3036,9 @@ async function handleEvent(ev) {
     ids = [ev.start, ...(ev.reached || [])];
   } else return;
   pulseNodes(ids);
+  const had = footprint.size;
   for (const id of ids) if (id) footprint.add(id);   // accumulate the conversation footprint (regardless of whether the node exists)
+  if (!had && footprint.size) renderMarks();
   // Reheat only when the event touched actual nodes - sync/hc chatter (now periodic via the
   // status loop) must never jiggle a settled layout.
   if (ids.length) wake(0.3);
@@ -4204,11 +4390,12 @@ function drawWsHulls(ctx, hullLabels) {
 // it drew was "why is it grouping by workspace", which is what a control with no affordance earns.
 // "b" still cycles, for whoever finds it.
 const BOUNDARY_MODES = [
-  ["workspace", "Each workspace is a sharing unit, and no entity is in two", "Workspace"],
+  ["workspace", "A workspace outline around each workspace: a sharing unit, and no entity is in two", "Workspace"],
   ["origin", "Who signed for each entity; outlines overlap where two machines both did", "Origin"],
   ["off", "No boundaries", "None"],
 ];
 function renderBoundaryChips() {
+  renderMarks();
   if (!legendBoundaryEl) return;
   legendBoundaryEl.innerHTML = "";
   for (const [mode, why, label] of BOUNDARY_MODES) {
@@ -4937,7 +5124,7 @@ function draw() {
   if (needFit && alpha < ALPHA_MIN && !userMoved) { needFit = false; fitView(); }
   if (refitAtRest && !simWarm()) { refitAtRest = false; if (!userMoved) fitView(); }
 
-  const act = activeSet();
+  const act = activeSet(), hov = act ? null : hoverSet();
   // Legend-chip hover highlight: for an edge-kind chip, collect the endpoint nodes of matching visible
   // edges once per frame (nodes to keep lit). Node-type chips match on n.type directly.
   let lgEndpoints = null;
@@ -4991,8 +5178,9 @@ function draw() {
     }
     const lgActive = !!(typeHl || edgeTypeHl);
     for (const it of items) {
-      it.alpha = lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : HULL_LAYER_DIM)
-        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : HULL_LAYER_DIM) : HULL_LAYER_ALPHA;
+      it.alpha = lgActive ? (it.lgHit ? HULL_LAYER_ALPHA : DIM_REGION)
+        // A hover brings its regions to full strength and dims no other; dimming is a selection's.
+        : hlAnchor ? (it.hot ? HULL_ACTIVE_ALPHA : focus ? DIM_REGION : HULL_LAYER_ALPHA) : HULL_LAYER_ALPHA;
       // The name sits above the region's upper edge, outside it, where no member's label is. Only
       // the active node's regions are named: names are placed before the nodes', which avoid them,
       // so twenty region names at rest would push the map's own names out. A region is named by its
@@ -5035,7 +5223,7 @@ function draw() {
         // canvas) keeps the group-color name sharp over the hull fills; lower idle opacity lets it recede.
         // The label fades as one unit (drawLabel), so the halo no longer darkens its own glyphs.
         ctx.globalAlpha = lgActive ? (l.lgHit ? 0.75 : HULL_LABEL_HOVER_FADE)
-          : hlAnchor ? (l.hot ? 1 : HULL_LABEL_HOVER_FADE) : 0.6;
+          : hlAnchor ? (l.hot ? 1 : focus ? HULL_LABEL_HOVER_FADE : 0.6) : 0.6;
         drawLabel(l.text, "500", o.fs, l.col, "0px", 2, o.px, o.py, "center");
       }
       if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
@@ -5130,7 +5318,7 @@ function draw() {
     const dx = e.b.x-e.a.x, dy = e.b.y-e.a.y, d = Math.hypot(dx,dy) || 1, ux = dx/d, uy = dy/d;
     // Hovering an edge-kind chip treats its edges as hot (weight + arrowhead) - same language as
     // node hover, so "what does this relation connect" reads instantly.
-    const hot = act ? act.es.has(i) : (edgeTypeHl ? e.type === edgeTypeHl : false);
+    const hot = act ? act.es.has(i) : hov ? hov.es.has(i) : (edgeTypeHl ? e.type === edgeTypeHl : false);
     // A relation fades in by its length on the screen (Section 26.5); one whose ends overlap is not drawn.
     const lengthA = hot ? 1 : stepped(ease(EDGE_FROM, EDGE_TO, d * cam.s));
     if (lengthA === 0) continue;
@@ -5177,7 +5365,9 @@ function draw() {
       ? (e.a.type === typeHl && e.b.type === typeHl ? 0.9 : (e.a.type === typeHl || e.b.type === typeHl) ? 0.45 : 0.05)
       : edgeTypeHl
       ? (e.type === edgeTypeHl ? 1 : 0.05)
-      : act ? (hot ? 1 : 0.06) : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA));
+      : act ? (hot ? 1 : DIM_EDGE) : hot ? 1 : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA))
+      // An end in a dimmed trust tier dims its relation too, unless a selection or hover lights it.
+      * (!hot && trustOff.size && (trustOff.has(e.a.trust_tier) || trustOff.has(e.b.trust_tier)) ? DIM_EDGE / EDGE_ALPHA : 1);
     // A relation's kind is said by its label, not a color (Section 5); an active edge or one whose kind
     // the legend points at is drawn brighter. A superseded edge is EDGE_OLD, thin (a past signal).
     const color = e.valid_to ? EDGE_OLD
@@ -5218,7 +5408,7 @@ function draw() {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : true;
-    const base = stepped((on ? 1 : 0.12) * n._o), r = rOf(n);
+    const base = stepped((on && !trustOff.has(n.trust_tier) ? 1 : DIM_NODE) * n._o), r = rOf(n);
     const layer = layersOf.get(base);
     if (layer) layer.push(n); else layersOf.set(base, [n]);
     if (n === anchor) {
@@ -5371,7 +5561,7 @@ function draw() {
       const lg = typeHl ? n.type === typeHl : edgeTypeHl ? lgEndpoints.has(n.id) : null;
       if (lg === false) continue;
       const on = lg === true ? true : (act ? act.ns.has(n.id) : true);
-      const show = on && (lg === true || n === hover || n === focus || (act && act.ns.has(n.id)) || (n.degree || 0) >= cut);
+      const show = on && (lg === true || n === hover || n === focus || (act && act.ns.has(n.id)) || (hov && hov.ns.has(n.id)) || (n.degree || 0) >= cut);
       if (!show) continue;
       const o = weightNow(n);
       if (o === 0) continue;   // faded out
@@ -5457,10 +5647,15 @@ function showTip(n, cx, cy) {
   tip.style.top = (cy + 14) + "px";
   // Node name/type come from untrusted observe calls and land in innerHTML here (Principle 18); the
   // html tag escapes every interpolation, the numeric fields included.
+  // The hover card (Section 29.9): a card, not a tooltip - the entity's facts in sentences.
+  const many = new Set(nodes.map(x => x.workspace)).size > 1;
+  const first = String(n.description || "").split("\n")[0];
   tip.innerHTML = html`${[
     html`<b>${n.name}</b><br>`,
-    html`<span class="k">type</span> ${n.type} &nbsp; <span class="k">relations</span> ${n.degree || 0}<br>`,
-    html`<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${tierName(n.trust_tier)}`]}`;
+    html`<span class="k">${many && n.workspace ? n.type + " in " + n.workspace : n.type}</span><br>`,
+    html`${plural(n.degree || 0, "relation")} - ${plural(n.sources || 0, "source")} - ${tierName(n.trust_tier)}`,
+    first ? html`<div class="tdesc">${first.length > 120 ? first.slice(0, 120).trimEnd() + "..." : first}</div>` : "",
+    n.contested ? html`<div class="tcontest">Two sources disagree</div>` : ""]}`;
 }
 
 
@@ -5485,7 +5680,11 @@ canvas.addEventListener("mousedown", ev => {
   }
 });
 addEventListener("mousemove", ev => {
-  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; positionsGen++; wake(0.3); showTip(null); personMoved(); return; }
+  if (drag) {
+    const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; positionsGen++;
+    canvas.classList.add("grabbing");   // grabbing while dragging (Section 29.9)
+    wake(0.3); showTip(null); personMoved(); return;
+  }
   if (panning) {
     // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
     cam.x = camT.x = panning.px + (ev.clientX - panning.sx);
@@ -5500,6 +5699,8 @@ addEventListener("mousemove", ev => {
   const ph = peerAt(ev.clientX, ev.clientY);   // peer cursor-dots sit above the graph - test them first
   if (ph) { hover = null; showPeerTip(ph.m, ph.id, ev.clientX, ev.clientY); return; }
   hover = nodeAt(ev.clientX, ev.clientY);
+  // A hand over an entity, a grab hand over the ground (Section 29.9).
+  canvas.classList.toggle("over", !!hover);
   showTip(hover, ev.clientX, ev.clientY);
 });
 addEventListener("mouseup", ev => {
@@ -5519,7 +5720,7 @@ addEventListener("mouseup", ev => {
     layoutSync();
   }
   drag = null;
-  if (panning) { panning = null; canvas.classList.remove("grabbing"); }
+  panning = null; canvas.classList.remove("grabbing");
   downPos = null;
 });
 
@@ -5757,6 +5958,7 @@ const REGION_WHY = {
   off: "No regions.",
 };
 function renderRegionsSeg() {
+  renderMarks();
   for (const b of regionsSeg.querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === regionsValue());
   radioGroup(regionsSeg, "Regions");
   const desc = document.getElementById("regionsDesc");
@@ -5889,8 +6091,8 @@ arrowTabs(document.getElementById("settingsTabs"));
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; setSwitch(e.currentTarget, showLabels); };
 document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; setSwitch(e.currentTarget, showEdges); };
 document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; setSwitch(e.currentTarget, showArrows); };
-document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; setSwitch(e.currentTarget, showFootprint); };
-document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; setSwitch(e.currentTarget, showPulses); };
+document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; setSwitch(e.currentTarget, showFootprint); renderMarks(); };
+document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; setSwitch(e.currentTarget, showPulses); renderMarks(); };
 document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; setSwitch(e.currentTarget, showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
 // The sync pill opens the settings at Sync. In the app the shell takes this click to the app's own
@@ -5901,6 +6103,7 @@ document.getElementById("miniBtn").onclick = e => { showMini = !showMini; setSwi
 // The contested pill and the review pill open the Review page, where contested beliefs wait under
 // Needs you.
 document.getElementById("contestedPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
+document.getElementById("showAll").onclick = showAll;
 document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
 // The view menu's choices persist, as the docks' open state does (docs/design-system.md Section 14
 // step 1): a choice made once stays made. A preference, so it lives in this browser and nowhere else.

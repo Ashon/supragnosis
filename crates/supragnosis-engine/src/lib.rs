@@ -1488,6 +1488,10 @@ pub struct ObsSummary {
     pub proposal: Option<ProposalEventSummary>,
 }
 
+/// How many of the store's most used types take the type band's own slots (design-system.md
+/// Section 29.9): the band holds sixteen colors.
+pub const COMMON_TYPES: usize = 16;
+
 /// The gate event that last moved an observation's effective tier, in the gate fold's verdict order
 /// (resolution.md R5): its proposal, whether it raised or lowered the tier, and its representative
 /// merge verdict - the verdict's id, time, surface marker and sync origin, so a reader can say who
@@ -5598,6 +5602,35 @@ impl Engine {
     /// Projects the ontology graph into a node-link view (the read path for observability/visualization).
     /// A pure read - it does not touch the observation log (Principle 1). An edge is included only when both endpoints
     /// are in the node set, giving a closed (renderable) graph. Node/edge order is deterministic (Principle 16).
+    /// The store's most used entity types, at most `COMMON_TYPES`, by count then name - what a page
+    /// assigns the type band's colors to, once (design-system.md Section 29.9, D4). Counted over the
+    /// materialized projection, merged-away rows left out, in every workspace (`None`) or in the
+    /// named ones, each counted on its own and summed. It reads the entity rows only.
+    pub fn common_types(&self, workspaces: Option<&[String]>) -> Result<Vec<String>, StoreError> {
+        let cx = &ReadCtx::default();
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut count_in = |ws: Option<&str>| -> Result<(), StoreError> {
+            let fwd = self.merge_forwarding(ws, cx)?;
+            for e in self.store.all_entities(ws)? {
+                if !fwd.contains_key(&e.id) {
+                    *counts.entry(e.kind).or_default() += 1;
+                }
+            }
+            Ok(())
+        };
+        match workspaces {
+            None => count_in(None)?,
+            Some(list) => {
+                for ws in list {
+                    count_in(Some(ws))?;
+                }
+            }
+        }
+        let mut ranked: Vec<(String, usize)> = counts.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        Ok(ranked.into_iter().take(COMMON_TYPES).map(|(t, _)| t).collect())
+    }
+
     pub fn graph(&self, workspace: Option<&str>) -> Result<GraphView, StoreError> {
         self.graph_in(workspace, &ReadCtx::default())
     }

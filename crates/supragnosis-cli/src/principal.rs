@@ -856,11 +856,34 @@ mod tests {
         });
         observe(&engine, "team", "the team uses rust", "rust");
         observe(&engine, "secret", "the launch date is friday", "launch");
+        engine
+            .observe(ObserveInput {
+                content: "the vault keeps the keys".into(),
+                workspace: Some("vault".into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    name: "keys".into(),
+                    kind: Some("Secret".into()),
+                    description: None,
+                }],
+                relations: vec![],
+            })
+            .unwrap();
         let (url, cred) = hub(engine.clone(), BTreeSet::new()).await;
         let base = url.replace("/mcp", "/viz");
         let c = Some(cred.as_str());
 
         assert_eq!(viz(&base, None, "/api/graph", None).await.0, 401, "V1: no anonymous read");
+        // The store's common types are counted within the grants (design-system.md Section 29.9).
+        let (status, _, types) = viz(&base, c, "/api/common_types", None).await;
+        assert!(status == 200 && types.starts_with("{\"types\":[\""), "{status} {types}");
+        assert!(
+            !types.contains("Secret"),
+            "a type only outside the grants is not named: {types}"
+        );
         let (status, _, page) = viz(&base, c, "/", None).await;
         assert!(
             status == 200 && page.contains("<title>Graph - Supragnosis</title>"),
@@ -983,6 +1006,8 @@ mod tests {
 
         let (status, _, body) = viz(&base, c, "/api/graph?workspace=*", None).await;
         assert!(status == 403 && body.contains("spoke-node"), "{status} {body}");
+        // The census skips what the hub may not serve rather than refusing the page its colors.
+        assert_eq!(viz(&base, c, "/api/common_types", None).await.0, 200);
         assert_eq!(viz(&base, c, "/api/graph?workspace=docs", None).await.0, 200);
         let (_, _, surface) = viz(&base, c, "/api/surface", None).await;
         assert!(

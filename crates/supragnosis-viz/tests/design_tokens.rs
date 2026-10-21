@@ -702,6 +702,14 @@ const VIEWER_LINES: &[(&str, &str)] = &[
         "the Trust legend's swatch of the human-confirmed ring",
     ),
     ("#loader .spin", "a control's own glyph: the loader's spinner"),
+    (
+        ".mk-outline",
+        "the map's key: the outline a boundary draws round a workspace or a signer (Section 29.9)",
+    ),
+    (
+        ".mk-pulse",
+        "the map's key: the ring a pulse draws round what was just touched (Section 29.9)",
+    ),
     ("#mapwin", "paints the frame around the map's window: a surface, not a line"),
     (
         ":where(button, input, select, textarea, summary)",
