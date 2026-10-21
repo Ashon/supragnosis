@@ -28,7 +28,8 @@
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
-> the first entry on screen, and step 49, search that finds and holds.
+> the first entry on screen, and step 49, search that finds and holds. Step 50a, the map's keys and
+> its View, is specified.
 
 ## 1. Why this exists
 
@@ -557,7 +558,9 @@ brighter or heavier for its hue; where clouds overlap they are mixed in OKLCH to
 chroma kept, hues by their weighted circular mean - not by the canvas, whose compositing mixes in
 sRGB and meets two hues in a grey or a brown neither of them is.
 
-**Workspaces cohere while the boundaries draw them.** With the boundaries on "workspace" and more
+**Workspaces cohere while the boundaries draw them.** *(Revised by step 50a: they cohere whenever more
+than one is in scope, whatever Boundaries draws, except under Arrange by type, Section 29.12.)* With
+the boundaries on "workspace" and more
 than one workspace in scope, a node outside its workspace's natural radius - what its nodes would
 fill at their usual spacing - is pulled toward the workspace's centre, two workspaces whose actual
 spreads overlap are pushed apart as wholes, and the repulsion between nodes of different workspaces
@@ -616,7 +619,9 @@ On the Graph page:
 
 - **The left panel is the filters**: workspaces, types, relations, the type definitions, and the
   Trust legend, which says what a ring reads (Section 5). The boundaries' legend is a view mode: it
-  moves into View as **Boundaries** - Workspace, Origin or None - which b still cycles. The Types
+  moves into View as **Boundaries** - Workspace, Origin or None - which b still cycles *(revised by
+  step 50a: b cycles the choices that outline two or more groups here, and None, and only draws,
+  Section 29.12)*. The Types
   tab's rows move here before the tab goes: a contested type definition with its confirm act, an axis
   collision, and the types that are defined but have no node in the loaded graph. Pointing at or
   focusing a legend entry lights its nodes and dims the rest, and its tooltip shows only the winning
@@ -651,7 +656,9 @@ On the Graph page:
 - **The camera is one toolbar** at the window's lower right: Follow, List, view, zoom in, zoom out,
   fit (Follow since step 43, Section 29.4; since step 49 Map and List are one tab list in List's
   place, and zoom and Fit are idle while List shows, Section 29.11). Under 760
-  pixels it stays at the top right, out of the sheets' way (Section 18). The minimap is on, above the
+  pixels it stays at the top right, out of the sheets' way (Section 18). *(Revised by step 50a: the
+  minimap draws only while zoomed in, and every framing leaves out the toolbar's box, Section
+  29.12.)* The minimap is on, above the
   toolbar, until View turns it off; between 760 and 1200 pixels it gives way to a panel floating over
   the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
   once, since any click stored every choice and most were never made, and View remembers it from then
@@ -661,7 +668,8 @@ On the Graph page:
   entries' to show, not the bar's. On the right: the way to Review, the sync pill, the search mode,
   then the gear, each a target of U19's size. A pill is tinted, not outlined. How fresh the map is goes unsaid while it is fresh;
   once a poll fails, the bar says "Not updated since 8:54 - the server is not answering", and the
-  time does not tick at every poll.
+  time does not tick at every poll. *(Revised by step 50a: a Retry button follows that line, Section
+  29.12.)*
 - **Review is always in the status bar** on the local console (U20). It reads "Review" when nothing
   waits, and "1 needs you" or "2 need you (1 contested)" when something does: one count, the items
   under Needs you, and in the parenthesis how many of them are contested beliefs. Needs you lists
@@ -1091,7 +1099,9 @@ principles page - to one floor (U19):
   above it read the same token. The landing and the principles page, read in any browser, keep WCAG
   2.5.8's 24, and 28 below 760.
 - **A single key can be turned off.** The view's single keys - /, b, [ and ] - act from anywhere
-  outside a text field, and View has a switch that turns them off (WCAG 2.1.4). The
+  outside a text field, and View has a switch that turns them off (WCAG 2.1.4). *(Revised by step
+  50a: =, +, -, 0, l and ? join them, they act on the Graph page while no dialog or card is open,
+  and the switch is in the Keys dialog, Section 29.12.)* The
   keys that decide act only within their list or item (Section 7).
 - **Progress is announced.** A step that runs shows its progress as `role="progressbar"` with its
   value, and a step's end, success or failure, is said in a polite live region (WCAG 4.1.3). A page
@@ -1911,6 +1921,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    workspace, "Show these 13 on the map" pins the answer as a working set that dims the rest and
    grows by Show related, List follows the set, and Map | List takes List's place, with List's rows
    marked when contested and sorted by any column.
+50a. **The map's keys and its View** (Section 29.12; D7; Sections 5, 6, 10, 18 and 29.4 revised): single keys
+   for zoom, Fit, List and the Keys dialog, which holds the single-key switch; View holds what
+   changes the picture; b only draws; Retry where the map is stale; the minimap while zoomed in; and
+   framing that keeps the toolbar's box. The menu bar, the tray and the window are step 50b.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2131,7 +2145,8 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
   cap and ran under both panels. Framing, the zoom buttons and the minimap's pan work in the window
   now, and the frame keeps room for the label that hangs right of a node, since the window's edge is
   hard.
-- **After step 7: the minimap starts on again.** Step 7 started it off to clear the corner; at the
+- **After step 7: the minimap starts on again.** *(Revised by step 50a: it stays on, and draws while
+  zoomed in, by Section 29.12's rule.)* Step 7 started it off to clear the corner; at the
   author's request it starts on, above the toolbar, and View still turns it off. Stored choices from
   0.6.0 and 0.6.1 held "off" for anyone who had clicked any View toggle, so they forget the minimap's
   once more.
@@ -3523,7 +3538,8 @@ decided both.
 **Behaviour.**
 - **The person's move** is any pan, zoom or drag they make: a wheel or pinch on the map, a drag of the
   map or a node, the minimap, and the zoom and Fit buttons. The camera moves follow, a selection or a
-  search make are not the person's move.
+  search make are not the person's move. *(Revised by step 50a: the keys =, +, - and 0 are the
+  person's move, and Follow waits while the Keys dialog is open, Section 29.12.)*
 - **Follow waits while the map is in use**: while a node is selected; while the List, the View
   popover, the search's results or an observation card is open; while the Review page is open; and
   for 20 seconds after the person's move. *(Revised by step 49: and while a working set is pinned,
@@ -4460,4 +4476,108 @@ No row needs a principle changed.
 the contested badge); `search_chooses_nothing_until_the_person_moves` (plain Enter takes no row,
 Cmd+Enter keeps only the set row, a choice clears the field); and
 `an_empty_scope_keeps_no_idle_controls` (the idle buttons, which List shares).
+
+### 29.12 Step 50a: the map's keys and its View
+
+**What was found.** Measured on the Graph page:
+- **The keys cannot be found.** Cmd+K is said nowhere. Zoom, Fit and List have no key, and there is
+  no list of the keys; View's "Keys" line names four of them beside the switch that turns them off.
+- **View mixes kinds of things.** Its popover holds how the map looks, how the layout behaves, a
+  keyboard preference and an act, Reload. Twelve controls with a line each make it taller than a
+  900-pixel window, so it scrolls. Reload is wanted exactly when the status bar says "Not updated
+  since ...", which is far from the popover.
+- **b moves the map and says nothing.** Under All, three presses of b moved nodes by up to 101
+  pixels, since the workspaces cohere only while their outlines are drawn. A choice that outlines
+  nothing here - Origin where fewer than two machines are recorded, Workspace in a scope of one -
+  looks the same as None.
+- **Fit and the minimap cover the same corner.** Fit frames down to the window's foot, under the
+  camera toolbar; at rest, when the map is fitted, the minimap repeats the
+  overview at a fifth of its size over the window's lower right (R2-14).
+
+**Decisions.** D7, approved, gives the map's keys the Mac's conventions, with the single keys =, -
+and 0 for zoom and Fit, since Cmd+= is the text's size; its other half, the selection history and
+the address, is Section 29.4's. Its recommended option moved the single-key switch to Settings; the
+author decided to put it in the Keys dialog instead, beside the keys it governs, since it is the
+page's own choice, kept in the page as View's choices are, and the app's Settings page holds only
+what changes this Mac (settings-page.md Section 2). R2-14, which Sections 29.9 and 29.11 handed to
+this step, hides the minimap while it repeats the map; the minimap stays on, as the author asked
+after step 7 (Section 18), and draws while zoomed in, by the rule below. R2-10's
+recommended option holds: the workspaces cohere whatever Boundaries draws. R2-15's holds: the
+switches that change least sit under More.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 10, and U19 | The view's single keys act outside a text field and can be turned off (WCAG 2.1.4); a dialog holds focus and makes the page behind it inert | Section 10 revised, U19 agrees - the single keys are /, b, [, ], =, +, -, 0, l and ?, each without Cmd, Ctrl or Option; the switch moves from View to the Keys dialog, which holds focus, makes the page behind it inert and closes with Esc |
+| Section 7 | On the Review page the map behind it is inert | repays - b, [ and ] acted behind the Review page; the map's keys now act only on the Graph page while no dialog or card is open, and / also on the Review page, where a search opens the Graph |
+| U25 and Section 9 | A tooltip names a control and its key; one line never states two contradictory states | agrees - "Zoom in (=)", "Zoom out (-)", "Fit to view (0)", "Map (l)" and "List (l)", and each control names its key only while the single keys are on |
+| U28 | Drawing never moves the layout | repays - b only draws: the workspaces cohere whenever the scope holds more than one, whatever Boundaries draws |
+| Section 5 | The workspaces cohere while the boundaries draw them; b cycles Boundaries | revised - they cohere whenever more than one is in scope, except under Arrange by type, as now; b cycles the choices that outline two or more groups here, and None |
+| Section 27 and the remembered layout | A scope of several workspaces is laid out with their cohesion | agrees - Boundaries is not among View's stored choices and starts on Workspace, which already coheres, so a remembered layout is unchanged |
+| P5 | Unknown is not empty | agrees - Origin counts the machines recorded on the drawn entities, those whose type is shown; an entity no peer stamped records none, so its line says "Fewer than two machines are recorded here", not that one machine signed everything; Retry keeps the poll's own reason |
+| Section 29.9 | The key names each mark the view draws, and only those | repays - an outline's row shows only while two or more outlines are drawn |
+| U42 and Section 28.4 | A notice that is the outcome of the person's act is `ok` and leaves on its own | agrees - b's notice is `ok`, and a later press replaces it with a new one, in the newest place with its own clock |
+| Section 6 | The status bar says "Not updated since 8:54 - the server is not answering"; the minimap is on until View turns it off; b still cycles Boundaries | revised - a Retry button follows the line; the minimap draws only while zoomed in; b cycles the choices that draw |
+| Section 18 | The minimap starts on, at the author's request | revised - it stays on, and draws while it shows something the window does not (R2-14) |
+| Section 29.4 | The person's move is a pan, zoom or drag, the buttons' included; Follow waits while the map is in use | revised - =, +, - and 0 are the person's move, and Follow waits while the Keys dialog is open |
+| Section 6, View's stored choices | View's choices are remembered | repays - Boundaries is stored with them, now that it no longer moves the layout |
+| Section 4 | A switch that is off is drawn at full strength; a control that cannot act now is dimmed and says why | agrees - Arrows and History are dimmed and say why while Relations is off; More is a disclosure whose summary names a switch under it that is off |
+| U32 and U35 | The minimap's miniature is a bitmap painted when it changes, under the window's frame drawn each frame | agrees - the minimap shows only once its miniature is painted, and fades over 120 ms, at once under reduced motion |
+| Section 29.11 | Map and List are one tab list; zoom and Fit are idle while List shows | agrees - l moves between them, and the keys are idle when their buttons are |
+| P24 | A failure says so | agrees - a Retry that fails keeps the poll's reason and says when it tried: "(tried 9:02)" |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Keys.** On the Graph page, outside a text field, while no dialog or card is open, and without
+  Cmd, Ctrl or Option: = (or +) zooms in, - zooms out, 0 fits, l moves between Map and List, b cycles
+  Boundaries, ? opens the Keys dialog, and [ and ] toggle the panels; / opens search on the Review
+  page too. A letter is matched by what it types, and by the key's place only when the input source
+  types a letter that is not Latin, so b and l act under Hangul as under Dvorak. A key is idle when
+  its button is (Sections 29.10 and 29.11). The buttons' tooltips name their keys while the single
+  keys are on.
+- **The Keys dialog.** ? or View's "Keys..." opens a dialog titled "Keys", listing the Graph page's
+  keys with what each does, in groups: Find (/ and Cmd+K; Cmd+Enter keeps an answer), Panels ([ and
+  ]), Map (=, -, 0, l, b), Selection (Cmd+[ and Cmd+], Esc) and Lists (the arrow keys move, Enter
+  chooses). At its foot is the switch "Single-key shortcuts", with the line "Letters and symbols act
+  on the Graph page, outside a text field, while no dialog or card is open." The switch governs ?
+  too; View's "Keys..." stays the way back.
+  The dialog holds focus, makes the page behind it inert, and Esc closes it alone.
+- **View holds what changes the picture.** Regions; Boundaries; Layout with Reset layout, Arrange by
+  type and Peers; Show with Labels, Relations, Arrows, History and Minimap; and a disclosure "More"
+  with Footprint and Pulses, its summary saying "More - Pulses off" when one is off. Arrows and
+  History are dimmed while Relations is off, with the line "Shown with relations." At View's foot,
+  "Keys...". The Keys group and Reload leave it.
+- **Retry where the map is stale.** While the status bar says "Not updated since 8:54 - the server is
+  not answering", or "Not loaded - ...", a Retry button follows the line; it reads the workspaces and
+  the map at once, and when that fails too the line keeps the poll's reason and says when it tried:
+  "Not updated since 8:54 - the server is not answering (tried 9:02)".
+- **b only draws.** The workspaces cohere whenever the scope holds more than one, whatever Boundaries
+  draws, except under Arrange by type, as now, so b never moves a node; None's line says "The
+  workspaces keep together, without outlines." A choice that would outline fewer than two groups
+  here is disabled with its reason - "One workspace here - nothing to outline", "Fewer than two
+  machines are recorded here - nothing to outline" - and b and the arrow keys pass it by; a current
+  choice that becomes so stays chosen and says so; while no choice outlines anything, b says
+  "Boundaries: nothing to outline here" and changes nothing. The groups are counted over the drawn
+  entities, those whose type is shown, as the outlines are drawn. Each press of b says its state in
+  an `ok` notice, which the next press replaces: "Boundaries: Workspace", "Boundaries: Origin",
+  "Boundaries: None". Boundaries is stored with View's choices.
+- **The minimap while zoomed in.** The minimap draws while the window holds less than 80 percent of
+  the drawn map's box by area, the box grown by the largest node's radius so a single entity or a line
+  of them has an area, and leaves when it holds more than 90 percent, so it does not flicker
+  at the line; it fades in and out over 120 ms, at once under reduced motion, and shows only once its
+  miniature is painted. The Minimap switch's line says "The whole graph, while you are zoomed in;
+  click or drag it to move." A stored choice keeps.
+- **Framing keeps the toolbar's box.** Every framing - Fit, the first view, the refit at rest, a
+  search, a preview, Follow, a selection's neighbourhood and the working set - leaves out the camera
+  toolbar's box: at the
+  window's foot from 760 pixels wide, and at its top, both rows, below it.
+
+**What this step does not do.**
+- It does not add the View, Edit and Help menus, Setup..., the tray's lines and icon, Quit's words,
+  Settings' sidebar or the window's frame (D14, D15, R4-05, R4-06, R4-13, R4-14, R4-16, R1-16),
+  which step 50b takes.
+- It does not name Origin's outlines by host, R2-10's other part, which waits for a roster the read
+  tier may read.
 
