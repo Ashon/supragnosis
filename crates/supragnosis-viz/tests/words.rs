@@ -367,7 +367,7 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
     let rows = body("contestedRows");
     assert!(rows.contains("\"In Supragnosis\"") && rows.contains("i-chevron-right"));
     assert!(
-        body("relationGroupHtml").contains("tierDot(e.trust_tier)"),
+        body("relationGroupHtml").contains("chipTier(e.trust_tier)"),
         "a relation draws no trust"
     );
     assert!(body("waitsHtml").contains("Waits for you: "));
