@@ -167,8 +167,9 @@ After connecting, an app still has to load the change, and setup says how for ea
   the bundler signs into the release - and macOS asks the person once; a refusal leaves the
   instruction in place. The page offers it on a row it connected itself.
 - **Cursor:** "Open Cursor" opens it, with where to turn the server on.
-- **Claude Code, Codex, Gemini and VS Code** load it in their next session or chat, which only the
-  person can start.
+- **Claude Code, Codex, Gemini, OpenCode and VS Code** load it in their next session or chat, which
+  only the person can start (OpenCode may need its background service restarted; client-connect.md
+  Section 13.3).
 
 `connect` itself warns, in its own output, when the server the active profile names does not answer:
 the entry is written, and the app will fail until a server runs.
