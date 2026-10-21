@@ -290,6 +290,11 @@ the formula with no version, and a `brew upgrade` can move one without the other
 cross that gap:
 
 - **The CLI's JSON** is covered by Section 6.
+- **The tray's reads.** The tray reads `/api/proposals` and `/api/curation` over the daemon's socket
+  to count what waits (design-system.md Section 7). It reads a proposal's `state`, and the report's
+  `secrets` and each contradiction's `contested`, and degrades to the count it could read when a
+  field or a read is missing. *(Added by design-system.md step 42: the tray read the proposal list
+  before, and this section did not name it.)*
 - **The viewer page the shell decorates.** `shell-init.js` comes from the app and runs inside the
   page the daemon serves. It finds `#settingsBtn`, `header` and `h1` there, and stands in for
   `EventSource("/api/events")` through `onmessage` alone. A viz test pins those as the page's
