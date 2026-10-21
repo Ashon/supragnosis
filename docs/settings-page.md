@@ -48,7 +48,8 @@ been, and the graph keeps its title bar to itself.
   click before the viewer's own handler, so the viewer needs to know nothing of the app.
 - **The page goes back to the graph** with "< Graph" at the leading end of its title bar, where a
   Mac puts the way back, or with Esc when no dialog is open, or with Cmd+[ (design-system.md Section
-  6a, U26).
+  6a, U26). It goes back to the graph as the person left it - its scope and selection - which the
+  way in carries (design-system.md Section 29.4).
 - **The keyboard does the same.** Cmd+, opens Settings from the app menu, where macOS users look for
   it, and Cmd+1 shows the graph from the View menu. The tray's Open Graph shows the graph, and
   Settings... shows the settings.
