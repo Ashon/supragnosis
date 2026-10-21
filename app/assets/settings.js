@@ -199,12 +199,6 @@ function renderServer() {
   ];
 }
 
-// What kind of app each is, for its icon: a desktop app, an editor, or a command-line tool.
-const APP_KIND = {
-  "claude-desktop": "desktop", "claude-code": "terminal", cursor: "editor",
-  vscode: "editor", codex: "terminal", gemini: "terminal",
-};
-
 // The line under an app's name: what the pill does not already say.
 function appDetail(a) {
   if (a.kind === "connected") return "Through the bridge";

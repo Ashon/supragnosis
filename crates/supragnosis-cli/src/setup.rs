@@ -318,7 +318,7 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
             "apps",
             None,
             State::Attention,
-            "No AI app that connect knows is installed: Claude Desktop, Claude Code, Cursor, VS Code, Codex or Gemini CLI.",
+            "No AI app that connect knows is installed: Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini CLI or OpenCode.",
         )
     } else {
         Event::new("apps", None, State::Todo, "None connected yet.")
@@ -495,6 +495,8 @@ pub fn client_app(name: &str) -> Option<&'static str> {
         Some("codex")
     } else if n.starts_with("gemini") {
         Some("gemini")
+    } else if n.starts_with("opencode") {
+        Some("opencode")
     } else {
         None
     }
@@ -822,6 +824,7 @@ mod tests {
             ("Visual Studio Code", "vscode"),
             ("codex-mcp-client", "codex"),
             ("gemini-cli-mcp-client", "gemini"),
+            ("opencode", "opencode"),
         ] {
             assert_eq!(client_app(name), Some(app), "{name}");
         }

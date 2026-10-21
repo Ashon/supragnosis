@@ -5,7 +5,7 @@
 > [architecture.md](architecture.md) Section 10 (the local surfaces).
 >
 > Status: **built** (Section 9 steps 1-5, Section 12 included). What building it changed is recorded in Section 11.
-> Section 13, OpenCode, is specified; it is built next.
+> Section 13, OpenCode, is built.
 
 ## 1. Why this exists
 
@@ -529,16 +529,17 @@ No contradiction.
 
 ### 13.4 Guarded by
 
-Tests named when Section 13 is built, one for each of these:
-- registration: the add command; the files (`XDG_CONFIG_HOME` honoured, the CLI's choice between
-  them); the listing across both, and `unknown` for one that does not parse; each case of the cut,
-  a comment holding brackets and quotes, and every byte outside the span kept; strict JSON staying
-  strict for the other apps;
-- removal from both files, each backed up, and none at all while one does not parse;
-- classification of a command array, a remote url and a disabled entry;
-- the first-contact name `opencode`;
-- the `connect --json` example listing every app the CLI knows, and the menu and both pages naming
-  each one from the one table in `kit.js`.
+- `opencode_is_registered_through_its_cli_and_removed_by_a_jsonc_edit` - the add command; the files
+  (`XDG_CONFIG_HOME` honoured, the CLI's choice between them); the listing across both, and
+  `unknown` for one that does not parse; each case of the cut, a comment holding brackets and
+  quotes, and every byte outside the span kept; strict JSON staying strict for the other apps.
+- `opencode_removal_clears_both_files_or_neither` - removal from both files, each backed up, and
+  none at all while one does not parse.
+- `classify_reads_a_command_array_a_remote_url_and_a_disabled_entry`.
+- `client_names_map_to_apps_and_unknown_names_to_none` - the first-contact name `opencode`.
+- `every_app_page_names_the_apps_connect_lists` (the app) and `connect_json_matches_its_example`
+  (the CLI): the example lists every app the CLI knows, and the menu and both pages name each one
+  from the one table in `kit.js`.
 
 ### 13.5 What the second reading changed
 

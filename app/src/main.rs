@@ -151,6 +151,7 @@ const AI_APPS: &[(&str, &str)] = &[
     ("vscode", "VS Code"),
     ("codex", "Codex"),
     ("gemini", "Gemini CLI"),
+    ("opencode", "OpenCode"),
 ];
 
 fn home() -> PathBuf {
@@ -592,34 +593,55 @@ fn run_cli(args: &[&str]) -> Option<std::process::Output> {
     let bin = find_server_bin()?;
     let mut cmd = Command::new(bin);
     cmd.args(args).stdin(Stdio::null());
-    if let Some(path) = cli_path(login_path(), std::env::var_os("PATH").as_deref()) {
-        cmd.env("PATH", path);
-    }
+    with_login_env(&mut cmd);
     cmd.output().ok()
 }
 
-/// The person's `PATH` as their login shell sets it, read once per launch (docs/client-connect.md
-/// Section 5). An app opened from the Finder gets `/usr/bin:/bin:/usr/sbin:/sbin`, so a client
-/// installed through nvm, fnm, volta or mise is on the shell's `PATH` only, and the CLI called it not
-/// installed. `None` when the shell could not be asked; the app's own `PATH` then stands.
-fn login_path() -> Option<&'static str> {
-    static LOGIN_PATH: OnceLock<Option<String>> = OnceLock::new();
-    LOGIN_PATH
-        .get_or_init(|| {
-            let shell = std::env::var_os("SHELL").filter(|s| !s.is_empty())?;
-            read_login_path(Path::new(&shell), Duration::from_secs(5))
-        })
-        .as_deref()
+/// What the person's login shell sets that the CLI's calls need, read once per launch
+/// (docs/client-connect.md Section 5). An app opened from the Finder gets
+/// `/usr/bin:/bin:/usr/sbin:/sbin`, so a client installed through nvm, fnm, volta or mise is on the
+/// shell's `PATH` only, and the CLI called it not installed; and a shell that sets
+/// `XDG_CONFIG_HOME` moves OpenCode's configuration, which the CLI then looked for in the wrong
+/// place.
+#[derive(Debug, Default, PartialEq)]
+struct LoginEnv {
+    path: Option<String>,
+    config_home: Option<String>,
 }
 
-/// The line `read_login_path` prints before the environment, so whatever the shell's startup files
+/// `None` when the shell could not be asked; the app's own environment then stands.
+fn login_env() -> Option<&'static LoginEnv> {
+    static LOGIN_ENV: OnceLock<Option<LoginEnv>> = OnceLock::new();
+    LOGIN_ENV
+        .get_or_init(|| {
+            let shell = std::env::var_os("SHELL").filter(|s| !s.is_empty())?;
+            read_login_env(Path::new(&shell), Duration::from_secs(5))
+        })
+        .as_ref()
+}
+
+fn login_path() -> Option<&'static str> {
+    login_env()?.path.as_deref()
+}
+
+/// A CLI call's environment: the login shell's `PATH` and `XDG_CONFIG_HOME` over the app's own.
+fn with_login_env(cmd: &mut Command) {
+    if let Some(path) = cli_path(login_path(), std::env::var_os("PATH").as_deref()) {
+        cmd.env("PATH", path);
+    }
+    if let Some(dir) = login_env().and_then(|e| e.config_home.as_deref()) {
+        cmd.env("XDG_CONFIG_HOME", dir);
+    }
+}
+
+/// The line `read_login_env` prints before the environment, so whatever the shell's startup files
 /// print first is skipped.
 const ENV_MARK: &str = "__supragnosis_env__";
 
-/// Asks `shell`, as a login and interactive shell, for its environment, and returns its `PATH`.
-/// `None` when it does not answer within `within`, or answers without one. Interactive, because nvm
-/// and its kind are set up in `.zshrc` and `.bashrc`, which a login shell alone does not read.
-fn read_login_path(shell: &Path, within: Duration) -> Option<String> {
+/// Asks `shell`, as a login and interactive shell, for its environment, and returns what it sets.
+/// `None` when it does not answer within `within`, or answers without a `PATH`. Interactive, because
+/// nvm and its kind are set up in `.zshrc` and `.bashrc`, which a login shell alone does not read.
+fn read_login_env(shell: &Path, within: Duration) -> Option<LoginEnv> {
     let mut child = Command::new(shell)
         .args(["-l", "-i", "-c", &format!("echo {ENV_MARK}; /usr/bin/env")])
         .stdin(Stdio::null())
@@ -648,18 +670,22 @@ fn read_login_path(shell: &Path, within: Duration) -> Option<String> {
         }
     }
     let out = rx.recv_timeout(within.saturating_sub(started.elapsed())).ok()?;
-    path_from_env_output(&out)
+    login_env_from_output(&out)
 }
 
-/// The `PATH=` line of `env`'s output after [`ENV_MARK`]; anything printed before the mark is not
-/// the environment.
-fn path_from_env_output(out: &str) -> Option<String> {
+/// The `PATH=` and `XDG_CONFIG_HOME=` lines of `env`'s output after [`ENV_MARK`]; anything printed
+/// before the mark is not the environment. `None` without a `PATH`.
+fn login_env_from_output(out: &str) -> Option<LoginEnv> {
     let after = out.split_once(&format!("{ENV_MARK}\n"))?.1;
-    after
-        .lines()
-        .find_map(|l| l.strip_prefix("PATH="))
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
+    let var = |key: &str| {
+        after
+            .lines()
+            .find_map(|l| l.strip_prefix(key))
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    let path = var("PATH=")?;
+    Some(LoginEnv { path: Some(path), config_home: var("XDG_CONFIG_HOME=") })
 }
 
 /// The `PATH` the app's CLI calls run with: the login shell's directories first, then those of the
@@ -1889,9 +1915,7 @@ async fn run_streamed(
             .stderr(Stdio::piped());
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-        if let Some(path) = cli_path(login_path(), std::env::var_os("PATH").as_deref()) {
-            cmd.env("PATH", path);
-        }
+        with_login_env(&mut cmd);
         let mut child =
             cmd.spawn().map_err(|e| format!("could not run the supragnosis CLI: {e}"))?;
         app.state::<RunningSteps>().0.lock().unwrap().insert(key.clone(), child.id());
@@ -2519,7 +2543,7 @@ fn main() {
             // The login shell's PATH, asked once in the background, so the first CLI call the
             // Settings page makes does not wait for the shell to start (client-connect.md Section 5).
             std::thread::spawn(|| {
-                let _ = login_path();
+                let _ = login_env();
             });
             // Tray: says what state this Mac is in and opens the windows that change it
             // (docs/settings-page.md Section 5). The settings themselves live on that page.
@@ -2803,7 +2827,7 @@ mod csp_tests {
 
 #[cfg(test)]
 mod status_text_tests {
-    use super::{app_row, cli_path, path_from_env_output, read_login_path, status_text, Daemon};
+    use super::{app_row, cli_path, login_env_from_output, read_login_env, status_text, Daemon};
     use std::time::Duration;
 
     /// An AI app's row in the settings window says its state and labels its one button with what a
@@ -2830,17 +2854,22 @@ mod status_text_tests {
 
     /// client-connect.md Section 5: the CLI runs with the login shell's `PATH`. From the Finder the app
     /// has `/usr/bin:/bin:/usr/sbin:/sbin`, and `codex` under `~/.nvm/versions/node/<v>/bin` read
-    /// "Not installed" on the Settings page while a terminal's `supragnosis connect` found it.
+    /// "Not installed" on the Settings page while a terminal's `supragnosis connect` found it. The
+    /// shell's `XDG_CONFIG_HOME` goes along, for OpenCode's configuration (Section 13.3).
     #[test]
     fn the_cli_runs_with_the_login_shells_path() {
         // What the startup files print is skipped: only the environment after the mark counts.
         let out = "Last login: today\nPATH=/printed/by/zshrc\n__supragnosis_env__\nHOME=/Users/x\n\
                    PATH=/Users/x/.nvm/versions/node/v24/bin:/usr/bin\n";
+        let read = login_env_from_output(out).expect("a PATH");
+        assert_eq!(read.path.as_deref(), Some("/Users/x/.nvm/versions/node/v24/bin:/usr/bin"));
+        assert_eq!(read.config_home, None, "unset stays unset");
+        assert_eq!(login_env_from_output("PATH=/usr/bin\n"), None, "no mark, no environment");
+        let xdg = "__supragnosis_env__\nXDG_CONFIG_HOME=/Users/x/dots\nPATH=/usr/bin\n";
         assert_eq!(
-            path_from_env_output(out).as_deref(),
-            Some("/Users/x/.nvm/versions/node/v24/bin:/usr/bin")
+            login_env_from_output(xdg).and_then(|e| e.config_home).as_deref(),
+            Some("/Users/x/dots")
         );
-        assert_eq!(path_from_env_output("PATH=/usr/bin\n"), None, "no mark, no environment");
 
         // A shell that prints first, sets PATH in its startup, then runs the command it is given.
         let dir = std::env::temp_dir().join(format!("sg-login-path-{}", std::process::id()));
@@ -2857,13 +2886,13 @@ mod status_text_tests {
             "#!/bin/sh\necho 'welcome PATH=/not/this'\nPATH=/opt/nvm/bin:/usr/bin\nexport PATH\neval \"$4\"\n",
         );
         assert_eq!(
-            read_login_path(&shell, Duration::from_secs(5)).as_deref(),
+            read_login_env(&shell, Duration::from_secs(5)).and_then(|e| e.path).as_deref(),
             Some("/opt/nvm/bin:/usr/bin")
         );
         // A shell that never answers leaves the app's PATH alone, and does not hold the app up.
         let hangs = write("hangs", "#!/bin/sh\nsleep 30\n");
         let started = std::time::Instant::now();
-        assert_eq!(read_login_path(&hangs, Duration::from_millis(300)), None);
+        assert_eq!(read_login_env(&hangs, Duration::from_millis(300)), None);
         assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -3745,6 +3774,34 @@ mod cli_contract_tests {
 
     fn read(doc: &str) -> serde_json::Value {
         cli_json(doc.as_bytes()).expect("a schema this app reads").expect("JSON")
+    }
+
+    /// client-connect.md Section 13.4: every app the CLI's example lists - the CLI holds the
+    /// example to every app it knows - has a name in the menu and a name and an icon on both pages,
+    /// from the one table in kit.js (design-system.md Section 6a).
+    #[test]
+    fn every_app_page_names_the_apps_connect_lists() {
+        let kit = include_str!("../assets/kit.js");
+        let table = |name: &str| -> &str {
+            let start = kit.find(&format!("const {name} = {{")).unwrap_or_else(|| panic!("{name}"));
+            &kit[start..start + kit[start..].find("};").expect("closed")]
+        };
+        let ids: Vec<String> = read(CONNECT)["clients"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap().to_string())
+            .collect();
+        assert!(ids.iter().any(|i| i == "opencode"), "{ids:?}");
+        for id in &ids {
+            let key = |t: &str| t.contains(&format!("\"{id}\":")) || t.contains(&format!(" {id}:"));
+            assert!(key(table("APPS")), "kit.js names no {id}");
+            assert!(key(table("APP_KIND")), "kit.js gives {id} no icon");
+            assert!(super::AI_APPS.iter().any(|(i, _)| i == id), "the menu lacks {id}");
+        }
+        for page in [include_str!("../assets/settings.js"), include_str!("../assets/welcome.js")] {
+            assert!(!page.contains("const APP_KIND") && !page.contains("const APPS"), "one table");
+        }
     }
 
     /// Every field this app reads from a CLI answer, by JSON pointer. A reader that starts using

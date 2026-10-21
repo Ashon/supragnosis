@@ -10,15 +10,6 @@ const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 const listen = (ev, fn) => window.__TAURI__.event.listen(ev, fn);
 const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
 
-// The apps `supragnosis connect` knows, for their names on buttons. Their state is setup's.
-const APPS = {
-  "claude-desktop": "Claude Desktop", "claude-code": "Claude Code", cursor: "Cursor",
-  vscode: "VS Code", codex: "Codex", gemini: "Gemini CLI",
-};
-const APP_KIND = {
-  "claude-desktop": "desktop", "claude-code": "terminal", cursor: "editor",
-  vscode: "editor", codex: "terminal", gemini: "terminal",
-};
 // The helper an app has once this page connected it (Section 4.2, D9).
 const HELPER = { "claude-desktop": "Restart Claude Desktop", cursor: "Open Cursor" };
 
