@@ -86,6 +86,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | `/api/events` | read | Filtered as Section 3.6 says. |
 | `/api/federation`, `/api/peer/share`, `/api/health`, `/api/clients` | refused | A node's own operations and state - its peers, its sharing boundary, its store's ledger, the AI apps on its own machine (onboarding.md O7). They are not a principal's. |
 | `/api/review`, `/api/resolve` | refused | Verdicts. These stamp the console surface, the one that records a human's direct act (V2). |
+| `/api/resolve/preview` | refused | The diff and checks a settle at the console would have (design-system.md Section 29.2). It writes nothing, but the read tier offers no settle to preview, and answering it would need Section 3.4's unknown-id rule for every target. |
 | `/api/reify`, `/api/propose_merge`, `/api/propose_split` | refused | Writes. A principal with a write grant reaches `observe` and `propose` through MCP. |
 
 A refusal is a 403 whose reason says where the act can be done instead.

@@ -22,7 +22,8 @@
 > asks first, region forces that scale, the layout on its own thread, the multilevel start, clipping,
 > semantic zoom, the GPU renderer, and the measure. The sixth pass, one icon set and one notice
 > (Section 28, U41-U42), is built - steps 39-40: Lucide's files on every surface, and a notice with
-> one anatomy and a clock that waits while it is read.
+> one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
+> (Section 29), goes one step at a time from step 41, each checked against the principles first.
 
 ## 1. Why this exists
 
@@ -791,20 +792,28 @@ U4 governs the Review page's controls.
   weight**: Confirm. The tier, the time and the asserting observation's first attestation come from
   `/api/explain`, which the inspector already reads. No value's button is filled or gold while the
   other's is not, and the shown value is marked as shown, not as preferred.
-- **Confirm asks once, in place**: "Confirm Database? It becomes Human confirmed, and Service stays
-  listed." The two buttons are Confirm and Cancel. The act is the promotion `/api/resolve` casts
-  today.
+- **Confirm asks once, in place**, and names what it confirms: the source it promotes, in that
+  source's words, and every entity whose ring the promotion raises with it (Section 29.2). The two
+  buttons are Confirm and Cancel, and Confirm acts only once the engine's diff and checks for that act
+  have been read. The act is the promotion `/api/resolve` casts. *(Revised by step 41: the ask first
+  read "Confirm Database? It becomes Human confirmed, and Service stays listed.", which named the
+  value and not the source it promotes with everything else that source said.)*
 - **When the shown value is already Human confirmed**, confirming the other would tie them again, so
   the other row's act is "Confirm instead", and its question says both halves: "Confirm Service
   instead? Database goes back to Agent, and Service becomes Human confirmed." It casts a demotion of
-  the shown value to the tier it has without any person's verdict, which `/api/explain` answers for
-  each candidate, and the promotion of the chosen one.
+  the shown value's source to the tier it has without any person's verdict, which `/api/explain`
+  answers for each source, and the promotion of the chosen one; the ask reads both acts' diff as one
+  (Section 29.2).
 - **The notice that follows offers Undo**, and stays until it is dismissed, as an error does. Undo
-  casts the reverse: a demotion of the observation just confirmed to the tier its row showed before,
-  and after "Confirm instead" a confirmation of the value it demoted. The log keeps every event (P3).
-  A demotion is a ceiling (resolution.md Section 5): until a person confirms that observation again,
-  a later attestation that would raise its tier does not, and the notice says so beside Undo, in
-  words: "Undo keeps Database at Agent until someone confirms it again".
+  casts the reverse: a demotion of the source just confirmed to the tier that source had before the
+  Confirm, read from the diff's `tier_changes`, and after "Confirm instead" a confirmation of the
+  source it demoted. The log keeps every event (P3). A demotion is a ceiling (resolution.md Section
+  5): until a person confirms that source again, a later attestation that would raise its tier does
+  not. The notice's note says so and names the entities whose ring Undo moves back, from the
+  reverse act's diff: "Undo returns this source to Agent and keeps it there until someone confirms
+  it again. Nightly export goes back to Agent." *(Revised by step 41: Undo first demoted to "the tier
+  its row showed before", the value's highest, which after a choice of a lower source would have
+  raised it.)*
 - **Every act is filed in the workspace of the observation it changes**, whatever scope is on screen.
   From All, `/api/resolve` would otherwise file it in the node default, where the fold that reads the
   observation's own workspace never sees it.
@@ -1384,7 +1393,7 @@ social image.
 | **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each related row saying which, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count, or "20+" at the limit (P5, P19). |
 | **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
 | **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; and a place keeps one name wherever it is reached (P2). |
-| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value - and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
+| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
 | **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
 | **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
 | **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's View menu sets the root's size from 100% to 200% and keeps it, while the title bar keeps its height and its traffic lights' place; and no text is cut short except where focus or a press shows it whole. |
@@ -1719,6 +1728,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    and the test that reads both surfaces.
 40. **Notices** [built] (Section 28.4; U42): the three kinds, the surface, the clock that stops while it is
    read, the motion, in `viewer.js` and `kit.js` both.
+41. **A confirmation says what it confirms** (Section 29.2; U18): each value's sources in `/api/explain`,
+   `/api/resolve/preview` with the diff's `reach` and the checks, the ask with the source and its reach,
+   the choice of source, both halves of Confirm instead, Undo's reach, no act without its diff, and the
+   tiers defined under the legend.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2957,3 +2970,131 @@ own icon.
 - **A mask needs `forced-color-adjust: none`.** Under forced colors a page's background colors are the
   system's, and a mask's fill is a background color, so an icon would take the ground's color and
   vanish. The app's `.i` lacked it too.
+
+## 29. Curation, wayfinding and words
+
+The author asked, on 2026-10-21, for a review of every surface through the lenses of interface,
+experience, information architecture, interaction design and Apple's guidelines. Four reviewers,
+working from a fifth's survey of those lenses, found 70 points: one blocker, 33 major, 31 minor and
+5 polish. A storyboard grouped them into
+fourteen scenes along four journeys: first use, exploring, deciding and running the app. The author
+took the recommended answer to each of the nineteen open questions. The author also asked that the
+steps go one at a time, and that each be checked against the principles before it is made. This
+section is the seventh pass: the steps in order, each with the check that came before it.
+
+### 29.1 How a step is checked
+
+Before a step changes a rule, it lists every principle, invariant and specified sentence the change
+touches, and says how the change stands with each:
+- **agrees**: the change keeps the rule as written;
+- **repays**: the rule already asked for this and the build fell short;
+- **contradicts**: the change and the rule cannot both hold;
+- **owed**: the rule asks for more than the build gives, before and after the step, and the step
+  names the gap rather than closing it.
+
+A contradiction stops the step until the author decides. Until then the principle stands and the
+change waits. The table stays in this section once the step is built, as the record of why the
+change was allowed.
+
+### 29.2 Step 41: a confirmation says what it confirms
+
+**What was found.** Confirm on a contested value casts a `claim_promotion` of one observation that
+asserts the value: the representative that `/api/explain` reports. A claim promotion promotes an
+assertion bundle (proposal-workflow.md Section 3, kind 1), so every entity and relation in that
+observation is confirmed together with the value.
+
+The ask said none of this. It named only the value: "Confirm Concept? It becomes Human confirmed,
+and Table stays listed."
+
+Measured on the review's demo store, confirming Concept as Ledger's type confirmed the sentence
+"The nightly export sends the ledger to the finance team's warehouse". Nightly export and Warehouse
+took the gold ring. Nobody had looked at either of them.
+
+When two observations asserted Concept, the page picked which one to promote, and did not say so.
+
+**The check.** A first draft of this step was checked by a second reader against the principles and
+the specs. That reader found three contradictions in the draft: tier definitions that misdescribed a
+ring, an Undo sentence that was false, and a source choice whose Undo could raise a tier. The rows
+below are the corrected step. No row needs a principle changed.
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P18, promotion (principles.md, Principle 18) | "Promotion of the trust tier happens only explicitly" | repays - the old ask raised entities nobody chose; now every entity whose ring a Confirm raises is named before it is cast |
+| P23, the gate | "a belief diff (promotions/reversals/new contradictions/blast radius) and check results must already be computed" | repays items 1-3 of the diff and the checks for the console's settle; item 4, the knowledge derived along `derived_from`, stays owed here as for every kind |
+| U4 | A decision control appears only with its item's diff and checks on screen | repays - the ask shows both |
+| proposal-workflow.md Section 3, kind 1 | A claim promotion promotes an assertion bundle | agrees - the bundle stays the unit; the ask says what is in it |
+| proposal-workflow.md Section 5, item 1 | "Assertions being promoted - what newly enters canon" | repays - the diff gains `reach`, which for a demotion lists what leaves |
+| BeliefDiff, the fold's own effect | What a reviewer reads is what the fold will do | agrees - `gate_tiers` gains an ordered list of hypothetical events in place of its one, so "Confirm instead" and its Undo, two events each, are previewed as the pair they are |
+| U2 and Section 5 | A ring is the tier of the node's best support | agrees - the reach names an entity only where its ring changes, with the tier it lands on; the tier definitions describe a source, not a value |
+| U18 | Says what the act does before it is cast; every value the same act at the same weight | repays the first clause; the source choice agrees because Undo lowers the chosen source to its own tier before the act (the diff's `tier_changes`), never to the value's highest, so undoing a choice cannot raise anything |
+| U17 and inspector.md D7 | No identifier in a line read first; text from the log is untrusted | agrees - the ask quotes the source through the escaping `html` builder and names entities, never an id |
+| P5, truncated | A cut answer says it is cut | agrees - a quote cut at 280 characters ends with "..." and its accessible text says it was shortened |
+| U42 | A notice holds at most one detail and one action's note | agrees - Undo's reach is part of its note |
+| U19 | A control exposes its state | agrees - a Confirm waiting for its diff, or refused one, is disabled and says why beside it |
+| P21 | No new tool without a repeated intent | agrees - no tool is added; MCP `get_proposal`'s answer gains the diff field `reach`, which the pinned `tools/list` (compatibility.md Section 7) does not cover |
+| remote-viewer.md, "Every path on the read tier has a declared policy" | The read tier names each path | agrees - the preview path is declared refused with its own reason (the read tier offers no settle), not as a verdict, and remote-viewer.md Section 3.2's table gains the row |
+| proposal-workflow.md I7 and I12 | A verdict is bound to the base it was reviewed at | owed, as before - nothing binds the cast to the previewed base; the page reads the preview again whenever the poll sees the log move, which narrows the gap without closing it |
+| P3 | Nothing is destroyed | agrees - the preview writes nothing |
+
+Found while checking, and not changed here: a relation's trust in the graph read is its attested
+tier with no gate event applied (`graph`, the edge rows). resolution.md Section 3 says that every
+display reads the effective tier, so a confirmed source's relations still read Agent. Edges draw no
+ring, so nothing on the map is wrong today. A later step gives relations their trust marks and
+repays this first.
+
+**Behaviour.**
+- **Each candidate value lists its sources.** `/api/explain`'s candidate rows gain `observations`:
+  every observation that asserts the value, each with its effective tier and its tier before any
+  person's verdict (`base_tier`), which a "Confirm instead" demotes the shown value's source to.
+  They are ordered by the rule that already picks the row's representative, highest effective tier
+  and then smallest id, so the representative comes first. The ask preselects the policy's own choice for the shown value (`kind_source`) and the
+  representative for every other value.
+- **The preview.** `GET /api/resolve/preview` takes the query `/api/resolve` takes: the
+  observations, the tier and the kind, and once more for a second act, so "Confirm instead" is
+  previewed as one. It applies the acts in order after every merged event, as the fold would, and
+  answers their belief diff and checks without writing anything. It refuses observations from two
+  workspaces, as `/api/resolve` does.
+- **The diff's `reach`.** Diff item 1 becomes `reach`. For each target whose tier changes, it holds
+  what the observation said (its first 280 characters, and whether it was cut) and the tier it
+  moves from and to. It also holds the entities the observation asserts, each with its ring before
+  and after, and the relations and type definitions it states.
+- **The ask names the source and its reach**: "Confirm Concept as Ledger's type?" Then "This
+  confirms one source:" with the source's words in a quote and its who-line. Next, the entities
+  whose ring rises: "With it, Nightly export and Warehouse become Human confirmed." At most four are
+  named, then "and N more". Then what else the source states: "It also states 2 relations" or "It
+  also defines 3 types". The ask closes with the line Human confirmed has under the legend. The
+  buttons stay Confirm and Cancel.
+- **The person chooses the source.** When more than one observation asserts the value, "Confirm
+  from" is a group of radio buttons, one per source, each named by its who-line and first words.
+  The reach follows the choice.
+- **"Confirm instead" says both halves with their reach** (U18). The preview applies the demotion
+  of the shown value's source and then the confirmation of the chosen one, so the ask reads the pair
+  as one result.
+- **Undo says what it moves back.** When the notice is drawn, the page reads the preview of the
+  reverse act. The note reads: "Undo returns this source to Agent and keeps it there until
+  someone confirms it again. Nightly export goes back to Agent." That reverse act lowers the chosen
+  source to the tier the diff's `tier_changes` gives as its own before the Confirm. After "Confirm
+  instead", the reverse is both acts in reverse order, previewed together. If that preview cannot
+  be read, the notice offers no Undo and says so.
+- **No diff, no act.** A Confirm, a Confirm instead or an Undo acts only after its preview has been
+  read. While the preview is being read, the button waits and says "Reading what this confirms...".
+  If it cannot be read, the button stays disabled and the ask says so (P23).
+- **The tiers are defined where trust is decided.** Under the Trust legend, beside its note on
+  rings, a disclosure "What these mean" gives one line per tier, describing a source:
+  - Human confirmed: "A person confirmed it in this app, on one of your machines. No agent's claim
+    outranks it; a later review can lower it."
+  - Host signed: "Above Agent, but not by a person: a trusted machine's signed claim, or a review an
+    agent accepted."
+  - Agent: "What an AI app writes, and what this app writes for you, until a review raises or
+    lowers it."
+  - Unverified: "Trusted less than an agent's claim: a review lowered it, or its sender marked it
+    so."
+
+  A tooltip cannot carry these (U25).
+
+**What this step does not do.** It does not let a person confirm one field without the rest of its
+source. A field-scoped promotion would change what a gate event targets: an assertion inside an
+observation, instead of an observation. That touches P23's list of proposal kinds, proposal-workflow
+I6 ("merge is additive") and Section 3, resolution.md Section 3's gate tier per observation, and how
+gate events replicate (federation.md). It is a later step with its own check. Until then, the ask
+says the bundle's reach honestly.

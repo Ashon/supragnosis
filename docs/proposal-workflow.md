@@ -229,6 +229,14 @@ Components:
    intensity, Section 9).
 5. **Resolution changes** - for an entity-merge proposal, which references get rewired.
 
+- [impl] For the gate kinds, item 1 is `reach`: for each target whose tier changes, what the
+  observation said, the tier it moves from and to, the entities it asserts with each one's ring
+  (the tier of its best support) before and after, and the relations and type definitions it
+  states - the bundle a claim promotion moves together (Section 3, kind 1). For a demotion it lists
+  what leaves. The console's settle reads the same diff and the checks before it casts
+  (`/api/resolve/preview`, design-system.md Section 29.2), so a person sees a source's whole reach
+  before confirming one value from it. Item 4 is owed for every kind.
+
 ---
 
 ## 6. Checks
