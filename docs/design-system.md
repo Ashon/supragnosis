@@ -1661,7 +1661,10 @@ U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 View's toggles, the legend's chips, the workspace chips, the page's language and the map's name, and
 the dialog on the app's pages; `the_app_pages_keep_focus_across_a_draw` in the app's tests holds the
 part a draw owes - Setup and Settings draw through `kit.js`'s `keepFocus`, their controls carry the
-keys it finds them by, and the reads on a timer or on focus draw only what changed; and `view_holds_two_choices_with_one_name_each` holds View's two
+keys it finds them by, and the reads on a timer or on focus draw only what changed;
+`a_focus_ring_is_never_cut_by_a_scroll_container` in `controls.rs` holds the ring whole - every
+container of the viewer's stylesheet that scrolls keeps a 6-pixel gutter, and the status bar's
+controls draw the ring inside; and `view_holds_two_choices_with_one_name_each` holds View's two
 choices and its switch for the single keys. The rest of U19 - every control on every surface, the
 targets and the reflow - is owed until the app's and the site's steps are built and browser scenarios
 press them at 1440 and 390 pixels.

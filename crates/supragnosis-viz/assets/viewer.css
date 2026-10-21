@@ -170,6 +170,12 @@
      the rules above so :where(input):focus cannot take it away. */
   :focus-visible { outline:2px solid var(--gold-bright); outline-offset:2px; }
   input:focus-visible { outline-offset:1px; }
+  /* The ring is never cut. A scroll container clips what lies outside its padding box, so each one
+     whose controls reach its edge keeps a gutter as wide as the widest ring - 3 pixels under
+     prefers-contrast plus the offset - and gives it back with a negative margin, so nothing moves.
+     The status bar sits on the window's edge, so its controls draw the ring inside. */
+  .railbody, .dock .panels, #detail .rels, .rv-list, #detail .why .whybody { padding:6px; margin:-6px; }
+  #statusbar :focus-visible, .sp-row:focus-visible { outline-offset:-3px; }
   /* "/" hint riding inside the search field (see viewer.html). pointer-events:none so a click at the
      badge still lands on the input - it advertises the shortcut, it is not a control. */
   /* The search sits at the title bar's trailing end, as a Mac toolbar's does (Section 6, U26). */
@@ -191,7 +197,7 @@
              color:var(--muted); font:var(--text-caption)/1.3 var(--mono); }
   .sp-mode { color:var(--muted); }
   .sp-sec { padding:8px 8px 4px; color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); }
-  .sp-row { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:6px 8px;
+  .sp-row { display:flex; align-items:baseline; gap:8px; width:100%; box-sizing:border-box; text-align:left; padding:6px 8px;
             border-radius:var(--r-control); background:none; color:var(--ink2); font:var(--text-body)/1.4 var(--sans); }
   .sp-row:hover { background:var(--panel-2); color:var(--ink); }
   .sp-row.on { background:var(--select); color:var(--ink); }
@@ -239,7 +245,8 @@
            animation:noticein 0.2s ease-out; }
   .toast.bad { background:color-mix(in srgb, var(--bad) 6%, var(--panel-2)); }
   .toast.out { opacity:0; transition:opacity 0.12s ease-out; }
-  .toast > .i { margin-top:6px; }
+  /* The kind's icon centers on the title's letters, which sit a pixel above its line's middle. */
+  .toast > .i { margin-top:5px; }
   .toast.ok > .i { color:var(--ok-ink); }
   .toast.bad > .i { color:var(--bad-ink); }
   .toast.info > .i { color:var(--ink2); }
@@ -412,7 +419,9 @@
   #detail .rchip:hover { background:var(--panel-3); }
   /* A superseded relation keeps a thin outline in place of a fill: the line says "past" (U9's list). */
   #detail .rchip.past { opacity:.6; background:none; border:1px solid var(--muted); padding:2px 7px; }
-  #detail .rchip .dot { width:7px; height:7px; border-radius:var(--r-mark); margin-right:5px; vertical-align:0; }
+  /* The type's dot sits on the name's middle, not its baseline. */
+  #detail .rchip .dot { width:7px; height:7px; border-radius:var(--r-mark); margin-right:5px; vertical-align:middle;
+                        position:relative; top:-1px; }
   #detail .rmore { font:var(--text-caption)/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
                    border-radius:var(--r-control); padding:1px 8px; }
   #detail .dot { width:9px; height:9px; border-radius:var(--r-mark); flex:0 0 auto; display:inline-block; }
@@ -594,11 +603,12 @@
   .contested .neither[open] summary .i { transform:rotate(90deg); }
   /* Each value's source under it: its first sentence, opening its card, and its who-line
      (design-system.md Section 29.7). */
-  .contested .csrc { display:flex; flex-wrap:wrap; align-items:center; gap:4px; color:var(--muted);
-                     font-size:var(--text-caption); padding:0 0 4px; }
+  .contested .csrc { display:flex; flex-direction:column; align-items:flex-start; color:var(--muted);
+                     font-size:var(--text-caption); line-height:1.4; padding:0 0 6px; }
   .contested .csrc:empty { display:none; }
-  .contested .csrc .cq { background:none; border:none; padding:0; min-height:28px; color:var(--ink2); font:inherit;
-                         cursor:pointer; text-align:left; overflow-wrap:anywhere; }
+  .contested .csrc .cq { background:none; border:none; padding:4px 0 0; min-height:24px; color:var(--ink2); font:inherit;
+                         line-height:1.4; cursor:pointer; text-align:left; overflow-wrap:anywhere; }
+  .contested .csrc .cwho { line-height:1.4; }
   .contested .csrc .cq:hover { color:var(--ink); }
   .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
   .contested .copyline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
@@ -665,7 +675,8 @@
   #detail .whytoggle { width:100%; text-align:left; padding:5px 9px; font-size:var(--text-body);
                        color:var(--muted); background:var(--panel-2); border-radius:var(--r-control); cursor:pointer; }
   #detail .whytoggle:hover { color:var(--ink); background:var(--panel-3); }
-  #detail .why .whybody { display:none; margin-top:5px; max-height:230px; overflow-y:auto; }
+  /* 5 pixels below its toggle, less the ring gutter's 6 (above). */
+  #detail .why .whybody { display:none; margin-top:-1px; max-height:230px; overflow-y:auto; }
   #detail .why.open .whybody { display:block; }
   .wfield { background:var(--panel-2); border-radius:var(--r-control); padding:6px 9px; margin-bottom:6px; }
   .wfield.hot { background:var(--bad-glass); }
@@ -707,7 +718,7 @@
    Section 29.7). */
 .card .oc-cited { font-size:var(--text-small); color:var(--ink2); margin:2px 0 6px; overflow-wrap:anywhere; }
 .card .oc-cited a { color:var(--ink); }
-.card .oc-gate { font-size:var(--text-small); color:var(--ink2); margin:6px 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+.card .oc-gate { font-size:var(--text-small); color:var(--ink2); margin:6px 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; }
 .card .ocwhy { font-size:var(--text-small); color:var(--ink2); margin:2px 0; }
 .card .prow .pwho { color:var(--ink2); }
 .card .oids .linkish { font:var(--text-small)/1.4 var(--mono); }
@@ -847,8 +858,10 @@
   /* Every check with its mark, the evidence in columns, identity before the belief rows
      (design-system.md Section 29.7). */
   #detail .waits { font-size:var(--text-small); color:var(--ink); background:var(--gold-glass); border-radius:var(--r-control);
-                   padding:2px 8px; margin:6px 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
-  .rchip .tsw { margin-left:4px; }
+                   padding:2px 4px 2px 8px; margin:6px 0; display:flex; align-items:center; gap:8px; }
+  #detail .waits .wt { flex:1 1 auto; min-width:0; }
+  #detail .waits .linkish { flex:none; padding:0 4px; }
+  .rchip .tsw { margin-left:5px; vertical-align:middle; }
   .cklist { display:flex; flex-direction:column; gap:2px; margin:4px 0; }
   .ckrow { display:flex; align-items:center; gap:6px; font-size:var(--text-small); color:var(--ink2); min-height:24px; }
   .ckrow .i { width:14px; height:14px; flex:none; color:var(--muted); }

@@ -111,3 +111,58 @@ fn view_holds_two_choices_with_one_name_each() {
         "an option that is off is drawn as if disabled"
     );
 }
+
+/// docs/design-system.md U19 and Section 10: the focus ring is seen whole. A scroll container clips
+/// what lies outside its padding box, so every container of the viewer's stylesheet that scrolls keeps
+/// a gutter of at least 6 pixels - the widest ring, 3 under prefers-contrast, plus its offset - on
+/// every side, its own or the shared gutter rule's; and the status bar, on the window's edge, draws
+/// the ring inside.
+#[test]
+fn a_focus_ring_is_never_cut_by_a_scroll_container() {
+    let css = include_str!("../assets/viewer.css");
+    let gutter = ".railbody, .dock .panels, #detail .rels, .rv-list, #detail .why .whybody { padding:6px; margin:-6px; }";
+    assert!(css.contains(gutter), "the shared ring gutter is gone");
+    assert!(
+        css.contains("#statusbar :focus-visible, .sp-row:focus-visible { outline-offset:-3px; }")
+    );
+    let guttered: Vec<&str> =
+        gutter[..gutter.find('{').unwrap()].split(',').map(str::trim).collect();
+    let px = |v: &str| v.trim_end_matches("px").parse::<f32>().unwrap_or(0.0);
+    let mut cut = Vec::new();
+    let mut rest = css;
+    while let Some(open) = rest.find('{') {
+        let selector = rest[..open].rsplit(['}', '\n']).next().unwrap_or("").trim().to_string();
+        let close = rest[open..].find('}').map(|i| open + i).unwrap_or(rest.len());
+        let body = &rest[open + 1..close];
+        rest = &rest[close.min(rest.len() - 1) + 1..];
+        let scrolls = body.split(';').any(|d| {
+            let d = d.trim().replace(' ', "");
+            (d.starts_with("overflow:")
+                || d.starts_with("overflow-y:")
+                || d.starts_with("overflow-x:"))
+                && (d.ends_with("auto") || d.ends_with("scroll"))
+        });
+        if !scrolls || selector.starts_with('@') {
+            continue;
+        }
+        let pad = body
+            .split(';')
+            .find_map(|d| d.trim().strip_prefix("padding:"))
+            .map(|v| v.split_whitespace().map(px).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let sides = match pad.len() {
+            1 => vec![pad[0]; 4],
+            2 => vec![pad[0], pad[1], pad[0], pad[1]],
+            3 => vec![pad[0], pad[1], pad[2], pad[1]],
+            4 => pad,
+            _ => vec![0.0; 4],
+        };
+        let padded = sides.iter().all(|s| *s >= 6.0);
+        for one in selector.split(',').map(str::trim) {
+            if !padded && !guttered.contains(&one) {
+                cut.push(one.to_string());
+            }
+        }
+    }
+    assert!(cut.is_empty(), "a scroll container cuts the focus ring: {cut:?}");
+}

@@ -306,7 +306,8 @@ header h1 { margin: 0 0 0 4px; color: var(--ink); font: 600 var(--text-body)/1.3
 }
 .toast.bad { background: color-mix(in srgb, var(--bad) 6%, var(--panel-2)); }
 .toast.out { opacity: 0; transition: opacity 0.12s ease-out; }
-.toast > .i { width: 16px; height: 16px; margin-top: 6px; }
+/* The kind's icon centers on the title's letters, which sit a pixel above its line's middle. */
+.toast > .i { width: 16px; height: 16px; margin-top: 5px; }
 .toast.ok > .i { color: var(--ok-ink); }
 .toast.bad > .i { color: var(--bad-ink); }
 .toast.info > .i { color: var(--ink2); }

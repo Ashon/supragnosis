@@ -2516,7 +2516,7 @@ function obsCardHtml(o) {
   if (g) {
     const by = writerOf({ source_ref: g.surface, origin_node: g.origin_node });
     const what = g.promotion ? tierName(o.effective_tier) + " by " + by : "Lowered to " + tierName(o.effective_tier) + " by " + by;
-    parts.push(html`<div class="oc-gate">${what}, ${obsWhenFull(g.at)} - <button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
+    parts.push(html`<div class="oc-gate"><span>${what}, ${obsWhenFull(g.at)}</span><button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
   }
   parts.push(html`<div class="osec">Provenance <span class="ct">${(o.attestations || []).length}</span></div>`);
   for (const a of o.attestations || []) {
@@ -3275,7 +3275,7 @@ async function fillSettleWho(host, entity) {
       q.onclick = (ev) => { ev.stopPropagation(); showObsCard(o); };
       const who = document.createElement("span");
       who.className = "cwho"; who.textContent = whoLine("", authorOf(o), shared);
-      el.replaceChildren(q, " - ", who);
+      el.replaceChildren(q, who);
     });
   });
 }
@@ -3467,6 +3467,9 @@ function relationGroups(node) {
   groups.sort((p, q) => (q.items.length - p.items.length) || p.kind.localeCompare(q.kind) || (q.out - p.out));
   return groups;
 }
+// A relation chip's mark: the ring the map draws for its tier, and none for Agent, which draws none
+// (Section 9) - an empty swatch would leave a gap in the chip.
+function chipTier(t) { return String(t) === "agent_extracted" ? "" : tierDot(t); }
 function relationGroupHtml(g, open) {
   const shown = open ? g.items : g.items.slice(0, RELATION_CHIPS);
   const rest = g.items.length - shown.length;
@@ -3476,7 +3479,7 @@ function relationGroupHtml(g, open) {
     html`<button type="button" class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
     html`title="${tipText((e.valid_to ? "Superseded, focus " : "Focus ") + other.name)}">`,
     // The relation's own trust, the map's ring for its tier (Section 29.7).
-    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}${tierDot(e.trust_tier)}</button>`]}`;
+    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}${chipTier(e.trust_tier)}</button>`]}`;
   return html`${[
     html`<div class="rgroup"><div class="rghead"><span class="i ${g.out ? "i-arrow-right" : "i-arrow-left"}" role="img" aria-label="${g.out ? "Outgoing" : "Incoming"}"></span>`,
     html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
@@ -3628,7 +3631,7 @@ function waitsHtml(node) {
   const items = needsItems().filter(it =>
     (it.kind === "proposal" && ((it.p.targets || []).includes(node.id) || it.p.into === node.id))
     || (it.kind === "contested" && it.c.id === node.id));
-  return html`${items.map(it => html`<div class="waits">Waits for you: ${itemTitle(it)} - <button type="button" class="linkish" data-waits="${it.key}">Open in Review</button></div>`)}`;
+  return html`${items.map(it => html`<div class="waits"><span class="wt">Waits for you: ${itemTitle(it)}</span><button type="button" class="linkish" data-waits="${it.key}">Open in Review</button></div>`)}`;
 }
 function renderDetail(node) {
   // The inspector is a sheet on the right; the Log and the corner controls step aside (viewer.css).
