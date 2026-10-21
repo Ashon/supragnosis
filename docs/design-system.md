@@ -27,7 +27,7 @@
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
-> is built.
+> is built. Step 46b, the app that wrote it, is specified.
 
 ## 1. Why this exists
 
@@ -1871,6 +1871,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    id, each contested value's source, Review's identity diff, every check and the evidence, what
    waits for the person on the inspector, a relation's trust, and Neither is right's sentence. The
    app that wrote an attestation (D13) is step 46b.
+46b. **The app that wrote it** (Section 29.8; D13, onboarding.md O7): the MCP client's name recorded in
+   a local table beside each attestation its session writes, store format 3, one name table in the
+   core crate, said in the who-line and the map's activity, and kept off the wire and the read tier.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -3958,3 +3961,79 @@ No row needs a principle changed.
   correction's arrival.
 - It does not change the inspector's scope line ("All here: Agent, from this Mac"), which still names
   an origin by its host as step 45 left it; graph nodes carry hosts, not sync origins.
+
+### 29.8 Step 46b: the app that wrote it
+
+**What was found.** Two AI apps on one Mac read alike everywhere a writer is named: "Agent - this
+Mac - 11:27 AM" for Claude Code and for Cursor, "An agent wrote 2 entities" on the map. The daemon
+knows which app each MCP session is - `initialize` names it, and first contact keeps it in memory
+(onboarding.md Section 5) - but nothing it writes records it, so an attestation cannot say which app
+made it (R3-02).
+
+**Decision.** The author approved D13: the MCP client's name is recorded with what the session
+writes.
+
+**How it is kept, and why there.** Step 46's review found that a field on the attestation would ride
+the sync wire unsigned (the wire carries the attestation as serialized, and a receiver keeps what
+arrives), would raise the store's `min_reader` (compatibility.md Section 3.7: an older writer's
+absorb strips it), and would need a merge rule for an echoed attestation. The name is therefore not
+part of the attestation. It is a row of a table of its own in this node's store, `attestation_app`:
+the attestation's key -> the app's name. The key is the observation's id and a hash of the
+attestation with its sync stamp left out, computed by one core function that names every field, so
+a field added later must be decided for it (P14), and a stamp added at first export does not move
+it. Nothing that is signed, synced, ordered, folded or compared reads the table.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P2 | Provenance is first-class; "who" is a delegation chain - its own example is `ashon -> claude-code@macbook`; a relayed attestation's authenticity is the origin's signature | repays on this node - the acting app is recorded beside the host and the principal; owed toward peers, which would need the name signed and a wire version (federation.md, a new row); agrees in the signature - the record never travels, so no relay can forge it |
+| P2, on self-declared identity | An agent's self-declared identity cannot be verified | agrees - the name is the app's own word in `initialize`, shown as that, read by no trust rule, check or gate |
+| P14 | Every attestation-distinguishing field is decided where it is enumerated | agrees - the key hashes every field but the stamp through one destructuring function, as `provenance_order` and the signing bytes do |
+| P17 | Nothing leaves the machine unasked | agrees - sync never sends the table; the read tier and MCP never ask for it |
+| P3 | Nothing is destroyed | agrees - a row is written once; re-keying a workspace or migrating legacy ids copies the rows to the re-created attestations' keys; excision (excision.md, not built) removes an excised observation's rows with it, the one exception |
+| P16 | A read answers alike on every node | agrees - the name is a separately labelled, node-local field, as the tier a node evaluates itself is (F13): no fold, check, projection or convergence test reads it, and only the local viewer's reads ask for it |
+| P18 | Writes are an attack surface | agrees - the name grants nothing; it is cut to 64 characters; only this node's own MCP sessions write it |
+| P24 and P5 | Degrade loudly; a failure is not an absence | agrees - recording the name never fails the write it belongs to (a failure is logged and the write stands); a backend failure reading the table is an error, never "no app"; one row that does not decode is dropped and logged, as a stored vector that does not decode is |
+| onboarding.md Section 5 and O7 | First contact is the client's own name, in memory only, "not a record of what an app did" | revised by D13: the app that wrote an attestation is now recorded, in the table above; first contact itself is unchanged - still in memory, still not served on the read tier, recorded by no hub listener, sent to no peer |
+| compatibility.md Sections 3.2, 3.7 and 5 | A change raises `min_reader` when a binary of the previous format writing to the store would lose or contradict something | agrees - format 3 adds the table and `min_reader` stays 2: a format 2 writer ignores the table, records no app for what it writes - which reads as no app, not as another app, since its attestations have keys of their own - and never rewrites a row. Its upgrade step creates the table. Revised: 3.7's last sentence reads as Section 5 does - a golden store of a format is written once a release moves past it; format 2's stays the oldest |
+| federation.md Section 3 and F2 | The wire carries the signed attestation; the content address excludes provenance | agrees - nothing on the wire or in the address changes |
+| remote-viewer.md Sections 3.2, 3.6 and V7 | The read tier answers a principal's workspaces; its event stream drops the session | revised: the read tier never asks for the app's name, and its event frame is built from an allowed list of fields, without the session or the app |
+| remote-server.md, the hub's listener | A principal's MCP session runs the same tool code as a local one | agrees with O7 - a server that serves principals records no name and its events carry none: the check is whether the server serves principals, nothing else, so the stdio server records |
+| compatibility.md Section 7 | The MCP surface is a contract | agrees - no tool's answer or resource carries the name; a test holds that |
+| architecture.md Section 2.4 | An attestation is acting host, `on_behalf_of`, workspace, `source_ref`, time, confidence, tier | agrees - the attestation is unchanged; the app is a local record beside it, said in a note there |
+| design-system.md Sections 29.6 and 29.7 | An activity row says "An agent" until an event names its app; a who-line's writer is the machine | revised: "Claude Code wrote 2 entities ...", and "Agent - Claude Code on this Mac, for alex - 11:27 AM" |
+
+No row needs a principle changed. O7 is revised by the author's D13.
+
+**Behaviour.**
+- **What is recorded.** When an MCP session on this node writes - observe, define_type, propose,
+  review - the daemon records the session's client name (from `initialize`, or the request's
+  metadata where a session skipped it), cut to 64 characters, for the attestation that write added.
+  The stdio server, which runs on this node's store for one local app, records it too. A session
+  with no name records none. A principal's session on a hub's listener records none, and its events
+  carry none. A write by the console, the CLI or a peer records none.
+- **Two writes in one millisecond** with every field alike are one attestation, and keep the first
+  app's name; any field that differs makes two attestations and two rows.
+- **One table of names.** The names the apps send are mapped to the apps `connect` lists - Claude
+  Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, OpenCode - by one table in the core crate,
+  which setup's first contact, `connect`'s names and the reads use; the app pages' copy of the names
+  is held to it by a test. A name the table does not know is shown as sent.
+- **Where it is read.** The local viewer's reads of observations (`/api/observations`, `/api/explain`'s
+  supporting rows) name each attestation's app, only for one written here (Section 29.7's rule). The
+  local event stream names the app of the session an activity came from. The viewer says it:
+  - the who-line's writer: "Agent - Claude Code on this Mac, for alex - 11:27 AM"; the machine alone
+    where no app is named;
+  - the map's activity: "Claude Code wrote 2 entities and 1 relation in infra", "Cursor searched
+    "ledger" - 8 found"; "An agent" where no app is named;
+  - Follow's notice, which says the row's sentence.
+- **Where it is not.** The read tier's reads never ask for it, and its events are built from an
+  allowed list; MCP's tools and its raw observation resource never carry it; sync never sends it.
+- **Ids that change.** Re-keying a workspace and migrating legacy ids copy each row to the re-created
+  attestation's key, inside their dry run and their idempotent re-run.
+- **The store's format** is 3: the upgrade from 2 creates the table, and `min_reader` stays 2.
+
+**What this step does not do.**
+- It does not send the app's name to a peer, which would need it signed and a wire version.
+- It does not record a name for what was written before it: those attestations read as no app.
+- It does not build excision; excision.md gains the line that removes an excised observation's rows.
