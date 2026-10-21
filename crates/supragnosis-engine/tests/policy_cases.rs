@@ -1540,3 +1540,91 @@ fn a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier() {
     assert!(!profile.blocking && profile.passed);
     assert_eq!(profile.detail, "1 human_confirmed");
 }
+
+/// design-system.md Section 29.8: what a local MCP session writes names its app on the local
+/// viewer's reads only - never on the reads the read tier and MCP use - by the name a person reads,
+/// a name the table does not know as sent and cut to 64 characters; an activity event names it too;
+/// re-keying a workspace keeps it, and a dry run writes nothing.
+#[test]
+fn an_attestation_names_its_app_on_local_reads_only() {
+    #[derive(Default)]
+    struct Seen(std::sync::Mutex<Vec<Option<String>>>);
+    impl supragnosis_core::EventSink for Seen {
+        fn emit(&self, env: &supragnosis_core::EventEnvelope) {
+            self.0.lock().unwrap().push(env.app.clone());
+        }
+    }
+    let seen = Arc::new(Seen::default());
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "host-a", WS).with_events(seen.clone());
+    let write = |app: Option<&str>, content: &str| {
+        engine
+            .as_app(app, || {
+                engine.observe(ObserveInput {
+                    content: content.into(),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: "Ledger".into(),
+                        kind: None,
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+            })
+            .expect("observe")
+            .observation_id
+    };
+    let long = "x".repeat(100);
+    let ids = [
+        write(Some("claude-code"), "written by claude code"),
+        write(Some("cursor-vscode"), "written by cursor"),
+        write(Some("some-agent"), "written by an app the table does not know"),
+        write(Some(&long), "written by a long name"),
+        write(None, "written by no app"),
+    ];
+    let named = |id: &str| {
+        let o = engine.observation_local(id, None).expect("read").expect("row");
+        o.attestations[o.author].app.clone()
+    };
+    assert_eq!(named(&ids[0]).as_deref(), Some("Claude Code"));
+    assert_eq!(named(&ids[1]).as_deref(), Some("Cursor"));
+    assert_eq!(named(&ids[2]).as_deref(), Some("some-agent"));
+    assert_eq!(named(&ids[3]).map(|n| n.chars().count()), Some(64));
+    assert_eq!(named(&ids[4]), None);
+    // The reads the read tier and MCP use never ask.
+    for o in engine.observation_log(None, None, None).expect("read") {
+        assert!(o.attestations.iter().all(|a| a.app.is_none()), "{} names its app", o.id);
+    }
+    assert!(engine.observation(&ids[0], None).expect("read").expect("row").attestations[0]
+        .app
+        .is_none());
+    let ledger = Entity::make_id(WS, "Ledger");
+    let local = engine.explain_entity_local(&ledger).expect("read").expect("entity");
+    assert!(local
+        .supporting
+        .iter()
+        .any(|o| o.attestations.iter().any(|a| a.app.as_deref() == Some("Claude Code"))));
+    let plain = engine.explain_entity(&ledger).expect("read").expect("entity");
+    assert!(plain.supporting.iter().all(|o| o.attestations.iter().all(|a| a.app.is_none())));
+    // The event names it, by the name a person reads.
+    engine.emit_from(
+        Some("claude-code"),
+        supragnosis_core::Event::Traverse { start: ledger.clone(), reached: vec![] },
+    );
+    assert_eq!(seen.0.lock().unwrap().last().cloned().flatten().as_deref(), Some("Claude Code"));
+
+    // Re-keying keeps it; a dry run writes nothing.
+    engine.rekey_workspace(WS, "moved", true).expect("dry run");
+    assert!(engine
+        .observation_log_local(Some("moved"), None, None)
+        .expect("read")
+        .is_empty());
+    engine.rekey_workspace(WS, "moved", false).expect("rekey");
+    let moved = engine.observation_log_local(Some("moved"), None, None).expect("read");
+    let claude = moved.iter().find(|o| o.content == "written by claude code").expect("moved row");
+    assert_eq!(claude.attestations[claude.author].app.as_deref(), Some("Claude Code"));
+}

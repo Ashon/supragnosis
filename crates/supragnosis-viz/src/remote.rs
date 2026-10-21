@@ -177,11 +177,13 @@ pub fn surface(reader: &Reader, servable: &Servable) -> Value {
 }
 
 /// One `/api/events` frame as the read tier relays it (Section 3.6): an `observe` in a workspace the
-/// reader may read and the hub may serve, without the session it came from. Every other event -
-/// searches, lookups, traversals, sync rounds - is somebody's activity, not knowledge, and is
-/// dropped (V7).
+/// reader may read and the hub may serve, built from an allowed list of its fields - never the
+/// session it came from or the app that wrote it (V7, design-system.md Section 29.8). Every other
+/// event - searches, lookups, traversals, sync rounds - is somebody's activity, not knowledge, and is
+/// dropped.
 pub fn filter_event(json: &str, reader: &Reader, servable: &Servable) -> Option<String> {
-    let mut v: Value = serde_json::from_str(json).ok()?;
+    const ALLOWED: [&str; 5] = ["kind", "observation", "entities", "relations", "workspace"];
+    let v: Value = serde_json::from_str(json).ok()?;
     if v.get("kind").and_then(Value::as_str) != Some("observe") {
         return None;
     }
@@ -189,8 +191,13 @@ pub fn filter_event(json: &str, reader: &Reader, servable: &Servable) -> Option<
     if !reader.readable.contains(&ws) || servable(&ws).is_err() {
         return None;
     }
-    v.as_object_mut()?.remove("session");
-    Some(v.to_string())
+    let frame: serde_json::Map<String, Value> = v
+        .as_object()?
+        .iter()
+        .filter(|(k, _)| ALLOWED.contains(&k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    Some(Value::Object(frame).to_string())
 }
 
 fn param(query: &str, key: &str) -> Option<String> {

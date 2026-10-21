@@ -484,28 +484,9 @@ pub fn text_row(e: &Event) -> String {
     }
 }
 
-/// The app a client name from MCP `initialize` belongs to (Section 5), as the apps send it. A name
-/// this table does not know is shown as sent, never guessed.
-pub fn client_app(name: &str) -> Option<&'static str> {
-    let n = name.trim().to_ascii_lowercase();
-    if n.starts_with("claude-code") {
-        Some("claude-code")
-    } else if n == "claude-ai" || n.starts_with("claude-desktop") || n == "claude" {
-        Some("claude-desktop")
-    } else if n.contains("cursor") {
-        Some("cursor")
-    } else if n.contains("visual studio code") || n == "vscode" || n.starts_with("code-") {
-        Some("vscode")
-    } else if n.starts_with("codex") {
-        Some("codex")
-    } else if n.starts_with("gemini") {
-        Some("gemini")
-    } else if n.starts_with("opencode") {
-        Some("opencode")
-    } else {
-        None
-    }
-}
+/// The app a client name from MCP `initialize` belongs to: the core's one table (design-system.md
+/// Section 29.8).
+pub use supragnosis_core::client_app;
 
 /// How long ago `then_ms` was, at `now_ms`, in the words a row shows.
 pub fn ago(then_ms: u64, now_ms: u64) -> String {

@@ -301,15 +301,21 @@ fn the_maps_activity_speaks_in_sentences() {
     let all =
         [body("wroteSaid"), body("syncSaid"), body("activitySaid"), handle.to_string()].concat();
     for said in [
-        "\"An agent wrote \"",
-        "\"An agent searched \\\"\"",
-        "\"An agent looked up \"",
-        "\"An agent followed \"",
+        "actorOf(ev) + \" wrote \"",
+        "actorOf(ev) + \" searched \\\"\"",
+        "actorOf(ev) + \" looked up \"",
+        "actorOf(ev) + \" followed \"",
         "\" sent \"",
         "\" read \"",
     ] {
         assert!(all.contains(said), "the activity does not say {said}");
     }
+    // Who acted is the app the local event names, else "An agent" (design-system.md Section 29.8).
+    assert!(SCRIPT.contains("function actorOf(ev) { return ev.app || \"An agent\"; }"));
+    assert!(
+        SCRIPT.contains("return a.app && mine ? a.app + \" on \" + machine : machine;"),
+        "the who-line does not name the app"
+    );
     assert!(handle.contains("\"Agents used \" + plural(footprint.size, \"entity\", \"entities\")"));
     assert!(!handle.contains("`session ${"), "the status bar names the session by its id");
 }
@@ -371,4 +377,24 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
         "a relation draws no trust"
     );
     assert!(body("waitsHtml").contains("Waits for you: "));
+}
+
+/// design-system.md Section 29.8: one table of the AI apps' names. The core crate holds it; the app's
+/// pages (`kit.js`) and its shell (`main.rs`) keep copies, which say the same, app for app.
+#[test]
+fn the_app_names_are_one_table() {
+    let kit = include_str!("../../../app/assets/kit.js");
+    let shell = include_str!("../../../app/src/main.rs");
+    for (id, name) in supragnosis_core::AI_APPS {
+        let key = if id.contains('-') {
+            format!("\"{id}\": \"{name}\"")
+        } else {
+            format!("{id}: \"{name}\"")
+        };
+        assert!(kit.contains(&key), "kit.js does not name {id} {name}");
+        assert!(
+            shell.contains(&format!("(\"{id}\", \"{name}\")")),
+            "the shell does not name {id} {name}"
+        );
+    }
 }

@@ -47,6 +47,11 @@ const META: TableDefinition<&str, &str> = TableDefinition::new("meta");
 /// that costs one needless reproject and loses nothing.
 const OWED: TableDefinition<&str, &str> = TableDefinition::new("owed_projection");
 
+/// The app that wrote each attestation, by `attestation_key` (design-system.md Section 29.8): this
+/// node's own record, never on the wire. Format 3. An older build never opens it and records no app
+/// for what it writes, which reads as no app; it never rewrites a row here.
+const APPS: TableDefinition<&str, &str> = TableDefinition::new("attestation_app");
+
 /// Embeddings, in their own tables under the same id.
 ///
 /// Not a layout preference - a requirement. Both `Observation::embedding` and `Entity::embedding`
@@ -78,7 +83,7 @@ fn backend(e: impl std::fmt::Display) -> StoreError {
 
 /// The store format this build writes (docs/compatibility.md Section 3). Section 3.7 says what
 /// raises it; a raise adds its step to [`upgrade_to`], its row to Section 3.2 and a golden store.
-pub const FORMAT: u32 = 2;
+pub const FORMAT: u32 = 3;
 
 /// The lowest format a binary must implement to share a store this build has written. Raised when
 /// a binary of an earlier format, writing here, would lose or contradict something (Section 3.7).
@@ -201,6 +206,12 @@ fn upgrade_to(txn: &redb::WriteTransaction, to: u32) -> Result<(), StoreError> {
                     owed.insert(id.map_err(backend)?.value(), ws.value()).map_err(backend)?;
                 }
             }
+            Ok(())
+        }
+        // Format 3 is the table of the app that wrote each attestation: it starts empty, since what
+        // was written before it records no app (design-system.md Section 29.8).
+        3 => {
+            txn.open_table(APPS).map_err(backend)?;
             Ok(())
         }
         _ => Err(StoreError::Backend(format!("no upgrade step to store format {to}"))),
@@ -327,6 +338,7 @@ impl RedbStore {
             txn.open_table(RELATIONS).map_err(backend)?;
             txn.open_table(META).map_err(backend)?;
             txn.open_table(OWED).map_err(backend)?;
+            txn.open_table(APPS).map_err(backend)?;
             txn.open_table(OBS_VEC).map_err(backend)?;
             txn.open_table(ENT_VEC).map_err(backend)?;
             txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
@@ -813,6 +825,33 @@ impl AssertionStore for RedbStore {
 }
 
 impl KnowledgeStore for RedbStore {
+    fn record_attestation_app(&self, key: &str, app: &str) -> Result<(), StoreError> {
+        let txn = self.db.begin_write().map_err(backend)?;
+        {
+            let mut t = txn.open_table(APPS).map_err(backend)?;
+            // Written once: the first name stays (design-system.md Section 29.8).
+            if t.get(key).map_err(backend)?.is_none() {
+                t.insert(key, app).map_err(backend)?;
+            }
+        }
+        txn.commit().map_err(backend)
+    }
+
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, StoreError> {
+        let txn = self.db.begin_read().map_err(backend)?;
+        let t = txn.open_table(APPS).map_err(backend)?;
+        let mut out = std::collections::BTreeMap::new();
+        for k in keys {
+            if let Some(v) = t.get(k.as_str()).map_err(backend)? {
+                out.insert(k.clone(), v.value().to_string());
+            }
+        }
+        Ok(out)
+    }
+
     fn attach_observation_embeddings(
         &self,
         vectors: &[(String, Vec<f32>)],
@@ -1201,6 +1240,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
     }
 
+    /// compatibility.md Sections 3.2 and 3.7, design-system.md Section 29.8: a format 2 store is
+    /// upgraded to 3 in place - the table of the app that wrote each attestation is created empty -
+    /// and min_reader stays 2, so no copy is kept beside it.
+    #[test]
+    fn a_format_2_store_gains_the_app_table_and_keeps_its_readers() {
+        let path = tmp_path();
+        {
+            let store = RedbStore::open(&path).expect("open");
+            let txn = store.db.begin_write().expect("txn");
+            txn.delete_table(APPS).expect("drop the app table");
+            {
+                let mut meta = txn.open_table(META).expect("meta");
+                meta.insert("format", "2").expect("format");
+                meta.insert("min_reader", "2").expect("min_reader");
+            }
+            txn.commit().expect("commit");
+        }
+        let store = RedbStore::open(&path).expect("upgrade");
+        assert_eq!(
+            store.format().expect("format"),
+            StoreFormat { format: 3, min_reader: 2, format_by: Some(RELEASE.to_string()) }
+        );
+        assert!(store.attestation_apps(&["k".to_string()]).expect("the table opens").is_empty());
+        drop(store);
+        assert!(!copy_beside(&path, 2).exists(), "min_reader did not move, so no copy");
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
     /// Sections 3.4 and 3.5: without the ledger a store is format 1. Upgrading it raises min_reader
     /// past what v0.4.3 and earlier can share, so the store as they knew it is copied aside first -
     /// and the copy is a format 1 store, with no ledger in it.
@@ -1220,7 +1287,7 @@ mod tests {
         let store = RedbStore::open(&path).expect("upgrade");
         assert_eq!(
             store.format().expect("format"),
-            StoreFormat { format: 2, min_reader: 2, format_by: Some(RELEASE.to_string()) }
+            StoreFormat { format: FORMAT, min_reader: 2, format_by: Some(RELEASE.to_string()) }
         );
         assert_eq!(store.owed_projections().expect("ledger").len(), 1, "the step from 1 to 2 ran");
         drop(store);

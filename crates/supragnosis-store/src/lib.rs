@@ -29,6 +29,8 @@ pub struct InMemoryStore {
     /// nothing survives this store's process, so the engine's repayment logic runs against the same
     /// contract in every test that uses it.
     owed: RwLock<std::collections::BTreeMap<String, String>>,
+    /// The app that wrote each attestation, by its key (design-system.md Section 29.8).
+    apps: RwLock<std::collections::BTreeMap<String, String>>,
 }
 
 impl InMemoryStore {
@@ -343,6 +345,26 @@ impl KnowledgeStore for InMemoryStore {
             }
         }
         Ok(attached)
+    }
+
+    fn record_attestation_app(&self, key: &str, app: &str) -> Result<(), StoreError> {
+        self.apps
+            .write()
+            .unwrap()
+            .entry(key.to_string())
+            .or_insert_with(|| app.to_string());
+        Ok(())
+    }
+
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, StoreError> {
+        let apps = self.apps.read().unwrap();
+        Ok(keys
+            .iter()
+            .filter_map(|k| apps.get(k).map(|a| (k.clone(), a.clone())))
+            .collect())
     }
 }
 

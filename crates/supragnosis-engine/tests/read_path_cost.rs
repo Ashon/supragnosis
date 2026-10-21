@@ -181,6 +181,15 @@ impl KnowledgeStore for CountingStore {
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
         self.inner.clear_owed(ids)
     }
+    fn record_attestation_app(&self, key: &str, app: &str) -> Result<(), StoreError> {
+        self.inner.record_attestation_app(key, app)
+    }
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, StoreError> {
+        self.inner.attestation_apps(keys)
+    }
 }
 
 /// A workspace with entities, relations, a merged entity_merge and a merged claim_promotion - so
@@ -592,6 +601,15 @@ impl KnowledgeStore for ReversedStore {
         vectors: &[(String, Vec<f32>)],
     ) -> Result<usize, StoreError> {
         self.0.attach_observation_embeddings(vectors)
+    }
+    fn record_attestation_app(&self, key: &str, app: &str) -> Result<(), StoreError> {
+        self.0.record_attestation_app(key, app)
+    }
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, StoreError> {
+        self.0.attestation_apps(keys)
     }
 }
 

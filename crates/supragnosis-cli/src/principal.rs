@@ -850,7 +850,10 @@ mod tests {
     #[tokio::test]
     async fn the_read_tier_answers_only_within_the_grants() {
         let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "hub", "default"));
-        observe(&engine, "docs", "the docs live in the wiki", "wiki");
+        // Written by a local app: the record stays this node's (design-system.md Section 29.8).
+        engine.as_app(Some("claude-code"), || {
+            observe(&engine, "docs", "the docs live in the wiki", "wiki")
+        });
         observe(&engine, "team", "the team uses rust", "rust");
         observe(&engine, "secret", "the launch date is friday", "launch");
         let (url, cred) = hub(engine.clone(), BTreeSet::new()).await;
@@ -891,9 +894,13 @@ mod tests {
         // One observation by id (design-system.md Section 29.7): a granted one answers; one outside
         // the grants reads exactly as an unknown id does.
         let id_of = |ws: &str| engine.observation_log(Some(ws), None, None).unwrap()[0].id.clone();
+
         let (status, _, body) =
             viz(&base, c, &format!("/api/observations?id={}", id_of("docs")), None).await;
         assert!(status == 200 && body.contains("the docs live in the wiki"), "{status} {body}");
+        assert!(!body.contains("Claude Code") && !body.contains("\"app\""), "{body}");
+        let (_, _, log) = viz(&base, c, "/api/observations?workspace=docs", None).await;
+        assert!(!log.contains("Claude Code"), "{log}");
         let a = viz(&base, c, &format!("/api/observations?id={}", id_of("secret")), None).await;
         let b = viz(&base, c, "/api/observations?id=0000", None).await;
         assert_eq!((a.0, a.2), (b.0, b.2), "an id outside the grants reads as unknown");
@@ -1022,7 +1029,8 @@ mod tests {
             nodes: vec![],
             mode: "keyword".into(),
         });
-        engine.emit(observed("team"));
+        // The local event names the writing app; the read tier's frame never does (Section 29.8).
+        engine.emit_from(Some("claude-code"), observed("team"));
 
         let mut seen = String::new();
         while !seen.contains("\"workspace\":\"team\"") {
@@ -1033,6 +1041,7 @@ mod tests {
         }
         assert!(!seen.contains("secret") && !seen.contains("launch"), "{seen}");
         assert!(!seen.contains("operator-session"), "no session ids: {seen}");
+        assert!(!seen.contains("Claude Code") && !seen.contains("\"app\""), "no app: {seen}");
     }
 
     #[tokio::test]

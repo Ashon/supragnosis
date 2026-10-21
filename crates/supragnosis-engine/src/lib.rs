@@ -8,15 +8,21 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use supragnosis_core::{
-    evaluated_tier, hyperedge_id, normalize_relation_kind, observation_content_id, ordering_hlc,
-    verdict_grant_ceiling, AssertionStore, Assertions, BeliefCandidate, Clock, EmbeddingProvider,
-    Entity, EntityAssertion, Hlc, KnowledgeStore, Observation, ProposalEventAssertion,
-    ProposalEventKind, Provenance, Relation, RelationAssertion, ResolutionPolicy, SearchHit,
-    SearchHitKind, StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TypeDefAssertion,
-    VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
+    attestation_key, evaluated_tier, hyperedge_id, normalize_relation_kind, observation_content_id,
+    ordering_hlc, verdict_grant_ceiling, AssertionStore, Assertions, BeliefCandidate, Clock,
+    EmbeddingProvider, Entity, EntityAssertion, Hlc, KnowledgeStore, Observation,
+    ProposalEventAssertion, ProposalEventKind, Provenance, Relation, RelationAssertion,
+    ResolutionPolicy, SearchHit, SearchHitKind, StoreError, SystemClock, TierWeighted, Timestamp,
+    TraverseHit, TypeDefAssertion, VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE,
+    VERDICT_SURFACE_PREFIX,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
 pub use supragnosis_core::{Event, EventEnvelope, EventSink, TrustTier, TypeTarget};
+
+thread_local! {
+    /// The client name of the local MCP session this thread writes for ([`Engine::as_app`]).
+    static WRITING_APP: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
 
 /// Ingest input (the domain input mapped from the transport DTO).
 pub struct ObserveInput {
@@ -1199,20 +1205,33 @@ fn reject_reserved_source_ref(source_ref: Option<&str>) -> Result<(), ObserveErr
 /// tier promotion by an operator act (P18: the tier is the receiver's evaluation, and re-keying
 /// must not raise it). `granted` lowers it further when a merged demotion applied to `obs`, since
 /// the gate events do not follow the row. `None` when `obs` has no attestation (P2 forbids it).
+/// One attestation as [`recreated`] re-creates it: in the new workspace, at the tier it evaluates to
+/// (clamped by a demotion that applied to it), unstamped.
+fn recreated_attestation(
+    p: &Provenance,
+    workspace: &str,
+    granted: Option<TrustTier>,
+) -> Provenance {
+    let mut p = p.clone();
+    p.workspace = workspace.to_string();
+    p.trust_tier = evaluated_tier(&p);
+    if let Some(g) = granted {
+        p.trust_tier = p.trust_tier.min(g);
+    }
+    p.sync = None;
+    p
+}
+
 fn recreated(
     obs: &Observation,
     workspace: &str,
     granted: Option<TrustTier>,
 ) -> Option<Observation> {
-    let mut provs = obs.provenance.clone();
-    for p in &mut provs {
-        p.workspace = workspace.to_string();
-        p.trust_tier = evaluated_tier(p);
-        if let Some(g) = granted {
-            p.trust_tier = p.trust_tier.min(g);
-        }
-        p.sync = None;
-    }
+    let mut provs: Vec<Provenance> = obs
+        .provenance
+        .iter()
+        .map(|p| recreated_attestation(p, workspace, granted))
+        .collect();
     if provs.is_empty() {
         return None;
     }
@@ -1383,6 +1402,11 @@ pub struct AttestationSummary {
     /// The origin node_id when the attestation is sync-stamped (federation provenance); absent for local.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origin_node: Option<String>,
+    /// The AI app that wrote it, as this node recorded it, by the name a person reads - only on the
+    /// local viewer's reads (design-system.md Section 29.8). A node-local field: no fold, check or
+    /// projection reads it, and the read tier and MCP never ask for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 /// A named entity an observation asserts (spelling + resolved canonical id), so a log row links back
@@ -1678,8 +1702,72 @@ impl Engine {
     /// Carries the session id in the envelope (footprint group key). The caller (MCP tool handler) invokes it per
     /// intent - a side channel unrelated to the storage/resolution logic.
     pub fn emit(&self, event: Event) {
+        self.emit_from(None, event);
+    }
+
+    /// [`Engine::emit`], naming the app of the session the activity came from - a local MCP
+    /// session's, never a remote principal's (design-system.md Section 29.8).
+    pub fn emit_from(&self, app: Option<&str>, event: Event) {
         if let Some(sink) = &self.events {
-            sink.emit(&EventEnvelope { session: self.session.clone(), event });
+            sink.emit(&EventEnvelope {
+                session: self.session.clone(),
+                // By the name a person reads (the core's table), as an attestation's app is said.
+                app: app.map(supragnosis_core::client_said),
+                event,
+            });
+        }
+    }
+
+    /// Runs `f` with what it writes attributed to `app`, the client name of the local MCP session
+    /// that asked (design-system.md Section 29.8): each attestation `f` adds records it, in this
+    /// node's own table. `None` attributes nothing. The attribution is the calling thread's, as the
+    /// write is.
+    pub fn as_app<T>(&self, app: Option<&str>, f: impl FnOnce() -> T) -> T {
+        let was = WRITING_APP.with(|a| a.replace(app.and_then(supragnosis_core::client_recorded)));
+        let out = f();
+        WRITING_APP.with(|a| a.replace(was));
+        out
+    }
+
+    /// Carries the apps recorded for `obs`'s attestations to the ones [`recreated`] made of them under
+    /// `fresh_id` (design-system.md Section 29.8): re-keying a workspace and migrating legacy ids
+    /// keep which app wrote what. A row already there keeps its name, so a re-run is idempotent.
+    fn carry_apps(
+        &self,
+        obs: &Observation,
+        fresh_id: &str,
+        workspace: &str,
+        granted: Option<TrustTier>,
+    ) -> Result<(), StoreError> {
+        let pairs: Vec<(String, String)> = obs
+            .provenance
+            .iter()
+            .map(|p| {
+                (
+                    attestation_key(&obs.id, p),
+                    attestation_key(fresh_id, &recreated_attestation(p, workspace, granted)),
+                )
+            })
+            .collect();
+        let found = self
+            .store
+            .attestation_apps(&pairs.iter().map(|(o, _)| o.clone()).collect::<Vec<_>>())?;
+        for (old, new) in pairs {
+            if let Some(app) = found.get(&old) {
+                self.store.record_attestation_app(&new, app)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Records the app this thread writes for, under the attestation's key. Recording never fails
+    /// the write it belongs to (P24): a failure is logged and the write stands.
+    fn note_app(&self, key: Option<&str>) {
+        let (Some(key), Some(app)) = (key, WRITING_APP.with(|a| a.borrow().clone())) else {
+            return;
+        };
+        if let Err(e) = self.store.record_attestation_app(key, &app) {
+            tracing::warn!(error = %e, "the app that wrote an attestation was not recorded");
         }
     }
 
@@ -1820,7 +1908,9 @@ impl Engine {
         // Embedding (above, probabilistic/CPU) is left outside the lock; we lock from here. The read path is not locked.
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
+        let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
         self.store.add_observation(obs)?;
+        self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Resolution write path (resolution-identity.md Section 4): the observation is in the log,
@@ -1939,7 +2029,9 @@ impl Engine {
         let observation_id = obs.id.clone();
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
+        let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
         self.store.add_observation(obs)?;
+        self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // The glossary is a read-time fold; nothing materialized depends on this row, so the append
         // owes no projection beyond itself (K2).
@@ -2599,7 +2691,9 @@ impl Engine {
         }
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
+        let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
         self.store.add_observation(obs)?;
+        self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
         self.repaid(&id);
@@ -2676,7 +2770,9 @@ impl Engine {
         let id = obs.id.clone();
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
+        let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
         self.store.add_observation(obs)?;
+        self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
         self.repaid(&id);
@@ -4464,9 +4560,13 @@ impl Engine {
             let Some(fresh) = recreated(&obs, to, granted) else {
                 continue; // unreachable by construction (P2), but never panic on a stored row
             };
-            // Idempotent: a second run finds the target already recording this origin and stops.
+            // Idempotent: a second run finds the target already recording this origin and stops -
+            // having carried the apps, which a run stopped between the two writes may have missed.
             if let Some(existing) = self.store.get_observation(&fresh.id)? {
                 if existing.derived_from.contains(&obs.id) {
+                    if !dry_run {
+                        self.carry_apps(&obs, &fresh.id, to, granted)?;
+                    }
                     report.already += 1;
                     continue;
                 }
@@ -4475,7 +4575,9 @@ impl Engine {
                 report.promotions_left_behind += 1;
             }
             if !dry_run {
+                let fresh_id = fresh.id.clone();
                 self.store.add_observation(fresh)?;
+                self.carry_apps(&obs, &fresh_id, to, granted)?;
             }
             report.moved += 1;
         }
@@ -4515,13 +4617,16 @@ impl Engine {
             };
             if let Some(existing) = self.store.get_observation(&fresh.id)? {
                 if existing.derived_from.contains(&obs.id) {
+                    self.carry_apps(&obs, &fresh.id, workspace, granted)?;
                     continue; // already migrated
                 }
             }
             if promotion_left_behind(&obs, granted) {
                 report.promotions_left_behind += 1;
             }
+            let fresh_id = fresh.id.clone();
             self.store.add_observation(fresh)?;
+            self.carry_apps(&obs, &fresh_id, workspace, granted)?;
             report.migrated += 1;
         }
         if report.migrated > 0 {
@@ -4882,7 +4987,19 @@ impl Engine {
         entity: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<ObsSummary>, StoreError> {
-        self.observation_rows(workspace, entity, limit, None)
+        self.observation_rows(workspace, entity, limit, None, false)
+    }
+
+    /// [`Engine::observation_log`] for the local viewer: each attestation names the app that wrote
+    /// it where this node recorded one (design-system.md Section 29.8). Only the local console's
+    /// routes call it; the read tier and MCP read [`Engine::observation_log`].
+    pub fn observation_log_local(
+        &self,
+        workspace: Option<&str>,
+        entity: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ObsSummary>, StoreError> {
+        self.observation_rows(workspace, entity, limit, None, true)
     }
 
     /// One observation by its id, as [`Engine::observation_log`] answers it in `workspace` (every
@@ -4893,7 +5010,19 @@ impl Engine {
         id: &str,
         workspace: Option<&str>,
     ) -> Result<Option<ObsSummary>, StoreError> {
-        Ok(self.observation_rows(workspace, None, None, Some(id))?.into_iter().next())
+        Ok(self
+            .observation_rows(workspace, None, None, Some(id), false)?
+            .into_iter()
+            .next())
+    }
+
+    /// [`Engine::observation`] for the local viewer, naming each attestation's app.
+    pub fn observation_local(
+        &self,
+        id: &str,
+        workspace: Option<&str>,
+    ) -> Result<Option<ObsSummary>, StoreError> {
+        Ok(self.observation_rows(workspace, None, None, Some(id), true)?.into_iter().next())
     }
 
     /// The workspace an observation was written to, or `None` for an id no workspace holds - what
@@ -4913,6 +5042,7 @@ impl Engine {
         entity: Option<&str>,
         limit: Option<usize>,
         only: Option<&str>,
+        apps: bool,
     ) -> Result<Vec<ObsSummary>, StoreError> {
         let cx = &ReadCtx::default();
         let fwd = self.merge_forwarding(workspace, cx)?;
@@ -5000,6 +5130,8 @@ impl Engine {
             id: id.to_string(),
         };
         let mut out: Vec<ObsSummary> = Vec::new();
+        // Each row's attestation keys, in its attestations' order, when the read names apps.
+        let mut app_keys: HashMap<String, Vec<String>> = HashMap::new();
         for obs in self.log(workspace, cx)?.iter() {
             if only.is_some_and(|o| o != obs.id) {
                 continue;
@@ -5025,10 +5157,11 @@ impl Engine {
                     continue;
                 }
             }
-            let attestations = obs
+            let attestations: Vec<AttestationSummary> = obs
                 .provenance
                 .iter()
                 .map(|p| AttestationSummary {
+                    app: None,
                     host: p.host.clone(),
                     on_behalf_of: p.on_behalf_of.clone(),
                     source_ref: p.source_ref.clone(),
@@ -5077,6 +5210,12 @@ impl Engine {
                     to: ra.to.clone(),
                 })
                 .collect();
+            if apps {
+                app_keys.insert(
+                    obs.id.clone(),
+                    obs.provenance.iter().map(|p| attestation_key(&obs.id, p)).collect(),
+                );
+            }
             out.push(ObsSummary {
                 hlc: ordering_hlc(obs),
                 effective_tier: effective_tier(obs, &gates),
@@ -5097,7 +5236,38 @@ impl Engine {
         if let Some(n) = limit {
             out.truncate(n);
         }
+        if apps {
+            self.name_apps(&mut out, &app_keys)?;
+        }
         Ok(out)
+    }
+
+    /// Names each attestation's app where this node recorded one (design-system.md Section 29.8).
+    /// A row exists only for what this node's own sessions wrote, so a peer's attestation is never
+    /// named. A backend failure is an error, not "no app" (Principle 5).
+    fn name_apps(
+        &self,
+        rows: &mut [ObsSummary],
+        app_keys: &HashMap<String, Vec<String>>,
+    ) -> Result<(), StoreError> {
+        let mut keys: Vec<String> = Vec::new();
+        let mut at: Vec<(usize, usize, String)> = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            for (j, key) in app_keys.get(&row.id).into_iter().flatten().enumerate() {
+                keys.push(key.clone());
+                at.push((i, j, key.clone()));
+            }
+        }
+        if keys.is_empty() {
+            return Ok(());
+        }
+        let found = self.store.attestation_apps(&keys)?;
+        for (i, j, key) in at {
+            if let (Some(name), Some(a)) = (found.get(&key), rows[i].attestations.get_mut(j)) {
+                a.app = Some(supragnosis_core::client_said(name));
+            }
+        }
+        Ok(())
     }
 
     /// "Why is this node projected this way" (observability): the per-field belief resolution
@@ -5108,6 +5278,23 @@ impl Engine {
     /// uses. `None` iff the id resolves to no entity (absence, Principle 5). A merged-away id
     /// forwards to its canonical entity (Principle 15), like [`Engine::get_entity`].
     pub fn explain_entity(&self, entity_id: &str) -> Result<Option<EntityExplain>, StoreError> {
+        self.explain_entity_as(entity_id, false)
+    }
+
+    /// [`Engine::explain_entity`] for the local viewer: its supporting rows name each attestation's
+    /// app (design-system.md Section 29.8).
+    pub fn explain_entity_local(
+        &self,
+        entity_id: &str,
+    ) -> Result<Option<EntityExplain>, StoreError> {
+        self.explain_entity_as(entity_id, true)
+    }
+
+    fn explain_entity_as(
+        &self,
+        entity_id: &str,
+        apps: bool,
+    ) -> Result<Option<EntityExplain>, StoreError> {
         let cx = &ReadCtx::default();
         let Some(view) = self.get_entity(entity_id)? else {
             return Ok(None);
@@ -5188,7 +5375,7 @@ impl Engine {
             },
         ];
 
-        let supporting = self.observation_log(ws.as_deref(), Some(&canon_id), None)?;
+        let supporting = self.observation_rows(ws.as_deref(), Some(&canon_id), None, None, apps)?;
         Ok(Some(EntityExplain {
             id: canon_id,
             name: view.entity.canonical_name,
