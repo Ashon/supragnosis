@@ -860,7 +860,7 @@ mod tests {
         assert_eq!(viz(&base, None, "/api/graph", None).await.0, 401, "V1: no anonymous read");
         let (status, _, page) = viz(&base, c, "/", None).await;
         assert!(
-            status == 200 && page.contains("<title>supragnosis</title>"),
+            status == 200 && page.contains("<title>Graph - Supragnosis</title>"),
             "the page: {status}"
         );
 

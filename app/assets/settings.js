@@ -15,10 +15,10 @@ const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.
 // ---- State -----------------------------------------------------------------------------------
 
 const SECTIONS = [
-  { id: "server", label: "Server", icon: "server", blurb: "The supragnosis server this Mac's AI apps use. A switch applies from each app's next session." },
-  { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches supragnosis. Every app goes through the bridge, which keeps no copy of the token and follows the server above." },
-  { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The supragnosis daemon on this Mac: the store your AI apps use when This Mac is the server." },
-  { id: "sync", label: "Sync", icon: "network", blurb: "How this Mac's knowledge travels between supragnosis nodes: the hubs it syncs to and, when it is a hub, what each peer may read." },
+  { id: "server", label: "Server", icon: "server", blurb: "The Supragnosis server this Mac's AI apps use. A switch applies from each app's next session." },
+  { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches Supragnosis. Every app goes through the bridge, which keeps no copy of the token and follows the server chosen in Server." },
+  { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The Supragnosis daemon on this Mac: the store your AI apps use when This Mac is the server." },
+  { id: "sync", label: "Sync", icon: "network", blurb: "How this Mac's knowledge travels between machines that run Supragnosis: the hubs it syncs to and, when it is a hub, what each peer may read." },
   { id: "about", label: "About", icon: "info", blurb: "Versions and where things live." },
 ];
 
@@ -34,7 +34,11 @@ function current() {
 
 // ---- Status summaries ---------------------------------------------------------------------------
 
+// "Answering" is said of a remote server only; This Mac's row says the daemon's word (Section 9's
+// state words, design-system.md Section 29.6).
 function serverStatus(server) {
+  const local = server && server.profiles && server.profiles.some((p) => p.active && !p.remote);
+  if (local && state && state.daemon) { const st = daemonStatus(state.daemon); return { kind: st.kind, text: st.title }; }
   const c = server && server.check;
   if (!c || c.answering === undefined) return { kind: "", text: "" };
   if (c.answering && c.credential === false) return { kind: "warn", text: "Credential refused" };
@@ -45,17 +49,21 @@ function serverStatus(server) {
 function daemonStatus(d) {
   if (!d) return { kind: "", title: "", detail: "" };
   if (d.remote) return { kind: "", title: "Not in use", detail: "AI apps use the server \"" + d.remote + "\"" };
-  if (d.situation === "conflict") return { kind: "bad", title: "Two managers claim the daemon", detail: d.line };
+  if (d.situation === "conflict") return { kind: "bad", title: "Two managers run Supragnosis", detail: "supragnosis status names them; stop the one you did not choose." };
   // A store indexed by another model keeps the daemon from starting, and a restart fails the same
   // way (docs/settings-page.md Section 3.3): the card says why and holds Rebuild index instead.
   const c = d.embedder_conflict;
   if (c) return { kind: "bad", title: "The search index needs rebuilding",
     detail: "Indexed by " + c.recorded + ", and the daemon runs " + c.daemon + " - it cannot start until the index is rebuilt" };
   if (d.running && d.installed && d.running !== d.installed)
-    return { kind: "warn", title: "Restart to update", detail: d.running + " is running, " + d.installed + " is installed" };
+    return { kind: "warn", title: "Update ready - restart", detail: d.running + " is running, " + d.installed + " is installed" };
   const owed = d.store && d.store.owed_projections;
-  if (d.answering === false || !d.running) return { kind: "bad", title: "Not running", detail: d.line };
-  if (owed) return { kind: "warn", title: "Running, repairing", detail: owed + " projections owed" };
+  if (d.answering === false || !d.running) {
+    if (d.shell === "starting") return { kind: "", title: "Starting...", detail: "" };
+    if (d.shell === "failed") return { kind: "bad", title: "Could not start", detail: d.cause || "" };
+    return { kind: "bad", title: "Stopped", detail: "Nothing runs the daemon. Restart starts it." };
+  }
+  if (owed) return { kind: "warn", title: "Repairing - " + owed + (owed === 1 ? " item left" : " items left"), detail: [d.running, d.who].filter(Boolean).join(" - ") };
   return { kind: "ok", title: "Running", detail: [d.running, d.who].filter(Boolean).join(" - ") };
 }
 
@@ -151,7 +159,8 @@ async function act(key, cmd, args, opts) {
   render();
   try {
     const out = await invoke(cmd, args);
-    toast("ok", (opts && opts.title) || out || "Done", opts && opts.title ? out : null);
+    const detail = opts && "detail" in opts ? opts.detail : opts && opts.title ? out : null;
+    toast("ok", (opts && opts.title) || out || "Done", detail);
     if (opts && opts.after) await opts.after(out);
     return true;
   } catch (e) {
@@ -167,7 +176,7 @@ function renderServer() {
   const server = state.server;
   if (!server.known) {
     return [h("div", { class: "callout warn" }, icon("warn"),
-      h("div", { class: "grow", text: "The supragnosis CLI did not list server profiles. Update supragnosis-server to manage them here." }))];
+      h("div", { class: "grow", text: "The supragnosis command did not list server profiles. Update supragnosis-server to manage them here." }))];
   }
   const status = serverStatus(server);
   const rows = server.profiles.map((p) => {
@@ -185,9 +194,11 @@ function renderServer() {
       h("div", { class: "end" }, end));
   });
   const trouble = [];
-  if (status.kind === "warn") trouble.push(h("div", { class: "callout warn" }, icon("key"),
+  // A remote server's trouble; This Mac's is said on its own pane, in the daemon's words.
+  const remoteActive = server.profiles.some((p) => p.active && p.remote);
+  if (remoteActive && status.kind === "warn") trouble.push(h("div", { class: "callout warn" }, icon("key"),
     h("div", { class: "grow", text: "The server answers but refused this Mac's credential. Ask its operator for a new one, then remove this profile and add it again." })));
-  if (status.kind === "bad") trouble.push(h("div", { class: "callout bad" }, icon("alert"),
+  if (remoteActive && status.kind === "bad") trouble.push(h("div", { class: "callout bad" }, icon("alert"),
     h("div", { class: "grow" }, "The server in use does not answer. AI apps cannot reach it until it does.",
       server.check && server.check.detail ? h("div", { class: "sub selectable", text: server.check.detail }) : null)));
   return [
@@ -199,55 +210,57 @@ function renderServer() {
   ];
 }
 
-// The line under an app's name: what the pill does not already say.
+// The line under an app's name: what the pill does not already say - or, once this visit connected
+// it, the next step the CLI named, said once here and not again in the notice (Section 29.6).
 function appDetail(a) {
+  if (appNotes[a.id] && a.kind === "connected") return appNotes[a.id];
   if (a.kind === "connected") return "Through the bridge";
   if (a.kind === "off" || a.state === "not installed") return null;
   return a.state.charAt(0).toUpperCase() + a.state.slice(1);
+}
+// A Settings row's kind, in the AI app row's words (kit.js).
+function appState(a) {
+  if (a.kind === "off") return "todo";
+  if (a.kind === "absent") return a.state === "not installed" ? "absent" : "unavailable";
+  return a.kind;
 }
 
 function renderApps() {
   // flatMap: Claude Code's row is two rows, its own and the capture switch's.
   const rows = state.apps.flatMap((a) => {
-    const pill = {
-      connected: h("span", { class: "pill ok" }, h("span", { class: "dot" }), "Connected"),
-      attention: h("span", { class: "pill warn" }, h("span", { class: "dot" }), "Needs switching"),
-      off: h("span", { class: "pill", text: "Not connected" }),
-      absent: h("span", { class: "pill", text: a.state === "not installed" ? "Not installed" : "Unavailable" }),
-    }[a.kind];
     const key = "app:" + a.id;
-    let button = null;
+    const end = [];
     if (a.action) {
       const disconnect = a.action === "Disconnect";
-      button = actionButton(key, a.action, disconnect ? "unplug" : "plug", disconnect ? "danger" : "primary",
+      end.push(actionButton(key, a.action, disconnect ? "unplug" : "plug", disconnect ? "danger" : "primary",
         () => act(key, "app_toggle", { id: a.id }, {
-          after: (out) => { appNotes[a.id] = disconnect ? null : out; },
-        }));
+          title: disconnect ? null : APPS[a.id] + " connected", detail: null,
+          // The row keeps only the next step: "Claude Desktop connected - <next>" says the first half
+          // in its pill already.
+          after: (out) => { appNotes[a.id] = disconnect ? null : (String(out).split(" connected - ")[1] || null); },
+          failTitle: APPS[a.id] + (disconnect ? " was not disconnected" : " was not connected"),
+        })));
     }
-    const note = appNotes[a.id] && a.kind === "connected"
-      ? h("div", { class: "callout info" }, icon("info"), h("div", { class: "grow", text: appNotes[a.id] }))
-      : null;
+    // The helper that finishes a connection, after this visit made it (onboarding.md D9).
+    if (HELPER[a.id] && appNotes[a.id] && a.kind === "connected") {
+      end.unshift(actionButton("helper:" + a.id, HELPER[a.id], a.id === "cursor" ? "open" : "restart", "",
+        () => act("helper:" + a.id, "app_helper", { id: a.id }, { failTitle: "Do it by hand" })));
+    }
     const detail = appDetail(a);
-    const row = h("div", { class: "row" + (a.kind === "absent" ? " muted" : ""), "data-k": "app:" + a.id },
-      h("span", { class: "lead" }, icon(APP_KIND[a.id] || "desktop")),
-      h("div", { class: "body" },
-        h("div", { class: "title" }, a.name, pill),
-        detail ? h("div", { class: "sub", text: detail }) : null,
-        note),
-      h("div", { class: "end" }, button));
+    const row = appRow({ id: a.id, state: appState(a), sub: detail ? h("div", { class: "sub", text: detail }) : null, end });
     // Claude Code's capture hook, a switch while it is connected through the bridge and the listing
     // says (design-system.md Section 6a); any other row has none, so the switch never connects or
     // replaces anything.
     if (a.id !== "claude-code" || typeof a.capture !== "boolean") return row;
     const input = h("input", {
       type: "checkbox", role: "switch", checked: a.capture, disabled: pending.size > 0,
-      "aria-label": "Save the why behind each commit",
+      "aria-label": CAPTURE.label,
       on: { change: (e) => act("capture", "capture_set", { on: e.target.checked }, { failTitle: "Capture did not change" }) },
     });
     return [row, h("div", { class: "row sub-row", "data-k": "capture:" + a.id },
       h("div", { class: "body" },
-        h("div", { class: "title", text: "Save the why behind each commit" }),
-        h("div", { class: "sub", text: "After a commit, Claude Code is asked to record the decision behind it, if there was one." })),
+        h("div", { class: "title", text: CAPTURE.label }),
+        h("div", { class: "sub", text: CAPTURE.sub })),
       h("label", { class: "switch" }, input, h("span", { class: "track" })))];
   });
   return [
@@ -285,7 +298,7 @@ function renderDaemon() {
   const recovery = store.last_recovery;
   const storeText = owed === undefined || owed === null
     ? "Unknown - the CLI did not report it"
-    : owed === 0 ? "Healthy - nothing owed" : owed + " projections owed - being repaired";
+    : owed === 0 ? "Up to date" : "Repairing - " + owed + (owed === 1 ? " item left" : " items left");
 
   const loginInput = h("input", {
     type: "checkbox", role: "switch", checked: d.login === true,
@@ -302,19 +315,20 @@ function renderDaemon() {
             ? "Needs a newer supragnosis-server"
             : "Keeps the daemon running whenever you are logged in, so AI apps always find it." })),
         h("label", { class: "switch" }, loginInput, h("span", { class: "track" }))),
-      h("div", { class: "row" },
+      // Not drawn while the card above holds the section's act, or a remote server is in use: a row
+      // with nothing to press said nothing (design-system.md Section 29.6).
+      remote || drift || conflict ? null : h("div", { class: "row" },
         h("div", { class: "body" },
           h("div", { class: "title", text: "Restart the daemon" }),
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
-        h("div", { class: "end" }, remote || drift || conflict ? null :
-          actionButton("restart", "Restart", "restart", "", () => restartDaemon())))),
+        h("div", { class: "end" }, actionButton("restart", "Restart", "restart", "", () => restartDaemon())))),
     // What a report needs, and where the daemon writes (design-system.md Section 29.5).
     h("div", { class: "group-title", text: "Troubleshooting" }),
     h("div", { class: "card" },
       h("div", { class: "row", "data-k": "diagnostics" },
         h("div", { class: "body" },
           h("div", { class: "title", text: "Diagnostics" }),
-          h("div", { class: "sub", text: "setup --check, status --json, this app's state and the log's last lines, for a report. Nothing leaves this Mac." })),
+          h("div", { class: "sub", text: "Setup's check, the daemon's status, this app's state and the log's last lines, for a report. Nothing leaves this Mac." })),
         h("div", { class: "end" }, h("button", { class: "btn", id: "copyDiagnostics", on: { click: copyDiagnostics } }, "Copy Diagnostics"))),
       h("div", { class: "row", "data-k": "log" },
         h("div", { class: "body" },
@@ -390,7 +404,8 @@ function searchRow(d, remote) {
     title = "Indexing"; sub = "Embedding what is in the store: " + b.embedded + " of " + b.found; kind = "ok";
   }
   else if (s.state === "on") { title = "Search by meaning"; sub = "Multilingual, on this Mac (" + s.model + ")"; kind = "ok"; }
-  else { title = "Keyword only - the model is not downloaded"; sub = s.note || "Search matches words until the model (224 MB) is here."; kind = "warn"; }
+  // The page's own sentence; the CLI's note is Copy Diagnostics' (design-system.md Section 29.6).
+  else { title = "Keyword only - the model is not downloaded"; sub = "Search matches words until the model (224 MB) is downloaded."; kind = "warn"; }
   let end = null, bar = null;
   if (!remote && s && s.state === "on" && indexing()) {
     const b = s.backfill, pct = b.found ? Math.round(100 * b.embedded / b.found) : 0;
@@ -456,7 +471,7 @@ function renderSync() {
   }
   const out = [];
   const role = f.role === "hub" ? "Hub" : "Spoke";
-  out.push(h("div", { class: "group-title", text: "This node" }),
+  out.push(h("div", { class: "group-title", text: "This Mac" }),
     h("div", { class: "card" },
       h("div", { class: "row" },
         h("span", { class: "lead" }, icon("network")),
@@ -554,7 +569,7 @@ function renderAbout() {
   const pairs = [
     ["App", a.app],
     ["CLI", d.installed || (a.cli ? "unknown" : "not found")],
-    ["Daemon", d.running || (d.remote ? "not in use" : "not running")],
+    ["Daemon", d.running || daemonStatus(d).title],
     ["CLI location", a.cli || "not found"],
     ["Data", a.data],
     ["License", a.license],
@@ -570,7 +585,7 @@ function renderAbout() {
           h("div", { class: "title", text: "Setup" }),
           h("div", { class: "sub", text: "The four steps of the first run: what is done, and what is left." })),
         h("div", { class: "end" }, h("a", { class: "btn", href: withBack("welcome.html") }, "Open Setup")))),
-    h("p", { class: "hint", text: "Dependency licences are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
+    h("p", { class: "hint", text: "Dependency licenses are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
   ];
 }
 
@@ -704,7 +719,7 @@ function openAddServer() {
   const form = h("form", { novalidate: true },
     h("div", { class: "d-head" },
       h("h3", { id: "d-title", text: "Add a server" }),
-      h("p", { text: "A supragnosis server another machine runs. Its operator gives you the address and a credential." })),
+      h("p", { text: "A Supragnosis server another machine runs. Its operator gives you the address and a credential." })),
     h("div", { class: "d-body" },
       error,
       field("f-name", "Name", name, "What this Mac calls it."),
@@ -803,7 +818,7 @@ async function load(quiet) {
 function daemonUnsettled() {
   const d = state && state.daemon;
   if (!d || d.remote) return false;
-  return !d.answering || !d.running || /starting|FAILED/.test(d.line || "") || indexing();
+  return !d.answering || !d.running || d.shell === "starting" || d.shell === "failed" || indexing();
 }
 
 // While the daemon is unsettled the page reads its state again every two seconds, for up to a
@@ -856,7 +871,7 @@ function actAsked() {
   // neither answers nor is being started; a notice says the state otherwise.
   if (act === "restart") {
     if (!d || d.remote) return;
-    if (!d.answering && !/starting/.test(d.line || "")) restartDaemon();
+    if (!d.answering && d.shell !== "starting") restartDaemon();
     else toast("info", d.answering ? "Not restarted: the daemon answers" : "Not restarted: the daemon is still starting");
     return;
   }

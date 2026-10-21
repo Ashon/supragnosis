@@ -58,6 +58,10 @@ fn a_tooltip_names_and_explains_nothing() {
         }
     }
     for (i, _) in SCRIPT.match_indices(".title = ") {
+        // The window's document title is not a tooltip.
+        if SCRIPT[..i].ends_with("document") {
+            continue;
+        }
         if !SCRIPT[i..].starts_with(".title = tipText(") {
             long.push(format!("viewer.js sets a tooltip around tip: {}", &SCRIPT[i..i + 50]));
         }

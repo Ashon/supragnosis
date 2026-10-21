@@ -1283,7 +1283,7 @@ fn narrow_share_response(method: &str, query: &str, narrow: Option<&NarrowShare>
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "this node has no federation server role - there is no allowlist to narrow \
+                "this server has no federation server role - there is no allowlist to narrow \
                  (docs/federation.md Section 9)",
             ),
         };

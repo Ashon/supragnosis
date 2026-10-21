@@ -191,8 +191,8 @@ fn search_groups_hits_by_how_they_were_reached() {
         "\"Contains \\\"\"",
         ">Related</div>",
         "\"near in meaning\"",
-        "\"linked to a match\"",
-        "\"No item in \"",
+        "\"related to a match\"",
+        "\"No entity in \"",
         "\"Search all workspaces (\"",
         "\"20+\"",
     ] {

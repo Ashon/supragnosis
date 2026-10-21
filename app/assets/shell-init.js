@@ -1,5 +1,5 @@
 // Injected by the shell before every page the main window loads (initialization_script) - the
-// daemon's viewer, the shell's own splash, and the app's settings page. Four duties, all of them
+// daemon's viewer, the shell's own splash, and the app's settings page. Five duties, all of them
 // desktop-shell concerns kept OUT of the viewer assets (which stay browser-neutral):
 //
 // 1. SSE facade - the webview's custom protocol cannot stream responses, so
@@ -14,9 +14,13 @@
 //    app's Settings page, which holds what the viewer's own dialog did (its build, a hub's peers).
 // 4. Startup health signal - report which page actually loaded (the daemon-served viewer vs the
 //    shell's starting splash); the shell's only observable for "the proxy + webview path works".
+// 5. The machine's name (docs/design-system.md Section 9, D2) - the viewer calls the machine it runs
+//    on "this machine"; in the app on a Mac the shell says "this Mac", the word the app's pages use.
 //
 // Everything is built with DOM calls - no markup strings - like the settings page (S5).
 (function () {
+  if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = "this Mac";
+
   // The two pages' addresses. macOS and Linux reach the app's schemes as scheme://localhost;
   // Windows' webview reaches them as http://<scheme>.localhost.
   var custom = location.protocol === "viz:" || location.protocol === "tauri:";

@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>supragnosis</title>
+<title>Graph - Supragnosis</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6.25' y='6.25' width='51.5' height='51.5' rx='11.56' fill='%230c0e14'/%3E%3Cg stroke='%23f0c469' stroke-width='4.44' stroke-linecap='round'%3E%3Cline x1='32' y1='32' x2='32' y2='19.9'/%3E%3Cline x1='32' y1='32' x2='43.5' y2='28.3'/%3E%3Cline x1='32' y1='32' x2='39.1' y2='41.8'/%3E%3Cline x1='32' y1='32' x2='24.9' y2='41.8'/%3E%3Cline x1='32' y1='32' x2='20.5' y2='28.3'/%3E%3C/g%3E%3C/svg%3E">
 <!-- Pretendard as its author publishes it: 92 files, each with a unicode-range, so the page fetches
      only what its text needs (docs/design-system.md Section 4, U11). -->
@@ -15,7 +15,7 @@
 <div id="mapwin" aria-hidden="true"></div>
 <section id="listwin" hidden aria-label="Entities"></section>
 <div id="empty"><div class="e-title">Nothing here yet.</div><div class="e-sub">Ask a connected AI app to remember something, or pick a workspace that holds knowledge.</div></div>
-<div id="loader"><div class="spin"></div><span>settling layout...</span></div>
+<div id="loader"><div class="spin"></div><span id="loaderSay">Arranging...</span></div>
 <header>
   <!-- The title bar is a Mac toolbar (design-system.md Section 6, U26): at its leading end the mark,
        the filters panel's toggle - or, on every page but the Graph, the way back to it - and the
@@ -48,7 +48,7 @@
   <!-- Workspace selection lives ONLY in the left rail's chips (one UI, one mechanism); the title says
        the scope on screen. -->
 </header>
-<div id="log"></div>
+<div id="log" role="region" aria-label="Activity"></div>
 <!-- The strip: the Log folded (design-system.md Section 6). While the right side is empty it shows
      the scope's newest observation; clicking it opens the Log. Filled by viewer.js. -->
 <button id="strip" type="button" title="Open the Log"></button>
@@ -59,9 +59,9 @@
 <aside id="dockL" class="dock on">
   <div id="wschips"></div>
   <div class="railbody">
-    <div class="rsec">Node types <span class="ct" id="nodeCt"></span></div>
+    <div class="rsec">Entity types <span class="ct" id="nodeCt"></span></div>
     <div id="legendNodes"></div>
-    <div class="rsec">Edge types <span class="ct" id="edgeCt"></span></div>
+    <div class="rsec">Relation types <span class="ct" id="edgeCt"></span></div>
     <div id="legendEdges"></div>
     <!-- The type definitions, moved from the dock's Types tab (design-system.md Section 6): every
          defined type with its definition, a contested one with its mediation act, and the types defined
@@ -124,7 +124,7 @@
      clean under the CSP the network read tier will need (federation.md 6d). -->
 <dialog id="settings" aria-labelledby="settingsTitle">
   <form method="dialog" class="fchead">
-    <span class="ftitle" id="settingsTitle">settings</span>
+    <span class="ftitle" id="settingsTitle">Settings</span>
     <!-- Same glyph and hit target as the detail / observation card closers, so "close" looks the
          same everywhere it appears. `method="dialog"` closes without any script. -->
     <button class="fclose" title="Close (Esc)" aria-label="Close">
@@ -161,23 +161,23 @@
        it (aria-describedby), since a tooltip is seen by no keyboard and no finger (U25). -->
   <div class="grp"><span class="ghdr">Layout</span><div class="btns">
     <button id="resetLayout" aria-describedby="dReset">Reset layout</button>
-    <p class="vdesc" id="dReset">Forgets where this scope's nodes were and lays it out again.</p>
+    <p class="vdesc" id="dReset">Forgets where this scope's entities were and lays it out again.</p>
     <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
-    <p class="vdesc" id="dPeers">Other machines as dots that move to the nodes they touch. On by default on a hub.</p>
+    <p class="vdesc" id="dPeers">Other machines, as dots that move to the entities they touch. On by default on a hub.</p>
     <button id="clusterBtn" class="tog" aria-describedby="dCluster">Group by type</button>
-    <p class="vdesc" id="dCluster">A circle of nodes for each type, with the links between groups kept.</p>
+    <p class="vdesc" id="dCluster">A circle of entities for each type, with the relations between groups kept.</p>
   </div></div>
   <div class="grp"><span class="ghdr">Show</span><div class="btns">
     <button id="labelsBtn" class="tog on" aria-describedby="dLabels">Labels</button>
-    <p class="vdesc" id="dLabels">Names of nodes and regions.</p>
-    <button id="edgesBtn" class="tog on" aria-describedby="dEdges">Edges</button>
-    <p class="vdesc" id="dEdges">Relations between nodes.</p>
+    <p class="vdesc" id="dLabels">Names of entities and regions.</p>
+    <button id="edgesBtn" class="tog on" aria-describedby="dEdges">Relations</button>
+    <p class="vdesc" id="dEdges">Lines between entities.</p>
     <button id="arrowsBtn" class="tog on" aria-describedby="dArrows">Arrows</button>
     <p class="vdesc" id="dArrows">Which way each relation points. An active relation always shows it.</p>
     <button id="footBtn" class="tog on" aria-describedby="dFoot">Footprint</button>
-    <p class="vdesc" id="dFoot">A glow on what this session used.</p>
+    <p class="vdesc" id="dFoot">A glow on what agents used.</p>
     <button id="pulseBtn" class="tog on" aria-describedby="dPulse">Pulses</button>
-    <p class="vdesc" id="dPulse">A ring when a node is touched.</p>
+    <p class="vdesc" id="dPulse">A ring when an entity is touched.</p>
     <button id="histBtn" class="tog on" aria-describedby="dHist">History</button>
     <p class="vdesc" id="dHist">Relations that were superseded, drawn faint.</p>
     <button id="miniBtn" class="tog on" aria-describedby="dMini">Minimap</button>

@@ -142,7 +142,7 @@ const legendNodesEl = document.getElementById("legendNodes"), legendEdgesEl = do
 const legendBoundaryEl = document.getElementById("legendBoundary");
 const nodeCtEl = document.getElementById("nodeCt"), edgeCtEl = document.getElementById("edgeCt");
 const emptyEl = document.getElementById("empty"), logEl = document.getElementById("log");
-const loaderEl = document.getElementById("loader");
+const loaderEl = document.getElementById("loader"), loaderSayEl = document.getElementById("loaderSay");
 const detailEl = document.getElementById("detail");
 const obscardEl = document.getElementById("obscard");
 // Close the observation detail card on a backdrop (scrim) click - a click on the card itself does not
@@ -220,7 +220,8 @@ const CLOUD_REACH = 1.8;         // how far the cloud reaches past its outermost
 const HULL_LABEL_BASE = 0.7;     // hull label opacity with no active node
 const HULL_LABEL_HOVER_FADE = 0.15; // non-member hull labels fade to this while a node is active
 const HULL_NODE_GAP = 14;        // world px: extra gap past the largest member glyph when expanding a hull
-let footprintSession = null;     // the session (conversation) the current footprint belongs to
+let footprintSession = null;     // the session the current footprint belongs to: the daemon's run
+let footprintSince = 0;          // when this page first saw that session
 const footprint = new Set();     // ids of nodes this session touched - the conversation's knowledge footprint
 let nodes = [], edges = [], typeColor = {}, edgeKinds = [];
 const posById = new Map();       // id -> {x,y,vx,vy} - layout stability across polls
@@ -471,6 +472,11 @@ function assignColors() {
 // the key exists only when /api/surface says "local". A position is a convenience; losing one costs a
 // settling.
 let surfaceNode = null;     // this node's host id on the local console, null elsewhere
+// The page's own machine, in words (design-system.md Section 9, D2): "this machine", or the word the
+// app's shell gives - "this Mac" - since the viewer stays browser-neutral; and only on the local
+// console, the one surface whose machine it is. Any other surface names the server.
+function here() { return surfaceNode ? (window.supragnosisHere || "this machine") : "this server"; }
+function hereTitle() { const w = here(); return w.charAt(0).toUpperCase() + w.slice(1); }
 let layoutScope = null;     // the storage key the current positions belong to
 let storedLayout = null;    // {id: [x, y]} read for the scope being loaded
 let layoutFresh = true;     // the next graph is the first of its scope
@@ -649,7 +655,7 @@ async function refreshSyncPill() {
     if (r.ok) f = await r.json();
   } catch (_) { f = null; }
   let text, tone;
-  if (!f) { text = "sync unavailable"; tone = "bad"; }
+  if (!f) { text = "Sync unavailable"; tone = "bad"; }
   else if (f.configured === false) { pill.hidden = true; return; }
   else {
     const hubs = f.servers || [];
@@ -657,11 +663,11 @@ async function refreshSyncPill() {
     const unknown = hubs.filter(s => !s.negotiated_at).length;
     let mine = 0, theirs = 0;
     for (const s of hubs) for (const w of (s.workspaces || [])) { mine += w.local_ahead | 0; theirs += w.hub_ahead | 0; }
-    if (down) { text = down === hubs.length ? "hub unreachable" : `${down} of ${hubs.length} hubs unreachable`; tone = "bad"; }
-    else if (unknown) { text = "sync: no answer yet"; tone = "warn"; }
-    else if (mine || theirs) { text = `syncing: this node +${mine}, hub +${theirs}`; tone = "warn"; }
-    else if (hubs.length) { text = "in sync"; tone = "ok"; }
-    else { const k = (f.known_peers || []).length; text = `hub: ${k} peer${k === 1 ? "" : "s"}`; tone = "ok"; }
+    if (down) { text = down === hubs.length ? "Hub unreachable" : `${down} of ${hubs.length} hubs unreachable`; tone = "bad"; }
+    else if (unknown) { text = "Sync: no answer yet"; tone = "warn"; }
+    else if (mine || theirs) { text = `Syncing: ${here()} +${mine}, hub +${theirs}`; tone = "warn"; }
+    else if (hubs.length) { text = "In sync"; tone = "ok"; }
+    else { const k = (f.known_peers || []).length; text = `Hub: ${k} peer${k === 1 ? "" : "s"}`; tone = "ok"; }
   }
   pill.hidden = false;
   pill.className = "spill " + tone;
@@ -797,11 +803,11 @@ async function renderAboutSection(host) {
   const repo = String(a.repository || "");
   const row = (k, v) => html`<dt>${k}</dt><dd>${v}</dd>`;
   host.innerHTML = html`<dl class="kv">${[
-    row("package", String(a.name || "supragnosis")),
-    row("version", String(a.version || "")),
-    row("licence", String(a.license || "")),
-    repo ? row("source", html`<a href="${repo}" target="_blank" rel="noreferrer noopener">${repo}</a>`) : "",
-  ]}</dl><div class="note">Dependency licences are not restated here - a hand-kept list is one that \
+    row("Package", String(a.name || "supragnosis")),
+    row("Version", String(a.version || "")),
+    row("License", String(a.license || "")),
+    repo ? row("Source", html`<a href="${repo}" target="_blank" rel="noreferrer noopener">${repo}</a>`) : "",
+  ]}</dl><div class="note">Dependency licenses are not restated here - a hand-kept list is one that \
 rots without saying so. They are in the manifest and lockfile at the source above, which \
 cannot disagree with this build.</div>`;
 }
@@ -815,18 +821,17 @@ async function renderFedSection(host) {
     return;
   }
   if (!f || f.configured === false) {
-    host.innerHTML = '<div class="empty">federation is not configured on this node - create '
-      + '~/.supragnosis/supragnosis.toml to join or host</div>';
+    host.innerHTML = html`<div class="empty">Sync is not set up on ${here()} - create ~/.supragnosis/supragnosis.toml to join or host</div>`;
     return;
   }
 
-  const parts = [html`<div class="fsec">This node</div>`,
+  const parts = [html`<div class="fsec">${hereTitle()}</div>`,
     html`<div class="prow"><span class="pid">${String(f.node_id || "")}</span>`,
-    html`<span class="hint"> ${f.role === "hub" ? "hub" : "spoke"}</span></div>`];
+    html`<span class="hint"> ${f.role === "hub" ? "Hub" : "Spoke"}</span></div>`];
 
   const hubs = f.servers || [];
   if (hubs.length) {
-    parts.push(html`<div class="fsec">Hubs this node syncs to</div>`);
+    parts.push(html`<div class="fsec">Hubs ${here()} syncs to</div>`);
     for (const s of hubs) {
       const dot = s.healthy ? TEAL : BAD;
       parts.push(html`<div class="prow"><span class="dot" style="background:${dot}"></span> `,
@@ -837,13 +842,13 @@ async function renderFedSection(host) {
         const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
         parts.push(html`<div class="hint">${w.workspace}: ${insync
           ? "in sync"
-          : `this node +${w.local_ahead | 0}, hub +${w.hub_ahead | 0}`}</div>`);
+          : `${here()} +${w.local_ahead | 0}, hub +${w.hub_ahead | 0}`}</div>`);
       }
       // The two buckets only this section names, moved from the dock's Peers tab. Listed here but
       // not admitted there is a setup error that would otherwise just vanish; admitted there but not
       // shared here is knowledge left on the table. Intersecting the two lists would hide both.
       for (const w of (s.local_only || [])) parts.push(html`<div class="hint">${w}: <span class="bad">not admitted by the hub</span></div>`);
-      for (const w of (s.peer_only || [])) parts.push(html`<div class="hint">${w}: admitted, not shared from this node</div>`);
+      for (const w of (s.peer_only || [])) parts.push(html`<div class="hint">${w}: admitted, not shared from ${here()}</div>`);
       // Unknown is not an empty grant set: a hub that has not answered must not read as one that
       // revoked everything.
       if (!s.negotiated_at) parts.push(html`<div class="hint">what it shares: unknown - no answer yet</div>`);
@@ -979,7 +984,7 @@ function showTypeTip(el, t, isEdge) {
   tip.style.left = Math.min(r.right + 10, innerWidth - 330) + "px";
   tip.style.top = Math.max(6, r.top - 4) + "px";
   tip.innerHTML = html`<b>${t || "(none)"}</b> <span class="k">${target} type</span>${def
-    ? html`<div class="tdef">${def.description}</div><span class="k">${def.sources} src</span>`
+    ? html`<div class="tdef">${def.description}</div><span class="k">${plural(def.sources | 0, "source")}</span>`
     : html`<div class="tdef none">no definition recorded - give this type a meaning with define_type</div>`}`;
 }
 
@@ -1065,8 +1070,8 @@ function renderTrustLegend() {
   const note = document.createElement("div");
   note.className = "tnote";
   note.textContent = trustUniform
-    ? "All here: " + TIER_NAME[trustUniform] + ", so no node is ringed."
-    : "A ring is the highest trust among the sources that support a node. Agent has none.";
+    ? "All here: " + TIER_NAME[trustUniform] + ", so no entity is ringed."
+    : "A ring is the highest trust among the sources that support an entity. Agent has none.";
   host.appendChild(note);
   // What each tier means, where trust is decided (Section 29.2) - a tooltip cannot carry it (U25).
   const means = document.createElement("details");
@@ -1444,7 +1449,7 @@ function renderGlossary() {
   const item = x => {
     const parts = [html`<div class="item"><span class="nm">${x.name}</span>`,
       spansWorkspaces ? html`<span class="gws">${String(x.workspace || "")}</span>` : "",
-      html`<span class="src">${x.sources} src</span>`,
+      html`<span class="src">${plural(x.sources | 0, "source")}</span>`,
       html`<div class="def">${x.description}</div>`];
     // Contested definitions take the same settling rows as an entity's type, so a type conflict and
     // an entity-type conflict read identically - one mediation pattern (IR5).
@@ -1620,7 +1625,7 @@ function wireCuration(host) {
         let q = "?hyperedge=" + encodeURIComponent(row.dataset.hid);
         if (inp.value.trim()) q += "&name=" + encodeURIComponent(inp.value.trim());
         if (ws) q += "&workspace=" + encodeURIComponent(ws);
-        await consoleWrite("/api/reify", q, "Group named - it is a node now, linked to its members");
+        await consoleWrite("/api/reify", q, "Group named - it is an entity now, related to its members");
         await poll();   // the group node + member_of edges appear; the page re-renders
       };
       form.append(inp, ok);
@@ -1807,6 +1812,8 @@ function renderReview() {
   reviewEl.hidden = !reviewOpen();
   setReviewInert(reviewOpen());
   document.body.classList.toggle("reviewing", reviewOpen());
+  // The window's document title names the page as the title bar does (Section 29.6, U26).
+  document.title = (reviewOpen() ? "Review" : "Graph") + " - Supragnosis";
   if (!reviewOpen()) { reviewSig = ""; return; }
   const local = surfaceKind === "local";
   const items = segItems();
@@ -2189,18 +2196,22 @@ async function fetchProposalDiff(id) {
 
 // Render the diff as a before -> after comparison. An uncomputable diff says so: for the three
 // proposal kinds that still enforce nothing, an empty diff would read as "changes nothing".
+// A diff row's field, in the screen's words (design-system.md Section 29.6): the engine's ids
+// `kind` and `edge` are a type and a relation.
+const FIELD_SAID = { kind: "Type", edge: "Relation", tier: "Trust", definition: "Definition", description: "Description" };
+function fieldSaid(f) { return FIELD_SAID[f] || String(f || ""); }
 function diffHtml(d) {
   if (!d) return html`<div class="dnote">computing the diff...</div>`;
   if (!d.computable) return html`<div class="dnote">no diff - ${d.note || "not computable for this kind"}</div>`;
   const tiers = (d.tier_changes || []).map(t => [
-    html`<div class="drow"><span class="dk">tier</span><code>${t.observation.slice(0, 10)}</code>`,
-    html`<span class="dfrom">${t.from}</span><span class="darr">-&gt;</span><span class="dto">${t.to}</span></div>`]);
+    html`<div class="drow"><span class="dk">${fieldSaid("tier")}</span><code>${t.observation.slice(0, 10)}</code>`,
+    html`<span class="dfrom">${tierName(t.from)}</span><span class="darr">-&gt;</span><span class="dto">${tierName(t.to)}</span></div>`]);
   const beliefs = (d.overturned || []).map(b => {
     const settled = b.contested_before && !b.contested_after;
     const created = !b.contested_before && b.contested_after;
     const flag = settled ? html`<span class="dsettled">settles a contradiction</span>`
                : created ? html`<span class="dcreated">creates a contradiction</span>` : "";
-    return [html`<div class="drow"><span class="dk">${b.field}</span>`,
+    return [html`<div class="drow"><span class="dk">${fieldSaid(b.field)}</span>`,
       html`<button type="button" class="nchip" data-id="${b.entity}" title="${tipText("Focus " + b.name)}">${b.name}</button>`,
       html`<span class="dfrom">${b.from || "(none)"}</span><span class="darr">-&gt;</span>`,
       html`<span class="dto">${b.to || "(none)"}</span>${flag}</div>`];
@@ -2209,11 +2220,11 @@ function diffHtml(d) {
   // A self-loop is dropped by graph(), so that edge vanishes on accept - not readable from the
   // canvas overlay, which can only accent edges incident to a target.
   const rewires = (d.rewired || []).map(r => [
-    html`<div class="drow"><span class="dk">edge</span><code>${r.kind}</code>`,
+    html`<div class="drow"><span class="dk">${fieldSaid("edge")}</span><code>${r.kind}</code>`,
     html`<span class="dfrom">${r.from_name}</span><span class="darr">-&gt;</span>`,
     html`<span class="dto">${r.to_name}</span>`,
     html`<span class="dother">(${r.other_name})</span>`,
-    r.becomes_self_loop ? html`<span class="dcreated">becomes a self-loop, edge disappears</span>` : "",
+    r.becomes_self_loop ? html`<span class="dcreated">becomes a loop, so the relation goes</span>` : "",
     html`</div>`]);
   if (!tiers.length && !beliefs.length && !rewires.length) return html`<div class="dnote">computed: this proposal overturns no current belief</div>`;
   return html`<div class="ddiff">${tiers}${beliefs}${rewires}</div>`;
@@ -2393,21 +2404,21 @@ function obsCardHtml(o) {
     // has to stay inspectable here even once it is no longer what the reader is shown.
     html`<div class="oc-content">${o.proposal ? proposalLine(o.proposal) : o.content}</div>`,
     o.proposal ? html`<div class="ocraw">${o.content}</div>` : "",
-    html`<div class="osec">provenance (${(o.attestations || []).length})</div>`];
+    html`<div class="osec">Provenance <span class="ct">${(o.attestations || []).length}</span></div>`];
   for (const a of o.attestations || []) {
     parts.push(html`<div class="prow"><span class="phost">${a.host}</span>`,
       a.on_behalf_of ? html`<span class="pobo">for ${a.on_behalf_of}</span>` : "",
       html`<span class="ptier">${tierName(a.trust_tier)}${a.evaluated_tier !== a.trust_tier ? ", counted as " + tierName(a.evaluated_tier) : ""}</span>`,
       a.confidence != null ? html`<span class="pconf">conf ${String(a.confidence)}</span>` : "",
-      a.origin_node ? html`<span class="poid">node ${String(a.origin_node).slice(0, 8)}</span>` : "",
+      a.origin_node ? html`<span class="poid">machine ${String(a.origin_node).slice(0, 8)}</span>` : "",
       html`<span class="pwhen">${obsWhenFull(a.observed_at)}</span></div>`);
   }
   if (o.derived_from && o.derived_from.length)
-    parts.push(html`<div class="osec">derived from</div><div class="oids">${
+    parts.push(html`<div class="osec">Derived from</div><div class="oids">${
       o.derived_from.map(id => html`<span class="oid">${String(id).slice(0, 10)}</span>`)}</div>`);
   if (o.proposal) {
     const p = o.proposal;
-    parts.push(html`<div class="osec">proposal</div>`,
+    parts.push(html`<div class="osec">Proposal</div>`,
       html`<div class="ocprop"><span class="pkind">${p.kind || "proposal"}</span>`,
         html`<span class="pstate ${p.state || ""}">${p.state || ""}</span>`,
         html`<span class="oid">${String(p.proposal).slice(0, 10)}</span></div>`);
@@ -2423,14 +2434,14 @@ function obsCardHtml(o) {
           ? html`<button type="button" class="echip" data-id="${t.id}" title="${tipText("Focus " + (t.name || t.id))}">${label}</button>`
           : html`<span class="echip off" title="${tipText("Folded away by this merge")}">${label}</span>`;
       };
-      parts.push(html`<div class="osec">targets</div><div class="echips">${ts.map(chip)}</div>`);
+      parts.push(html`<div class="osec">Targets</div><div class="echips">${ts.map(chip)}</div>`);
     }
   }
   if (o.entities && o.entities.length)
-    parts.push(html`<div class="osec">entities</div><div class="echips">${
+    parts.push(html`<div class="osec">Entities</div><div class="echips">${
       o.entities.map(e => html`<button type="button" class="echip" data-id="${e.id}" title="${tipText("Focus " + e.name)}">${e.name}</button>`)}</div>`);
   if (o.relations && o.relations.length)
-    parts.push(html`<div class="osec">relations</div>`,
+    parts.push(html`<div class="osec">Relations</div>`,
       o.relations.map(r => html`<div class="ocrel">${r.from} <span class="rk">${r.type}</span> ${r.to}</div>`));
   parts.push(html`<div class="ocid">obs ${String(o.id).slice(0, 16)}</div></div>`);
   return html`${parts}`;
@@ -2494,7 +2505,7 @@ function stripShown() {
 // /api/surface reports (Section 9).
 function writerOf(a) {
   if (a.on_behalf_of) return a.on_behalf_of;
-  if (a.host && surfaceNode && a.host === surfaceNode) return "this node";
+  if (a.host && surfaceNode && a.host === surfaceNode) return here();
   return a.host || "";
 }
 async function refreshStrip() {
@@ -2547,8 +2558,7 @@ async function fillNodeLog(node, colEl, secEl) {
   // host adds the first without the second. Equal is the common case, so the second number appears
   // only when they part - which is when it says something (docs/inspector.md Section 5).
   const setCount = n => {
-    if (secEl) secEl.textContent = "evidence (" + n + ")"
-      + (node.sources !== n ? " / " + node.sources + " attestations" : "");
+    if (secEl) secEl.innerHTML = html`Evidence <span class="ct">${n}${node.sources !== n ? " / " + node.sources + " attestations" : ""}</span>`;
   };
   if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list); setCount(nodeLogCache.list.length); }
   else colEl.textContent = "loading...";
@@ -2568,9 +2578,10 @@ async function fillNodeLog(node, colEl, secEl) {
 }
 
 function pulseNodes(ids) { for (const id of ids || []) if (posById.has(id)) pulses.set(id, 60); requestFrame(); }
-function logRow(body) {
+function logRow(body, tip) {
   const row = document.createElement("div");
   row.className = "row";
+  if (tip) row.title = tipText(tip);
   row.innerHTML = html`<span class="t">${new Date().toLocaleTimeString()}</span>${body}`;
   logEl.prepend(row);
   while (logEl.children.length > 8) logEl.lastChild.remove();
@@ -2599,6 +2610,48 @@ function noteElsewhere(ws) {
   } });
   elsewhere.set(ws, { el, n: 1 });
 }
+// The map's activity, in sentences (design-system.md Section 29.6, U17): no tool name, abbreviation
+// or mode id. Who acted is "An agent" until an event names its app (D13, step 46).
+function plural(n, one, many) { return n + " " + (n === 1 ? one : many || one + "s"); }
+function wroteSaid(ev) {
+  const parts = [];
+  const ne = (ev.entities || []).length, nr = ev.relations || 0;
+  if (ne) parts.push(plural(ne, "entity", "entities"));
+  if (nr) parts.push(plural(nr, "relation"));
+  return "An agent wrote " + (parts.length ? parts.join(" and ") : "an observation") + " in " + ev.workspace;
+}
+// A peer as a row names it: a node id's first eight characters, or a server's host.
+function peerSaid(peer) {
+  const p = String(peer || "");
+  try { if (/^https?:/.test(p)) return new URL(p).host; } catch (_) { /* not an address */ }
+  return p.slice(0, 8);
+}
+function syncSaid(ev) {
+  const n = ev.count, who = peerSaid(ev.peer), ws = ev.workspace;
+  if (!n) return null;   // a check-in that moved nothing writes no row
+  return ev.direction === "push" ? "Sent " + n + " in " + ws + " to " + who
+    : ev.direction === "pull" ? "Received " + n + " in " + ws + " from " + who
+    : ev.direction === "push-received" ? who + " sent " + n + " to " + ws
+    : ev.direction === "pull-served" ? who + " read " + n + " from " + ws
+    : null;
+}
+// One sentence for an event, written once for the passing row and for Follow's notice (Section 29.6
+// revises 29.4's words to these).
+function activitySaid(ev) {
+  const nameOf = id => { const n = nodeById(id); return n ? n.name : null; };
+  if (ev.kind === "observe") return wroteSaid(ev);
+  if (ev.kind === "search") return "An agent searched \"" + ev.query + "\" - " + (ev.hits | 0) + " found";
+  if (ev.kind === "get_entity") {
+    const n = ev.name || nameOf(ev.id) || "an entity";
+    return ev.found ? "An agent looked up " + n : "An agent looked for " + n + " - not found";
+  }
+  if (ev.kind === "traverse") {
+    const n = nameOf(ev.start);
+    return "An agent followed " + (n ? n + "'s" : "an entity's") + " relations - " + (ev.reached || []).length + " reached";
+  }
+  if (ev.kind === "sync") return syncSaid(ev);
+  return null;
+}
 function primaryNode(ev) {
   const id = ev.kind === "observe" ? (ev.entities || [])[0]
     : ev.kind === "traverse" ? ev.start
@@ -2608,7 +2661,7 @@ function primaryNode(ev) {
 }
 async function handleEvent(ev) {
   // If the session (conversation) changes, reset the footprint - track the new conversation's knowledge use from the start.
-  if (ev.session && ev.session !== footprintSession) { footprintSession = ev.session; footprint.clear(); }
+  if (ev.session && ev.session !== footprintSession) { footprintSession = ev.session; footprint.clear(); footprintSince = Date.now(); }
   // Follow moves the camera, never the reader (design-system.md Section 6, U20): activity in the scope
   // on screen frames what it touched below; a write in another workspace is a notice with Show, and
   // the scope, the selection and the open sheet stay where the person left them.
@@ -2618,18 +2671,19 @@ async function handleEvent(ev) {
   }
   let ids = [];
   if (ev.kind === "observe") {
-    logRow(html`<b>observe</b> +${(ev.entities||[]).length} ent, +${ev.relations||0} rel <span class="t">ws ${ev.workspace}</span>`);
+    logRow(html`${activitySaid(ev)}`);
     await poll();                       // wait for the new nodes to enter the graph, then pulse
     ids = ev.entities || [];
   } else if (ev.kind === "search") {
-    logRow(html`<b>search</b> "${ev.query}" <span class="i i-arrow-right" role="img" aria-label="found"></span> ${ev.hits} hits <span class="t">${ev.mode}</span>`);
+    logRow(html`${activitySaid(ev)}`);
     ids = ev.nodes || [];
   } else if (ev.kind === "get_entity") {
-    logRow(html`<b>get_entity</b> ${ev.name || ev.id.slice(0,8)} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
+    logRow(html`${activitySaid(ev)}`);
     ids = ev.found ? [ev.id] : [];
   } else if (ev.kind === "sync") {
     // Federation hit: who touched this store, which direction, how much - the live remote feed.
-    logRow(html`<b>sync</b> ${ev.direction} ${ev.workspace} &lt;-&gt; ${String(ev.peer).slice(0, 18)} (${ev.count})`);
+    const said = activitySaid(ev);
+    if (said) logRow(html`${said}`, String(ev.peer));
     let addedNodes = [], addedEdges = [];
     if (ev.count > 0) {
       // Knowledge landed: load it now, and re-frame once the re-layout settles (follow mode) so the
@@ -2644,8 +2698,7 @@ async function handleEvent(ev) {
     if (peersOn) notePeer(ev, addedNodes, addedEdges);   // server mode: tour the peer's marker, not the camera
     ids = [];
   } else if (ev.kind === "traverse") {
-    const sn = nodeById(ev.start);
-    logRow(html`<b>traverse</b> ${sn ? sn.name : ev.start.slice(0,8)} <span class="i i-arrow-right" role="img" aria-label="reached"></span> ${(ev.reached||[]).length}`);
+    logRow(html`${activitySaid(ev)}`);
     ids = [ev.start, ...(ev.reached || [])];
   } else return;
   pulseNodes(ids);
@@ -2664,7 +2717,12 @@ async function handleEvent(ev) {
     else { const n = hitNodes[0] || primaryNode(ev); if (n) centerOn(n); }
   }
   const sEl = document.getElementById("session");
-  if (sEl) sEl.textContent = footprintSession ? `session ${footprintSession.slice(0,22)} / ${footprint.size} used` : "";
+  // The footprint in words (Section 29.6). The session is the daemon's run, not one conversation:
+  // every agent since it started, so the line says agents, and the tooltip since when.
+  if (sEl) {
+    sEl.textContent = footprintSession ? "Agents used " + plural(footprint.size, "entity", "entities") : "";
+    sEl.title = tipText(footprintSession ? "Since " + new Date(footprintSince).toLocaleTimeString() + ", session " + footprintSession : "");
+  }
 }
 // --- Peer markers (server mode) -----------------------------------------------------
 // On a hub, many peers sync at once. Instead of the camera chasing every remote hit, each federated
@@ -2800,7 +2858,7 @@ function showPeerTip(m, id, cx, cy) {
   const ago = m.seen ? Math.max(0, Math.round((Date.now() - m.seen) / 1000)) : null;
   tip.innerHTML = html`${[
     html`<b>peer ${id.slice(0, 6)}</b><br>`,
-    html`<span class="k">node</span> ${id.slice(0, 16)}<br>`,
+    html`<span class="k">machine</span> ${id.slice(0, 16)}<br>`,
     html`<span class="k">last</span> ${m.action || "-"}${ago !== null ? " " + ago + "s ago" : ""} `,
     html`&nbsp; <span class="k">hits</span> ${m.count | 0}`]}`;
 }
@@ -3352,13 +3410,8 @@ function mapInUse() {
 // with Show framing what it touched.
 let activityNote = null;   // { el, n, ids }
 function noteActivity(ev, ids) {
-  const ws = ev.workspace && ev.workspace !== "*" ? ev.workspace : "";
-  const node = id => { const n = nodeById(id); return n ? n.name : "an entity"; };
-  const said = ev.kind === "observe" ? "An agent wrote " + (ev.entities || []).length + ((ev.entities || []).length === 1 ? " entity" : " entities") + (ws ? " to " + ws : "")
-    : ev.kind === "search" ? "An agent searched" + (ws ? " " + ws : "") + " - " + (ev.hits | 0) + " found"
-    : ev.kind === "get_entity" ? "An agent read " + node(ev.id)
-    : ev.kind === "traverse" ? "An agent traversed from " + node(ev.start) + " - " + (ev.reached || []).length + " reached"
-    : null;
+  // The row's sentence (Section 29.6); a sync lands without a notice, as before.
+  const said = ev.kind === "sync" ? null : activitySaid(ev);
   if (!said) return;
   const was = activityNote;
   if (was && was.el && was.el.isConnected && !was.el.classList.contains("out")) {
@@ -3413,7 +3466,7 @@ function renderDetail(node) {
   const tier = String(node.trust_tier);
   const scopeSaid = [];
   if (base.tier !== null) scopeSaid.push(tierName(base.tier));
-  if (base.origin) scopeSaid.push("from " + base.origin + (surfaceNode && base.origin === surfaceNode ? " (this node)" : ""));
+  if (base.origin) scopeSaid.push("from " + (surfaceNode && base.origin === surfaceNode ? here() : base.origin));
   const origin = base.origin === null && node.origins && node.origins.length
     ? html`<div class="meta">from: ${node.origins.join(", ")}</div>` : "";
   // An empty workspace is an entity a merge carried across a workspace boundary - said, not left blank.
@@ -3443,14 +3496,14 @@ function renderDetail(node) {
     contestedBlock(node),
     // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
     // only when opened - the graph poll stays light). The evidence itself is the column below.
-    disputed ? html`<div class="why"><button class="whytoggle" type="button">belief decision (why this value)</button><div class="whybody"></div></div>` : "",
+    disputed ? html`<div class="why"><button class="whytoggle" type="button">Why this value</button><div class="whybody"></div></div>` : "",
     // Two regions: the node's relations, grouped by kind, and its observation log (the evidence
     // behind its belief), side by side.
     html`<div class="rels">`,
-      html`<div class="relcol"><div class="sec">relations (${nrel})</div>`,
+      html`<div class="relcol"><div class="sec">Relations <span class="ct">${nrel}</span></div>`,
         groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">none</div>`,
       html`</div>`,
-      html`<div class="relcol"><div class="sec">evidence</div><div class="logcol"></div></div>`,
+      html`<div class="relcol"><div class="sec">Evidence</div><div class="logcol"></div></div>`,
     html`</div>`]}`;
   detailEl.className = "on" + (detailTall ? " tall" : "");
   detailEl.querySelector(".close").onclick = () => clearSelection(true);
@@ -4684,6 +4737,8 @@ function draw() {
   if (settling && nodes.length) {
     ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
     if (gpu) gpu.clear();
+    // Section 9's words: what the layout settles, counted (design-system.md Section 29.6).
+    if (loaderSayEl) loaderSayEl.textContent = "Arranging " + plural(nodes.length, "entity", "entities");
     loaderEl.classList.add("on");
     requestFrame(); return;
   }
@@ -5214,7 +5269,7 @@ function showTip(n, cx, cy) {
   // html tag escapes every interpolation, the numeric fields included.
   tip.innerHTML = html`${[
     html`<b>${n.name}</b><br>`,
-    html`<span class="k">type</span> ${n.type} &nbsp; <span class="k">degree</span> ${n.degree || 0}<br>`,
+    html`<span class="k">type</span> ${n.type} &nbsp; <span class="k">relations</span> ${n.degree || 0}<br>`,
     html`<span class="k">sources</span> ${n.sources || 0} &nbsp; <span class="k">trust</span> ${tierName(n.trust_tier)}`]}`;
 }
 
@@ -5287,7 +5342,7 @@ const searchWrap = searchEl.closest(".searchwrap");
 const searchPop = document.getElementById("searchPop");
 const SEARCH_MODE = {
   hybrid: ["keyword + meaning", "Searched the words and what they mean."],
-  keyword: ["keyword only", "Searched the words only: this node has no meaning index, so a miss may be one the words did not catch."],
+  keyword: ["keyword only", "Searched the words only: there is no meaning index here, so a miss may be one the words did not catch."],
 };
 let searchAns = null;    // { q, ws, mode, hits, note } or { q, ws, error }
 let searchRows = [];     // the hits in the order the list shows them
@@ -5359,7 +5414,7 @@ function renderSearch() {
   const words = searchAns.hits.filter(h => h.reached === "words");
   const related = searchAns.hits.filter(h => h.reached !== "words");
   searchRows = [...words, ...related];
-  const why = h => h.reached === "meaning" ? "near in meaning" : h.reached === "neighbor" ? "linked to a match" : "";
+  const why = h => h.reached === "meaning" ? "near in meaning" : h.reached === "neighbor" ? "related to a match" : "";
   const [modeWord, modeWhy] = SEARCH_MODE[searchAns.mode] || [String(searchAns.mode || "?"), ""];
   const row = (h, i) => {
     const on = i === searchSel ? " on" : "";
@@ -5383,7 +5438,7 @@ function renderSearch() {
     : "";
   const first = words.length
     ? [html`<div class="sp-sec">${"Contains \"" + searchAns.q + "\""}</div>`, words.map((h, i) => row(h, i))]
-    : [html`<div class="sp-note">${"No item in " + scope + " contains \"" + searchAns.q + "\"."}</div>`, widen];
+    : [html`<div class="sp-note">${"No entity in " + scope + " contains \"" + searchAns.q + "\"."}</div>`, widen];
   searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode">${modeWord}</span></div><div class="sp-modewhy">${modeWhy}</div>${
     count || widen ? first : ""}${
     related.length ? [html`<div class="sp-sec">Related</div>`, related.map((h, i) => row(h, words.length + i))] : ""}${
@@ -5507,8 +5562,8 @@ function setRegions(v) {
 }
 // What each choice of regions draws, said under the choice rather than in a tooltip (Section 4, U25).
 const REGION_WHY = {
-  all: "Every region faint, and the active node's at full strength.",
-  selected: "Only the regions of the node you point at or select.",
+  all: "Every region faint, and the active entity's at full strength.",
+  selected: "Only the regions of the entity you point at or select.",
   off: "No regions.",
 };
 function renderRegionsSeg() {
@@ -5533,7 +5588,9 @@ function applyDock(isLeft, on, remember = true) {
   document.body.classList.toggle(isLeft ? "dl" : "dr", on);
   if (isLeft) renderTierNote();
   else if (on) refreshLog();
-  renderStrip();
+  // Closing the Log fetches the strip that takes its place at once, not at the next poll.
+  if (!isLeft && !on) refreshStrip();
+  else renderStrip();
   if (remember) {
     try { localStorage.setItem(isLeft ? "supra.dockL" : "supra.dockR", on ? "1" : "0"); } catch (_) { /* private mode */ }
   }
