@@ -113,7 +113,7 @@ pub fn runner(
             let why = "this system has no user service manager setup can use (`systemctl --user` does not work here, as in many containers)";
             return match s {
                 Situation::Stopped => Runner::Attention(format!(
-                    "Not running, and {why}. `supragnosis serve` runs it in the foreground; `supragnosis start` runs it until you log out."
+                    "Stopped, and {why}. `supragnosis serve` runs it in the foreground; `supragnosis start` runs it until you log out."
                 )),
                 Situation::One(Manager::Pidfile { .. }) => Runner::Attention(format!(
                     "Running only until you log out (`supragnosis start`), and {why}, so nothing keeps it running at login. `supragnosis status` shows it."
@@ -126,21 +126,21 @@ pub fn runner(
         }
     }
     match s {
-        Situation::Stopped if hand => Runner::Attention(format!("Not running, and {}", hand_written())),
+        Situation::Stopped if hand => Runner::Attention(format!("Stopped, and {}", hand_written())),
         Situation::Stopped => Runner::Stopped,
         Situation::One(Manager::Launchd(j)) => match j.kind {
             LabelKind::Canonical if answering => {
                 Runner::Kept("Running, and the login job starts it at every login.".to_string())
             }
             LabelKind::Canonical => Runner::Attention(format!(
-                "The login job is loaded but its server does not answer{}. `supragnosis status` says why, and `supragnosis restart` tries again.",
+                "Stopped{}: the login job is loaded, but its daemon does not run. `supragnosis status` says why, and `supragnosis restart` tries again.",
                 j.last_exit.map(|c| format!(" (last exit {c})")).unwrap_or_default()
             )),
             LabelKind::Homebrew(token) if answering => Runner::Kept(format!(
                 "Running under Homebrew's service (brew services {token}), which starts it at login."
             )),
             LabelKind::Homebrew(token) => Runner::Attention(format!(
-                "Homebrew's service (brew services {token}) is loaded but its server does not answer. Setup does not take it over unless asked: `supragnosis service install --take-over`."
+                "Stopped: Homebrew's service (brew services {token}) is loaded, but its daemon does not run. Setup does not take it over unless asked: `supragnosis service install --take-over`."
             )),
             LabelKind::Retired if hand => Runner::Attention(hand_written()),
             LabelKind::Retired => Runner::TakeOver(format!(
@@ -162,7 +162,7 @@ pub fn runner(
 /// unasked (L5); a refused linger is attention, since it may need an administrator.
 fn systemd_runner(s: &Situation, answering: bool, hand: bool, linger: Option<bool>) -> Runner {
     match s {
-        Situation::Stopped if hand => Runner::Attention(format!("Not running, and {HAND_WRITTEN_UNIT}")),
+        Situation::Stopped if hand => Runner::Attention(format!("Stopped, and {HAND_WRITTEN_UNIT}")),
         Situation::Stopped => Runner::Stopped,
         Situation::One(Manager::Systemd(j)) => match j.kind {
             LabelKind::Canonical if answering && linger == Some(false) => Runner::Attention(
@@ -175,14 +175,14 @@ fn systemd_runner(s: &Situation, answering: bool, hand: bool, linger: Option<boo
                 Runner::Kept("Running, and its user unit starts it at every login.".to_string())
             }
             LabelKind::Canonical => Runner::Attention(format!(
-                "The user unit is enabled but its server does not answer{}. `supragnosis status` says why, `journalctl --user -u supragnosis` has its log, and `supragnosis restart` tries again.",
+                "Stopped{}: the user unit is enabled, but its daemon does not run. `supragnosis status` says why, `journalctl --user -u supragnosis` has its log, and `supragnosis restart` tries again.",
                 j.last_exit.map(|c| format!(" (last exit {c})")).unwrap_or_default()
             )),
             LabelKind::Homebrew(token) if answering => Runner::Kept(format!(
                 "Running under Homebrew's service (brew services {token}), which starts it at login."
             )),
             LabelKind::Homebrew(token) => Runner::Attention(format!(
-                "Homebrew's service (brew services {token}) is enabled but its server does not answer. Setup does not take it over unless asked: `supragnosis service install --take-over`."
+                "Stopped: Homebrew's service (brew services {token}) is enabled, but its daemon does not run. Setup does not take it over unless asked: `supragnosis service install --take-over`."
             )),
             LabelKind::Retired => Runner::TakeOver(format!(
                 "A unit an earlier release installed ({}) runs it. Setup replaces it with the current one.",
@@ -290,7 +290,9 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
             "server",
             None,
             State::Skipped,
-            format!("This machine's AI apps use the server \"{r}\", so this machine's daemon is not what they use."),
+            format!(
+                "AI apps here use the server \"{r}\", so the daemon here is not what they use."
+            ),
         ),
         (None, Runner::Kept(say)) => Event::new("server", None, State::Done, say.clone()),
         (None, Runner::TakeOver(say)) => Event::new("server", None, State::Todo, say.clone()),
@@ -298,11 +300,14 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
             "server",
             None,
             State::Todo,
-            "Running only while the app is open. Setup keeps it running at login instead.",
+            "Running while this app is open. Setup keeps it running at login instead.",
         ),
-        (None, Runner::Stopped) => {
-            Event::new("server", None, State::Todo, "Not running. Setup starts it now and at every login.")
-        }
+        (None, Runner::Stopped) => Event::new(
+            "server",
+            None,
+            State::Todo,
+            "Stopped. Setup starts it now and at every login.",
+        ),
         (None, Runner::Attention(say)) => Event::new("server", None, State::Attention, say.clone()),
     });
 
@@ -357,7 +362,7 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
                 id,
                 State::Attention,
                 format!(
-                    "{} has a supragnosis entry setup did not write ({other}). Setup leaves it: `supragnosis connect {} --replace` switches it to the bridge.",
+                    "{} already has an entry setup did not write ({other}). Setup leaves it: `supragnosis connect {} --replace` switches it to the bridge.",
                     a.name, a.id
                 ),
             ),
@@ -452,7 +457,7 @@ pub fn summary(list: &[Event]) -> Event {
 /// A step's name where a person reads it.
 pub fn title(step: &str) -> &'static str {
     match step {
-        "server" => "Keep it running",
+        "server" => "Keep supragnosis running",
         "apps" => "Connect your AI apps",
         "model" => "Search by meaning",
         "first" => "Try it",
@@ -475,7 +480,7 @@ pub fn text_row(e: &Event) -> String {
     match e.step {
         "app" => format!("      {mark} {}", e.say),
         "summary" => e.say.clone(),
-        _ => format!("  {mark} {:<21} {}", title(e.step), e.say),
+        _ => format!("  {mark} {:<24} {}", title(e.step), e.say),
     }
 }
 
@@ -575,7 +580,7 @@ mod tests {
         let s = summary(&l);
         assert_eq!((s.step, s.state), ("summary", State::Todo));
         assert!(
-            s.say.starts_with("Not done: Keep it running, Connect your AI apps"),
+            s.say.starts_with("Not done: Keep supragnosis running, Connect your AI apps"),
             "{}",
             s.say
         );
@@ -843,7 +848,7 @@ mod tests {
         assert_eq!(text_row(&e), "      [~] connected");
         assert_eq!(
             text_row(&Event::new("server", None, State::Done, "Running.")),
-            "  [o] Keep it running       Running."
+            "  [o] Keep supragnosis running Running."
         );
         assert_eq!(
             progress_say(40 << 20, 224),

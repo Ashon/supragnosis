@@ -50,12 +50,14 @@ enum Daemon {
 }
 
 impl Daemon {
+    /// What the shell knows of the daemon by itself, in the state words every surface uses
+    /// (docs/design-system.md Section 9, step 45).
     fn status_line(&self) -> String {
         match self {
-            Daemon::Starting => "daemon: starting...".to_string(),
-            Daemon::External => "daemon: attached (externally managed)".to_string(),
-            Daemon::Spawned(c) => format!("daemon: running (spawned, pid {})", c.id()),
-            Daemon::Failed(e) => format!("daemon: FAILED - {e}"),
+            Daemon::Starting => "Starting...".to_string(),
+            Daemon::External => "Running - started outside this app".to_string(),
+            Daemon::Spawned(_) => "Running while this app is open".to_string(),
+            Daemon::Failed(e) => format!("Could not start: {}", cause_of(e)),
         }
     }
 }
@@ -529,7 +531,7 @@ fn remote_html(r: &RemoteServer) -> String {
         (false, _) => "it does not answer right now",
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
         name = esc(&r.name),
         url = esc(&r.url),
     )
@@ -544,8 +546,11 @@ enum StartPage {
     Starting,
     /// A start past 10 seconds, or a daemon the shell holds that has not answered yet.
     StillStarting,
-    /// The start failed, or the daemon stopped answering: the cause, in one sentence.
+    /// The start failed, or the child the app spawned exited: the cause, in one sentence.
     Failed(String),
+    /// A daemon the app attached to stopped answering, and nothing is starting it (Section 9's
+    /// "Stopped", since step 45).
+    Stopped,
 }
 
 /// When the shell last began a start - at launch or for a restart - for "Still starting".
@@ -570,7 +575,23 @@ fn start_page(d: &mut Daemon, since: Option<Duration>) -> StartPage {
             Ok(None) => StartPage::StillStarting,
             _ => StartPage::Failed("The daemon exited.".to_string()),
         },
-        Daemon::External => StartPage::Failed("The daemon stopped answering.".to_string()),
+        Daemon::External => StartPage::Stopped,
+    }
+}
+
+/// A child the app spawned that has since exited is a failed start - Section 9's "Could not start" -
+/// for whatever reads the state next: the tray, Settings and the starting page say the same.
+fn settle_exited(d: &mut Daemon) {
+    let exited = match d {
+        Daemon::Spawned(c) => match c.try_wait() {
+            Ok(Some(status)) => Some(format!("the daemon exited ({status})")),
+            Ok(None) => None,
+            Err(e) => Some(format!("the daemon could not be watched: {e}")),
+        },
+        _ => None,
+    };
+    if let Some(why) = exited {
+        *d = Daemon::Failed(why);
     }
 }
 
@@ -658,20 +679,26 @@ fn starting_html(
             "or in a terminal: supragnosis embed rebuild".to_string(),
         ),
         (None, StartPage::Starting) => (
-            r#"<span class="spin" aria-hidden="true"></span>Starting supragnosis..."#.to_string(),
+            r#"<span class="spin" aria-hidden="true"></span>Starting Supragnosis..."#.to_string(),
             String::new(),
             String::new(),
             String::new(),
         ),
         (None, StartPage::StillStarting) => (
-            r#"<span class="spin" aria-hidden="true"></span>Starting supragnosis..."#.to_string(),
+            r#"<span class="spin" aria-hidden="true"></span>Starting Supragnosis..."#.to_string(),
             "Still starting.".to_string(),
             log_field.clone() + &plain(link(None), "Open This Mac"),
             String::new(),
         ),
-        (None, StartPage::Failed(cause)) => (
-            "Supragnosis could not start".to_string(),
-            esc(cause),
+        (None, page @ (StartPage::Failed(_) | StartPage::Stopped)) => (
+            match page {
+                StartPage::Stopped => "Supragnosis stopped".to_string(),
+                _ => "Supragnosis could not start".to_string(),
+            },
+            match page {
+                StartPage::Failed(cause) => esc(cause),
+                _ => "It stopped answering, and nothing is starting it.".to_string(),
+            },
             [
                 primary(link(Some("restart")), "Restart"),
                 plain(link(Some("diagnostics")), "Diagnostics"),
@@ -685,7 +712,7 @@ fn starting_html(
         ),
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2, .lf {{ color:#16181e !important; border-color:#c9ccd3 !important }} }} .spin {{ display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid #b0b8c7;border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite }} @keyframes s {{ to {{ transform:rotate(360deg) }} }} @media (prefers-reduced-motion: reduce) {{ .spin {{ animation:none }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2, .lf {{ color:#16181e !important; border-color:#c9ccd3 !important }} }} .spin {{ display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid #b0b8c7;border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite }} @keyframes s {{ to {{ transform:rotate(360deg) }} }} @media (prefers-reduced-motion: reduce) {{ .spin {{ animation:none }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
     )
 }
 
@@ -941,36 +968,43 @@ fn cli_outcome(out: &std::process::Output) -> (bool, String) {
 /// of this app, which the CLI cannot see (no pidfile, no launchd job).
 fn who_runs(daemon: &Daemon, st: &serde_json::Value) -> String {
     match (daemon, st["managers"].get(0)) {
-        (Daemon::Spawned(_), _) => "run by this app, not at login".to_string(),
+        (Daemon::Spawned(_), _) => "while this app is open".to_string(),
         (_, Some(m)) => match (m["type"].as_str(), m["source"].as_str()) {
-            (Some("launchd"), Some("canonical")) => "login item".to_string(),
-            (Some("launchd"), Some("homebrew")) => "brew services".to_string(),
-            (Some("launchd"), _) => format!("launchd {}", m["label"].as_str().unwrap_or("?")),
+            (_, Some("canonical")) => "starts at login".to_string(),
+            (Some("launchd"), Some("homebrew")) => "Homebrew's service".to_string(),
             (Some("pidfile"), _) => "supragnosis start".to_string(),
-            _ => "externally managed".to_string(),
+            _ => "started outside this app".to_string(),
         },
-        (_, None) => "externally managed".to_string(),
+        (_, None) => "started outside this app".to_string(),
     }
 }
 
 fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&str>) -> String {
     let base = match (daemon, st) {
         (Daemon::Starting | Daemon::Failed(_), _) | (_, None) => daemon.status_line(),
+        // The app's child, alive and not answering yet (an exited one is settled to Failed first).
+        (Daemon::Spawned(_), Some(st)) if st["answering"].as_bool() == Some(false) => {
+            "Starting...".to_string()
+        }
         (_, Some(st)) => {
             let situation = st["situation"].as_str().unwrap_or("");
             let running = st["version"]["running"].as_str();
             let here = st["version"]["here"].as_str().unwrap_or("?");
             if situation == "conflict" {
-                let n = st["managers"].as_array().map_or(0, Vec::len);
-                format!("daemon: CONFLICT - {n} managers claim it (see `supragnosis status`)")
+                "Two managers run Supragnosis - open Settings".to_string()
             } else {
                 let who = who_runs(daemon, st);
                 match running {
+                    // Both versions, as daemon-lifecycle.md L3 has the tray say, and where to act
+                    // (settings-page.md Section 5).
                     Some(r) if r != here => {
-                        format!("daemon {r} running, {here} installed - restart it in Settings")
+                        format!(
+                            "Update ready - {r} running, {here} installed - restart in Settings"
+                        )
                     }
-                    Some(r) => format!("daemon {r} - {who}"),
-                    None => format!("daemon - {who}"),
+                    Some(r) => format!("Running {r} - {who}"),
+                    None if st["answering"].as_bool() == Some(false) => "Stopped".to_string(),
+                    None => format!("Running - {who}"),
                 }
             }
         }
@@ -1046,11 +1080,12 @@ async fn refresh_status(app: &tauri::AppHandle) {
                     let running = v["version"]["running"].as_str();
                     running.is_some() && running != v["version"]["here"].as_str()
                 });
-                let text = status_text(
-                    &app.state::<DaemonGuard>().0.lock().unwrap(),
-                    st.as_ref(),
-                    hint.as_deref(),
-                );
+                let guard = app.state::<DaemonGuard>();
+                let text = {
+                    let mut daemon = guard.0.lock().unwrap();
+                    settle_exited(&mut daemon);
+                    status_text(&daemon, st.as_ref(), hint.as_deref())
+                };
                 let attention = if drift { Some("daemon") } else { hint.as_ref().map(|_| "apps") };
                 (text, attention)
             }
@@ -1129,7 +1164,11 @@ fn app_row(report: Option<&serde_json::Value>) -> (String, Option<&'static str>,
             Some("Switch to the bridge"),
             "attention",
         ),
-        "other" => ("another supragnosis entry is configured".into(), Some("Replace"), "attention"),
+        "other" => (
+            "another Supragnosis entry is configured".into(),
+            Some("Switch to the bridge"),
+            "attention",
+        ),
         "unknown" => ("its settings file could not be read".into(), None, "absent"),
         _ => ("not connected".into(), Some("Connect"), "off"),
     }
@@ -1151,7 +1190,8 @@ async fn refresh_apps(app: &tauri::AppHandle) {
 /// Connects an AI app through the bridge, or disconnects it if it already is. The click is the
 /// consent to replace another supragnosis entry (client-connect.md Section 5). The CLI decides and
 /// does; the answer is what it said.
-async fn toggle_app(app: &tauri::AppHandle, id: &str) -> String {
+/// A failure is an error, so a page never draws it as done (U1).
+async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> {
     let name = AI_APPS
         .iter()
         .find(|(i, _)| *i == id)
@@ -1181,19 +1221,19 @@ async fn toggle_app(app: &tauri::AppHandle, id: &str) -> String {
     .ok()
     .flatten();
     let message = match out {
-        None => format!("{name}: supragnosis CLI not found"),
-        Some(o) if o.status.success() && connected => format!("{name} disconnected"),
+        None => Err(format!("{name}: the supragnosis command was not found")),
+        Some(o) if o.status.success() && connected => Ok(format!("{name} disconnected")),
         Some(o) if o.status.success() => {
             // The CLI's "next" line is the one thing the person still has to do.
             let next = String::from_utf8_lossy(&o.stdout)
                 .lines()
                 .find_map(|l| l.trim().strip_prefix("next").map(|n| n.trim().to_string()));
-            match next {
+            Ok(match next {
                 Some(n) => format!("{name} connected - {n}"),
                 None => format!("{name} connected"),
-            }
+            })
         }
-        Some(o) => format!("connecting {name} failed: {}", cli_outcome(&o).1),
+        Some(o) => Err(format!("connecting {name} failed: {}", cli_outcome(&o).1)),
     };
     refresh_status(app).await;
     message
@@ -1449,7 +1489,7 @@ async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> String {
         Some((true, _)) if installed => "no longer starts at login".to_string(),
         Some((true, _)) => "starts at login".to_string(),
         Some((false, why)) => format!("Start at Login failed: {why}"),
-        None => "Start at Login: supragnosis CLI not found".to_string(),
+        None => "Start at Login: the supragnosis command was not found".to_string(),
     };
     if !installed {
         wait_for_socket(&sock, Duration::from_secs(10)).await;
@@ -1644,10 +1684,18 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
         None
     };
     let guard = app.state::<DaemonGuard>();
-    let (line, who) = {
-        let daemon = guard.0.lock().unwrap();
+    let (line, who, shell, cause) = {
+        let mut daemon = guard.0.lock().unwrap();
+        settle_exited(&mut daemon);
         let who = status.as_ref().map(|st| who_runs(&daemon, st));
-        (status_text(&daemon, status.as_ref(), None), who)
+        // The shell's own state as a field, so no page parses the tray's words (Section 29.6).
+        let (shell, cause) = match &*daemon {
+            Daemon::Starting => ("starting", None),
+            Daemon::Failed(e) => ("failed", Some(cause_of(e))),
+            Daemon::Spawned(_) => ("spawned", None),
+            Daemon::External => ("attached", None),
+        };
+        (status_text(&daemon, status.as_ref(), None), who, shell, cause)
     };
     let login = status
         .as_ref()
@@ -1666,6 +1714,8 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
         "daemon": {
             "line": line,
             "who": who,
+            "shell": shell,
+            "cause": cause,
             "situation": status.as_ref().map(|v| v["situation"].clone()),
             "answering": status.as_ref().map(|v| v["answering"].clone()),
             "running": status.as_ref().map(|v| v["version"]["running"].clone()),
@@ -1752,7 +1802,7 @@ async fn app_toggle(
     if !AI_APPS.iter().any(|(i, _)| *i == id) {
         return Err(format!("{id:?} is not an app supragnosis connects"));
     }
-    Ok(toggle_app(&app, &id).await)
+    toggle_app(&app, &id).await
 }
 
 /// The Settings page's capture switch (design-system.md Section 6a): on runs `connect claude-code`,
@@ -2447,7 +2497,15 @@ async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<S
     own_page_caller(&webview)?;
     // The shell's own state and the daemon log's last lines: what a failed start leaves, which the
     // CLI's reads cannot say (design-system.md Section 29.5). The log names the token by its path only.
-    let shell = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
+    let guard = app.state::<DaemonGuard>();
+    let shell = {
+        let d = guard.0.lock().unwrap();
+        // The tray's words, and a failure's reason whole - the log path included.
+        match &*d {
+            Daemon::Failed(e) => format!("{} ({e})", d.status_line()),
+            other => other.status_line(),
+        }
+    };
     let log = daemon_log();
     let tail = std::fs::read_to_string(&log)
         .map(|t| {
@@ -2858,7 +2916,7 @@ fn main() {
             });
             // Tray: says what state this Mac is in and opens the windows that change it
             // (docs/settings-page.md Section 5). The settings themselves live on that page.
-            let status = MenuItem::with_id(app, "status", "daemon: starting...", false, None::<&str>)?;
+            let status = MenuItem::with_id(app, "status", "Starting...", false, None::<&str>)?;
             let open = MenuItem::with_id(app, "open", "Open Graph", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
@@ -3153,7 +3211,7 @@ mod status_text_tests {
         let (state, action, kind) = app_row(Some(&r(true, "http")));
         assert!(state.contains("HTTP") && action == Some("Switch to the bridge"), "{state}");
         assert_eq!(kind, "attention", "a copy of the token is something to fix");
-        assert_eq!(app_row(Some(&r(true, "other"))).1, Some("Replace"));
+        assert_eq!(app_row(Some(&r(true, "other"))).1, Some("Switch to the bridge"));
         assert_eq!(app_row(Some(&r(false, "none"))), ("not installed".into(), None, "absent"));
         assert_eq!(app_row(Some(&r(true, "unknown"))).1, None);
         assert_eq!(app_row(None).1, None, "an old CLI cannot connect anything");
@@ -3229,19 +3287,101 @@ mod status_text_tests {
         })
     }
 
+    /// docs/design-system.md Sections 6a and 29.6: the AI app's row is built once, in kit.js, and
+    /// drawn by both pages - one pill map, one capture label, the helper on both.
+    #[test]
+    fn the_ai_app_row_is_built_once() {
+        let kit = include_str!("../assets/kit.js");
+        for part in [
+            "function appRow(row)",
+            "attention: [\"warn\", \"Needs you\"]",
+            "label: \"Save the why behind each commit\"",
+            "const HELPER = { \"claude-desktop\": \"Restart Claude Desktop\", cursor: \"Open Cursor\" };",
+        ] {
+            assert!(kit.contains(part), "kit.js does not hold: {part}");
+        }
+        let settings = include_str!("../assets/settings.js");
+        let welcome = include_str!("../assets/welcome.js");
+        for (page, js) in [("Settings", settings), ("Setup", welcome)] {
+            assert!(js.contains("appRow({ id: a.id"), "{page} builds its own app row");
+            assert!(
+                !js.contains("const HELPER") && !js.contains("const APP_PILL"),
+                "{page} keeps its own words"
+            );
+        }
+        assert!(settings.contains("CAPTURE.label") && welcome.contains("CAPTURE.label"));
+        assert!(settings.contains("HELPER[a.id] && appNotes[a.id]"), "Settings offers no helper");
+        assert!(settings
+            .contains("title: disconnect ? null : APPS[a.id] + \" connected\", detail: null"));
+    }
+
+    /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
+    /// tray's line, Settings' Server and This Mac panes, Setup's first card and the starting page.
+    /// "Answering" is a remote server's word only.
+    #[test]
+    fn the_daemon_has_one_word_per_state() {
+        let child = std::process::Command::new("true").spawn().unwrap();
+        let mut spawned = Daemon::Spawned(child);
+        assert!(spawned.status_line().starts_with("Running while this app is open"));
+        if let Daemon::Spawned(c) = &mut spawned {
+            let _ = c.wait();
+        }
+        assert_eq!(Daemon::Starting.status_line(), "Starting...");
+        assert_eq!(Daemon::External.status_line(), "Running - started outside this app");
+        assert_eq!(Daemon::Failed("x".into()).status_line(), "Could not start: X.");
+        let stopped = serde_json::json!({ "situation": "none", "answering": false, "managers": [], "version": { "here": "0.4.2" } });
+        assert_eq!(status_text(&Daemon::External, Some(&stopped), None), "Stopped");
+
+        let settings = include_str!("../assets/settings.js");
+        let words = &settings[settings.find("function daemonStatus(").expect("daemonStatus")..];
+        let words = &words[..words.find("\n}\n").expect("it closes")];
+        for word in [
+            "\"Not in use\"",
+            "\"Two managers run Supragnosis\"",
+            "\"Update ready - restart\"",
+            "\"Starting...\"",
+            "\"Could not start\"",
+            "\"Stopped\"",
+            "\"Repairing - \"",
+            "\"Running\"",
+        ] {
+            assert!(words.contains(word), "This Mac's card does not say {word}");
+        }
+        let server = &settings[settings.find("function serverStatus(").expect("serverStatus")..];
+        let server = &server[..server.find("\n}\n").expect("it closes")];
+        assert!(
+            server.contains("if (local && state && state.daemon)")
+                && server.contains("daemonStatus(state.daemon)"),
+            "Settings' Server pane says Answering of this Mac"
+        );
+        assert!(settings.contains("owed === 0 ? \"Up to date\" : \"Repairing - \""));
+        let welcome = include_str!("../assets/welcome.js");
+        assert!(welcome.contains("title: \"Keep Supragnosis running\""));
+        let setup = include_str!("../../crates/supragnosis-cli/src/setup.rs");
+        assert!(setup.contains(
+            "\"Running while this app is open. Setup keeps it running at login instead.\""
+        ));
+    }
+
     /// The line names who runs the daemon - including a child of this app, which the CLI cannot see.
     #[test]
     fn the_line_names_the_manager() {
         let canonical = serde_json::json!({ "type": "launchd", "source": "canonical", "label": "com.supragnosis.daemon" });
         let brew = serde_json::json!({ "type": "launchd", "source": "homebrew", "label": "sh.brew.supragnosis-server" });
         let s = st("one", Some("0.4.2"), "0.4.2", canonical);
-        assert_eq!(status_text(&Daemon::External, Some(&s), None), "daemon 0.4.2 - login item");
+        assert_eq!(
+            status_text(&Daemon::External, Some(&s), None),
+            "Running 0.4.2 - starts at login"
+        );
         let s = st("one", Some("0.4.2"), "0.4.2", brew);
-        assert_eq!(status_text(&Daemon::External, Some(&s), None), "daemon 0.4.2 - brew services");
+        assert_eq!(
+            status_text(&Daemon::External, Some(&s), None),
+            "Running 0.4.2 - Homebrew's service"
+        );
         let s = st("unrecognized", Some("0.4.2"), "0.4.2", serde_json::Value::Null);
         assert_eq!(
             status_text(&Daemon::External, Some(&s), Some("no longer starts at login")),
-            "daemon 0.4.2 - externally managed | no longer starts at login"
+            "Running 0.4.2 - started outside this app | no longer starts at login"
         );
     }
 
@@ -3252,15 +3392,17 @@ mod status_text_tests {
         let s = st("one", Some("0.4.0"), "0.4.2", canonical);
         assert_eq!(
             status_text(&Daemon::External, Some(&s), None),
-            "daemon 0.4.0 running, 0.4.2 installed - restart it in Settings"
+            "Update ready - 0.4.0 running, 0.4.2 installed - restart in Settings"
         );
         let conflict = serde_json::json!({
             "situation": "conflict",
             "managers": [{ "type": "launchd" }, { "type": "launchd" }],
             "version": { "here": "0.4.2", "running": "0.4.0" },
         });
-        assert!(status_text(&Daemon::External, Some(&conflict), None)
-            .starts_with("daemon: CONFLICT - 2 managers"));
+        assert_eq!(
+            status_text(&Daemon::External, Some(&conflict), None),
+            "Two managers run Supragnosis - open Settings"
+        );
     }
 
     /// Without a CLI that answers `status --json`, the shell says only what it knows itself.
@@ -3268,9 +3410,13 @@ mod status_text_tests {
     fn an_old_cli_falls_back_to_the_shells_own_view() {
         assert_eq!(
             status_text(&Daemon::External, None, None),
-            "daemon: attached (externally managed)"
+            "Running - started outside this app"
         );
-        assert_eq!(status_text(&Daemon::Starting, None, None), "daemon: starting...");
+        assert_eq!(status_text(&Daemon::Starting, None, None), "Starting...");
+        assert_eq!(
+            status_text(&Daemon::Failed("port in use - full log: x".into()), None, None),
+            "Could not start: Port in use."
+        );
     }
 }
 
@@ -3632,10 +3778,9 @@ mod settings_tests {
             start_page(&mut alive, None),
             StartPage::Failed("The daemon exited.".to_string())
         );
-        assert_eq!(
-            start_page(&mut Daemon::External, None),
-            StartPage::Failed("The daemon stopped answering.".to_string())
-        );
+        assert_eq!(start_page(&mut Daemon::External, None), StartPage::Stopped);
+        let stopped = starting_html(&StartPage::Stopped, None, &settings_url(), Path::new(LOG));
+        assert!(stopped.contains("Supragnosis stopped") && stopped.contains(">Restart</a>"));
         let why = "the spawned daemon exited immediately (exit status: 1): store locked - full log: ~/.supragnosis/log/app-daemon.err.log";
         assert_eq!(
             start_page(&mut Daemon::Failed(why.to_string()), None),
@@ -3677,7 +3822,7 @@ mod settings_tests {
         );
         assert!(!still.contains("act=restart"), "a start in progress offers Restart");
         let first = starting_html(&StartPage::Starting, None, &settings_url(), log);
-        assert!(first.contains("Starting supragnosis...") && !first.contains("<input"));
+        assert!(first.contains("Starting Supragnosis...") && !first.contains("<input"));
         for page in [&failed, &still, &first] {
             assert!(!page.contains("http-equiv"), "the starting page reloads itself");
             assert!(!page.contains("<script"), "the starting page holds a script");
@@ -3708,7 +3853,7 @@ mod settings_tests {
         for part in [
             "keep.delete(\"act\")",
             "history.replaceState(",
-            "if (!d.answering && !/starting/.test(d.line || \"\")) restartDaemon();",
+            "if (!d.answering && d.shell !== \"starting\") restartDaemon();",
             "\"Not restarted: the daemon answers\"",
             "\"Not restarted: the daemon is still starting\"",
             "document.getElementById(\"copyDiagnostics\")",
@@ -3764,7 +3909,6 @@ mod settings_tests {
         }
         for key in [
             "\"server:\" + p.name",
-            "\"app:\" + a.id",
             "\"capture:\" + a.id",
             "\"data-k\": \"daemon\"",
             "\"data-k\": \"model\"",
@@ -3773,9 +3917,9 @@ mod settings_tests {
         ] {
             assert!(settings.contains(key), "a Settings row has no key: {key}");
         }
-        for key in ["\"step:\" + s.step", "\"app:\" + a.id"] {
-            assert!(welcome.contains(key), "a Setup row has no key: {key}");
-        }
+        assert!(welcome.contains("\"data-k\": \"step:\" + s.step"), "a Setup card has no key");
+        // An AI app's row, on either page, is kit.js's, which keys it.
+        assert!(kit.contains("\"data-k\": \"app:\" + row.id"), "an app row has no key");
         assert!(settings.contains("if (!quiet || now !== drawnFrom) render();"));
         assert!(settings.contains("load(true);"), "the window's focus draws what did not change");
         assert!(settings.contains("await load(true);"), "the watch draws what did not change");
@@ -3995,7 +4139,8 @@ mod settings_tests {
             "an app's replacement is not a plan item"
         );
         assert!(
-            js.contains("h(tick ? \"label\" : \"div\""),
+            js.contains("pick: !!tick")
+                && include_str!("../assets/kit.js").contains("h(row.pick ? \"label\" : \"div\""),
             "a plan row is not its checkbox's label"
         );
         assert!(
@@ -4406,13 +4551,13 @@ mod cli_contract_tests {
     #[test]
     fn the_examples_read_through_the_apps_own_readers() {
         let st = read(STATUS);
-        assert!(status_text(&Daemon::External, Some(&st), None).contains("CONFLICT"));
+        assert!(status_text(&Daemon::External, Some(&st), None).starts_with("Two managers"));
         let mut one = st.clone();
         one["situation"] = "one".into();
         one["managers"] = serde_json::json!([st["managers"][1].clone()]);
-        assert_eq!(who_runs(&Daemon::External, &one), "login item");
+        assert_eq!(who_runs(&Daemon::External, &one), "starts at login");
         let line = status_text(&Daemon::External, Some(&one), None);
-        assert!(line.contains("0.4.7 running, 0.4.8 installed"), "{line}");
+        assert_eq!(line, "Update ready - 0.4.7 running, 0.4.8 installed - restart in Settings");
 
         let apps = read(CONNECT);
         let kinds: Vec<_> = apps["clients"]

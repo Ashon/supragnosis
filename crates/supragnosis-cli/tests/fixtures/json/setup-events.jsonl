@@ -1,5 +1,5 @@
 {"schema":1}
-{"step":"server","state":"todo","say":"Not running. Setup starts it now and at every login."}
+{"step":"server","state":"todo","say":"Stopped. Setup starts it now and at every login."}
 {"step":"server","state":"working","say":"Running supragnosis service install --no-model.","cmd":"supragnosis service install --no-model"}
 {"step":"server","state":"working","say":"Running supragnosis service install --no-model.","out":"installed com.supragnosis.daemon -> /Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist"}
 {"step":"server","state":"done","say":"Running, and the login job starts it at every login."}
@@ -7,7 +7,7 @@
 {"step":"app","id":"claude-desktop","state":"working","say":"Running supragnosis connect claude-desktop.","out":"  backup  /Users/you/.supragnosis/backups/claude-desktop-1792310400.json"}
 {"step":"app","id":"claude-desktop","state":"done","say":"Claude Desktop is connected; it reaches the server once it loads the change: quit Claude (Cmd+Q) and open it again - it reads its servers at launch."}
 {"step":"app","id":"codex","state":"skipped","say":"Codex is not installed."}
-{"step":"app","id":"cursor","state":"attention","say":"Cursor has a supragnosis entry setup did not write (http). Setup leaves it: `supragnosis connect cursor --replace` switches it to the bridge."}
+{"step":"app","id":"cursor","state":"attention","say":"Cursor already has an entry setup did not write (http). Setup leaves it: `supragnosis connect cursor --replace` switches it to the bridge."}
 {"step":"model","state":"working","say":"40 of 224 MB. Search matches words until it is here."}
 {"step":"model","state":"failed","say":"`supragnosis embed fetch --events` failed: the download failed (connection reset). Search matches words until the model is here; run setup again when online."}
 {"step":"first","state":"working","say":"Ask a connected app: \"Remember one decision we made in this project today, and why.\""}

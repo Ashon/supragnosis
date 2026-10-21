@@ -24,9 +24,9 @@
 > (Section 28, U41-U42), is built - steps 39-40: Lucide's files on every surface, and a notice with
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
-> steps 41 to 44 are built: a confirmation that says what it confirms, a review that closes its loop,
-> a map that keeps the person's place, and app pages that hold focus and a failure that says so.
-> Step 45, one concept with one name, is specified.
+> steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
+> a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
+> concept with one name.
 
 ## 1. Why this exists
 
@@ -712,7 +712,7 @@ pass a fifth:
   Esc and Cmd+[ go back too (settings-page.md Section 3.0).
 
 - **One name: Setup.** The first-run page is Setup everywhere: its title bar says Setup, its heading
-  "Set up supragnosis", the tray's item "Finish Setup..." and About's act "Open Setup". "Welcome"
+  "Set up Supragnosis" (capitalized since step 45, D17), the tray's item "Finish Setup..." and About's act "Open Setup". "Welcome"
   fits only the first visit, and the page is reached three ways after it. A state has one word on
   both pages: an AI app that waits for the person's act "Needs you", on Setup as in Settings. A
   control that both pages offer, such as an AI app's row or the model's download, is built once in the
@@ -952,7 +952,7 @@ a state keeps one word on every page that shows it.
 | merge cycles / name variants / orphans | Conflicting merges / Possible duplicates / Unlinked |
 | Healthy - nothing owed | Up to date |
 | Peers, client, local +N | Sync, Spoke, this Mac (or this machine) +N - since step 45 |
-| settling layout... | Arranging 168 items |
+| settling layout... | Arranging 168 entities - since step 45 |
 | accepted claim_promotion: 9f778c20 | Claim confirmation accepted: "The ledger is a Postgres table..." (Ledger) - since step 42 |
 | opened entity_merge: PostgreS -> Postgres | Merge proposed: PostgreSQL into Postgres |
 | ws (all) / nodes 20 / edges 14 / Component 3, ... / hyperedges 10 (hull 4) | All workspaces - 20 entities, 14 relations, 10 regions |
@@ -972,7 +972,7 @@ Settings' Server and This Mac panes, Setup's first card and the starting page (s
 | answering at the installed version | Running | who keeps it: starts at login, while this app is open, Homebrew's service, `supragnosis start`, started outside this app |
 | answering at an older version than the installed one | Update ready - restart | both versions (daemon-lifecycle.md L3) and where to restart |
 | answering while its store repairs | Repairing - N items left | |
-| not answering, and nothing starting it - a login job's included | Stopped | a login job's last exit, where Setup reads it |
+| not answering, and nothing starting it - a login job's, and one the app attached to, included | Stopped | a login job's last exit, where Setup reads it |
 | its start failed, or the app's child exited | Could not start | the cause, in one sentence |
 | claimed by two managers | Two managers run Supragnosis | where to settle it |
 | unable to open its store for its model | The search index needs rebuilding | the two models, and Rebuild index |
@@ -1007,7 +1007,7 @@ shell's lines or Setup's sentences, comments and test code left out:
 | Needs switching | Needs you |
 | nothing owed | Up to date |
 | projections owed | Repairing - N items left |
-| settling layout | Arranging N items |
+| settling layout | Arranging N entities |
 | After a commit, ask for the decision | Save the why behind each commit |
 | Keep it running | Keep Supragnosis running |
 | Set up supragnosis | Set up Supragnosis |
@@ -1640,7 +1640,12 @@ through `tierName`, and the Log's two tables cover every kind in the engine's `P
 `ProposalEventKind` and every decision `review_proposal` accepts. Its second half is guarded by
 `every_log_row_says_who_and_when` in the same file - the tier by name, the writer and the time once a
 minute, marked with the legend's ring - and by `the_setup_page_says_what_is_true_and_how_far_it_is` in
-the app's tests, which holds Setup's one name in its crumb, the tray and About.
+the app's tests, which holds Setup's one name in its crumb, the tray and About. Its words are guarded
+by `no_retired_word_reaches_a_page` in the same file, which reads Section 9's retired words and fails
+when one is in a page's, the shell's or Setup's source, and `the_maps_activity_speaks_in_sentences`,
+which holds the activity's rows and the footprint in words; and by `the_daemon_has_one_word_per_state`
+and `the_ai_app_row_is_built_once` in the app's tests - the state words on the tray, Settings, Setup
+and the starting page, and the AI app's row drawn from `kit.js` by both pages.
 
 U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 `crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:
@@ -1845,7 +1850,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    draw and no draw for an unchanged read, the starting page's three states with Restart, Diagnostics
    and the log, a restart that leaves a login job its daemon, Settings acting on what that page asks,
    selectable commands and paths with Copy, and Setup's foot.
-45. **One concept, one name** (Section 29.6; U17, D2, D17): this Mac or this machine for the page's
+45. **One concept, one name** [built] (Section 29.6; U17, D2, D17): this Mac or this machine for the page's
    own machine, entity, relation and type for the graph's parts, sentence-case headings with their
    counts, the map's activity in sentences, one word per daemon state, the AI app's row built once in
    `kit.js`, This Mac's own sentences, Supragnosis in sentences, and the retired words as a tripwire.
@@ -3591,7 +3596,9 @@ these findings.
     or "The daemon stopped answering."; Restart, the
     default (it has focus when the page opens), Diagnostics and Open This Mac, each a link to Settings
     > This Mac (`?act=restart`, `?act=diagnostics`); the log's path in a read-only field, selectable
-    and copyable; and Show in Finder (`?act=reveal-log`).
+    and copyable; and Show in Finder (`?act=reveal-log`). *(Revised by step 45: a daemon the app
+    attached to that went silent is Section 9's "Stopped" - the heading "Supragnosis stopped", "It
+    stopped answering, and nothing is starting it.", with the same acts.)*
   - **The log** is the one written last of `app-daemon.err.log` (the app's child) and
     `supragnosis.err.log` (a login job, and `supragnosis start`).
   - A store the daemon cannot open keeps its page, with Rebuild index.
@@ -3676,7 +3683,7 @@ a path, the CLI's own output and code (D17).
 
 | Rule | What it asks | Standing |
 |---|---|---|
-| U17 | No line read first spells a system identifier; a place keeps one name wherever it is reached | repays - the activity rows, the status bar's session, Review's diff fields and the tray's lines say what happened in words; revised: it gains "a state keeps one word on every surface that shows it, from Section 9's state words, and no retired word of Section 9 reaches a page", guarded by tests named when they are built |
+| U17 | No line read first spells a system identifier; a place keeps one name wherever it is reached | repays - the activity rows, the status bar's session, Review's diff fields and the tray's lines say what happened in words; revised: it gains "a state keeps one word on every surface that shows it, from Section 9's state words, and no retired word of Section 9 reaches a page", guarded by `no_retired_word_reaches_a_page`, `the_maps_activity_speaks_in_sentences`, `the_daemon_has_one_word_per_state` and `the_ai_app_row_is_built_once` |
 | Section 9, "Words are the reader's" | A host is named by its id, and "this node" only when the id is the page's own | revised by D2: the page's own machine is "this Mac" in the app on a Mac and "this machine" elsewhere, still only for the id `/api/surface` reports; another machine stays named by its id |
 | Section 9, "One place, one name" | The table's left column is replaced by its right | repays - "Needs switching", "Healthy - nothing owed" and "settling layout..." go, and a test now fails when a retired word returns |
 | P8 | One meaning per concept | agrees - the screen uses the ontology's own three words, entity, relation and type; "node" no longer names both an entity and a machine |
@@ -3735,7 +3742,7 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
 - **The status bar's footprint** reads "Agents used 8 entities": its session is the daemon's run, not
   one conversation, so it counts every agent since then. The tooltip says since when and the
   session's id. Closing the Log fetches the strip at once.
-- **The map's loader** says "Arranging 168 items", the count of what the layout settles.
+- **The map's loader** says "Arranging 168 entities", the count of what the layout settles.
 - **The daemon has one word per state** (Section 9's state words), on the tray's line, Settings'
   Server and This Mac panes, Setup's first card and the starting page:
   - Starting; Running, with who keeps it - "starts at login", "while this app is open", Homebrew's
@@ -3750,7 +3757,12 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
   - This Mac's store row: "Up to date", or "Repairing - 12 items left". About's daemon row says the
     version, "Not in use" or "Stopped".
   - No page reads a state out of these words: Settings is given the shell's state - starting, failed
-    with its cause, spawned, attached - as a field of its own, and the tray's line only to show.
+    with its cause, spawned, attached - as a field of its own, and the tray's line only to show. A
+    child the app spawned that has exited is settled to failed before any of them reads it, so all
+    say "Could not start"; a daemon the app attached to that went silent is "Stopped" on all,
+    the starting page's heading "Supragnosis stopped" included.
+  - "Answering" stays on Settings' Server pane for a remote server only, and so do its two warnings,
+    a refused credential and a server that does not answer.
 - **The AI app's row is `kit.js`'s.** Both pages draw it from one function, which takes the app, its
   state in one vocabulary and what the page puts at its end - a checkbox on Setup's plan, a button on
   Settings:
@@ -3775,12 +3787,17 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
 - **Setup's sentences are the CLI's,** written once for the terminal and the app, so they say neither
   the machine's word nor the product's name: "AI apps here use the server "home", so the daemon here
   is not what they use"; "Cursor already has an entry setup did not write". A daemon that does not
-  answer is "Stopped" there too ("Stopped, and ..."). The step's title is "Keep Supragnosis running"
-  on the page and "Keep supragnosis running" in the terminal.
+  run is "Stopped" there too - "Stopped, and ...", and with a login job loaded "Stopped (last exit
+  1): the login job is loaded, but its daemon does not run". The step's title is "Keep Supragnosis
+  running" on the page and "Keep supragnosis running" in the terminal. Claude Code's capture option
+  carries its line under the checkbox as under Settings' switch.
+- **One act, one name on both pages:** replacing another app's entry is "Switch to the bridge" on
+  Settings as on Setup, and a helper that fails says "Do it by hand" on both. A Connect that fails is
+  an error, never a notice that it connected (U1).
 - **The browser's Settings dialog** says "Settings", "Package", "Version", "License", "Source", and
   the role "Hub" or "Spoke", as the app's page does. A count of sources is "3 sources".
-- **The Graph is the page; the map is its drawing.** "Open the Graph" names the page, as the tray and
-  the title bar do; "on the map" keeps naming the drawing inside it.
+- **The Graph is the page; the map is its drawing.** Setup's "Open the Graph" names the page, as the
+  tray's Open Graph and the title bar do; "on the map" keeps naming the drawing inside it.
 - **Section 9's words become a tripwire.** Its table of retired words lists phrases as they were
   written; a test reads the viewer's markup and script, the app's pages and scripts, the shell's
   lines and Setup's sentences, comments and test code left out, and fails when one appears, case for

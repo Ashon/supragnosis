@@ -10,11 +10,8 @@ const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 const listen = (ev, fn) => window.__TAURI__.event.listen(ev, fn);
 const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
 
-// The helper an app has once this page connected it (Section 4.2, D9).
-const HELPER = { "claude-desktop": "Restart Claude Desktop", cursor: "Open Cursor" };
-
 const STEPS = [
-  { step: "server", title: "Keep it running", log: "server" },
+  { step: "server", title: "Keep Supragnosis running", log: "server" },
   { step: "apps", title: "Connect your AI apps", log: "apps" },
   { step: "model", title: "Search by meaning", log: "model" },
   { step: "first", title: "Try it", log: "first" },
@@ -25,10 +22,8 @@ const PILL = {
 };
 // The last step's work is the person's: while it waits, it says so rather than "Working".
 const FIRST_PILL = Object.assign({}, PILL, { working: ["gold", "Waiting for an entry"] });
-const APP_PILL = {
-  done: ["ok", "Connected"], todo: ["", "Not connected"], working: ["gold", "Connecting"],
-  attention: ["warn", "Needs you"], failed: ["bad", "Failed"], skipped: ["", "Not installed"],
-};
+// A setup event's state, in the AI app row's words (kit.js, design-system.md Section 29.6).
+const APP_STATE = { done: "connected", skipped: "absent" };
 
 let events = [];              // the last checklist
 let info = null;              // welcome_state: what the app remembers, and its facts
@@ -371,7 +366,7 @@ function appsBody(e, state, say) {
       end.push(tick);
       if (a.id === "claude-code" && plan.apps[a.id] !== false) {
         option = h("div", { class: "sub option" },
-          check_(plan.capture, "After a commit, ask for the decision behind it", (v) => { plan.capture = v; }));
+          check_(plan.capture, CAPTURE.label, (v) => { plan.capture = v; }), h("div", { class: "sub", text: CAPTURE.sub }));
       }
     } else if ((st === "todo" || st === "failed") && APPS[a.id]) {
       end.push(button("Connect", "plug", "primary", () => run(key, { noCapture: a.id === "claude-code" && !plan.capture, failTitle: name + " was not connected" }), key));
@@ -387,11 +382,7 @@ function appsBody(e, state, say) {
       end.push(button(HELPER[a.id], a.id === "cursor" ? "open" : "restart", "", () => helper(a.id), "helper:" + a.id));
     }
     if (st !== "todo" && st !== "skipped") sub = h("div", { class: "sub" }, sayNodes(l && running[key] ? l.say : a.say));
-    // A plan row is one checkbox whose label is the whole row (design-system.md Section 6a).
-    return h(tick ? "label" : "div", { class: "row" + (st === "skipped" ? " muted" : "") + (tick ? " pick" : ""), "data-k": "app:" + a.id },
-      h("span", { class: "lead" }, icon(APP_KIND[a.id] || "desktop")),
-      h("div", { class: "body" }, h("div", { class: "title" }, name, pill(APP_PILL, st)), sub, option),
-      h("div", { class: "end" }, end));
+    return appRow({ id: a.id, state: APP_STATE[st] || st, sub, option, end, pick: !!tick });
   });
   return [h("p", { class: "say" + (state === "done" ? " quiet" : "") }, sayNodes(say)),
     rows.length ? h("div", { class: "apps" }, rows) : null];
@@ -448,7 +439,7 @@ function renderIntro() {
     ? "Four steps. Each one says what it ran and what it changed. Nothing changes until you click Set up."
     : "Each step says what it ran. You can leave, and come back from Open Setup in Settings > About.";
   // The heading says the work is done once the essentials are, not only a notice that leaves.
-  const title = essentialsDone() ? "Supragnosis is set up" : "Set up supragnosis";
+  const title = essentialsDone() ? "Supragnosis is set up" : "Set up Supragnosis";
   return h("div", { class: "wintro" }, h("h2", { text: title }), h("p", { text }));
 }
 
@@ -465,7 +456,7 @@ function renderActions() {
     const essentials = essentialsDone();
     const first = stepEvent("first");
     main.push(h("button", { class: "btn " + (essentials ? "primary" : ""), on: { click: () => openGraph(first && first.state === "done" ? first.id : null) } },
-      "Open the graph", icon("arrow")));
+      "Open the Graph", icon("arrow")));
     if (!essentials) main.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
   }
   // While the plan runs, the foot says how far it is (Section 6a).

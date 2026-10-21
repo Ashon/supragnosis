@@ -153,3 +153,163 @@ fn every_log_row_says_who_and_when() {
         "a row's tier mark is not the legend's ring"
     );
 }
+
+/// A source with its comments left out: `//` to the line's end where whitespace or the line's start
+/// comes before it (so an address's `://` stays), `/* ... */`, and `<!-- ... -->`.
+fn prose(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut rest = src;
+    loop {
+        let block = rest.find("/*");
+        let html = rest.find("<!--");
+        let at = match (block, html) {
+            (Some(b), Some(h)) => b.min(h),
+            (Some(b), None) => b,
+            (None, Some(h)) => h,
+            (None, None) => break,
+        };
+        out.push_str(&rest[..at]);
+        let close = if rest[at..].starts_with("/*") { "*/" } else { "-->" };
+        rest = match rest[at..].find(close) {
+            Some(end) => &rest[at + end + close.len()..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out.lines()
+        .map(|l| {
+            let cut = l
+                .match_indices("//")
+                .find(|(i, _)| *i == 0 || l[..*i].ends_with(char::is_whitespace))
+                .map(|(i, _)| i);
+            match cut {
+                Some(i) => &l[..i],
+                None => l,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A Rust source without its `#[cfg(test)]` items: each runs from the attribute to the next line that
+/// rustfmt starts with a closing `}` or `]` in the first column - a test module's end, or a test-only
+/// list's.
+fn without_tests(src: &str) -> String {
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(at) = rest.find("#[cfg(test)]") {
+        out.push_str(&rest[..at]);
+        let item = &rest[at..];
+        let end = ["\n}", "\n]"]
+            .iter()
+            .filter_map(|close| item.find(close).map(|i| i + close.len()))
+            .min()
+            .unwrap_or(item.len());
+        rest = &item[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// docs/design-system.md Section 9 and U17: a retired word does not come back. The table's left
+/// column, as it was written, is looked for in every page's markup and script, the shell's lines and
+/// Setup's sentences - the code before each file's tests, comments left out.
+#[test]
+fn no_retired_word_reaches_a_page() {
+    let doc = include_str!("../../../docs/design-system.md");
+    let at = doc.find("**Retired words**").expect("Section 9 lists the retired words");
+    let table = &doc[at..];
+    let table = &table[table.find("| Retired |").expect("its table")..];
+    let retired: Vec<&str> = table
+        .lines()
+        .skip(2)
+        .take_while(|l| l.starts_with('|'))
+        .map(|l| l.trim_start_matches('|').split('|').next().unwrap_or("").trim())
+        .filter(|w| !w.is_empty())
+        .collect();
+    assert!(retired.len() >= 20, "the table was not read: {retired:?}");
+    let before_tests = |src: &'static str| without_tests(src);
+    let sources: [(&str, String); 11] = [
+        ("viewer.html", include_str!("../assets/viewer.html").to_string()),
+        ("viewer.js", SCRIPT.to_string()),
+        ("app/assets/kit.js", include_str!("../../../app/assets/kit.js").to_string()),
+        (
+            "app/assets/settings.js",
+            include_str!("../../../app/assets/settings.js").to_string(),
+        ),
+        (
+            "app/assets/settings.html",
+            include_str!("../../../app/assets/settings.html").to_string(),
+        ),
+        (
+            "app/assets/welcome.js",
+            include_str!("../../../app/assets/welcome.js").to_string(),
+        ),
+        (
+            "app/assets/welcome.html",
+            include_str!("../../../app/assets/welcome.html").to_string(),
+        ),
+        (
+            "app/assets/shell-init.js",
+            include_str!("../../../app/assets/shell-init.js").to_string(),
+        ),
+        ("app/src/main.rs", before_tests(include_str!("../../../app/src/main.rs"))),
+        (
+            "supragnosis-cli/src/setup.rs",
+            before_tests(include_str!("../../supragnosis-cli/src/setup.rs")),
+        ),
+        // The viewer's server: a refusal it writes reaches a notice.
+        ("supragnosis-viz/src/lib.rs", before_tests(include_str!("../src/lib.rs"))),
+    ];
+    let mut found = Vec::new();
+    for (name, src) in sources {
+        let text = prose(&src);
+        for word in &retired {
+            if text.contains(word) {
+                found.push(format!("{name}: \"{word}\""));
+            }
+        }
+    }
+    assert!(found.is_empty(), "retired words are back on a page: {found:#?}");
+}
+
+/// docs/design-system.md Section 29.6 and U17: the map's passing activity is named and speaks in
+/// sentences - no tool name, abbreviation or mode id - and the status bar's footprint says what
+/// agents used, not a session's id.
+#[test]
+fn the_maps_activity_speaks_in_sentences() {
+    let html = include_str!("../assets/viewer.html");
+    assert!(html.contains("<div id=\"log\" role=\"region\" aria-label=\"Activity\">"));
+    let at = SCRIPT.find("async function handleEvent(").expect("handleEvent");
+    let handle = &SCRIPT[at..];
+    let handle = &handle[..handle.find("\n}\n").expect("it closes")];
+    let rows: Vec<&str> = handle
+        .match_indices("logRow(")
+        .map(|(i, _)| handle[i..].lines().next().unwrap_or(""))
+        .collect();
+    assert!(rows.len() >= 5, "the rows were not found: {rows:?}");
+    for row in &rows {
+        for spelled in ["<b>", " ent,", " rel ", "ev.mode", "get_entity", "ws ${", "&lt;-&gt;"] {
+            assert!(!row.contains(spelled), "an activity row spells {spelled:?}: {row}");
+        }
+    }
+    let body = |name: &str| {
+        let at = SCRIPT.find(&format!("function {name}(")).unwrap_or_else(|| panic!("no {name}"));
+        let f = &SCRIPT[at..];
+        f[..f.find("\n}\n").expect("it closes")].to_string()
+    };
+    let all =
+        [body("wroteSaid"), body("syncSaid"), body("activitySaid"), handle.to_string()].concat();
+    for said in [
+        "\"An agent wrote \"",
+        "\"An agent searched \\\"\"",
+        "\"An agent looked up \"",
+        "\"An agent followed \"",
+        "\" sent \"",
+        "\" read \"",
+    ] {
+        assert!(all.contains(said), "the activity does not say {said}");
+    }
+    assert!(handle.contains("\"Agents used \" + plural(footprint.size, \"entity\", \"entities\")"));
+    assert!(!handle.contains("`session ${"), "the status bar names the session by its id");
+}

@@ -40,14 +40,8 @@ fn follow_waits_while_the_map_is_in_use() {
         "a sync refits a map in use"
     );
     let note = function(SCRIPT, "noteActivity");
-    for said in [
-        "\"An agent wrote \"",
-        "\"An agent searched\"",
-        "\"An agent read \"",
-        "\"An agent traversed from \"",
-    ] {
-        assert!(note.contains(said), "{said} is not said");
-    }
+    // The notice says what the passing row says (design-system.md Section 29.6).
+    assert!(note.contains("activitySaid(ev)"), "the notice has words of its own");
     assert!(note.contains("label: \"Show\""), "the notice has no Show");
     assert!(!note.contains("\"New in \""), "the notice reads like a write elsewhere");
     // The person's own moves, and only those, start the 20 seconds.

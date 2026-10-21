@@ -18,6 +18,38 @@ const APP_KIND = {
   vscode: "editor", codex: "terminal", gemini: "terminal", opencode: "terminal",
 };
 
+// The AI app's row, built once and drawn by both pages (docs/design-system.md Sections 6a and 29.6):
+// one word for each state, one label for Claude Code's capture option, and the helper that finishes
+// a connection. A page says what it knows - the row's state in this vocabulary, the line under the
+// name - and what goes at the row's end: a checkbox in Setup's plan, a button on Settings.
+const APP_PILL = {
+  connected: ["ok", "Connected"], todo: ["", "Not connected"], working: ["gold", "Connecting"],
+  attention: ["warn", "Needs you"], failed: ["bad", "Failed"], absent: ["", "Not installed"],
+  unavailable: ["", "Unavailable"],
+};
+const CAPTURE = {
+  label: "Save the why behind each commit",
+  sub: "After a commit, Claude Code is asked to record the decision behind it, if there was one.",
+};
+// What finishes a connection an app loads only at its start (onboarding.md Section 4.2, D9).
+const HELPER = { "claude-desktop": "Restart Claude Desktop", cursor: "Open Cursor" };
+function appPill(state) {
+  const [cls, text] = APP_PILL[state] || ["", state || "Unknown"];
+  return h("span", { class: "pill " + cls }, cls === "ok" || cls === "warn" || cls === "bad" ? h("span", { class: "dot" }) : null,
+    state === "working" ? icon("spin", "i-spin") : null, text);
+}
+// row: { id, state, sub, option, end, pick }. A plan row is one checkbox whose label is the whole
+// row (Section 6a), so `pick` makes the row a label.
+function appRow(row) {
+  return h(row.pick ? "label" : "div", {
+    class: "row" + (row.state === "absent" || row.state === "unavailable" ? " muted" : "") + (row.pick ? " pick" : ""),
+    "data-k": "app:" + row.id,
+  },
+    h("span", { class: "lead" }, icon(APP_KIND[row.id] || "desktop")),
+    h("div", { class: "body" }, h("div", { class: "title" }, APPS[row.id] || row.id, appPill(row.state)), row.sub || null, row.option || null),
+    h("div", { class: "end" }, row.end || null));
+}
+
 // ---- The way back --------------------------------------------------------------------------
 
 // The graph as the person left it (docs/design-system.md Section 29.4): the viewer's address the way

@@ -694,7 +694,7 @@ fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
         "it hides where sync is not set up"
     );
     assert!(
-        body.contains(r#"text = "sync unavailable""#),
+        body.contains(r#"text = "Sync unavailable""#),
         "a daemon that does not answer is a state the pill draws"
     );
 }

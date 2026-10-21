@@ -113,8 +113,9 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
 
 - **Each app is listed with its state:** connected through the bridge, connected the old way
   (HTTP, or a stdio entry), another supragnosis entry, not connected, or not installed.
-- **One button per app says what it will do:** Connect, Switch to the bridge, Replace, or
-  Disconnect. A click is the consent to replace the entry that is there, as the tray's was. An app
+- **One button per app says what it will do:** Connect, Switch to the bridge, or Disconnect.
+  *(Another supragnosis entry was "Replace" until design-system.md step 45: it runs the same
+  `--replace` Setup calls Switch to the bridge.)* A click is the consent to replace the entry that is there, as the tray's was. An app
   a click could do nothing for - not installed, its settings unreadable - has no button.
 - **The CLI's next step stays beside the app it concerns** ("quit Claude and open it again").
 - **Claude Code's row carries a switch for its capture hook** while it is connected through the
@@ -123,10 +124,12 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
 
 ### 3.3 This Mac's daemon
 
-- **The daemon's state:** the version and who runs it (login item, this app, Homebrew,
-  `supragnosis start`), version drift when there is any - one card at the top of the section,
-  "Update ready - restart to load 0.7.0", holding the section's only Restart while it shows - and the store's health - owed projections
-  and the last recovery (crash-recovery.md K5).
+- **The daemon's state:** the version and who runs it (starts at login, while this app is open,
+  Homebrew's service, `supragnosis start`), version drift when there is any - one card at the top of
+  the section, "Update ready - restart to load 0.7.0", holding the section's only Restart while it
+  shows - and the store's health - "Up to date", or "Repairing - N items left" while projections are
+  owed - and the last recovery (crash-recovery.md K5). The words are design-system.md Section 9's
+  state words (step 45).
 - **Start at Login** is a switch, with the behaviour daemon-lifecycle.md Section 6 gave the tray's
   check item: on is `service install --take-over`, off is `service uninstall`.
 - **Restart Daemon** restarts it, and the CLI's answer shows at the foot of the page. The page then
@@ -168,7 +171,8 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
 How this Mac's knowledge travels between supragnosis nodes (federation.md). It is what the viewer's
 Peers tab showed, read from this Mac's daemon, and not shown while a remote profile is active.
 
-- **This node:** its id and its role - a spoke that syncs to hubs, or a hub that serves peers.
+- **This Mac:** its id and its role - a spoke that syncs to hubs, or a hub that serves peers.
+  *("This node" until design-system.md step 45.)*
 - **Hubs this Mac syncs to:** each one's address, version and reachability, and per workspace
   whether this Mac or the hub is ahead.
 - **On a hub, each admitted peer and what it may read**, one row per peer. Each workspace is a chip with one act: stop
