@@ -879,7 +879,7 @@ async function renderFedSection(host) {
           const armed = fedCfgArmed === a.node_id + "\u0000" + w;
           parts.push(html`<button type="button" class="wsc${armed ? " armed" : ""}" data-node="${a.node_id}" `,
             html`data-ws="${w}" title="${tipText(armed ? "Press again to stop" : "Stop sharing")}">`,
-            html`${w}<span class="x">${armed ? "confirm" : "x"}</span></button>`);
+            html`${w}<span class="x">${armed ? "confirm" : html`<span class="i i-x" aria-hidden="true"></span>`}</span></button>`);
         }
       }
       parts.push(html`</div></div>`);
@@ -1295,6 +1295,27 @@ function markupOf(v) {
   if (v === null || v === undefined || v === false) return "";
   return esc(String(v));
 }
+// An icon (docs/design-system.md Section 28, U41): Lucide's file, drawn by the `.i` classes in
+// viewer.css as a mask over the text's color. Hidden from a screen reader: the control it sits in is
+// named by its act.
+function icon(name) {
+  const el = document.createElement("span");
+  el.className = "i i-" + name;
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
+// The contested badge's mark (Section 28.3, U41): circle-alert's bar and dot, from
+// icons/circle-alert.svg in its own 24-unit grid, with the badge's disc of radius r taken as the
+// icon's 10-unit circle - Lucide's 2-unit stroke, never under 1.5 pixels at the camera's scale s.
+const ALERT_MARK = new Path2D("M12 8v4M12 16h.01");
+function alertMark(c, x, y, r, color, s) {
+  const k = r / 10;
+  c.save();
+  c.translate(x - 12 * k, y - 12 * k); c.scale(k, k);
+  c.lineCap = "round"; c.strokeStyle = color; c.lineWidth = Math.max(2, 1.5 / (k * s));
+  c.stroke(ALERT_MARK);
+  c.restore();
+}
 
 // --- Notices: every write answers (Principle 24) -------------------------------------------------
 // The console's writes used to drop the server's answer and wait for the next poll to change the
@@ -1323,7 +1344,8 @@ function toast(kind, title, detail, action) {
     act.onclick = () => { el.remove(); action.run(); };
     el.appendChild(act);
   }
-  const close = document.createElement("button"); close.textContent = "x"; close.setAttribute("aria-label", "dismiss");
+  const close = document.createElement("button"); close.setAttribute("aria-label", "Dismiss");
+  close.appendChild(icon("x"));
   close.onclick = () => el.remove();
   el.appendChild(close);
   toastsEl.prepend(el);
@@ -1545,7 +1567,9 @@ function wireCuration(host) {
       inp.placeholder = "group name (optional)";
       inp.onclick = (e2) => e2.stopPropagation();
       const ok = document.createElement("button");
-      ok.textContent = "ok";
+      ok.type = "button"; ok.title = tipText("Name this group");
+      ok.setAttribute("aria-label", "Name this group");
+      ok.appendChild(icon("check"));
       ok.onclick = async (e2) => {
         e2.stopPropagation();
         const ws = wsInput.value.trim();
@@ -2104,9 +2128,7 @@ function obsRowHtml(o, i, list) {
 function obsCardHtml(o) {
   const a0 = (o.attestations || [])[0] || {};
   const parts = [html`<div class="card">`,
-    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close">`,
-      html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
-      html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`,
+    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>`,
     html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${tierName(o.effective_tier)}</span>`,
       html`<span class="ocwhen">${obsWhenFull(a0.observed_at)}</span></div>`,
     // A proposal event leads with the readable form, but keeps the stored text underneath: this
@@ -2343,7 +2365,7 @@ async function handleEvent(ev) {
     await poll();                       // wait for the new nodes to enter the graph, then pulse
     ids = ev.entities || [];
   } else if (ev.kind === "search") {
-    logRow(html`<b>search</b> "${ev.query}" -> ${ev.hits} hits <span class="t">${ev.mode}</span>`);
+    logRow(html`<b>search</b> "${ev.query}" <span class="i i-arrow-right" role="img" aria-label="found"></span> ${ev.hits} hits <span class="t">${ev.mode}</span>`);
     ids = ev.nodes || [];
   } else if (ev.kind === "get_entity") {
     logRow(html`<b>get_entity</b> ${ev.name || ev.id.slice(0,8)} <span class="t">${ev.found ? "found" : "unknown"}</span>`);
@@ -2366,7 +2388,7 @@ async function handleEvent(ev) {
     ids = [];
   } else if (ev.kind === "traverse") {
     const sn = nodeById(ev.start);
-    logRow(html`<b>traverse</b> ${sn ? sn.name : ev.start.slice(0,8)} -> ${(ev.reached||[]).length}`);
+    logRow(html`<b>traverse</b> ${sn ? sn.name : ev.start.slice(0,8)} <span class="i i-arrow-right" role="img" aria-label="reached"></span> ${(ev.reached||[]).length}`);
     ids = [ev.start, ...(ev.reached || [])];
   } else return;
   pulseNodes(ids);
@@ -2802,7 +2824,7 @@ function relationGroupHtml(g, open) {
     html`title="${tipText((e.valid_to ? "Superseded, focus " : "Focus ") + other.name)}">`,
     html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}</button>`]}`;
   return html`${[
-    html`<div class="rgroup"><div class="rghead"><span class="rdir">${g.out ? "->" : "<-"}</span>`,
+    html`<div class="rgroup"><div class="rghead"><span class="i ${g.out ? "i-arrow-right" : "i-arrow-left"}" role="img" aria-label="${g.out ? "Outgoing" : "Incoming"}"></span>`,
     html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
     html`<div class="rchips">${shown.map(chip)}`,
     rest > 0 ? html`<button class="rmore" type="button" data-key="${g.key}" title="${tipText("Show " + rest + " more")}">+${rest}</button>` : "",
@@ -2840,15 +2862,10 @@ function renderDetail(node) {
   // field has a second candidate: an alias spelling or a competing kind (Section 5).
   const disputed = (node.aliases || []).length > 0 || (node.competitors || []).length > 0;
   detailEl.innerHTML = html`${[
-    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close">`,
-      html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
-      html`<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
-      html`</svg></button>`,
+    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>`,
     // Taller / shorter: the height cap keeps the graph visible by default; this trades it for room.
     html`<button class="grow" title="${tipText(detailTall ? "Shorter panel" : "Taller panel")}" aria-label="${detailTall ? "Shorter panel" : "Taller panel"}">`,
-      html`<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">`,
-      html`<path d="${detailTall ? "M3 4.5 L6 7.5 L9 4.5" : "M3 7.5 L6 4.5 L9 7.5"}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
-      html`</svg></button>`,
+      html`<span class="i ${detailTall ? "i-chevron-down" : "i-chevron-up"}" aria-hidden="true"></span></button>`,
     html`<h2>${node.name}</h2>`,
     html`<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`,
       html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tierName(tier)}</span>` : ""}`,
@@ -4452,10 +4469,7 @@ function draw() {
     const r = rOf(n), br = 7 / cam.s, bx = n.x + r * 0.75, by = n.y - r * 0.75;
     ctx.beginPath(); ctx.arc(bx, by, br, 0, 7);
     ctx.fillStyle = BAD; ctx.fill(); ctx.lineWidth = 1.5 / cam.s; ctx.strokeStyle = SURFACE; ctx.stroke();
-    ctx.fillStyle = SURFACE; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "600 " + (11 * TEXT_SCALE / cam.s) + "px " + KIND_FAMILY;
-    ctx.fillText("!", bx, by + 0.5 / cam.s);
-    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    alertMark(ctx, bx, by, br, SURFACE, cam.s);
   }
   // Event pulses (nodes the agent touched) - an expanding, fading ring. rAF always runs, so it keeps
   // animating even after cooling.

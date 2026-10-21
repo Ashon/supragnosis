@@ -11,7 +11,7 @@ export default [
       sourceType: "script",
       globals: {
         cancelAnimationFrame: "readonly", clearTimeout: "readonly", document: "readonly",
-        IntersectionObserver: "readonly", matchMedia: "readonly", performance: "readonly",
+        IntersectionObserver: "readonly", matchMedia: "readonly", Path2D: "readonly", performance: "readonly",
         requestAnimationFrame: "readonly", ResizeObserver: "readonly", setTimeout: "readonly",
         window: "readonly",
       },

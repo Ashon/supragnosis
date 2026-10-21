@@ -69,6 +69,45 @@ fn main() {
     }
     table.push_str("];\n");
     fs::write(out.join("fonts.rs"), table).expect("write fonts.rs to OUT_DIR");
+
+    // The marks the viewer draws (docs/design-system.md Section 28, U41): Lucide's files, unmodified,
+    // served at /icons/lucide-<release>/<name>.svg. The release is read from each file's own license
+    // line, so a file from another release fails the build instead of being served under this one's
+    // path, which is cached for a year.
+    let icons = assets.join("icons");
+    println!("cargo:rerun-if-changed={}", icons.display());
+    let mut svgs: Vec<_> = fs::read_dir(&icons)
+        .unwrap_or_else(|e| panic!("read {}: {e}", icons.display()))
+        .map(|e| e.expect("a directory entry").path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("svg"))
+        .collect();
+    svgs.sort();
+    let mut release: Option<String> = None;
+    let mut table = String::from("pub(crate) static ICONS: &[(&str, &str, &[u8])] = &[\n");
+    for f in &svgs {
+        println!("cargo:rerun-if-changed={}", f.display());
+        let text = fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
+        let this = text
+            .lines()
+            .next()
+            .and_then(|l| l.strip_prefix("<!-- @license lucide-static v"))
+            .and_then(|l| l.strip_suffix(" - ISC -->"))
+            .unwrap_or_else(|| panic!("{} does not start with Lucide's license line", f.display()))
+            .to_string();
+        match &release {
+            None => release = Some(this),
+            Some(r) if *r == this => {}
+            Some(r) => panic!("{} is Lucide {this}, the others {r}", f.display()),
+        }
+        let name = f.file_name().expect("a file name").to_string_lossy();
+        table.push_str(&format!(
+            "    (\"/icons/lucide-{}/{name}\", \"image/svg+xml\", include_bytes!({:?})),\n",
+            release.as_deref().expect("set above"),
+            f.display().to_string()
+        ));
+    }
+    table.push_str("];\n");
+    fs::write(out.join("icons.rs"), table).expect("write icons.rs to OUT_DIR");
 }
 
 fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {

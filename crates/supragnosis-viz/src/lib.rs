@@ -25,12 +25,18 @@ mod fonts {
     include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 }
 
+mod icons {
+    include!(concat!(env!("OUT_DIR"), "/icons.rs"));
+}
+
 /// A file the page ships with it - the faces under `/fonts/` (docs/design-system.md Section 4,
-/// U11) - as its content type and bytes. The same bytes answer on the local console and on a hub's
-/// read tier, which serves them as it serves the page itself.
+/// U11) and the icons under `/icons/` (Section 28, U41) - as its content type and bytes. The same
+/// bytes answer on the local console and on a hub's read tier, which serves them as it serves the
+/// page itself.
 pub fn asset(path: &str) -> Option<(&'static str, &'static [u8])> {
     fonts::FONTS
         .iter()
+        .chain(icons::ICONS)
         .find(|(p, _, _)| *p == path)
         .map(|(_, kind, bytes)| (*kind, *bytes))
 }

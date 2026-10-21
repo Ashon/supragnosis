@@ -277,6 +277,18 @@
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
+  // The contested badge's mark (docs/design-system.md Section 28.3, U41): Lucide's circle-alert bar and
+  // dot, in its own 24-unit grid, with the badge's disc of radius r taken as the icon's 10-unit circle -
+  // the set's 2-unit stroke, never under 1.5 pixels. The viewer draws the same mark.
+  const ALERT_MARK = new Path2D("M12 8v4M12 16h.01");
+  function alertMark(ctx, x, y, r, color) {
+    const k = r / 10;
+    ctx.save();
+    ctx.translate(x - 12 * k, y - 12 * k); ctx.scale(k, k);
+    ctx.lineCap = "round"; ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, 1.5 / k);
+    ctx.stroke(ALERT_MARK);
+    ctx.restore();
+  }
   function label(ctx, s, x, y, color, a, o = {}) {
     if (a <= .01) return;
     ctx.globalAlpha = Math.min(1, a);
@@ -395,7 +407,7 @@
       ctx.globalAlpha = alpha * Math.min(1, n.bad);
       ctx.beginPath(); ctx.arc(bx, by, 7 * n.bad, 0, 7); ctx.fillStyle = C.bad; ctx.fill();
       ctx.lineWidth = 1.5; ctx.strokeStyle = C.bg; ctx.stroke();
-      if (n.bad > .6) label(ctx, "!", bx, by + .5, C.bg, alpha, { weight: 700, align: "center", halo: false });
+      if (n.bad > .6) { ctx.globalAlpha = Math.min(1, alpha); alertMark(ctx, bx, by, 7, C.bg); }
     }
     ctx.globalAlpha = 1;
   }

@@ -121,7 +121,32 @@
            text-decoration:none; font-size:var(--text-body); border-radius:var(--r-control); }
   .tback:hover { background:var(--panel-2); color:var(--ink); }
   .tback[hidden] { display:none; }
-  .tback svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  /* Icons (docs/design-system.md Section 28, U41): Lucide's files, unmodified, served under /icons/
+     and drawn as a mask over the text's color, so an icon takes the color of what it sits in - a
+     state's color, Increase Contrast, forced colors - with no rule of its own. 16 pixels, or 14 where
+     a part says so. forced-color-adjust keeps the system from painting the mask's fill as a ground. */
+  .i { display:inline-block; width:16px; height:16px; flex:none; pointer-events:none;
+       background-color:currentColor; forced-color-adjust:none;
+       -webkit-mask:var(--i) center / contain no-repeat; mask:var(--i) center / contain no-repeat; }
+  .i-x { --i:url("/icons/lucide-1.52.0/x.svg"); }
+  .i-circle-check { --i:url("/icons/lucide-1.52.0/circle-check.svg"); }
+  .i-circle-alert { --i:url("/icons/lucide-1.52.0/circle-alert.svg"); }
+  .i-info { --i:url("/icons/lucide-1.52.0/info.svg"); }
+  .i-check { --i:url("/icons/lucide-1.52.0/check.svg"); }
+  .i-chevron-right { --i:url("/icons/lucide-1.52.0/chevron-right.svg"); }
+  .i-chevron-up { --i:url("/icons/lucide-1.52.0/chevron-up.svg"); }
+  .i-chevron-down { --i:url("/icons/lucide-1.52.0/chevron-down.svg"); }
+  .i-chevron-left { --i:url("/icons/lucide-1.52.0/chevron-left.svg"); }
+  .i-arrow-right { --i:url("/icons/lucide-1.52.0/arrow-right.svg"); }
+  .i-arrow-left { --i:url("/icons/lucide-1.52.0/arrow-left.svg"); }
+  .i-list { --i:url("/icons/lucide-1.52.0/list.svg"); }
+  .i-eye { --i:url("/icons/lucide-1.52.0/eye.svg"); }
+  .i-plus { --i:url("/icons/lucide-1.52.0/plus.svg"); }
+  .i-minus { --i:url("/icons/lucide-1.52.0/minus.svg"); }
+  .i-scan { --i:url("/icons/lucide-1.52.0/scan.svg"); }
+  .i-panel-left { --i:url("/icons/lucide-1.52.0/panel-left.svg"); }
+  .i-panel-right { --i:url("/icons/lucide-1.52.0/panel-right.svg"); }
+  .i-settings { --i:url("/icons/lucide-1.52.0/settings.svg"); }
   /* The base for every input and button, at zero specificity (:where), so any component class
      overrides it whole: chips, legend entries, proposal and log rows are buttons now, and each keeps
      its own look (docs/design-system.md Section 10). */
@@ -281,8 +306,6 @@
   #hud button { width:32px; height:32px; padding:0; display:flex; align-items:center;
                 justify-content:center; background:none; border-radius:var(--r-control); color:var(--ink2); }
   #hud button:hover { background:var(--panel-2); color:var(--ink); }
-  #hud button svg { width:16px; height:16px; fill:none; stroke:currentColor;
-                    stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
   /* The eye stays lit while its popover is open: the popover is detached, so the button is the
      only anchor telling you where it came from. */
   #hud button.on { background:var(--select); color:var(--gold-ink); }
@@ -315,6 +338,7 @@
               padding:5px 10px; font-size:var(--text-small); color:var(--ink2); animation:logfade 8s forwards; }
   #log .row b { color:var(--ink); font-weight:600; }
   #log .row .t { color:var(--muted); margin-right:5px; }
+  #log .row .i { width:14px; height:14px; vertical-align:-3px; color:var(--muted); }
   @keyframes logfade { 0%{opacity:0;transform:translateY(6px);} 6%{opacity:1;transform:none;}
                        82%{opacity:1;} 100%{opacity:0;} }
   /* Node detail: a sheet on the right (design-system.md Section 6), from under the header to above the
@@ -352,6 +376,7 @@
   #statusbar, .ct, .rct { font-variant-numeric:tabular-nums; }
   #detail .rghead .rkind { color:var(--ink2); }
   #detail .rghead .rct { color:var(--muted); }
+  #detail .rghead .i { width:14px; height:14px; align-self:center; }
   #detail .rchips { display:flex; flex-wrap:wrap; gap:4px; }
   #detail .rchip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                    font:var(--text-body)/1.55 var(--sans); color:var(--ink); background:var(--panel-2);
@@ -363,21 +388,18 @@
   #detail .rmore { font:var(--text-caption)/1.55 var(--mono); color:var(--muted); background:var(--panel-2);
                    border-radius:var(--r-control); padding:1px 8px; }
   #detail .dot { width:9px; height:9px; border-radius:var(--r-mark); flex:0 0 auto; display:inline-block; }
-  /* Icon close button (inline SVG X, round-capped strokes - same drawing language as the favicon
-     asterisk). A square hit target with a soft hover fill, not a bare text glyph. */
+  /* The close button: Lucide's x on a square hit target with a soft hover fill. */
   #detail .close { position:absolute; top:8px; right:8px; cursor:pointer; color:var(--muted);
                    border:none; background:none; border-radius:var(--r-control); padding:0;
                    width:24px; height:24px; min-height:24px; display:flex; align-items:center; justify-content:center;
                    transition:color 0.15s ease, background 0.15s ease; }
   #detail .close:hover { color:var(--ink); background:var(--panel-2); }
-  #detail .close svg { display:block; }
   /* The grow control sits beside close and borrows its whole look. */
   #detail .grow { position:absolute; top:8px; right:32px; cursor:pointer; color:var(--muted);
                   border:none; background:none; border-radius:var(--r-control); padding:0;
                   width:22px; height:22px; display:flex; align-items:center; justify-content:center;
                   transition:color 0.15s ease, background 0.15s ease; }
   #detail .grow:hover { color:var(--ink); background:var(--panel-2); }
-  #detail .grow svg { display:block; }
   /* The sheet is already full height; the grow control is for the bottom panel a phone gets. */
   #detail .grow { display:none; }
   #detail .empty { color:var(--muted); font:italic var(--text-body)/1.5 var(--sans); padding:2px 5px; }
@@ -483,7 +505,8 @@
   .rv-detail .ms .propmerge { padding:2px 10px; font-size:var(--text-body); }
   .rv-detail .reifyform { display:inline-flex; gap:4px; margin-left:6px; }
   .rv-detail .reifyform input { width:150px; padding:2px 8px; font-size:var(--text-body); }
-  .rv-detail .reifyform button { padding:2px 9px; font-size:var(--text-body); }
+  .rv-detail .reifyform button { display:inline-flex; align-items:center; justify-content:center; min-width:28px;
+                                 padding:2px 6px; font-size:var(--text-body); }
   .rv-detail .empty { color:var(--muted); font:italic var(--text-body)/1.5 var(--sans); padding:2px 0; }
   /* Contested-belief block (resolution.md 4.2) - shared by the inspector and the curation panel.
      .hot = tier-tied (the contested badge on the canvas): mediation invited; otherwise the list is
@@ -568,7 +591,6 @@
                     background:none; border:none; padding:4px; border-radius:var(--r-control); line-height:0;
                     min-height:24px; min-width:24px; display:flex; align-items:center; justify-content:center; }
   #obscard .close:hover { color:var(--ink); background:var(--panel-2); }
-  #obscard .close svg { display:block; }
   .oc-meta { display:flex; align-items:center; gap:7px; margin:0 22px 8px 0; font-size:var(--text-small); color:var(--muted); }
   .oc-meta .octier { color:var(--ink2); }
   .oc-meta .ocwhen { margin-left:auto; }
@@ -598,10 +620,11 @@
   .pacts button[disabled] { opacity:0.45; cursor:not-allowed; }
   /* The type definitions in the filters dock (moved from the Types tab): a disclosure under the
      legend, its summary styled as the section heads around it. */
-  #defsBox summary { cursor:pointer; list-style:none; min-height:24px; padding-block:4px; line-height:16px; box-sizing:border-box; }
+  #defsBox summary { cursor:pointer; list-style:none; min-height:24px; padding-block:4px; line-height:16px; box-sizing:border-box;
+                     display:flex; align-items:center; gap:4px; }
   #defsBox summary::-webkit-details-marker { display:none; }
-  #defsBox summary::before { content:"+ "; color:var(--muted); }
-  #defsBox[open] summary::before { content:"- "; }
+  #defsBox summary .i { width:14px; height:14px; color:var(--muted); transition:transform 0.12s ease-out; }
+  #defsBox[open] summary .i { transform:rotate(90deg); }
   #settings .bad { color:var(--bad-ink); }
 
 /* A proposal event is bookkeeping about the canon, not knowledge someone observed - dimmed and
@@ -636,7 +659,6 @@
                       transition:color 0.15s ease, background 0.15s ease; }
   #settings .fclose:hover { color:var(--ink); background:var(--panel-2); }
   #settings dd a { display:inline-block; min-height:24px; line-height:24px; overflow-wrap:anywhere; }
-  #settings .fclose svg { display:block; }
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */
   #glossaryBody .gws { margin-left:6px; padding:0 6px; background:var(--panel-2);
@@ -674,9 +696,7 @@
   #statusbar #settingsBtn { margin-left:6px; width:28px; height:28px; min-height:24px; padding:0; flex:none;
                             display:flex; align-items:center; justify-content:center;
                             background:none; border:none; color:var(--muted); cursor:pointer; }
-  /* Lucide's own stroke on its 24-unit grid, so the gear keeps the set's line weight at this size. */
-  #statusbar #settingsBtn svg { width:14px; height:14px; fill:none; stroke:currentColor;
-                                stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  #statusbar #settingsBtn .i { width:14px; height:14px; }
   #statusbar #settingsBtn:hover { color:var(--ink); background:none; }
   /* The Trust legend: the four ring styles the map draws (design-system.md Section 5), and what a
      ring reads. A tier the scope does not hold is dimmed when the scope holds only one. */
@@ -755,8 +775,6 @@
   #panelL[hidden], #panelR[hidden] { display:none; }
   #panelL:hover, #panelR:hover { background:var(--panel-2); color:var(--ink); }
   #panelL[aria-pressed="true"], #panelR[aria-pressed="true"] { color:var(--ink); }
-  #panelL svg, #panelR svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8;
-                             stroke-linecap:round; stroke-linejoin:round; }
   /* The status bar's word for the scope's one tier while the Trust legend is out of sight (U2). */
   #tierNote { white-space:nowrap; }
   /* The strip: the Log folded (Section 6). The newest observation of the scope, one line, at the

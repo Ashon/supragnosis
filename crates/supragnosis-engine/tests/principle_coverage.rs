@@ -821,9 +821,14 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (41, &[c(
         "every icon the viewer, the app's pages and the landing draw is a Lucide 1.52.0 file, vendored unmodified and drawn as a mask over the text's color, the contested badge's mark included; no page draws an icon from a character, a hand-written path or a pasted copy, and a file both surfaces ship is the same bytes on both",
-        Evidence::Deferred(
-            "specified in design-system.md Section 28, not built. Revisit when Section 14 step 39 lands and the test reading both surfaces' icons runs",
-        ),
+        // crates/supragnosis-viz/tests/icons.rs reads the three copies of the files, every class and
+        // name the pages use, what the viewer serves, and the sources for a mark drawn from text.
+        Evidence::Scenario(&[
+            "the_icons_are_lucides_files_unmodified",
+            "every_icon_a_page_names_is_a_file_it_ships",
+            "no_page_draws_an_icon_from_text",
+            "the_contested_badge_draws_the_sets_mark",
+        ]),
     )]),
     (42, &[c(
         "a notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, a 28-pixel dismiss showing x; a success without an action leaves 4.5 s after it shows, counted only while the pointer is off it and focus outside it, every other notice stays until dismissed or used; four at most; 200 ms in, 120 ms out, neither under reduced motion",
@@ -3349,6 +3354,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/list.rs"),
     include_str!("../../supragnosis-viz/tests/titlebar.rs"),
     include_str!("../../supragnosis-viz/tests/scale.rs"),
+    include_str!("../../supragnosis-viz/tests/icons.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

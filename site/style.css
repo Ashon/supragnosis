@@ -483,8 +483,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .clauses { margin-top: 12px; }
 .clauses summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-block: 4px; font: var(--fs-label) var(--sans); color: var(--ink2); }
 .clauses summary::-webkit-details-marker { display: none; }
-.clauses summary::after { content: "+"; color: var(--muted); }
-.clauses[open] summary::after { content: "-"; }
+/* The disclosure's mark is Lucide's chevron-right (icons/, unmodified - docs/design-system.md Section
+   28, U41), painted in the muted ink through the file's shape and turned down while open. The summary
+   is written by the page's generator, so the mark is its pseudo-element rather than a span. */
+.clauses summary::after {
+  content: ""; width: 14px; height: 14px; flex: none; background-color: var(--muted); forced-color-adjust: none;
+  -webkit-mask: url("icons/chevron-right.svg") center / contain no-repeat; mask: url("icons/chevron-right.svg") center / contain no-repeat;
+  transition: transform 0.12s ease-out;
+}
+.clauses[open] summary::after { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .clauses summary::after { transition: none; } }
 .clauses .bar { display: inline-flex; gap: 2px; }
 .clauses .bar i { width: 7px; }
 .clauses .cl { margin-top: 10px; }

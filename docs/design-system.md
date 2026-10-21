@@ -2823,7 +2823,8 @@ The app's own pages draw every icon from Lucide's files (Section 12, "Lucide and
 
 - **A character for a mark.** A notice's dismiss is the letter x and its kind a 7-pixel dot; a
   workspace a peer is sent shows x to stop sending it; naming a group confirms with "ok"; the
-  Definitions disclosure opens with "+ " and closes with "- "; the inspector heads a relation group
+  Definitions disclosure, and the principles page's clause lists, open with "+" and close with "-";
+  the inspector heads a relation group
   with "->" or "<-"; the Log writes "->" between a search and its hits and between a traverse and
   what it reached; the contested badge is a typed "!" on the map, on the landing's stage and on the
   principles page's pictures.
@@ -2851,7 +2852,9 @@ a 24-unit grid, round at the ends and joins, which sits with the thin solid line
 An icon is a mark that stands for a thing or an act in place of a word. A word stays a word: Copy,
 Replay, Confirm and Show are not replaced by marks. A count stays a count, "+3" included. A key cap
 names a key ("/"). The legend's dots and the map's rings are data, drawn from the data, and the gold
-star is the brand mark. None of those is an icon here.
+star is the brand mark, as the landing's wordmark "* supragnosis" is. The shell's "$ " before a
+command Setup ran, the slash between the landing's facts and a step's number are typography. None of
+those is an icon here.
 
 ### 28.3 How a page draws one
 
@@ -2862,13 +2865,17 @@ pages. The viewer keeps its own in `crates/supragnosis-viz/assets/icons/`, compi
 the faces are (U11) and served at `/icons/lucide-1.52.0/<name>.svg` by the same lookup, on the local
 console and on a hub's read tier alike, with the same year-long cache: a new release of the set is a
 new path. The viewer's policy needs nothing new, since `img-src 'self'` admits a mask image. Two
-copies, as with the tokens (U7): a file in both is the same bytes, and a test reads both.
+copies, as with the tokens (U7): a file in both is the same bytes, and a test reads both. The landing
+keeps the one file it draws, chevron-right, in `site/icons/`, the third copy under the same rule.
 
 **A page draws an icon as a mask over the text's color.** One class, `.i`, sets the size and paints
 `currentColor` through the file's shape, and `.i-<name>` names the file. An icon takes the color of
 the text around it, so a state's color reaches its icon with no second rule, and Increase Contrast and
 forced colors reach it the way they reach text (Section 10). An icon that stands alone in a button is
-`aria-hidden` and the button is named by its act and object (U19). Sizes are two: 16 pixels in the
+`aria-hidden` and the button is named by its act and object (U19); one that carries meaning beside
+text, such as a relation group's direction, is `role="img"` with its word. Where a page does not write
+the markup - the principles page's clause lists, which its generator writes - the mark is the
+element's pseudo-element with the same mask, and generates no text. Sizes are two: 16 pixels in the
 title bar, the HUD, the inspector and a notice, and 14 in the status bar and inline in a row - a
 relation group's head, a Log row. The stroke stays Lucide's, which at 16 pixels is 1.33.
 
@@ -2892,6 +2899,7 @@ the weight of whichever face was loaded, and moved with it.
 | the inspector's hand-drawn chevrons | chevron-up and chevron-down |
 | the HUD's list, eye, plus, minus and fit | list, eye, plus, minus and scan |
 | the title bar's and status bar's pasted paths | panel-left, panel-right, chevron-left and settings, as files |
+| the principles page's "+" and "-" on a clause list | chevron-right, turned down while open |
 
 ### 28.4 Notices
 

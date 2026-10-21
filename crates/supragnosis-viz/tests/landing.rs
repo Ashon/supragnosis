@@ -138,7 +138,8 @@ fn the_stage_draws_the_viewers_marks() {
             && STAGE.contains("ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi;")
     );
 
-    // Contested is the viewer's badge: --bad, at the node's upper right, with its "!".
+    // Contested is the viewer's badge: --bad, at the node's upper right, with circle-alert's mark
+    // (design-system.md Section 28.3, U41) rather than a typed "!".
     for src in [VIEWER, STAGE] {
         assert!(
             src.contains("+ r * 0.75") && src.contains("- r * 0.75"),
@@ -146,7 +147,16 @@ fn the_stage_draws_the_viewers_marks() {
         );
     }
     assert_eq!(viewer_color("BAD"), token("--bad"));
-    assert!(STAGE.contains("ctx.fillStyle = C.bad;") && STAGE.contains("label(ctx, \"!\""));
+    assert!(
+        STAGE.contains("ctx.fillStyle = C.bad;")
+            && STAGE.contains("alertMark(ctx, bx, by, 7, C.bg)")
+    );
+    for src in [VIEWER, STAGE] {
+        assert!(
+            src.contains("new Path2D(\"M12 8v4M12 16h.01\")") && !src.contains("\"!\""),
+            "the badge's mark is circle-alert's, not a typed \"!\""
+        );
+    }
 
     // The second machine replays the same log, so it draws the marks the first one does
     // (resolution.md Section 6: a verdict's ceiling is read from the log, the same on every node).
