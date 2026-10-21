@@ -18,6 +18,27 @@ const APP_KIND = {
   vscode: "editor", codex: "terminal", gemini: "terminal", opencode: "terminal",
 };
 
+// ---- The way back --------------------------------------------------------------------------
+
+// The graph as the person left it (docs/design-system.md Section 29.4): the viewer's address the way
+// in carried in `?from=`, followed only when it is the viewer's own - its scheme and host - since
+// anything else would make "< Graph" a redirect (docs/settings-page.md Section 4, S1). Without one,
+// the bare graph.
+const GRAPH_HOME = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
+function graphBack() {
+  try {
+    const from = new URL(new URLSearchParams(location.search).get("from"));
+    const home = new URL(GRAPH_HOME);
+    if (from.protocol === home.protocol && from.host === home.host) { from.hash = ""; return from.href; }
+  } catch (_) { /* no address, or not one */ }
+  return GRAPH_HOME;
+}
+// This page's address with the way back kept, for a link to the other app page.
+function withBack(page) {
+  const from = new URLSearchParams(location.search).get("from");
+  return from ? page + "?from=" + encodeURIComponent(from) : page;
+}
+
 // ---- DOM helpers ---------------------------------------------------------------------------
 
 // h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.

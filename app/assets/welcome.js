@@ -254,7 +254,7 @@ function logText() {
 
 async function finishLater() {
   try { await invoke("welcome_set", { later: true }); } catch (_) { /* it shows again next launch */ }
-  location.href = GRAPH;
+  location.href = graphBack();
 }
 
 function openGraph(ws) {
@@ -485,14 +485,14 @@ listen("viz-event", () => {
 setInterval(() => { if (!busy() && document.visibilityState === "visible") check(); }, 15000);
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") location.href = GRAPH;
+  if (e.key === "Escape") location.href = graphBack();
   // Return presses the default button, Set up, unless focus is on a control Return already acts on.
   if (e.key === "Enter" && !applied && needsPlan() && !(e.target.closest && e.target.closest("button, a, textarea"))) {
     const go = document.getElementById("setup-go");
     if (go && !go.disabled) { e.preventDefault(); applyPlan(); }
   }
 });
-document.getElementById("close").href = GRAPH;
+document.getElementById("close").href = graphBack();
 
 // Acts the shell still runs from an earlier visit - the person left Setup while a step ran - are shown
 // as running and waited for, instead of being lost or offered again.

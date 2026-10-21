@@ -11,19 +11,26 @@ fn function(name: &str) -> &'static str {
     &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")]
 }
 
-/// U24: List is the camera toolbar's first button; its table holds the entities the map draws in the
+/// U24: List is the camera toolbar's first button after Follow (design-system.md Section 29.4); its
+/// table holds the entities the map draws in the
 /// scope and its filters, sorted by type and name, each row naming the entity, its type, its trust by
 /// the legend's name, its relations and, across workspaces, its workspace, and selecting its node as
 /// the map does; Esc gives the map back; and the canvas's name says what it draws and that List holds it.
 #[test]
 fn the_map_has_a_list() {
     let hud = &HTML[HTML.find("<div id=\"hud\">").expect("the camera toolbar")..];
-    let first = &hud[hud.find("<button").expect("a button")..];
+    let follow = &hud[hud.find("<button").expect("a button")..];
+    assert!(
+        follow.starts_with("<button id=\"followBtn\""),
+        "Follow does not lead the toolbar"
+    );
+    let rest = &follow[1..];
+    let first = &rest[rest.find("<button").expect("a second button")..];
     assert!(
         first.starts_with("<button id=\"listBtn\"")
             && first[..first.find('>').unwrap()].contains("aria-pressed=\"false\"")
             && first[..first.find('>').unwrap()].contains("aria-controls=\"listwin\""),
-        "List is not the camera toolbar's first button"
+        "List is not the camera toolbar's first button after Follow"
     );
     assert!(HTML.contains("id=\"listwin\""), "there is no table to show");
     let rows = function("listRows");
@@ -45,10 +52,7 @@ fn the_map_has_a_list() {
     ] {
         assert!(render.contains(part), "List does not show {part}");
     }
-    assert!(
-        render.contains("focus = n; renderDetail(n); focusView(n);"),
-        "a row does not select its node as the map does"
-    );
+    assert!(render.contains("select(n);"), "a row does not select its node as the map does");
     assert!(
         function("setList").contains("aria-pressed"),
         "List does not say whether it is on"

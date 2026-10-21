@@ -144,6 +144,8 @@
   .i-plus { --i:url("/icons/lucide-1.52.0/plus.svg"); }
   .i-minus { --i:url("/icons/lucide-1.52.0/minus.svg"); }
   .i-scan { --i:url("/icons/lucide-1.52.0/scan.svg"); }
+  .i-locate { --i:url("/icons/lucide-1.52.0/locate.svg"); }
+  .i-locate-off { --i:url("/icons/lucide-1.52.0/locate-off.svg"); }
   .i-panel-left { --i:url("/icons/lucide-1.52.0/panel-left.svg"); }
   .i-panel-right { --i:url("/icons/lucide-1.52.0/panel-right.svg"); }
   .i-settings { --i:url("/icons/lucide-1.52.0/settings.svg"); }
@@ -333,6 +335,8 @@
   /* The eye stays lit while its popover is open: the popover is detached, so the button is the
      only anchor telling you where it came from. */
   #hud button.on { background:var(--select); color:var(--gold-ink); }
+  /* Follow on and waiting while the map is in use: its color, not its fill (Section 29.4). */
+  #hud button.paused { color:var(--gold-ink); }
   #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:7;
              width:168px; height:154px; background:var(--panel); border-radius:var(--r-surface);
              box-shadow:0 8px 24px var(--shadow-soft); cursor:crosshair; display:none; }
@@ -418,6 +422,12 @@
                    width:24px; height:24px; min-height:24px; display:flex; align-items:center; justify-content:center;
                    transition:color 0.15s ease, background 0.15s ease; }
   #detail .close:hover { color:var(--ink); background:var(--panel-2); }
+  /* Back and Forward through the selections, over the name (Section 29.4). */
+  #detail .hnav { display:flex; gap:2px; margin:-4px 0 2px -6px; }
+  #detail .hnav button { width:28px; height:28px; min-height:28px; padding:0; border:none; background:none; color:var(--muted);
+                         border-radius:var(--r-control); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  #detail .hnav button:hover:not([disabled]) { color:var(--ink); background:var(--panel-2); }
+  #detail .hnav button[disabled] { opacity:.4; cursor:default; }
   /* The grow control sits beside close and borrows its whole look. */
   #detail .grow { position:absolute; top:8px; right:32px; cursor:pointer; color:var(--muted);
                   border:none; background:none; border-radius:var(--r-control); padding:0;

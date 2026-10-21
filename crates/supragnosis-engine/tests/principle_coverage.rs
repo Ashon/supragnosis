@@ -732,10 +732,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (20, &[c(
         "on the local console the status bar always holds the way to Review with one count over tie-only contested items, and follow never changes the scope, the selection or the open sheet",
         // places.rs: Review's entry and Needs you, follow, and the first view; review.rs: the count
-        // with contested definitions in it (Section 29.3).
+        // with contested definitions in it (Section 29.3); place.rs: follow waiting while the map is
+        // in use, and a selection a merge folds or a scope leaves (Section 29.4).
         Evidence::Scenario(&[
             "review_is_always_in_the_status_bar_with_one_count",
             "one_count_covers_all_of_needs_you",
+            "follow_waits_while_the_map_is_in_use",
+            "a_selection_that_leaves_is_followed_or_named",
             "follow_frames_what_is_in_scope_and_notes_the_rest",
             "the_first_view_opens_where_the_knowledge_is",
         ]),
@@ -796,6 +799,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&[
             "the_viewer_title_bar_is_a_mac_toolbar",
             "the_app_pages_go_back_to_the_graph",
+            // place.rs: the way back goes to the graph as it was left (Section 29.4).
+            "the_way_back_goes_back_to_it",
             "every_page_has_one_title_bar",
             "the_title_bar_drags_the_window_but_not_its_controls",
             "the_title_bar_clears_the_lights_only_while_they_are_shown",
@@ -3377,6 +3382,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/icons.rs"),
     include_str!("../../supragnosis-viz/tests/notices.rs"),
     include_str!("../../supragnosis-viz/tests/review.rs"),
+    include_str!("../../supragnosis-viz/tests/place.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

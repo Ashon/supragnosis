@@ -160,8 +160,8 @@
        full strength (Section 4). Each carries a line under its name that says what it shows, read with
        it (aria-describedby), since a tooltip is seen by no keyboard and no finger (U25). -->
   <div class="grp"><span class="ghdr">Layout</span><div class="btns">
-    <button id="followBtn" class="tog on" aria-describedby="dFollow">Follow activity</button>
-    <p class="vdesc" id="dFollow">Frames new activity in this scope; activity elsewhere is a notice.</p>
+    <button id="resetLayout" aria-describedby="dReset">Reset layout</button>
+    <p class="vdesc" id="dReset">Forgets where this scope's nodes were and lays it out again.</p>
     <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
     <p class="vdesc" id="dPeers">Other machines as dots that move to the nodes they touch. On by default on a hub.</p>
     <button id="clusterBtn" class="tog" aria-describedby="dCluster">Group by type</button>
@@ -197,6 +197,11 @@
 <div id="hud">
   <!-- List (design-system.md Section 6, U24): the map's entities as a table, the map for a screen
        reader and for anyone who cannot tell its colors apart. Lucide's list (ISC). -->
+  <!-- Follow (design-system.md Section 29.4): frames new activity in this scope while the map is not in
+       use, and waits while it is. Lucide's locate and locate-off (ISC). -->
+  <button id="followBtn" class="on" title="Follow" aria-label="Follow" aria-pressed="true">
+    <span class="i i-locate" aria-hidden="true"></span>
+  </button>
   <button id="listBtn" title="List" aria-label="List" aria-pressed="false" aria-controls="listwin">
     <span class="i i-list" aria-hidden="true"></span>
   </button>

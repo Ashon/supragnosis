@@ -25,7 +25,7 @@
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
 > steps 41 and 42 are built: a confirmation that says what it confirms, and a review that closes its
-> loop. Step 43, a map that keeps the person's place, is specified.
+> loop, and step 43, a map that keeps the person's place, is built.
 
 ## 1. Why this exists
 
@@ -1770,7 +1770,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    that says what it asks, one count with the tray's read of curation, contested type definitions in
    Needs you, keys from the first press, Suggestions and Health as queues, the map preview's way back,
    and the Log's decision rows.
-43. **The map keeps the person's place** (Section 29.4; U20, U26): follow that waits while the map is in
+43. **The map keeps the person's place** [built] (Section 29.4; U20, U26): follow that waits while the map is in
    use and its toggle on the camera toolbar, the selection in the address, the way back to the
    address left, a selection history, Esc giving the camera back, a layout reset, and a selection
    followed when it is merged or named when it leaves.

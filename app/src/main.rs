@@ -1342,6 +1342,37 @@ fn settings_url() -> tauri::Url {
     own_page("settings.html")
 }
 
+/// Whether `url` is the viewer's own address - its scheme and host, `viz://localhost` or, where the
+/// webview reaches schemes over http, `http://viz.localhost`. Only such an address is a way back:
+/// anything else a page could put in `?from=` would make "< Graph" a redirect (settings-page.md
+/// Section 4, S1; design-system.md Section 29.4).
+fn is_viewer(url: &tauri::Url) -> bool {
+    let own = graph_url();
+    url.scheme() == own.scheme() && url.host_str() == own.host_str()
+}
+
+/// The graph as the person left it (design-system.md Section 29.4): the address the window's page
+/// carries in `?from=` when it is an app page and that address is the viewer's own; the viewer's
+/// address itself, `#review` dropped, when the window shows the viewer; else `None`.
+fn graph_left(current: &tauri::Url) -> Option<tauri::Url> {
+    let mut back = if is_viewer(current) {
+        current.clone()
+    } else {
+        let from = current.query_pairs().find(|(k, _)| k == "from")?.1.into_owned();
+        tauri::Url::parse(&from).ok().filter(is_viewer)?
+    };
+    back.set_fragment(None);
+    Some(back)
+}
+
+/// An app page's address carrying the way back to the graph, when there is one.
+fn with_from(mut page: tauri::Url, current: Option<&tauri::Url>) -> tauri::Url {
+    if let Some(back) = current.and_then(graph_left) {
+        page.query_pairs_mut().append_pair("from", back.as_str());
+    }
+    page
+}
+
 fn welcome_url() -> tauri::Url {
     own_page("welcome.html")
 }
@@ -2276,8 +2307,9 @@ async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<S
 fn show_welcome(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        if !w.url().is_ok_and(|u| is_page(&u, "welcome.html")) {
-            w.navigate(welcome_url())?;
+        let current = w.url().ok();
+        if !current.as_ref().is_some_and(|u| is_page(u, "welcome.html")) {
+            w.navigate(with_from(welcome_url(), current.as_ref()))?;
         }
     }
     Ok(())
@@ -2319,9 +2351,10 @@ fn graph_url() -> tauri::Url {
 fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        let there = w.url().is_ok_and(|u| is_page(&u, "settings.html"));
+        let current = w.url().ok();
+        let there = current.as_ref().is_some_and(|u| is_page(u, "settings.html"));
         if !there || section.is_some() {
-            let mut url = settings_url();
+            let mut url = with_from(settings_url(), current.as_ref());
             url.set_fragment(section);
             w.navigate(url)?;
         }
@@ -2335,8 +2368,8 @@ fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result
 fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        if w.url().is_ok_and(|u| own_page_ok("main", &u)) {
-            let mut url = graph_url();
+        if let Some(u) = w.url().ok().filter(|u| own_page_ok("main", u)) {
+            let mut url = graph_left(&u).unwrap_or_else(graph_url);
             url.set_fragment(Some("review"));
             w.navigate(url)?;
         } else {
@@ -2367,8 +2400,9 @@ fn show_review_all(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
-        if w.url().is_ok_and(|u| own_page_ok("main", &u)) {
-            w.navigate(graph_url())?;
+        if let Some(u) = w.url().ok().filter(|u| own_page_ok("main", u)) {
+            // Back to the graph as the person left it (design-system.md Section 29.4).
+            w.navigate(graph_left(&u).unwrap_or_else(graph_url))?;
         }
     }
     Ok(())
@@ -3701,6 +3735,30 @@ mod settings_tests {
         assert_eq!(text(1, None).as_deref(), Some("Review - 1 proposal waits..."));
         assert_eq!(text(0, Some(0)), None);
         assert_eq!(text(0, None), None);
+    }
+
+    /// design-system.md Section 29.4: the way back is the viewer's address an app page carries in
+    /// `?from=`, its `#review` dropped, or the viewer's own address; nothing else is followed, so a
+    /// page cannot make "< Graph" a redirect (settings-page.md Section 4).
+    #[test]
+    fn the_way_back_goes_only_to_the_viewer() {
+        let viewer = super::graph_url();
+        let mut left = viewer.clone();
+        left.query_pairs_mut()
+            .append_pair("workspace", "billing")
+            .append_pair("entity", "e1");
+        let settings = super::with_from(super::settings_url(), Some(&left));
+        assert_eq!(super::graph_left(&settings).as_ref(), Some(&left), "the way back is lost");
+        let mut on_review = left.clone();
+        on_review.set_fragment(Some("review"));
+        assert_eq!(super::graph_left(&on_review).as_ref(), Some(&left), "#review is kept");
+        // Passed on from one app page to the other.
+        let setup = super::with_from(super::welcome_url(), Some(&settings));
+        assert_eq!(super::graph_left(&setup).as_ref(), Some(&left));
+        let mut evil = super::settings_url();
+        evil.query_pairs_mut().append_pair("from", "https://example.com/");
+        assert_eq!(super::graph_left(&evil), None, "an address elsewhere is followed");
+        assert_eq!(super::graph_left(&super::settings_url()), None);
     }
 
     #[test]
