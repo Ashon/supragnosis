@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.ashon/supragnosis",
+  "name": "io.github.Ashon/supragnosis",
   "title": "supragnosis",
   "description": "Memory for AI agents that remembers who said it.",
   "version": "0.8.2",
