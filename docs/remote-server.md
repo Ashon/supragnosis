@@ -169,6 +169,11 @@ sync surface.
 > the app's settings page, which can also add a profile - credential included, handed to the CLI on
 > stdin - and remove one. The tray keeps the status line naming the server and its state.
 
+*(Revised by design-system.md step 50b: the tray's line reads "Server home - answering", "Server
+home - not answering" or "Server home - refused the credential", an act line "Check the Server..."
+follows it while the server does not answer or refuses, and the icon's trouble shape shows then,
+design-system.md Section 29.13.)*
+
 The tray gains a **Server** submenu listing the profiles, with the active one checked:
 
 - **The status line names the server and whether it answers**, so a person can tell at a glance

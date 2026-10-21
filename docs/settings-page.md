@@ -217,6 +217,11 @@ at a different server.
 
 ## 5. The tray, after
 
+*(Revised by design-system.md step 50b: a disabled state line and, when something needs doing, a
+second line that does it; then Finish Setup..., Review - N need you..., Open Graph and Settings..., and
+Quit, which reads "Quit and Stop Memory" while the app's own child runs the daemon; an icon that
+changes shape while the memory cannot be used. design-system.md Section 29.13.)*
+
 The tray keeps what a menu does well - glancing and opening:
 
 - **The status line.** One line: the server the AI apps use and its state, or this Mac's daemon and

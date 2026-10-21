@@ -29,7 +29,7 @@
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
-> its View.
+> its View. Step 50b, the menu bar and the tray, is specified.
 
 ## 1. Why this exists
 
@@ -585,7 +585,9 @@ outlive a revoked grant. A position is a convenience; losing it costs one settli
 The window has three pages: the **Graph**, **Review** (Section 7) and **Settings**. Graph and Review
 are routes of the viewer's own page (`#review`), so they work in the app, on a hub's read tier and in
 a browser alike; Settings is the app's page (settings-page.md Section 6). The app's View menu holds
-Graph (Cmd+1) and Review (Cmd+2), and the status bar's gear opens Settings, as it does today. In a
+Graph (Cmd+1) and Review (Cmd+2), and the status bar's gear opens Settings, as it does today.
+*(Revised by step 50b: View also holds the map's commands, Edit holds Find, Help the app's help, and
+the app menu Setup..., Section 29.13.)* In a
 browser, where those keys belong to the browser, the review pill and the address reach the page.
 
 **The title bar is a Mac toolbar** (U26). At its leading end, after the traffic lights and the star,
@@ -732,7 +734,8 @@ pass a fifth:
 - **One name: Setup.** The first-run page is Setup everywhere: its title bar says Setup, its heading
   "Set up Supragnosis" (capitalized since step 45, D17), the tray's item "Finish Setup..." and About's act "Open Setup". "Welcome"
   fits only the first visit, and the page is reached three ways after it (four since step 48: the
-  empty map's Open Setup, in the app, Section 29.10). A state has one word on
+  empty map's Open Setup, in the app, Section 29.10; five since step 50b: the app menu's Setup...,
+  Section 29.13). A state has one word on
   both pages: an AI app that waits for the person's act "Needs you", on Setup as in Settings. A
   control that both pages offer, such as an AI app's row or the model's download, is built once in the
   app's shared script and drawn by both.
@@ -1924,7 +1927,13 @@ and it fails when one of them appears in the viewer's source other than as an ar
 50a. **The map's keys and its View** [built] (Section 29.12; D7; Sections 5, 6, 10, 18 and 29.4 revised): single keys
    for zoom, Fit, List and the Keys dialog, which holds the single-key switch; View holds what
    changes the picture; b only draws; Retry where the map is stale; the minimap while zoomed in; and
-   framing that keeps the toolbar's box. The menu bar, the tray and the window are step 50b.
+   framing that keeps the toolbar's box. The menu bar and the tray are step 50b; Settings' sidebar
+   and the window's frame are step 50c.
+50b. **The menu bar and the tray** (Section 29.13; D14, D15; Sections 6 and 6a, settings-page.md
+   Section 5, remote-viewer.md Section 6 and compatibility.md Section 8 revised): the app menu's
+   Setup..., Edit's Find, View's map commands, Help, the tray's state line with its act in a fixed
+   order, an icon that changes shape only while the memory cannot be used, Quit that says it stops
+   the memory, and one id per item per menu. Settings' sidebar and the window's frame are step 50c.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -1936,7 +1945,8 @@ proposal and the read tier.
 ## 15. What this revises
 
 - **settings-page.md Section 5**: the tray menu gains "Review (N)..." while something waits on this
-  Mac's daemon (since step 42, "Review - N need you...", Section 29.3). The status line is unchanged,
+  Mac's daemon (since step 42, "Review - N need you...", Section 29.3). The status line is unchanged
+  (until step 50b, which splits it into a state line and an act line, Section 29.13),
   and on a remote profile the tray is as remote-viewer.md Section 6 leaves it.
 - **settings-page.md Section 3.0** (step 43): the way back goes to the graph as it was left, its scope
   and selection, which the way in carries in `?from=` (Section 29.4).
@@ -4578,9 +4588,9 @@ No row needs a principle changed.
   window's foot from 760 pixels wide, and at its top, both rows, below it.
 
 **What this step does not do.**
-- It does not add the View, Edit and Help menus, Setup..., the tray's lines and icon, Quit's words,
-  Settings' sidebar or the window's frame (D14, D15, R4-05, R4-06, R4-13, R4-14, R4-16, R1-16),
-  which step 50b takes.
+- It does not add the View, Edit and Help menus, Setup..., the tray's lines and icon or Quit's words
+  (D14, D15, R4-05, R4-06, R4-13, R1-16), which step 50b takes, or change Settings' sidebar or the
+  window's frame (R4-14, R4-16), which step 50c takes.
 - It does not name Origin's outlines by host, R2-10's other part, which waits for a roster the read
   tier may read.
 
@@ -4589,4 +4599,100 @@ No row needs a principle changed.
 `the_minimap_waits_and_framing_keeps_the_toolbar_box` in `crates/supragnosis-viz/tests/keys.rs`;
 `view_holds_two_choices_with_one_name_each` (the single keys and the switch's place) and
 `a_selection_has_a_history_and_esc_gives_the_camera_back` (no single key takes Cmd).
+
+### 29.13 Step 50b: the menu bar and the tray
+
+**What was found.** Measured in the app:
+- **The menu bar teaches none of the map.** View holds Graph, Review, the text's size and the
+  platform's Enter Full Screen. The panels, List, Fit, Back and Forward, Find and Setup are in no
+  menu, so a Mac user's usual way of learning a shortcut - reading the menus - teaches none of the
+  viewer's. Help holds macOS's search field and nothing to find with it; Settings... sits directly
+  under About with no separator.
+- **The tray says its state in one line it cannot act on.** "Running 0.8.2 - starts at login | no
+  AI app connected - see Settings" is one disabled line holding two facts and an instruction. Finish
+  Setup... and Review take the third place in the order they appeared. The icon never changes, so a
+  daemon that could not start looks like one that runs.
+- **The tray and the menu bar share item ids, and each hears the other's.** Cmd+2 opens Review at
+  All workspaces, since the tray's Review handler runs too, and Cmd+, also takes the tray's jump to
+  the section that needs attention.
+- **Quit stops the memory without a word.** While the app runs the daemon itself, Quit stops it, and
+  every connected AI app's next tool call fails.
+
+**Decisions.** The author approved D14: the tray's icon changes shape only while the memory cannot be
+used - and decided that this means a daemon that could not start, stopped or is claimed by two
+managers, a search index that needs rebuilding, and a remote server that does not answer or refuses
+the credential; not an update ready, an unknown state, a review waiting or no AI app connected. And
+D15: while the app runs the daemon itself, Quit says that it stops the memory, with no alert; the
+author decided the words replace both the tray's Quit and the app menu's, though the platform names
+that one "Quit Supragnosis". The author also decided that closing the window, which leaves the app in
+the menu bar, says nothing: the tray says the state, as a menu bar app's does (R4-06's other half).
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| settings-page.md Section 5 | The tray: one status line that says when something needs doing and points to Settings; Open Viewer, Finish Setup..., Settings..., Quit Supragnosis | revised - the state line, and when something needs doing a second line that does it; a fixed order; Quit's words while the app runs the daemon |
+| settings-page.md Sections 3.0 and 6 | The tray opens Settings where the attention is; it says what state this Mac is in and opens the page that changes it; no submenus | agrees - the act line opens that section, the tray's Settings... still does, and the tray gains no submenu |
+| remote-viewer.md Section 6 and remote-server.md Section 5 | On a remote profile the tray is unchanged: its line names the server and whether it answers | revised - the line reads "Server home - not answering" or "Server home - refused the credential", its act "Check the Server...", and the trouble shape shows while it does not answer or refuses; this Mac's states do not count while a remote server is used |
+| Section 9's state words and its Retired words | The daemon has one word per state; no retired word reaches the tray | agrees - the state line keeps the words, "Update ready - restart: 0.8.1 running, 0.8.2 installed" included, and no act line says "Restart to update" |
+| Section 7 and Section 29.3 | The tray's review item reads "Review - 3 need you...", or "Review - 2 proposals wait..." when the curation read fails | agrees - unchanged, in its fixed place |
+| onboarding.md Section 6 | Finish Setup... while step 4.1 or 4.2 is not done, Start at Login off by choice settling 4.1 | agrees - the same rule; while it shows, the act line does not repeat "Connect an AI App..." |
+| Section 6, Section 6a | The app's View menu holds Graph (Cmd+1) and Review (Cmd+2); Setup is reached four ways after the first visit | revised - View also holds the map's commands, Help the app's help, and the app menu's Setup... is a fifth way in |
+| U26 and Section 29.4 | Esc and Cmd+[ take the way back on every page but the Graph; the menu bar's Review keeps the scope | agrees, and repays - View's Back and Forward send the page on screen its own Cmd+[ and Cmd+]; one id per item per menu ends Cmd+2's jump to All workspaces |
+| U17 | One concept, one name | agrees - View's "Fit to View" is the button's "Fit to view" in a menu's title case |
+| Section 29.12 and U19 | The single keys can be turned off; the page behind a dialog is inert | agrees - the menu commands are not single keys; they act only while no dialog or card is open on the page |
+| settings-page.md Section 6 | The viewer does not know the shell | agrees - the viewer still learns nothing of the shell; the shell knows more of the page |
+| compatibility.md Section 8 | The controls the shell finds on the page are listed | revised - the shell presses the page's own controls by id, and only when the press changes something - the panel toggles by `aria-pressed`, the Map and List tabs by `aria-selected`, Fit, Keys... - only while no `dialog[open]` and no `#obscard.on` is on the page; it sends Cmd+K, and to a viewer that has `#keysDlg` Cmd+[ and Cmd+], to the focused element; a viewer without a control leaves its item disabled |
+| U41 | Icons are Lucide's files, and the app's own mark is the app's | agrees - the trouble shape is the mark drawn by the same generator, a second template |
+| onboarding.md O6 and P17 | A report copies no knowledge | repays - the shell's diagnostics read, which This Mac's Copy Diagnostics copies, gives the done sentence of Try it as "An entry is in the store.", without the workspace or the app it named |
+| Section 29.5 and P24 | `act=diagnostics` focuses This Mac's Copy Diagnostics, so the copy is the person's press; Show in Finder reports its outcome where it ran | agrees - Help's Diagnostics... opens This Mac with Copy Diagnostics focused, the starting page's word for the same act, and Show Log in Finder opens it with `act=reveal-log`, where the page says whether it worked |
+| Section 10 | A control has a name and says its state | agrees - the tray's tooltip names the state while the trouble shape shows, "Supragnosis - Could not start"; whether VoiceOver reads it is measured in the build |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Each item has its own id in its own menu,** the tray's apart from the menu bar's, so an item does
+  only its own act.
+- **The app menu.** About Supragnosis, a separator, Settings... (Cmd+,) and Setup..., a separator,
+  then the platform's own items. Its Quit (Cmd+Q) takes the tray's words.
+- **Edit.** After the platform's items, Find (Cmd+F) focuses the Graph's search; from another page it
+  opens the Graph first.
+- **View.** Graph (Cmd+1) and Review (Cmd+2); then Filters Panel (Ctrl+Cmd+S), Log Panel
+  (Ctrl+Cmd+L), as Map, as List, Fit to View and Keys...; then Back (Cmd+[) and Forward (Cmd+]); then
+  the text's size and the platform's Enter Full Screen. The map's commands act on the Graph page
+  while no dialog or card is open; on Review, Settings or Setup they open the Graph and do nothing
+  else; on the starting page, or a viewer that lacks the control, they are disabled. Back and Forward
+  send the page on screen its own Cmd+[ and Cmd+], which each page reads as it does now; Forward is
+  disabled on Settings, Setup and Review, where it has no meaning. Which items act is known from the
+  report each page already sends when it loads, which says the controls it has; a page that reported
+  wrongly enables an item at most, since each press looks for its control again.
+- **Help.** Supragnosis Documentation opens the project's documentation, and Report an Issue... its
+  issue tracker, in the browser, both from the app's repository address, sending nothing of this
+  Mac's; Diagnostics... opens Settings' This Mac with its Copy Diagnostics focused, and Show Log in
+  Finder opens it and shows the log there. macOS's search field stays.
+- **The tray's menu**, in this order:
+  - the state line, disabled, in Section 9's words: "Running 0.8.2 - starts at login", "Could not
+    start: <cause>", "Update ready - restart: 0.8.1 running, 0.8.2 installed", "Two managers run
+    Supragnosis", "The search index needs rebuilding", "Stopped"; on a remote profile "Server home -
+    answering", "Server home - not answering" or "Server home - refused the credential";
+  - when something needs doing, one line that does it, opening the section of Settings where it is
+    done. The first that holds wins: the memory cannot be used - "Open This Mac..." (could not start,
+    stopped, two managers, the index) or "Check the Server..." (a remote server not answering or
+    refusing); an update ready - "Open This Mac..."; no AI app connected, while Finish Setup... does
+    not show - "Connect an AI App...". A command line newer than the app says so on the state line and
+    adds no act;
+  - a separator; Finish Setup... by onboarding.md Section 6's rule; "Review - 3 need you..." while
+    something waits; Open Graph; Settings..., which still opens the section that needs attention;
+  - a separator, and Quit.
+- **The icon.** The mark stays the template it is. While the memory cannot be used, by the author's
+  list above, it shows the mark with a dot cut beside it, a second template, so the state reads as
+  shape and not as color, and its tooltip says the state.
+- **Quit.** While the app's own child runs the daemon and no remote profile is active, the tray's
+  Quit and the app menu's read "Quit and Stop Memory"; otherwise "Quit Supragnosis".
+
+**What this step does not do.**
+- It does not change Settings' sidebar or remember the window's frame (R4-14, R4-16), which step 50c
+  takes.
+- It does not take the menu interface from the pages of the main window, which any of them may still
+  call; it is owed with the window's permissions, unscheduled.
 
