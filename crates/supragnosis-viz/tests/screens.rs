@@ -88,13 +88,19 @@ fn the_review_page_works_from_the_keyboard() {
         !detail.contains("<kbd>A</kbd></button>") && !detail.contains("<kbd>R</kbd></button>"),
         "a key is part of a button's name"
     );
-    for key in ["A", "R", "J"] {
+    for key in ["A", "R"] {
         assert!(
             detail.contains(&format!("aria-keyshortcuts=\"{key}\"")),
             "no control names the key {key}"
         );
     }
-    assert!(detail.contains("data-skip"), "there is no Skip button");
+    // Skip is one button wherever an item is decided one at a time (Section 29.3).
+    let skip = function("skipButton");
+    assert!(skip.contains("aria-keyshortcuts=\"J\""), "no control names the key J");
+    assert!(
+        skip.contains("data-skip") && detail.contains("skipButton()"),
+        "there is no Skip button"
+    );
     assert!(function("wireDecisions").contains("[data-skip]"), "Skip does nothing");
     let at = SCRIPT
         .find("window.addEventListener(\"keydown\", e => {\n  if (!reviewOpen()) return;")

@@ -565,8 +565,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (4, &[c(
         "on the Review page a decision control appears only with its item's diff and checks on screen and decides that item alone; every open proposal is listed, and a generated candidate is left out only when its diff is computable and empty",
-        // crates/supragnosis-viz/tests/http.rs: reviewDecide's guards and its call sites.
-        Evidence::Scenario(&["a_review_decision_takes_one_item_with_its_diff_on_screen"]),
+        // crates/supragnosis-viz/tests/http.rs: reviewDecide's guards and its call sites; review.rs:
+        // a Decided item's reverse is read with its diff before it acts (Section 29.3).
+        Evidence::Scenario(&[
+            "a_review_decision_takes_one_item_with_its_diff_on_screen",
+            "every_reverse_is_on_its_decided_item",
+        ]),
     )]),
     (5, &[c(
         "dream drafts are listed apart from published proposals and marked as this node's; only the person's act publishes or accepts one, and none is shown on a read tier",
@@ -689,7 +693,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         "no line a person reads first spells a system identifier: tiers by their legend names, and every proposal kind and event with a sentence and no hash id",
         // crates/supragnosis-viz/tests/words.rs: every interpolation of a tier goes through tierName,
         // and the Log's tables cover the engine's kinds, events and decisions.
-        Evidence::Scenario(&["a_tier_is_named_never_spelled", "every_proposal_event_has_a_sentence"]),
+        // review.rs: Decided's titles from the server's labels and its outcomes in words.
+        Evidence::Scenario(&[
+            "a_tier_is_named_never_spelled",
+            "every_proposal_event_has_a_sentence",
+            "decided_says_what_was_decided",
+        ]),
     ), c(
         "each observation row with a who-line naming tier, who and when and the map's ring for its tier, and one name for one place",
         // words.rs reads the Log's rows; the app's tests read Setup's one name.
@@ -722,9 +731,11 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (20, &[c(
         "on the local console the status bar always holds the way to Review with one count over tie-only contested items, and follow never changes the scope, the selection or the open sheet",
-        // places.rs: Review's entry and Needs you, follow, and the first view.
+        // places.rs: Review's entry and Needs you, follow, and the first view; review.rs: the count
+        // with contested definitions in it (Section 29.3).
         Evidence::Scenario(&[
             "review_is_always_in_the_status_bar_with_one_count",
+            "one_count_covers_all_of_needs_you",
             "follow_frames_what_is_in_scope_and_notes_the_rest",
             "the_first_view_opens_where_the_knowledge_is",
         ]),
@@ -834,13 +845,15 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (42, &[c(
-        "a notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, a 28-pixel dismiss showing x; a success without an action leaves 4.5 s after it shows, counted only while the pointer is off it and focus outside it, every other notice stays until dismissed or used; four at most; 200 ms in, 120 ms out, neither under reduced motion",
+        "a notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, a 28-pixel dismiss showing x; a success without an action leaves 4.5 s after it shows, counted only while the pointer is off it and focus outside it, and so does a success on the Review page whose act is also on its Decided item, every other notice stays until dismissed or used; four at most; 200 ms in, 120 ms out, neither under reduced motion",
         // crates/supragnosis-viz/tests/notices.rs reads toast, leaveAfter and dismiss in viewer.js and
-        // kit.js, and the notice rules of viewer.css and settings.css.
+        // kit.js, and the notice rules of viewer.css and settings.css; review.rs the Review page's
+        // notices (Section 29.3).
         Evidence::Scenario(&[
             "a_notice_has_one_anatomy",
             "a_success_waits_while_it_is_read",
             "a_notice_moves_in_the_three_durations",
+            "review_notices_and_log_rows",
         ]),
     )]),
     (32, &[c(
@@ -3363,6 +3376,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/scale.rs"),
     include_str!("../../supragnosis-viz/tests/icons.rs"),
     include_str!("../../supragnosis-viz/tests/notices.rs"),
+    include_str!("../../supragnosis-viz/tests/review.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),

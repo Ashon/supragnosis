@@ -56,11 +56,12 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
     assert!(!rows.contains("class=\"why\""), "the block reuses the inspector's .why");
     // Undo is the reverse gated event, and the notice says what it costs, in words.
     let settle = function("settleValue");
+    // Each act keeps the sentence its notice says as its rationale (Section 29.3).
+    assert!(settle.contains(
+        "consoleWrite(\"/api/resolve\", settleQuery(a.from, \"human_confirmed\", null, confirmed)"
+    ));
     assert!(
-        settle.contains("consoleWrite(\"/api/resolve\", settleQuery(a.from, \"human_confirmed\")")
-    );
-    assert!(
-        settle.contains("settleQuery(a.from, fromWas, \"claim_demotion\")"),
+        settle.contains("settleQuery(a.from, fromWas, \"claim_demotion\", \"Undid \" + confirmed)"),
         "Undo is not the demotion"
     );
     assert!(
@@ -71,8 +72,11 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
         settle.contains("until someone confirms it again"),
         "the notice does not name the ceiling"
     );
+    // A notice with Undo stays, except on the Review page, where the same Undo is on its Decided
+    // item (Section 29.3).
     assert!(
-        function("toast").contains("kind === \"ok\" && !action"),
+        function("toast")
+            .contains("kind === \"ok\" && (!action || (action.decided && reviewOpen()))"),
         "a notice with Undo leaves on its own"
     );
 }

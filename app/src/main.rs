@@ -78,8 +78,9 @@ struct AppsHint(Mutex<Option<String>>);
 /// pointing at, if any (docs/settings-page.md Section 3.0).
 struct Attention(Mutex<Option<&'static str>>);
 
-/// The tray's "Review (N)..." item (docs/design-system.md Section 7): in the menu while proposals wait
-/// on this Mac's daemon, out of it otherwise. The menu and whether the item is in it are kept with it.
+/// The tray's "Review - N need you..." item (docs/design-system.md Section 7): in the menu while
+/// something waits on this Mac's daemon, out of it otherwise. The menu and whether the item is in it
+/// are kept with it.
 struct TrayReview {
     menu: Menu<tauri::Wry>,
     item: MenuItem<tauri::Wry>,
@@ -109,19 +110,61 @@ fn tray_item_shown(
     }
 }
 
-/// How many proposals wait for a decision on this Mac's daemon, across its workspaces: the open ones
-/// and the blocked ones, which wait for a person to reject them. None when the daemon does not answer.
-async fn waiting_proposals(sock: &Path) -> Option<usize> {
-    let f =
-        tokio::time::timeout(Duration::from_secs(5), uds_fetch(sock, "/api/proposals?workspace=*"))
-            .await
-            .ok()?
-            .ok()?;
+/// What waits for a person on this Mac's daemon, across its workspaces (docs/design-system.md
+/// Section 7): the open and blocked proposals, and with them, from the curation report, the suspected
+/// secrets and the contested beliefs - all of Needs you. `needs` is `None` when the curation read
+/// failed and the proposal list answered, and the item then says what it counted (P5).
+#[derive(Debug, PartialEq)]
+struct Waiting {
+    proposals: usize,
+    needs: Option<usize>,
+}
+
+/// One JSON read over the daemon's socket, or `None` when it does not answer in time or well.
+async fn read_json(sock: &Path, path: &str) -> Option<serde_json::Value> {
+    let f = tokio::time::timeout(Duration::from_secs(5), uds_fetch(sock, path))
+        .await
+        .ok()?
+        .ok()?;
     if f.status != 200 {
         return None;
     }
-    let list: serde_json::Value = serde_json::from_slice(&f.body).ok()?;
-    Some(review_count(&list))
+    serde_json::from_slice(&f.body).ok()
+}
+
+/// The tray's count, read once a beat. `None` when the daemon does not answer the proposal list.
+async fn waiting(sock: &Path) -> Option<Waiting> {
+    let proposals = review_count(&read_json(sock, "/api/proposals?workspace=*").await?);
+    let needs = read_json(sock, "/api/curation?workspace=*")
+        .await
+        .and_then(|c| curation_count(&c))
+        .map(|n| n + proposals);
+    Some(Waiting { proposals, needs })
+}
+
+/// What the curation report adds to Needs you: the suspected secrets and the contested beliefs (an
+/// entity's type or a type's definition). `None` for an answer that is not the report.
+fn curation_count(report: &serde_json::Value) -> Option<usize> {
+    let secrets = report.get("secrets")?.as_array()?.len();
+    let contested = report
+        .get("contradictions")?
+        .as_array()?
+        .iter()
+        .filter(|c| c["contested"].as_bool() == Some(true))
+        .count();
+    Some(secrets + contested)
+}
+
+/// The item's words, or `None` when nothing waits: "Review - 3 need you...", and when only the
+/// proposals could be read, what was counted: "Review - 2 proposals wait...".
+fn review_item_text(w: &Waiting) -> Option<String> {
+    match (w.needs, w.proposals) {
+        (Some(0), _) | (None, 0) => None,
+        (Some(1), _) => Some("Review - 1 needs you...".into()),
+        (Some(n), _) => Some(format!("Review - {n} need you...")),
+        (None, 1) => Some("Review - 1 proposal waits...".into()),
+        (None, n) => Some(format!("Review - {n} proposals wait...")),
+    }
 }
 
 /// The count `waiting_proposals` reports, from the daemon's proposal list.
@@ -880,16 +923,16 @@ async fn refresh_status(app: &tauri::AppHandle) {
     }
     // The review item counts this Mac's daemon only; on a remote profile the tray stays as
     // remote-viewer.md Section 6 has it.
-    let waiting = if active_remote(app).is_none() {
-        waiting_proposals(&app.state::<VizSock>().0).await.unwrap_or(0)
+    let text = if active_remote(app).is_none() {
+        waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text)
     } else {
-        0
+        None
     };
     if let Some(r) = app.try_state::<TrayReview>() {
-        if waiting > 0 {
-            let _ = r.item.set_text(format!("Review ({waiting})..."));
+        if let Some(t) = &text {
+            let _ = r.item.set_text(t);
         }
-        tray_item_shown(&r.menu, &r.item, &r.shown, waiting > 0);
+        tray_item_shown(&r.menu, &r.item, &r.shown, text.is_some());
     }
     // "Finish setup..." while the daemon or the AI apps are not set up (docs/onboarding.md
     // Section 6), from setup's own checklist. A CLI that predates setup offers nothing.
@@ -2303,6 +2346,23 @@ fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The tray's Review item opens the page at All workspaces, the scope its count is of
+/// (docs/design-system.md Section 7). The menu bar's Review keeps the scope on screen.
+fn show_review_all(app: &tauri::AppHandle) -> tauri::Result<()> {
+    show_viewer(app)?;
+    if let Some(w) = app.get_webview_window("main") {
+        if w.url().is_ok_and(|u| own_page_ok("main", &u)) {
+            let mut url = graph_url();
+            url.query_pairs_mut().append_pair("workspace", "*");
+            url.set_fragment(Some("review"));
+            w.navigate(url)?;
+        } else {
+            w.eval("typeof openReviewAt === 'function' ? openReviewAt('*') : (location.hash = '#review')")?;
+        }
+    }
+    Ok(())
+}
+
 /// Turns the main window to the graph, creating it first if needed.
 fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
     show_viewer(app)?;
@@ -2654,7 +2714,7 @@ fn main() {
                         }
                     }
                     "review" => {
-                        if let Err(e) = show_review(app) {
+                        if let Err(e) = show_review_all(app) {
                             tracing::error!(error = %e, "failed to open the review page");
                         }
                     }
@@ -3613,7 +3673,9 @@ mod settings_tests {
     /// from its own workspace by name; when the shell left the server workspace it stopped doing
     /// so, and every build until 0.5.2 showed "-" in that row.
     /// The tray's Review item counts what waits for a person (docs/design-system.md Section 7): open
-    /// proposals and blocked ones, which wait to be rejected - never merged, rejected or withdrawn ones.
+    /// proposals and blocked ones, which wait to be rejected, never merged, rejected or withdrawn
+    /// ones; and from the curation report the suspected secrets and the contested beliefs, all of
+    /// Needs you. Without the report it says what it counted (P5).
     #[test]
     fn the_review_item_counts_open_and_blocked_proposals() {
         let list = serde_json::json!([
@@ -3622,6 +3684,23 @@ mod settings_tests {
         ]);
         assert_eq!(super::review_count(&list), 3);
         assert_eq!(super::review_count(&serde_json::json!({"error": "x"})), 0);
+        let report = serde_json::json!({
+            "secrets": [{"observation": "s"}],
+            "contradictions": [
+                {"id": "a", "field": "kind", "contested": true},
+                {"id": "type:ws:entity:Service", "field": "definition", "contested": true},
+                {"id": "b", "field": "kind", "contested": false}
+            ]
+        });
+        assert_eq!(super::curation_count(&report), Some(3), "a secret and two contested beliefs");
+        assert_eq!(super::curation_count(&serde_json::json!({"error": "x"})), None);
+        let text = |proposals, needs| super::review_item_text(&super::Waiting { proposals, needs });
+        assert_eq!(text(3, Some(6)).as_deref(), Some("Review - 6 need you..."));
+        assert_eq!(text(0, Some(1)).as_deref(), Some("Review - 1 needs you..."));
+        assert_eq!(text(2, None).as_deref(), Some("Review - 2 proposals wait..."));
+        assert_eq!(text(1, None).as_deref(), Some("Review - 1 proposal waits..."));
+        assert_eq!(text(0, Some(0)), None);
+        assert_eq!(text(0, None), None);
     }
 
     #[test]

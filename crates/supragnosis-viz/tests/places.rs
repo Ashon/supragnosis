@@ -23,7 +23,7 @@ fn review_is_always_in_the_status_bar_with_one_count() {
         "with nothing waiting the entry does not read Review"
     );
     assert!(
-        pill.contains("\" to review\" + (contested ? \" (\" + contested + \" contested)\" : \"\")"),
+        pill.contains("(n === 1 ? \"1 needs you\" : n + \" need you\") + (contested ? \" (\" + contested + \" contested)\" : \"\")"),
         "the contested beliefs are not counted inside the one count"
     );
     // Needs you lists only the beliefs that tie on trust, so a confirmation takes its item away.
@@ -33,7 +33,7 @@ fn review_is_always_in_the_status_bar_with_one_count() {
         "Needs you lists conflicts trust already settled"
     );
     assert!(
-        function("curationParts").contains("settled conflicts"),
+        function("signalItems").contains("\"Settled conflict: \""),
         "a settled conflict is listed nowhere"
     );
 }

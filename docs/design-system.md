@@ -24,8 +24,8 @@
 > (Section 28, U41-U42), is built - steps 39-40: Lucide's files on every surface, and a notice with
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
-> step 41, a confirmation that says what it confirms, is built, and step 42, a review that closes
-> its loop, is specified.
+> steps 41 and 42 are built: a confirmation that says what it confirms, and a review that closes its
+> loop.
 
 ## 1. Why this exists
 
@@ -1760,7 +1760,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    `/api/resolve/preview` with the diff's `reach` and the checks, the ask with the source and its reach,
    the choice of source, both halves of Confirm instead, Undo's reach, no act without its diff, and the
    tiers defined under the legend.
-42. **Review closes the loop** (Section 29.3; U4, U20, U42): a decision leaves Needs you at once, every
+42. **Review closes the loop** [built] (Section 29.3; U4, U20, U42): a decision leaves Needs you at once, every
    reverse on its Decided item and in the notice after it, Decided in names and outcomes, the queue
    that says what it asks, one count with the tray's read of curation, contested type definitions in
    Needs you, keys from the first press, Suggestions and Health as queues, the map preview's way back,
@@ -3225,7 +3225,8 @@ D11 and D12 decided both.
   fold. It answers those acts' diff and checks as the preview does, and no acts when the proposal no
   longer moves any target: another proposal holds the same tier.
 - **The fold.** A blocked merge with a valid reject concludes Rejected (proposal-workflow.md Section
-  7.1).
+  7.1). A proposal row says `merge_verdict` when a merge verdict was cast on it, so the page can say
+  that such a reject is provisional.
 - **The report.** Contested and settled type definitions join `contradictions`, with `field`
   "definition", the type's `target` and `workspace`, and the defining observation as `kind_source`.
 - **The rationale.** Every act the console casts records the sentence its notice says as its
@@ -3250,7 +3251,7 @@ D11 and D12 decided both.
   - A merged claim demotion offers "Undo demotion", the same way in the other direction. Its note
     names who cast the demotion, since undoing it can raise a source someone lowered on purpose.
   - The two acts of a "Confirm instead" are two Decided items, each with its own reverse; undoing
-    one alone ties the belief again, and its note says so from the diff.
+    one alone moves only its own source, and its note says what that moves back, from the diff.
   - A split, a type change and a recall offer none, and say what undoing them takes: "Merging them
     again takes a new proposal."
 - **The notice right after names the item.**
