@@ -83,6 +83,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | `/api/graph`, `/api/hypergraph`, `/api/types`, `/api/curation`, `/api/proposals`, `/api/observations` | read | The workspace as Section 3.3 resolves it. |
 | `/api/proposal` | read | The named workspace must be granted and servable. `*` is refused, because a proposal lives in one workspace. |
 | `/api/explain?entity=`, `/api/observations?entity=` | read | The entity's own workspace must be granted and servable. An id outside the grants is answered exactly as an unknown id is (Section 3.4). |
+| `/api/observations?id=` | read | One observation by its id (design-system.md Section 29.7). Its own workspace must be granted and servable; an id outside the grants is answered exactly as an unknown id is (Section 3.4). |
 | `/api/events` | read | Filtered as Section 3.6 says. |
 | `/api/federation`, `/api/peer/share`, `/api/health`, `/api/clients` | refused | A node's own operations and state - its peers, its sharing boundary, its store's ledger, the AI apps on its own machine (onboarding.md O7). They are not a principal's. |
 | `/api/review`, `/api/resolve` | refused | Verdicts. These stamp the console surface, the one that records a human's direct act (V2). |

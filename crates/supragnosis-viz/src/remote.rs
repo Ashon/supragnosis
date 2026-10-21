@@ -356,6 +356,18 @@ fn read_value(
                 Err(e) => Err(failure(&e)),
             }
         }
+        // One observation by id: its own workspace decides, and an id outside the grants is answered
+        // as an unknown one (remote-viewer.md Section 3.4).
+        "/api/observations" if param(query, "id").is_some_and(|s| !s.is_empty()) => {
+            let id = param(query, "id").unwrap_or_default();
+            let ws = match engine.observation_workspace(&id).map_err(|e| failure(&e))? {
+                Some(ws) if reader.readable.contains(&ws) => ws,
+                _ => return Err(Answer::unknown_id()),
+            };
+            servable(&ws).map_err(|why| Answer::error(403, &why))?;
+            let one = engine.observation(&id, Some(&ws)).map_err(|e| failure(&e))?;
+            to_value(one.into_iter().collect::<Vec<_>>())
+        }
         // One entity's evidence: its own workspace decides, whatever the request named.
         "/api/observations" if param(query, "entity").is_some_and(|s| !s.is_empty()) => {
             let id = param(query, "entity").unwrap_or_default();

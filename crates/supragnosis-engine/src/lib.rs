@@ -1258,6 +1258,12 @@ fn effective_tier(obs: &Observation, gates: &HashMap<String, TrustTier>) -> Trus
 /// row. The surface marker is not an authorship question - a gate grant's ceiling and the I17
 /// recall check read every attestation of a merge verdict (resolution.md Section 6).
 fn authoring_attestation(obs: &Observation) -> Option<&Provenance> {
+    authoring_index(obs).map(|i| &obs.provenance[i])
+}
+
+/// [`authoring_attestation`]'s position in the observation's provenance list - what a read that
+/// lists every attestation names as the one that wrote it (design-system.md Section 29.7).
+fn authoring_index(obs: &Observation) -> Option<usize> {
     obs.provenance
         .iter()
         .enumerate()
@@ -1270,7 +1276,7 @@ fn authoring_attestation(obs: &Observation) -> Option<&Provenance> {
                 *i,
             )
         })
-        .map(|(_, p)| p)
+        .map(|(i, _)| i)
 }
 
 /// The canonical member set an observation co-asserts (the hyperedge membership rule): entity
@@ -1442,6 +1448,13 @@ pub struct ObsSummary {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub derived_from: Vec<String>,
     pub attestations: Vec<AttestationSummary>,
+    /// Which of `attestations` wrote it - [`authoring_attestation`], not the first by host, which is
+    /// how the union sorts them (design-system.md Section 29.7).
+    pub author: usize,
+    /// The gate event that last moved its effective tier, when one did (design-system.md Section
+    /// 29.7): what the card says confirmed or lowered it, and when.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated_by: Option<GateMove>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub entities: Vec<EntityRef>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1449,6 +1462,22 @@ pub struct ObsSummary {
     /// Present when this observation IS a proposal event - the readable form of `content`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proposal: Option<ProposalEventSummary>,
+}
+
+/// The gate event that last moved an observation's effective tier, in the gate fold's verdict order
+/// (resolution.md R5): its proposal, whether it raised or lowered the tier, and its representative
+/// merge verdict - the verdict's id, time, surface marker and sync origin, so a reader can say who
+/// cast it and where (design-system.md Section 29.7).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct GateMove {
+    pub proposal: String,
+    pub promotion: bool,
+    pub verdict: String,
+    pub at: Timestamp,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_node: Option<String>,
 }
 
 /// One competing value for a single-valued belief field, with its role in the RESOLVED projection -
@@ -3010,7 +3039,69 @@ impl Engine {
             &self.asserted_entity_ids(workspace, cx)?,
             &self.decided_merges(workspace, cx)?,
         )?;
+        if let Some(profile) = self.trust_profile(workspace, &view, cx)? {
+            view.checks.push(profile);
+        }
         Ok(Some(view))
+    }
+
+    /// The informative trust profile beside the blocking checks (proposal-workflow.md Section 6,
+    /// design-system.md Section 29.7): how many observations the proposal rests on, at each
+    /// EFFECTIVE tier - for a merge those that state its entities, for a gate act its targets. It
+    /// blocks nothing (the fold reads blocking checks only), and is `None` for a kind that rests on
+    /// no observation of its own. Highest tier first, as "3 agent_extracted, 1 human_confirmed".
+    fn trust_profile(
+        &self,
+        workspace: Option<&str>,
+        view: &ProposalView,
+        cx: &ReadCtx,
+    ) -> Result<Option<CheckResult>, StoreError> {
+        let gate = GATE_KINDS.contains(&view.kind.as_str());
+        if view.kind != "entity_merge" && !gate {
+            return Ok(None);
+        }
+        let fwd = self.merge_forwarding(workspace, cx)?;
+        let gates = self.gate_grants(workspace, cx)?;
+        let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
+        let mut wanted: HashSet<String> = view.targets.iter().cloned().collect();
+        wanted.extend(view.into.iter().cloned());
+        // A merge's entities are counted after forwarding, so an entity merged elsewhere still
+        // finds the observations that named it.
+        let wanted_canon: HashSet<String> = wanted.iter().map(|t| canon(t.clone())).collect();
+        let mut counts: BTreeMap<TrustTier, usize> = BTreeMap::new();
+        for obs in self.log(workspace, cx)?.iter() {
+            let rests = if gate {
+                wanted.contains(&obs.id)
+            } else {
+                let ws = obs.workspace();
+                obs.assertions
+                    .entities
+                    .iter()
+                    .map(|e| e.name.as_str())
+                    .chain(
+                        obs.assertions
+                            .relations
+                            .iter()
+                            .flat_map(|r| [r.from.as_str(), r.to.as_str()]),
+                    )
+                    .any(|n| wanted_canon.contains(&canon(Entity::make_id(ws, n))))
+            };
+            if rests {
+                *counts.entry(effective_tier(obs, &gates)).or_default() += 1;
+            }
+        }
+        let detail = counts
+            .iter()
+            .rev()
+            .map(|(tier, n)| format!("{n} {}", tier_label(*tier)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Ok(Some(CheckResult {
+            name: "trust profile".into(),
+            blocking: false,
+            passed: true,
+            detail,
+        }))
     }
 
     /// What the console's settle would do, without casting it (design-system.md Section 29.2): the
@@ -3875,6 +3966,21 @@ impl Engine {
         extra: &[(&[String], TrustTier, bool)],
         without: Option<&str>,
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
+        Ok(self.gate_fold(workspace, cx, extra, without)?.0)
+    }
+
+    /// [`Engine::gate_tiers`], with each target's last moving event beside its tier: observation id
+    /// -> (proposal id, its representative merge verdict's observation id, promotion). An event that
+    /// left the tier where it was moves nothing.
+    #[allow(clippy::type_complexity)]
+    fn gate_fold(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+        extra: &[(&[String], TrustTier, bool)],
+        without: Option<&str>,
+    ) -> Result<(HashMap<String, TrustTier>, HashMap<String, (String, String, bool)>), StoreError>
+    {
         // proposal id -> (targets, requested tier, is a promotion); from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier, bool)> = HashMap::new();
         // proposal id -> (representative merge verdict's ordering hlc and obs id, the highest
@@ -3970,12 +4076,13 @@ impl Engine {
             }
         }
         if events.is_empty() {
-            return Ok(HashMap::new());
+            return Ok((HashMap::new(), HashMap::new()));
         }
         // Each target's base evaluation is where its events start. A target this log does not hold
         // has nothing to apply to; when it arrives, the next read folds it (the same monotone
         // direction as a blocked merge turning merged).
         let mut tiers: HashMap<String, TrustTier> = HashMap::new();
+        let mut moved: HashMap<String, (String, String, bool)> = HashMap::new();
         for obs in self.log(workspace, cx)?.iter() {
             let Some(list) = events.get_mut(&obs.id) else {
                 continue;
@@ -3989,8 +4096,13 @@ impl Engine {
                     tier.min(grant)
                 }
             };
-            for (_, _, grant, promotion) in list.iter() {
-                tier = apply(tier, *grant, *promotion);
+            for (_, proposal, grant, promotion) in list.iter() {
+                let next = apply(tier, *grant, *promotion);
+                if next != tier {
+                    let verdict = rep_merge.get(proposal).map(|r| r.1.clone()).unwrap_or_default();
+                    moved.insert(obs.id.clone(), (proposal.clone(), verdict, *promotion));
+                }
+                tier = next;
             }
             let mut touched = !list.is_empty();
             for (targets, grant, promotion) in extra {
@@ -4003,7 +4115,7 @@ impl Engine {
                 tiers.insert(obs.id.clone(), tier);
             }
         }
-        Ok(tiers)
+        Ok((tiers, moved))
     }
 
     /// Per-canonical-entity belief fold over the observation log (resolution.md Sections 2-4):
@@ -4770,9 +4882,77 @@ impl Engine {
         entity: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<ObsSummary>, StoreError> {
+        self.observation_rows(workspace, entity, limit, None)
+    }
+
+    /// One observation by its id, as [`Engine::observation_log`] answers it in `workspace` (every
+    /// workspace when `None`), so a card opens without reading a scope's log (design-system.md
+    /// Section 29.7). `None` for an id the scope does not hold (absence, Principle 5).
+    pub fn observation(
+        &self,
+        id: &str,
+        workspace: Option<&str>,
+    ) -> Result<Option<ObsSummary>, StoreError> {
+        Ok(self.observation_rows(workspace, None, None, Some(id))?.into_iter().next())
+    }
+
+    /// The workspace an observation was written to, or `None` for an id no workspace holds - what
+    /// the read tier checks against a principal's grants before it answers by id.
+    pub fn observation_workspace(&self, id: &str) -> Result<Option<String>, StoreError> {
+        let cx = &ReadCtx::default();
+        Ok(self
+            .log(None, cx)?
+            .iter()
+            .find(|o| o.id == id)
+            .map(|o| o.workspace().to_string()))
+    }
+
+    fn observation_rows(
+        &self,
+        workspace: Option<&str>,
+        entity: Option<&str>,
+        limit: Option<usize>,
+        only: Option<&str>,
+    ) -> Result<Vec<ObsSummary>, StoreError> {
         let cx = &ReadCtx::default();
         let fwd = self.merge_forwarding(workspace, cx)?;
-        let gates = self.gate_grants(workspace, cx)?;
+        let (gates, moved) = self.gate_fold(workspace, cx, &[], None)?;
+        // Each moving event's verdict, said by its authoring attestation: when, at which surface,
+        // from which sync origin (design-system.md Section 29.7).
+        let verdicts: HashSet<&str> = moved.values().map(|m| m.1.as_str()).collect();
+        let mut verdict_said: HashMap<String, (Timestamp, Option<String>, Option<String>)> =
+            HashMap::new();
+        if !verdicts.is_empty() {
+            for obs in self.log(workspace, cx)?.iter() {
+                if !verdicts.contains(obs.id.as_str()) {
+                    continue;
+                }
+                if let Some(a) = authoring_attestation(obs) {
+                    verdict_said.insert(
+                        obs.id.clone(),
+                        (
+                            a.observed_at,
+                            a.source_ref.clone(),
+                            a.sync.as_ref().map(|s| s.origin_node.clone()),
+                        ),
+                    );
+                }
+            }
+        }
+        let gated_by = |id: &str| {
+            moved.get(id).map(|(proposal, verdict, promotion)| {
+                let (at, surface, origin_node) =
+                    verdict_said.get(verdict).cloned().unwrap_or((0, None, None));
+                GateMove {
+                    proposal: proposal.clone(),
+                    promotion: *promotion,
+                    verdict: verdict.clone(),
+                    at,
+                    surface,
+                    origin_node,
+                }
+            })
+        };
         let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
         let want = entity.map(|e| canon(e.to_string()));
         // Proposal-event rows are unreadable as stored (machine text, fixed inside the content
@@ -4821,6 +5001,9 @@ impl Engine {
         };
         let mut out: Vec<ObsSummary> = Vec::new();
         for obs in self.log(workspace, cx)?.iter() {
+            if only.is_some_and(|o| o != obs.id) {
+                continue;
+            }
             let ws = obs.workspace().to_string();
             // Canonical entity refs this observation asserts (assertions + relation endpoints),
             // keyed by canonical id (deterministic BTreeMap order), first spelling kept for display.
@@ -4903,6 +5086,8 @@ impl Engine {
                 proposal,
                 derived_from: obs.derived_from.clone(),
                 attestations,
+                author: authoring_index(obs).unwrap_or(0),
+                gated_by: gated_by(&obs.id),
                 entities,
                 relations,
             });
@@ -5266,6 +5451,27 @@ impl Engine {
         }
         let node_ids: HashSet<&str> = groups.keys().map(|s| s.as_str()).collect();
 
+        // A relation's trust is the highest EFFECTIVE tier among the observations that state it, gate
+        // events applied (resolution.md Section 3, design-system.md Section 29.7) - keyed as the edges
+        // are, by endpoints after merges and the normalized type, so merged duplicates share one. A
+        // max over a set, so the order of the log does not matter (Principle 16).
+        let mut edge_tier: HashMap<(String, String, String), TrustTier> = HashMap::new();
+        for obs in self.log(workspace, cx)?.iter() {
+            if obs.assertions.relations.is_empty() {
+                continue;
+            }
+            let ws = obs.workspace();
+            let tier = effective_tier(obs, &gates);
+            for ra in &obs.assertions.relations {
+                let key = (
+                    canon(&Entity::make_id(ws, &ra.from)),
+                    normalize_relation_kind(&ra.kind),
+                    canon(&Entity::make_id(ws, &ra.to)),
+                );
+                edge_tier.entry(key).and_modify(|t| *t = (*t).max(tier)).or_insert(tier);
+            }
+        }
+
         // Edges: rewire endpoints through canon, drop merge self-loops and duplicates, count degree.
         let mut degree: HashMap<String, usize> = HashMap::new();
         let mut seen: HashSet<(String, String, String)> = HashSet::new();
@@ -5275,6 +5481,10 @@ impl Engine {
             if f == t || !node_ids.contains(f.as_str()) || !node_ids.contains(t.as_str()) {
                 continue; // self-loop from a merge, or an endpoint outside the node set
             }
+            let trust_tier = edge_tier
+                .get(&(f.clone(), r.kind.clone(), t.clone()))
+                .copied()
+                .unwrap_or_else(|| evaluated_tier(&r.provenance));
             if !seen.insert((f.clone(), r.kind.clone(), t.clone())) {
                 continue; // the merge can produce duplicate edges - keep the lowest relation id
             }
@@ -5285,8 +5495,10 @@ impl Engine {
                 to: t,
                 kind: r.kind.clone(),
                 description: r.description.clone(),
-                // Receiver-evaluated, never the raw claim (resolution.md Section 3, F13).
-                trust_tier: evaluated_tier(&r.provenance),
+                // Effective, never the raw claim (resolution.md Section 3, F13); the row's own
+                // evaluation only when no observation in this log states it (a partial sync).
+                trust_tier,
+                // The latest asserting row's, as the description is (design-system.md Section 29.7).
                 confidence: r.provenance.confidence,
                 valid_to: r.valid_to,
             });

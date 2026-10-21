@@ -587,7 +587,19 @@
   .contested .cacts { display:flex; gap:6px; justify-content:flex-end; }
   .contested .cacts .confirm[disabled] { opacity:0.5; cursor:not-allowed; }
   .contested .neither { margin-top:6px; font-size:var(--text-body); color:var(--ink2); }
-  .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box; }
+  .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box;
+                                list-style:none; display:flex; align-items:center; gap:4px; }
+  .contested .neither summary::-webkit-details-marker { display:none; }
+  .contested .neither summary .i { width:14px; height:14px; transition:transform 0.12s ease-out; }
+  .contested .neither[open] summary .i { transform:rotate(90deg); }
+  /* Each value's source under it: its first sentence, opening its card, and its who-line
+     (design-system.md Section 29.7). */
+  .contested .csrc { display:flex; flex-wrap:wrap; align-items:center; gap:4px; color:var(--muted);
+                     font-size:var(--text-caption); padding:0 0 4px; }
+  .contested .csrc:empty { display:none; }
+  .contested .csrc .cq { background:none; border:none; padding:0; min-height:28px; color:var(--ink2); font:inherit;
+                         cursor:pointer; text-align:left; overflow-wrap:anywhere; }
+  .contested .csrc .cq:hover { color:var(--ink); }
   .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
   .contested .copyline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
   .contested .copyline code { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; padding:4px 6px; border-radius:var(--r-inset);
@@ -691,6 +703,19 @@
 /* Observation card, proposal event: the readable line leads, the stored text stays beneath it for
    audit, and a target with no node left is listed but not offered as a jump. */
 .card .ocraw { font:var(--text-small)/1.4 var(--mono); color:var(--muted); word-break:break-all; margin:2px 0 4px; }
+/* What grounds it, who confirmed it, and the stored text folded at the foot (design-system.md
+   Section 29.7). */
+.card .oc-cited { font-size:var(--text-small); color:var(--ink2); margin:2px 0 6px; overflow-wrap:anywhere; }
+.card .oc-cited a { color:var(--ink); }
+.card .oc-gate { font-size:var(--text-small); color:var(--ink2); margin:6px 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+.card .ocwhy { font-size:var(--text-small); color:var(--ink2); margin:2px 0; }
+.card .prow .pwho { color:var(--ink2); }
+.card .oids .linkish { font:var(--text-small)/1.4 var(--mono); }
+.card .ocraw-fold { margin-top:8px; font-size:var(--text-small); color:var(--muted); }
+.card .ocraw-fold summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:4px; min-height:24px; }
+.card .ocraw-fold summary::-webkit-details-marker { display:none; }
+.card .ocraw-fold summary .i { width:14px; height:14px; transition:transform 0.12s ease-out; }
+.card .ocraw-fold[open] summary .i { transform:rotate(90deg); }
 .card .ocprop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:var(--text-body)/1.4 var(--sans); }
 .card .ocprop .pkind { color:var(--ink); }
 .card .ocprop .pstate { font:var(--text-caption)/1 var(--mono); color:var(--muted); }
@@ -819,6 +844,25 @@
   .rv-detail .sec { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:18px 0 6px; }
   .rv-detail .hint { color:var(--muted); }
   .rv-block { background:var(--bad-glass); border-radius:var(--r-control); padding:9px 12px; color:var(--ink); line-height:1.5; }
+  /* Every check with its mark, the evidence in columns, identity before the belief rows
+     (design-system.md Section 29.7). */
+  #detail .waits { font-size:var(--text-small); color:var(--ink); background:var(--gold-glass); border-radius:var(--r-control);
+                   padding:2px 8px; margin:6px 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+  .rchip .tsw { margin-left:4px; }
+  .cklist { display:flex; flex-direction:column; gap:2px; margin:4px 0; }
+  .ckrow { display:flex; align-items:center; gap:6px; font-size:var(--text-small); color:var(--ink2); min-height:24px; }
+  .ckrow .i { width:14px; height:14px; flex:none; color:var(--muted); }
+  .ckrow.ok .i { color:var(--ok-ink); }
+  .ckrow.bad .i { color:var(--bad-ink); }
+  .ckrow.bad { color:var(--ink); }
+  .drow.ident { color:var(--ink); }
+  .evcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+  .evcol { min-width:0; }
+  .evh { color:var(--muted); font:600 var(--text-small)/1.3 var(--sans); margin:2px 0 4px; }
+  .evh .ct { font-weight:400; margin-left:4px; }
+  .linkish { background:none; border:none; padding:0; min-height:28px; color:var(--ink2); font:inherit; cursor:pointer;
+             text-decoration:underline; text-underline-offset:2px; text-align:left; }
+  .linkish:hover { color:var(--ink); }
   .rv-block b { color:var(--bad-ink); }
   .rv-acts { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 8px; }
   /* The decision's row is drawn large, a Mac's 28, as capsules, every button of it alike (Section 4). */
