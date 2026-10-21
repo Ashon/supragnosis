@@ -412,6 +412,10 @@
              width:168px; height:154px; background:var(--panel); border-radius:var(--r-surface);
              box-shadow:0 8px 24px var(--shadow-soft); cursor:crosshair; display:none; }
   #minimap.on { display:block; }
+  /* Drawn while zoomed in, fading over 120 ms (Section 29.12); a hidden minimap takes no pointer. */
+  #minimap { opacity:0; visibility:hidden; transition:opacity .12s ease, visibility 0s linear .12s; }
+  #minimap.want { opacity:1; visibility:visible; transition:opacity .12s ease; }
+  @media (prefers-reduced-motion: reduce) { #minimap, #minimap.want { transition:none; } }
   #empty { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
            gap:6px; padding:0 24px; text-align:center; color:var(--muted); font:var(--text-body)/1.5 var(--sans); pointer-events:none; }
   #empty .e-title { color:var(--ink); font-size:var(--text-section); font-weight:600; }
@@ -556,29 +560,42 @@
              padding:10px 12px; box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft);
              max-height:calc(100vh - var(--bar) - 130px); overflow-y:auto; }
   #viewpop.on { display:flex; }
-  #viewpop .btns { display:flex; flex-direction:column; gap:1px; }
+  #viewpop .btns, #keysDlg .btns { display:flex; flex-direction:column; gap:1px; }
   /* A line under each of View's options that says what it shows (Section 4, U25). */
-  #viewpop .vdesc { margin:0 3px 6px; color:var(--muted); font-size:var(--text-small); line-height:1.4; }
+  #viewpop .vdesc, #keysDlg .vdesc { margin:0 3px 6px; color:var(--muted); font-size:var(--text-small); line-height:1.4; }
   #viewpop .vdesc:empty { display:none; }
   /* An edge's description, on the screen under its chips. */
   #detail .rdesc { margin:4px 0 0; color:var(--ink2); font-size:var(--text-small); }
   #viewpop button.tog { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:28px;
                         text-align:left; background:none; border:none; padding:2px 3px;
                         font-size:var(--text-body); color:var(--ink2); border-radius:var(--r-control); }
+  #keysDlg button.tog { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:28px;
+                        text-align:left; background:none; border:none; padding:2px 3px;
+                        font-size:var(--text-body); color:var(--ink2); border-radius:var(--r-control); }
   /* The switch's track: a knob at the left on a panel tone when off, at the right on the selection
      tone, in gold, when on (Section 4: gold says selected). */
-  #viewpop button.tog::after { content:""; flex:none; width:26px; height:14px; border-radius:var(--r-capsule);
+  #viewpop button.tog::after, #keysDlg button.tog::after { content:""; flex:none; width:26px; height:14px; border-radius:var(--r-capsule);
                                background:radial-gradient(circle at 7px 50%, var(--muted) 4.5px, transparent 5px), var(--panel-3); }
-  #viewpop button.tog.on { color:var(--ink); background:none; border:none; }
-  #viewpop button.tog.on::after { background:radial-gradient(circle at 19px 50%, var(--gold-bright) 4.5px, transparent 5px), var(--select); }
-  #viewpop button.tog:hover { color:var(--ink); background:var(--panel-2); }
+  #viewpop button.tog.on, #keysDlg button.tog.on { color:var(--ink); background:none; border:none; }
+  #viewpop button.tog.on::after, #keysDlg button.tog.on::after { background:radial-gradient(circle at 19px 50%, var(--gold-bright) 4.5px, transparent 5px), var(--select); }
+  #viewpop button.tog:hover, #keysDlg button.tog:hover { color:var(--ink); background:var(--panel-2); }
+  /* A switch with nothing to act on (Arrows and History while Relations is off) is dimmed (Section 4). */
+  #viewpop button.tog[aria-disabled="true"] { opacity:.45; cursor:default; }
+  #viewpop button.tog[aria-disabled="true"]:hover { background:none; color:var(--ink2); }
+  /* A Boundaries choice that outlines nothing here is dimmed and says why under the group. */
+  #viewpop .seg button[aria-disabled="true"]:not(.on) { opacity:.45; cursor:default; }
+  /* More: the switches that change least, under a disclosure (Section 29.12). */
+  #viewpop details.grp > summary { display:flex; align-items:center; gap:4px; cursor:pointer; list-style:none; min-height:28px; }
+  #viewpop details.grp > summary::-webkit-details-marker { display:none; }
+  #viewpop details.grp > summary .i { width:14px; height:14px; transition:transform .12s ease; }
+  #viewpop details.grp[open] > summary .i { transform:rotate(90deg); }
   /* Regions and Boundaries: one choice of three each, a segmented control (Sections 4, 5). */
   #viewpop .seg { display:flex; gap:2px; padding:2px; border-radius:var(--r-control); background:var(--panel-2); }
   #viewpop .seg button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:28px;
                          padding:2px 6px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:var(--r-inset); }
   #viewpop .seg button.on { background:var(--select); color:var(--gold-ink); }
   #viewpop .seg .sw { width:10px; height:10px; border-radius:var(--r-mark); flex:none; }
-  #viewpop #reload { margin-top:7px; padding:4px 8px; font-size:var(--text-body); }
+  #viewpop #keysOpen { margin-top:7px; padding:4px 8px; min-height:28px; font-size:var(--text-body); align-self:flex-start; }
   /* Legend chips live in the dock sections now. */
   #legendNodes,#legendEdges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   /* Glossary entries. */
@@ -804,19 +821,34 @@
      Small, centred, and deliberately plain: it is a settings surface, not a view. The peer rows
      reuse the panel type scale so the dialog reads as the same application rather than a bolted-on
      form. */
-  #settings { width:min(560px,92vw); max-height:82vh; padding:0; border:0;
+  #settings, #keysDlg { width:min(560px,92vw); max-height:82vh; padding:0; border:0;
             border-radius:var(--r-surface); background:var(--panel); color:var(--ink2);
             font:var(--text-body)/1.5 var(--mono); box-shadow:0 18px 60px var(--shadow); }
-  #settings::backdrop { background:var(--scrim); }
-  #settings .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
+  #settings::backdrop, #keysDlg::backdrop { background:var(--scrim); }
+  #settings .fchead, #keysDlg .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
                     padding:12px 14px 4px; }
-  #settings .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
+  #settings .ftitle, #keysDlg .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
   /* Matches #detail/#obscard: a square hit target with a soft hover fill, not a bare glyph. */
   #settings .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
                       border-radius:var(--r-control); color:var(--muted); cursor:pointer;
                       display:flex; align-items:center; justify-content:center;
                       transition:color 0.15s ease, background 0.15s ease; }
-  #settings .fclose:hover { color:var(--ink); background:var(--panel-2); }
+  #keysDlg .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
+                      border-radius:var(--r-control); color:var(--muted); cursor:pointer;
+                      display:flex; align-items:center; justify-content:center;
+                      transition:color 0.15s ease, background 0.15s ease; }
+  #settings .fclose:hover, #keysDlg .fclose:hover { color:var(--ink); background:var(--panel-2); }
+  /* The Keys dialog (Section 29.12): each group a heading and a list of key and act. */
+  #keysDlg { width:min(420px,92vw); font-family:var(--sans); }
+  #keysDlg .kbody { padding:6px 14px 14px; overflow-y:auto; }
+  #keysDlg h3 { margin:12px 0 4px; font:600 var(--text-small)/1.4 var(--sans); color:var(--muted); }
+  /* One column for the keys in every group, so the acts start in one place. */
+  #keysDlg dl { display:grid; grid-template-columns:11rem 1fr; gap:4px 16px; margin:0; }
+  #keysDlg dt { color:var(--ink2); }
+  #keysDlg dd { margin:0; color:var(--ink2); }
+  #keysDlg kbd { padding:0 5px; border-radius:var(--r-inset); background:var(--panel-3); color:var(--ink);
+                 font:var(--text-caption)/1.6 var(--mono); }
+  #keysDlg .btns { margin-top:14px; }
   #settings dd a { display:inline-block; min-height:24px; line-height:24px; overflow-wrap:anywhere; }
   /* Which workspace's T-Box a definition belongs to - shown only in the all-workspaces glossary,
      where the same type name can legitimately appear twice (P11). */

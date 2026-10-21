@@ -105,7 +105,7 @@
   <!-- The working set, said where a phone keeps it, with its Clear (design-system.md Section 29.11). -->
   <span id="kept" class="spill" hidden><span class="kn"></span><button type="button" class="kx" title="Clear" aria-label="Clear"><span class="i i-x" aria-hidden="true"></span></button></span>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
-  <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span>
+  <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span><button type="button" id="retry" class="spill" hidden>Retry</button>
   <!-- The way to Review (design-system.md Section 6, U20): always here on the local console, with
        what waits in this scope and how many of those are contested beliefs. Absent on a read tier. -->
   <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (U3): on a read
@@ -165,14 +165,6 @@
   <!-- On/off view state: each is a switch that says on or off, and an option that is off is drawn at
        full strength (Section 4). Each carries a line under its name that says what it shows, read with
        it (aria-describedby), since a tooltip is seen by no keyboard and no finger (U25). -->
-  <div class="grp"><span class="ghdr">Layout</span><div class="btns">
-    <button id="resetLayout" aria-describedby="dReset">Reset layout</button>
-    <p class="vdesc" id="dReset">Forgets where this scope's entities were and lays it out again.</p>
-    <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
-    <p class="vdesc" id="dPeers">Other machines, as dots that move to the entities they touch. On by default on a hub.</p>
-    <button id="clusterBtn" class="tog" aria-describedby="dCluster">Arrange by type</button>
-    <p class="vdesc" id="dCluster">A circle of entities for each type, with the relations between types kept.</p>
-  </div></div>
   <div class="grp"><span class="ghdr">Show</span><div class="btns">
     <button id="labelsBtn" class="tog on" aria-describedby="dLabels">Labels</button>
     <p class="vdesc" id="dLabels">Names of entities and regions.</p>
@@ -180,24 +172,55 @@
     <p class="vdesc" id="dEdges">Lines between entities.</p>
     <button id="arrowsBtn" class="tog on" aria-describedby="dArrows">Arrows</button>
     <p class="vdesc" id="dArrows">Which way each relation points. An active relation always shows it.</p>
+    <button id="histBtn" class="tog on" aria-describedby="dHist">History</button>
+    <p class="vdesc" id="dHist">Relations that were superseded, drawn faint.</p>
+    <button id="miniBtn" class="tog on" aria-describedby="dMini">Minimap</button>
+    <p class="vdesc" id="dMini">The whole graph, while you are zoomed in; click or drag it to move.</p>
+    <button id="clusterBtn" class="tog" aria-describedby="dCluster">Arrange by type</button>
+    <p class="vdesc" id="dCluster">A circle of entities for each type, with the relations between types kept.</p>
+  </div></div>
+  <!-- What changes the picture least, under a disclosure whose summary names a switch that is off
+       (design-system.md Section 29.12). -->
+  <details id="moreView" class="grp"><summary class="ghdr"><span class="i i-chevron-right" aria-hidden="true"></span><span id="moreSum">More</span></summary><div class="btns">
     <button id="footBtn" class="tog on" aria-describedby="dFoot">Footprint</button>
     <p class="vdesc" id="dFoot">A glow on what agents used.</p>
     <button id="pulseBtn" class="tog on" aria-describedby="dPulse">Pulses</button>
     <p class="vdesc" id="dPulse">A ring when an entity is touched.</p>
-    <button id="histBtn" class="tog on" aria-describedby="dHist">History</button>
-    <p class="vdesc" id="dHist">Relations that were superseded, drawn faint.</p>
-    <button id="miniBtn" class="tog on" aria-describedby="dMini">Minimap</button>
-    <p class="vdesc" id="dMini">The whole graph and the window on it; click or drag it to move.</p>
-  </div></div>
-  <!-- The single keys - / b [ ] - act from anywhere outside a text field; this turns them off
-       (design-system.md Section 10, WCAG 2.1.4). -->
-  <div class="grp"><span class="ghdr">Keys</span><div class="btns">
-    <button id="keysBtn" class="tog on" aria-describedby="dKeys">Single-key shortcuts</button>
-    <p class="vdesc" id="dKeys">/ search, b boundaries, [ and ] panels, from anywhere outside a text field.</p>
-  </div></div>
-  <button id="reload" aria-describedby="dReload">Reload</button>
-  <p class="vdesc" id="dReload">Fetches the graph now; it also refreshes on its own.</p>
+    <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
+    <p class="vdesc" id="dPeers">Other machines, as dots that move to the entities they touch. On by default on a hub.</p>
+    <button id="resetLayout" aria-describedby="dReset">Reset layout</button>
+    <p class="vdesc" id="dReset">Forgets where this scope's entities were and lays it out again.</p>
+  </div></details>
+  <!-- The keys and their switch are in the Keys dialog (Section 29.12). -->
+  <button id="keysOpen" type="button">Keys...</button>
+  <p class="vdesc" id="dShownWithRel" hidden>Shown with relations.</p>
 </div>
+<!-- The Keys dialog (design-system.md Section 29.12): every key of the Graph page, and at its foot the
+     switch that turns the single keys off (WCAG 2.1.4). Native <dialog>: it holds focus and makes the
+     page behind it inert. -->
+<dialog id="keysDlg" aria-labelledby="keysTitle">
+  <form method="dialog" class="fchead">
+    <span class="ftitle" id="keysTitle">Keys</span>
+    <button class="fclose" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
+  </form>
+  <div class="kbody">
+    <h3>Find</h3>
+    <dl><dt><kbd>/</kbd> or <kbd>Cmd+K</kbd></dt><dd>Search</dd><dt><kbd>Cmd+Enter</kbd></dt><dd>Keep the answer on the map</dd></dl>
+    <h3>Panels</h3>
+    <dl><dt><kbd>[</kbd></dt><dd>Filters</dd><dt><kbd>]</kbd></dt><dd>Log</dd></dl>
+    <h3>Map</h3>
+    <dl><dt><kbd>=</kbd> or <kbd>+</kbd></dt><dd>Zoom in</dd><dt><kbd>-</kbd></dt><dd>Zoom out</dd><dt><kbd>0</kbd></dt><dd>Fit to view</dd>
+      <dt><kbd>l</kbd></dt><dd>Map or List</dd><dt><kbd>b</kbd></dt><dd>Boundaries</dd><dt><kbd>?</kbd></dt><dd>Keys</dd></dl>
+    <h3>Selection</h3>
+    <dl><dt><kbd>Cmd+[</kbd> and <kbd>Cmd+]</kbd></dt><dd>Back and Forward</dd><dt><kbd>Esc</kbd></dt><dd>Close what is on top</dd></dl>
+    <h3>Lists</h3>
+    <dl><dt>Arrow keys</dt><dd>Move</dd><dt><kbd>Enter</kbd></dt><dd>Choose</dd></dl>
+    <div class="btns">
+      <button id="keysBtn" class="tog on" aria-describedby="dKeys">Single-key shortcuts</button>
+      <p class="vdesc" id="dKeys">Letters and symbols act on the Graph page, outside a text field, while no dialog or card is open.</p>
+    </div>
+  </div>
+</dialog>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">

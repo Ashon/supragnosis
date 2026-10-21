@@ -137,10 +137,10 @@ fn a_selection_has_a_history_and_esc_gives_the_camera_back() {
         SCRIPT.contains("stepSelection(e.key === \"[\" ? -1 : 1);"),
         "Cmd+[ does not step back"
     );
+    // The single keys act only without Cmd, Ctrl or Option (Section 29.12).
     assert!(
-        SCRIPT.contains(
-            "if (e.key === \"[\" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleDock(true);"
-        ),
+        SCRIPT.contains("const bare = !e.metaKey && !e.ctrlKey && !e.altKey;")
+            && SCRIPT.contains("if (k === \"[\") toggleDock(true);"),
         "the single key [ still takes Cmd+["
     );
     let detail = function(SCRIPT, "renderDetail");

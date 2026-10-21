@@ -28,8 +28,8 @@
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
-> the first entry on screen, and step 49, search that finds and holds. Step 50a, the map's keys and
-> its View, is specified.
+> the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
+> its View.
 
 ## 1. Why this exists
 
@@ -1921,7 +1921,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    workspace, "Show these 13 on the map" pins the answer as a working set that dims the rest and
    grows by Show related, List follows the set, and Map | List takes List's place, with List's rows
    marked when contested and sorted by any column.
-50a. **The map's keys and its View** (Section 29.12; D7; Sections 5, 6, 10, 18 and 29.4 revised): single keys
+50a. **The map's keys and its View** [built] (Section 29.12; D7; Sections 5, 6, 10, 18 and 29.4 revised): single keys
    for zoom, Fit, List and the Keys dialog, which holds the single-key switch; View holds what
    changes the picture; b only draws; Retry where the map is stale; the minimap while zoomed in; and
    framing that keeps the toolbar's box. The menu bar, the tray and the window are step 50b.
@@ -4544,11 +4544,14 @@ No row needs a principle changed.
   on the Graph page, outside a text field, while no dialog or card is open." The switch governs ?
   too; View's "Keys..." stays the way back.
   The dialog holds focus, makes the page behind it inert, and Esc closes it alone.
-- **View holds what changes the picture.** Regions; Boundaries; Layout with Reset layout, Arrange by
-  type and Peers; Show with Labels, Relations, Arrows, History and Minimap; and a disclosure "More"
-  with Footprint and Pulses, its summary saying "More - Pulses off" when one is off. Arrows and
+- **View holds what changes the picture.** Regions; Boundaries; Show with Labels, Relations, Arrows,
+  History, Minimap and Arrange by type; and a disclosure "More" with Footprint, Pulses, Peers and
+  Reset layout, its summary saying "More - Pulses off" when a switch under it that starts on is off
+  (Peers starts off on a node and on on a hub, so it is not named). Arrows and
   History are dimmed while Relations is off, with the line "Shown with relations." At View's foot,
-  "Keys...". The Keys group and Reload leave it.
+  "Keys...". The Layout group, the Keys group and Reload leave it, and View fits a 900-pixel window
+  without scrolling. *(Building it settled that Peers and Reset layout go under More: with them in a
+  Layout group View still scrolled at 900 pixels.)*
 - **Retry where the map is stale.** While the status bar says "Not updated since 8:54 - the server is
   not answering", or "Not loaded - ...", a Retry button follows the line; it reads the workspaces and
   the map at once, and when that fails too the line keeps the poll's reason and says when it tried:
@@ -4580,4 +4583,10 @@ No row needs a principle changed.
   which step 50b takes.
 - It does not name Origin's outlines by host, R2-10's other part, which waits for a roster the read
   tier may read.
+
+**Guarded by** `the_map_has_keys_that_name_themselves`, `the_keys_dialog_holds_the_switch`,
+`view_holds_what_changes_the_picture`, `boundaries_only_draw`, `retry_follows_a_stale_line` and
+`the_minimap_waits_and_framing_keeps_the_toolbar_box` in `crates/supragnosis-viz/tests/keys.rs`;
+`view_holds_two_choices_with_one_name_each` (the single keys and the switch's place) and
+`a_selection_has_a_history_and_esc_gives_the_camera_back` (no single key takes Cmd).
 
