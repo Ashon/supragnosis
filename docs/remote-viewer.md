@@ -80,7 +80,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | `/api/about` | served | Which build answers. |
 | `/api/surface` | served | New, on both surfaces (Section 3.5). |
 | `/api/workspaces` | read | The principal's granted workspaces that hold knowledge, unservable ones included (V3). |
-| `/api/graph`, `/api/hypergraph`, `/api/types`, `/api/curation`, `/api/proposals`, `/api/observations` | read | The workspace as Section 3.3 resolves it. |
+| `/api/graph`, `/api/hypergraph`, `/api/types`, `/api/curation`, `/api/proposals`, `/api/observations` | read | The workspace as Section 3.3 resolves it. An observation, here and on the rows below, is answered without the app that wrote it (design-system.md Section 29.8). |
 | `/api/proposal` | read | The named workspace must be granted and servable. `*` is refused, because a proposal lives in one workspace. |
 | `/api/explain?entity=`, `/api/observations?entity=` | read | The entity's own workspace must be granted and servable. An id outside the grants is answered exactly as an unknown id is (Section 3.4). |
 | `/api/observations?id=` | read | One observation by its id (design-system.md Section 29.7). Its own workspace must be granted and servable; an id outside the grants is answered exactly as an unknown id is (Section 3.4). |
@@ -157,7 +157,9 @@ traversals and sync rounds, each with the session it came from. On the read tier
 knowledge changes only:
 
 - **It carries `observe` events** in workspaces the principal may read and the hub may serve, with
-  the session id removed.
+  the session id and the app's name removed: its frame is built from an allowed list of fields. The
+  read tier's reads of observations never ask for the app that wrote an attestation
+  (design-system.md Section 29.8).
 - **It does not carry searches, lookups or traversals.** What one principal asked, or the hub
   operator's own agents, is not knowledge in a workspace. Showing it to another principal would
   disclose their reading (V7).
@@ -303,7 +305,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
 | **V4** | A workspace is shown only when the hub may serve it (R5). A union that includes one it may not serve is refused with the reason, never shown in part. |
 | **V5** | The credential never appears in a URL, the page or the shell. The relay reads it from its 0600 file per request and sends it as a header. |
 | **V6** | The relay reaches a remote server over verified TLS, or plain HTTP to loopback only (R8), relays only GET, and cannot outlive the app that started it. |
-| **V7** | One principal's reads are not shown to another. The remote event stream carries knowledge changes in readable, servable workspaces, without session ids, queries or lookups. |
+| **V7** | One principal's reads are not shown to another. The remote event stream carries knowledge changes in readable, servable workspaces, without session ids, the writing app's name (design-system.md Section 29.8), queries or lookups. |
 | **V8** | On a remote profile, the window never shows an empty graph for a failure. Unreachable, credential refused, server too old and no grants each have their own page. |
 | **V9** | The local viewer is unchanged: the daemon's unix socket, the full console, no credential. |
 

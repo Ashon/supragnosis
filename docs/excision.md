@@ -200,7 +200,7 @@ So the order is:
 | | Invariant |
 |---|---|
 | **E1** | Excision replaces an observation with a tombstone under the same id. There is no in-place edit of content, because content is identity (P14). |
-| **E2** | A tombstone records the act and a structural census, never the content or anything reversibly derived from it - including the stated reason. |
+| **E2** | A tombstone records the act and a structural census, never the content or anything reversibly derived from it - including the stated reason. The node-local record of which app wrote each of the observation's attestations goes with the content (design-system.md Section 29.8). |
 | **E3** | A tombstone is absorbing: `add_observation` for that id is refused locally and from the wire, and the tombstone is never superseded or removed (P3, P16 monotonicity). |
 | **E4** | A tombstoned id keeps advancing the version vector for its `(origin, origin_seq)`. Without this the cursor retreats and the row is re-pulled. |
 | **E5** | Tombstones propagate through the ordinary signed, allowlisted, workspace-filtered sync path. Excision reaches exactly as far as sharing reached, and the surface reports where it could not reach. |
