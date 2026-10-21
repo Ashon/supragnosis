@@ -25,6 +25,8 @@
        the page shows the stage's still picture and every step's words. -->
   <script>document.documentElement.classList.add("js");</script>
   <script src="stage.js" defer></script>
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="analytics.js" async></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -56,11 +58,11 @@
         </div>
         <div class="cmd" id="hero-pane-app" role="tabpanel" aria-labelledby="hero-tab-app">
           <code id="cmd-app">brew install --cask ashon/tap/supragnosis &amp;&amp; open -a Supragnosis</code>
-          <button type="button" class="copy" data-copy="#cmd-app">Copy</button>
+          <button type="button" class="copy" data-copy="#cmd-app" data-method="app">Copy</button>
         </div>
         <div class="cmd" id="hero-pane-script" role="tabpanel" aria-labelledby="hero-tab-script" hidden>
           <code id="cmd-script">curl -fsSL https://supragnosis.dev/install.sh | sh</code>
-          <button type="button" class="copy" data-copy="#cmd-script">Copy</button>
+          <button type="button" class="copy" data-copy="#cmd-script" data-method="script">Copy</button>
         </div>
       </div>
       <p class="next">The app's Setup opens: it keeps supragnosis running, offers to connect each AI app it finds and downloads the search model. With the script, run <code>supragnosis setup</code>. <a href="#get-started">All steps -&gt;</a></p>
@@ -337,11 +339,12 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
       <a href="https://github.com/Ashon/supragnosis">GitHub</a>
       <a href="https://github.com/Ashon/supragnosis/releases">Releases</a>
       <a href="principles/">Principles</a>
+      <a href="privacy/">Privacy</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Architecture</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">Federation</a>
       <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">Proposal workflow</a>
     </nav>
-    <p class="fine">MIT or Apache-2.0. Plain HTML, CSS and one script, no build step. This page lives in <code>site/</code>.</p>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/</code>.</p>
   </footer>
 
   <p id="copied" class="sr-only" aria-live="polite"></p>
@@ -377,6 +380,8 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
     // Copy a command; where the clipboard is refused, select it so it can be copied by hand.
     document.querySelectorAll('.copy').forEach(function (btn) {
       btn.addEventListener('click', function () {
+        // Counted, with which command it was, as the Privacy page says (analytics.js).
+        if (window.gtag) window.gtag('event', 'copy_install', { method: btn.dataset.method });
         var el = document.querySelector(btn.dataset.copy);
         var pick = function () { getSelection().selectAllChildren(el); };
         var done = function () {

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy - supragnosis</title>
+  <meta name="description" content="What supragnosis.dev counts with Google Analytics, and why the app, the server and the CLI have none of it.">
+  <link rel="canonical" href="https://supragnosis.dev/privacy/">
+  <meta name="theme-color" content="#08090d">
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="preload" href="../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../#how">How it works</a>
+      <a href="../principles/">Principles</a>
+      <a href="../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- What the site counts, said where the footer of every page links to it. It states what
+         site/analytics.js and the landing's Copy buttons do, and what the product does not. -->
+    <section class="p-hero wrap" id="top">
+      <p class="eyebrow">Privacy</p>
+      <h1>The site counts visits. supragnosis does not.</h1>
+      <p class="sub">This website uses Google Analytics. The app, the server and the CLI have no analytics of any kind.</p>
+    </section>
+
+    <section class="section wrap" aria-labelledby="site-title">
+      <h2 id="site-title">This website</h2>
+      <p class="lead">supragnosis.dev counts its visits with Google Analytics: the pages you view, the site that sent you here, whether you copy an install command and which one, and your rough location and device, kept in cookies Google sets. It helps tell what people read and how they choose to install. A copy of these pages served anywhere else counts nothing.</p>
+      <p class="note">To be left out, block cookies for this site, or use Google's <a href="https://tools.google.com/dlpage/gaoptout">opt-out browser add-on</a>.</p>
+    </section>
+
+    <section class="section wrap" aria-labelledby="product-title">
+      <h2 id="product-title">supragnosis itself</h2>
+      <p class="lead">The app, the server and the CLI report nothing about you, how you use them or what they hold, and send nothing to Google. They go online only to fetch the search model once, and to reach the servers and hubs you connect them to.</p>
+    </section>
+
+    <section class="p-close wrap" aria-label="Where to go next">
+      <a class="pri" href="../#get-started">Install supragnosis</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/site/analytics.js">What the site loads, analytics.js</a>
+    </section>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="https://github.com/Ashon/supragnosis/releases">Releases</a>
+      <a href="../principles/">Principles</a>
+      <a href="./" aria-current="page">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">Architecture</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">Federation</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">Proposal workflow</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/privacy/</code>.</p>
+  </footer>
+</body>
+</html>
