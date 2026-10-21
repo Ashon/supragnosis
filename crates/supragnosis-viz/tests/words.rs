@@ -141,7 +141,7 @@ fn every_log_row_says_who_and_when() {
     let row = &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")];
     for part in [
         "tierName(o.effective_tier)",
-        "writerOf(a0)",
+        "writerFor(a0)",
         "obsWhen(prev.observed_at) === when",
     ] {
         assert!(row.contains(part), "a Log row does not say {part}");
@@ -312,4 +312,63 @@ fn the_maps_activity_speaks_in_sentences() {
     }
     assert!(handle.contains("\"Agents used \" + plural(footprint.size, \"entity\", \"entities\")"));
     assert!(!handle.contains("`session ${"), "the status bar names the session by its id");
+}
+
+/// docs/design-system.md Section 29.7 and U17: one who-line grammar - tier, writer, for whom, when -
+/// from the attestation that wrote it, where "here" is a sync origin and never a host name, and the
+/// card resolves every id: Cited first, the act that set its tier, Derived from and Open in Review.
+#[test]
+fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
+    let body = |name: &str| {
+        let at = SCRIPT.find(&format!("function {name}(")).unwrap_or_else(|| panic!("no {name}"));
+        let f = &SCRIPT[at..];
+        f[..f.find("\n}\n").unwrap_or_else(|| f.find("}\n").expect("it closes"))].to_string()
+    };
+    let writer = body("writerOf");
+    for part in [
+        "writtenHere(a)",
+        "\"you at this console\"",
+        "\"a person at \"",
+        "String(a.origin_node).slice(0, 8)",
+    ] {
+        assert!(writer.contains(part), "writerOf does not say {part}");
+    }
+    assert!(!writer.contains("a.host"), "a host name decides here");
+    assert!(SCRIPT.contains("function writtenHere(a) { return !a.origin_node || (!!ownNode && a.origin_node === ownNode); }"));
+    assert!(SCRIPT.contains("(a.on_behalf_of ? \", for \" + a.on_behalf_of : \"\")"));
+    assert!(
+        SCRIPT.contains("return as[o && o.author | 0] || as[0] || null;"),
+        "the row names the first by host"
+    );
+    assert!(body("obsRowHtml").contains("authorOf(o)"));
+    let card = body("obsCardHtml");
+    for part in [
+        "!/^surface:/.test(r)",
+        "/^https?:\\/\\//.test(cited)",
+        "Cited: ",
+        "o.gated_by",
+        "\"Lowered to \"",
+        "the agent's confidence: ",
+        "data-open-obs=",
+        "data-open-review=",
+        "As stored",
+    ] {
+        assert!(card.contains(part), "the card does not hold {part}");
+    }
+    assert!(
+        body("observationById").contains("/api/observations?id="),
+        "an id read loads the scope's log"
+    );
+    let settle = body("fillSettleWho");
+    assert!(
+        settle.contains("firstSentence(o.content)")
+            && settle.contains("whoLine(\"\", authorOf(o), shared)")
+    );
+    let rows = body("contestedRows");
+    assert!(rows.contains("\"In Supragnosis\"") && rows.contains("i-chevron-right"));
+    assert!(
+        body("relationGroupHtml").contains("tierDot(e.trust_tier)"),
+        "a relation draws no trust"
+    );
+    assert!(body("waitsHtml").contains("Waits for you: "));
 }

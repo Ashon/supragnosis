@@ -1473,3 +1473,70 @@ fn a_contested_type_definition_is_a_curation_contradiction() {
     assert!(def.kind_source.is_some() && def.competitors.len() == 1);
     Case::new("Principle 7", "the curation read commits nothing").changed_nothing(&before, &after);
 }
+
+/// GIVEN a source that states a relation, WHEN the console confirms it, THEN the relation reads at
+/// the source's effective tier in the graph (resolution.md Section 3, the gap step 41 found), the
+/// source's own read names the act that moved it - its proposal, a promotion, cast at the console,
+/// when - and which attestation wrote it, an observation is read by its id, and the proposal's
+/// checks carry a trust profile that blocks nothing (design-system.md Section 29.7).
+#[test]
+fn a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier() {
+    let (_store, engine) = engine();
+    let obs = engine
+        .observe(ObserveInput {
+            content: "the ledger is stored in postgres".into(),
+            workspace: None,
+            source_ref: Some("git:4f2a9c1".into()),
+            confidence: None,
+            on_behalf_of: Some("alex".into()),
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![RelationInput {
+                from: "Ledger".into(),
+                kind: "stored_in".into(),
+                to: "Postgres".into(),
+                description: None,
+                valid_from: None,
+                valid_to: None,
+            }],
+        })
+        .expect("observe")
+        .observation_id;
+    let edge_tier = |engine: &Engine| {
+        let g = engine.graph(Some(WS)).expect("graph");
+        g.edges.iter().find(|e| e.kind == "stored_in").expect("the edge").trust_tier
+    };
+    assert_eq!(edge_tier(&engine), TrustTier::AgentExtracted);
+    let read = engine.observation(&obs, None).expect("read").expect("the observation");
+    assert!(read.gated_by.is_none(), "nothing moved it yet");
+    assert_eq!(read.author, 0);
+
+    let confirm =
+        propose(&engine, "claim_promotion", vec![obs.clone()], None, Some("human_confirmed"));
+    decide(&engine, &confirm, "merge");
+
+    assert_eq!(
+        edge_tier(&engine),
+        TrustTier::HumanConfirmed,
+        "the relation reads at its source's tier"
+    );
+    let read = engine.observation(&obs, None).expect("read").expect("the observation");
+    assert_eq!(read.effective_tier, TrustTier::HumanConfirmed);
+    let moved = read.gated_by.expect("the act that moved it");
+    assert_eq!(moved.proposal, confirm);
+    assert!(moved.promotion);
+    assert_eq!(moved.surface.as_deref(), Some(VERDICT_SURFACE_CONSOLE));
+    assert!(moved.origin_node.is_none(), "written here, unstamped");
+    assert!(moved.at > 0);
+    assert_eq!(
+        engine.observation(&obs, Some(WS)).expect("read").map(|o| o.id),
+        Some(obs.clone())
+    );
+    assert!(engine.observation("no such observation", None).expect("read").is_none());
+    assert_eq!(engine.observation_workspace(&obs).expect("read").as_deref(), Some(WS));
+
+    let checks = engine.get_proposal(None, &confirm).expect("get").expect("proposal").checks;
+    let profile = checks.iter().find(|c| c.name == "trust profile").expect("a trust profile");
+    assert!(!profile.blocking && profile.passed);
+    assert_eq!(profile.detail, "1 human_confirmed");
+}

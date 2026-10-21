@@ -26,8 +26,8 @@
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
-> concept with one name. Step 46, evidence where a decision is made and provenance to its end, is
-> specified.
+> concept with one name; and step 46, evidence where a decision is made and provenance to its end,
+> is built.
 
 ## 1. Why this exists
 
@@ -1564,11 +1564,17 @@ that skips only an undrawn type, and the count is taken over every loaded node.
 
 U4 is guarded by `a_review_decision_takes_one_item_with_its_diff_on_screen`: the decision returns unless
 the view it holds is the item's, refuses a merge a blocking check fails, asks a recall twice, and is
-never called over a list of items; every open or blocked proposal is listed.
+never called over a list of items; every open or blocked proposal is listed. The detail's evidence
+is guarded by `the_review_page_shows_its_evidence` in `crates/supragnosis-viz/tests/review.rs` -
+identity first for a merge, every check in words, the evidence, who asked, a contested item's
+sources - and the engine's half, a relation at its source's effective tier, the act that moved an
+observation and the trust profile, by
+`a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier` in the engine's policy
+cases.
 
 U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the contested pill hides
 only at zero, and the sync pill hides only off the local console or where sync is not configured, and
-draws "sync unavailable" when the daemon does not answer.
+draws "Sync unavailable" when the daemon does not answer.
 
 U7 is guarded by `the_surfaces_share_one_token_set`, `every_text_token_meets_4_5_on_every_surface`
 and `every_token_a_stylesheet_reads_is_declared` in `crates/supragnosis-viz/tests/design_tokens.rs`.
@@ -1644,7 +1650,9 @@ minute, marked with the legend's ring - and by `the_setup_page_says_what_is_true
 the app's tests, which holds Setup's one name in its crumb, the tray and About. Its words are guarded
 by `no_retired_word_reaches_a_page` in the same file, which reads Section 9's retired words and fails
 when one is in a page's, the shell's or Setup's source, and `the_maps_activity_speaks_in_sentences`,
-which holds the activity's rows and the footprint in words; and by `the_daemon_has_one_word_per_state`
+which holds the activity's rows and the footprint in words, and
+`a_who_line_names_the_writer_apart_from_whom_it_wrote_for`, which holds the who-line's grammar and
+the card's Cited, confirmation and links; and by `the_daemon_has_one_word_per_state`
 and `the_ai_app_row_is_built_once` in the app's tests - the state words on the tray, Settings, Setup
 and the starting page, and the AI app's row drawn from `kit.js` by both pages.
 
@@ -1855,7 +1863,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    own machine, entity, relation and type for the graph's parts, sentence-case headings with their
    counts, the map's activity in sentences, one word per daemon state, the AI app's row built once in
    `kit.js`, This Mac's own sentences, Supragnosis in sentences, and the retired words as a tripwire.
-46. **Evidence where a decision is made, and provenance to its end** (Section 29.7; U4, U17, U18,
+46. **Evidence where a decision is made, and provenance to its end** [built] (Section 29.7; U4, U17, U18,
    P14): one who-line grammar, the card's Cited, confirmation and links, an observation read by its
    id, each contested value's source, Review's identity diff, every check and the evidence, what
    waits for the person on the inspector, a relation's trust, and Neither is right's sentence. The
@@ -3866,9 +3874,9 @@ needs the sync wire and the read tier to keep it out; it is specified and built 
 | P14 | An identifier stays dereferenceable | repays - Derived from opens its card, a proposal event's card opens its Review item, a cited reference that is a web address is a link, and an observation is read by its id |
 | P18 | `source_ref` is the writer's own claim | agrees - it is drawn as written, a link only for `http` and `https`; a `surface:` marker is the console's, said as "this console", never as Cited |
 | P23 and proposal-workflow.md Section 6 | Checks before canon; an informative trust profile beside the blocking checks | repays - the engine adds the trust profile as a non-blocking check, which the fold already ignores, and Review lists every check |
-| resolution.md Section 3 | Every display reads the effective tier | repays - a relation's trust in the graph read takes the gate events of the observations that state it, and its mark is drawn |
-| design-system.md Section 7 and U4 | Review shows the item's evidence; a decision control appears only with the diff and checks on screen | repays - Evidence under Checks, every check listed, the diff led by what happens to identity |
-| U17 | A who-line says tier, who and when | revised: one grammar - tier, writer, for whom, when - for every row and card, the writer from the authoring attestation, a console verdict written here "you at this console" |
+| resolution.md Section 3 | Every display reads the effective tier | repays - a relation's trust in the graph read takes the gate events of the observations that state it, and its mark is drawn; guarded by `a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier` |
+| design-system.md Section 7 and U4 | Review shows the item's evidence; a decision control appears only with the diff and checks on screen | repays - Evidence under Checks, every check listed, the diff led by what happens to identity; guarded by `the_review_page_shows_its_evidence` |
+| U17 | A who-line says tier, who and when | revised: one grammar - tier, writer, for whom, when - for every row and card, the writer from the authoring attestation, a console verdict written here "you at this console"; guarded by `a_who_line_names_the_writer_apart_from_whom_it_wrote_for` |
 | U18 | Settling names each source | repays - each value carries its source's first sentence, opening its card, and its who-line, on the inspector and on Review alike |
 | proposal-workflow.md Section 14.4 | A merged entity's old id forwards to the new | agrees - the diff says so in words before the verdict |
 | remote-viewer.md Section 3.2 | `/api/observations` and `/api/explain` are read on the read tier under the workspace's grants | revised: `/api/observations?id=` answers one observation, its workspace granted and servable, an id outside the grants answered as an unknown one (remote-viewer.md Section 3.4) |
@@ -3889,7 +3897,8 @@ No row needs a principle changed.
   - A verdict cast at this console and written here (`surface:console`) is "Agent - you at this
     console - 11:38 AM": the row's tier is the verdict's own, and its sentence says what it granted.
     One cast at another machine's console is "Agent - a person at 4a1b2c3d - ...".
-  - When two rows of one list share a minute, both show seconds.
+  - Where two values of one contested field were written in the same minute, both their who-lines
+    show seconds; the Log keeps its time once per minute (Section 9).
 - **The card** leads with what grounds it and resolves every id:
   - "Cited: git:4f2a9c1" first, a link when it is an `http` or `https` address; a `surface:` marker
     is not a citation and is said in the who-line;
@@ -3933,7 +3942,7 @@ No row needs a principle changed.
   gate events applied; its confidence stays the latest row's. The inspector's relation rows draw the
   map's ring for that tier beside each relation, as a log row's mark.
 - **"Neither is right"** opens with Lucide's chevron, and copies "In Supragnosis workspace billing,
-  Ledger's type is recorded as Table and as Concept, and both are wrong. Observe the correct type of
+  Ledger's type is recorded as Table and as Concept, and both are wrong. Record the correct type of
   Ledger in billing." (the product's name is in the sentence an agent reads, by D17).
 
 **What this step does not do.**
@@ -3944,3 +3953,5 @@ No row needs a principle changed.
 - It does not settle a contested name the way a type is settled (R3-17's question, not decided).
 - It does not mark a Review item "Waiting for a correction" after Neither is right, or notice the
   correction's arrival.
+- It does not change the inspector's scope line ("All here: Agent, from this Mac"), which still names
+  an origin by its host as step 45 left it; graph nodes carry hosts, not sync origins.

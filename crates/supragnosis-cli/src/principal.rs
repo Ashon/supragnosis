@@ -888,6 +888,15 @@ mod tests {
             let b = viz(&base, c, &format!("{path}{unknown}"), None).await;
             assert_eq!((a.0, a.2), (b.0, b.2), "{path}: no existence oracle (Section 3.4)");
         }
+        // One observation by id (design-system.md Section 29.7): a granted one answers; one outside
+        // the grants reads exactly as an unknown id does.
+        let id_of = |ws: &str| engine.observation_log(Some(ws), None, None).unwrap()[0].id.clone();
+        let (status, _, body) =
+            viz(&base, c, &format!("/api/observations?id={}", id_of("docs")), None).await;
+        assert!(status == 200 && body.contains("the docs live in the wiki"), "{status} {body}");
+        let a = viz(&base, c, &format!("/api/observations?id={}", id_of("secret")), None).await;
+        let b = viz(&base, c, "/api/observations?id=0000", None).await;
+        assert_eq!((a.0, a.2), (b.0, b.2), "an id outside the grants reads as unknown");
 
         for path in [
             "/api/review?proposal=p&decision=merge",

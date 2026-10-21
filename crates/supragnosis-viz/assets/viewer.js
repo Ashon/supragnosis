@@ -655,6 +655,7 @@ async function refreshSyncPill() {
     if (r.ok) f = await r.json();
   } catch (_) { f = null; }
   let text, tone;
+  if (f && f.node_id) ownNode = String(f.node_id);
   if (!f) { text = "Sync unavailable"; tone = "bad"; }
   else if (f.configured === false) { pill.hidden = true; return; }
   else {
@@ -1822,7 +1823,8 @@ function renderReview() {
   // it, so a decided item leaves at the next read (Section 29.3).
   const sig = JSON.stringify([reviewSeg, reviewSel, local, recallArmed, currentWs(), items.map(itemSig),
     ["needs", "decided", "suggestions", "health"].map(s => s === reviewSeg ? items.length : segItems(s).length),
-    reviewView && [reviewView.id, (reviewView.checks || []).length], undoView && [undoView.id, undoView.state]]);
+    reviewView && [reviewView.id, (reviewView.checks || []).length], undoView && [undoView.id, undoView.state],
+    reviewEvidence && [reviewEvidence.id, reviewEvidence.cols.map(c => c.list.length), !!reviewEvidence.opened]]);
   if (sig === reviewSig) return;
   reviewSig = sig;
   // The segments' counts: only Needs you's asks; the others are drawn muted (Section 29.3).
@@ -1869,6 +1871,15 @@ function renderReview() {
   if (it && it.kind === "contested") detail.querySelectorAll('[data-settle="ask"]').forEach((b, i) => { if (i < 9) b.setAttribute("aria-keyshortcuts", String(i + 1)); });
   wireCuration(detail);
   wireDecisions(detail, it);
+  // The evidence's rows open their cards; a linked item is selected in place (Section 29.7).
+  const ev = it && it.kind === "proposal" && reviewEvidence && reviewEvidence.id === it.p.id ? reviewEvidence : null;
+  if (ev) detail.querySelectorAll(".evcol").forEach((col, ci) => {
+    const list = (ev.cols[ci] || {}).list || [];
+    col.querySelectorAll(".obs").forEach((row, i) => { const o = list[i]; if (o && o.id === row.dataset.id) row.querySelector(".ohead").onclick = () => showObsCard(o); });
+  });
+  detail.querySelectorAll("[data-review]").forEach(b => { b.onclick = () => { reviewSeg = "needs"; reviewSel = b.dataset.review; reviewFocus = true; renderReview(); }; });
+  // Each value's source, as the inspector says it (design-system.md Section 29.7).
+  if (it && it.kind === "contested" && it.c.field !== "definition") fillSettleWho(detail, it.c.id);
 }
 // Skip, as a button and as J, wherever an item is decided one at a time (Section 7).
 function skipButton() {
@@ -1885,10 +1896,10 @@ function itemDetail(it, local) {
   if (it.kind === "contested") {
     const c = it.c, def = c.field === "definition";
     return [html`<h3>${contestedTitle(c)}</h3>`,
-      html`<p class="why">Two ${def ? "definitions" : "values"} tie on trust, so supragnosis does not pick one for you. The other stays in the log and can be chosen again.</p>`,
+      html`<p class="why">Two ${def ? "definitions" : "values"} tie on trust, so Supragnosis does not pick one for you. The other stays in the log and can be chosen again.</p>`,
       html`<div class="contested hot">${contestedRows({ name: c.name, field: def ? "definition" : (c.field === "kind" ? "type" : c.field), entity: def ? "" : c.id,
-        current: c.current, curObs: c.kind_source, tier: "", competitors: c.competitors || [], contested: c.contested })}</div>`,
-      html`<div class="rv-acts">${skipButton()}</div>`,
+        current: c.current, curObs: c.kind_source, tier: "", competitors: c.competitors || [], contested: c.contested, ws: c.workspace || (nodeById(c.id) || {}).workspace || "" })}</div>`,
+      html`<div class="rv-acts">${def ? "" : html`<button type="button" class="btn" data-map="1">Show on the map</button>`}${skipButton()}</div>`,
       local ? html`<p class="hint"><kbd>1</kbd> <kbd>2</kbd> confirm a value. <kbd>J</kbd> <kbd>K</kbd> move between items.</p>` : html`<p class="why">This view is read-only.</p>`];
   }
   if (it.kind === "signal") return signalDetail(it);
@@ -1896,15 +1907,24 @@ function itemDetail(it, local) {
   const failing = v && v.checks ? v.checks.filter(c => c.blocking && !c.passed) : [];
   const decided = p.state === "merged" || p.state === "rejected" || p.state === "withdrawn";
   const parts = [html`<h3>${itemTitle(it)}</h3>`];
-  if (p.rationale) parts.push(html`<p class="why">${p.rationale}</p>`);
-  // A decided item's diff is worked out against today's beliefs, so it says so (Section 29.3).
-  parts.push(html`<div class="sec">${decided ? "What it would change now" : "What changes"}</div>`, diffHtml(v ? v.diff : null));
+  if (p.rationale) parts.push(html`<p class="why">"${p.rationale}"</p>`);
+  const ev = reviewEvidence && reviewEvidence.id === p.id ? reviewEvidence : null;
+  // A decided item's diff is worked out against today's beliefs, so it says so (Section 29.3); a
+  // merge's leads with what happens to identity (Section 29.7).
+  parts.push(html`<div class="sec">${decided ? "What it would change now" : "What changes"}</div>`, identityHtml(p, ev), diffHtml(v ? v.diff : null));
   parts.push(html`<div class="sec">Checks</div>`);
   if (!v) parts.push(html`<div class="dnote">reading the checks...</div>`);
-  else if (failing.length) parts.push(html`<div class="rv-block"><b>Blocked.</b> ${failing.map(c => html`<div>${c.name}: ${c.detail}</div>`)}<div>The merge cannot reach canon while this holds. Reject it here, or fix the proposal and open it again.</div></div>`);
-  else parts.push(html`<div class="dnote">checks pass</div>`);
-  const who = p.proposer ? "Opened by " + p.proposer : "Opened";
-  parts.push(html`<div class="sec">Who asked</div><div class="hint">${who}${p.opened_at ? ", " + new Date(p.opened_at).toLocaleString() : ""}${p.self_attested ? " - self-attested" : ""}</div>`);
+  else {
+    if (failing.length) parts.push(html`<div class="rv-block"><b>Blocked.</b> ${failing.map(c => html`<div>${checkSaid(p, c)}: ${c.detail}</div>`)}<div>The merge cannot reach canon while this holds. Reject it here, or fix the proposal and open it again.</div></div>`);
+    parts.push(checkListHtml(p, v.checks));
+  }
+  parts.push(html`<div class="sec">Evidence</div>`, evidenceHtml(p, ev));
+  // Who asked: the opening event in the who-line grammar, opening its card; "self-attested", which
+  // every opened proposal carries, is not drawn (Section 29.7).
+  const opened = ev && ev.opened;
+  parts.push(html`<div class="sec">Who asked</div>`, opened
+    ? html`<div class="hint"><button type="button" class="linkish" data-obs="${opened.id}">${whoLine(opened.effective_tier, authorOf(opened))}</button></div>`
+    : html`<div class="hint">${p.opened_at ? new Date(p.opened_at).toLocaleString() : ""}</div>`);
   if (!local) { parts.push(html`<p class="why">This view is read-only.</p>`); return parts; }
   const acts = [];
   const ready = !!v;   // the diff and checks are on screen
@@ -1943,9 +1963,89 @@ async function fetchReviewView(id) {
     const view = await r.json();
     if (!view || view.id !== id) return;
     reviewView = { id, diff: view.belief_diff || null, checks: view.checks || [] };
+    fetchReviewEvidence(view);
     if (proposalSel && proposalSel.id === id) { proposalDiff = reviewView.diff; proposalChecks = reviewView.checks; }
     renderReview();
   } catch (e) { /* the page still lists the item - it just cannot be decided yet */ }
+}
+// What a decision rests on (design-system.md Section 29.7): for a merge each entity's supporting
+// observations, for a gate act the observations it moves, and the opening event - read when the item
+// is selected, each by the read that answers it alone.
+let reviewEvidence = null;   // {id, cols: [{id, name, list}], opened}
+async function fetchReviewEvidence(p) {
+  const id = p.id, ws = wsInput.value.trim();
+  const wsq = ws && ws !== "*" && ws !== "all" ? "&workspace=" + encodeURIComponent(ws) : "";
+  const cols = [];
+  try {
+    if (p.kind === "entity_merge") {
+      const ids = [...new Set([...(p.targets || []), ...(p.into ? [p.into] : [])])];
+      for (const e of ids) {
+        const r = await fetch("/api/observations?entity=" + encodeURIComponent(e) + wsq, { cache: "no-store" });
+        const list = r.ok ? await r.json() : [];
+        const n = nodeById(e);
+        cols.push({ id: e, name: n ? n.name : labelOf(p, e), list: Array.isArray(list) ? list : [] });
+      }
+    } else if (p.kind === "claim_promotion" || p.kind === "claim_demotion") {
+      const list = [];
+      for (const t of p.targets || []) { const o = await observationById(t); if (o) list.push(o); }
+      cols.push({ id: "", name: "", list });
+    }
+    const opened = await observationById(id);
+    if (reviewView && reviewView.id !== id) return;   // the selection moved on
+    reviewEvidence = { id, cols, opened };
+    renderReview();
+  } catch (_) { /* the item stands without it */ }
+}
+function labelOf(p, e) {
+  const i = (p.targets || []).indexOf(e);
+  return (i >= 0 && p.labels && p.labels[i]) || (e === p.into && p.into_label) || String(e).slice(0, 8);
+}
+// A merge's identity, before the belief rows: the entity that goes becomes an alias of the one kept,
+// its observations count for it, and a contested field of the kept one stays contested.
+function identityHtml(p, ev) {
+  if (p.kind !== "entity_merge" || !p.into) return html``;
+  const kept = nodeById(p.into), keptName = kept ? kept.name : labelOf(p, p.into);
+  const rows = [];
+  for (const t of (p.targets || []).filter(t => t !== p.into)) {
+    const n = nodeById(t), name = n ? n.name : labelOf(p, t);
+    rows.push(html`<div class="drow ident">${name} leaves the map; its name becomes an alias of ${keptName}</div>`);
+    const col = ev && ev.cols.find(c => c.id === t);
+    if (col && col.list.length) rows.push(html`<div class="drow ident">${plural(col.list.length, "observation")} ${col.list.length === 1 ? "counts" : "count"} for ${keptName} from then on</div>`);
+  }
+  const still = ((curation && curation.contradictions) || []).find(c => c.id === p.into && c.contested);
+  if (still) rows.push(html`<div class="drow ident">${keptName}'s ${still.field === "kind" ? "type" : still.field} stays contested - <button type="button" class="linkish" data-review="${"c:" + still.id}">also under Needs you</button></div>`);
+  return html`<div class="ddiff">${rows}</div>`;
+}
+// Every check, in words keyed by the proposal's kind and the check's name (Section 29.7); one the
+// page has no words for as the engine names it.
+const CHECK_SAID = {
+  "entity_merge|referential integrity": p => "All " + ((p.targets || []).length + (p.into && !(p.targets || []).includes(p.into) ? 1 : 0)) + " entities are in this log",
+  "entity_merge|distinct targets": () => "The targets are at least two entities",
+  "entity_merge|canonical target named": () => "It names the entity to keep",
+  "tbox_change|t-box axis consistency": () => "Types are consistent",
+  "entity_split|reversible target": () => "It names a merge to undo",
+  "claim_promotion|referential integrity": () => "Its observations are in this log",
+  "claim_demotion|referential integrity": () => "Its observations are in this log",
+  "claim_promotion|tier stated": () => "It says the tier it asks for",
+  "claim_demotion|tier stated": () => "It says the tier it asks for",
+};
+function checkSaid(p, c) { const f = CHECK_SAID[p.kind + "|" + c.name]; return f ? f(p) : c.name; }
+function checkListHtml(p, cs) {
+  const rows = (cs || []).map(c => {
+    if (c.name === "trust profile") {
+      const said = String(c.detail || "").split(", ").filter(Boolean).map(x => { const [n, t] = x.split(" "); return n + " " + tierName(t); }).join(", ");
+      return html`<div class="ckrow"><span class="i i-info" aria-hidden="true"></span><span>Sources: ${said || "none"}</span></div>`;
+    }
+    return html`<div class="ckrow ${c.passed ? "ok" : "bad"}"><span class="i ${c.passed ? "i-circle-check" : "i-circle-alert"}" role="img" aria-label="${c.passed ? "Passed" : "Failed"}"></span><span>${c.passed ? checkSaid(p, c) : checkSaid(p, c) + ": " + c.detail}</span></div>`;
+  });
+  return html`<div class="cklist">${rows}</div>`;
+}
+// The evidence in the Log's row anatomy, each row opening its card: one column per entity for a merge.
+function evidenceHtml(p, ev) {
+  if (!ev) return html`<div class="dnote">reading the evidence...</div>`;
+  if (!ev.cols.length) return html`<div class="dnote">This proposal rests on no observation of its own.</div>`;
+  return html`<div class="evcols">${ev.cols.map(c => html`<div class="evcol">${c.name ? html`<div class="evh">${c.name} <span class="ct">${c.list.length}</span></div>` : ""}${
+    c.list.map((o, i, l) => obsRowHtml(o, i, l))}</div>`)}</div>`;
 }
 // A merged gate act has a reverse on its Decided item (Section 29.3).
 function undoable(p) { return p.state === "merged" && (p.kind === "claim_promotion" || p.kind === "claim_demotion"); }
@@ -2288,10 +2388,10 @@ const heldLog = { url: "", tag: "" };
 async function observationById(id) {
   const kept = obsLog.find(x => x.id === id);
   if (kept) return kept;
-  const ws = currentWs();
+  // Read by its id, in whichever workspace holds it (design-system.md Section 29.7).
   try {
-    const r = await fetch("/api/observations" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
-    if (r.ok) { const l = await r.json(); if (Array.isArray(l)) return l.find(x => x.id === id) || null; }
+    const r = await fetch("/api/observations?id=" + encodeURIComponent(id), { cache: "no-store" });
+    if (r.ok) { const l = await r.json(); if (Array.isArray(l)) return l[0] || null; }
   } catch (e) { /* the caller says it could not open it */ }
   return null;
 }
@@ -2306,6 +2406,10 @@ function obsWhen(ms) {
   const hm = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+function obsWhenSec(ms) {
+  const d = new Date(ms);
+  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
 }
 function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
 // Trust tier as a colored dot (the edge columns' dot idiom) - a quiet ramp from dim (unverified) to
@@ -2373,12 +2477,12 @@ function proposalLine(p) {
 // who and when, marked with the ring the map draws for that tier. Rows from one minute say the time
 // once, on the first. Called as a map callback, so `list` is the rows it is one of.
 function obsRowHtml(o, i, list) {
-  const a0 = (o.attestations || [])[0] || {};
+  const a0 = authorOf(o) || {};
   const text = o.proposal ? proposalLine(o.proposal) : o.content;
   const cls = o.proposal ? "otext ev" : "otext";
   const when = obsWhen(a0.observed_at);
-  const prev = i > 0 && Array.isArray(list) ? (list[i - 1].attestations || [])[0] || {} : null;
-  const who = [tierName(o.effective_tier), writerOf(a0), prev && obsWhen(prev.observed_at) === when ? "" : when]
+  const prev = i > 0 && Array.isArray(list) ? authorOf(list[i - 1]) || {} : null;
+  const who = [tierName(o.effective_tier), writerFor(a0), prev && obsWhen(prev.observed_at) === when ? "" : when]
     .filter(Boolean).join(" - ");
   return html`${[
     html`<div class="obs" data-id="${o.id}">`,
@@ -2394,34 +2498,44 @@ function obsRowHtml(o, i, list) {
 // The single detail surface for both the node log column and the workspace Log tab (a log row opens
 // it, so the list stays a scannable list - the earlier cramped in-column expansion is gone).
 function obsCardHtml(o) {
-  const a0 = (o.attestations || [])[0] || {};
+  const a0 = authorOf(o) || {};
+  // What grounds it, first: the reference its writer cited - a link only for a web address, since
+  // the writer wrote it (P18) - and never a `surface:` marker, which the who-line says (Section 29.7).
+  const cited = (o.attestations || []).map(a => a.source_ref).find(r => r && !/^surface:/.test(r));
+  const citedHtml = !cited ? "" : /^https?:\/\//.test(cited)
+    ? html`<div class="oc-cited">Cited: <a href="${cited}" target="_blank" rel="noreferrer noopener">${cited}</a></div>`
+    : html`<div class="oc-cited">Cited: <span class="selectable">${cited}</span></div>`;
   const parts = [html`<div class="card">`,
     html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>`,
     html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${tierName(o.effective_tier)}</span>`,
       html`<span class="ocwhen">${obsWhenFull(a0.observed_at)}</span></div>`,
-    // A proposal event leads with the readable form, but keeps the stored text underneath: this
-    // card is the dereference surface an id resolves to (P2/P14), so what is literally in the log
-    // has to stay inspectable here even once it is no longer what the reader is shown.
-    html`<div class="oc-content">${o.proposal ? proposalLine(o.proposal) : o.content}</div>`,
-    o.proposal ? html`<div class="ocraw">${o.content}</div>` : "",
-    html`<div class="osec">Provenance <span class="ct">${(o.attestations || []).length}</span></div>`];
+    citedHtml,
+    html`<div class="oc-content">${o.proposal ? proposalLine(o.proposal) : o.content}</div>`];
+  // The act that set the tier it reads at, said beside what its writer wrote.
+  const g = o.gated_by;
+  if (g) {
+    const by = writerOf({ source_ref: g.surface, origin_node: g.origin_node });
+    const what = g.promotion ? tierName(o.effective_tier) + " by " + by : "Lowered to " + tierName(o.effective_tier) + " by " + by;
+    parts.push(html`<div class="oc-gate">${what}, ${obsWhenFull(g.at)} - <button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
+  }
+  parts.push(html`<div class="osec">Provenance <span class="ct">${(o.attestations || []).length}</span></div>`);
   for (const a of o.attestations || []) {
-    parts.push(html`<div class="prow"><span class="phost">${a.host}</span>`,
-      a.on_behalf_of ? html`<span class="pobo">for ${a.on_behalf_of}</span>` : "",
-      html`<span class="ptier">${tierName(a.trust_tier)}${a.evaluated_tier !== a.trust_tier ? ", counted as " + tierName(a.evaluated_tier) : ""}</span>`,
-      a.confidence != null ? html`<span class="pconf">conf ${String(a.confidence)}</span>` : "",
+    parts.push(html`<div class="prow"><span class="pwho">${whoLine(a.trust_tier, a)}</span>`,
+      a.evaluated_tier !== a.trust_tier ? html`<span class="ptier">counted as ${tierName(a.evaluated_tier)}</span>` : "",
+      a.confidence != null ? html`<span class="pconf">the agent's confidence: ${String(a.confidence)}</span>` : "",
       a.origin_node ? html`<span class="poid">machine ${String(a.origin_node).slice(0, 8)}</span>` : "",
-      html`<span class="pwhen">${obsWhenFull(a.observed_at)}</span></div>`);
+      html`</div>`);
   }
   if (o.derived_from && o.derived_from.length)
     parts.push(html`<div class="osec">Derived from</div><div class="oids">${
-      o.derived_from.map(id => html`<span class="oid">${String(id).slice(0, 10)}</span>`)}</div>`);
+      o.derived_from.map(id => html`<button type="button" class="oid linkish" data-open-obs="${id}">${String(id).slice(0, 10)}</button>`)}</div>`);
   if (o.proposal) {
     const p = o.proposal;
+    const full = proposals.find(q => q.id === p.proposal);
     parts.push(html`<div class="osec">Proposal</div>`,
-      html`<div class="ocprop"><span class="pkind">${p.kind || "proposal"}</span>`,
-        html`<span class="pstate ${p.state || ""}">${p.state || ""}</span>`,
-        html`<span class="oid">${String(p.proposal).slice(0, 10)}</span></div>`);
+      html`<div class="ocprop">${PROPOSAL_NOUN[p.kind] || "Proposal"} - ${(OUTCOME[p.state] || (p.state === "open" ? "Open" : p.state || "")).toLowerCase()}</div>`,
+      full && full.rationale ? html`<div class="ocwhy">"${full.rationale}"</div>` : "",
+      html`<div><button type="button" class="linkish" data-open-review="${p.proposal}">Open in Review</button></div>`);
     const ts = p.targets || [];
     if (ts.length) {
       // A target that no longer has a node is one this merge folded away - it stays listed (the act
@@ -2443,14 +2557,33 @@ function obsCardHtml(o) {
   if (o.relations && o.relations.length)
     parts.push(html`<div class="osec">Relations</div>`,
       o.relations.map(r => html`<div class="ocrel">${r.from} <span class="rk">${r.type}</span> ${r.to}</div>`));
+  // A proposal event's stored text stays inspectable, folded at the foot: this card is where an id
+  // resolves (P2/P14), and what is literally in the log is part of that.
+  if (o.proposal) parts.push(html`<details class="ocraw-fold"><summary><span class="i i-chevron-right" aria-hidden="true"></span>As stored</summary><div class="ocraw">${o.content}</div></details>`);
   parts.push(html`<div class="ocid">obs ${String(o.id).slice(0, 16)}</div></div>`);
   return html`${parts}`;
+}
+// Opens a proposal's Review item, in its own segment, from a card (Section 29.7).
+function openReviewItem(pid, ws) {
+  hideObsCard();
+  if (ws && currentWs() !== ws && currentWs() !== "*" && currentWs() !== "all") { wsInput.value = ws; beginWorkspaceTransition(); renderChipsActive(); poll(); }
+  const p = proposals.find(q => q.id === pid);
+  reviewSeg = p && p.state !== "open" && p.state !== "blocked" ? "decided" : "needs";
+  reviewSel = "p:" + pid; reviewFocus = true;
+  if (reviewOpen()) renderReview(); else location.hash = "#review";
 }
 function hideObsCard() { obscardEl.className = ""; obscardEl.innerHTML = ""; }
 function showObsCard(o) {
   obscardEl.innerHTML = html`${obsCardHtml(o)}`;
   obscardEl.className = "on";
   obscardEl.querySelector(".close").onclick = hideObsCard;
+  // Every id leads somewhere: a parent observation opens its card, a proposal its Review item.
+  obscardEl.querySelectorAll("[data-open-obs]").forEach(b => {
+    b.onclick = async ev => { ev.stopPropagation(); const p = await observationById(b.dataset.openObs); if (p) showObsCard(p); else toast("bad", "That observation is not here", "It may be in a workspace this view cannot read."); };
+  });
+  obscardEl.querySelectorAll("[data-open-review]").forEach(b => {
+    b.onclick = ev => { ev.stopPropagation(); openReviewItem(b.dataset.openReview, o.workspace); };
+  });
   // An asserted entity: close the card and focus its node.
   obscardEl.querySelectorAll(".echip").forEach(c => {
     c.onclick = ev => {
@@ -2501,12 +2634,27 @@ let stripState = null;   // { o } | { empty: true } | { failed: true }; null unt
 function stripShown() {
   return !dockREl.classList.contains("on") && !detailEl.classList.contains("on") && !reviewOpen();
 }
-// Who wrote it: the person it was written for, else the host by id - "this node" only for the id
-// /api/surface reports (Section 9).
+// The who-line (design-system.md Section 29.7): tier - writer, for whom - time. The writer is the
+// machine that wrote the authoring attestation: this one when it carries no sync stamp or its stamp's
+// origin is this node - a host name decides nothing, since every unconfigured node is "localhost" -
+// and any other by its origin id's first eight characters. A console verdict written here is "you
+// at this console" on the local console.
+let ownNode = null;   // this node's sync id, from the Sync read; null until known
+function writtenHere(a) { return !a.origin_node || (!!ownNode && a.origin_node === ownNode); }
 function writerOf(a) {
-  if (a.on_behalf_of) return a.on_behalf_of;
-  if (a.host && surfaceNode && a.host === surfaceNode) return here();
-  return a.host || "";
+  if (!a) return "";
+  const mine = writtenHere(a);
+  const machine = mine ? here() : String(a.origin_node).slice(0, 8);
+  if (a.source_ref === "surface:console") return mine && surfaceKind === "local" ? "you at this console" : "a person at " + machine;
+  return machine;
+}
+function writerFor(a) { return a ? writerOf(a) + (a.on_behalf_of ? ", for " + a.on_behalf_of : "") : ""; }
+// The attestation that wrote it - the engine's `author`, not the first by host.
+function authorOf(o) { const as = (o && o.attestations) || []; return as[o && o.author | 0] || as[0] || null; }
+// "11:27 AM", or "11:27:41 AM" where a neighbor shares the minute.
+function whoLine(tier, a, withSeconds) {
+  const when = a ? (withSeconds ? obsWhenSec(a.observed_at) : obsWhen(a.observed_at)) : "";
+  return [tier ? tierName(tier) : "", writerFor(a), when].filter(Boolean).join(" - ");
 }
 async function refreshStrip() {
   if (!stripShown()) { renderStrip(); return; }
@@ -2525,9 +2673,9 @@ function renderStrip() {
   stripEl.classList.toggle("on", on);
   if (!on) return;
   if (stripState.o) {
-    const o = stripState.o, a = (o.attestations || [])[0] || {};
+    const o = stripState.o, a = authorOf(o) || {};
     const first = String(o.content || "").split("\n")[0];
-    stripEl.innerHTML = html`${tierDot(o.effective_tier)}<span class="w">${writerOf(a)} ${obsWhen(a.observed_at)}</span><span class="t">${o.proposal ? proposalLine(o.proposal) : first}</span>`;
+    stripEl.innerHTML = html`${tierDot(o.effective_tier)}<span class="w">${writerFor(a)} ${obsWhen(a.observed_at)}</span><span class="t">${o.proposal ? proposalLine(o.proposal) : first}</span>`;
   } else if (stripState.empty) {
     stripEl.innerHTML = html`<span class="t">Nothing observed in this scope yet</span>`;
   } else {
@@ -2611,7 +2759,7 @@ function noteElsewhere(ws) {
   elsewhere.set(ws, { el, n: 1 });
 }
 // The map's activity, in sentences (design-system.md Section 29.6, U17): no tool name, abbreviation
-// or mode id. Who acted is "An agent" until an event names its app (D13, step 46).
+// or mode id. Who acted is "An agent" until an event names its app (D13, step 46b).
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many || one + "s"); }
 function wroteSaid(ev) {
   const parts = [];
@@ -3011,8 +3159,8 @@ async function readSettle() {
 // Who said a source and when, and its first words, from the explain read.
 function sourceWho(v, obs) {
   const o = v && v.supporting && v.supporting.get(obs);
-  const a = o && (o.attestations || [])[0];
-  return a ? [writerOf(a), obsWhen(a.observed_at)].filter(Boolean).join(" - ") : "";
+  const a = authorOf(o);
+  return a ? [writerFor(a), obsWhen(a.observed_at)].filter(Boolean).join(" - ") : "";
 }
 function firstWords(v, obs) {
   const o = v && v.supporting && v.supporting.get(obs);
@@ -3100,24 +3248,41 @@ async function settleValue(a) {
 }
 // Who said each value and when, from the explain read: its asserting observation's first attestation.
 const settleWho = new Map();   // entity id -> { at, by: Map(observation -> "who - when") }
+// Each value's source under it (design-system.md Section 29.7, U18): its first sentence in quotes,
+// a button that opens its card, and its who-line - with seconds where two values share a minute.
 async function fillSettleWho(host, entity) {
-  if (!entity || !host.querySelector(".cwho")) return;
+  if (!entity || !host.querySelector(".csrc")) return;
   let got = settleWho.get(entity);
   if (!got || Date.now() - got.at > 10000) {
     try {
       const r = await fetch("/api/explain?entity=" + encodeURIComponent(entity), { cache: "no-store" });
       if (!r.ok) return;
       const ex = await r.json();
-      const by = new Map();
-      for (const o of ex.supporting || []) {
-        const a = (o.attestations || [])[0];
-        if (a) by.set(o.id, [writerOf(a), obsWhen(a.observed_at)].filter(Boolean).join(" - "));
-      }
-      got = { at: Date.now(), by };
+      got = { at: Date.now(), by: new Map((ex.supporting || []).map(o => [o.id, o])) };
       settleWho.set(entity, got);
     } catch (_) { return; }   // the rows stand without it
   }
-  host.querySelectorAll(".cwho").forEach(el => { el.textContent = got.by.get(el.dataset.who) || ""; });
+  host.querySelectorAll(".contested").forEach(block => {
+    const lines = [...block.querySelectorAll(".csrc[data-src]")];
+    const minutes = lines.map(el => { const a = authorOf(got.by.get(el.dataset.src)); return a ? obsWhen(a.observed_at) : ""; });
+    lines.forEach((el, i) => {
+      const o = got.by.get(el.dataset.src);
+      if (!o) { el.replaceChildren(); return; }
+      const shared = minutes[i] && minutes.filter(m => m === minutes[i]).length > 1;
+      const q = document.createElement("button");
+      q.type = "button"; q.className = "cq"; q.textContent = `"${firstSentence(o.content)}"`;
+      q.title = tipText("Open the observation");
+      q.onclick = (ev) => { ev.stopPropagation(); showObsCard(o); };
+      const who = document.createElement("span");
+      who.className = "cwho"; who.textContent = whoLine("", authorOf(o), shared);
+      el.replaceChildren(q, " - ", who);
+    });
+  });
+}
+// An observation's first sentence, short enough for one line.
+function firstSentence(t) {
+  const s = String(t || "").trim().split(/(?<=[.!?])\s|\n/)[0] || "";
+  return s.length > 90 ? s.slice(0, 90).trimEnd() + "..." : s;
 }
 
 // The rows of a contested belief: why the shown value is shown, then each value with its tier, who
@@ -3153,15 +3318,21 @@ function contestedRows(o) {
       html`<div class="crow${shown ? " cur" : ""}"><span class="cv">${value}</span>`,
       shown ? html`<span class="curtag">shown</span>` : "",
       tier ? html`<span class="ctier">${tierName(tier)}</span>` : "",
-      html`<span class="cwho" data-who="${obs || ""}"></span>`,
       act, html`</div>`,
+      obs ? html`<div class="csrc" data-src="${obs}"></div>` : "",
       asking ? askHtml(ctx) : ""]}`;
   };
-  const say = "Record the correct " + o.field + " of " + o.name + " in supragnosis.";
+  // The sentence an agent is handed names the workspace and every value it calls wrong (Section 29.7).
+  const values = [o.current, ...comps.map(c => c.value)].filter(v => v != null && v !== "");
+  const where = o.ws ? " in " + o.ws : "";
+  const said = values.map(v => "as " + v);
+  const listed = said.length > 1 ? said.slice(0, -1).join(", ") + " and " + said[said.length - 1] : said.join("");
+  const say = "In Supragnosis" + (o.ws ? " workspace " + o.ws : "") + ", " + o.name + "'s " + o.field + " is recorded " + listed
+    + ", and " + (values.length > 2 ? "all are" : "both are") + " wrong. Record the correct " + o.field + " of " + o.name + where + ".";
   const key = o.name + "|" + o.field;
   return html`<div class="chead">${head}</div>${row(o.current, curTier, o.curObs, true)}${
     comps.map(c => row(c.value, c.trust_tier, c.observation, false))}${
-    local ? html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary>Neither is right</summary><div class="nhelp">Ask an agent to record the right value, then confirm it here.</div><div class="copyline"><code>${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">Copy</button></div></details>` : ""}`;
+    local ? html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary><span class="i i-chevron-right" aria-hidden="true"></span>Neither is right</summary><div class="nhelp">Ask an agent to record the right value, then confirm it here.</div><div class="copyline"><code>${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">Copy</button></div></details>` : ""}`;
 }
 // The block's acts, wired after each draw; `redraw` draws the block's surface again.
 function wireSettle(host, redraw) {
@@ -3225,7 +3396,7 @@ let foldOpen = null;   // node id whose resolved-by-trust block is expanded - su
 // A node's type, as the settling rows read a belief.
 function nodeBelief(node) {
   return { name: node.name, field: "type", entity: node.id, current: node.type, curObs: node.kind_source,
-    tier: node.trust_tier, competitors: node.competitors || [], contested: !!node.contested };
+    tier: node.trust_tier, competitors: node.competitors || [], contested: !!node.contested, ws: node.workspace || "" };
 }
 function contestedBlock(node) {
   if (node.contested) return html`<div class="contested hot">${contestedRows(nodeBelief(node))}</div>`;
@@ -3304,7 +3475,8 @@ function relationGroupHtml(g, open) {
   const chip = ({ other, e }) => html`${[
     html`<button type="button" class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
     html`title="${tipText((e.valid_to ? "Superseded, focus " : "Focus ") + other.name)}">`,
-    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}</button>`]}`;
+    // The relation's own trust, the map's ring for its tier (Section 29.7).
+    html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}${tierDot(e.trust_tier)}</button>`]}`;
   return html`${[
     html`<div class="rgroup"><div class="rghead"><span class="i ${g.out ? "i-arrow-right" : "i-arrow-left"}" role="img" aria-label="${g.out ? "Outgoing" : "Incoming"}"></span>`,
     html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
@@ -3449,6 +3621,15 @@ function resetLayout() {
   poll();
 }
 
+// What waits for the person about this entity, under the inspector's header (Section 29.7): one line
+// per Needs-you item that names it, with Open in Review.
+function waitsHtml(node) {
+  if (surfaceKind !== "local") return html``;
+  const items = needsItems().filter(it =>
+    (it.kind === "proposal" && ((it.p.targets || []).includes(node.id) || it.p.into === node.id))
+    || (it.kind === "contested" && it.c.id === node.id));
+  return html`${items.map(it => html`<div class="waits">Waits for you: ${itemTitle(it)} - <button type="button" class="linkish" data-waits="${it.key}">Open in Review</button></div>`)}`;
+}
 function renderDetail(node) {
   // The inspector is a sheet on the right; the Log and the corner controls step aside (viewer.css).
   document.body.classList.toggle("sheet", !!node);
@@ -3493,6 +3674,7 @@ function renderDetail(node) {
     node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
     origin, workspace,
     node.description ? html`<div class="desc">${node.description}</div>` : "",
+    waitsHtml(node),
     contestedBlock(node),
     // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
     // only when opened - the graph poll stays light). The evidence itself is the column below.
@@ -3509,6 +3691,9 @@ function renderDetail(node) {
   detailEl.querySelector(".close").onclick = () => clearSelection(true);
   detailEl.querySelectorAll(".hback").forEach(b => { b.onclick = () => stepSelection(-1); });
   detailEl.querySelectorAll(".hfwd").forEach(b => { b.onclick = () => stepSelection(1); });
+  detailEl.querySelectorAll("[data-waits]").forEach(b => {
+    b.onclick = () => { reviewSeg = "needs"; reviewSel = b.dataset.waits; reviewFocus = true; if (reviewOpen()) renderReview(); else location.hash = "#review"; };
+  });
   detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
   detailEl.querySelectorAll(".rchip").forEach(r => {
     r.onclick = () => {

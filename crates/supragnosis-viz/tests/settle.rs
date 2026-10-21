@@ -51,7 +51,7 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
         "the question does not say what happens"
     );
     // The console asserts nothing of its own: "Neither is right" hands an agent a sentence.
-    assert!(rows.contains("Neither is right") && rows.contains("\"Record the correct \""));
+    assert!(rows.contains("Neither is right") && rows.contains("\" wrong. Record the correct \""));
     // The inspector finds its own "why" disclosure by class, so the block must not reuse the name.
     assert!(!rows.contains("class=\"why\""), "the block reuses the inspector's .why");
     // Undo is the reverse gated event, and the notice says what it costs, in words.

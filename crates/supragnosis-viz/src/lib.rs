@@ -608,7 +608,7 @@ fn curation_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
-/// `/api/observations[?workspace=&entity=&limit=]` - the observation log (the source of truth,
+/// `/api/observations[?workspace=&entity=&limit=|?id=]` - the observation log (the source of truth,
 /// Principle 1), newest-first. Workspace resolution is identical to `/api/graph`. `entity=<id>`
 /// narrows to the evidence set behind one node (forwarded through accepted merges); `limit` keeps
 /// the newest N. A storage failure is 500 + error body (Principle 5: a failure is not an empty log).
@@ -626,7 +626,13 @@ fn observations_response(engine: &Engine, query: &str) -> Response {
     };
     let entity = param("entity").filter(|s| !s.is_empty());
     let limit = param("limit").and_then(|s| s.parse::<usize>().ok());
-    match engine.observation_log(ws_owned.as_deref(), entity.as_deref(), limit) {
+    // `id=<observation id>`: that one, in whichever workspace holds it, so a card opens without the
+    // scope's log (design-system.md Section 29.7). A list of one, or empty for an unknown id.
+    let read = match param("id").filter(|s| !s.is_empty()) {
+        Some(id) => engine.observation(&id, None).map(|o| o.into_iter().collect::<Vec<_>>()),
+        None => engine.observation_log(ws_owned.as_deref(), entity.as_deref(), limit),
+    };
+    match read {
         Ok(log) => match serde_json::to_string(&log) {
             Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {

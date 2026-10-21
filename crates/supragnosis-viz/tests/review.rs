@@ -212,3 +212,42 @@ fn review_notices_and_log_rows() {
     assert!(function("renderReview")
         .contains("document.body.classList.toggle(\"reviewing\", reviewOpen());"));
 }
+
+/// design-system.md Section 29.7, U4: a proposal's detail reads what changes - identity first for a
+/// merge - then every check in words, then the evidence it rests on, then who asked; and a
+/// contested item says each value's source as the inspector does.
+#[test]
+fn the_review_page_shows_its_evidence() {
+    let detail = function("itemDetail");
+    for part in [
+        "identityHtml(p, ev)",
+        "checkListHtml(p, v.checks)",
+        "html`<div class=\"sec\">Evidence</div>`, evidenceHtml(p, ev)",
+        "whoLine(opened.effective_tier, authorOf(opened))",
+        "data-map=\"1\">Show on the map</button>`}${skipButton()}",
+    ] {
+        assert!(detail.contains(part), "the detail does not hold {part}");
+    }
+    assert!(!detail.contains("p.self_attested"), "a mark every proposal carries is drawn");
+    let identity = function("identityHtml");
+    assert!(identity.contains(" leaves the map; its name becomes an alias of "));
+    assert!(identity.contains(" for ${keptName} from then on"));
+    assert!(identity.contains("stays contested - "));
+    let checks = function("checkListHtml");
+    for part in ["i-circle-check", "i-circle-alert", "c.name === \"trust profile\"", "Sources: "] {
+        assert!(checks.contains(part), "the checks do not hold {part}");
+    }
+    assert!(SCRIPT.contains("\"entity_merge|referential integrity\": p => \"All \""));
+    assert!(SCRIPT.contains(
+        "\"claim_promotion|referential integrity\": () => \"Its observations are in this log\""
+    ));
+    let fetch = function("fetchReviewEvidence");
+    assert!(fetch.contains("/api/observations?entity=") && fetch.contains("observationById("));
+    let render = function("renderReview");
+    assert!(
+        render.contains("fillSettleWho(detail, it.c.id)"),
+        "a contested item leaves its sources blank"
+    );
+    assert!(CSS.contains(".evcols {") && CSS.contains(".ckrow.ok .i { color:var(--ok-ink); }"));
+    let _ = PAGE;
+}
