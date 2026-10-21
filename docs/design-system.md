@@ -28,7 +28,7 @@
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
-> the first entry on screen. Step 49, search that finds and holds, is specified.
+> the first entry on screen, and step 49, search that finds and holds.
 
 ## 1. Why this exists
 
@@ -1906,7 +1906,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    contact, with the minutes and what to check; the landing's one line opens the app; an empty scope
    says so in one voice and keeps no camera controls that act on nothing; and the default is called
    by its name.
-49. **Search finds, and holds** (Section 29.11; D8; Sections 6, 8, 10 and 29.4 and U24 revised): a
+49. **Search finds, and holds** [built] (Section 29.11; D8; Sections 6, 8, 10 and 29.4 and U24 revised): a
    choice clears the field, an empty field offers this page's recent searches, hits name their
    workspace, "Show these 13 on the map" pins the answer as a working set that dims the rest and
    grows by Show related, List follows the set, and Map | List takes List's place, with List's rows
@@ -4452,4 +4452,12 @@ No row needs a principle changed.
 - It does not lay a set out on its own or keep it across visits (D8).
 - It does not filter List by trust (R2-06).
 - It does not move the minimap or make Fit leave room for it (R2-14), which step 50 takes.
+
+**Guarded by** `a_choice_clears_the_field_and_recent_searches_wait`,
+`the_answer_can_be_kept_as_a_working_set`, `show_related_adds_what_the_relations_reach` and
+`list_leaves_the_camera_idle_in_place` in `crates/supragnosis-viz/tests/holds.rs`;
+`the_map_has_a_list` (the tab list after Follow, the rows that follow the set, the sorting heads and
+the contested badge); `search_chooses_nothing_until_the_person_moves` (plain Enter takes no row,
+Cmd+Enter keeps only the set row, a choice clears the field); and
+`an_empty_scope_keeps_no_idle_controls` (the idle buttons, which List shares).
 

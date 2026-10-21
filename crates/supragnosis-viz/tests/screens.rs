@@ -113,7 +113,7 @@ fn the_review_page_works_from_the_keyboard() {
 }
 
 /// Section 8: the search field is a combobox that chooses nothing until the person moves. Enter acts
-/// only on the row moved to, a chosen entity's name replaces the query, and the field names its scope.
+/// only on the row moved to, a choice clears the field (Section 29.11), and the field names its scope.
 #[test]
 fn search_chooses_nothing_until_the_person_moves() {
     assert!(
@@ -130,11 +130,20 @@ fn search_chooses_nothing_until_the_person_moves() {
     let at = SCRIPT.find("searchEl.addEventListener(\"keydown\"").expect("the search keys");
     let keys = &SCRIPT[at..at + SCRIPT[at..].find("\n});").expect("it closes")];
     assert!(keys.contains("searchSel >= 0"), "Enter acts with no row chosen");
-    assert!(!keys.contains("chooseSearch(0)"), "Enter takes the top row on its own");
-    let choose = function("chooseSearch");
+    // Plain Enter never takes a row on its own; Cmd+Enter keeps the answer, the set row being first
+    // (design-system.md Section 29.11).
+    let enter = &keys[keys.find("} else if (ev.key === \"Enter\") {").expect("plain Enter")..];
+    let enter = &enter[..enter.find("} else if").unwrap_or(enter.len())];
+    assert!(!enter.contains("chooseSearch(0)"), "Enter takes the top row on its own");
     assert!(
-        choose.contains("searchEl.value = n.name;"),
-        "the chosen name does not replace the query"
+        keys.contains("searchRows[0].kind === \"keep\") chooseSearch(0)"),
+        "Cmd+Enter keeps only the set row"
+    );
+    let choose = function("chooseSearch");
+    let entity = &choose[choose.find("if (h.kind === \"entity\")").expect("the entity branch")..];
+    assert!(
+        entity.contains("searchEl.value = \"\";"),
+        "a choice does not clear the field (Section 29.11)"
     );
     let scope = function("syncSearchScope");
     for word in ["Search all workspaces", "\"Search \" + defaultName()", "\"Search \" + "] {

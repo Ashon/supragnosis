@@ -147,6 +147,7 @@
   .i-arrow-right { --i:url("/icons/lucide-1.52.0/arrow-right.svg"); }
   .i-arrow-left { --i:url("/icons/lucide-1.52.0/arrow-left.svg"); }
   .i-list { --i:url("/icons/lucide-1.52.0/list.svg"); }
+  .i-waypoints { --i:url("/icons/lucide-1.52.0/waypoints.svg"); }
   .i-eye { --i:url("/icons/lucide-1.52.0/eye.svg"); }
   .i-eye-off { --i:url("/icons/lucide-1.52.0/eye-off.svg"); }
   .i-plus { --i:url("/icons/lucide-1.52.0/plus.svg"); }
@@ -217,6 +218,11 @@
   .sp-row.off .sp-name { color:var(--muted); }
   /* How a related hit was reached (Section 8), and the row that widens the scope. */
   .sp-why { flex:none; margin-left:auto; color:var(--muted); font-size:var(--text-small); }
+  /* The kept answer's row (Section 29.11): its key cap at the trailing end, after any note. */
+  .sp-keep .sp-name { font-weight:600; }
+  .sp-key { flex:none; margin-left:auto; padding:0 5px; border-radius:var(--r-inset); background:var(--panel-3);
+            color:var(--muted); font:var(--text-caption)/1.6 var(--mono); }
+  .sp-keep .sp-why + .sp-key { margin-left:8px; }
   /* What the search searched, in words (Section 4, U25). */
   .sp-modewhy { padding:0 8px 6px; color:var(--muted); font-size:var(--text-small); }
   .sp-widen { color:var(--ink); }
@@ -374,6 +380,16 @@
   .ltable .lrow { display:inline-flex; align-items:center; gap:8px; min-height:28px; padding:0 4px; color:var(--ink);
                   background:none; border-radius:var(--r-control); text-align:left; }
   .ltable .lrow .dot { width:9px; height:9px; border-radius:var(--r-mark); flex:none; }
+  .ltable .lbad { width:14px; height:14px; color:var(--bad-ink); }
+  /* A column head is a button that sorts by it (Section 29.11); it reads as the head it was. */
+  .ltable .lsort { font:inherit; color:inherit; background:none; padding:4px 6px; margin:-4px -6px;
+                   border-radius:var(--r-control); min-height:28px; }
+  .ltable .lsort:hover { background:var(--panel-2); color:var(--ink); }
+  .ltable th[aria-sort="ascending"] .lsort::after, .ltable th[aria-sort="descending"] .lsort::after {
+    content:""; display:inline-block; width:12px; height:12px; margin-left:4px; vertical-align:-1px;
+    background-color:currentColor; -webkit-mask:var(--i) center / contain no-repeat; mask:var(--i) center / contain no-repeat; }
+  .ltable th[aria-sort="ascending"] .lsort::after { --i:url("/icons/lucide-1.52.0/chevron-up.svg"); }
+  .ltable th[aria-sort="descending"] .lsort::after { --i:url("/icons/lucide-1.52.0/chevron-down.svg"); }
   #mapwin { position:fixed; top:49px; bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:3;
             pointer-events:none; border-radius:var(--r-window); box-shadow:0 0 0 100vmax var(--panel);
             transition:left .18s ease, right .18s ease; }
@@ -389,6 +405,7 @@
   /* The eye stays lit while its popover is open: the popover is detached, so the button is the
      only anchor telling you where it came from. */
   #hud button.on { background:var(--select); color:var(--gold-ink); }
+  #mapList { display:flex; }
   /* Follow on and waiting while the map is in use: its color, not its fill (Section 29.4). */
   #hud button.paused { color:var(--gold-ink); }
   #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:7;
@@ -863,6 +880,14 @@
   #statusbar .spill.warn { color:var(--gold-ink); background:var(--gold-glass); }
   #statusbar .spill.ok { color:var(--ok-ink); background:var(--ok-glass); }
   #statusbar .spill:hover { filter:brightness(1.25); }
+  /* The working set's pill: its count and its Clear (Section 29.11). */
+  #statusbar #kept { display:inline-flex; align-items:center; gap:4px; padding-right:4px; color:var(--ink2); background:var(--panel-2); }
+  #statusbar #kept[hidden] { display:none; }
+  #statusbar #kept:hover { filter:none; }
+  #kept .kx { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0;
+              background:none; color:var(--muted); border-radius:var(--r-capsule); }
+  #kept .kx:hover { background:var(--panel-3); color:var(--ink); }
+  #kept .kx .i { width:14px; height:14px; }
   /* The Review page (design-system.md Section 7): over the canvas, between the header and the status
      bar - a queue on the left, the selected item on the right. */
   #reviewPage { position:fixed; top:49px; bottom:var(--bar); left:0; right:0; z-index:11; display:grid;
@@ -991,6 +1016,8 @@
     #statusbar #session, #statusbar #tierNote { display:none; }
     /* The camera buttons move to the top right, out of the sheets' way. */
     #hud { right:16px; top:61px; bottom:auto; }
+    /* Seven controls do not fit 320 pixels under a finger: the toolbar wraps rather than scroll (Section 29.11). */
+    #hud { flex-wrap:wrap; justify-content:flex-end; max-width:calc(100vw - 32px); }
     .contested .confirm { min-height:28px; }
     .rv-segb, .rv-acts .btn { min-height:28px; }
     /* The status bar gives up its counts first and keeps the scope's name (Section 6). */

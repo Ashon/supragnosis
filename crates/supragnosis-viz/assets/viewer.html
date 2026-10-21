@@ -102,6 +102,8 @@
   <button type="button" class="btn" data-pv="back" aria-keyshortcuts="Escape">Back to Review</button>
   <button type="button" class="btn" data-pv="done">Done</button></div>
 <div id="statusbar"><span id="stats"></span><button type="button" id="showAll" class="spill" hidden>Show all</button>
+  <!-- The working set, said where a phone keeps it, with its Clear (design-system.md Section 29.11). -->
+  <span id="kept" class="spill" hidden><span class="kn"></span><button type="button" class="kx" title="Clear" aria-label="Clear"><span class="i i-x" aria-hidden="true"></span></button></span>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
   <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span>
   <!-- The way to Review (design-system.md Section 6, U20): always here on the local console, with
@@ -206,9 +208,17 @@
   <button id="followBtn" class="on" title="Follow" aria-label="Follow" aria-pressed="true">
     <span class="i i-locate" aria-hidden="true"></span>
   </button>
-  <button id="listBtn" title="List" aria-label="List" aria-pressed="false" aria-controls="listwin">
-    <span class="i i-list" aria-hidden="true"></span>
-  </button>
+  <!-- Map | List (design-system.md Section 29.11): one tab list after Follow, the window's two views.
+       Map is Lucide's waypoints, List its list (ISC). -->
+  <div id="mapList" role="tablist" aria-label="Show as">
+    <button id="mapTab" type="button" role="tab" title="Map" aria-label="Map" aria-selected="true" aria-controls="c" class="on">
+      <span class="i i-waypoints" aria-hidden="true"></span>
+    </button>
+    <button id="listBtn" type="button" role="tab" title="List" aria-label="List" aria-selected="false" aria-controls="listwin" tabindex="-1">
+      <span class="i i-list" aria-hidden="true"></span>
+    </button>
+  </div>
+  <span id="listIdle" hidden>List shows the map as a table.</span>
   <button id="viewBtn" title="View options" aria-label="View options" aria-expanded="false" aria-controls="viewpop">
     <span class="i i-eye" aria-hidden="true"></span>
   </button>
