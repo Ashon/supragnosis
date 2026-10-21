@@ -27,7 +27,8 @@
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
-> is built, as is step 46b, the app that wrote it, and step 47, a map that explains itself.
+> is built, as is step 46b, the app that wrote it, and step 47, a map that explains itself. Step 48,
+> the first entry on screen, is specified.
 
 ## 1. Why this exists
 
@@ -632,7 +633,8 @@ On the Graph page:
   first line. It reads `/api/observations` with `limit=1`, a `Read` path on the read tier, refreshed
   with the graph. With nothing observed it says "Nothing observed in this scope yet"; when the server
   does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
-  activity feed's passing rows sit inside the window at its upper left.
+  activity feed's passing rows sit inside the window at its upper left. *(Revised by step 48: with
+  nothing observed the strip says "Nothing here yet.", the canvas's words, Section 29.10.)*
 - **The map has a List** (U24). List, the camera toolbar's first button after Follow (Section 29.4),
   turns the map's window
   into a table of the entities the map draws - the same scope, the same filters, the same search -
@@ -672,7 +674,8 @@ On the Graph page:
 
 **The first view is where the knowledge is.** The viewer opens on the scope the address names, or
 else on the node default. When the default holds nothing while other workspaces hold knowledge, it
-opens on All and says so beside the chips: "Showing all workspaces - default is empty". The scope in
+opens on All and says so beside the chips: "Showing all workspaces - default is empty" *(revised by
+step 48: the default by its own name, Section 29.10)*. The scope in
 use is always a selected chip, All among them, and it is called All, never "(all)" or "*". An empty
 default means the wrong scope, not an absence of knowledge (P5).
 
@@ -717,7 +720,8 @@ pass a fifth:
 
 - **One name: Setup.** The first-run page is Setup everywhere: its title bar says Setup, its heading
   "Set up Supragnosis" (capitalized since step 45, D17), the tray's item "Finish Setup..." and About's act "Open Setup". "Welcome"
-  fits only the first visit, and the page is reached three ways after it. A state has one word on
+  fits only the first visit, and the page is reached three ways after it (four since step 48: the
+  empty map's Open Setup, in the app, Section 29.10). A state has one word on
   both pages: an AI app that waits for the person's act "Needs you", on Setup as in Settings. A
   control that both pages offer, such as an AI app's row or the model's download, is built once in the
   app's shared script and drawn by both.
@@ -725,7 +729,8 @@ pass a fifth:
   whose label is its whole row, since the plan is a choice the Set up button confirms (Section 4).
   Set up is the default button, which Return presses, and the first control after the plan in tab
   order, drawn at the trailing edge. One Copy Diagnostics sits at the left, beside the privacy line,
-  once a step has run or failed in this visit, or the check could not be read (Section 29.5). An item that replaces
+  once a step has run or failed in this visit, or the check could not be read (Section 29.5), or,
+  since step 48, Try it has waited two minutes (Section 29.10). An item that replaces
   what the person set up - an app's "Switch to the bridge", the daemon's "Take over" - starts
   unchecked (onboarding.md O8). While the plan runs
   the foot says "Setting up... 2 of 3"; when it ends the heading says "Supragnosis is set up"; the
@@ -1112,7 +1117,8 @@ not shipped; moving between machines is the stage's fifth step.
 **The hero.** The heading stays: memory for AI agents that remembers who said it. The subhead names
 the clients and the split of the work - agents write as they work, a person decides what becomes
 canon. The act is the install command in two tabs, the macOS app (`brew install --cask
-ashon/tap/supragnosis`, the one spelling the page uses) and the script, with a copy button; beside it
+ashon/tap/supragnosis`, the one spelling the page uses; *revised by step 48*: followed by `&& open -a
+Supragnosis`, Section 29.10) and the script, with a copy button; beside it
 are the install script's source, GitHub and the docs. One line of facts follows: the version, Rust,
 the licenses, the platforms the binaries are built for (macOS on Apple silicon, Linux with glibc 2.39
 or later), and no account. The version is stamped on deploy by one substitution over exactly one
@@ -1122,8 +1128,10 @@ install script the hero links to says what its binary searches with: the release
 local embedding model, and the script's keyword-only notice predates that.
 
 **After the command, the next step.** Under the install command one line says what follows it: "Then
-connect an agent: `supragnosis connect claude-code`, or Connect in the app. All steps ->", which
-links to Get started, and the header gains Install beside its other links. Below 560 pixels the
+connect an agent: `supragnosis connect claude-code`, or Connect in the app. All steps ->"
+*(revised by step 48: "The app's Setup opens: it keeps supragnosis running, offers to connect each
+AI app it finds and downloads the search model. With the script, run `supragnosis setup`. All steps
+->", Section 29.10)*, which links to Get started, and the header gains Install beside its other links. Below 560 pixels the
 command wraps and its Copy button sits on its own line; a code block that still scrolls takes focus.
 The hero's picture of a question and an Accept chip is a picture: no pointer, no hover, nothing that
 looks pressable. The header's links stand at least 24 pixels apart, a finger's width (Section 10).
@@ -1883,6 +1891,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
 47. **The map explains itself** [built] (Section 29.9; U16 and Section 5 revised by D4, U25, D3, D5): the map's
    key, counted chips with Only and Show all, counts of what is drawn, one color per type for the
    store, trust toggles that dim, the hover card, and one word for the region.
+48. **The first entry on screen** (Section 29.10; D18; onboarding.md Sections 4.4, 7 and 8): Try it
+   quotes the entry, names the app that wrote it and opens the graph on it; the wait follows first
+   contact, with the minutes and what to check; the landing's one line opens the app; an empty scope
+   says so in one voice and keeps no camera controls that act on nothing; and the default is called
+   by its name.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -1935,7 +1948,8 @@ proposal and the read tier.
   to "< Graph" and the page's title, and Esc and Cmd+[ go back.
 - **remote-viewer.md Section 3.5**: the local `/api/surface` also names the node's host id, which the
   remembered layout is keyed by (Section 5) and which a host is compared with before it is called
-  "this node" (Section 9). The read tier's answer is unchanged.
+  "this node" (Section 9). The read tier's answer is unchanged. Since step 48 it also gives
+  `default_workspace`, the node's default, so the page calls the default by its name (Section 29.10).
 
 ## 16. Closure map
 
@@ -4172,3 +4186,138 @@ the viewer's HTTP tests (names only, counted in every workspace, at most sixteen
 `the_read_tier_answers_only_within_the_grants` and `a_union_with_an_unconsented_workspace_is_refused_whole`
 in the read tier's tests (a type only outside the grants is not named, and an unservable grant is
 skipped rather than refusing the page its colors).
+
+### 29.10 Step 48: the first entry on screen
+
+**What was found.** Measured on Setup, the landing and the empty map:
+- **The first entry arrives as a sentence about the store.** When it comes, the Try it card turns
+  Done with "The store holds an entry: workspace "billing", just now." The person's own words do not
+  show, though setup reads them for `setup --step wait`, which prints them. The card still says "The
+  entry appears here as soon as the app records it.", the change is not announced, and Open the Graph
+  goes to the workspace, not to what was written. onboarding.md Section 4.4 already says the step
+  shows what the entry said.
+- **Try it waits without saying for what.** "Ask a connected app" shows as soon as one app is
+  connected, whether or not any has reached the server. The card has no clock and nothing to check
+  when nothing comes. The helper's notice says "Claude Desktop restarted and loaded supragnosis.",
+  though nothing checked the load.
+- **The landing hands off to the CLI.** The hero's command installs the app without opening it. The
+  line under it teaches `supragnosis connect claude-code`, the step Setup takes for every installed
+  app at once, and Get started says the same under "Up and running in a minute.", above a 224 MB
+  download. onboarding.md Section 8 decided the command ends with `open -a Supragnosis`. The Linux
+  tab still says to keep the server running with "the systemd user unit in deploy/systemd", which
+  `supragnosis setup` now writes.
+- **The empty map speaks in three voices and keeps its controls.** The Log says "no observations in
+  this workspace yet - observe knowledge to see the log", lowercase and naming a tool. The strip says
+  "Nothing observed in this scope yet" and the canvas "Nothing here yet.". The type, relation and
+  trust sections, zoom, Fit and List stay, and act on nothing, and the canvas's name still says List
+  shows them as a table. A store whose entries name no entity reads as empty. In the app, a store with
+  nothing in it does not lead back to Setup.
+- **The default has two names.** The status bar and the search field call the scope addressed as ""
+  "default", whatever the node's default is named, and so does its chip while it holds nothing; once
+  it holds something its chip takes its name.
+
+**Decisions.** The author approved D18: the landing promises "Up and running in a few minutes.", since
+the model is a 224 MB download and an AI app may need a restart.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| onboarding.md Sections 4.4 and 9 | When the entry arrives the step shows what it said and in which workspace; the first useful moment is an entry, not a green check | repays - the card quotes the entry and opens the graph on it |
+| onboarding.md O1 | Setup appends nothing to the knowledge log | agrees - setup reads the newest entry, the app that wrote it and its first entity, and writes nothing |
+| onboarding.md O3 and O4 | The checklist is computed from the live state; every state the page draws comes from setup's events | revised - the entry, its app and entity, which app has reached the server and the checks are setup's; O4 gains one exception, how long the page has waited in this visit, which it counts itself and uses only to show the minutes, the checks the event carries and the foot's Copy Diagnostics |
+| onboarding.md O6 and P17 | Nothing leaves the machine during setup; a report copies no secret | agrees - the shell's Copy Diagnostics drops `quote`, `app` and `entity` from each event line it copies, so a report carries no knowledge |
+| Section 29.8 and onboarding.md O7 | The app's name is read on local reads only | agrees - setup reads the entry over the local socket, whose reads name the app; on a remote profile the step is skipped as before |
+| onboarding.md Sections 4.2 and 5 | First contact is not a condition any step waits on, and a restart forgets it | agrees - it chooses the waiting sentence only, the question shows in every case, and the sentence for no contact says "since it started"; Try it is done when an entry is in, as before |
+| P5 | Unknown is not empty | agrees - a daemon that does not report first contact keeps "Ask a connected app"; one that does not answer keeps "Known once the server answers."; a store whose entries name no entity says its Log holds them |
+| onboarding.md Section 9 | The app restarts Claude Desktop for the person (its ninth decision) | agrees - the helper's notice says only what it knows |
+| onboarding.md Section 8 and design-system.md Section 11 | The landing's install command ends with the app open; under it one line says what follows; the page says only what the binary it offers does | revised - Section 11's hero command and next-step line change, the Linux tab gains `supragnosis setup`, and every sentence is true of the release the page offers today; `the_landing_says_the_next_step_and_reads_on_a_phone` follows the new line |
+| U17 and Section 9 | One concept, one name; a reader's words name no tool | repays - "observe knowledge" and "Nothing observed" are retired, the Log, the strip and the canvas say "Nothing here yet.", and the node's default is called by its name everywhere |
+| onboarding.md Section 7 | Words where people land | revised - the Log's empty line joins the table, and in the app an empty store's map offers Open Setup |
+| Section 4 and U19 | A control that cannot be used now is dimmed and says why; a control exposes its state | agrees - with the scope empty, zoom, Fit and List stay focusable, are `aria-disabled`, and are described by the empty map's sentence |
+| U24 | The canvas's name says what it draws and that List holds it | revised - with nothing drawn the name says the scope holds nothing, without List |
+| Section 29.9 | Where the scope has one tier, or none, the Trust note stays | revised - with no entity the Trust section hides with the type sections |
+| Section 6 | The strip says "Nothing observed in this scope yet" | revised - it says "Nothing here yet." |
+| Section 6a and Section 29.5 | One Copy Diagnostics, shown once a step has run or failed in this visit; the page is reached three ways after the first visit | revised - the foot's Copy Diagnostics also shows once Try it has waited two minutes, and the empty map's Open Setup is a fourth way in |
+| settings-page.md Section 6 and compatibility.md Section 8 | The viewer does not know the shell exists; every coupling between them is listed | revised - the shell gives the page one more optional global, Setup's address, as it gives `window.supragnosisHere` (Section 9, D2); without it the page has no button, and compatibility.md Section 8 lists it |
+| Section 10 | A step's end is announced in the page's live region | repays - the first entry is announced |
+| Section 6 | The scope in use is a selected chip; the first view says when the default is empty | revised - the default's chip keeps its place and takes the default's name, and so does the first view's note |
+| remote-viewer.md Section 3.5 | Locally `/api/surface` answers the surface and the node; the read tier gives the workspace an omitted one resolves to | revised - the local answer gains `default_workspace`, the same key with the same meaning, the workspace an omitted one resolves to: the node's default locally, the reader's first grant on the read tier |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The entry, quoted.** When Try it is done, setup's event carries the newest entry's first 140
+  characters (`quote`), the app that wrote it when the local read names one (`app`), and the id of its
+  first entity when it names one (`entity`), beside the workspace its id already carries. Its sentence
+  reads "An entry is in "billing", from Claude Code, just now." ("An entry is in "billing", just
+  now." with no app named, and "An entry is in the store, ..." from a daemon that does not say the
+  workspace). The card shows the sentence and the quote in the block Try it used for the question.
+  With an entity, a quiet "Show in the Graph" opens the graph at that workspace with that entity
+  selected (`?entity=`, Section 29.4); the foot's Open the Graph stays the page's main act and opens
+  the workspace. When the card turns done while the page shows, the page announces "First entry
+  recorded in billing". `setup --step wait` says the same sentence and quote, and `setup --check`'s
+  text the sentence alone. The page reads `setup --check --events`, the line Copy Diagnostics copies
+  too, so the shell's diagnostics drop `quote`, `app` and `entity` from each event line before they
+  are copied. An app older than this step shows the sentence alone, and this app with an older CLI
+  shows what that CLI says. The `--events` example, `setup-events.jsonl`, gains the three fields and
+  `checks` (compatibility.md Section 6).
+- **The wait follows first contact.** While an app is connected and no entry is in, setup's sentence
+  says which app has reached the server, and quotes the question in every case:
+  - no client has reached the server since it started: "No connected app has reached the server
+    since it started - each app's row says how. Then ask, in the project you are working on:", and
+    the card repeats an app's restart when its row offers one;
+  - one has: "Claude Code has reached the server. Ask it, in the project you are working on:", or
+    "Claude Code and Cursor have reached the server. Ask one, in the project you are working on:", a
+    client the table does not know by the name it sent; an unnamed client is not named, and when
+    only such clients have reached it, "A client has reached the server. Ask your app, in the project
+    you are working on:";
+  - first contact is not known: "Ask a connected app, in the project you are working on:", as the
+    page words it now.
+- **Minutes and what to check.** From 60 seconds after the card first waited in this visit it says
+  "Waiting 1 minute", in whole minutes. From two minutes it shows the checks setup's event carries:
+  "Does the app list supragnosis's tools? Its tools or MCP list shows them." and "Some agents answer
+  without recording. Ask it to use supragnosis to remember the decision.", and the foot's Copy
+  Diagnostics shows. `setup --step wait` prints the same checks once two minutes pass.
+- **The helper's notice** says what it knows: "Claude Desktop is open. Its row says when it reaches
+  the server."
+- **The landing.** The hero's macOS command is `brew install --cask ashon/tap/supragnosis && open -a
+  Supragnosis`. The line under it reads "The app's Setup opens: it keeps supragnosis running, offers
+  to connect each AI app it finds and downloads the search model. With the script, run `supragnosis
+  setup`. All steps ->". Get started is "Up and running in a few minutes." with three steps: Install
+  (the macOS tab's command opens the app; the server alone and the source build stay; the Linux tab's
+  comment becomes `supragnosis setup`), "Set up" ("The app's Setup keeps the server running at
+  login, offers to connect each AI app it finds and downloads the search model in the background. On
+  Linux or a server, `supragnosis setup` does the same."), and "Try it" ("Ask your agent to remember
+  one decision and why. Setup says when it is in, and the Graph shows it."). The note names Setup
+  among what fetches the model. Each sentence is true of the release the page offers today.
+- **An empty scope keeps no idle controls.** While the scope holds no entity, the Entity types,
+  Relation types and Trust sections hide, Definitions shows only while the scope has a definition,
+  and zoom in, zoom out, Fit and List are `aria-disabled` and described by the empty map's sentence.
+  The canvas's name says "Map of billing: nothing here yet." ("Map of billing: nothing on the map yet;
+  the Log holds its entries." when its entries name no entity). The Log's empty line is "Nothing here
+  yet. What an AI app remembers in billing shows up here." ("What an AI app remembers shows up here."
+  under All), and the strip says "Nothing here yet.".
+- **Entries with no entity.** When the scope's Log holds entries and none names an entity, the canvas
+  says "Nothing on the map yet. The entries here name no entity - the Log holds them." in place of
+  the first-entry sentence.
+- **Open Setup on an empty store.** In the app, on the local console (`/api/surface` says `local`; a
+  remote profile's window shows a read tier, where the store is not this Mac's), while the store
+  holds no entry, the empty map adds
+  "Open Setup" under its sentence, carrying `?from=` as the gear does (Section 29.4). The shell gives
+  the page Setup's address in `window.supragnosisSetup`; without it there is no button.
+- **The default by its name.** The local console's `/api/surface` gains `default_workspace`, the key
+  the read tier already answers with the same meaning: the workspace an omitted one resolves to, the
+  node's default here. The chip, the status bar, the title, List's head, the search field and
+  search's sentences call the scope addressed as "" by that name, whether or not it holds anything,
+  and "Showing all workspaces - default is empty" names it the same way.
+- **Retired words** gain "observe knowledge", "Nothing observed", "The store holds an entry" and
+  "restarted and loaded supragnosis".
+
+**What this step does not do.**
+- It does not give the tray its two lines and state icon, or add the Help and Setup menu commands
+  (R4-05, R4-13), which step 50 takes.
+- It does not change Settings' sidebar or remember the window's frame (R4-14, R4-16), which step 50
+  takes with the menus.
+- It does not add keys for zoom or Fit (D7), which step 50 takes.
+- It does not carry the server inside the app (onboarding.md Section 10).

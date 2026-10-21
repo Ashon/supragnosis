@@ -958,7 +958,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         4,
         &[c(
-            "every state the Welcome page draws comes from setup's events, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking setup again",
+            "every state the Welcome page draws comes from setup's events, except how long Try it has waited in this visit, and its own acts are only stopping its spawned daemon, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking setup again",
             Evidence::Scenario(&[
                 "the_welcome_page_calls_only_its_own_acts",
                 "setup_events_read_as_the_clis_example_has_them",

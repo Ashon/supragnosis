@@ -245,7 +245,9 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **Settings are entered where they always were.** The graph's gear, which a person already knows,
   rather than a new control in a title bar whose left side is the app's name and the search. The
   viewer does not know the shell exists, so the shell takes the gear's click, as it already makes
-  the title bar the drag region.
+  the title bar the drag region. *(Revised by design-system.md step 48: the viewer reads two optional
+  globals the shell may set, `window.supragnosisHere` and `window.supragnosisSetup`, and draws the
+  same page without them; it still calls nothing of the shell's, design-system.md Section 29.10.)*
 - **The tray loses its submenus rather than mirroring the page.** Two places to switch a server
   would be two places to keep consistent. The tray's job is to say what state this Mac is in and to
   open the page that changes it.

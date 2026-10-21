@@ -212,6 +212,17 @@ the id the event carries; `setup --step wait`, by reading the newest entry acros
 every two seconds until there is one (a store that already holds one is done at once). When the entry arrives the step shows what it said and in which workspace,
 and the app offers "Open the graph" at that workspace.
 
+*(Revised by design-system.md Section 29.10, step 48.)* The done step carries the entry's first 140
+characters, the app that wrote it when the local read names one, and its first entity when it names
+one, and says "An entry is in "billing", from Claude Code, just now."; the page quotes the entry,
+offers "Show in the
+Graph" with that entity selected, and announces it. While it waits, the sentence follows first
+contact - no client has reached the server since it started, a client that has, or, unknown, any
+connected app - and quotes the question in every case, without making contact a condition of the
+step (Section 5). The page counts the minutes from one, and from two shows the checks the event
+carries (O4); `setup --step wait` prints them then too. Copy Diagnostics drops the entry's words, its
+app and its entity from what it copies (O6).
+
 ## 5. First contact
 
 When an AI app talks to the local daemon, the daemon notes who it was. The name is the client's own:
@@ -296,6 +307,8 @@ The places a person meets without the Welcome page say what to do next:
 | Where | Today | After |
 |---|---|---|
 | The viewer, an empty workspace | no nodes in this workspace - observe knowledge, or pick another workspace | Nothing here yet. Ask a connected AI app to remember something, or pick a workspace that holds knowledge, each named with its count. |
+| The viewer's Log, an empty workspace | no observations in this workspace yet - observe knowledge to see the log | Nothing here yet. What an AI app remembers in `<workspace>` shows up here. (design-system.md Section 29.10) |
+| The app's map, an empty store | the viewer's sentence alone | the same sentence, and Open Setup (design-system.md Section 29.10) |
 | `status`, daemon stopped | stopped | stopped, then how to start it now, how to keep it running, and `supragnosis setup` for a first run |
 | `connect`, no daemon | (no check) | the connection is made, and the app will fail until a daemon runs: `supragnosis setup` |
 | The `brief` prompt, an empty workspace | counts of zero | says the workspace holds nothing yet, and that recording decisions as work happens is what fills it (prompts.md Section 4) |
@@ -304,7 +317,9 @@ The places a person meets without the Welcome page say what to do next:
 ## 8. The installers and the landing
 
 - **The landing's install command** becomes `brew install --cask ashon/tap/supragnosis && open -a
-  Supragnosis` (design-system.md Section 11), so one line ends with the Welcome page open.
+  Supragnosis` (design-system.md Section 11), so one line ends with the Welcome page open. The line
+  under it and Get started name Setup rather than `connect`, and keep `supragnosis setup` for Linux
+  and a server (design-system.md Section 29.10).
 - **The cask's caveats** say to open the app to finish setting up.
 - **The install script** ends with "Next: supragnosis setup" instead of its own list, and when a
   terminal is attached it asks whether to run it now, reading the answer from `/dev/tty`, since under
@@ -345,7 +360,7 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
 | **O1** | Setup appends nothing to the knowledge log: its checks read, its first-entry step waits for an entry the person's own work makes, and every path it changes is named in its events. |
 | **O2** | Every step reports its outcome where it ran - what it did, each file it changed and the copy where client-connect.md C3 or daemon-lifecycle.md L5 makes one, or why it failed and what to do - and a failed step exits non-zero (P24). |
 | **O3** | The checklist is computed from the live state each time it is shown; `setup --check` only reads, and running setup again changes only what is not done. |
-| **O4** | Every state the Welcome page draws comes from `setup`'s events. Its own acts are only stopping the daemon it spawned before the server step, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking `setup` again when an entry arrives. |
+| **O4** | Every state the Welcome page draws comes from `setup`'s events, except how long Try it has waited in this visit, which the page counts itself and uses only to show the minutes, the checks the event carries and the foot's Copy Diagnostics (design-system.md Section 29.10). Its own acts are only stopping the daemon it spawned before the server step, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking `setup` again when an entry arrives. |
 | **O5** | The model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only until the model is complete, a download in progress never reads as complete, and stopping it leaves nothing broken. |
 | **O6** | Nothing leaves the machine during setup: it never configures sync or a remote server, and the page says so. |
 | **O7** | First contact is the client's own name, kept in the local daemon's memory; the name of the app that wrote an attestation is written to this node's store, in a table of its own (design-system.md Section 29.8, by the author's decision); neither is served on the read tier, recorded by a hub's remote listener or sent to a peer. |
