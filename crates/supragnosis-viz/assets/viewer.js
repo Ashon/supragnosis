@@ -106,7 +106,7 @@ function renderList() {
     b.onclick = () => {
       const n = nodeById(b.dataset.id);
       if (!n) return;
-      focus = n; renderDetail(n); focusView(n);
+      select(n);
       for (const r of listWin.querySelectorAll("tr.on")) r.classList.remove("on");
       b.closest("tr").classList.add("on");
     };
@@ -619,8 +619,10 @@ function applyGraph(g) {
   emptyEl.style.display = nodes.length ? "none" : "flex";
   if (!nodes.length) refreshEmpty();
 
-  // If focused, refresh the detail inspector (reflect connection changes). If the focus node is gone, clear it.
-  if (focus) { if (nodes.includes(focus)) renderDetail(focus); else { focus = null; renderDetail(null); } }
+  // If focused, refresh the detail inspector (reflect connection changes). A focus the graph no longer
+  // holds is followed to what a merge made of it, or said gone (U20, Section 29.4).
+  if (focus) { if (nodes.includes(focus)) renderDetail(focus); else keepSelection(); }
+  selectLinked();
 
   // Initial auto-fit: once after the layout settles (cooling done), and only before user interaction (in draw).
   if (firstData && nodes.length) { firstData = false; needFit = !warm; }
@@ -1161,11 +1163,16 @@ function currentWs() { return wsInput.value.trim(); }
 // reveal ends with an auto-fit, so switching workspaces always lands framed and zoomed sensibly.
 // Reflect the selected workspace in the URL (?workspace=...) - shareable, bookmarkable, and it
 // survives a reload. Empty (the node default) keeps the URL clean; "*" (all) is kept as-is.
+// The address holds the place: the scope and the selected entity (Section 29.4). A page opened on an
+// entity keeps that id until the graph that holds it arrives.
 function syncUrlWorkspace() {
   const ws = wsInput.value.trim();
   const url = new URL(location.href);
   if (ws) url.searchParams.set("workspace", ws);
   else url.searchParams.delete("workspace");
+  const entity = focus ? focus.id : linkedEntity;
+  if (entity) url.searchParams.set("entity", entity);
+  else url.searchParams.delete("entity");
   history.replaceState(null, "", url);
 }
 
@@ -1586,7 +1593,7 @@ function wireCuration(host) {
       if (!n) return;
       // From Review, the map is a preview with its way back (Section 29.3).
       if (reviewOpen()) { previewOnMap(segItems().find(x => x.key === reviewSel), n); return; }
-      focus = n; renderDetail(n); focusView(n);
+      select(n);
     };
   });
   wireSettle(host, () => { reviewSig = ""; renderReview(); });
@@ -2095,7 +2102,7 @@ function previewOnMap(it, only) {
   location.hash = "";
   if (it.kind === "proposal") { proposalSel = null; selectProposal(it.p); }
   if (ns.length > 1) { fitView(ns); userMoved = true; }
-  else if (ns.length === 1) { focus = ns[0]; renderDetail(ns[0]); focusView(ns[0]); }
+  else if (ns.length === 1) select(ns[0]);
   showPreviewBar();
 }
 function showPreviewBar() {
@@ -2116,7 +2123,7 @@ function backToReview() {
   const r = reviewPreview;
   if (!r) return;
   endPreview();
-  focus = null; renderDetail(null);   // the sheet the preview opened closes with it
+  clearSelection(false);   // the sheet the preview opened closes with it
   reviewSeg = r.seg; reviewSel = r.key;
   location.hash = "#review";
 }
@@ -2234,7 +2241,7 @@ function selectProposal(p) {
   if (proposalSel) {
     fetchProposalDiff(proposalSel.id);
     const into = nodeById(proposalSel.into);
-    if (into) { focus = into; renderDetail(into); focusView(into); }
+    if (into) select(into);
     // No single canonical node (tbox_change): frame the affected members and mark the view user-driven
     // so a pending auto-fit does not stomp the preview (same as the search-result fit).
     else { const framed = affectedNodes(proposalSel); if (framed.length) { fitView(framed); userMoved = true; } }
@@ -2439,7 +2446,7 @@ function showObsCard(o) {
       ev.stopPropagation();
       const n = nodeById(c.dataset.id);
       hideObsCard();
-      if (n) { focus = n; renderDetail(n); focusView(n); }
+      if (n) select(n);
     };
   });
 }
@@ -2629,7 +2636,7 @@ async function handleEvent(ev) {
       // camera presents the grown graph instead of staring at a stale corner of it. Diff the node AND
       // edge sets across the reload so a peer's cursor can tour exactly what it just contributed.
       const beforeN = new Set(nodes.map(n => n.id)), beforeE = new Set(edges.map(edgeKey));
-      refitOnReveal = follow;
+      refitOnReveal = follow && !mapInUse();   // not while the person uses the map (Section 29.4)
       await poll();
       addedNodes = nodes.filter(n => !beforeN.has(n.id));
       addedEdges = edges.filter(e => !beforeE.has(edgeKey(e)));
@@ -2646,7 +2653,9 @@ async function handleEvent(ev) {
   // Reheat only when the event touched actual nodes - sync/hc chatter (now periodic via the
   // status loop) must never jiggle a settled layout.
   if (ids.length) wake(0.3);
-  if (follow && !peersOn) {
+  // While the person uses the map, follow waits and says what happened instead (D6, Section 29.4).
+  if (follow && !peersOn && mapInUse()) noteActivity(ev, ids);
+  else if (follow && !peersOn) {
     // Frame the WHOLE hit set: several hits fit into view together (pan + zoom as needed); a
     // single hit centers smoothly. The camera narrates what the agent touched. In server mode the
     // camera holds still and the peer markers move instead (a hub would otherwise jump on every hit).
@@ -2815,7 +2824,7 @@ async function detectServerMode() {
     if (!f || f.role !== "hub") return;
     serverMode = true;
     peersOn = true; setSwitch(peersBtn, true);
-    follow = false; setSwitch(followBtn, false);
+    follow = false; renderFollow();
     seedPeers(f);
   } catch (_) { /* federation status unavailable - stay in client mode */ }
 }
@@ -3249,6 +3258,144 @@ function relationGroupHtml(g, open) {
 }
 
 // --- Detail inspector: shows the clicked node's connections (neighbors + relations), and click a neighbor to explore ---
+// --- The person's place (docs/design-system.md Section 29.4, U20, U26) -----------------------------
+// A selection is the person's: it has a history while the page is open, its id is in the address,
+// and Esc gives back the camera it moved. Follow waits while the person uses the map.
+let selHist = { scope: null, back: [], fwd: [], last: null };   // entity ids, this scope's
+let walkCam = null;     // the camera before the walk's first selection, and when that selection came
+let handAt = -Infinity; // when the person last panned, zoomed or dragged (performance.now()); never yet
+function personMoved() { handAt = performance.now(); }
+// What a merged-away entity became: an accepted merge naming it, else the node carrying its name as
+// an alias. Null when nothing here holds it.
+function mergedInto(id, name) {
+  for (let hop = 0, at = id; hop < 4; hop++) {
+    const p = proposals.find(q => q.kind === "entity_merge" && q.state === "merged" && q.into && q.into !== at && (q.targets || []).includes(at));
+    if (!p) break;
+    const n = nodeById(p.into);
+    if (n) return n;
+    at = p.into;
+  }
+  return name ? nodes.find(n => (n.aliases || []).includes(name)) || null : null;
+}
+// Selects a node, as every selection does: the history, the address, the sheet, then the camera.
+function select(n, stepping) {
+  if (!n) return;
+  if (selHist.scope !== currentWs()) selHist = { scope: currentWs(), back: [], fwd: [], last: null };
+  if (!focus) walkCam = { s: camT.s, x: camT.x, y: camT.y, at: performance.now() };
+  if (!stepping && focus && focus !== n) { selHist.back.push(focus.id); selHist.fwd = []; }
+  else if (!stepping && !focus) selHist.fwd = [];
+  focus = n;
+  renderDetail(n);   // the sheet first: focusView measures it (see the click handler)
+  focusView(n);
+  syncUrlWorkspace();
+  requestFrame();
+}
+// Clears the selection. `giveBack`: Esc or the sheet's close, which return the camera to where the
+// walk began, unless the person moved it since.
+function clearSelection(giveBack) {
+  if (!focus) return;
+  selHist.last = focus.id;
+  focus = null;
+  renderDetail(null);
+  if (giveBack && walkCam && handAt < walkCam.at) { camT.s = walkCam.s; camT.x = walkCam.x; camT.y = walkCam.y; }
+  walkCam = null;
+  syncUrlWorkspace();
+  requestFrame();
+}
+// Back (-1) or Forward (+1) through the selections. An entry merged away is followed to what it
+// became, one no longer in the scope is skipped; with nothing selected, Back reopens the last.
+function stepSelection(dir) {
+  if (selHist.scope !== currentWs()) return;
+  const from = dir < 0 ? selHist.back : selHist.fwd, to = dir < 0 ? selHist.fwd : selHist.back;
+  if (!focus && dir < 0 && selHist.last) {
+    const n = nodeById(selHist.last) || mergedInto(selHist.last);
+    if (n) { select(n, true); return; }
+  }
+  while (from.length) {
+    const id = from.pop(), n = nodeById(id) || mergedInto(id);
+    if (!n) continue;
+    if (focus) to.push(focus.id);
+    select(n, true);
+    return;
+  }
+}
+// The selected entity that the address named when the page opened, selected once the graph holds it.
+let linkedEntity = new URLSearchParams(location.search).get("entity");
+function selectLinked() {
+  if (!linkedEntity || !nodes.length) return;
+  const n = nodeById(linkedEntity) || mergedInto(linkedEntity);
+  linkedEntity = null;
+  if (n) select(n);
+  else toast("info", "The linked entity is not in " + statsScope(currentWs()));
+}
+// A selected entity the graph no longer holds: followed to what a merge made of it, or said gone.
+function keepSelection() {
+  const was = focus, again = nodeById(was.id);
+  if (again) { focus = again; renderDetail(again); return; }
+  const now = mergedInto(was.id, was.name);
+  if (now) {
+    focus = now; renderDetail(now); syncUrlWorkspace();
+    toast("info", was.name + " is now " + now.name);
+  } else {
+    selHist.last = null;
+    focus = null; renderDetail(null); syncUrlWorkspace();
+    toast("info", was.name + " is no longer in " + statsScope(currentWs()));
+  }
+}
+// Whether the person is using the map, which follow waits out (D6): a selection, the List, a popover,
+// the search's results, a card or the Review page open, or their own move in the last 20 seconds.
+function mapInUse() {
+  return !!focus || listOn || viewPop.classList.contains("on") || !searchPop.hidden
+    || obscardEl.classList.contains("on") || reviewOpen() || performance.now() - handAt < 20000;
+}
+// Activity follow did not frame because the map was in use: one notice, the latest said in words,
+// with Show framing what it touched.
+let activityNote = null;   // { el, n, ids }
+function noteActivity(ev, ids) {
+  const ws = ev.workspace && ev.workspace !== "*" ? ev.workspace : "";
+  const node = id => { const n = nodeById(id); return n ? n.name : "an entity"; };
+  const said = ev.kind === "observe" ? "An agent wrote " + (ev.entities || []).length + ((ev.entities || []).length === 1 ? " entity" : " entities") + (ws ? " to " + ws : "")
+    : ev.kind === "search" ? "An agent searched" + (ws ? " " + ws : "") + " - " + (ev.hits | 0) + " found"
+    : ev.kind === "get_entity" ? "An agent read " + node(ev.id)
+    : ev.kind === "traverse" ? "An agent traversed from " + node(ev.start) + " - " + (ev.reached || []).length + " reached"
+    : null;
+  if (!said) return;
+  const was = activityNote;
+  if (was && was.el && was.el.isConnected && !was.el.classList.contains("out")) {
+    was.n += 1; was.ids = ids;
+    was.el.querySelector(".tt").textContent = said + " (and " + (was.n - 1) + " more)";
+    return;
+  }
+  const note = { n: 1, ids, el: null };
+  note.el = toast("info", said, null, { label: "Show", note: "", run: () => {
+    activityNote = null;
+    const hit = note.ids.map(nodeById).filter(Boolean);
+    if (hit.length > 1) fitView(hit, 130); else if (hit[0]) centerOn(hit[0]);
+  } });
+  activityNote = note;
+}
+// The Follow button says its state: on, waiting while the map is in use, or off (Section 29.4).
+function renderFollow() {
+  if (!followBtn) return;
+  const paused = follow && mapInUse();
+  followBtn.setAttribute("aria-pressed", follow ? "true" : "false");
+  followBtn.classList.toggle("on", follow && !paused);
+  followBtn.classList.toggle("paused", paused);
+  const label = !follow ? "Follow" : paused ? "Follow paused" : "Follow";
+  followBtn.setAttribute("aria-label", label);
+  followBtn.title = tipText(label);
+  followBtn.querySelector(".i").className = "i " + (follow ? "i-locate" : "i-locate-off");
+}
+// "Reset layout" (View): forget this scope's remembered positions and lay it out afresh.
+function resetLayout() {
+  if (layoutScope) { try { localStorage.removeItem(layoutScope); } catch (_) { /* nothing kept */ } }
+  storedLayout = null; posById.clear(); spiralN = 0;
+  heldGraph.url = heldGraph.tag = "";
+  layoutFresh = true; firstData = true; settling = true; needFit = true; userMoved = false;
+  wake(1);
+  poll();
+}
+
 function renderDetail(node) {
   // The inspector is a sheet on the right; the Log and the corner controls step aside (viewer.css).
   document.body.classList.toggle("sheet", !!node);
@@ -3281,6 +3428,10 @@ function renderDetail(node) {
     // Taller / shorter: the height cap keeps the graph visible by default; this trades it for room.
     html`<button class="grow" title="${tipText(detailTall ? "Shorter panel" : "Taller panel")}" aria-label="${detailTall ? "Shorter panel" : "Taller panel"}">`,
       html`<span class="i ${detailTall ? "i-chevron-down" : "i-chevron-up"}" aria-hidden="true"></span></button>`,
+    // Back and Forward through the selections, once there is somewhere to go (Section 29.4).
+    selHist.back.length || selHist.fwd.length ? html`<div class="hnav">${[
+      html`<button type="button" class="hback" title="${tipText("Back", "Cmd+[")}" aria-label="Back" aria-keyshortcuts="Meta+["${selHist.back.length ? "" : html` disabled`}><span class="i i-chevron-left" aria-hidden="true"></span></button>`,
+      html`<button type="button" class="hfwd" title="${tipText("Forward", "Cmd+]")}" aria-label="Forward" aria-keyshortcuts="Meta+]"${selHist.fwd.length ? "" : html` disabled`}><span class="i i-chevron-right" aria-hidden="true"></span></button>`]}</div>` : "",
     html`<h2>${node.name}</h2>`,
     html`<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`,
       html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tierName(tier)}</span>` : ""}`,
@@ -3302,12 +3453,14 @@ function renderDetail(node) {
       html`<div class="relcol"><div class="sec">evidence</div><div class="logcol"></div></div>`,
     html`</div>`]}`;
   detailEl.className = "on" + (detailTall ? " tall" : "");
-  detailEl.querySelector(".close").onclick = () => { focus = null; renderDetail(null); };
+  detailEl.querySelector(".close").onclick = () => clearSelection(true);
+  detailEl.querySelectorAll(".hback").forEach(b => { b.onclick = () => stepSelection(-1); });
+  detailEl.querySelectorAll(".hfwd").forEach(b => { b.onclick = () => stepSelection(1); });
   detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
   detailEl.querySelectorAll(".rchip").forEach(r => {
     r.onclick = () => {
       const n = nodeById(r.dataset.id);
-      if (n) { focus = n; renderDetail(n); focusView(n); }
+      if (n) select(n);
     };
   });
   detailEl.querySelectorAll(".rmore").forEach(b => {
@@ -3599,6 +3752,7 @@ function miniPan(ev) {
   userMoved = true;
 }
 miniEl.addEventListener("mousedown", ev => {
+  personMoved();
   ev.preventDefault();
   ev.stopPropagation();
   miniPan(ev);
@@ -5070,6 +5224,7 @@ canvas.addEventListener("wheel", ev => {
   if (settling) return;   // graph is hidden behind the loader - ignore interaction until it settles
   ev.preventDefault();
   zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.12 : 0.89);
+  personMoved();
 }, { passive: false });
 
 canvas.addEventListener("mousedown", ev => {
@@ -5085,12 +5240,12 @@ canvas.addEventListener("mousedown", ev => {
   }
 });
 addEventListener("mousemove", ev => {
-  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; positionsGen++; wake(0.3); showTip(null); return; }
+  if (drag) { const [wx, wy] = toWorld(ev.clientX, ev.clientY); drag.x = wx; drag.y = wy; positionsGen++; wake(0.3); showTip(null); personMoved(); return; }
   if (panning) {
     // Panning is instant (1:1) - move cam and camT together so easing does not drag behind.
     cam.x = camT.x = panning.px + (ev.clientX - panning.sx);
     cam.y = camT.y = panning.py + (ev.clientY - panning.sy);
-    userMoved = true; showTip(null); return;
+    userMoved = true; showTip(null); personMoved(); return;
   }
   // Only canvas-targeted moves drive node hover from here on. Over the chrome (docks, header,
   // statusbar) the shared #tip belongs to whatever chrome element is showing it (legend chip
@@ -5107,13 +5262,10 @@ addEventListener("mouseup", ev => {
   const moved = downPos && Math.hypot(ev.clientX - downPos.x, ev.clientY - downPos.y) > 4;
   if (!moved && ev.target === canvas) {
     const n = nodeAt(ev.clientX, ev.clientY);
-    focus = n ? (focus === n ? null : n) : null;   // node click = toggle focus (pin), empty space = clear
-    // Inspector first, camera second: insetB() MEASURES the open panel, so aiming before the panel
-    // exists frames against the previous layout and drops the bottom of the neighbourhood behind it.
-    // Every other focus path already ordered it this way; this one did not, and framing a box rather
-    // than centring a point is what made it visible.
-    renderDetail(focus);                           // show/clear the detail inspector
-    if (focus) focusView(focus);   // frame the node with the neighbours the focus reveals - no reheat, the layout stays put
+    // A node click selects it (select() puts the inspector first, the camera second: insetB() measures
+    // the open panel); a click on the same node or on empty space clears it and leaves the camera,
+    // since the person is moving it (Section 29.4).
+    if (n && focus !== n) select(n); else clearSelection(false);
   }
   if (drag && moved) {
     wake(0.3);   // settle neighbors only after a real drag, not a plain click
@@ -5269,7 +5421,7 @@ async function chooseSearch(i) {
     searchEl.value = n.name; searchWrap?.classList.toggle("filled", true);
     closeSearch();
     if (reviewOpen()) location.hash = "";
-    focus = n; renderDetail(n); focusView(n);
+    select(n);
     return;
   }
   // An observation opens its card - from the Log's rows when they hold it, else read once - and the
@@ -5320,12 +5472,15 @@ searchEl.addEventListener("keydown", ev => {
 });
 document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
 // The zoom buttons zoom about the map window's centre, which is not the canvas's when a panel is open.
-function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); }
+function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); personMoved(); }
 document.getElementById("zin").onclick = () => zoomWindow(1.2);
 document.getElementById("zout").onclick = () => zoomWindow(1/1.2);
-document.getElementById("fit").onclick = () => { userMoved = true; fitView(); };
+document.getElementById("fit").onclick = () => { userMoved = true; fitView(); personMoved(); };
+// Follow on the camera toolbar (Section 29.4): a press turns it on or off, waiting or not.
 const followBtn = document.getElementById("followBtn");
-followBtn.onclick = () => { follow = !follow; setSwitch(followBtn, follow); };
+followBtn.onclick = () => { follow = !follow; renderFollow(); };
+setInterval(renderFollow, 1000);
+document.getElementById("resetLayout").onclick = () => { setViewPop(false); resetLayout(); };
 const peersBtn = document.getElementById("peersBtn");
 peersBtn.onclick = () => { peersOn = !peersOn; setSwitch(peersBtn, peersOn); };
 const clusterBtn = document.getElementById("clusterBtn");
@@ -5337,7 +5492,7 @@ let viewPrefsReady = false;   // false while stored choices are replayed, so the
 function saveViewPrefs() {
   if (!viewPrefsReady) return;
   const now = { v: 5, regions: regionsValue() };
-  for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = x.classList.contains("on"); }
+  for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = k === "followBtn" ? follow : x.classList.contains("on"); }
   try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
 }
 // Regions: All, Selected or Off (design-system.md Section 5) - one choice over the two switches it
@@ -5386,7 +5541,7 @@ function applyDock(isLeft, on, remember = true) {
   // closes the other and the inspector. Not remembered - the wide window's choice stands.
   if (on && narrowWindow()) {
     applyDock(!isLeft, false, false);
-    if (focus) { focus = null; renderDetail(null); }
+    clearSelection(false);
   }
 }
 function narrowWindow() { return innerWidth < 1200; }
@@ -5414,9 +5569,17 @@ window.addEventListener("keydown", e => {
     return;
   }
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+  // Cmd+[ and Cmd+] step through the selections on the Graph page (Section 29.4); the Review map
+  // preview's own way back is a capturing listener and comes first while its bar shows.
+  if ((e.key === "[" || e.key === "]") && (e.metaKey || e.ctrlKey) && !e.altKey && !reviewOpen()) {
+    e.preventDefault();
+    stepSelection(e.key === "[" ? -1 : 1);
+    return;
+  }
   if (!singleKeys && ["[", "]", "/", "b"].includes(e.key)) return;   // turned off in View (WCAG 2.1.4)
-  if (e.key === "[") toggleDock(true);
-  else if (e.key === "]") toggleDock(false);
+  // The single keys act only without a modifier, so Cmd+[ is never a panel toggle.
+  if (e.key === "[" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleDock(true);
+  else if (e.key === "]" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleDock(false);
   else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
     // preventDefault or the "/" itself lands in the field as the first character (and Firefox
     // opens its quick-find). The INPUT/TEXTAREA guard above already keeps this from hijacking
@@ -5438,7 +5601,7 @@ window.addEventListener("keydown", e => {
   else if (e.key === "Escape") {
     if (obscardEl.classList.contains("on")) hideObsCard();
     else if (viewPop.classList.contains("on")) setViewPop(false);
-    else if (focus) { focus = null; renderDetail(null); requestFrame(); }
+    else if (focus) clearSelection(true);   // and the camera goes back to before the walk (Section 29.4)
   }
 });
 // Restore the persisted state (default: both open).
@@ -5515,7 +5678,8 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
     const b = document.getElementById(id);
     if (!b) continue;
     // Replay a stored choice through the button's own handler, so its state and side effects agree.
-    if (typeof saved[id] === "boolean" && saved[id] !== b.classList.contains("on")) b.click();
+    const on = id === "followBtn" ? follow : b.classList.contains("on");   // Follow's look also says "paused"
+    if (typeof saved[id] === "boolean" && saved[id] !== on) b.click();
     b.addEventListener("click", saveViewPrefs);
   }
   if (["all", "selected", "off"].includes(saved.regions)) setRegions(saved.regions);

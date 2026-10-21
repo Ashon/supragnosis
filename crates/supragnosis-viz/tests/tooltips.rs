@@ -82,8 +82,9 @@ fn a_tooltip_names_and_explains_nothing() {
 fn view_and_search_say_what_they_do_on_the_screen() {
     let at = HTML.find("<div id=\"viewpop\"").expect("View");
     let pop = &HTML[at..at + HTML[at..].find("<div id=\"hud\"").expect("the HUD follows")];
+    // Ten since Follow left View for the camera toolbar (design-system.md Section 29.4).
     let switches = pop.matches("class=\"tog").count();
-    assert!(switches >= 11, "View lost its switches ({switches})");
+    assert!(switches >= 10, "View lost its switches ({switches})");
     let described = pop.matches("aria-describedby=\"").count();
     assert!(described > switches, "a View option has no line under its name");
     for id in attrs(pop, "aria-describedby") {

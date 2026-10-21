@@ -174,7 +174,7 @@ function renderServer() {
     const host = p.remote ? p.url : "this Mac's daemon";
     const end = [];
     if (p.active && status.text) end.push(h("span", { class: "pill " + status.kind }, h("span", { class: "dot" }), status.text));
-    if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label })));
+    if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label, after: forgetGraphLeft })));
     if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p), "Remove " + p.label));
     // A list, not a radio group: the active row says Active, every other row has Use, so arrowing down
     // the list cannot switch every AI app's server (design-system.md Section 6a).
@@ -554,7 +554,7 @@ function renderAbout() {
         h("div", { class: "body" },
           h("div", { class: "title", text: "Setup" }),
           h("div", { class: "sub", text: "The four steps of the first run: what is done, and what is left." })),
-        h("div", { class: "end" }, h("a", { class: "btn", href: "welcome.html" }, "Open Setup")))),
+        h("div", { class: "end" }, h("a", { class: "btn", href: withBack("welcome.html") }, "Open Setup")))),
     h("p", { class: "hint", text: "Dependency licences are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
   ];
 }
@@ -733,7 +733,7 @@ function openAddServer() {
       await invoke("server_add", { name: f.name, url: f.url, credential: f.credential, ca: f.ca });
       closeDialog();
       if (useNow.checked) {
-        await act("use:" + f.name, "server_use", { name: f.name }, { title: "Added and switched to " + f.name });
+        await act("use:" + f.name, "server_use", { name: f.name }, { title: "Added and switched to " + f.name, after: forgetGraphLeft });
       } else {
         toast("ok", "Added " + f.name, "Switch to it from the list when you are ready.");
         await load();
@@ -797,16 +797,25 @@ window.addEventListener("focus", () => { if (!pending.size && !document.getEleme
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (document.getElementById("dialogHost").firstChild) closeDialog();
-  else location.href = GRAPH;
+  else location.href = graphBack();
 });
-document.getElementById("close").href = GRAPH;
+document.getElementById("close").href = graphBack();
+// The way back named the other server's knowledge once the active server changes: from then on it is
+// the bare graph (design-system.md Section 29.4).
+function forgetGraphLeft() {
+  history.replaceState(null, "", location.pathname + location.hash);
+  document.getElementById("close").href = GRAPH;
+}
 
 // Rebuild index from the starting page (docs/settings-page.md Section 3.3): its click opened this page
 // with act=rebuild, which starts the rebuild only while the daemon still cannot open its store. The
 // parameter is dropped either way, so a reload asks nothing again.
 function rebuildAsked() {
   if (new URLSearchParams(location.search).get("act") !== "rebuild") return;
-  history.replaceState(null, "", location.pathname + location.hash);
+  const keep = new URLSearchParams(location.search);
+  keep.delete("act");
+  const q = keep.toString();
+  history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
   const d = state && state.daemon;
   if (d && !d.remote && d.embedder_conflict) rebuildIndex();
 }

@@ -43,9 +43,12 @@
       if (!e.target.closest) return;
       // The status bar's sync pill opens the same page at its Sync section - the place sync lives in
       // the app (docs/design-system.md Section 6).
-      var to = e.target.closest("#settingsBtn") ? SETTINGS
-        : e.target.closest("#syncPill") ? SETTINGS + "#sync" : null;
-      if (!to) return;
+      var to = e.target.closest("#settingsBtn") ? "" : e.target.closest("#syncPill") ? "#sync" : null;
+      if (to === null) return;
+      // The way back carries the viewer's address, its #review dropped (design-system.md Section
+      // 29.4); the app's pages follow it only when it is the viewer's own.
+      var here = String(location.href).split("#")[0];
+      to = SETTINGS + "?from=" + encodeURIComponent(here) + to;
       e.preventDefault();
       e.stopPropagation();
       location.href = to;
