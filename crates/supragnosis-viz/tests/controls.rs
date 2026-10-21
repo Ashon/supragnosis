@@ -103,8 +103,15 @@ fn view_holds_two_choices_with_one_name_each() {
         PAGE.contains("id=\"keysBtn\" class=\"tog on\""),
         "the single keys cannot be turned off"
     );
+    // The single keys and their switch, in the Keys dialog since step 50a (Section 29.12).
+    assert!(SCRIPT.contains(
+        "const single = bare && [\"[\", \"]\", \"/\", \"b\", \"=\", \"+\", \"-\", \"0\", \"l\", \"?\"].includes(k);"
+    ));
+    assert!(SCRIPT.contains("if (single && !singleKeys) return;"));
+    let dialog = &PAGE[PAGE.find("<dialog id=\"keysDlg\"").expect("the Keys dialog")..];
     assert!(
-        SCRIPT.contains("if (!singleKeys && [\"[\", \"]\", \"/\", \"b\"].includes(e.key)) return;")
+        dialog[..dialog.find("</dialog>").unwrap()].contains("id=\"keysBtn\""),
+        "the switch is not in the Keys dialog"
     );
     assert!(
         !css.contains("button.tog { opacity"),

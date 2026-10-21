@@ -662,7 +662,7 @@ function renderKept() {
   }
   if (fit) {
     const name = workSet ? "Fit to kept entities" : "Fit to view";
-    fit.title = tipText(name); fit.setAttribute("aria-label", name);
+    fit.title = tipText(name, typeof singleKeys === "undefined" || singleKeys ? "0" : null); fit.setAttribute("aria-label", name);
   }
 }
 // A member merged away is followed to what it became, as a selection is (Section 29.4).
@@ -713,8 +713,9 @@ function renderMarks() {
     if (contestedCount) row("mk-badge", "Two sources disagree" + (surfaceKind === "local" ? " - select to decide" : ""));
     row("mk-size", "Larger: more relations");
     if (hyperMode && allRegions && drawnCounts().reg) row("mk-cloud", "Soft cloud: a region - entities said together");
-    if (boundaryMode === "workspace") row("mk-outline", "Outline: a workspace");
-    else if (boundaryMode === "origin") row("mk-outline", "Outline: the machine that signed");
+    // Only while two or more outlines are drawn (Section 29.12).
+    if (boundaryMode === "workspace" && outlines("workspace")) row("mk-outline", "Outline: a workspace");
+    else if (boundaryMode === "origin" && outlines("origin")) row("mk-outline", "Outline: the machine that signed");
     if (showFootprint && footprint.size) row("mk-glow", "Glow: what agents used");
     if (pulsedAny && showPulses && !REDUCED_MOTION) row("mk-pulse", "Ring that grows and fades: just touched");
   }
@@ -758,15 +759,22 @@ addEventListener("resize", fitStats);
 // Status bar: only say when the graph is stale, and only then say since when.
 function sayLate(reason) {
   // The reason is poll's: the HTTP status, the server's own error, or that it did not answer.
-  statusEl.textContent = lastOkAt
+  const line = lastOkAt
     ? "Not updated since " + lastOkAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " - " + reason
     : "Not loaded - " + reason;
+  // A Retry that failed keeps the poll's reason and says when it tried (P24, P5).
+  statusEl.textContent = retryAsked ? line + " (tried " + retryAsked + ")" : line;
+  // Retry follows the line, as its own button, so the line's rewrite never takes its focus.
+  const r = document.getElementById("retry");
+  if (r) r.hidden = false;
 }
 
 // The graph is current: a poll answered, with a graph or with "unchanged" (U33).
 function heardBack() {
   lastOkAt = new Date();
   statusEl.textContent = "";
+  retryAsked = null;
+  { const r = document.getElementById("retry"); if (r) r.hidden = true; }
 }
 
 function applyGraph(g) {
@@ -967,8 +975,11 @@ function radioGroup(host, label) {
       : step ? (i + step + all.length) % all.length : -1;
     if (j < 0) return;
     ev.preventDefault();
-    all[j].click();
-    (host.querySelector('[aria-checked="true"]') || all[j]).focus();
+    // A disabled choice is passed by, as b passes it (Section 29.12).
+    let k = j;
+    if (step) for (let n = 0; n < all.length && all[k].getAttribute("aria-disabled") === "true"; n++) k = (k + step + all.length) % all.length;
+    all[k].click();
+    (host.querySelector('[aria-checked="true"]') || all[k]).focus();
   });
 }
 
@@ -3945,6 +3956,7 @@ function keepSelection() {
 // the search's results, a card or the Review page open, or their own move in the last 20 seconds.
 function mapInUse() {
   return !!focus || listOn || !!workSet || viewPop.classList.contains("on") || !searchPop.hidden
+    || document.getElementById("keysDlg").open
     || obscardEl.classList.contains("on") || reviewOpen() || performance.now() - handAt < 20000;
 }
 // Activity follow did not frame because the map was in use: one notice, the latest said in words,
@@ -4204,6 +4216,20 @@ function paintMiniDots(src, dpr, mx, my, weight) {
   L.x.putImageData(L.img, 0, 0);
   return L.c;
 }
+let miniShown = false;
+function miniWanted(src) {
+  const box = miniStill.box || (miniStill.box = boundsOf(src));
+  if (!box) return false;
+  // Grown by the largest node's radius, so a single entity or a line of them has an area.
+  const grow = miniStill.grow ?? (miniStill.grow = src.reduce((m, n) => Math.max(m, nodeRadius(n)), 0));
+  const a = box.a - grow, b = box.b - grow, c = box.c + grow, d = box.d + grow;
+  const w = mapWindow();
+  const wa = (w.l - cam.x) / cam.s, wb = (w.t - cam.y) / cam.s, wc = (w.r - cam.x) / cam.s, wd = (w.b - cam.y) / cam.s;
+  const ix = Math.max(0, Math.min(c, wc) - Math.max(a, wa)), iy = Math.max(0, Math.min(d, wd) - Math.max(b, wb));
+  const held = (ix * iy) / Math.max(1e-6, (c - a) * (d - b));
+  miniShown = miniShown ? held <= 0.9 : held < 0.8;
+  return miniShown;
+}
 function drawMinimap() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(","),
@@ -4213,11 +4239,15 @@ function drawMinimap() {
   // Section 27.7) - so it is owed a paint; otherwise a frame neither filters the nodes nor bounds them again.
   if (m.look !== look || m.nodes !== nodes || m.hyper !== hyperedges || m.gen !== positionsGen) {
     m.look = look; m.nodes = nodes; m.hyper = hyperedges; m.gen = positionsGen; m.dirty = true;
+    m.box = null; m.grow = null;   // the drawn map's box, read again for the minimap's rule
     m.src = nodes.filter(n => !typeOff.has(n.type));
   }
   const src = m.src;
   const on = showMini && src.length > 0;
   miniEl.classList.toggle("on", on);
+  // The minimap draws while zoomed in (Section 29.12, R2-14): while the window holds less than 80
+  // percent of the drawn map's box by area, until it holds more than 90 - and only once painted.
+  miniEl.classList.toggle("want", on && !!miniStill.c && miniWanted(src));
   if (!on) return;
   if (miniEl.width !== MINI_W * dpr) { miniEl.width = MINI_W * dpr; miniEl.height = MINI_H * dpr; }
   // Everything renders inside the panel's rounded outline, read from viewer.css, so the clip and
@@ -4445,6 +4475,14 @@ function boundsOf(list) {
 // Aim the camera so a world box fits a screen rect, with `pad` breathing room and the zoom capped at
 // `hi`. Shared so the two framings differ only in their rect and ceiling, not in their arithmetic.
 function frameBox({ a, b, c, d }, L, R, T, B, pad, hi) {
+  // Every framing leaves out the camera toolbar's box (Section 29.12): at the window's foot when it
+  // sits there, and at its top, both rows, when it sits there (under 760 pixels).
+  const hud = document.getElementById("hud");
+  const hb = hud && hud.offsetParent !== null ? hud.getBoundingClientRect() : null;
+  if (hb && hb.height) {
+    if (hb.top > innerHeight / 2) B = Math.min(B, hb.top - 8);
+    else T = Math.max(T, hb.bottom + 8);
+  }
   const vw = Math.max(1, R - L - pad*2), vh = Math.max(1, B - T - pad*2);
   const gw = Math.max(1, c-a), gh = Math.max(1, d-b);
   camT.s = Math.max(SCALE_LEAST, Math.min(hi, Math.min(vw / gw, vh / gh)));
@@ -4532,25 +4570,33 @@ function regionGeometry() {
 //
 // Groups of one or two nodes are skipped for the same reason `hullGeom` needs three: a hull around
 // two points is a line, which reads as an edge rather than a region.
-function drawWsHulls(ctx, hullLabels) {
-  if (boundaryMode === "off") return;
+// The groups a Boundaries choice outlines, over the drawn entities - those whose type is shown
+// (Section 29.12). One predicate, two or more groups, decides the outline, the choice's state, b's
+// cycle and the map key's row.
+function boundaryGroups(mode) {
   const groups = new Map();
   const push = (key, n) => {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(n);
   };
-  if (boundaryMode === "workspace") {
+  if (mode === "workspace") {
     // At most one key per node. Empty means the projection found attestations naming more than one
     // workspace (a merge folded across the boundary), and such a node joins no region.
-    for (const n of nodes) if (n.workspace) push(n.workspace, n);
-  } else {
+    for (const n of nodes) if (!typeOff.has(n.type) && n.workspace) push(n.workspace, n);
+  } else if (mode === "origin") {
     // Several keys per node, on purpose. Attestations union across nodes (F4), so an entity both
     // sides asserted belongs to both regions and the outlines overlap - which is the fact worth
     // seeing, not a defect to design away. Labelled by id prefix: `origins` is the self-declared
     // host and pairing the two would need a stamp-level join the graph does not carry, so a hex
     // prefix is the honest name here (P2 - the verifiable id is the one that may attribute).
-    for (const n of nodes) for (const o of (n.origin_nodes || [])) push(o, n);
+    for (const n of nodes) if (!typeOff.has(n.type)) for (const o of (n.origin_nodes || [])) push(o, n);
   }
+  return groups;
+}
+function outlines(mode) { return mode !== "off" && boundaryGroups(mode).size >= 2; }
+function drawWsHulls(ctx, hullLabels) {
+  if (boundaryMode === "off") return;
+  const groups = boundaryGroups(boundaryMode);
   if (groups.size < 2) return;
   ctx.save();
   ctx.lineWidth = 1;
@@ -4607,8 +4653,13 @@ function drawWsHulls(ctx, hullLabels) {
 const BOUNDARY_MODES = [
   ["workspace", "A workspace outline around each workspace: a sharing unit, and no entity is in two", "Workspace"],
   ["origin", "Who signed for each entity; outlines overlap where two machines both did", "Origin"],
-  ["off", "No boundaries", "None"],
+  ["off", "The workspaces keep together, without outlines", "None"],
 ];
+// Why a choice outlines nothing here (Section 29.12, P5: what is counted, not what is assumed).
+const BOUNDARY_NOTHING = {
+  workspace: "One workspace here - nothing to outline",
+  origin: "Fewer than two machines are recorded here - nothing to outline",
+};
 function renderBoundaryChips() {
   renderMarks();
   if (!legendBoundaryEl) return;
@@ -4624,15 +4675,38 @@ function renderBoundaryChips() {
     else { sw.style.background = "transparent"; sw.style.border = "1px solid " + hyperColor(mode + ":swatch"); }
     el.appendChild(sw);
     el.appendChild(document.createTextNode(label));
-    el.title = tipText(label, "b");
-    el.onclick = () => { boundaryMode = mode; renderBoundaryChips(); wake(0.5); };   // workspaces cohere only in one mode
+    el.title = tipText(label, singleKeys ? "b" : null);
+    // A choice that outlines nothing here is dimmed and says why; the chosen one stays chosen.
+    if (mode !== "off" && !outlines(mode)) el.setAttribute("aria-disabled", "true");
+    // Boundaries only draws: the layout does not move (Section 29.12).
+    el.onclick = () => { if (el.getAttribute("aria-disabled") === "true" && boundaryMode !== mode) return; boundaryMode = mode; renderBoundaryChips(); saveViewPrefs(); requestFrame(); };
     legendBoundaryEl.appendChild(el);
   }
   radioGroup(legendBoundaryEl, "Boundaries");   // one choice of three (Section 4)
   // What the chosen boundaries draw, said under the choice (Section 4, U25).
   const desc = document.getElementById("boundaryDesc");
   const chosen = BOUNDARY_MODES.find(([mode]) => mode === boundaryMode);
-  if (desc && chosen) desc.textContent = chosen[1] + ". b cycles the three.";
+  if (desc && chosen) desc.textContent = boundaryMode !== "off" && !outlines(boundaryMode) ? BOUNDARY_NOTHING[boundaryMode] + "." : chosen[1] + ".";
+}
+// b moves to the next choice that draws, or None; with nothing to outline it says so and changes
+// nothing. Its notice replaces the last one (U42).
+let boundaryNote = null;
+function cycleBoundaries() {
+  const order = ["workspace", "origin", "off"];
+  const usable = order.filter(m => m === "off" || outlines(m));
+  let said;
+  if (usable.length === 1) said = "Boundaries: nothing to outline here";
+  else {
+    const at = order.indexOf(boundaryMode);
+    for (let k = 1; k <= order.length; k++) {
+      const m = order[(at + k) % order.length];
+      if (usable.includes(m)) { boundaryMode = m; break; }
+    }
+    said = "Boundaries: " + BOUNDARY_MODES.find(([m]) => m === boundaryMode)[2];
+    renderBoundaryChips(); saveViewPrefs(); requestFrame();
+  }
+  if (boundaryNote) dismiss(boundaryNote);
+  boundaryNote = toast("ok", said);
 }
 
 // --- Region clouds, mixed in OKLCH (docs/design-system.md Section 5) ------------------------------
@@ -5219,7 +5293,9 @@ function layoutGraph(moved = false) {
 let layoutSent = "";
 function layoutSync() {
   const q = {
-    hullForce, clusterMode, wsMode: boundaryMode === "workspace", wcx: innerWidth / 2, wcy: innerHeight / 2,
+    // The workspaces cohere whatever Boundaries draws, so b never moves a node (Section 29.12); the
+    // layout still turns it off under Arrange by type and in a scope of one workspace.
+    hullForce, clusterMode, wsMode: true, wcx: innerWidth / 2, wcy: innerHeight / 2,
     camS: +cam.s.toPrecision(2), drag: drag ? drag._k : -1, dragX: drag ? drag.x : 0, dragY: drag ? drag.y : 0,
     focus: focus && focus._k !== undefined ? focus._k : -1, targets: null,
   };
@@ -6200,7 +6276,14 @@ searchEl.addEventListener("keydown", ev => {
     closeSearch();
   }
 });
-document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
+// Retry where the map is stale (Section 29.12): the workspaces and the map at once; a Retry that fails
+// too says so.
+let retryAsked = null;   // when Retry was last pressed, until a read succeeds
+const retryBtn = document.getElementById("retry");
+retryBtn.onclick = () => {
+  retryAsked = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  loadWorkspaces(); poll();
+};
 // The zoom buttons zoom about the map window's centre, which is not the canvas's when a panel is open.
 function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); personMoved(); }
 document.getElementById("zin").onclick = e => { if (idle(e)) return; zoomWindow(1.2); };
@@ -6227,7 +6310,7 @@ const VIEW_PREFS = ["followBtn", "clusterBtn", "labelsBtn", "edgesBtn", "arrowsB
 let viewPrefsReady = false;   // false while stored choices are replayed, so the replay stores nothing
 function saveViewPrefs() {
   if (!viewPrefsReady) return;
-  const now = { v: 5, regions: regionsValue() };
+  const now = { v: 5, regions: regionsValue(), boundaries: boundaryMode };
   for (const k of VIEW_PREFS) { const x = document.getElementById(k); if (x) now[k] = k === "followBtn" ? follow : x.classList.contains("on"); }
   try { localStorage.setItem("supra.view", JSON.stringify(now)); } catch (_) { /* private mode - the choice lasts the session */ }
 }
@@ -6255,10 +6338,38 @@ function renderRegionsSeg() {
   if (desc) desc.textContent = REGION_WHY[regionsValue()] || "";
 }
 regionsSeg.querySelectorAll("button").forEach(b => { b.onclick = () => setRegions(b.dataset.v); });
-// The single keys - / b [ ] - can be turned off (Section 10, WCAG 2.1.4).
+// The single keys can be turned off (Section 10, WCAG 2.1.4); the switch is in the Keys dialog, beside
+// the keys it governs (Section 29.12, the author's decision).
 let singleKeys = true;
 const keysBtn = document.getElementById("keysBtn");
-keysBtn.onclick = () => { singleKeys = !singleKeys; setSwitch(keysBtn, singleKeys); };
+keysBtn.onclick = () => { singleKeys = !singleKeys; setSwitch(keysBtn, singleKeys); renderKeyNames(); };
+const keysDlg = document.getElementById("keysDlg");
+function openKeys() { setViewPop(false); if (!keysDlg.open) keysDlg.showModal(); }
+document.getElementById("keysOpen").onclick = openKeys;
+function dialogOpen() { return !!document.querySelector("dialog[open]"); }
+// A control names its key only while the single keys are on (Section 9: one line never states two
+// contradictory states).
+function renderKeyNames() {
+  const k = key => singleKeys ? key : null;
+  const name = (id, label, key) => { const b = document.getElementById(id); if (b) b.title = tipText(label, k(key)); };
+  name("zin", "Zoom in", "="); name("zout", "Zoom out", "-");
+  name("mapTab", "Map", "l"); name("listBtn", "List", "l");
+  name("panelL", "Filters panel", "["); name("panelR", "Log panel", "]");
+  renderKept();   // Fit's name and key follow the working set
+  for (const el of document.querySelectorAll(".slashkey, #viewpop .keyhint")) el.hidden = !singleKeys;
+}
+// Relations off leaves Arrows and History nothing to draw: they are dimmed and say why (Section 4).
+function renderShowDeps() {
+  for (const id of ["arrowsBtn", "histBtn"]) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    if (showEdges) { b.removeAttribute("aria-disabled"); b.setAttribute("aria-describedby", id === "arrowsBtn" ? "dArrows" : "dHist"); }
+    else { b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "dShownWithRel"); }
+  }
+  // More's summary names a switch under it that is off.
+  const off = [["footBtn", "Footprint"], ["pulseBtn", "Pulses"]].filter(([id]) => !document.getElementById(id).classList.contains("on")).map(([, w]) => w);
+  document.getElementById("moreSum").textContent = off.length ? "More - " + off.join(" and ") + " off" : "More";
+}
 // The panels and their title-bar toggles (docs/design-system.md Section 6): each panel opens and
 // closes on its own, with its toggle or [ and ], and the choice persists across reloads. A panel is
 // part of the frame beside the map's window - body.dl / body.dr move the window's edges - and
@@ -6308,6 +6419,8 @@ window.addEventListener("keydown", e => {
     return;
   }
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+  // A dialog holds the keyboard: its own Esc closes it alone (Section 10).
+  if (dialogOpen()) return;
   // Cmd+[ and Cmd+] step through the selections on the Graph page (Section 29.4); the Review map
   // preview's own way back is a capturing listener and comes first while its bar shows.
   if ((e.key === "[" || e.key === "]") && (e.metaKey || e.ctrlKey) && !e.altKey && !reviewOpen()) {
@@ -6315,11 +6428,16 @@ window.addEventListener("keydown", e => {
     stepSelection(e.key === "[" ? -1 : 1);
     return;
   }
-  if (!singleKeys && ["[", "]", "/", "b"].includes(e.key)) return;   // turned off in View (WCAG 2.1.4)
-  // The single keys act only without a modifier, so Cmd+[ is never a panel toggle.
-  if (e.key === "[" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleDock(true);
-  else if (e.key === "]" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleDock(false);
-  else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+  // The single keys (Section 29.12): without Cmd, Ctrl or Option; a letter by what it types, and by
+  // the key's place only when the input source types a letter that is not Latin (b and l under Hangul).
+  const bare = !e.metaKey && !e.ctrlKey && !e.altKey;
+  const k = /^[\x20-\x7e]$/.test(e.key) ? e.key : e.code === "KeyB" ? "b" : e.code === "KeyL" ? "l" : e.key;
+  const single = bare && ["[", "]", "/", "b", "=", "+", "-", "0", "l", "?"].includes(k);
+  if (single && !singleKeys) return;   // turned off in the Keys dialog (WCAG 2.1.4)
+  // "/" opens search on the Review page too; the map's keys act only on the Graph page with no card open.
+  const onMap = !reviewOpen() && !obscardEl.classList.contains("on");
+  const press = id => { const b = document.getElementById(id); if (b && b.getAttribute("aria-disabled") !== "true") b.click(); };
+  if (single && k === "/") {
     // preventDefault or the "/" itself lands in the field as the first character (and Firefox
     // opens its quick-find). The INPUT/TEXTAREA guard above already keeps this from hijacking
     // a "/" typed into any other field. select() so the shortcut replaces a stale term.
@@ -6327,14 +6445,17 @@ window.addEventListener("keydown", e => {
     searchEl.focus();
     searchEl.select();
   }
-  else if (e.key === "b") {
-    boundaryMode = boundaryMode === "workspace" ? "origin" : boundaryMode === "origin" ? "off" : "workspace";
-    wake(0.5);   // the workspace cohesion turns on or off with the mode (the layout)
-    // The mode belongs in the stats line, which is durable, and not in `statusEl`, which the render
-    // loop rewrites every frame - the first version put it there and the feedback was gone before it
-    // could be read, so the toggle looked like it had done nothing.
-    renderBoundaryChips();
-    requestFrame();
+  else if (single && !onMap) return;
+  else if (single) {
+    e.preventDefault();
+    if (k === "[") toggleDock(true);
+    else if (k === "]") toggleDock(false);
+    else if (k === "=" || k === "+") press("zin");
+    else if (k === "-") press("zout");
+    else if (k === "0") press("fit");
+    else if (k === "l") press(listOn ? "mapTab" : "listBtn");
+    else if (k === "?") openKeys();
+    else if (k === "b") cycleBoundaries();
   }
   // Esc closes the topmost thing: the observation card, then the view menu, then the inspector.
   else if (e.key === "Escape") {
@@ -6381,11 +6502,12 @@ document.querySelectorAll(".dock .tabs").forEach(tabs => {
 arrowTabs(document.getElementById("settingsTabs"));
 // Pure render toggles (no layout/data change - rAF reflects them every frame, so wake/poll is unnecessary).
 document.getElementById("labelsBtn").onclick = e => { showLabels = !showLabels; setSwitch(e.currentTarget, showLabels); };
-document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; setSwitch(e.currentTarget, showEdges); };
-document.getElementById("arrowsBtn").onclick = e => { showArrows = !showArrows; setSwitch(e.currentTarget, showArrows); };
-document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; setSwitch(e.currentTarget, showFootprint); renderMarks(); };
-document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; setSwitch(e.currentTarget, showPulses); renderMarks(); };
-document.getElementById("histBtn").onclick = e => { showSuperseded = !showSuperseded; setSwitch(e.currentTarget, showSuperseded); };
+document.getElementById("edgesBtn").onclick = e => { showEdges = !showEdges; setSwitch(e.currentTarget, showEdges); renderShowDeps(); };
+// Arrows and History act on relations: while Relations is off they are idle (a stored choice still replays).
+document.getElementById("arrowsBtn").onclick = e => { if (viewPrefsReady && idle(e)) return; showArrows = !showArrows; setSwitch(e.currentTarget, showArrows); };
+document.getElementById("footBtn").onclick = e => { showFootprint = !showFootprint; setSwitch(e.currentTarget, showFootprint); renderMarks(); renderShowDeps(); };
+document.getElementById("pulseBtn").onclick = e => { showPulses = !showPulses; setSwitch(e.currentTarget, showPulses); renderMarks(); renderShowDeps(); };
+document.getElementById("histBtn").onclick = e => { if (viewPrefsReady && idle(e)) return; showSuperseded = !showSuperseded; setSwitch(e.currentTarget, showSuperseded); };
 document.getElementById("settingsBtn").onclick = openSettings;
 // The sync pill opens the settings at Sync. In the app the shell takes this click to the app's own
 // Settings > Sync page, as it takes the gear's.
@@ -6427,7 +6549,10 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
   }
   if (["all", "selected", "off"].includes(saved.regions)) setRegions(saved.regions);
   else renderRegionsSeg();
+  // Boundaries is stored since it only draws (Section 29.12).
+  if (["workspace", "origin", "off"].includes(saved.boundaries)) { boundaryMode = saved.boundaries; renderBoundaryChips(); }
   viewPrefsReady = true;
+  renderKeyNames(); renderShowDeps();
 }
 
 // Restore the workspace selection from the URL (deep link / reload) before the first poll.
