@@ -11,11 +11,12 @@ fn function(name: &str) -> &'static str {
     &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")]
 }
 
-/// U24: List is the camera toolbar's first button after Follow (design-system.md Section 29.4); its
-/// table holds the entities the map draws in the
-/// scope and its filters, sorted by type and name, each row naming the entity, its type, its trust by
-/// the legend's name, its relations and, across workspaces, its workspace, and selecting its node as
-/// the map does; Esc gives the map back; and the canvas's name says what it draws and that List holds it.
+/// U24: Map and List are one tab list, the first control after Follow (design-system.md Sections
+/// 29.4 and 29.11); List's table holds the entities the map draws in the scope, its filters and the
+/// working set, starting by type and name and sorted by any column, each row naming the entity, its
+/// type, its trust by the legend's name, its relations and, across workspaces, its workspace, marked
+/// when contested, and selecting its node as the map does; Esc gives the map back; and the canvas's
+/// name says what it draws and that List holds it.
 #[test]
 fn the_map_has_a_list() {
     let hud = &HTML[HTML.find("<div id=\"hud\">").expect("the camera toolbar")..];
@@ -24,20 +25,37 @@ fn the_map_has_a_list() {
         follow.starts_with("<button id=\"followBtn\""),
         "Follow does not lead the toolbar"
     );
-    let rest = &follow[1..];
-    let first = &rest[rest.find("<button").expect("a second button")..];
+    let rest = &follow[follow.find("</button>").expect("Follow closes")..];
+    let tabs = rest.trim_start_matches("</button>").trim_start();
+    let tabs = &tabs[tabs.find('<').unwrap()..];
     assert!(
-        first.starts_with("<button id=\"listBtn\"")
-            && first[..first.find('>').unwrap()].contains("aria-pressed=\"false\"")
-            && first[..first.find('>').unwrap()].contains("aria-controls=\"listwin\""),
-        "List is not the camera toolbar's first button after Follow"
+        tabs.starts_with("<!--") || tabs.starts_with("<div id=\"mapList\" role=\"tablist\""),
+        "Map | List is not the first control after Follow"
     );
+    let list = &tabs[tabs.find("<div id=\"mapList\" role=\"tablist\"").expect("the tab list")..];
+    let list = &list[..list.find("</div>").unwrap()];
+    for tab in [
+        "id=\"mapTab\" type=\"button\" role=\"tab\"",
+        "id=\"listBtn\" type=\"button\" role=\"tab\"",
+        "aria-controls=\"c\"",
+        "aria-controls=\"listwin\"",
+        "i-waypoints",
+    ] {
+        assert!(list.contains(tab), "the tab list lacks {tab}");
+    }
     assert!(HTML.contains("id=\"listwin\""), "there is no table to show");
     let rows = function("listRows");
     assert!(rows.contains("!typeOff.has(n.type)"), "List shows types the filters hide");
     assert!(
-        rows.contains("a.type.localeCompare(b.type) || a.name.localeCompare(b.name)"),
-        "List is not sorted by type and name"
+        rows.contains("!workSet || workSet.ids.has(n.id)"),
+        "List does not follow the working set"
+    );
+    assert!(
+        SCRIPT.contains("let listSort = { key: \"type\", dir: 1 };")
+            && SCRIPT.contains(
+                "type: (a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name),"
+            ),
+        "List does not start by type and name"
     );
     let render = function("renderList");
     for part in [
@@ -48,14 +66,21 @@ fn the_map_has_a_list() {
         "Workspace",
         "tierName(n.trust_tier)",
         "n.degree",
-        "scope=\"col\"",
+        "listHead(",
+        "aria-label=\"Two sources disagree\"",
     ] {
         assert!(render.contains(part), "List does not show {part}");
     }
+    assert!(
+        function("listHead").contains("scope=\"col\"")
+            && function("listHead").contains("aria-sort="),
+        "a column head is not a sorting button that says which way"
+    );
     assert!(render.contains("select(n);"), "a row does not select its node as the map does");
     assert!(
-        function("setList").contains("aria-pressed"),
-        "List does not say whether it is on"
+        function("setList")
+            .contains("tab.setAttribute(\"aria-selected\", sel ? \"true\" : \"false\")"),
+        "the tabs do not say which view shows"
     );
     assert!(
         SCRIPT.contains("e.key === \"Escape\") { e.stopPropagation(); setList(false);"),

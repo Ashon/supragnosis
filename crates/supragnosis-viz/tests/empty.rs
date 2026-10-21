@@ -41,7 +41,8 @@ fn an_empty_scope_keeps_no_idle_controls() {
     for part in [
         "classList.toggle(\"scope-empty\", empty)",
         "setAttribute(\"aria-disabled\", \"true\")",
-        "setAttribute(\"aria-describedby\", \"emptyTitle\")",
+        "const why = empty ? \"emptyTitle\"",
+        "b.setAttribute(\"aria-describedby\", why)",
     ] {
         assert!(idle.contains(part), "idleWhileEmpty lacks {part}");
     }
@@ -49,7 +50,7 @@ fn an_empty_scope_keeps_no_idle_controls() {
     for handler in [
         "getElementById(\"zin\").onclick = e => { if (idle(e)) return;",
         "getElementById(\"zout\").onclick = e => { if (idle(e)) return;",
-        "getElementById(\"fit\").onclick = e => { if (idle(e)) return;",
+        "getElementById(\"fit\").onclick = e => {\n  if (idle(e)) return;",
         "listBtn.onclick = e => { if (idle(e)) return;",
     ] {
         assert!(SCRIPT.contains(handler), "an idle button still acts: {handler}");

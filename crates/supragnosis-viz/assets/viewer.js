@@ -85,10 +85,28 @@ const tip = document.getElementById("tip"), statusEl = document.getElementById("
 // name. A row selects its node as a click on the map does; List again, or Esc in the table, gives the
 // map back with that node selected.
 const listBtn = document.getElementById("listBtn"), listWin = document.getElementById("listwin");
+const mapTab = document.getElementById("mapTab");
 let listOn = false;
+// The column List is sorted by, and which way (Section 29.11): it starts by type, then name; a head
+// sorts by its column, again to reverse.
+let listSort = { key: "type", dir: 1 };
+const TIER_RANK = { unverified: 0, agent_extracted: 1, host_signed: 2, human_confirmed: 3 };
+const LIST_COLS = {
+  name: (a, b) => a.name.localeCompare(b.name),
+  type: (a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name),
+  trust: (a, b) => (TIER_RANK[a.trust_tier] ?? -1) - (TIER_RANK[b.trust_tier] ?? -1) || a.name.localeCompare(b.name),
+  relations: (a, b) => (a.degree || 0) - (b.degree || 0) || a.name.localeCompare(b.name),
+  workspace: (a, b) => String(a.workspace).localeCompare(String(b.workspace)) || a.name.localeCompare(b.name),
+};
 function listRows() {
-  return nodes.filter(n => !typeOff.has(n.type))
-    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+  const by = LIST_COLS[listSort.key] || LIST_COLS.type;
+  // List follows the working set, not the field (Section 29.11, D8).
+  return nodes.filter(n => !typeOff.has(n.type) && (!workSet || workSet.ids.has(n.id)))
+    .sort((a, b) => listSort.dir * by(a, b));
+}
+function listHead(key, label, cls) {
+  const sort = listSort.key === key ? (listSort.dir > 0 ? "ascending" : "descending") : "none";
+  return html`<th scope="col"${cls ? html` class="${cls}"` : ""} aria-sort="${sort}"><button type="button" class="lsort" data-k="${key}">${label}</button></th>`;
 }
 function renderList() {
   if (!listOn || !listWin) return;
@@ -96,14 +114,32 @@ function renderList() {
   const many = new Set(rows.map(n => n.workspace)).size > 1;
   // Redrawing keeps the person's place (Section 10): the focused row keeps focus.
   const had = listWin.contains(document.activeElement) ? document.activeElement.dataset.id : null;
-  listWin.innerHTML = html`<p class="lhead"></p><table class="ltable"><thead><tr><th scope="col">Name</th><th scope="col">Type</th>${
-    html`<th scope="col">Trust</th><th scope="col" class="n">Relations</th>`}${many ? html`<th scope="col">Workspace</th>` : ""}</tr></thead><tbody>${
+  listWin.innerHTML = html`<p class="lhead"></p>${workSet ? html`<p class="lset"><span></span> <button type="button" class="linkish lclear">Clear</button></p>` : ""}<table class="ltable"><thead><tr>${listHead("name", "Name")}${listHead("type", "Type")}${
+    listHead("trust", "Trust")}${listHead("relations", "Relations", "n")}${many ? listHead("workspace", "Workspace") : ""}</tr></thead><tbody>${
     rows.map(n => html`<tr${n === focus ? html` class="on"` : ""}><td><button type="button" class="lrow" data-id="${n.id}">${
+      // A contested entity carries the map's badge here too, in words for a screen reader (U3).
+      n.contested ? html`<span class="i i-circle-alert lbad" role="img" aria-label="Two sources disagree"></span>` : ""}${
       html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>${n.name}</button></td>`}${
       html`<td>${n.type}</td><td>${tierName(n.trust_tier)}</td><td class="n">${n.degree}</td>`}${
       many ? html`<td>${n.workspace}</td>` : ""}</tr>`)}</tbody></table>`;
   // List's head says what the status bar says (Section 29.9, U24).
   listWin.querySelector(".lhead").textContent = statsLine(currentWs(), drawnCounts());
+  // Under it, what the working set holds, with Clear (Section 29.11).
+  const lset = listWin.querySelector(".lset");
+  if (lset) {
+    const c = drawnCounts();
+    lset.firstChild.textContent = rows.length + " of " + c.shown + " entities kept - " + workSet.parts.map(partSaid).join(", ");
+    lset.querySelector(".lclear").onclick = clearWorkSet;
+  }
+  listWin.querySelectorAll(".lsort").forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.k;
+      listSort = listSort.key === k ? { key: k, dir: -listSort.dir } : { key: k, dir: 1 };
+      renderList();
+      const again = listWin.querySelector(`.lsort[data-k="${k}"]`);
+      if (again) again.focus();
+    };
+  });
   listWin.querySelectorAll(".lrow").forEach(b => {
     b.onclick = () => {
       const n = nodeById(b.dataset.id);
@@ -121,29 +157,40 @@ function renderList() {
 function setList(on) {
   listOn = on;
   listWin.hidden = !on;
-  listBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  // Map | List is one tab list (Section 29.11): the selected tab is the one in the tab order.
+  for (const [tab, sel] of [[mapTab, !on], [listBtn, on]]) {
+    tab.setAttribute("aria-selected", sel ? "true" : "false");
+    tab.tabIndex = sel ? 0 : -1;
+    tab.classList.toggle("on", sel);
+  }
   document.body.classList.toggle("listing", on);   // the minimap is the map's, not the table's
+  idleWhileEmpty();
   if (on) {
     renderList();
     const row = listWin.querySelector("tr.on .lrow") || listWin.querySelector(".lrow");
     if (row) row.focus();
-  } else listBtn.focus();
+  } else mapTab.focus();
 }
-listBtn.onclick = e => { if (idle(e)) return; setList(!listOn); };
+listBtn.onclick = e => { if (idle(e)) return; if (!listOn) setList(true); };
+mapTab.onclick = () => { if (listOn) setList(false); };
+arrowTabs(document.getElementById("mapList"));
 // With the scope empty, the camera's zoom, Fit and List act on nothing: they stay focusable,
 // aria-disabled and described by the empty map's sentence (design-system.md Section 29.10, Section 4).
+// While List shows, zoom and Fit act on a map no one sees, and are idle the same way (Section 29.11).
 const IDLE_WHEN_EMPTY = ["zin", "zout", "fit", "listBtn"];
+const IDLE_WHEN_LISTING = ["zin", "zout", "fit"];
 function idle(e) { return e.currentTarget.getAttribute("aria-disabled") === "true"; }
 function idleWhileEmpty() {
   const empty = !nodes.length;
   document.body.classList.toggle("scope-empty", empty);
+  if (empty && listOn) { setList(false); return; }
   for (const id of IDLE_WHEN_EMPTY) {
     const b = document.getElementById(id);
     if (!b) continue;
-    if (empty) { b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "emptyTitle"); }
+    const why = empty ? "emptyTitle" : listOn && IDLE_WHEN_LISTING.includes(id) ? "listIdle" : null;
+    if (why) { b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", why); }
     else { b.removeAttribute("aria-disabled"); b.removeAttribute("aria-describedby"); }
   }
-  if (empty && listOn) setList(false);
 }
 listWin.addEventListener("keydown", e => {
   if (e.key === "Escape") { e.stopPropagation(); setList(false); }
@@ -225,6 +272,9 @@ let allRegions = true;    // draw every context region as a cloud, not only the 
 let boundaryMode = "workspace";   // "workspace" | "origin" | "off"
 const bridgeSet = new Set();     // ids of nodes connected to another type (linking nodes that join groups)
 const pulses = new Map();        // id -> remaining frames (event-node highlight ring animation)
+// The working set (Section 29.11, D8): the entities the person asked to keep in view, and where each
+// part came from - a search's answer or an entity's related ones. Page memory only; null while none.
+let workSet = null;   // { ids: Set, parts: [{ kind: "search", q, n, first } | { kind: "related", name, n }] }
 let contestedCount = 0;          // contested nodes in the loaded scope, whatever the legend hides (U3)
 // Whether the scope on screen holds entries though it draws no entity, and whether the store holds
 // any entry at all - read with the counts, while the empty map shows (design-system.md Section 29.10).
@@ -584,11 +634,70 @@ function statsLine(cur, c) {
   let line = scope + " - " + e + ", " + r;
   if (c.reg !== null) line += ", " + (c.reg === 1 ? "1 region" : c.reg + " regions");
   if (c.dimmed.length) line += ", " + c.dimmed.map(tierName).join(" and ") + " dimmed";
+  // A pinned working set is said after the counts, as a dimmed tier is (Section 29.11).
+  if (workSet) line += ", " + workSetSaid();
   return line;
 }
 // The line drawn: the counts in their own span, which a phone gives up before the scope's name.
 // The counts drawn, said again wherever they show (Section 29.9).
 function renderStats() { showStats(currentWs()); }
+// The working set's members the map draws, and its words for the status line, List and the canvas.
+function keptDrawn() {
+  return workSet ? nodes.filter(n => !typeOff.has(n.type) && workSet.ids.has(n.id)) : [];
+}
+function partSaid(p) { return p.kind === "search" ? p.n + " for \"" + p.q + "\"" : p.n + " related to " + p.name; }
+function workSetSaid() {
+  if (!workSet) return "";
+  const k = keptDrawn().length, [one] = workSet.parts;
+  if (workSet.parts.length === 1 && one.kind === "search")
+    return k + " kept for \"" + one.q + "\"" + (one.first ? " (the search stopped at " + SEARCH_LIMIT + ")" : "");
+  return k + " kept - " + workSet.parts.map(partSaid).join(", ");
+}
+// The pill a narrow status bar keeps, and Fit's name, follow the set (Section 29.11).
+function renderKept() {
+  const pill = document.getElementById("kept"), fit = document.getElementById("fit");
+  if (pill) {
+    pill.hidden = !workSet;
+    if (workSet) pill.querySelector(".kn").textContent = keptDrawn().length + " kept";
+  }
+  if (fit) {
+    const name = workSet ? "Fit to kept entities" : "Fit to view";
+    fit.title = tipText(name); fit.setAttribute("aria-label", name);
+  }
+}
+// A member merged away is followed to what it became, as a selection is (Section 29.4).
+function followKept() {
+  if (!workSet) return;
+  for (const id of [...workSet.ids]) {
+    if (nodeById(id)) continue;
+    const now = mergedInto(id);
+    if (now) { workSet.ids.delete(id); workSet.ids.add(now.id); }
+  }
+}
+// The entities a node's drawn relations reach: a relation whose kind is shown, between two drawn ends.
+function relatedDrawn(node) {
+  const out = new Map();
+  for (const e of edges) {
+    if (edgeTypeOff.has(e.type) || typeOff.has(e.a.type) || typeOff.has(e.b.type)) continue;
+    if (e.a.id === node.id && e.b.id !== node.id) out.set(e.b.id, e.b);
+    else if (e.b.id === node.id && e.a.id !== node.id) out.set(e.a.id, e.a);
+  }
+  return [...out.values()];
+}
+// Adds entities to the working set, pinning one when none is; the part says where they came from.
+function keepInView(ids, part) {
+  if (!workSet) workSet = { ids: new Set(), parts: [] };
+  let added = 0;
+  for (const id of ids) if (!workSet.ids.has(id)) { workSet.ids.add(id); added++; }
+  // A part that added nothing is not said: the set already held all of it.
+  if (added) workSet.parts.push(Object.assign(part, { n: added }));
+  renderStats(); renderList(); requestFrame();
+}
+function clearWorkSet() {
+  if (!workSet) return;
+  workSet = null;
+  renderStats(); renderList(); requestFrame();
+}
 // The map's key (Section 29.9): each mark the current view draws, its mark beside it, and only those.
 function renderMarks() {
   const host = document.getElementById("legendMarks"), head = document.getElementById("marksHead");
@@ -623,18 +732,20 @@ function showStats(cur) {
   fitStats();
   renderPlace();
   // The canvas says what it draws and where else it is (Section 6, U24).
-  // With nothing drawn it says the scope holds nothing, and no List (Section 29.10).
-  canvas.setAttribute("aria-label", c.all ? "Map of " + line.slice(scope.length + 3) + ". List shows them as a table."
+  // With nothing drawn it says the scope holds nothing, and no List (Section 29.10); with a working
+  // set, that List holds the kept ones (Section 29.11).
+  renderKept();
+  canvas.setAttribute("aria-label", c.all ? "Map of " + line.slice(scope.length + 3) + (workSet ? ". List shows the kept ones as a table." : ". List shows them as a table.")
     : "Map of " + scope + (scopeEntries ? ": nothing on the map yet; the Log holds its entries." : ": nothing here yet."));
   // While anything is hidden or dimmed the status bar says so and offers Show all, which clears both.
   const all = document.getElementById("showAll");
-  if (all) all.hidden = !(c.hiddenTypes || c.hiddenKinds || c.dimmed.length);
+  if (all) all.hidden = !(c.hiddenTypes || c.hiddenKinds || c.dimmed.length || workSet);
   const lh = listWin && listWin.querySelector(".lhead");
   if (lh) lh.textContent = line;
   renderMarks();
 }
 function showAll() {
-  typeOff.clear(); edgeTypeOff.clear(); trustOff.clear();
+  typeOff.clear(); edgeTypeOff.clear(); trustOff.clear(); workSet = null;
   renderLegend(); renderTrustLegend(); renderStats(); requestFrame();
 }
 // A line that does not fit gives up its counts before it cuts the scope's name (Section 6).
@@ -720,6 +831,7 @@ function applyGraph(g) {
   positionsGen++;
   renderLegend();
   noteTrustAndContest();
+  followKept();
   const s = g.stats || {};
   lastStats = s;
   heardBack();
@@ -869,6 +981,8 @@ function arrowTabs(list) {
     const j = ev.key === "Home" ? 0 : ev.key === "End" ? tabs.length - 1
       : (i + (ev.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
     ev.preventDefault();
+    // An idle tab is reached and not chosen (Section 29.10, 29.11).
+    if (tabs[j].getAttribute("aria-disabled") === "true") { tabs[j].focus(); return; }
     tabs[j].click();
     // A strip that re-renders on click replaces its buttons, so focus the selected one afresh.
     (list.querySelector('[aria-selected="true"]') || tabs[j]).focus();
@@ -1379,6 +1493,7 @@ function syncUrlWorkspace() {
 }
 
 function beginWorkspaceTransition() {
+  workSet = null;        // a working set belongs to the scope it was made in (Section 29.11)
   saveLayout();          // the scope being left, under its own key
   layoutFresh = true;    // the next graph reads the new scope's
   heldGraph.url = heldGraph.tag = heldHyper.url = heldHyper.tag = "";   // the next poll fetches in full
@@ -3829,7 +3944,7 @@ function keepSelection() {
 // Whether the person is using the map, which follow waits out (D6): a selection, the List, a popover,
 // the search's results, a card or the Review page open, or their own move in the last 20 seconds.
 function mapInUse() {
-  return !!focus || listOn || viewPop.classList.contains("on") || !searchPop.hidden
+  return !!focus || listOn || !!workSet || viewPop.classList.contains("on") || !searchPop.hidden
     || obscardEl.classList.contains("on") || reviewOpen() || performance.now() - handAt < 20000;
 }
 // Activity follow did not frame because the map was in use: one notice, the latest said in words,
@@ -3936,7 +4051,9 @@ function renderDetail(node) {
     // Two regions: the node's relations, grouped by kind, and its observation log (the evidence
     // behind its belief), side by side.
     html`<div class="rels">`,
-      html`<div class="relcol"><div class="sec">Relations <span class="ct">${nrel}</span></div>`,
+      html`<div class="relcol"><div class="sec">Relations <span class="ct">${nrel}</span>${
+        // Keep this entity and what its drawn relations reach in view (Section 29.11).
+        relatedDrawn(node).length ? html`<button type="button" class="linkish shrel">Show related</button>` : ""}</div>`,
         groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">none</div>`,
       html`</div>`,
       html`<div class="relcol"><div class="sec">Evidence</div><div class="logcol"></div></div>`,
@@ -3949,6 +4066,9 @@ function renderDetail(node) {
     b.onclick = () => { reviewSeg = "needs"; reviewSel = b.dataset.waits; reviewFocus = true; if (reviewOpen()) renderReview(); else location.hash = "#review"; };
   });
   detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
+  detailEl.querySelectorAll(".shrel").forEach(b => {
+    b.onclick = () => keepInView([node.id, ...relatedDrawn(node).map(n => n.id)], { kind: "related", name: node.name });
+  });
   detailEl.querySelectorAll(".rchip").forEach(r => {
     r.onclick = () => {
       const n = nodeById(r.dataset.id);
@@ -5220,6 +5340,9 @@ function draw() {
   if (refitAtRest && !simWarm()) { refitAtRest = false; if (!userMoved) fitView(); }
 
   const act = activeSet(), hov = act ? null : hoverSet();
+  // A working set dims the rest while no selection, search or preview takes the map; its members are
+  // not made active, so they fade by rank like any entity (Section 29.11, U38).
+  const kept = !act && workSet ? workSet.ids : null;
   // Legend-chip hover highlight: for an edge-kind chip, collect the endpoint nodes of matching visible
   // edges once per frame (nodes to keep lit). Node-type chips match on n.type directly.
   let lgEndpoints = null;
@@ -5462,7 +5585,9 @@ function draw() {
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : DIM_EDGE) : hot ? 1 : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA))
       // An end in a dimmed trust tier dims its relation too, unless a selection or hover lights it.
-      * (!hot && trustOff.size && (trustOff.has(e.a.trust_tier) || trustOff.has(e.b.trust_tier)) ? DIM_EDGE / EDGE_ALPHA : 1);
+      * (!hot && trustOff.size && (trustOff.has(e.a.trust_tier) || trustOff.has(e.b.trust_tier)) ? DIM_EDGE / EDGE_ALPHA : 1)
+      // A relation leaving the working set dims with the rest; one between two members keeps its strength.
+      * (!hot && kept && !(kept.has(e.a.id) && kept.has(e.b.id)) ? DIM_EDGE / EDGE_ALPHA : 1);
     // A relation's kind is said by its label, not a color (Section 5); an active edge or one whose kind
     // the legend points at is drawn brighter. A superseded edge is EDGE_OLD, thin (a past signal).
     const color = e.valid_to ? EDGE_OLD
@@ -5502,7 +5627,7 @@ function draw() {
   for (const n of vis) {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
-      : act ? act.ns.has(n.id) : true;
+      : act ? act.ns.has(n.id) : kept ? kept.has(n.id) : true;
     const base = stepped((on && !trustOff.has(n.trust_tier) ? 1 : DIM_NODE) * n._o), r = rOf(n);
     const layer = layersOf.get(base);
     if (layer) layer.push(n); else layersOf.set(base, [n]);
@@ -5831,6 +5956,18 @@ const SEARCH_MODE = {
   keyword: ["keyword only", "Searched the words only: there is no meaning index here, so a miss may be one the words did not catch."],
 };
 let searchAns = null;    // { q, ws, mode, hits, note } or { q, ws, error }
+const SEARCH_LIMIT = 20;  // the path's default limit: an answer this long may have been cut (P5)
+// The last five queries this page ran, newest first, offered by an empty field (Section 29.11). They
+// live in the page's memory only, never in the browser's storage.
+const recentQueries = [];
+function noteRecent(q) {
+  const at = recentQueries.indexOf(q);
+  if (at >= 0) recentQueries.splice(at, 1);
+  recentQueries.unshift(q);
+  recentQueries.length = Math.min(recentQueries.length, 5);
+}
+// An empty field that has focus lists the recent queries instead of an answer.
+function recentShown() { return !searchQuery() && recentQueries.length > 0; }
 let searchRows = [];     // the hits in the order the list shows them
 let searchSel = -1, searchSeq = 0, searchTimer = 0;   // -1 = nothing chosen yet
 
@@ -5839,10 +5976,11 @@ function searchQuery() { return searchEl.value.trim(); }
 // asks again rather than listing what another scope held.
 function searchFresh() { return !!searchAns && searchAns.q === searchQuery() && searchAns.ws === currentWs(); }
 function setSearchOpen(on) {
-  on = on && searchFresh();
+  if (on && recentShown()) { renderSearch(); }
+  on = on && (searchFresh() || recentShown());
   searchPop.hidden = !on;
   searchEl.setAttribute("aria-expanded", on ? "true" : "false");
-  searchLit = on && searchAns.hits
+  searchLit = on && searchFresh() && searchAns.hits
     ? new Set(searchAns.hits.filter(h => h.kind === "entity").map(h => h.id))
     : null;
   requestFrame();
@@ -5850,7 +5988,8 @@ function setSearchOpen(on) {
 async function runSearch() {
   const q = searchQuery();
   const seq = ++searchSeq;
-  if (!q) { searchAns = null; renderSearch(); setSearchOpen(false); return; }
+  // An emptied field offers the recent queries again while it has focus.
+  if (!q) { searchAns = null; renderSearch(); setSearchOpen(document.activeElement === searchEl); return; }
   // The scope reads as the map's: the same workspace parameter /api/graph is asked with.
   const ws = currentWs();
   let ans;
@@ -5864,6 +6003,7 @@ async function runSearch() {
   }
   if (seq !== searchSeq) return;   // a newer query is on its way; this answer is for text no longer there
   searchAns = ans;
+  if (!ans.error) noteRecent(q);
   searchSel = -1;   // the person has not moved yet - no row is chosen
   renderSearch();
   setSearchOpen(document.activeElement === searchEl);
@@ -5889,6 +6029,19 @@ function searchNode(h) {
   return n && !typeOff.has(n.type) ? n : null;
 }
 function renderSearch() {
+  if (recentShown()) {
+    // An empty field: the queries this page ran, newest first; choosing one asks it again.
+    searchRows = recentQueries.map(q => ({ kind: "recent", q }));
+    searchSel = -1;
+    searchPop.innerHTML = html`<div class="sp-sec">Recent</div>${recentQueries.map((q, i) =>
+      html`<button type="button" class="sp-row" role="option" id="sp${i}" data-i="${i}" aria-selected="false"><span class="sp-name">${q}</span></button>`)}`;
+    searchPop.querySelectorAll(".sp-row").forEach(b => {
+      b.onmousedown = ev => ev.preventDefault();
+      b.onclick = () => chooseSearch(Number(b.dataset.i));
+    });
+    searchEl.setAttribute("aria-activedescendant", "");
+    return;
+  }
   if (!searchAns) { searchRows = []; searchPop.innerHTML = html``; return; }
   if (searchAns.error) {
     searchRows = [];
@@ -5899,8 +6052,20 @@ function renderSearch() {
   // the words, then the related ones, each saying how it was reached.
   const words = searchAns.hits.filter(h => h.reached === "words");
   const related = searchAns.hits.filter(h => h.reached !== "words");
-  searchRows = [...words, ...related];
+  // The answer kept on the map (Section 29.11, D8): the first row, when two or more of its entities
+  // are drawn. It says "these", or "the first" when the answer reached the path's limit, and counts
+  // apart the entity hits this view does not draw (P5).
+  const ents = searchAns.hits.filter(h => h.kind === "entity");
+  const drawn = ents.filter(h => searchNode(h)).map(h => h.id);
+  const keep = drawn.length >= 2
+    ? { kind: "keep", ids: drawn, q: searchAns.q, first: searchAns.hits.length >= SEARCH_LIMIT, apart: ents.length - drawn.length }
+    : null;
+  const off = keep ? 1 : 0;
+  searchRows = [...(keep ? [keep] : []), ...words, ...related];
   const why = h => h.reached === "meaning" ? "near in meaning" : h.reached === "neighbor" ? "related to a match" : "";
+  // Where the scope holds more than one workspace, an entity's row names its own in the hover card's
+  // words, "Service in infra" (Section 29.11).
+  const manyWs = new Set(nodes.map(n => n.workspace)).size > 1;
   const [modeWord, modeWhy] = SEARCH_MODE[searchAns.mode] || [String(searchAns.mode || "?"), ""];
   const row = (h, i) => {
     const on = i === searchSel ? " on" : "";
@@ -5912,7 +6077,7 @@ function renderSearch() {
     // graph predates it) stays listed - it is part of the answer - and says why it cannot be focused.
     return html`<button type="button" class="sp-row${on}${n ? "" : " off"}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}">${
       n ? html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>` : ""}<span class="sp-name">${n ? n.name : h.snippet}</span>${
-      n ? html`<span class="sp-k">${n.type}</span>` : html`<span class="sp-k">not on the map in this view</span>`}${reason}</button>`;
+      n ? html`<span class="sp-k">${manyWs && n.workspace ? n.type + " in " + n.workspace : n.type}</span>` : html`<span class="sp-k">not on the map in this view</span>`}${reason}</button>`;
   };
   const count = searchAns.hits.length;
   const cur = currentWs();
@@ -5922,12 +6087,15 @@ function renderSearch() {
   const widen = !all && searchAns.wider > 0
     ? html`<button type="button" class="sp-row sp-widen" data-widen="1">${"Search all workspaces (" + (searchAns.widerCapped ? "20+" : searchAns.wider) + " found)"}</button>`
     : "";
+  const keepRow = keep ? html`<button type="button" class="sp-row sp-keep${searchSel === 0 ? " on" : ""}" role="option" id="sp0" data-i="0" aria-selected="${searchSel === 0}" aria-keyshortcuts="Meta+Enter"><span class="sp-name">${
+    "Show these " + keep.ids.length + " on the map" + (keep.first ? " - the search stopped at " + SEARCH_LIMIT : "")}</span>${
+    keep.apart ? html`<span class="sp-why">${keep.apart + (keep.apart === 1 ? " is" : " are") + " not drawn in this view"}</span>` : ""}<kbd class="sp-key">Cmd+Enter</kbd></button>` : "";
   const first = words.length
-    ? [html`<div class="sp-sec">${"Contains \"" + searchAns.q + "\""}</div>`, words.map((h, i) => row(h, i))]
+    ? [html`<div class="sp-sec">${"Contains \"" + searchAns.q + "\""}</div>`, words.map((h, i) => row(h, off + i))]
     : [html`<div class="sp-note">${"No entity in " + scope + " contains \"" + searchAns.q + "\"."}</div>`, widen];
-  searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode">${modeWord}</span></div><div class="sp-modewhy">${modeWhy}</div>${
+  searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode">${modeWord}</span></div><div class="sp-modewhy">${modeWhy}</div>${keepRow}${
     count || widen ? first : ""}${
-    related.length ? [html`<div class="sp-sec">Related</div>`, related.map((h, i) => row(h, words.length + i))] : ""}${
+    related.length ? [html`<div class="sp-sec">Related</div>`, related.map((h, i) => row(h, off + words.length + i))] : ""}${
     count ? "" : html`<div class="sp-note">${searchAns.note || "no hits - absence is unknown, not a negation"}</div>`}`;
   searchPop.querySelectorAll("[data-widen]").forEach(b => {
     b.onmousedown = ev => ev.preventDefault();
@@ -5956,10 +6124,25 @@ function moveSearch(d) {
 async function chooseSearch(i) {
   const h = searchRows[i];
   if (!h) return;
+  if (h.kind === "recent") {
+    searchEl.value = h.q; searchWrap?.classList.toggle("filled", true);
+    runSearch();
+    return;
+  }
+  if (h.kind === "keep") {
+    // The answer stays on the map as the working set; the field clears (D8), and from Review the
+    // Graph opens.
+    searchEl.value = ""; searchWrap?.classList.toggle("filled", false);
+    closeSearch();
+    if (reviewOpen()) location.hash = "";
+    keepInView(h.ids, { kind: "search", q: h.q, first: h.first });
+    return;
+  }
   if (h.kind === "entity") {
     const n = searchNode(h);
     if (!n) return;   // listed, not drawn: the row already says so
-    searchEl.value = n.name; searchWrap?.classList.toggle("filled", true);
+    // Search goes somewhere (D8): the field clears, and the chosen name is the sheet's title.
+    searchEl.value = ""; searchWrap?.classList.toggle("filled", false);
     closeSearch();
     if (reviewOpen()) location.hash = "";
     select(n);
@@ -5997,11 +6180,17 @@ searchEl.addEventListener("keydown", ev => {
     if (!searchPop.hidden) moveSearch(ev.key === "ArrowDown" ? 1 : -1);
     else if (searchFresh()) setSearchOpen(true);
     else if (searchQuery()) runSearch();
+  } else if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+    // Cmd+Enter keeps a fresh answer on the map; before the answer, it asks first (Section 29.11).
+    ev.preventDefault();
+    clearTimeout(searchTimer);
+    if (searchFresh() && searchRows[0] && searchRows[0].kind === "keep") chooseSearch(0);
+    else if (searchQuery() && !searchFresh()) runSearch();
   } else if (ev.key === "Enter") {
     ev.preventDefault();
     clearTimeout(searchTimer);
     // Enter on a chosen row picks it; otherwise ask first. No auto-pick of the top row.
-    if (searchFresh() && searchSel >= 0) chooseSearch(searchSel);
+    if ((searchFresh() || recentShown()) && searchSel >= 0) chooseSearch(searchSel);
     else if (searchQuery() && !searchFresh()) runSearch();
   } else if (ev.key === "Escape") {
     // Hand the keyboard back to the canvas, so "/" -> type -> Escape is a closed loop.
@@ -6016,7 +6205,13 @@ document.getElementById("reload").onclick = () => { loadWorkspaces(); poll(); };
 function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); personMoved(); }
 document.getElementById("zin").onclick = e => { if (idle(e)) return; zoomWindow(1.2); };
 document.getElementById("zout").onclick = e => { if (idle(e)) return; zoomWindow(1/1.2); };
-document.getElementById("fit").onclick = e => { if (idle(e)) return; userMoved = true; fitView(); personMoved(); };
+document.getElementById("fit").onclick = e => {
+  if (idle(e)) return;
+  userMoved = true;
+  // With a working set pinned, Fit frames the set (Section 29.11).
+  const kept = keptDrawn();
+  fitView(kept.length ? kept : undefined); personMoved();
+};
 // Follow on the camera toolbar (Section 29.4): a press turns it on or off, waiting or not.
 const followBtn = document.getElementById("followBtn");
 followBtn.onclick = () => { follow = !follow; renderFollow(); };
@@ -6143,9 +6338,11 @@ window.addEventListener("keydown", e => {
   }
   // Esc closes the topmost thing: the observation card, then the view menu, then the inspector.
   else if (e.key === "Escape") {
-    if (obscardEl.classList.contains("on")) hideObsCard();
+    if (listOn) setList(false);   // List goes back to Map first, from the table or its tab (Section 29.11)
+    else if (obscardEl.classList.contains("on")) hideObsCard();
     else if (viewPop.classList.contains("on")) setViewPop(false);
     else if (focus) clearSelection(true);   // and the camera goes back to before the walk (Section 29.4)
+    else if (workSet) clearWorkSet();       // the working set ends last (Section 29.11)
   }
 });
 // Restore the persisted state (default: both open).
@@ -6198,6 +6395,7 @@ document.getElementById("miniBtn").onclick = e => { showMini = !showMini; setSwi
 // The contested pill and the review pill open the Review page, where contested beliefs wait under
 // Needs you.
 document.getElementById("contestedPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
+document.querySelector("#kept .kx").onclick = clearWorkSet;
 document.getElementById("showAll").onclick = showAll;
 document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
 // The view menu's choices persist, as the docks' open state does (docs/design-system.md Section 14
