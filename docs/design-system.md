@@ -26,7 +26,8 @@
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
-> concept with one name.
+> concept with one name. Step 46, evidence where a decision is made and provenance to its end, is
+> specified.
 
 ## 1. Why this exists
 
@@ -1854,6 +1855,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
    own machine, entity, relation and type for the graph's parts, sentence-case headings with their
    counts, the map's activity in sentences, one word per daemon state, the AI app's row built once in
    `kit.js`, This Mac's own sentences, Supragnosis in sentences, and the retired words as a tripwire.
+46. **Evidence where a decision is made, and provenance to its end** (Section 29.7; U4, U17, U18,
+   P14): one who-line grammar, the card's Cited, confirmation and links, an observation read by its
+   id, each contested value's source, Review's identity diff, every check and the evidence, what
+   waits for the person on the inspector, a relation's trust, and Neither is right's sentence. The
+   app that wrote an attestation (D13) is step 46b.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -3728,7 +3734,7 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
   "Derived from", "Proposal", "Targets", "Entities" and "Relations"; and the toggle "Why this value".
 - **The map's activity** is named "Activity" for a screen reader, and its rows are sentences with no
   tool name, abbreviation or mode id; who acted is "An agent" until the event names the app (D13,
-  step 46):
+  step 46b):
   - "An agent wrote 2 entities and 1 relation in infra" (a part with none is left out; "wrote an
     observation" when it linked nothing);
   - "An agent searched "kubernetes ingress" - 8 found";
@@ -3808,7 +3814,7 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
   with the map's legend (D3).
 - It does not change the landing's words (R1-17's "viewer", "entry", "machine"), which step 48 does
   with its install line.
-- It does not add the client's name to an observation's attestation (D13, step 46), so an activity
+- It does not add the client's name to an observation's attestation (D13, step 46b), so an activity
   row says "An agent".
 - It does not split the tray into two lines, change its icon or the Quit item (D14, D15, step 50), or
   rename Settings' sidebar group and reopen its last pane (R4-14, R4-16, step 50).
@@ -3816,3 +3822,125 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
   writes" - which step 48 settles with the landing's (R1-17).
 - It does not give the browser's dialog and the app's Sync pane one source for their words (R1-11),
   or a case rule for buttons; a button keeps its words.
+
+### 29.7 Step 46: evidence where a decision is made, and provenance to its end
+
+**What was found.** Measured on the Review page, the inspector and the observation card:
+- **Review decides without evidence.** Section 7 lists "the evidence, each observation with who said
+  it and when" on a proposal's detail; the page shows the diff, a "checks pass" line in the muted
+  italic of an empty state, and "Opened by localhost ... self-attested" - a mark every opened
+  proposal carries, so it tells the reader nothing. A contested item's rows leave who and when blank:
+  only the inspector fills them.
+- **The merge diff does not say what happens to the entity that goes**: that PostgreSQL leaves the
+  map and becomes an alias of Postgres, or that its observations count for Postgres from then on.
+- **Checks show only what fails,** though the engine answers every check it ran; and none reads in
+  words ("referential integrity", "t-box axis consistency").
+- **A contested value cannot be traced to what said it.** "Two sources disagree" leads to rows that
+  read alike, with nothing that quotes or opens the source, and two times in one minute read the same.
+- **The who-line names the wrong actor.** It puts the principal in the writer's place - "Agent -
+  alex" reads as an agent named alex, "Human confirmed - sam" as sam's confirmation - and the
+  person's own console verdicts read "Agent - this machine". A row names whichever attestation sorts
+  first by host, not the one that wrote it.
+- **The card leaves out the reference and the confirmation.** `source_ref` - the commit or runbook
+  the agent cited - is drawn nowhere. A card whose observation a person confirmed says "Human
+  confirmed" over a provenance row that says Agent, with no who or when. Confidence reads "conf 0.9".
+- **The card's ids lead nowhere.** Derived from lists hashes that cannot be opened; a proposal
+  event's card prints "entity_merge", "merged" and an id, with no way to its Review item. Opening an
+  observation the page has not loaded reads the scope's whole log, and fails outside the scope.
+- **Entity and Review item do not link** (R1-06): the inspector does not say that a merge of this
+  entity waits for a verdict, and a contested Review item cannot show its entity.
+- **A relation's trust is never drawn,** and in the graph read it ignores gate events (step 41's
+  finding, owed since): a relation stated by a confirmed source still reads Agent.
+- **"Neither is right"** is the browser's own disclosure triangle, and the sentence it copies leaves
+  out the workspace and the values it calls wrong.
+
+**Decisions.** D13 - recording which AI app wrote an attestation - changes the store's format and
+needs the sync wire and the read tier to keep it out; it is specified and built on its own as step
+46b. Until then a writer is its machine, as now.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P2 | Provenance is first-class; "who" is a delegation chain, the acting host and the principal | repays - the who-line says the writer and the principal apart ("Agent - this Mac, for alex"), from the authoring attestation, and the card says who confirmed and when |
+| P14 | An identifier stays dereferenceable | repays - Derived from opens its card, a proposal event's card opens its Review item, a cited reference that is a web address is a link, and an observation is read by its id |
+| P18 | `source_ref` is the writer's own claim | agrees - it is drawn as written, a link only for `http` and `https`; a `surface:` marker is the console's, said as "this console", never as Cited |
+| P23 and proposal-workflow.md Section 6 | Checks before canon; an informative trust profile beside the blocking checks | repays - the engine adds the trust profile as a non-blocking check, which the fold already ignores, and Review lists every check |
+| resolution.md Section 3 | Every display reads the effective tier | repays - a relation's trust in the graph read takes the gate events of the observations that state it, and its mark is drawn |
+| design-system.md Section 7 and U4 | Review shows the item's evidence; a decision control appears only with the diff and checks on screen | repays - Evidence under Checks, every check listed, the diff led by what happens to identity |
+| U17 | A who-line says tier, who and when | revised: one grammar - tier, writer, for whom, when - for every row and card, the writer from the authoring attestation, a console verdict written here "you at this console" |
+| U18 | Settling names each source | repays - each value carries its source's first sentence, opening its card, and its who-line, on the inspector and on Review alike |
+| proposal-workflow.md Section 14.4 | A merged entity's old id forwards to the new | agrees - the diff says so in words before the verdict |
+| remote-viewer.md Section 3.2 | `/api/observations` and `/api/explain` are read on the read tier under the workspace's grants | revised: `/api/observations?id=` answers one observation, its workspace granted and servable, an id outside the grants answered as an unknown one (remote-viewer.md Section 3.4) |
+| inspector.md, the card | The card is where an id resolves | repays - Cited first, the confirmation's who and when, Open in Review |
+| P16 | A read answers alike on every node | agrees - the edge's tier is a max over a set, and the confirmation is the last event in the gate fold's verdict order (resolution.md R5) |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **One who-line grammar** on every row and card: tier - writer, for whom - time.
+  - The writer comes from the authoring attestation (the engine's rule for "who authored this
+    act"), which the observation's answer names. It was written here when it carries no sync stamp,
+    or its stamp's origin is this node - the id the Sync read names - and is then this machine as
+    Section 9 says it, on the local console only. Any other origin is named by its id's first eight
+    characters. A host name is not a machine's identity - every unconfigured node is `localhost` - so
+    it never decides "here".
+  - "for alex" when that attestation names a principal: "Agent - this Mac, for alex - 11:27 AM".
+  - A verdict cast at this console and written here (`surface:console`) is "Agent - you at this
+    console - 11:38 AM": the row's tier is the verdict's own, and its sentence says what it granted.
+    One cast at another machine's console is "Agent - a person at 4a1b2c3d - ...".
+  - When two rows of one list share a minute, both show seconds.
+- **The card** leads with what grounds it and resolves every id:
+  - "Cited: git:4f2a9c1" first, a link when it is an `http` or `https` address; a `surface:` marker
+    is not a citation and is said in the who-line;
+  - each attestation in the who-line grammar, with "the agent's confidence: 0.9";
+  - when a merged gate event set the effective tier, the act that did, from the engine: "Human
+    confirmed by you at this console, 11:38 AM - Open in Review", or "Lowered to Agent by ..." for a
+    demotion - each observation's answer names the gate event that last moved it in the gate fold's
+    verdict order (resolution.md R5): its proposal, and its verdict's time, surface and sync origin,
+    read by the rule above;
+  - Derived from, each id a button that opens that observation's card;
+  - for a proposal event, its kind and state in words ("Merge - accepted"), the rationale in quotes,
+    and Open in Review; the stored text in a collapsed footer;
+  - the date once, at the top.
+- **An observation is read by its id**: `/api/observations?id=<id>` answers that one, in any workspace
+  the surface may read, so a card opens without reading the scope's log.
+- **Each contested value names its source,** on the inspector and on Review alike: under the value,
+  its source's first sentence in quotes - a button that opens the card - and its who-line. A Review
+  contested item gains Show on the map.
+- **Review's proposal detail** reads top to bottom: what changes, checks, evidence, who asked.
+  - **What changes** leads with identity for a merge, worked out by the page from the proposal and
+    each entity's support: "PostgreSQL leaves the map; its name becomes an alias of Postgres", "1
+    observation counts for Postgres from then on". When the kept entity has a contested field in the
+    Needs-you list, "Postgres's type stays contested - also under Needs you", a link to that item.
+    Then the belief rows, in Section 29.6's words.
+  - **Checks** lists every check, passed and failed, each with a Lucide check or alert. A passed
+    check reads in words keyed by the proposal's kind and the check's name - for a merge "All 3
+    entities are in this log", "The targets are at least two entities", "It names the entity to
+    keep"; for a type change "Types are consistent"; for an un-merge "It names a merge to undo"; for
+    a gate act "Its observations are in this log", "It says the tier it asks for" - and one the page
+    has no words for as the engine names it. A failed check reads its name and the engine's detail,
+    and a failing blocking one keeps its Blocked block. The trust profile, a check that blocks
+    nothing, reads "Sources: 3 Agent, 1 Human confirmed".
+  - **Evidence** lists the observations the decision rests on in the Log's row anatomy, each opening
+    its card: for a merge, one column per entity - "PostgreSQL 1", "Postgres 2"; for a gate act, the
+    source observations it moves.
+  - **Who asked** is the opening event's who-line, opening its card. "self-attested" is not drawn.
+- **The inspector says what waits for the person**: under its header, one line per Needs-you item
+  that names the entity - "Waits for you: Merge PostgreSQL into Postgres" - with Open in Review.
+- **A relation carries its trust.** The graph read gives each relation - by its endpoints after
+  merges and its normalized type - the highest effective tier among the observations that state it,
+  gate events applied; its confidence stays the latest row's. The inspector's relation rows draw the
+  map's ring for that tier beside each relation, as a log row's mark.
+- **"Neither is right"** opens with Lucide's chevron, and copies "In Supragnosis workspace billing,
+  Ledger's type is recorded as Table and as Concept, and both are wrong. Observe the correct type of
+  Ledger in billing." (the product's name is in the sentence an agent reads, by D17).
+
+**What this step does not do.**
+- It does not record which AI app wrote an attestation, name it in a who-line or an activity row, or
+  keep it off the wire and the read tier (D13: step 46b).
+- It does not let a person open a merge from the console ("Same as...", D10) or offer "Keep
+  PostgreSQL instead" (D19); step 51 does both.
+- It does not settle a contested name the way a type is settled (R3-17's question, not decided).
+- It does not mark a Review item "Waiting for a correction" after Neither is right, or notice the
+  correction's arrival.
