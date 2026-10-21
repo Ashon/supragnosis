@@ -300,7 +300,10 @@ cross that gap:
   `EventSource("/api/events")` through `onmessage` alone. A viz test pins those as the page's
   contract with the shell. A page without a header (the shell's own splash) is not decorated at
   all. A viewer without the gear keeps its own settings, and `shell-init.js` logs that it found
-  none.
+  none. Since design-system.md step 43 the shell also reads the page's address when it leaves it for
+  Settings or Setup - its script from the gear and the sync pill, the app from the window when its
+  menu or tray does - and the app's pages go back to that address. The address is the viewer's own
+  `?workspace=` and `?entity=`, which a page that keeps neither still answers with its first view.
 
 The app does not compare its own version with the daemon's, and this does not add that check. Drift
 is reported between the CLI and the daemon, which is the pair that has to agree for a restart to

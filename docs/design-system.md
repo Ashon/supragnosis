@@ -25,7 +25,7 @@
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
 > steps 41 and 42 are built: a confirmation that says what it confirms, and a review that closes its
-> loop.
+> loop. Step 43, a map that keeps the person's place, is specified.
 
 ## 1. Why this exists
 
@@ -628,7 +628,8 @@ On the Graph page:
   with the graph. With nothing observed it says "Nothing observed in this scope yet"; when the server
   does not answer it says so instead of keeping a stale line (P5, P24). Clicking it opens the Log. The
   activity feed's passing rows sit inside the window at its upper left.
-- **The map has a List** (U24). List, the first button of the camera toolbar, turns the map's window
+- **The map has a List** (U24). List, the camera toolbar's first button after Follow (Section 29.4),
+  turns the map's window
   into a table of the entities the map draws - the same scope, the same filters, the same search -
   sorted by type and then by name, each row naming the entity, its type, its trust by the legend's
   name and its count of relations, and its workspace when the scope holds more than one. Regions are
@@ -638,7 +639,8 @@ On the Graph page:
   is: "Map of 20 entities and 14 relations in 10 regions. List shows them as a table." The table is
   the map for a screen reader and for anyone who cannot tell sixteen colors apart: it names each
   type in words.
-- **The camera is one toolbar** at the window's lower right: List, view, zoom in, zoom out, fit. Under 760
+- **The camera is one toolbar** at the window's lower right: Follow, List, view, zoom in, zoom out,
+  fit (Follow since step 43, Section 29.4). Under 760
   pixels it stays at the top right, out of the sheets' way (Section 18). The minimap is on, above the
   toolbar, until View turns it off; between 760 and 1200 pixels it gives way to a panel floating over
   the map's right side, and under 760 it is not drawn. View's stored choices forget the minimap's
@@ -670,12 +672,15 @@ use is always a selected chip, All among them, and it is called All, never "(all
 default means the wrong scope, not an absence of knowledge (P5).
 
 **Follow moves the camera, not the reader** (U20). With follow on, activity in the scope on screen,
-a write or an agent's read, frames the nodes it touched. A write in another workspace is a notice
+a write or an agent's read, frames the nodes it touched - while the person is not using the map. While
+a node is selected, the List, a popover, a card or the Review page is open, or within 20 seconds of
+their own pan, zoom or drag, it is a notice with Show instead (Section 29.4). *(Revised by step 43: follow framed every
+activity, and moved the camera off the node the person was reading.)* A write in another workspace is a notice
 that names the workspace, with Show; a read elsewhere says nothing. The scope, the selection and the
 open sheet stay as the person left them: changing what a person is reading is the person's act
 (WCAG 3.2.5). Only the knowledge itself can move the selection: when a merge folds the selected entity
 into another, the selection follows it there, and when a sync or a merge leaves it out of the scope,
-the sheet says so and closes.
+the sheet closes and a notice says so.
 
 The dock's Peers tab is the only place that lists known peers with "not admitted", "admitted, not
 shared" and "surface unknown". Those rows move into Settings > Sync, and into the viewer's own
@@ -1423,7 +1428,7 @@ social image.
 | **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; and a place keeps one name wherever it is reached (P2). |
 | **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
 | **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
-| **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
+| **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen while the person is not using the map, names it in a notice with Show while they are, and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
 | **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's View menu sets the root's size from 100% to 200% and keeps it, while the title bar keeps its height and its traffic lights' place; and no text is cut short except where focus or a press shows it whole. |
 | **U22** | Every corner the viewer's, the app pages' (`settings.css`, `welcome.css`, `shell.css`) and the landing's stylesheets draw is one of Section 3's radius tokens, none, or a dot's circle; a part inside a rounded part takes the outer radius less the space between them; a pill and a large control are capsules, and the controls of one row share one size; a checkbox, a radio and a switch take the accent; and no line is dashed or dotted, on a page or on a canvas. |
 | **U23** | Under `prefers-contrast: more` every text token takes the next stronger one, every control, chip and field draws an edge of 3:1 on its surface, and the focus ring is 3 pixels; under `forced-colors: active` the map redraws in the system's colors, keeps every mark it draws, and widens the human-confirmed ring. |
@@ -1765,6 +1770,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    that says what it asks, one count with the tray's read of curation, contested type definitions in
    Needs you, keys from the first press, Suggestions and Health as queues, the map preview's way back,
    and the Log's decision rows.
+43. **The map keeps the person's place** (Section 29.4; U20, U26): follow that waits while the map is in
+   use and its toggle on the camera toolbar, the selection in the address, the way back to the
+   address left, a selection history, Esc giving the camera back, a layout reset, and a selection
+   followed when it is merged or named when it leaves.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -1776,8 +1785,10 @@ proposal and the read tier.
 ## 15. What this revises
 
 - **settings-page.md Section 5**: the tray menu gains "Review (N)..." while something waits on this
-  Mac's daemon (since step 42, "Review - N need you...", Section 29.3). The status line is unchanged, and on a remote profile the tray is as remote-viewer.md
-  Section 6 leaves it.
+  Mac's daemon (since step 42, "Review - N need you...", Section 29.3). The status line is unchanged,
+  and on a remote profile the tray is as remote-viewer.md Section 6 leaves it.
+- **settings-page.md Section 3.0** (step 43): the way back goes to the graph as it was left, its scope
+  and selection, which the way in carries in `?from=` (Section 29.4).
 - **inspector.md**: the panel moves from the bottom to a sheet on the right, and the scope line's
   words change. Its rules and D1-D7 do not.
 - **The viewer's dock**: Proposals and Review leave for the Review page; the Types tab's rows join the
@@ -3319,3 +3330,116 @@ D11 and D12 decided both.
 - It does not let a person keep the other name of a merge (D19) or open a merge the detectors missed
   (step 51).
 - It does not change the who-line's grammar, which step 46 does.
+
+### 29.4 Step 43: the map keeps the person's place
+
+**What was found.** Measured on the review's demo store, and read in the code:
+- **Follow takes the camera from the person.** With Ledger selected and its sheet open, one agent
+  search in infra moved the camera from zoom 1.10 to 1.44 and put Ledger behind the filters panel.
+  The sheet still described Ledger. Esc afterwards left the camera where follow had put it. Follow
+  frames every read and write in the scope on screen, with no regard for a selection or the person's
+  own last move, and its switch is inside View, out of sight.
+- **The way back loses the place.** "< Graph", Esc and Cmd+[ on Settings and Setup, and Cmd+1 and
+  Cmd+2 from them, go to the graph's bare address. The scope, the selection and the camera are gone,
+  and with an empty default the page opens on All.
+- **A selection has no history.** Walking Ledger, Postgres, Backups through the sheet's relation
+  chips leaves no trail back. Esc clears the selection and keeps the zoom it brought. A node dragged by
+  accident stays where it was dropped, in this browser, with no reset.
+- **Only the scope has an address.** A selected entity cannot be kept across a reload or returned to.
+- **A selection that leaves vanishes.** When a merge folds the selected entity, or a sync moves it out
+  of the scope, the sheet closes with no word. U20 asks that the first be followed to what it became
+  and the second be said; neither is built.
+- **Cmd+[ and Cmd+] already act on the Graph page,** by accident: the single keys `[` and `]` toggle
+  the panels without looking at the modifiers.
+
+**Decisions taken.** The author took the recommendation on both, on 2026-10-21:
+- **D6:** follow pauses while the person is using the map - a node selected, the List or a popover
+  open, or within 20 seconds of their own pan, zoom or drag. Activity meanwhile is a quiet notice with
+  Show.
+- **D7:** a selection history, on Cmd+[ and Cmd+] on the Graph page, and the selected entity's id in
+  the address. Registering the `supragnosis://` scheme waits (R1-07).
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| U20 | "follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen" | contradicts, decided by the author (D6): it frames activity in the scope on screen while the person is not using the map, and names it in a notice with Show while they are. The scope, the selection and the sheet stay the person's either way |
+| U20, its last clause | A selection a merge folds is followed to what it became; one that leaves the scope closes its sheet with a line that says so | repays - neither was built (R1-15). The review suggested keeping the sheet open over the line; U20 says the sheet closes, and it does |
+| WCAG 3.2.5, change on request | A change of context comes from the person | repays - follow took the viewport while the person read it; the camera now waits for them |
+| Section 6, the camera toolbar and List | "List, view, zoom in, zoom out, fit"; "List, the first button of the camera toolbar" | contradicts, decided by the author (D6, which puts the toggle where it acts): Follow leads the toolbar and leaves View; both sentences say so |
+| Section 6, the first view | The viewer opens on the scope the address names, or else on the node default | agrees - the way back passes the address it left, so no other memory of the scope is needed; the review's tab memory (R1-05) is left out |
+| U26 | On every page but the Graph the way back is "< Graph", which Esc and Cmd+[ also take | agrees, and sharpened: the way back goes to the address the graph was left at. On the Graph page Cmd+[ and Cmd+] step through the selection; the Review map preview's way back (Section 29.3) comes first while its bar shows, and the single keys `[` and `]` act only without a modifier, which they did not |
+| U19 | A single key that decides acts only in its region, and the view's single keys can be turned off | agrees - Cmd+[ and Cmd+] are not single keys; `[` and `]` stay single keys, now only without a modifier |
+| U17 and Section 9 | No identifier in a line read first | agrees - an address naming an entity the scope does not hold says "The linked entity is not in billing", with no id |
+| settings-page.md Section 3.0 | "The page goes back to the graph" | agrees - it goes back to the graph the person left; the sentence says so |
+| settings-page.md Section 4 | "A page from another machine must not be able to point this Mac's AI apps at a different server", nor, by the same reasoning, the app's pages anywhere | agrees, on a condition the step keeps: `?from=` is followed only when it is the viewer's own address (`viz://localhost/` or `http://viz.localhost/`), on the app's pages and in the shell alike; anything else goes to the bare graph, so the way back cannot be made a redirect |
+| compatibility.md Section 8 | The shell's couplings with the page the daemon serves are listed | agrees - Section 8 gains the address read: the shell's script in the viewer page reads the page's address when it leaves for Settings, and the app reads the window's address when its menu or tray does |
+| Section 5, the remembered layout | Positions are a convenience kept per workspace on the local console; the read tier remembers nothing | agrees - "Reset layout" forgets this scope's positions and lays it out afresh; on the read tier, which keeps none, it only lays out afresh |
+| P17 and remote-viewer.md Section 3.4 | A reader is told nothing outside their grants | agrees - an entity id in the address selects only a node the page's graph holds |
+| P3 | Nothing is destroyed | agrees - every act here moves the view; nothing reaches the log |
+| P21 | No new tool without a repeated intent | agrees - nothing changes on the MCP surface or in the event stream |
+
+No row needs a principle changed. Two rows contradict sentences of this document, and the author's D6
+decided both.
+
+**Behaviour.**
+- **The person's move** is any pan, zoom or drag they make: a wheel or pinch on the map, a drag of the
+  map or a node, the minimap, and the zoom and Fit buttons. The camera moves follow, a selection or a
+  search make are not the person's move.
+- **Follow waits while the map is in use**: while a node is selected; while the List, the View
+  popover, the search's results or an observation card is open; while the Review page is open; and
+  for 20 seconds after the person's move.
+  - Activity in the scope on screen meanwhile - a write, a search, a read of an entity, a traversal -
+    is one notice, `info`, saying the latest in words, always as what an agent did, so it is never
+    taken for the notice of a write elsewhere ("New in infra", whose Show changes the scope): "An agent
+    wrote 3 entities to billing", "An agent searched billing - 8 found", "An agent searched - 8 found"
+    for a search that names no workspace, "An agent read Ledger", "An agent traversed from Ledger - 5
+    reached". Show frames what that latest activity touched. Later activity rewrites the notice in
+    place, with a count: "An agent read Ledger (and 2 more)". It stays until it is used or dismissed,
+    as U42 has it.
+  - A sync that lands knowledge in the scope meanwhile does not refit the map.
+- **Follow leads the camera toolbar**, with Lucide's `locate`. While on it is pressed
+  (`aria-pressed`); while on and waiting it is named "Follow paused"; while off it shows
+  `locate-off`. A press turns it on or off, waiting or not. It is remembered as View's choices are,
+  and a hub starts with it off, as now.
+- **The address holds the place.** The viewer keeps `?workspace=` and `?entity=<id>` with
+  `replaceState` as the scope and the selection change. A page opened on an entity selects it once the
+  graph holds it, and says "The linked entity is not in billing" when the graph does not.
+- **The way back goes back to it.**
+  - Leaving the viewer for Settings - the gear, the sync pill, the menu bar's Settings or the tray's -
+    or for Setup carries the viewer's address in `?from=`, its `#review` dropped.
+  - Settings keeps `?from=` through its own sections and hands it to Setup ("Open Setup"), and the
+    menu bar and the tray pass the current page's `?from=` on when they turn one app page into the
+    other.
+  - "< Graph", Esc and Cmd+[ on those pages, the menu bar's Graph (Cmd+1) and the tray's Open Graph
+    go to it; the menu bar's Review (Cmd+2) goes to it with `#review`. Setup's "Finish later" goes to
+    it too; Setup's own "Open the graph" on a workspace goes to that workspace.
+  - When the person switches the active server in Settings, the way back becomes the bare graph,
+    since the address named the other server's knowledge.
+  - Only the viewer's own address is followed (the S1 row above).
+- **A selection has a history** for as long as the page is open, in this scope. Every selection - from
+  the map, the sheet's relations, the List, search, a card or Review - joins it.
+  - The sheet's header has Back and Forward (`chevron-left` and `chevron-right`, "Back (Cmd+[)" and
+    "Forward (Cmd+])"), and Cmd+[ and Cmd+] on the Graph page take them. With nothing selected,
+    Cmd+[ reopens the last selection.
+  - An entry merged away is followed to what it became; one no longer in the scope is skipped.
+    Changing the scope starts a new history.
+  - In a browser that keeps Cmd+[ for its own Back, the sheet's buttons do it while a node is
+    selected.
+- **Esc gives the camera back.** Esc, or the sheet's close, returns the camera to where it was before
+  the first selection of the walk - the walk being every selection since nothing was selected - unless
+  the person made a move since that selection. A click on the empty map clears the selection and
+  leaves the camera, since the person is moving it. Esc on a map preview opened from Review goes back
+  to Review (Section 29.3) and leaves the camera, which that page hides.
+- **"Reset layout"** in View forgets this scope's remembered positions and lays it out afresh, in the
+  arrangement on screen (by type, if Group by type is on).
+- **A selection that leaves is followed or named.** When the selected entity is merged away, the
+  selection moves to what it became and a notice says "PostgreSQL is now Postgres". When it leaves the
+  scope otherwise, the sheet closes and a notice says "PostgreSQL is no longer in billing".
+
+**What this step does not do.**
+- It does not undo a single drag. In the app the Edit menu's Undo owns Cmd+Z, and a drag's place lasts
+  only until its neighbours settle; "Reset layout" is the way back.
+- It does not register `supragnosis://` with the system, offer "Copy link" (an app address opens
+  nowhere yet), or give the Review item, the observation card or the List an address (R1-07).
+- It does not reopen Settings on its last pane, or say "< Settings" on Setup opened from Settings.
