@@ -295,20 +295,25 @@ header h1 { margin: 0 0 0 4px; color: var(--ink); font: 600 var(--text-body)/1.3
 /* Every checkbox and radio takes the accent, so the system's blue never sits beside a gold one. */
 :where(input[type="checkbox"], input[type="radio"]) { accent-color: var(--accent); }
 
-/* Notices: the outcome of an action, top right under the title bar. */
+/* Notices: the outcome of an action, top right under the title bar, in the viewer's anatomy
+   (docs/design-system.md Section 28.4, U42): the kind's icon, the words, a 28-pixel dismiss. A
+   surface with no edge (U9); an error tints the whole of it, never one side. */
 .toasts { position: fixed; top: 60px; right: 16px; z-index: 30; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); }
 .toast {
-  display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px 11px 14px; border-radius: var(--r-surface);
+  display: flex; gap: 10px; align-items: flex-start; padding: 8px 6px 8px 12px; border-radius: var(--r-surface);
   background: var(--panel-2); box-shadow: 0 12px 32px var(--shadow-soft);
-  color: var(--ink); animation: slidein 0.18s ease;
+  color: var(--ink); animation: noticein 0.2s ease-out;
 }
-.toast .i { margin-top: 2px; }
-.toast.ok .i { color: var(--ok-ink); }
-.toast.bad .i { color: var(--bad-ink); }
-.toast .grow { flex: 1; min-width: 0; }
+.toast.bad { background: color-mix(in srgb, var(--bad) 6%, var(--panel-2)); }
+.toast.out { opacity: 0; transition: opacity 0.12s ease-out; }
+.toast > .i { width: 16px; height: 16px; margin-top: 6px; }
+.toast.ok > .i { color: var(--ok-ink); }
+.toast.bad > .i { color: var(--bad-ink); }
+.toast.info > .i { color: var(--ink2); }
+.toast .grow { flex: 1; min-width: 0; padding-top: 4px; }
 .toast .t-title { font-weight: 500; }
 .toast .t-detail { color: var(--muted); font-size: var(--text-small); overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
-.toast .btn { height: 22px; width: 22px; }
+.toast .btn { flex: none; height: 28px; width: 28px; }
 
 /* Icons used on this page (icons/README.md); .i and the mask are in shell.css. */
 .i-server { --i: url(icons/server.svg); }
@@ -346,7 +351,7 @@ a.btn { text-decoration: none; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
-@keyframes slidein { from { opacity: 0; transform: translateX(12px); } }
+@keyframes noticein { from { opacity: 0; transform: translateX(8px); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

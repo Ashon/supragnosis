@@ -1320,10 +1320,14 @@ function alertMark(c, x, y, r, color, s) {
 // --- Notices: every write answers (Principle 24) -------------------------------------------------
 // The console's writes used to drop the server's answer and wait for the next poll to change the
 // panel, so a refusal - a merge the fold blocks, the hub's read tier answering 403 - looked exactly
-// like a success that had not arrived yet. Each one now reports here. The settings page's toasts in
-// shape: a success leaves by itself, an error stays until it is dismissed, at most four at a time.
+// like a success that had not arrived yet. Each one now reports here, in the anatomy the app's pages
+// share (design-system.md Section 28.4, U42): its kind's icon, a title, at most a detail and one
+// action, and a dismiss. At most four at a time, the newest first.
 // Built from text nodes, never markup: an error string can carry an entity name.
 const toastsEl = document.getElementById("toasts");
+// ok - an act done; bad - an act refused or not done; info - news that is not the outcome of the
+// person's act, such as a write in another workspace.
+const NOTICE_ICON = { ok: "circle-check", bad: "circle-alert", info: "info" };
 // A notice may carry one action - { label, note, run } - such as Undo: the note says what the
 // action does, in words beside it, and the notice stays until it is used or dismissed, as an error
 // does, so the action is not taken away while it is being read.
@@ -1331,27 +1335,46 @@ function toast(kind, title, detail, action) {
   if (!toastsEl) return;
   const el = document.createElement("div");
   el.className = "toast " + kind;
-  const tick = document.createElement("span"); tick.className = "tk";
   const body = document.createElement("div"); body.className = "tb";
   const t = document.createElement("div"); t.className = "tt"; t.textContent = title;
   body.appendChild(t);
   if (detail) { const d = document.createElement("div"); d.className = "td"; d.textContent = detail; body.appendChild(d); }
   if (action && action.note) { const n = document.createElement("div"); n.className = "td"; n.textContent = action.note; body.appendChild(n); }
-  el.append(tick, body);
+  el.append(icon(NOTICE_ICON[kind] || "info"), body);
   if (action) {
     const act = document.createElement("button");
     act.type = "button"; act.className = "tact"; act.textContent = action.label;
-    act.onclick = () => { el.remove(); action.run(); };
+    act.onclick = () => { dismiss(el); action.run(); };
     el.appendChild(act);
   }
-  const close = document.createElement("button"); close.setAttribute("aria-label", "Dismiss");
+  const close = document.createElement("button");
+  close.type = "button"; close.className = "tx"; close.setAttribute("aria-label", "Dismiss");
   close.appendChild(icon("x"));
-  close.onclick = () => el.remove();
+  close.onclick = () => dismiss(el);
   el.appendChild(close);
   toastsEl.prepend(el);
-  if (kind === "ok" && !action) setTimeout(() => el.remove(), 4500);
+  if (kind === "ok" && !action) leaveAfter(el, 4500);
   while (toastsEl.children.length > 4) toastsEl.lastChild.remove();
   return el;
+}
+// A success leaves by itself 4.5 seconds after it shows, counted only while it is not being read: the
+// pointer over it or focus inside it stops the clock, and the whole wait starts again once both have
+// left (WCAG 2.2.1).
+function leaveAfter(el, ms) {
+  let timer = 0, pointer = false, focus = false;
+  const sync = () => { clearTimeout(timer); if (!pointer && !focus) timer = setTimeout(() => dismiss(el), ms); };
+  el.addEventListener("pointerenter", () => { pointer = true; sync(); });
+  el.addEventListener("pointerleave", () => { pointer = false; sync(); });
+  el.addEventListener("focusin", () => { focus = true; sync(); });
+  el.addEventListener("focusout", (e) => { focus = el.contains(e.relatedTarget); sync(); });
+  sync();
+}
+// A notice leaves by fading over 120 ms (Section 3), and at once under reduced motion.
+function dismiss(el) {
+  if (!el.isConnected || el.classList.contains("out")) return;
+  if (REDUCED_MOTION) { el.remove(); return; }
+  el.classList.add("out");
+  setTimeout(() => el.remove(), 120);
 }
 // One console write: GET path+query (the viewer's writes are GETs on the 0600 socket - see the review
 // handler below), then a notice saying what happened. Returns the parsed answer, or null when the
@@ -2331,12 +2354,12 @@ function inScope(ws) {
 const elsewhere = new Map();   // workspace -> { el, n }
 function noteElsewhere(ws) {
   const was = elsewhere.get(ws);
-  if (was && was.el && was.el.isConnected) {
+  if (was && was.el && was.el.isConnected && !was.el.classList.contains("out")) {
     was.n += 1;
     was.el.querySelector(".tt").textContent = was.n + " new writes in " + ws;
     return;
   }
-  const el = toast("ok", "New in " + ws, null, { label: "Show", note: "", run: () => {
+  const el = toast("info", "New in " + ws, null, { label: "Show", note: "", run: () => {
     elsewhere.delete(ws);
     wsInput.value = ws; beginWorkspaceTransition(); renderChipsActive(); poll();
   } });

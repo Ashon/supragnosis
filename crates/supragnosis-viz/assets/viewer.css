@@ -211,21 +211,30 @@
   .keyhint { font:600 var(--text-caption)/1 var(--mono); color:var(--muted); background:var(--panel-3);
              border-radius:var(--r-inset); padding:2px 5px; margin-left:6px; vertical-align:1px; }
   /* Notices: what a write did. Top centre, under the header and clear of both docks, the HUD and the
-     inspector at the bottom (whose acts most writes come from); the same shape as the settings page's
-     toasts - a success leaves by itself, an error stays until it is dismissed. */
+     inspector at the bottom (whose acts most writes come from). The anatomy and the clock are the app
+     pages' too (design-system.md Section 28.4, U42): the kind's icon, the words, one action, a
+     28-pixel dismiss. A surface with no edge (U9); an error tints the whole of it, never one side. */
   #toasts { position:fixed; left:50%; top:61px; transform:translateX(-50%); z-index:12;
-            display:grid; gap:6px; width:min(420px, calc(100vw - 32px)); pointer-events:none; }
-  .toast { display:flex; gap:9px; align-items:flex-start; padding:9px 10px 9px 12px; border-radius:var(--r-surface);
+            display:grid; gap:8px; width:min(420px, calc(100vw - 32px)); pointer-events:none; }
+  .toast { display:flex; gap:10px; align-items:flex-start; padding:8px 6px 8px 12px; border-radius:var(--r-surface);
            background:var(--panel-2); color:var(--ink);
-           box-shadow:0 12px 32px var(--shadow-soft); font:var(--text-body)/1.45 var(--sans); pointer-events:auto; }
-  .toast .tk { width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none; margin-top:5px; }
-  .toast.bad .tk { background:var(--bad); }
-  .toast .tb { flex:1; min-width:0; }
+           box-shadow:0 12px 32px var(--shadow-soft); font:var(--text-body)/1.45 var(--sans); pointer-events:auto;
+           animation:noticein 0.2s ease-out; }
+  .toast.bad { background:color-mix(in srgb, var(--bad) 6%, var(--panel-2)); }
+  .toast.out { opacity:0; transition:opacity 0.12s ease-out; }
+  .toast > .i { margin-top:6px; }
+  .toast.ok > .i { color:var(--ok-ink); }
+  .toast.bad > .i { color:var(--bad-ink); }
+  .toast.info > .i { color:var(--ink2); }
+  .toast .tb { flex:1; min-width:0; padding-top:4px; }
   .toast .tt { font-weight:500; }
   .toast .td { color:var(--muted); font-size:var(--text-small); overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
-  .toast button { padding:0 6px; font-size:var(--text-body); line-height:18px; color:var(--muted); background:none; }
   /* A notice's one action, such as Undo. */
-  .toast button.tact { align-self:center; padding:2px 10px; border-radius:var(--r-control); font-size:var(--text-body); color:var(--ink); background:var(--panel-3); }
+  .toast button.tact { flex:none; align-self:center; padding:2px 10px; border-radius:var(--r-control); font-size:var(--text-body); color:var(--ink); background:var(--panel-3); }
+  .toast button.tx { flex:none; width:28px; height:28px; min-height:28px; padding:0; display:flex; align-items:center; justify-content:center;
+                     color:var(--muted); background:none; border-radius:var(--r-control); }
+  .toast button.tx:hover { color:var(--ink); background:var(--panel-3); }
+  @keyframes noticein { from { opacity:0; transform:translateY(-8px); } }
   /* Computed belief diff on the selected proposal - a before -> after row per change, so accepting
      is a decision about a visible delta rather than about a proposal's title. */
   .ddiff { margin:5px 0 2px; display:flex; flex-direction:column; gap:3px; }

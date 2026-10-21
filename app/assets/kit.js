@@ -66,17 +66,43 @@ function holdFocus(dialog) {
 
 // ---- Notices --------------------------------------------------------------------------------
 
+// The viewer's anatomy and clock (docs/design-system.md Section 28.4, U42): the kind's icon - ok, an
+// act done; bad, refused or not done; info, news - the words, and a 28-pixel dismiss. At most four,
+// the newest first.
+const NOTICE_ICON = { ok: "ok", bad: "alert", info: "info" };
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function toast(kind, title, detail) {
   const host = document.getElementById("toasts");
-  const close = h("button", { class: "btn quiet iconbtn", "aria-label": "Dismiss" }, icon("x"));
+  const close = h("button", { type: "button", class: "btn quiet iconbtn", "aria-label": "Dismiss" }, icon("x"));
   const el = h("div", { class: "toast " + kind },
-    icon(kind === "ok" ? "ok" : "alert"),
+    icon(NOTICE_ICON[kind] || "info"),
     h("div", { class: "grow" }, h("div", { class: "t-title", text: title }), detail ? h("div", { class: "t-detail", text: detail }) : null),
     close);
-  close.addEventListener("click", () => el.remove());
+  close.addEventListener("click", () => dismiss(el));
   host.prepend(el);
   // A success needs no reading twice; an error stays until it is dismissed.
-  if (kind === "ok") setTimeout(() => el.remove(), 4500);
+  if (kind === "ok") leaveAfter(el, 4500);
   while (host.children.length > 4) host.lastChild.remove();
+}
+
+// A success leaves 4.5 seconds after it shows, counted only while it is not being read: the pointer
+// over it or focus inside it stops the clock, and the whole wait starts again once both have left
+// (WCAG 2.2.1).
+function leaveAfter(el, ms) {
+  let timer = 0, pointer = false, focus = false;
+  const sync = () => { clearTimeout(timer); if (!pointer && !focus) timer = setTimeout(() => dismiss(el), ms); };
+  el.addEventListener("pointerenter", () => { pointer = true; sync(); });
+  el.addEventListener("pointerleave", () => { pointer = false; sync(); });
+  el.addEventListener("focusin", () => { focus = true; sync(); });
+  el.addEventListener("focusout", (e) => { focus = el.contains(e.relatedTarget); sync(); });
+  sync();
+}
+
+// A notice leaves by fading over 120 ms, and at once under reduced motion.
+function dismiss(el) {
+  if (!el.isConnected || el.classList.contains("out")) return;
+  if (REDUCED_MOTION) { el.remove(); return; }
+  el.classList.add("out");
+  setTimeout(() => el.remove(), 120);
 }
 

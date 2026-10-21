@@ -832,9 +832,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (42, &[c(
         "a notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, a 28-pixel dismiss showing x; a success without an action leaves 4.5 s after it shows, counted only while the pointer is off it and focus outside it, every other notice stays until dismissed or used; four at most; 200 ms in, 120 ms out, neither under reduced motion",
-        Evidence::Deferred(
-            "specified in design-system.md Section 28.4, not built. Revisit when Section 14 step 40 lands and the test reading viewer.js and kit.js runs",
-        ),
+        // crates/supragnosis-viz/tests/notices.rs reads toast, leaveAfter and dismiss in viewer.js and
+        // kit.js, and the notice rules of viewer.css and settings.css.
+        Evidence::Scenario(&[
+            "a_notice_has_one_anatomy",
+            "a_success_waits_while_it_is_read",
+            "a_notice_moves_in_the_three_durations",
+        ]),
     )]),
     (32, &[c(
         "the region field is kept with its camera and moved as a bitmap while only the camera moves, and the minimap's miniature is painted only when it changes",
@@ -3355,6 +3359,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/titlebar.rs"),
     include_str!("../../supragnosis-viz/tests/scale.rs"),
     include_str!("../../supragnosis-viz/tests/icons.rs"),
+    include_str!("../../supragnosis-viz/tests/notices.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
     include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
