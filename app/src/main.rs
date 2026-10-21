@@ -205,8 +205,9 @@ fn open_url(url: &str) -> tauri::Result<()> {
 struct ActiveRemote(Mutex<Option<RemoteServer>>);
 
 /// Whether no AI app is connected yet, the state a new user is in (docs/client-connect.md Section 5):
-/// the tray's act line asks to connect one.
-struct AppsHint(Mutex<bool>);
+/// the tray's act line asks to connect one. And whether any app's row needs the person - an entry
+/// other than the bridge, or settings that could not be read - which marks AI apps (Section 29.14).
+struct AppsHint(Mutex<(bool, bool)>);
 
 /// The settings section the tray's Settings... opens: the one whose state the status line is
 /// pointing at, if any (docs/settings-page.md Section 3.0).
@@ -1142,6 +1143,25 @@ struct TrayState {
     quit_stops: bool,
 }
 
+/// The section the tray's Settings... opens: the first whose dot shows, in the sidebar's order - the
+/// act's own section when it is Server, then AI apps, then This Mac - or none, which reopens the last
+/// pane (design-system.md Section 29.14).
+fn attention_section(
+    act: Option<&'static str>,
+    apps: bool,
+    repairing: bool,
+) -> Option<&'static str> {
+    if act == Some("server") {
+        Some("server")
+    } else if apps {
+        Some("apps")
+    } else if act == Some("daemon") || repairing {
+        Some("daemon")
+    } else {
+        act
+    }
+}
+
 /// The act line for what needs doing, the first that holds: the memory cannot be used, an update is
 /// ready, then no AI app connected - which Finish Setup... covers while it shows.
 fn tray_act(
@@ -1216,7 +1236,8 @@ async fn refresh_status(app: &tauri::AppHandle) {
     heal_failed(app).await;
     refresh_servers(app).await;
     refresh_apps(app).await;
-    let no_app = app.try_state::<AppsHint>().is_some_and(|h| *h.0.lock().unwrap());
+    let (no_app, apps_need) =
+        app.try_state::<AppsHint>().map_or((false, false), |h| *h.0.lock().unwrap());
     // "Finish Setup..." while the daemon or the AI apps are not set up (docs/onboarding.md
     // Section 6), from setup's own checklist. A CLI that predates setup offers nothing.
     let pid = spawned_pid(app);
@@ -1228,6 +1249,7 @@ async fn refresh_status(app: &tauri::AppHandle) {
     let finish = finish_setup_offered(read_prefs(app), steps);
     let remote = active_remote(app);
     let mut tray = TrayState { finish, ..TrayState::default() };
+    let mut repairing = false;
     match &remote {
         // This Mac's states do not count while a remote server is used (design-system.md Section
         // 29.13); the server's do.
@@ -1250,6 +1272,9 @@ async fn refresh_status(app: &tauri::AppHandle) {
                 let mut daemon = guard.0.lock().unwrap();
                 settle_exited(&mut daemon);
                 tray.line = status_text(&daemon, st.as_ref());
+                repairing = st
+                    .as_ref()
+                    .is_some_and(|v| v["store"]["owed_projections"].as_u64().unwrap_or(0) > 0);
                 tray.trouble = daemon_trouble(&daemon, st.as_ref());
                 tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));
                 tray.act = tray_act(tray.trouble, false, drift, no_app, finish);
@@ -1261,12 +1286,9 @@ async fn refresh_status(app: &tauri::AppHandle) {
     if remote.is_none() {
         tray.review = waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text);
     }
-    // Settings... opens the section that needs attention, the act's, or AI apps while none is
-    // connected and Finish Setup... covers it (settings-page.md Section 3.0).
-    let attention = tray.act.map(|(_, section)| section).or_else(|| {
-        (no_app && remote.as_ref().is_none_or(|r| r.answering && !r.credential_refused))
-            .then_some("apps")
-    });
+    // Settings... opens the first section whose dot shows - Server, AI apps, This Mac - and the last
+    // pane while none does (design-system.md Section 29.14).
+    let attention = attention_section(tray.act.map(|(_, s)| s), no_app || apps_need, repairing);
     if let Some(a) = app.try_state::<Attention>() {
         *a.0.lock().unwrap() = attention;
     }
@@ -1393,12 +1415,18 @@ fn app_row(report: Option<&serde_json::Value>) -> (String, Option<&'static str>,
 /// Re-reads which AI apps are connected, for the status line's hint while none is.
 async fn refresh_apps(app: &tauri::AppHandle) {
     let list = tokio::task::spawn_blocking(cli_connect_list).await.ok().flatten();
-    let any = list
-        .as_ref()
-        .and_then(|l| l["clients"].as_array())
-        .is_some_and(|rs| rs.iter().any(|r| r["entry"].as_str().is_some_and(|e| e != "none")));
+    let rows = list.as_ref().and_then(|l| l["clients"].as_array());
+    let any =
+        rows.is_some_and(|rs| rs.iter().any(|r| r["entry"].as_str().is_some_and(|e| e != "none")));
+    let needs = rows.is_some_and(|rs| {
+        rs.iter().any(|r| {
+            r["installed"].as_bool() == Some(true)
+                && r["entry"].as_str().is_some_and(|e| e != "none" && e != "bridge")
+        })
+    });
     if let Some(hint) = app.try_state::<AppsHint>() {
-        *hint.0.lock().unwrap() = list.is_some() && !any;
+        // A listing that could not be read needs the person too (P5).
+        *hint.0.lock().unwrap() = (list.is_some() && !any, list.is_none() || needs);
     }
 }
 
@@ -2262,6 +2290,121 @@ fn view_prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("view.json"))
 }
 
+/// Keeps one of the view preferences - the text's size, the window's frame - beside the others, so
+/// writing one never drops another (design-system.md Section 29.14).
+fn keep_view_pref(
+    app: &tauri::AppHandle,
+    key: &str,
+    value: serde_json::Value,
+) -> std::io::Result<()> {
+    let Some(path) = view_prefs_path(app) else {
+        return Ok(());
+    };
+    let mut all = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    all[key] = value;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    // Replaced whole, through a temporary file, so a write cut short loses neither preference.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, all.to_string())?;
+    std::fs::rename(&tmp, &path)
+}
+
+/// The window's kept frame - its place and size in logical points - when it is on a screen now.
+fn kept_frame(app: &tauri::AppHandle) -> Option<WindowFrame> {
+    let v = view_prefs_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())?;
+    let f = &v["window"];
+    let mut frame = WindowFrame {
+        x: f["x"].as_f64()?,
+        y: f["y"].as_f64()?,
+        w: f["w"].as_f64()?.max(MIN_WINDOW.0),
+        h: f["h"].as_f64()?.max(MIN_WINDOW.1),
+    };
+    let screens: Vec<(f64, f64, f64, f64)> = app
+        .available_monitors()
+        .ok()?
+        .iter()
+        .map(|m| {
+            let s = m.scale_factor();
+            let (p, z) = (m.position(), m.size());
+            (
+                f64::from(p.x) / s,
+                f64::from(p.y) / s,
+                f64::from(z.width) / s,
+                f64::from(z.height) / s,
+            )
+        })
+        .collect();
+    // Its size is cut to the screen it opens on (design-system.md Section 29.14).
+    let (_, _, sw, sh) = screens
+        .iter()
+        .copied()
+        .find(|s| frame_on_a_screen(&frame, std::slice::from_ref(s)))?;
+    frame.w = frame.w.min(sw).max(MIN_WINDOW.0);
+    frame.h = frame.h.min(sh).max(MIN_WINDOW.1);
+    Some(frame)
+}
+
+/// The window's frame in logical points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WindowFrame {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+/// The smallest window: 760 pixels keeps the Graph in its wide layout, so the narrow one stays the
+/// browser's (design-system.md Section 29.14).
+const MIN_WINDOW: (f64, f64) = (760.0, 480.0);
+
+/// Whether a kept frame's title bar is on one of the screens now, so the window can be found and
+/// moved; a place on no screen is forgotten (design-system.md Section 29.14).
+fn frame_on_a_screen(f: &WindowFrame, screens: &[(f64, f64, f64, f64)]) -> bool {
+    let (cx, cy) = (f.x + f.w / 2.0, f.y + 12.0);
+    screens
+        .iter()
+        .any(|&(x, y, w, h)| cx >= x && cx <= x + w && cy >= y && cy <= y + h)
+}
+
+/// The frame the window has now, kept in memory as it moves and resizes, written when it closes or
+/// the app quits.
+struct FrameNow(Mutex<Option<WindowFrame>>);
+
+fn note_frame(w: &tauri::Window) {
+    let (Ok(p), Ok(z), Ok(s)) = (w.outer_position(), w.inner_size(), w.scale_factor()) else {
+        return;
+    };
+    if w.is_fullscreen().unwrap_or(false) || w.is_minimized().unwrap_or(false) {
+        return; // a full-screen or minimized window keeps the frame it had before
+    }
+    if let Some(now) = w.app_handle().try_state::<FrameNow>() {
+        *now.0.lock().unwrap() = Some(WindowFrame {
+            x: f64::from(p.x) / s,
+            y: f64::from(p.y) / s,
+            w: f64::from(z.width) / s,
+            h: f64::from(z.height) / s,
+        });
+    }
+}
+
+fn keep_frame(app: &tauri::AppHandle) {
+    let Some(f) = app.try_state::<FrameNow>().and_then(|n| *n.0.lock().unwrap()) else {
+        return;
+    };
+    let v = serde_json::json!({ "x": f.x, "y": f.y, "w": f.w, "h": f.h });
+    if let Err(e) = keep_view_pref(app, "window", v) {
+        tracing::warn!(error = %e, "the window's frame was not kept");
+    }
+}
+
 /// The kept text size; 100% when the file is missing or unreadable.
 fn read_text_scale(app: &tauri::AppHandle) -> f64 {
     view_prefs_path(app)
@@ -2281,13 +2424,8 @@ fn set_text_scale(app: &tauri::AppHandle, step: i32) -> tauri::Result<()> {
         *s = step_text_scale(*s, step);
         *s
     };
-    if let Some(path) = view_prefs_path(app) {
-        let kept = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| {
-            std::fs::write(&path, serde_json::json!({ "text_scale": scale }).to_string())
-        });
-        if let Err(e) = kept {
-            tracing::warn!(error = %e, "the text size was not kept");
-        }
+    if let Err(e) = keep_view_pref(app, "text_scale", serde_json::json!(scale)) {
+        tracing::warn!(error = %e, "the text size was not kept");
     }
     if let Some(w) = app.get_webview_window("main") {
         w.eval(text_scale_script(scale))?;
@@ -2937,7 +3075,7 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
         WebviewUrl::External("viz://localhost/".parse().expect("static url")),
     )
     .title(&app.package_info().name)
-    .inner_size(1280.0, 860.0)
+    .min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)
     .initialization_script(include_str!("../assets/shell-init.js"))
     // Each page the window loads - the viewer, Settings, Setup - takes the kept text size (U21).
     .on_page_load(|w, payload| {
@@ -2971,6 +3109,12 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
         .traffic_light_position(tauri::LogicalPosition::new(14.0, 26.0));
+    // The window opens where the person left it, at its size, when that place is on a screen now;
+    // otherwise at the default size, centred (design-system.md Section 29.14).
+    let builder = match kept_frame(app) {
+        Some(f) => builder.inner_size(f.w, f.h).position(f.x, f.y),
+        None => builder.inner_size(1280.0, 860.0).center(),
+    };
     builder.build()?;
     Ok(())
 }
@@ -3135,13 +3279,17 @@ fn main() {
                 // reachable from the tray. On macOS also leave the dock (Accessory) - the menu
                 // bar mark is the app's background presence.
                 api.prevent_close();
+                // The window's frame is kept when it closes (design-system.md Section 29.14).
+                keep_frame(window.app_handle());
                 let _ = window.hide();
                 #[cfg(target_os = "macos")]
                 let _ = window
                     .app_handle()
                     .set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
+            WindowEvent::Moved(_) => note_frame(window),
             WindowEvent::Resized(_) => {
+                note_frame(window);
                 // macOS hides the traffic lights in fullscreen - tell the page, so the header
                 // can drop the left padding that cleared them (shell-init.js toggles a class).
                 // Resized fires on the fullscreen transition; re-emitting the same state is a
@@ -3178,8 +3326,9 @@ fn main() {
                 ],
             )?;
             app.manage(TrayKept(Mutex::new(None)));
+            app.manage(FrameNow(Mutex::new(None)));
             app.manage(ActiveRemote(Mutex::new(None)));
-            app.manage(AppsHint(Mutex::new(false)));
+            app.manage(AppsHint(Mutex::new((false, false))));
             app.manage(Attention(Mutex::new(None)));
             app.manage(VizSock(sock.clone()));
             app.manage(TextScale(Mutex::new(read_text_scale(app.handle()))));
@@ -3376,6 +3525,7 @@ fn main() {
                 }
             }
             RunEvent::Exit => {
+                keep_frame(app);
                 // Reap only a daemon WE spawned - an attached external daemon keeps running.
                 let prev = std::mem::replace(
                     &mut *app.state::<DaemonGuard>().0.lock().unwrap(),
@@ -4800,6 +4950,68 @@ mod welcome_tests {
 /// docs/compatibility.md Section 6, the app's side. The CLI's own tests hold its `--json` output
 /// to one example document per command; these hold this app's readers to the same documents, so a
 /// field read here that the CLI never sends fails here, and a field the CLI renames fails there.
+#[cfg(test)]
+mod window_tests {
+    use super::{attention_section, frame_on_a_screen, WindowFrame, MIN_WINDOW};
+
+    /// design-system.md Section 29.14: a kept frame opens where it was while its title bar is on a
+    /// screen now, and is forgotten otherwise; the window has a smallest size that keeps the Graph's
+    /// wide layout; the frame shares its file with the text size, written whole; the tray's Settings...
+    /// opens the first section whose dot shows; and the sidebar has no heading for its one group,
+    /// counts as the tray does, says no count it could not read, and reopens the last pane.
+    #[test]
+    fn the_window_and_the_sidebar_keep_their_place() {
+        let screens = [(0.0, 0.0, 1512.0, 982.0), (1512.0, -200.0, 2560.0, 1440.0)];
+        let at = |x, y| WindowFrame { x, y, w: 1280.0, h: 860.0 };
+        assert!(frame_on_a_screen(&at(100.0, 50.0), &screens));
+        assert!(frame_on_a_screen(&at(1700.0, -100.0), &screens), "the second screen");
+        assert!(!frame_on_a_screen(&at(5000.0, 50.0), &screens), "a place on no screen");
+        assert_eq!(MIN_WINDOW, (760.0, 480.0), "the Graph keeps its wide layout in the app");
+        assert_eq!(attention_section(Some("server"), true, true), Some("server"));
+        assert_eq!(attention_section(Some("daemon"), true, false), Some("apps"));
+        assert_eq!(attention_section(None, false, true), Some("daemon"), "repairing");
+        assert_eq!(attention_section(None, false, false), None, "the last pane");
+        let src = include_str!("main.rs");
+        assert!(src.contains(".min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)"));
+        assert!(src.contains("Some(f) => builder.inner_size(f.w, f.h).position(f.x, f.y),"));
+        assert!(src.contains("None => builder.inner_size(1280.0, 860.0).center(),"));
+        assert!(
+            src.contains("keep_view_pref(app, \"text_scale\""),
+            "the text size overwrites the frame"
+        );
+        assert!(
+            src.contains("let tmp = path.with_extension(\"json.tmp\");")
+                && src.contains("std::fs::rename(&tmp, &path)"),
+            "a write cut short can lose both preferences"
+        );
+        let js = include_str!("../assets/settings.js");
+        assert!(!js.contains("text: \"General\""), "the sidebar still heads its one group");
+        assert!(js.contains("text: appsWithEntry() + \" connected\""), "the count says no unit");
+        assert!(
+            js.contains("a.kind === \"connected\" || a.kind === \"attention\""),
+            "the count is not the tray's"
+        );
+        assert!(
+            js.contains("if (!appsRead()) return \"warn\";") && js.contains("state && appsRead()"),
+            "an unread listing counts as zero"
+        );
+        assert!(
+            js.contains("!state.apps.some((a) => a.kind === \"attention\")"),
+            "a row that needs the person leaves no dot"
+        );
+        assert!(js.contains("localStorage.getItem(LAST_PANE)") && js.contains("keepPane();"));
+        let css = include_str!("../assets/settings.css");
+        assert!(
+            css.contains("width: clamp(220px, 13.75rem, 40vw);"),
+            "the sidebar does not grow with the text"
+        );
+        assert!(
+            css.contains("padding: 12vh 0 24px;\n  overflow-y: auto;"),
+            "a tall sheet cannot be scrolled"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tray_tests {
     use super::{

@@ -29,8 +29,7 @@
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
-> its View, and step 50b, the menu bar and the tray. Step 50c, Settings' sidebar and the window, is
-> specified.
+> its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 
 ## 1. Why this exists
 
@@ -1935,7 +1934,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Setup..., Edit's Find, View's map commands, Help, the tray's state line with its act in a fixed
    order, an icon that changes shape only while the memory cannot be used, Quit that says it stops
    the memory, and one id per item per menu. Settings' sidebar and the window's frame are step 50c.
-50c. **Settings' sidebar and the window** (Section 29.14; settings-page.md Sections 3.0 and 3.0.1
+50c. **Settings' sidebar and the window** [built] (Section 29.14; settings-page.md Sections 3.0 and 3.0.1
    revised):
    a sidebar with no heading for its one group, a count that says what it counts, a dot on AI apps
    whenever a row needs the person, the last pane reopened, and a window that keeps its size and
@@ -4779,4 +4778,10 @@ No row needs a principle changed.
 - It does not keep the frame through a crash: the frame is written when the window closes or the app
   quits.
 - It does not read sync health in the tray.
+
+**Guarded by** `the_window_and_the_sidebar_keep_their_place` in the app's window tests (a frame kept
+only while on a screen, the smallest window, one preferences file written whole, the tray's
+Settings... and its first section with a dot, and the sidebar's heading, count, dot and last pane);
+browser checks of Settings at 760 by 480 and 200% text measure that the count fits and a tall sheet
+scrolls to its buttons.
 

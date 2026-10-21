@@ -27,9 +27,18 @@ let loadError = null;      // why it could not be read, if it could not
 const pending = new Set(); // action keys whose CLI call is running
 const appNotes = {};       // app id -> the next step the CLI named for it
 
+// The pane on screen: the one the address names, or the one last opened, which the page keeps in its
+// own storage so Cmd+, and the gear reopen it (design-system.md Section 29.14); Server otherwise.
+const LAST_PANE = "supra.settings.pane";
 function current() {
   const id = location.hash.replace("#", "");
-  return SECTIONS.some((s) => s.id === id) ? id : "server";
+  if (SECTIONS.some((s) => s.id === id)) return id;
+  let last = null;
+  try { last = localStorage.getItem(LAST_PANE); } catch (_) { /* no storage - Server */ }
+  return SECTIONS.some((s) => s.id === last) ? last : "server";
+}
+function keepPane() {
+  try { localStorage.setItem(LAST_PANE, current()); } catch (_) { /* lost, the page opens on Server */ }
 }
 
 // ---- Status summaries ---------------------------------------------------------------------------
@@ -67,6 +76,11 @@ function daemonStatus(d) {
   return { kind: "ok", title: "Running", detail: [d.running, d.who].filter(Boolean).join(" - ") };
 }
 
+// The AI apps the command line reported, and how many have an entry - on the bridge or not, as the
+// tray counts them (design-system.md Section 29.14).
+function appsRead() { return !!(state && state.cli !== false && !state.cli_newer); }
+function appsWithEntry() { return state.apps.filter((a) => a.kind === "connected" || a.kind === "attention").length; }
+
 // A section's dot appears only when the section needs attention (design-system.md Section 6a): a dot
 // on every section said nothing. "ok" is no dot.
 function sectionDot(id) {
@@ -77,8 +91,10 @@ function sectionKind(id) {
   if (!state) return null;
   if (id === "server") return serverStatus(state.server).kind;
   if (id === "apps") {
-    const connected = state.apps.filter((a) => a.kind === "connected").length;
-    return connected ? "ok" : "warn";
+    // The dot shows while no app has an entry, a row needs the person, or the apps could not be read
+    // (Section 29.14).
+    if (!appsRead()) return "warn";
+    return appsWithEntry() && !state.apps.some((a) => a.kind === "attention") ? "ok" : "warn";
   }
   if (id === "daemon") return daemonStatus(state.daemon).kind;
   if (id === "sync") {
@@ -94,16 +110,17 @@ function sectionKind(id) {
 function renderSidebar() {
   const host = document.getElementById("sidebar");
   const now = current();
-  host.replaceChildren(
-    h("div", { class: "group", text: "General" }),
-    ...sectionItems(now));
+  // One group, so no heading: "General" named the whole list (Section 29.14).
+  host.replaceChildren(...sectionItems(now));
 }
 
 function sectionItems(now) {
   return SECTIONS.map((s) => {
       const dot = sectionDot(s.id);
       let meta = null;
-      if (s.id === "apps" && state) meta = h("span", { class: "meta", text: state.apps.filter((a) => a.kind === "connected").length });
+      // The count says what it counts, the tray's count: every app with an entry; while the apps
+      // could not be read there is none (Section 29.14, P5).
+      if (s.id === "apps" && state && appsRead()) meta = h("span", { class: "meta", text: appsWithEntry() + " connected" });
       return h("a", { class: "navitem", href: "#" + s.id, "aria-current": s.id === now ? "page" : null },
         h("span", { class: "tile" }, icon(s.icon)),
         h("span", { class: "label", text: s.label }),
@@ -839,7 +856,7 @@ function watchDaemon() {
   setTimeout(tick, 2000);
 }
 
-window.addEventListener("hashchange", () => { render(); document.getElementById("pane").scrollTop = 0; });
+window.addEventListener("hashchange", () => { keepPane(); render(); document.getElementById("pane").scrollTop = 0; });
 window.addEventListener("focus", () => { if (!pending.size && !document.getElementById("dialogHost").firstChild) load(true); });
 // Esc closes a dialog if one is open, and otherwise closes Settings back to the graph.
 document.addEventListener("keydown", (e) => {
@@ -879,5 +896,6 @@ function actAsked() {
   if (act === "reveal-log") revealFile("log");
 }
 
+keepPane();
 render();
 load().then(adoptDownload).then(actAsked);
