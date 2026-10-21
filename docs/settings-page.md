@@ -55,6 +55,9 @@ been, and the graph keeps its title bar to itself.
   Settings... shows the settings.
 - **The tray opens Settings where the attention is.** A refused credential or an unanswering server
   opens the Server section; no AI app connected opens AI apps; version drift opens This Mac.
+  *(Revised by design-system.md step 50c: the gear and Cmd+, reopen the pane last shown; the
+  tray's Settings... opens the first section whose dot shows - Server, AI apps, This Mac - and the
+  last pane while none does, design-system.md Section 29.14.)*
 - **One place called Settings.** The viewer's own dialog held its build information and, on a hub,
   its peers. Both are on this page - About and Sync - so in the app the gear leads to one place, not
   two.
@@ -76,6 +79,10 @@ The page follows the shape of the platform's own settings:
 
 - **A sidebar of sections** - Server, AI apps, This Mac, About - each with a status dot, so the
   state of everything is visible before anything is opened.
+  *(Revised by design-system.md step 50c: Server, AI apps, This Mac, Sync and About; a dot shows
+  only while a section needs attention, as design-system.md Section 6a has it; no heading for the
+  one group; AI apps' count reads "2 connected", and its dot shows whenever a row needs the person,
+  design-system.md Section 29.14.)*
 - **A content pane** with the selected section: a title, one sentence on what it is for, and
   grouped cards of rows. Each row has a name, a line of state, and its control on the right - a
   switch, a button, a status pill.

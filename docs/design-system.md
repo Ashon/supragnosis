@@ -29,7 +29,8 @@
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
-> its View, and step 50b, the menu bar and the tray.
+> its View, and step 50b, the menu bar and the tray. Step 50c, Settings' sidebar and the window, is
+> specified.
 
 ## 1. Why this exists
 
@@ -1934,6 +1935,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Setup..., Edit's Find, View's map commands, Help, the tray's state line with its act in a fixed
    order, an icon that changes shape only while the memory cannot be used, Quit that says it stops
    the memory, and one id per item per menu. Settings' sidebar and the window's frame are step 50c.
+50c. **Settings' sidebar and the window** (Section 29.14; settings-page.md Sections 3.0 and 3.0.1
+   revised):
+   a sidebar with no heading for its one group, a count that says what it counts, a dot on AI apps
+   whenever a row needs the person, the last pane reopened, and a window that keeps its size and
+   place and has a smallest size.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -1949,7 +1955,11 @@ proposal and the read tier.
   (until step 50b, which splits it into a state line and an act line, Section 29.13),
   and on a remote profile the tray is as remote-viewer.md Section 6 leaves it.
 - **settings-page.md Section 3.0** (step 43): the way back goes to the graph as it was left, its scope
-  and selection, which the way in carries in `?from=` (Section 29.4).
+  and selection, which the way in carries in `?from=` (Section 29.4). Since step 50c the gear and
+  Cmd+, reopen the last pane, and the tray's Settings... the first section whose dot shows (Section
+  29.14).
+- **settings-page.md Section 3.0.1** (step 50c): the sidebar has no heading for its one group, AI
+  apps' count says "2 connected", and its dot shows whenever a row needs the person (Section 29.14).
 - **inspector.md**: the panel moves from the bottom to a sheet on the right, and the scope line's
   words change. Its rules and D1-D7 do not.
 - **The viewer's dock**: Proposals and Review leave for the Review page; the Types tab's rows join the
@@ -3609,6 +3619,7 @@ decided both.
 - It does not register `supragnosis://` with the system, offer "Copy link" (an app address opens
   nowhere yet), or give the Review item, the observation card or the List an address (R1-07).
 - It does not reopen Settings on its last pane, or say "< Settings" on Setup opened from Settings.
+  *(Step 50c reopens the last pane, Section 29.14.)*
 
 ### 29.5 Step 44: the app's pages hold focus, and a failure says so
 
@@ -3715,7 +3726,8 @@ these findings.
   words are step 45's).
 - It does not give the daemon's states one word on every surface (R4-11, step 45), build the AI app's
   row once for both pages (R4-08, step 45), or rename Settings' sidebar, reopen its last pane and keep
-  the window's size (R4-14, R4-16, step 50).
+  the window's size (R4-14, R4-16, step 50). *(Step 50c removes the sidebar's heading rather than
+  renaming it, Section 29.14.)*
 
 ### 29.6 Step 45: one concept, one name
 
@@ -3897,7 +3909,8 @@ No row needs a principle changed; D2 and D17 are the author's decisions.
 - It does not add the client's name to an observation's attestation (D13, step 46b), so an activity
   row says "An agent".
 - It does not split the tray into two lines, change its icon or the Quit item (D14, D15, step 50), or
-  rename Settings' sidebar group and reopen its last pane (R4-14, R4-16, step 50).
+  rename Settings' sidebar group and reopen its last pane (R4-14, R4-16, step 50). *(Step 50c removes
+  the heading rather than renaming it, Section 29.14.)*
 - It does not change the first entry's words - Setup's "Waiting for an entry", the map's "new
   writes" - which step 48 settles with the landing's (R1-17).
 - It does not give the browser's dialog and the app's Sync pane one source for their words (R1-11),
@@ -4702,4 +4715,68 @@ tests; `copy_diagnostics_carries_no_entry` (the done sentence without its worksp
 `drift_and_conflict_are_said_outright` and `the_examples_read_through_the_apps_own_readers` (the
 state line's words). The menus and the tray are native, so the build checks them by hand before the
 release: each item's act, the order, the trouble shape and what VoiceOver reads.
+
+### 29.14 Step 50c: Settings' sidebar and the window
+
+**What was found.** Measured in the app:
+- **The sidebar heads its one group "General".** The heading names the whole list and reads like a
+  pane that does not exist.
+- **AI apps' count is a bare number,** and counts a different thing from the tray. "2" could be two
+  problems or two apps, VoiceOver reads "AI apps 2", and it counts only the apps on the bridge, while
+  the tray counts every app with an entry.
+- **AI apps shows no dot while a row needs the person.** One app on the bridge makes the section
+  fine, so VS Code's "Needs you" leaves no mark in the sidebar, and the tray's Settings... then opens
+  Server.
+- **Every Cmd+, and every press of the gear opens Server,** the pane a person who keeps everything on
+  this Mac never changes.
+- **The window forgets its size and place.** It opens at 1280 by 860 at every launch, wherever the
+  person left it, and can be dragged narrower than anything it holds; and Settings' Add a server sheet
+  runs below a short window with no way to scroll to its buttons.
+
+**Decisions.** None was needed: R4-14 and R4-16 asked for no decision, and the storyboard's
+recommended options hold - R4-14's removes the heading rather than renaming it, and counts the apps
+as the tray does.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| settings-page.md Section 3.0.1 | A sidebar of sections, each with a status dot, so the state of everything shows before anything opens | revised - no heading for one group; AI apps' count says what it counts; its dot shows whenever a row needs the person |
+| settings-page.md Section 3.0 and Section 29.13 | The gear and Cmd+, open Settings; the tray's Settings... opens the section that needs attention | revised - the gear and Cmd+, reopen the last pane; the tray's Settings... opens the first section whose dot shows - Server, AI apps, This Mac - and the last pane while none does; the act line stays as Section 29.13 has it |
+| Section 6a, U17 | A section's dot appears only when it needs attention; a state keeps one word on every surface | agrees - "connected" counts every app with an entry, the tray's count; the dot reads "needs attention" and shows while no app has an entry or a row says "Needs you" |
+| P5, Section 6 | Unknown is not empty; a count is a known count | agrees - while the apps could not be read (no command line, or one newer than the app) the sidebar shows no count, and the dot says the section needs attention, as its pane does |
+| U19 | A control has a name and says its state | repays - VoiceOver reads "AI apps, 2 connected" |
+| Section 4 and Section 9 | Mono sets identifiers; a count is said in the reading face, "Relations 3" | repays - the count is set in the caption size of the reading face |
+| U21 and Section 10 | Text grows to 200% and nothing is cut short | agrees - the sidebar grows with the text, up to 40 percent of the window, so "2 connected" fits at 200% and the pane keeps most of a small window; a sheet taller than the window scrolls inside it |
+| Section 5 | Positions are a convenience; the page keeps nothing a grant could outlive | agrees - the last pane is the Settings page's own, kept in its storage on every load however it opened, and holds no knowledge; lost, the page opens on Server |
+| U21's text size | The text's size is kept in the app's view preferences | agrees - the window's frame is kept in the same file; each write keeps the other's key and replaces the file whole, through a temporary file |
+| Section 6, by width | Under 760 pixels the viewer takes its narrow layout | agrees - the app's smallest window is 760 by 480, so the Graph keeps its title and wide layout there; the narrow layout stays the browser's |
+| Section 29.4, 29.5 and 29.6 | Settings does not reopen its last pane; the sidebar group is renamed by step 50 | revised - it reopens its last pane, and the group's heading is removed |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **One group, no heading.** The sidebar lists its sections with no group heading while it has one
+  group.
+- **A count that says what it counts.** AI apps' count reads "2 connected", counting every app with
+  an entry as the tray does, in the caption size of the reading face. While the apps could not be
+  read, there is no count.
+- **AI apps' dot.** The section shows its dot, read as "needs attention", whenever no app has an
+  entry, a row needs the person, or the apps could not be read.
+- **The last pane.** The gear and Cmd+, reopen the pane last shown, however it was opened, which the
+  page keeps in its own storage. A link that names a section opens it. The tray's Settings... opens
+  the first section whose dot shows - Server, AI apps, This Mac, in that order - and the last pane
+  while none does; the tray reads no sync health, so Sync's dot is the sidebar's to show.
+- **The window keeps its frame.** The main window keeps its size and place across launches, in the
+  app's view preferences beside the text's size, written when it closes and when the app quits. It
+  reopens there while the top centre of its title bar is on a screen now, its size cut to that
+  screen's; otherwise, and at the first launch, it opens at 1280 by 860 centred on the main screen. A
+  full-screen or minimized window keeps the frame it had before, and reopens windowed. It cannot be
+  made smaller than 760 by 480.
+- **A tall sheet scrolls.** Settings' sheets hold within the window and scroll inside it.
+
+**What this step does not do.**
+- It does not keep the frame through a crash: the frame is written when the window closes or the app
+  quits.
+- It does not read sync health in the tray.
 
