@@ -655,16 +655,9 @@ impl Client {
         }
     }
 
+    /// The name a person reads: the core's one table (design-system.md Section 29.8).
     pub fn name(self) -> &'static str {
-        match self {
-            Client::ClaudeDesktop => "Claude Desktop",
-            Client::ClaudeCode => "Claude Code",
-            Client::Cursor => "Cursor",
-            Client::VsCode => "VS Code",
-            Client::Codex => "Codex",
-            Client::Gemini => "Gemini CLI",
-            Client::OpenCode => "OpenCode",
-        }
+        supragnosis_core::app_name(self.id()).expect("every client is in the core's table")
     }
 
     pub fn parse(id: &str) -> Option<Client> {

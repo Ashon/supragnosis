@@ -27,7 +27,7 @@
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
-> is built. Step 46b, the app that wrote it, is specified.
+> is built, as is step 46b, the app that wrote it.
 
 ## 1. Why this exists
 
@@ -1871,7 +1871,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    id, each contested value's source, Review's identity diff, every check and the evidence, what
    waits for the person on the inspector, a relation's trust, and Neither is right's sentence. The
    app that wrote an attestation (D13) is step 46b.
-46b. **The app that wrote it** (Section 29.8; D13, onboarding.md O7): the MCP client's name recorded in
+46b. **The app that wrote it** [built] (Section 29.8; D13, onboarding.md O7): the MCP client's name recorded in
    a local table beside each attestation its session writes, store format 3, one name table in the
    core crate, said in the who-line and the map's activity, and kept off the wire and the read tier.
 
@@ -4037,3 +4037,12 @@ No row needs a principle changed. O7 is revised by the author's D13.
 - It does not send the app's name to a peer, which would need it signed and a wire version.
 - It does not record a name for what was written before it: those attestations read as no app.
 - It does not build excision; excision.md gains the line that removes an excised observation's rows.
+
+**Guarded by** `an_attestation_keeps_the_app_that_wrote_it` in the store's port conformance (a row
+written once, the key moved by every field but the stamp), `an_attestation_names_its_app_on_local_reads_only`
+in the engine's policy cases (local reads only, the name table, the 64-character cut, the event, a
+re-key that keeps it), `a_session_records_its_app_and_no_tool_answer_carries_it` in the MCP surface
+tests (a local session records, no tool or resource answers with it, only the branch that serves no
+principals sets it), `the_read_tier_answers_only_within_the_grants` and its event stream in the
+read tier's tests (never answered, never streamed), and `the_app_names_are_one_table` in
+`crates/supragnosis-viz/tests/words.rs` (the app pages' and the shell's copies of the names).

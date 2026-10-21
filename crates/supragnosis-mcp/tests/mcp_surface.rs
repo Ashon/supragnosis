@@ -1189,6 +1189,73 @@ async fn first_contact_is_the_clients_own_name_and_a_hub_records_none() {
     }
 }
 
+/// design-system.md Section 29.8: what a local session writes records the app it named itself as,
+/// in this node's own table, and no tool's answer or resource carries it; only a server that serves
+/// no principals sets the name a write records.
+#[tokio::test]
+async fn a_session_records_its_app_and_no_tool_answer_carries_it() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let serving = engine.clone();
+    let server = tokio::spawn(async move {
+        let running = SupragnosisServer::new(serving).serve(server_io).await.expect("handshake");
+        let _ = running.waiting().await;
+    });
+    let info = rmcp::model::ClientConfig::new(
+        Default::default(),
+        rmcp::model::Implementation::new("claude-code", "2.1.0"),
+    );
+    let client = info.serve(client_io).await.expect("client handshake");
+    let call = |name: &'static str, v: Value| {
+        let client = &client;
+        async move {
+            let mut p = CallToolRequestParams::new(name);
+            p.arguments = Some(args(v));
+            client.call_tool(p).await.expect(name)
+        }
+    };
+    let out = tool_json(
+        &call(
+            "observe",
+            json!({ "content": "the ledger is a table", "entities": [{ "name": "Ledger" }] }),
+        )
+        .await,
+    );
+    let id = out["observation_id"].as_str().expect("an observation").to_string();
+    let local = engine.observation_local(&id, None).unwrap().expect("row");
+    assert_eq!(local.attestations[local.author].app.as_deref(), Some("Claude Code"));
+    let ledger = supragnosis_core::Entity::make_id("ws", "Ledger");
+    for (name, v) in [
+        ("get_entity", json!({ "id": ledger })),
+        ("search_knowledge", json!({ "query": "ledger" })),
+        ("traverse", json!({ "id": ledger })),
+    ] {
+        let text = serde_json::to_string(&tool_json(&call(name, v).await)).unwrap();
+        assert!(!text.contains("\"app\""), "{name} carries the app: {text}");
+    }
+    let res = client
+        .read_resource(rmcp::model::ReadResourceRequestParams::new(format!(
+            "supragnosis://observation/{id}"
+        )))
+        .await
+        .expect("resource");
+    assert!(
+        !format!("{res:?}").contains("Claude Code"),
+        "the raw observation carries the app"
+    );
+    client.cancel().await.ok();
+    server.abort();
+
+    // The name is set only on the branch that serves no principals.
+    let src = include_str!("../src/lib.rs");
+    let local =
+        &src[src.find("let Some(surface) = &self.remote else {").expect("the local branch")..];
+    let local = &local[..local.find("};").expect("it closes")];
+    assert!(local.contains("WRITING_APP.scope(app,"), "a local call names no app");
+    assert_eq!(src.matches("WRITING_APP.scope(").count(), 1, "another path names an app");
+}
+
 // --- Prompts (docs/prompts.md) ------------------------------------------------------------------
 
 async fn prompt_server(
@@ -1663,6 +1730,19 @@ impl supragnosis_core::KnowledgeStore for SlowStore {
         vectors: &[(String, Vec<f32>)],
     ) -> Result<usize, supragnosis_core::StoreError> {
         self.inner.attach_observation_embeddings(vectors)
+    }
+    fn record_attestation_app(
+        &self,
+        key: &str,
+        app: &str,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.record_attestation_app(key, app)
+    }
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, supragnosis_core::StoreError> {
+        self.inner.attestation_apps(keys)
     }
 }
 

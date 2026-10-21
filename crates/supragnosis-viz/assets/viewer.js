@@ -2646,7 +2646,8 @@ function writerOf(a) {
   const mine = writtenHere(a);
   const machine = mine ? here() : String(a.origin_node).slice(0, 8);
   if (a.source_ref === "surface:console") return mine && surfaceKind === "local" ? "you at this console" : "a person at " + machine;
-  return machine;
+  // The app this node recorded for it (Section 29.8): "Claude Code on this Mac".
+  return a.app && mine ? a.app + " on " + machine : machine;
 }
 function writerFor(a) { return a ? writerOf(a) + (a.on_behalf_of ? ", for " + a.on_behalf_of : "") : ""; }
 // The attestation that wrote it - the engine's `author`, not the first by host.
@@ -2759,14 +2760,15 @@ function noteElsewhere(ws) {
   elsewhere.set(ws, { el, n: 1 });
 }
 // The map's activity, in sentences (design-system.md Section 29.6, U17): no tool name, abbreviation
-// or mode id. Who acted is "An agent" until an event names its app (D13, step 46b).
+// or mode id. Who acted is the app the local event names (Section 29.8), else "An agent".
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many || one + "s"); }
+function actorOf(ev) { return ev.app || "An agent"; }
 function wroteSaid(ev) {
   const parts = [];
   const ne = (ev.entities || []).length, nr = ev.relations || 0;
   if (ne) parts.push(plural(ne, "entity", "entities"));
   if (nr) parts.push(plural(nr, "relation"));
-  return "An agent wrote " + (parts.length ? parts.join(" and ") : "an observation") + " in " + ev.workspace;
+  return actorOf(ev) + " wrote " + (parts.length ? parts.join(" and ") : "an observation") + " in " + ev.workspace;
 }
 // A peer as a row names it: a node id's first eight characters, or a server's host.
 function peerSaid(peer) {
@@ -2788,14 +2790,14 @@ function syncSaid(ev) {
 function activitySaid(ev) {
   const nameOf = id => { const n = nodeById(id); return n ? n.name : null; };
   if (ev.kind === "observe") return wroteSaid(ev);
-  if (ev.kind === "search") return "An agent searched \"" + ev.query + "\" - " + (ev.hits | 0) + " found";
+  if (ev.kind === "search") return actorOf(ev) + " searched \"" + ev.query + "\" - " + (ev.hits | 0) + " found";
   if (ev.kind === "get_entity") {
     const n = ev.name || nameOf(ev.id) || "an entity";
-    return ev.found ? "An agent looked up " + n : "An agent looked for " + n + " - not found";
+    return ev.found ? actorOf(ev) + " looked up " + n : actorOf(ev) + " looked for " + n + " - not found";
   }
   if (ev.kind === "traverse") {
     const n = nameOf(ev.start);
-    return "An agent followed " + (n ? n + "'s" : "an entity's") + " relations - " + (ev.reached || []).length + " reached";
+    return actorOf(ev) + " followed " + (n ? n + "'s" : "an entity's") + " relations - " + (ev.reached || []).length + " reached";
   }
   if (ev.kind === "sync") return syncSaid(ev);
   return null;

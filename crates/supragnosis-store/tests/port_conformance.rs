@@ -1034,3 +1034,37 @@ fn a_stored_vector_survives_the_round_trip() {
         );
     });
 }
+
+/// design-system.md Section 29.8: the app that wrote an attestation is kept by its key, written
+/// once - a second name for the same key does not replace the first - and a lookup answers only the
+/// keys that have a row. The key moves with every attestation field but the sync stamp.
+#[test]
+fn an_attestation_keeps_the_app_that_wrote_it() {
+    for_each_adapter(|s| {
+        let o = obs("written by an app");
+        let p = o.provenance[0].clone();
+        let key = supragnosis_core::attestation_key(&o.id, &p);
+        s.add_observation(o.clone()).unwrap();
+        assert!(s.attestation_apps(std::slice::from_ref(&key)).unwrap().is_empty(), "no row yet");
+        s.record_attestation_app(&key, "claude-code").unwrap();
+        s.record_attestation_app(&key, "cursor").unwrap();
+        let other = "an attestation nobody recorded".to_string();
+        let got = s.attestation_apps(&[key.clone(), other]).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[&key], "claude-code", "a row is written once");
+
+        // A stamp added at first export does not move the key.
+        let mut stamped = p.clone();
+        stamped.sync = Some(supragnosis_core::SyncMeta {
+            origin_node: "node-a".into(),
+            origin_seq: 1,
+            hlc: supragnosis_core::Hlc { wall: 1, counter: 0, node: "node-a".into() },
+            signature: "sig".into(),
+            lineage: vec![],
+        });
+        assert_eq!(supragnosis_core::attestation_key(&o.id, &stamped), key);
+        let mut other_source = p.clone();
+        other_source.source_ref = Some("git:1".into());
+        assert_ne!(supragnosis_core::attestation_key(&o.id, &other_source), key);
+    });
+}

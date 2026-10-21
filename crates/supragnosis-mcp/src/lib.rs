@@ -551,15 +551,24 @@ impl SupragnosisServer {
         // Run the blocking store call on spawn_blocking so concurrent HTTP requests do not starve
         // the tokio workers (harmless with a single stdio client, but essential for a daemon with multiple connections).
         let engine = self.engine.clone();
-        match tokio::task::spawn_blocking(move || engine.observe(input)).await {
+        let app = writing_app();
+        let as_app = app.clone();
+        match tokio::task::spawn_blocking(move || {
+            engine.as_app(as_app.as_deref(), || engine.observe(input))
+        })
+        .await
+        {
             Ok(Ok(out)) => {
                 // UI observability: publish the ingest activity (viewer live log + new-node pulse).
-                self.engine.emit(Event::Observe {
-                    observation: out.observation_id.clone(),
-                    entities: out.entities.clone(),
-                    relations: out.relations.len(),
-                    workspace,
-                });
+                self.engine.emit_from(
+                    app.as_deref(),
+                    Event::Observe {
+                        observation: out.observation_id.clone(),
+                        entities: out.entities.clone(),
+                        relations: out.relations.len(),
+                        workspace,
+                    },
+                );
                 to_json(&out)
             }
             Ok(Err(e)) => err_json(&e.to_string()),
@@ -582,11 +591,14 @@ impl SupragnosisServer {
                     Err(Unseen::NotGranted) => return self.unknown_entity(&req.id),
                     Err(Unseen::Unservable(why)) => return err_json(&why),
                 }
-                self.engine.emit(Event::GetEntity {
-                    id: req.id.clone(),
-                    name: Some(view.entity.canonical_name.clone()),
-                    found: true,
-                });
+                self.engine.emit_from(
+                    writing_app().as_deref(),
+                    Event::GetEntity {
+                        id: req.id.clone(),
+                        name: Some(view.entity.canonical_name.clone()),
+                        found: true,
+                    },
+                );
                 to_json(&view)
             }
             // Open-world assumption (Principle 5): absence is not falsehood but unknown.
@@ -726,17 +738,20 @@ impl SupragnosisServer {
         match searched {
             Ok(out) => {
                 // UI observability: publish the search activity (viewer log + hit-node highlight).
-                self.engine.emit(Event::Search {
-                    query: req.query.clone(),
-                    workspace: req.workspace.clone(),
-                    hits: out.hits.len(),
-                    nodes: out.hits.iter().map(|h| h.id.clone()).collect(),
-                    mode: match out.mode {
-                        SearchMode::Hybrid => "hybrid",
-                        SearchMode::Keyword => "keyword",
-                    }
-                    .to_string(),
-                });
+                self.engine.emit_from(
+                    writing_app().as_deref(),
+                    Event::Search {
+                        query: req.query.clone(),
+                        workspace: req.workspace.clone(),
+                        hits: out.hits.len(),
+                        nodes: out.hits.iter().map(|h| h.id.clone()).collect(),
+                        mode: match out.mode {
+                            SearchMode::Hybrid => "hybrid",
+                            SearchMode::Keyword => "keyword",
+                        }
+                        .to_string(),
+                    },
+                );
                 let mut resp = serde_json::json!({ "mode": out.mode, "hits": out.hits });
                 if !remote_results.is_empty() {
                     resp["remote"] = serde_json::Value::Array(remote_results);
@@ -807,10 +822,13 @@ impl SupragnosisServer {
             Err(e) => return err_json(&format!("task join error: {e}")),
         };
         // UI observability: publish the traverse activity (highlight the start + reached nodes).
-        self.engine.emit(Event::Traverse {
-            start: req.id.clone(),
-            reached: hits.iter().map(|h| h.id.clone()).collect(),
-        });
+        self.engine.emit_from(
+            writing_app().as_deref(),
+            Event::Traverse {
+                start: req.id.clone(),
+                reached: hits.iter().map(|h| h.id.clone()).collect(),
+            },
+        );
         let mut resp = serde_json::json!({ "hits": hits });
         // Distinguish the cause of zero hits (Principles 5/21): a missing start entity (unknown) and
         // "exists but has no outgoing relations" are situations the LLM must correct for differently.
@@ -970,7 +988,12 @@ impl SupragnosisServer {
             defs,
         };
         let engine = self.engine.clone();
-        match tokio::task::spawn_blocking(move || engine.define_type(input)).await {
+        let app = writing_app();
+        match tokio::task::spawn_blocking(move || {
+            engine.as_app(app.as_deref(), || engine.define_type(input))
+        })
+        .await
+        {
             Ok(Ok(observation_id)) => {
                 serde_json::json!({ "observation_id": observation_id }).to_string()
             }
@@ -1029,7 +1052,12 @@ impl SupragnosisServer {
             on_behalf_of: req.on_behalf_of,
         };
         let engine = self.engine.clone();
-        match tokio::task::spawn_blocking(move || engine.propose(input)).await {
+        let app = writing_app();
+        match tokio::task::spawn_blocking(move || {
+            engine.as_app(app.as_deref(), || engine.propose(input))
+        })
+        .await
+        {
             Ok(Ok(id)) => serde_json::json!({ "proposal_id": id }).to_string(),
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),
@@ -1045,15 +1073,18 @@ impl SupragnosisServer {
             (req.workspace, req.proposal, req.decision, req.note, req.on_behalf_of);
         // This is the agent-facing surface (resolution.md Section 6): the engine stamps the Agent
         // marker, capping what a merged promotion can grant. Never client-suppliable.
+        let app = writing_app();
         match tokio::task::spawn_blocking(move || {
-            engine.review_proposal(
-                ws,
-                prop,
-                dec,
-                note,
-                obo,
-                supragnosis_engine::VerdictSurface::Agent,
-            )
+            engine.as_app(app.as_deref(), || {
+                engine.review_proposal(
+                    ws,
+                    prop,
+                    dec,
+                    note,
+                    obo,
+                    supragnosis_engine::VerdictSurface::Agent,
+                )
+            })
         })
         .await
         {
@@ -1485,8 +1516,11 @@ impl ServerHandler for SupragnosisServer {
     ) -> Result<CallToolResponse, ErrorData> {
         self.note_contact(&context);
         let Some(surface) = &self.remote else {
+            // A local session: what it writes, and the activity it causes, name its app
+            // (design-system.md Section 29.8). A server that serves principals never sets it (O7).
+            let app = client_name(&context);
             let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-            return self.tool_router.call(tcc).await;
+            return WRITING_APP.scope(app, self.tool_router.call(tcc)).await;
         };
         let refuse = |why: String| -> Result<CallToolResponse, ErrorData> {
             Ok(CallToolResult::error(vec![ContentBlock::text(
@@ -1920,6 +1954,28 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
 }
 
 // --- Serialization helpers (tools return JSON strings) ----------------------
+
+tokio::task_local! {
+    /// The client name of the local MCP call in progress, as its session named itself - set only on
+    /// a server that serves no principals (design-system.md Section 29.8, onboarding.md O7).
+    static WRITING_APP: Option<String>;
+}
+
+/// The app of the local call in progress, or `None` outside one (a remote principal's, the CLI's).
+fn writing_app() -> Option<String> {
+    WRITING_APP.try_with(|a| a.clone()).ok().flatten()
+}
+
+/// A request's client name: its session's `initialize`, else the client information the request
+/// carries in its metadata, recorded as a node records it (cut to 64 characters).
+fn client_name(context: &RequestContext<RoleServer>) -> Option<String> {
+    context
+        .peer
+        .peer_info()
+        .map(|i| i.client_info.name.clone())
+        .or_else(|| context.meta.client_info().map(|i| i.name.clone()))
+        .and_then(|n| supragnosis_core::client_recorded(&n))
+}
 
 fn to_json<T: Serialize>(v: &T) -> String {
     serde_json::to_string(v).unwrap_or_else(|e| err_json(&e.to_string()))

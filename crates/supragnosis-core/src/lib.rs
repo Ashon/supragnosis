@@ -308,6 +308,105 @@ pub fn attestation_signing_bytes(content_id: &str, p: &Provenance, meta: &SyncMe
     buf
 }
 
+/// The key a node keeps the app that wrote an attestation under (design-system.md Section 29.8):
+/// the observation's id and a hash of every field of the attestation but its sync stamp. Every
+/// field is named here, as in [`attestation_signing_bytes`] and `provenance_order`, so one added
+/// later is decided for this key too (Principle 14); the stamp is left out so that stamping a local
+/// attestation at its first export does not move it. Two attestations that differ in any other
+/// field have two keys.
+pub fn attestation_key(observation_id: &str, p: &Provenance) -> String {
+    let Provenance {
+        host,
+        on_behalf_of,
+        workspace,
+        source_ref,
+        observed_at,
+        confidence,
+        trust_tier,
+        sync: _, // added at first export (federation.md Section 3) - not part of which attestation it is
+    } = p;
+    let mut buf = Vec::new();
+    push_field(&mut buf, observation_id.as_bytes());
+    push_field(&mut buf, host.as_bytes());
+    push_opt_field(&mut buf, on_behalf_of.as_deref());
+    push_field(&mut buf, workspace.as_bytes());
+    push_opt_field(&mut buf, source_ref.as_deref());
+    buf.extend_from_slice(&observed_at.to_le_bytes());
+    match confidence {
+        Some(c) => {
+            buf.push(1);
+            buf.extend_from_slice(&c.to_bits().to_le_bytes());
+        }
+        None => buf.push(0),
+    }
+    buf.push(match trust_tier {
+        TrustTier::Unverified => 0,
+        TrustTier::AgentExtracted => 1,
+        TrustTier::HostSigned => 2,
+        TrustTier::HumanConfirmed => 3,
+    });
+    format!("{observation_id}:{}", blake3::hash(&buf).to_hex())
+}
+
+/// The AI apps `supragnosis connect` knows (client-connect.md Section 4): the id a command takes and
+/// the name a person reads - the one table setup, `connect` and the reads that name an app use
+/// (design-system.md Section 29.8).
+pub const AI_APPS: [(&str, &str); 7] = [
+    ("claude-desktop", "Claude Desktop"),
+    ("claude-code", "Claude Code"),
+    ("cursor", "Cursor"),
+    ("vscode", "VS Code"),
+    ("codex", "Codex"),
+    ("gemini", "Gemini CLI"),
+    ("opencode", "OpenCode"),
+];
+
+/// The name a person reads for an app id of [`AI_APPS`].
+pub fn app_name(id: &str) -> Option<&'static str> {
+    AI_APPS.iter().find(|(i, _)| *i == id).map(|(_, n)| *n)
+}
+
+/// The app a client name from MCP `initialize` belongs to (onboarding.md Section 5), as the apps
+/// send it. A name this table does not know is shown as sent, never guessed.
+pub fn client_app(name: &str) -> Option<&'static str> {
+    let n = name.trim().to_ascii_lowercase();
+    if n.starts_with("claude-code") {
+        Some("claude-code")
+    } else if n == "claude-ai" || n.starts_with("claude-desktop") || n == "claude" {
+        Some("claude-desktop")
+    } else if n.contains("cursor") {
+        Some("cursor")
+    } else if n.contains("visual studio code") || n == "vscode" || n.starts_with("code-") {
+        Some("vscode")
+    } else if n.starts_with("codex") {
+        Some("codex")
+    } else if n.starts_with("gemini") {
+        Some("gemini")
+    } else if n.starts_with("opencode") {
+        Some("opencode")
+    } else {
+        None
+    }
+}
+
+/// The longest client name a node records for an attestation (design-system.md Section 29.8).
+pub const CLIENT_NAME_MAX: usize = 64;
+
+/// A client name as a node records it: trimmed and cut to [`CLIENT_NAME_MAX`] characters, or
+/// `None` for an empty one.
+pub fn client_recorded(name: &str) -> Option<String> {
+    let n: String = name.trim().chars().take(CLIENT_NAME_MAX).collect();
+    (!n.is_empty()).then_some(n)
+}
+
+/// What a reader is shown for a recorded client name: its app's name, or the name as sent.
+pub fn client_said(name: &str) -> String {
+    client_app(name)
+        .and_then(app_name)
+        .map(str::to_string)
+        .unwrap_or_else(|| name.to_string())
+}
+
 /// Length-prefixed append (the signing-bytes counterpart of [`hash_field`]).
 fn push_field(buf: &mut Vec<u8>, bytes: &[u8]) {
     buf.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
@@ -1329,6 +1428,15 @@ pub trait KnowledgeStore: AssertionStore {
         &self,
         vectors: &[(String, Vec<f32>)],
     ) -> Result<usize, StoreError>;
+    /// Records the app that wrote an attestation, under its [`attestation_key`] (design-system.md
+    /// Section 29.8). Node-local: nothing that is signed, synced, ordered or folded reads it. A key
+    /// already recorded keeps the name it has - a row is written once.
+    fn record_attestation_app(&self, key: &str, app: &str) -> Result<(), StoreError>;
+    /// The apps recorded under these keys, by key; a key with none is absent from the answer.
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, StoreError>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1599,6 +1707,10 @@ pub enum Event {
 pub struct EventEnvelope {
     /// Session id (a conversation, roughly one MCP server run unit, or injected by the client). The footprint grouping key.
     pub session: String,
+    /// The app of the local MCP session the activity came from, as it named itself in `initialize`
+    /// (design-system.md Section 29.8). Never a remote principal's; the read tier drops it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
     #[serde(flatten)]
     pub event: Event,
 }

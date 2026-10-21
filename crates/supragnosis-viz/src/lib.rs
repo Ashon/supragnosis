@@ -629,8 +629,10 @@ fn observations_response(engine: &Engine, query: &str) -> Response {
     // `id=<observation id>`: that one, in whichever workspace holds it, so a card opens without the
     // scope's log (design-system.md Section 29.7). A list of one, or empty for an unknown id.
     let read = match param("id").filter(|s| !s.is_empty()) {
-        Some(id) => engine.observation(&id, None).map(|o| o.into_iter().collect::<Vec<_>>()),
-        None => engine.observation_log(ws_owned.as_deref(), entity.as_deref(), limit),
+        // The local console's reads name each attestation's app (design-system.md Section 29.8);
+        // the read tier answers through remote.rs, which never asks for it.
+        Some(id) => engine.observation_local(&id, None).map(|o| o.into_iter().collect::<Vec<_>>()),
+        None => engine.observation_log_local(ws_owned.as_deref(), entity.as_deref(), limit),
     };
     match read {
         Ok(log) => match serde_json::to_string(&log) {
@@ -713,7 +715,7 @@ fn explain_response(engine: &Engine, query: &str) -> Response {
             body: err_body("explain needs ?entity=<id> (ids come from /api/graph nodes)"),
         };
     };
-    match engine.explain_entity(&entity) {
+    match engine.explain_entity_local(&entity) {
         Ok(Some(ex)) => match serde_json::to_string(&ex) {
             Ok(json) => Response { status: "200 OK", content_type: "application/json", body: json },
             Err(e) => Response {
