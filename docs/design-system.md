@@ -26,6 +26,7 @@
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
 > steps 41 to 44 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, and app pages that hold focus and a failure that says so.
+> Step 45, one concept with one name, is specified.
 
 ## 1. Why this exists
 
@@ -915,8 +916,11 @@ surfaces one anatomy for them, and a clock that stops while a notice is read (U4
 **Words are the reader's.** The interface stays in English. A system term may stay in a tooltip or a
 disclosure, where it links the screen to these documents, and never in the line a person reads first.
 Hashes and ids live in footers and cards. One line never states two contradictory states. A host is
-named by its id; it is called "this node" only when the id is the one `/api/surface` reports for the
-node serving the page, since every unconfigured node calls itself `localhost`.
+named by its id; it is called "this Mac" in the app on a Mac and "this machine" elsewhere only when
+the id is the one `/api/surface` reports for the node serving the page, since every unconfigured node
+calls itself `localhost`. *(Revised by step 45, D2: it was "this node", the word the rail used for an
+entity.)* The product is "Supragnosis" in a sentence and "supragnosis" in a command, a path, the
+CLI's own output and code (D17).
 
 **A tier is named, never spelled** (U17). Every place that shows a tier uses the Trust legend's
 names, which are Unverified, Agent, Host signed and Human confirmed. The identifiers stay in tooltips
@@ -942,12 +946,12 @@ a state keeps one word on every page that shows it.
 |---|---|
 | the Proposals and Review tabs | Review |
 | BLOCKED 1V | Blocked - 1 check fails |
-| same across this scope: agent_extracted / from localhost | All here: Agent, from localhost (this node) |
+| same across this scope: agent_extracted / from localhost | All here: Agent, from this Mac (or this machine) - since step 45 |
 | accepted entity_merge [blocked]: c9a66148 -> T2 | You accepted merging into "T2". A check blocks it. |
 | grab-bag contexts / reify | Overloaded contexts / Name this group |
 | merge cycles / name variants / orphans | Conflicting merges / Possible duplicates / Unlinked |
 | Healthy - nothing owed | Up to date |
-| Peers, client, local +N | Sync, Spoke, this node +N |
+| Peers, client, local +N | Sync, Spoke, this Mac (or this machine) +N - since step 45 |
 | settling layout... | Arranging 168 items |
 | accepted claim_promotion: 9f778c20 | Claim confirmation accepted: "The ledger is a Postgres table..." (Ledger) - since step 42 |
 | opened entity_merge: PostgreS -> Postgres | Merge proposed: PostgreSQL into Postgres |
@@ -958,6 +962,66 @@ a state keeps one word on every page that shows it.
 | agent_extracted, host_signed | Agent, Host signed |
 | welcome / Finish setup... / Run setup again | Setup / Finish Setup... / Open Setup |
 | Needs switching | Needs you |
+
+**A state keeps one word** (U17). The daemon's state is said with these words on the tray's line,
+Settings' Server and This Mac panes, Setup's first card and the starting page (step 45):
+
+| The daemon | Word | Said with |
+|---|---|---|
+| started by the shell, not answering yet | Starting... | nothing to press for 10 seconds (Section 29.5) |
+| answering at the installed version | Running | who keeps it: starts at login, while this app is open, Homebrew's service, `supragnosis start`, started outside this app |
+| answering at an older version than the installed one | Update ready - restart | both versions (daemon-lifecycle.md L3) and where to restart |
+| answering while its store repairs | Repairing - N items left | |
+| not answering, and nothing starting it - a login job's included | Stopped | a login job's last exit, where Setup reads it |
+| its start failed, or the app's child exited | Could not start | the cause, in one sentence |
+| claimed by two managers | Two managers run Supragnosis | where to settle it |
+| unable to open its store for its model | The search index needs rebuilding | the two models, and Rebuild index |
+| not used, a remote server is | Not in use | the server's name |
+| not read: the command line did not answer | Unknown | |
+
+"Answering" and "Not answering" are said of a remote server only. A step's own pills on Setup - Done,
+Not done, Needs you - are the step's, not the daemon's. The app's own state - a `supragnosis-server`
+newer than the app - is the tray's line "supragnosis-server is newer than this app - update the
+app". No page reads a state out of these words: Settings is given the shell's state as a field.
+
+**Headings are in sentence case** (U17): only the first word and names take a capital, and a count
+stands beside its heading in the muted count style - "Relations 3", "Provenance 2" - not in brackets.
+
+**Retired words** (U17). Each phrase of the left column, as it was written and matched case for case,
+fails the build when it appears in the viewer's markup or script, the app's pages and scripts, the
+shell's lines or Setup's sentences, comments and test code left out:
+
+| Retired | Said instead |
+|---|---|
+| this node | this Mac, or this machine |
+| This node | This Mac, or This machine |
+| Node types | Entity types |
+| Edge types | Relation types |
+| between nodes | between entities |
+| links between groups | relations between groups |
+| nodes they touch | entities they touch |
+| linked to a match | related to a match |
+| No item in | No entity in |
+| no node is ringed | no entity is ringed |
+| belief decision | Why this value |
+| Needs switching | Needs you |
+| nothing owed | Up to date |
+| projections owed | Repairing - N items left |
+| settling layout | Arranging N items |
+| After a commit, ask for the decision | Save the why behind each commit |
+| Keep it running | Keep Supragnosis running |
+| Set up supragnosis | Set up Supragnosis |
+| Welcome - supragnosis | Setup - Supragnosis |
+| Running only while the app is open | Running while this app is open |
+| run by this app, not at login | while this app is open |
+| Restart to update | Update ready - restart |
+| Not running | Stopped |
+| daemon: FAILED | Could not start |
+| daemon: CONFLICT | Two managers run Supragnosis |
+| licence | License |
+| daemon: starting | Starting... |
+| externally managed | started outside this app |
+| login item | starts at login |
 
 ## 10. Keyboard, motion and contrast
 
@@ -1426,7 +1490,7 @@ social image.
 | **U14** | The principles page draws the viewer's marks with the viewer's meanings and every other mark as its own, every color a landing token; each demo and scene plays at most once on its own, can be stopped while it plays, and rests drawing nothing; under reduced motion each beat and demo state is its resting frame; every canvas is hidden from assistive technology, a caption is announced only after the reader acts, and without a script the page draws no empty frame (P2, P6, P18). |
 | **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each related row saying which, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count, or "20+" at the limit (P5, P19). |
 | **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
-| **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; and a place keeps one name wherever it is reached (P2). |
+| **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; a place keeps one name wherever it is reached; a state of the daemon keeps one word on every surface that shows it, from Section 9's state words; and no retired word of Section 9 reaches a page, the tray or Setup's sentences (P2). |
 | **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
 | **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a page that draws itself again keeps the control that had focus; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
 | **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen while the person is not using the map, names it in a notice with Show while they are, and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
@@ -1781,6 +1845,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    draw and no draw for an unchanged read, the starting page's three states with Restart, Diagnostics
    and the log, a restart that leaves a login job its daemon, Settings acting on what that page asks,
    selectable commands and paths with Copy, and Setup's foot.
+45. **One concept, one name** (Section 29.6; U17, D2, D17): this Mac or this machine for the page's
+   own machine, entity, relation and type for the graph's parts, sentence-case headings with their
+   counts, the map's activity in sentences, one word per daemon state, the AI app's row built once in
+   `kit.js`, This Mac's own sentences, Supragnosis in sentences, and the retired words as a tripwire.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -3398,12 +3466,13 @@ decided both.
   for 20 seconds after the person's move.
   - Activity in the scope on screen meanwhile - a write, a search, a read of an entity, a traversal -
     is one notice, `info`, saying the latest in words, always as what an agent did, so it is never
-    taken for the notice of a write elsewhere ("New in infra", whose Show changes the scope): "An agent
-    wrote 3 entities to billing", "An agent searched billing - 8 found", "An agent searched - 8 found"
-    for a search that names no workspace, "An agent read Ledger", "An agent traversed from Ledger - 5
-    reached". Show frames what that latest activity touched. Later activity rewrites the notice in
-    place, with a count: "An agent read Ledger (and 2 more)". It stays until it is used or dismissed,
-    as U42 has it.
+    taken for the notice of a write elsewhere ("New in infra", whose Show changes the scope): the
+    sentence the map's passing row says for it (Section 29.6) - "An agent wrote 3 entities in
+    billing", "An agent searched "ledger" - 8 found", "An agent looked up Ledger", "An agent followed
+    Ledger's relations - 5 reached". Show frames what that latest activity touched. Later activity
+    rewrites the notice in place, with a count: "An agent looked up Ledger (and 2 more)". It stays
+    until it is used or dismissed, as U42 has it. *(Revised by step 45: the notice had words of its
+    own - "read", "traversed from" - beside the row's.)*
   - A sync that lands knowledge in the scope meanwhile does not refit the map.
 - **Follow leads the camera toolbar**, with Lucide's `locate`. While on it is pressed
   (`aria-pressed`); while on and waiting it is named "Follow paused"; while off it shows
@@ -3511,7 +3580,7 @@ these findings.
     on window focus and its 2-second watch. Every other draw - after an act, on a hash change - happens
     as now.
 - **The starting page says which of three things is true,** from the shell's state, and has no timer:
-  - **Starting**, for the first 10 seconds of a start the shell made: "Starting supragnosis..." with a
+  - **Starting**, for the first 10 seconds of a start the shell made: "Starting Supragnosis..." (the name capitalized since step 45) with a
     small spinner, still under reduced motion, and nothing to press.
   - **Still starting**, after that, and while a child the app spawned is alive and not yet
     answering (the app stops waiting on it at 10 seconds, and a cold start can take longer): the same
@@ -3550,7 +3619,183 @@ these findings.
 - It does not give the page shown while a remote server is active (`remote_html`) the same anatomy.
 - It does not read a systemd unit's journal or a legacy `brew services` job's log for the log field
   and Diagnostics; under those, they name the two files above.
-- It does not change the tray's lines or icon, or the Quit item's words (D14, D15: step 50).
+- It does not change the tray's lines or icon, or the Quit item's words (D14, D15: step 50; the line's
+  words are step 45's).
 - It does not give the daemon's states one word on every surface (R4-11, step 45), build the AI app's
-  row once for both pages (R4-08), or rename Settings' sidebar, reopen its last pane and keep the
-  window's size (R4-14, R4-16).
+  row once for both pages (R4-08, step 45), or rename Settings' sidebar, reopen its last pane and keep
+  the window's size (R4-14, R4-16, step 50).
+
+### 29.6 Step 45: one concept, one name
+
+**What was found.** Measured in the viewer, the app's pages, the tray and the code that writes them:
+- **"Node" names two things, and the computer has many names.** The Log's who-line says "this node"
+  beside a rail headed "Node types"; the trust note says "no node is ringed"; the Peers switch moves
+  dots "to the nodes they touch". The same Mac is "this node" in the Log and the sync pill, "localhost
+  (this node)" in the inspector, "localhost" on Review, "This Mac" in Settings, a heading "This node"
+  over "Hubs this Mac syncs to" on Sync, and "daemon" in the tray.
+- **Entities and relations go by node, edge, link, kind and item.** The rail says "Node types" and
+  "Edge types" and, two rows lower in Definitions, "entity types" and "relation types"; View's switch
+  is "Edges - Relations between nodes"; search says "linked to a match" and "No item in billing
+  contains"; Review's diff prints the field ids "kind" and "edge"; the map's tooltip says "degree".
+- **Section 9's renames were not all applied.** "Needs switching" (Settings' AI apps), "Healthy -
+  nothing owed" (This Mac's store) and "settling layout..." (the map's loader) are still drawn.
+- **Headings change case from panel to panel:** sentence case in the rail, lowercase in the
+  inspector ("relations (3)", "evidence (2)") and the observation card ("provenance (2)", "derived
+  from"), and "belief decision (why this value)" as a toggle.
+- **The map's passing rows speak in tool calls:** "observe +2 ent, +1 rel ws infra", "search "q" ->
+  8 hits hybrid", "get_entity Ledger found", "sync push billing <-> 4a1b2c3d4e5f6071 (3)"; the status
+  bar names a session by its id, "session localhost-1792... / 8 used". Closing the Log leaves no strip
+  in its place until the next poll, up to 2.5 seconds later.
+- **The daemon's state has a word per surface.** The same healthy state is "daemon 0.8.2 - login
+  item" in the tray, "Answering" on Settings' Server pane, "Running" on This Mac and "Done" under
+  "Keep it running" on Setup; drift is "daemon 0.8.1 running, 0.8.2 installed - restart it in
+  Settings" in the tray and "Update ready - restart to load 0.8.2" in Settings; a stopped daemon is
+  "Not running"; the tray says "daemon: FAILED - ..." and "daemon: CONFLICT - 2 managers claim it".
+- **The AI app's row is built twice and the two disagree.** Settings and Setup each draw their own
+  row: "Needs switching" against "Needs you", the capture option "Save the why behind each commit"
+  against "After a commit, ask for the decision behind it", and Restart Claude Desktop and Open
+  Cursor only on Setup. Settings' Connect says the next step twice, in its notice and in a callout in
+  the row.
+- **This Mac speaks the CLI's words beside its own controls.** The model row shows the CLI's note
+  ("semantic retrieval is off: the embedding model ... - run `supragnosis embed fetch` once") beside
+  a Download button; Diagnostics is described as "setup --check, status --json, ..."; with drift, a
+  conflict or a remote server the "Restart the daemon" row stays with nothing to press.
+- **The product is "supragnosis" and "Supragnosis" on one page** ("Set up supragnosis", "Supragnosis
+  is set up"), and Setup's window is titled "Welcome - supragnosis" where every other place calls it
+  Setup.
+- **The browser's Settings dialog reads like a debug panel:** its title "settings", its rows
+  "package", "version", "licence" and "source", and the role "spoke", where the app's page says
+  License and Spoke. Definitions and Review count sources as "3 src".
+
+**Decisions.** The author approved the review's recommendations: the computer serving the page is
+"this Mac" in the app on a Mac and "this machine" elsewhere (D2), which replaces Section 9's "this
+node"; and the product is "Supragnosis" in the interface's sentences and "supragnosis" in a command,
+a path, the CLI's own output and code (D17).
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| U17 | No line read first spells a system identifier; a place keeps one name wherever it is reached | repays - the activity rows, the status bar's session, Review's diff fields and the tray's lines say what happened in words; revised: it gains "a state keeps one word on every surface that shows it, from Section 9's state words, and no retired word of Section 9 reaches a page", guarded by tests named when they are built |
+| Section 9, "Words are the reader's" | A host is named by its id, and "this node" only when the id is the page's own | revised by D2: the page's own machine is "this Mac" in the app on a Mac and "this machine" elsewhere, still only for the id `/api/surface` reports; another machine stays named by its id |
+| Section 9, "One place, one name" | The table's left column is replaced by its right | repays - "Needs switching", "Healthy - nothing owed" and "settling layout..." go, and a test now fails when a retired word returns |
+| P8 | One meaning per concept | agrees - the screen uses the ontology's own three words, entity, relation and type; "node" no longer names both an entity and a machine |
+| P2 | Provenance is first-class: who wrote it is said | agrees - the who-line keeps tier, who and when; only the page's own machine changes its word |
+| design-system.md Section 6a | A control both pages offer "is built once in the app's shared script and drawn by both"; Setup's heading "Set up supragnosis" | repays the first - the AI app's row, its pill words, the capture option's label and the helper are `kit.js`'s; each page passes what it knows; revised in the second by D17: "Set up Supragnosis" |
+| design-system.md Section 29.4 | Follow's notice says the latest activity: "An agent read Ledger", "traversed from Ledger" | revised: it says the passing row's sentence, built once |
+| settings-page.md Section 3.2 | "The CLI's next step stays beside the app it concerns" | agrees - it stays in the row, said once, with the helper that does it where there is one; the notice names only what was done |
+| settings-page.md Section 3.3 | The daemon's card says its version and who runs it (login item, this app, Homebrew, `supragnosis start`); "Update ready - restart to load 0.7.0" | revised in who's words - starts at login, while this app is open, Homebrew's service, `supragnosis start`; agrees in drift's |
+| settings-page.md Section 3.4 | Sync shows "This node: its id and its role" | revised by D2: "This Mac" |
+| settings-page.md Section 5 | The tray's line says what needs doing and points to Settings | agrees - "Update ready - 0.8.1 running, 0.8.2 installed - restart in Settings", "Two managers run Supragnosis - open Settings" |
+| daemon-lifecycle.md L3 | The tray shows the running and the installed versions when they differ | agrees - the drift line keeps both |
+| remote-viewer.md Sections 3.5 and 6 | The page reads `/api/surface`; on a remote profile the app's window shows the server's read tier | agrees - the machine's word is said only where `/api/surface` reports the local console; a read tier's page says "this server" |
+| shell-init.js, its duties | The viewer stays browser-neutral; the shell's concerns stay in the shell's script | agrees - the word "this Mac" is the shell's to give, a fifth duty, and the viewer falls back to "this machine" |
+| onboarding.md Section 4.1 | The first step is "Keep it running" | revised: "Keep Supragnosis running" in the app and "Keep supragnosis running" in the CLI, by D17; the step's state and act are unchanged |
+| settings-page.md Section 3.2 and design-system.md Section 6a | Claude Code's capture switch is "Save the why behind each commit" | agrees - Setup takes the same label |
+| WCAG 3.2.4 | One function, one name across pages | repays |
+| U26 | The title bar names the place, never the product | agrees - the window's document titles become "Graph - Supragnosis", "Settings - Supragnosis" and "Setup - Supragnosis"; the bar itself is unchanged |
+
+No row needs a principle changed; D2 and D17 are the author's decisions.
+
+**Behaviour.**
+- **The page's own machine** is "this Mac" in the app on a Mac and "this machine" in a browser and
+  on other systems. The word is the app's shell's to give - its script sets it before the page loads,
+  as a fifth duty, since the viewer stays browser-neutral - and the viewer says it only where
+  `/api/surface` reports the local console; a read tier's page says "this server". It is said in the
+  Log's who-line, the inspector's scope line ("All here: Agent, from this Mac"), the sync pill
+  ("Syncing: this Mac +3, hub +2") and the Sync dialog's headings ("This Mac", "Hubs this Mac syncs
+  to"). Settings' Sync heading is "This Mac". Another machine is named by its id, as now, with
+  "machine" where a label names it. The keyword-only search note says "there is no meaning index
+  here".
+- **Entity, relation and type** are the only words for the graph's parts in a line read first:
+  - the rail's headings "Entity types" and "Relation types", each with its count beside it;
+  - View's switch "Relations", described "Lines between entities."; Group by type "A circle of
+    entities for each type, with the relations between groups kept."; Peers "Other machines, as dots
+    that move to the entities they touch.";
+  - search's reason "related to a match", and "No entity in billing contains "ledger".";
+  - the trust note "so no entity is ringed";
+  - Review's diff rows "Type" and "Relation" for the fields `kind` and `edge`;
+  - the map's tooltip "type", "relations" (the entity's count of relations) and "sources".
+- **Headings are in sentence case, a count beside them in the muted count style** the rail already
+  uses: the inspector's "Relations 3" and "Evidence 2"; the observation card's "Provenance 2",
+  "Derived from", "Proposal", "Targets", "Entities" and "Relations"; and the toggle "Why this value".
+- **The map's activity** is named "Activity" for a screen reader, and its rows are sentences with no
+  tool name, abbreviation or mode id; who acted is "An agent" until the event names the app (D13,
+  step 46):
+  - "An agent wrote 2 entities and 1 relation in infra" (a part with none is left out; "wrote an
+    observation" when it linked nothing);
+  - "An agent searched "kubernetes ingress" - 8 found";
+  - "An agent looked up Ledger", or "... looked for Ledger - not found";
+  - "An agent followed Ledger's relations - 4 reached";
+  - a sync: "Sent 3 in billing to 4a1b2c3d", "Received 3 in billing from 4a1b2c3d", and on a hub
+    "4a1b2c3d sent 3 to billing", "4a1b2c3d read 3 from billing"; a peer is its id's first eight
+    characters or its server's host, whole in the row's tooltip, and a check-in with nothing moved
+    writes no row.
+  - Follow's notice (Section 29.4) says the same sentence, from the same function.
+- **The status bar's footprint** reads "Agents used 8 entities": its session is the daemon's run, not
+  one conversation, so it counts every agent since then. The tooltip says since when and the
+  session's id. Closing the Log fetches the strip at once.
+- **The map's loader** says "Arranging 168 items", the count of what the layout settles.
+- **The daemon has one word per state** (Section 9's state words), on the tray's line, Settings'
+  Server and This Mac panes, Setup's first card and the starting page:
+  - Starting; Running, with who keeps it - "starts at login", "while this app is open", Homebrew's
+    service, `supragnosis start` or "started outside this app"; Stopped; Could not start, with the
+    cause; Update ready - restart; Repairing - N items left; Two managers run it; and Not in use while
+    a remote server is.
+  - "Answering" and "Not answering" are said of a remote server only. Settings' Server pane says the
+    daemon's word for This Mac.
+  - The tray's line: "Running 0.8.2 - starts at login", "Starting...", "Could not start: <cause>",
+    "Update ready - 0.8.1 running, 0.8.2 installed - restart in Settings", "Two managers run
+    Supragnosis - open Settings". Its structure and icon are step 50's.
+  - This Mac's store row: "Up to date", or "Repairing - 12 items left". About's daemon row says the
+    version, "Not in use" or "Stopped".
+  - No page reads a state out of these words: Settings is given the shell's state - starting, failed
+    with its cause, spawned, attached - as a field of its own, and the tray's line only to show.
+- **The AI app's row is `kit.js`'s.** Both pages draw it from one function, which takes the app, its
+  state in one vocabulary and what the page puts at its end - a checkbox on Setup's plan, a button on
+  Settings:
+  - one pill map: Connected, Not connected, Connecting, Needs you, Failed, Not installed, and
+    Unavailable when its settings cannot be read or the CLI is too old;
+  - one capture option, "Save the why behind each commit", with "After a commit, Claude Code is
+    asked to record the decision behind it, if there was one." under it - a switch on Settings, a
+    checkbox in Setup's plan;
+  - the helper - Restart Claude Desktop, Open Cursor - on both pages after this visit connected the
+    app, and Settings' Connect says its next step once, in the row; its notice says "Claude Desktop
+    connected".
+- **This Mac writes its own sentences.** The model row: "Search matches words until the model (224
+  MB) is downloaded." - the CLI's note goes into Copy Diagnostics. Diagnostics: "Setup's check, the
+  daemon's status, this app's state and the log's last lines, for a report. Nothing leaves this
+  Mac." The "Restart the daemon" row is not drawn while the card above holds the section's act or a
+  remote server is in use.
+- **The product's name** is "Supragnosis" in every sentence of the viewer, the app's pages, the tray
+  and the starting page - Setup's heading "Set up Supragnosis", Settings' blurbs ("The Supragnosis
+  server this Mac's AI apps use"), the document titles "Graph - Supragnosis", "Review - Supragnosis",
+  "Settings - Supragnosis", "Setup - Supragnosis" - and "supragnosis" in a command, a path, the
+  CLI's own output and code.
+- **Setup's sentences are the CLI's,** written once for the terminal and the app, so they say neither
+  the machine's word nor the product's name: "AI apps here use the server "home", so the daemon here
+  is not what they use"; "Cursor already has an entry setup did not write". A daemon that does not
+  answer is "Stopped" there too ("Stopped, and ..."). The step's title is "Keep Supragnosis running"
+  on the page and "Keep supragnosis running" in the terminal.
+- **The browser's Settings dialog** says "Settings", "Package", "Version", "License", "Source", and
+  the role "Hub" or "Spoke", as the app's page does. A count of sources is "3 sources".
+- **The Graph is the page; the map is its drawing.** "Open the Graph" names the page, as the tray and
+  the title bar do; "on the map" keeps naming the drawing inside it.
+- **Section 9's words become a tripwire.** Its table of retired words lists phrases as they were
+  written; a test reads the viewer's markup and script, the app's pages and scripts, the shell's
+  lines and Setup's sentences, comments and test code left out, and fails when one appears, case for
+  case. Section 9 gains the rule that headings are in sentence case.
+
+**What this step does not do.**
+- It does not rename regions or their count ("10 regions", Health's "contexts"), which step 47 does
+  with the map's legend (D3).
+- It does not change the landing's words (R1-17's "viewer", "entry", "machine"), which step 48 does
+  with its install line.
+- It does not add the client's name to an observation's attestation (D13, step 46), so an activity
+  row says "An agent".
+- It does not split the tray into two lines, change its icon or the Quit item (D14, D15, step 50), or
+  rename Settings' sidebar group and reopen its last pane (R4-14, R4-16, step 50).
+- It does not change the first entry's words - Setup's "Waiting for an entry", the map's "new
+  writes" - which step 48 settles with the landing's (R1-17).
+- It does not give the browser's dialog and the app's Sync pane one source for their words (R1-11),
+  or a case rule for buttons; a button keeps its words.
