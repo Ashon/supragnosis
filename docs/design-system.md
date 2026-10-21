@@ -29,7 +29,7 @@
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
-> its View. Step 50b, the menu bar and the tray, is specified.
+> its View, and step 50b, the menu bar and the tray.
 
 ## 1. Why this exists
 
@@ -1929,7 +1929,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    changes the picture; b only draws; Retry where the map is stale; the minimap while zoomed in; and
    framing that keeps the toolbar's box. The menu bar and the tray are step 50b; Settings' sidebar
    and the window's frame are step 50c.
-50b. **The menu bar and the tray** (Section 29.13; D14, D15; Sections 6 and 6a, settings-page.md
+50b. **The menu bar and the tray** [built] (Section 29.13; D14, D15; Sections 6 and 6a, settings-page.md
    Section 5, remote-viewer.md Section 6 and compatibility.md Section 8 revised): the app menu's
    Setup..., Edit's Find, View's map commands, Help, the tray's state line with its act in a fixed
    order, an icon that changes shape only while the memory cannot be used, Quit that says it stops
@@ -4646,7 +4646,7 @@ the menu bar, says nothing: the tray says the state, as a menu bar app's does (R
 | U41 | Icons are Lucide's files, and the app's own mark is the app's | agrees - the trouble shape is the mark drawn by the same generator, a second template |
 | onboarding.md O6 and P17 | A report copies no knowledge | repays - the shell's diagnostics read, which This Mac's Copy Diagnostics copies, gives the done sentence of Try it as "An entry is in the store.", without the workspace or the app it named |
 | Section 29.5 and P24 | `act=diagnostics` focuses This Mac's Copy Diagnostics, so the copy is the person's press; Show in Finder reports its outcome where it ran | agrees - Help's Diagnostics... opens This Mac with Copy Diagnostics focused, the starting page's word for the same act, and Show Log in Finder opens it with `act=reveal-log`, where the page says whether it worked |
-| Section 10 | A control has a name and says its state | agrees - the tray's tooltip names the state while the trouble shape shows, "Supragnosis - Could not start"; whether VoiceOver reads it is measured in the build |
+| Section 10 | A control has a name and says its state | agrees - the tray's tooltip names the state while the trouble shape shows, "Supragnosis - Could not start"; whether VoiceOver reads it is checked by hand before the release, with the menus |
 
 No row needs a principle changed.
 
@@ -4695,4 +4695,11 @@ No row needs a principle changed.
   takes.
 - It does not take the menu interface from the pages of the main window, which any of them may still
   call; it is owed with the window's permissions, unscheduled.
+
+**Guarded by** `trouble_is_the_memory_that_cannot_be_used`, `the_tray_has_one_act_in_order`,
+`the_map_commands_act_where_their_control_is` and `each_menu_item_has_its_own_id` in the app's tray
+tests; `copy_diagnostics_carries_no_entry` (the done sentence without its workspace or app); and
+`drift_and_conflict_are_said_outright` and `the_examples_read_through_the_apps_own_readers` (the
+state line's words). The menus and the tray are native, so the build checks them by hand before the
+release: each item's act, the order, the trouble shape and what VoiceOver reads.
 
